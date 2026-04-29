@@ -5,6 +5,9 @@ import { CHANNEL_LABEL, TAG_LIBRARY, type ReviewChannel } from '../../../_data/r
 import { fireToast } from '../../Toaster';
 
 export function SettingsPage() {
+  // @demo:config — Channel subscriptions, auto-publish threshold (5 min), and low-activity window
+  // (90 days) are hardcoded defaults. Replace with GET /api/reviews/settings returning per-tenant
+  // channel subscriptions and review policy config. Tag: PROD-CONFIG-6.
   const [channelSubs, setChannelSubs] = useState<Record<ReviewChannel, boolean>>({
     airbnb: true, booking: true, vrbo: true, google: true, direct: false,
   });

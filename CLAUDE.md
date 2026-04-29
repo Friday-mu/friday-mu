@@ -72,7 +72,7 @@ Friday Admin Dashboard (FAD) is the operations cockpit for Friday Retreats — a
 
 The FAD has no real backend yet. Login is fake, fixtures are local, "logout" just clears localStorage. Everything that exists purely to make the UI demonstrable needs a tag so Judith can rip it out cleanly when the backend lands.
 
-**The five tags** (use as code comments above the relevant constant / function / JSX block):
+**The six tags** (use as code comments above the relevant constant / function / JSX block):
 
 | Tag | Means | Backend action when wired |
 |---|---|---|
@@ -81,6 +81,7 @@ The FAD has no real backend yet. Login is fake, fixtures are local, "logout" jus
 | `// @demo:state` | Frontend-only persisted state (localStorage) that needs server sync | Add backend mirror + sync layer |
 | `// @demo:auth` | Anything that bypasses real authentication / authorization | Wire real auth + replace with backend-enforced gating |
 | `// @demo:ui` | UI surfaces that exist only because we're showcasing | Remove or hide behind feature flag |
+| `// @demo:config` | Hardcoded business constants / policy values that will become tenant-configurable | Replace with appropriate policy/config API endpoint |
 
 **Comment shape** — always include a tag ID that maps back to `DEMO_CRUFT.md`:
 

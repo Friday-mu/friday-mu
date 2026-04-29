@@ -856,6 +856,9 @@ export interface FinEscalationChain {
   };
 }
 
+// @demo:config — Escalation chain with hardcoded recipient IDs, timeout minutes, and
+// fallback approval cap (20_000_00 minor units). Replace with GET /api/finance/escalation-chain
+// returning the tenant-configured chain. Tag: PROD-CONFIG-3.
 export const FIN_ESCALATION_CHAIN: FinEscalationChain = {
   tier1: { recipientId: 'u-ishant', channelKey: 'finance', silentTimeoutMins: 30 },
   tier2: { recipientId: 'u-ishant', via: '3cx_phone', silentTimeoutMins: 15 },

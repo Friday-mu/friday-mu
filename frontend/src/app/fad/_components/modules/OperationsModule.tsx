@@ -1251,6 +1251,7 @@ function ApprovalsPage({ onAfter }: { onAfter: () => void }) {
                 </div>
                 {r.amount !== undefined && (
                   <div className="mono" style={{ fontSize: 11 }}>
+                    {/* @demo:config — 'MUR' hardcoded fallback currency. Replace with tenant defaultCurrency from GET /api/tenant/config. Tag: PROD-CONFIG-9. */}
                     {r.amount.toLocaleString()} {r.currency ?? 'MUR'}
                   </div>
                 )}
@@ -1307,6 +1308,7 @@ function ApprovalDetail({
           }}
         >
           <div style={{ fontSize: 24, fontWeight: 500 }}>
+            {/* @demo:config — 'MUR' fallback (see PROD-CONFIG-9) */}
             {req.amount.toLocaleString()} {req.currency ?? 'MUR'}
           </div>
           {req.vendor && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>Vendor: {req.vendor}</div>}

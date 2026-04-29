@@ -565,6 +565,9 @@ function CardRow({ card, accessTimeGated }: { card: PropertyCard; accessTimeGate
 
 function FinancialTab({ property, role }: { property: Property; role: string }) {
   // Mock per-property revenue using ADR + occupancy. Real numbers come from Finance Phase 2.
+  // @demo:config — Hardcoded MUR/EUR rate (44), PMC commission (0.20), Airbnb commission (0.17),
+  // mock float ratio (0.08), tourist-tax proxy (0.05). Replace with GET /api/finance/policies
+  // returning {pmcRate, channelRates, mur_eur_rate, touristTaxRate}. Tag: PROD-CONFIG-1.
   const yearlyRevenueMUR = Math.round(property.adr * 365 * property.occupancyYTD * 44); // 44 ≈ MUR per EUR
   const payoutMUR = Math.round(yearlyRevenueMUR * (1 - 0.20 - 0.17)); // less PMC commission + Airbnb
   const ownerBalanceMUR = Math.round(payoutMUR * 0.08); // mock float

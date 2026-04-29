@@ -2185,6 +2185,9 @@ function SettingsCategories() {
 
 function SettingsCaps() {
   const { openConfirm } = useFinCtx();
+  // @demo:config — Per-user spending caps and team members hardcoded inline. Replace with
+  // GET /api/finance/policies/caps returning [{userId, displayName, role, capMinor, updatedAt}].
+  // User list duplicates PROD-DATA-38 (TASK_USERS); caps are business policy. Tag: PROD-CONFIG-2.
   const team = [
     { user: 'Ishant', role: 'Admin', cap: null, lastUpdated: '—' },
     { user: 'Mary', role: 'Admin (departing May)', cap: null, lastUpdated: '2026-01-04 · Ishant' },
@@ -2960,6 +2963,9 @@ function BankUploadDrawer({
   const [fileName, setFileName] = useState<string>('');
 
   const account = FIN_ACCOUNTS.find((a) => a.id === selectedAccount);
+  // @demo:config — Hardcoded importable platforms (Airbnb, BDC, Direct). Tenant-configurable when
+  // multi-tenant lands. Replace with GET /api/finance/import-platforms returning supported platforms
+  // with label, sourceHint, and expected format per platform. Tag: PROD-CONFIG-4.
   const platformLabel: Record<string, { label: string; sourceHint: string; expected: string }> = {
     airbnb: { label: 'Airbnb', sourceHint: 'CSV download · 7 event types', expected: 'CSV with reservation + payout + adjustment events' },
     bdc: { label: 'Booking.com', sourceHint: 'CSV download · per-statement-descriptor reservation linkage', expected: 'CSV with explicit Exchange Rate column' },
@@ -3154,6 +3160,8 @@ function VendorDrawer({ mode, vendorId, onClose }: { mode: 'add' | 'edit'; vendo
   const [patterns, setPatterns] = useState<string[]>(existing?.altNames || []);
   const [patternInput, setPatternInput] = useState('');
   const [defaultCategory, setDefaultCategory] = useState(existing?.defaultCategory || '');
+  // @demo:config — 'MCB' hardcoded as default bank in vendor-add form. Replace with first
+  // connected bank from GET /api/finance/banks (tenant's configured bank accounts). Tag: PROD-CONFIG-5.
   const [bank, setBank] = useState('MCB');
   const [accountNumber, setAccountNumber] = useState('');
   const [iban, setIban] = useState('');

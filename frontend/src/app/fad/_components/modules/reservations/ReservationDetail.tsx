@@ -264,6 +264,8 @@ function OverviewTab({
   const handleAirbnbResolution = () => {
     // Phase 1: open Airbnb host dashboard reservations page in a new tab.
     // Phase 3: deep-link to the specific resolution thread once we have channel-side IDs.
+    // @demo:config — Airbnb URL hardcoded; won't work for other channels. Replace with
+    // GET /api/integrations/channels/:channelId/resolution-url. Tag: PROD-CONFIG-8.
     window.open('https://www.airbnb.com/hosting/reservations', '_blank', 'noopener');
   };
 

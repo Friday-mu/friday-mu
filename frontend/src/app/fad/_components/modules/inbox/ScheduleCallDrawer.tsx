@@ -62,6 +62,8 @@ export function ScheduleCallDrawer({ open, onClose, target, defaultInviteeIds, o
   };
 
   const submit = () => {
+    // @demo:config — Google Meet hardcoded as video provider. Replace with
+    // GET /api/integrations/video-conferencing returning active provider + URL template. Tag: PROD-CONFIG-7.
     const meetUrl = `https://meet.google.com/${makeMeetSlug()}`;
     const startAt = new Date(`${date}T${time}:00`).toISOString();
     const callMeta: TeamCallMeta = {

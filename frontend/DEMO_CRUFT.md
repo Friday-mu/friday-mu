@@ -170,6 +170,24 @@ Both modules have an "Approvals" sub-page. Confirmed via investigation (audit ex
 
 **Recommendation:** Keep separate (different domains, different lifecycles). But **extract a shared `<ApprovalSplitPane>` component** to eliminate the UI code duplication. That's a refactor task, not a backend wiring task — file under code-quality follow-ups.
 
+---
+
+## PROD-CONFIG — Business constants & tenant-configurable policy
+
+Hardcoded values that are not fake data but will become tenant-configurable once multi-tenant lands or the backend policy layer exists.
+
+| ID | Path | What it holds | Backend action |
+|---|---|---|---|
+| PROD-CONFIG-1 | `app/fad/_components/modules/properties/PropertyDetail.tsx:568-571` `FinancialTab` revenue formula | MUR/EUR rate (`44`), PMC commission (`0.20`), Airbnb commission (`0.17`), mock float ratio (`0.08`), tourist-tax proxy (`0.05`) — all hardcoded in per-property payout estimate | `GET /api/finance/policies` returning `{pmcRate, channelRates: {airbnb, bdc, …}, mur_eur_rate, touristTaxRate}` (Finance Phase 2) |
+| PROD-CONFIG-2 | `app/fad/_components/modules/FinanceModule.tsx:2188-2194` `SettingsCaps()` inline team array | Per-user spending caps (`20_000_00` manager, `5_000_00` contributors) hardcoded in JSX alongside staff names. Names duplicate PROD-DATA-38; caps are business policy. | `GET /api/finance/policies/caps` returning `[{userId, displayName, role, capMinor, updatedAt}]` |
+| PROD-CONFIG-3 | `app/fad/_data/finance.ts:859` `FIN_ESCALATION_CHAIN` | Tier1/2/3 escalation chain with hardcoded recipient IDs (`u-ishant`, `u-mathias`, `u-franny`), timeout minutes (30/15), and `fallbackApprovalCapMinor: 20_000_00` | `GET /api/finance/escalation-chain` returning tenant-configured escalation policy |
+| PROD-CONFIG-4 | `app/fad/_components/modules/FinanceModule.tsx:2963` `platformLabel` map | Importable payout platforms hardcoded as Airbnb/BDC/Direct only. Tenant-configurable when multi-tenant lands (different channel mix per property). | `GET /api/finance/import-platforms` returning supported platforms with label, sourceHint, and expected format |
+| PROD-CONFIG-5 | `app/fad/_components/modules/FinanceModule.tsx:3157` `useState('MCB')` | MCB hardcoded as default bank in vendor-add form. Mauritius-specific. | Replace default with first connected bank from `GET /api/finance/banks` |
+| PROD-CONFIG-6 | `app/fad/_components/modules/reviews/SettingsPage.tsx:8-12` | Channel subscription defaults (`airbnb: true, booking: true, vrbo: true, google: true, direct: false`), auto-publish threshold (5 min), and low-activity window (90 days) hardcoded as `useState` initial values | `GET /api/reviews/settings` returning per-tenant channel subscriptions and review policy config |
+| PROD-CONFIG-7 | `app/fad/_components/modules/inbox/ScheduleCallDrawer.tsx:65` | `https://meet.google.com/…` hardcoded as video conferencing provider. No abstraction for Zoom/Teams. | `GET /api/integrations/video-conferencing` returning active provider + URL template |
+| PROD-CONFIG-8 | `app/fad/_components/modules/reservations/ReservationDetail.tsx:267` | `https://www.airbnb.com/hosting/reservations` hardcoded in Airbnb resolution handler. Won't route correctly for BDC/Vrbo channels. | `GET /api/integrations/channels/:channelId/resolution-url` returning channel-specific management URL |
+| PROD-CONFIG-9 | `app/fad/_components/modules/OperationsModule.tsx:1254, 1311` `r.currency ?? 'MUR'` (×2) | 'MUR' hardcoded as fallback currency in spend-request display (list item + detail view). | Replace with `defaultCurrency` from `GET /api/tenant/config` |
+
 ## Notes for backend wiring
 
 - **`bumpRev` pattern is everywhere** — lots of components depend on it. Search-replace strategy: every `bumpRev()` call becomes either (a) an optimistic update + refetch, or (b) a no-op once the SSE event handler refreshes the affected slice.
@@ -182,13 +200,14 @@ Both modules have an "Approvals" sub-page. Confirmed via investigation (audit ex
 
 ## Inventory summary
 
-After Apr 29 2026 audit extension:
+After Apr 29 2026 config audit extension:
 
-- **24 data fixtures + inline business-data Maps** to replace with API endpoints (PROD-DATA-1..24)
+- **49 data fixtures + inline business-data Maps** to replace with API endpoints (PROD-DATA-1..49)
 - **5 auth-bypass surfaces** to wire real authentication (PROD-AUTH-1..5)
 - **6 localStorage-state buckets** to either sync or delete (PROD-STATE-1..6)
-- **12 logic patterns** to move to backend or fix (PROD-LOGIC-1..12)
+- **13 logic patterns** to move to backend or fix (PROD-LOGIC-1..13)
 - **4 demo UI surfaces** to remove or feature-flag (PROD-UI-1..4)
+- **9 business constants / policy values** to move to config endpoints (PROD-CONFIG-1..9)
 - **1 architectural note** — Approvals duplication (Operations vs Finance)
 
-**Total: 51 individual `// @demo:*` tags across the codebase.** Grep `// @demo:` to confirm count after tagging pass lands.
+**Total: ~86 `// @demo:*` tags across the codebase.** Grep `// @demo:` to confirm count.
