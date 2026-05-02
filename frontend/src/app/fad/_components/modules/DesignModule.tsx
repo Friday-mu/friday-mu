@@ -14,6 +14,8 @@ import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { ProjectIntake } from './design/ProjectIntake';
+import { SiteVisitStage } from './design/stages/SiteVisitStage';
+import { PreferencesStage } from './design/stages/PreferencesStage';
 import { fireToast } from '../Toaster';
 
 interface Props {
@@ -649,6 +651,10 @@ function ProjectScreenContent({ project, screen }: { project: DesignProject; scr
   switch (screen) {
     case 'overview':
       return <ProjectOverview project={project} />;
+    case 'site-visit':
+      return <SiteVisitStage project={project} />;
+    case 'preferences':
+      return <PreferencesStage project={project} />;
     default:
       return (
         <div style={{ padding: 24, background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)' }}>
