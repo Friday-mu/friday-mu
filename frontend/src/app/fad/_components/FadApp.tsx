@@ -32,6 +32,7 @@ import { ReservationsModule } from './modules/ReservationsModule';
 import { TrainingModule } from './modules/TrainingModule';
 import { NotificationsModule } from './modules/NotificationsModule';
 import { HRModule } from './modules/HRModule';
+import { DesignModule } from './modules/DesignModule';
 import { MODULE_RESOURCE, PermissionsProvider } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
@@ -76,6 +77,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
     const urlSub = params.get('sub');
     // Legacy redirect: 'tasks' module was renamed to 'operations'.
     if (urlMod === 'tasks') urlMod = 'operations';
+    // Legacy redirect: 'interior' tease slot was repurposed as the live 'design' module.
+    if (urlMod === 'interior') urlMod = 'design';
     if (urlMod && MODULES.some((m) => m.id === urlMod)) {
       setActive(urlMod);
       setFridayFs(false);
@@ -349,8 +352,9 @@ function renderModuleInner(
       return <AnalyticsModule />;
     case 'notifications':
       return <NotificationsModule />;
+    case 'design':
+      return <DesignModule subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} />;
     case 'syndic':
-    case 'interior':
     case 'agency':
       return <TeaseModule mod={mod} />;
     default:

@@ -1,0 +1,531 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { ModuleHeader } from '../ModuleHeader';
+import { useCanSee } from '../usePermissions';
+import {
+  designClient,
+  formatMUR,
+  stageDef,
+  type DesignProject,
+  type StageId,
+} from '../../_data/design';
+import { ProjectContextBar } from './design/ProjectContextBar';
+import { StageTracker, stageStatusLabel } from './design/StageTracker';
+import { AIPlaceholder } from './design/AIPlaceholder';
+
+interface Props {
+  subPage: string;
+  onChangeSubPage: (id: string) => void;
+}
+
+type ProjectScreen =
+  | 'overview'
+  | 'site-visit'
+  | 'preferences'
+  | 'rough-budget'
+  | 'agreement'
+  | 'payments'
+  | 'moodboard'
+  | 'design-pack'
+  | 'final-budget'
+  | 'procurement'
+  | 'execution'
+  | 'reconciliation'
+  | 'handover'
+  | 'documents';
+
+// ─────────────────────────── Module shell ───────────────────────────
+
+export function DesignModule({ subPage, onChangeSubPage }: Props) {
+  const canSeeSettings = useCanSee('settings');
+
+  const tabs = [
+    { id: 'overview',  label: 'Overview' },
+    { id: 'projects',  label: 'Projects' },
+    { id: 'leads',     label: 'Leads' },
+    { id: 'vendors',   label: 'Vendors' },
+    canSeeSettings && { id: 'settings', label: 'Settings' },
+  ].filter((t): t is { id: string; label: string } => Boolean(t));
+
+  const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
+
+  // Project drill-down — URL param pid, stage param for inner screen.
+  const [pid, setPid] = useState<string | null>(null);
+  const [screen, setScreen] = useState<ProjectScreen>('overview');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlPid = params.get('pid');
+    const urlScreen = params.get('stage') as ProjectScreen | null;
+    if (urlPid) setPid(urlPid);
+    if (urlScreen) setScreen(urlScreen);
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    let changed = false;
+    if (pid) {
+      if (url.searchParams.get('pid') !== pid) { url.searchParams.set('pid', pid); changed = true; }
+      if (url.searchParams.get('stage') !== screen) { url.searchParams.set('stage', screen); changed = true; }
+    } else {
+      if (url.searchParams.has('pid')) { url.searchParams.delete('pid'); changed = true; }
+      if (url.searchParams.has('stage')) { url.searchParams.delete('stage'); changed = true; }
+    }
+    if (changed) window.history.replaceState(null, '', url);
+  }, [pid, screen]);
+
+  // Reset drill-down when sub-page changes (overview/leads/vendors/settings shouldn't carry a pid).
+  useEffect(() => {
+    if (active !== 'projects') setPid(null);
+  }, [active]);
+
+  const project = pid ? designClient.projects.get(pid) : null;
+
+  // If we're inside a project, render the project shell instead of the tab content.
+  if (project) {
+    return (
+      <ProjectShell
+        project={project}
+        screen={screen}
+        onChangeScreen={setScreen}
+        onClose={() => { setPid(null); onChangeSubPage('projects'); }}
+      />
+    );
+  }
+
+  return (
+    <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <ModuleHeader
+        title="Design"
+        subtitle="Friday Design OS — interior design projects (FD entity)"
+        tabs={tabs}
+        activeTab={active}
+        onTabChange={onChangeSubPage}
+        actions={
+          active === 'projects' || active === 'overview' ? (
+            <button
+              type="button"
+              onClick={() => { onChangeSubPage('projects'); setPid('__new'); setScreen('overview'); }}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-brand-accent)',
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 500,
+              }}
+            >
+              + New project
+            </button>
+          ) : null
+        }
+      />
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        {active === 'overview' && <DesignDashboard onOpenProject={(id) => { onChangeSubPage('projects'); setPid(id); setScreen('overview'); }} />}
+        {active === 'projects' && <ProjectsList onOpenProject={(id) => { setPid(id); setScreen('overview'); }} />}
+        {active === 'leads' && <LeadsList />}
+        {active === 'vendors' && <VendorsList />}
+        {active === 'settings' && <DesignSettings />}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────── Dashboard (Phase 2 placeholder, real in Phase 2) ───────────────────────────
+
+function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => void }) {
+  const metrics = designClient.projects.metrics();
+  const projects = designClient.projects.list();
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <MetricCard label="Active projects" value={String(metrics.activeProjects)} />
+        <MetricCard label="Pending owner approvals" value={String(metrics.pendingOwnerApprovals)} tone="warning" />
+        <MetricCard label="Procurement open" value={String(metrics.procurementOpen)} tone="info" />
+        <MetricCard label="Margin exposure" value={formatMUR(metrics.marginExposureMinor)} tone="accent" />
+      </div>
+      <div
+        style={{
+          background: 'var(--color-background-primary)',
+          border: '0.5px solid var(--color-border-tertiary)',
+          borderRadius: 'var(--radius-md)',
+          padding: 12,
+        }}
+      >
+        <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+          All projects
+        </h3>
+        <ProjectsTable projects={projects} onOpenProject={onOpenProject} />
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, tone }: { label: string; value: string; tone?: 'info' | 'warning' | 'accent' }) {
+  const color =
+    tone === 'info'    ? 'var(--color-text-info)' :
+    tone === 'warning' ? 'var(--color-text-warning)' :
+    tone === 'accent'  ? 'var(--color-brand-accent)' :
+                          'var(--color-text-primary)';
+  return (
+    <div
+      style={{
+        padding: 14,
+        background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 500 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 600, color, marginTop: 4, fontFamily: 'var(--font-mono-fad)' }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────── Projects table ───────────────────────────
+
+function ProjectsList({ onOpenProject }: { onOpenProject: (id: string) => void }) {
+  const projects = designClient.projects.list();
+  return <ProjectsTable projects={projects} onOpenProject={onOpenProject} />;
+}
+
+function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[]; onOpenProject: (id: string) => void }) {
+  if (projects.length === 0) {
+    return (
+      <div style={{ padding: 24, color: 'var(--color-text-tertiary)', fontSize: 13, textAlign: 'center' }}>
+        No projects yet. Create one with <strong style={{ color: 'var(--color-text-primary)' }}>+ New project</strong>.
+      </div>
+    );
+  }
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <th style={cellStyle('left')}>Project</th>
+            <th style={cellStyle('left')}>Counterparty</th>
+            <th style={cellStyle('left')}>Property</th>
+            <th style={cellStyle('left')}>Class.</th>
+            <th style={cellStyle('left')}>Tier</th>
+            <th style={cellStyle('left')}>Stage</th>
+            <th style={cellStyle('left')}>Next action</th>
+            <th style={cellStyle('right')}>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {projects.map((p) => {
+            const cp = designClient.counterparties.get(p.counterpartyId);
+            const prop = designClient.properties.get(p.propertyId);
+            return (
+              <tr
+                key={p.id}
+                onClick={() => onOpenProject(p.id)}
+                style={{ cursor: 'pointer', borderTop: '0.5px solid var(--color-border-tertiary)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-brand-accent-softer)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <td style={cellStyle('left')}><strong>{p.name}</strong></td>
+                <td style={cellStyle('left')}>{cp?.fullName ?? '—'}</td>
+                <td style={cellStyle('left')}>{prop?.name ?? '—'}</td>
+                <td style={cellStyle('left')}>{p.classification}</td>
+                <td style={cellStyle('left')}>{p.tier ? `T${p.tier}` : '—'}</td>
+                <td style={cellStyle('left')}>
+                  <span style={{ color: 'var(--color-text-info)', fontWeight: 500 }}>{p.currentStage}</span>{' '}
+                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>({stageStatusLabel(p.stageStatus)})</span>
+                </td>
+                <td style={cellStyle('left')}>{p.nextAction ?? '—'}</td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
+                  {p.updatedAt.slice(0, 10)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function cellStyle(align: 'left' | 'right'): React.CSSProperties {
+  return { padding: '8px 10px', textAlign: align, verticalAlign: 'top', whiteSpace: 'nowrap' };
+}
+
+// ─────────────────────────── Leads / Vendors / Settings (Phase 1 stubs) ───────────────────────────
+
+function LeadsList() {
+  const leads = designClient.leads.list();
+  return (
+    <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+      <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Leads</h3>
+      {leads.length === 0 ? (
+        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>No leads yet.</div>
+      ) : (
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {leads.map((l) => (
+            <li key={l.id} style={{ padding: 10, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ fontWeight: 500 }}>{l.counterpartyName}</div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{l.propertyHint} · {l.budgetHint}</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+                Source: {l.source} · Status: {l.status}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function VendorsList() {
+  const vendors = designClient.vendors.list();
+  return (
+    <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+      <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Vendor register (§7.YY)</h3>
+      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <th style={cellStyle('left')}>Name</th>
+            <th style={cellStyle('left')}>Company</th>
+            <th style={cellStyle('left')}>Category</th>
+            <th style={cellStyle('left')}>Phone</th>
+            <th style={cellStyle('left')}>Engagements</th>
+          </tr>
+        </thead>
+        <tbody>
+          {vendors.map((v) => (
+            <tr key={v.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+              <td style={cellStyle('left')}>{v.name}</td>
+              <td style={cellStyle('left')}>{v.company ?? '—'}</td>
+              <td style={cellStyle('left')}>{v.category.replace(/_/g, ' ')}</td>
+              <td style={cellStyle('left')}>{v.phone ?? '—'}</td>
+              <td style={cellStyle('left')}>{v.engagements.length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DesignSettings() {
+  const cfg = designClient.settings.annexA();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Annex A — Pricing schedule</h3>
+        <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+          Default pricing tiers used when generating new agreements. Annex B in each project carries the negotiated overrides.
+        </p>
+        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+          <tbody>
+            <tr><td style={cellStyle('left')}>Tier 3 design fee (EPC &lt; Rs 500K)</td><td style={cellStyle('right')}>{formatMUR(cfg.designFee.tier3FlatMinor)} flat</td></tr>
+            <tr><td style={cellStyle('left')}>Tier 2 design fee (Rs 500K–1.5M)</td><td style={cellStyle('right')}>{formatMUR(cfg.designFee.tier2FlatMinor)} flat</td></tr>
+            <tr><td style={cellStyle('left')}>Tier 1 design fee (EPC &gt; Rs 1.5M)</td><td style={cellStyle('right')}>{(cfg.designFee.tier1PercentOfEpc * 100).toFixed(1)}% of EPC</td></tr>
+            <tr><td style={cellStyle('left')}>P&amp;E Furnishing</td><td style={cellStyle('right')}>{(cfg.procurementFurnishing.tier3Pct * 100).toFixed(1)}% / {(cfg.procurementFurnishing.tier2Pct * 100).toFixed(1)}% / {(cfg.procurementFurnishing.tier1Pct * 100).toFixed(1)}%</td></tr>
+            <tr><td style={cellStyle('left')}>P&amp;E Renovation</td><td style={cellStyle('right')}>{(cfg.procurementRenovation.tier3Pct * 100).toFixed(1)}% / {(cfg.procurementRenovation.tier2Pct * 100).toFixed(1)}% / {(cfg.procurementRenovation.tier1Pct * 100).toFixed(1)}%</td></tr>
+            <tr><td style={cellStyle('left')}>Agreement template</td><td style={cellStyle('right')}>{cfg.agreementTemplateVersion}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>ID Standards Book</h3>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>Coming in v0.2 — central library of approved palettes, materials, vendors, and per-room defaults.</p>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────── Project shell (drill-down) ───────────────────────────
+
+function ProjectShell({
+  project,
+  screen,
+  onChangeScreen,
+  onClose,
+}: {
+  project: DesignProject;
+  screen: ProjectScreen;
+  onChangeScreen: (s: ProjectScreen) => void;
+  onClose: () => void;
+}) {
+  const screens: { id: ProjectScreen; label: string }[] = useMemo(
+    () => [
+      { id: 'overview',       label: 'Overview' },
+      { id: 'site-visit',     label: 'Site visit' },
+      { id: 'preferences',    label: 'Preferences' },
+      { id: 'rough-budget',   label: 'Rough budget' },
+      { id: 'agreement',      label: 'Agreement' },
+      { id: 'payments',       label: 'Payments' },
+      { id: 'moodboard',      label: 'Moodboard' },
+      { id: 'design-pack',    label: 'Design pack' },
+      { id: 'final-budget',   label: 'Final budget' },
+      { id: 'procurement',    label: 'Procurement' },
+      { id: 'execution',      label: 'Execution' },
+      { id: 'reconciliation', label: 'Reconciliation' },
+      { id: 'handover',       label: 'Handover' },
+      { id: 'documents',      label: 'Documents' },
+    ],
+    [],
+  );
+
+  const stageRouteToScreen = (stageId: StageId): ProjectScreen => stageDef(stageId).route as ProjectScreen;
+
+  return (
+    <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <ProjectContextBar project={project} onBack={onClose} />
+      <div style={{ padding: '8px 16px', background: 'var(--color-background-primary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+        <StageTracker
+          currentStage={project.currentStage}
+          status={project.stageStatus}
+          onStageSelect={(stageId) => onChangeScreen(stageRouteToScreen(stageId))}
+        />
+      </div>
+      <ModuleHeader
+        title=""
+        tabs={screens}
+        activeTab={screen}
+        onTabChange={(id) => onChangeScreen(id as ProjectScreen)}
+      />
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        <ProjectScreenContent project={project} screen={screen} />
+      </div>
+    </div>
+  );
+}
+
+function ProjectScreenContent({ project, screen }: { project: DesignProject; screen: ProjectScreen }) {
+  switch (screen) {
+    case 'overview':
+      return <ProjectOverview project={project} />;
+    default:
+      return (
+        <div style={{ padding: 24, background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)' }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 500 }}>{screen.replace(/-/g, ' ')}</h3>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+            Screen scaffolded. Phase {phaseForScreen(screen)} ships full implementation.
+          </p>
+          <div style={{ marginTop: 12 }}>
+            <AIPlaceholder feature={aiFeatureForScreen(screen)} label={aiLabelForScreen(screen)} />
+          </div>
+        </div>
+      );
+  }
+}
+
+function ProjectOverview({ project }: { project: DesignProject }) {
+  const cp = designClient.counterparties.get(project.counterpartyId);
+  const prop = designClient.properties.get(project.propertyId);
+  const activity = designClient.activity.list(project.id);
+  const docs = designClient.documents.list(project.id).filter((d) => d.status !== 'not_yet');
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Summary</h3>
+          <SummaryRow label="Counterparty"  value={cp?.fullName ?? '—'} />
+          <SummaryRow label="Property"      value={prop?.name ?? '—'} />
+          <SummaryRow label="Classification" value={project.classification} />
+          <SummaryRow label="Tier"          value={project.tier ? `Tier ${project.tier}` : '—'} />
+          <SummaryRow label="EPC"           value={formatMUR(project.epcMinor)} />
+          <SummaryRow label="Design fee"    value={formatMUR(project.designFeeMinor)} />
+          <SummaryRow label="Procurement fee" value={formatMUR(project.procurementFeeMinor)} />
+          <SummaryRow label="Start"         value={project.startDate ?? '—'} />
+          <SummaryRow label="Est. completion" value={project.estimatedCompletion ?? '—'} />
+          <SummaryRow label="Design lead"   value={project.designLeadUserId?.replace('u-', '') ?? '—'} />
+          <SummaryRow label="Blocker"       value={project.blocker ?? '—'} tone={project.blocker ? 'danger' : undefined} />
+          <SummaryRow label="Next action"   value={project.nextAction ?? '—'} />
+        </div>
+        <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Documents</h3>
+          {docs.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>No documents yet.</div>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {docs.map((d) => (
+                <li key={d.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span>{d.type.replace(/_/g, ' ')} <span style={{ color: 'var(--color-text-tertiary)' }}>v{d.version}</span></span>
+                  <span style={{ color: 'var(--color-text-info)' }}>{d.status}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Activity</h3>
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {activity.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>No activity yet.</div>
+          ) : activity.slice(0, 10).map((a) => (
+            <li key={a.id} style={{ fontSize: 12, paddingBottom: 8, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+              <div style={{ color: 'var(--color-text-primary)' }}>{a.summary}</div>
+              <div style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)', fontSize: 11, marginTop: 2 }}>
+                {a.at.slice(0, 16).replace('T', ' ')} · {a.userId ?? 'system'}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, tone }: { label: string; value: string; tone?: 'danger' }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, borderBottom: '0.5px dashed var(--color-border-tertiary)' }}>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
+      <span style={{ color: tone === 'danger' ? 'var(--color-text-danger)' : 'var(--color-text-primary)', textAlign: 'right', maxWidth: '60%' }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function phaseForScreen(s: ProjectScreen): number {
+  if (s === 'site-visit' || s === 'preferences') return 4;
+  if (s === 'rough-budget' || s === 'agreement') return 5;
+  if (s === 'payments' || s === 'moodboard' || s === 'design-pack') return 6;
+  if (s === 'final-budget' || s === 'procurement') return 7;
+  if (s === 'execution' || s === 'reconciliation' || s === 'handover') return 8;
+  if (s === 'documents') return 9;
+  return 1;
+}
+
+function aiFeatureForScreen(s: ProjectScreen) {
+  switch (s) {
+    case 'site-visit':     return 'site-visit-audit';
+    case 'preferences':    return 'preference-brief';
+    case 'rough-budget':   return 'rough-budget-estimate';
+    case 'agreement':      return 'agreement-autofill';
+    case 'moodboard':      return 'moodboard-narrative';
+    case 'design-pack':    return 'design-pack-copy';
+    case 'final-budget':   return 'final-budget-suggest';
+    case 'execution':      return 'receipt-scan';
+    case 'reconciliation': return 'reconciliation-variance';
+    case 'handover':       return 'handover-report';
+    default:               return 'owner-update';
+  }
+}
+
+function aiLabelForScreen(s: ProjectScreen): string {
+  switch (s) {
+    case 'site-visit':     return 'Run AI audit';
+    case 'preferences':    return 'Generate brief';
+    case 'rough-budget':   return 'Generate estimate';
+    case 'agreement':      return 'Auto-fill from project';
+    case 'moodboard':      return 'Generate narrative';
+    case 'design-pack':    return 'Generate copy';
+    case 'final-budget':   return 'Suggest items';
+    case 'execution':      return 'Scan receipt';
+    case 'reconciliation': return 'Detect variances';
+    case 'handover':       return 'Generate report';
+    default:               return 'Generate update';
+  }
+}
