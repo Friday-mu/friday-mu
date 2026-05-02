@@ -21,6 +21,8 @@ import { AgreementStage } from './design/stages/AgreementStage';
 import { PaymentsStage } from './design/stages/PaymentsStage';
 import { MoodboardStage } from './design/stages/MoodboardStage';
 import { DesignPackStage } from './design/stages/DesignPackStage';
+import { FinalBudgetStage } from './design/stages/FinalBudgetStage';
+import { ProcurementStage } from './design/stages/ProcurementStage';
 import { fireToast } from '../Toaster';
 
 interface Props {
@@ -670,6 +672,10 @@ function ProjectScreenContent({ project, screen }: { project: DesignProject; scr
       return <MoodboardStage project={project} />;
     case 'design-pack':
       return <DesignPackStage project={project} />;
+    case 'final-budget':
+      return <FinalBudgetStage project={project} />;
+    case 'procurement':
+      return <ProcurementStage project={project} />;
     default:
       return (
         <div style={{ padding: 24, background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)' }}>
