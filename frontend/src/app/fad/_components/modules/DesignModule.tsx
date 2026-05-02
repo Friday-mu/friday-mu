@@ -12,7 +12,6 @@ import {
 } from '../../_data/design';
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
-import { AIPlaceholder } from './design/AIPlaceholder';
 import { ProjectIntake } from './design/ProjectIntake';
 import { SiteVisitStage } from './design/stages/SiteVisitStage';
 import { PreferencesStage } from './design/stages/PreferencesStage';
@@ -26,6 +25,8 @@ import { ProcurementStage } from './design/stages/ProcurementStage';
 import { ExecutionStage } from './design/stages/ExecutionStage';
 import { ReconciliationStage } from './design/stages/ReconciliationStage';
 import { HandoverStage } from './design/stages/HandoverStage';
+import { DocumentsStage } from './design/stages/DocumentsStage';
+import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import { fireToast } from '../Toaster';
 
 interface Props {
@@ -612,6 +613,7 @@ function ProjectShell({
   onChangeScreen: (s: ProjectScreen) => void;
   onClose: () => void;
 }) {
+  const [portalOpen, setPortalOpen] = useState(false);
   const screens: { id: ProjectScreen; label: string }[] = useMemo(
     () => [
       { id: 'overview',       label: 'Overview' },
@@ -636,7 +638,8 @@ function ProjectShell({
 
   return (
     <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <ProjectContextBar project={project} onBack={onClose} />
+      <ProjectContextBar project={project} onBack={onClose} onOpenOwnerPortal={() => setPortalOpen(true)} />
+      {portalOpen && <OwnerPortalPreview project={project} onClose={() => setPortalOpen(false)} />}
       <div style={{ padding: '8px 16px', background: 'var(--color-background-primary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
         <StageTracker
           currentStage={project.currentStage}
@@ -685,19 +688,11 @@ function ProjectScreenContent({ project, screen }: { project: DesignProject; scr
       return <ReconciliationStage project={project} />;
     case 'handover':
       return <HandoverStage project={project} />;
-    default:
-      return (
-        <div style={{ padding: 24, background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)' }}>
-          <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 500 }}>{screen.replace(/-/g, ' ')}</h3>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-            Screen scaffolded. Phase {phaseForScreen(screen)} ships full implementation.
-          </p>
-          <div style={{ marginTop: 12 }}>
-            <AIPlaceholder feature={aiFeatureForScreen(screen)} label={aiLabelForScreen(screen)} />
-          </div>
-        </div>
-      );
+    case 'documents':
+      return <DocumentsStage project={project} />;
   }
+  // Exhaustive — TS narrows `screen` to never here.
+  return null;
 }
 
 function ProjectOverview({ project }: { project: DesignProject }) {
@@ -770,44 +765,3 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-function phaseForScreen(s: ProjectScreen): number {
-  if (s === 'site-visit' || s === 'preferences') return 4;
-  if (s === 'rough-budget' || s === 'agreement') return 5;
-  if (s === 'payments' || s === 'moodboard' || s === 'design-pack') return 6;
-  if (s === 'final-budget' || s === 'procurement') return 7;
-  if (s === 'execution' || s === 'reconciliation' || s === 'handover') return 8;
-  if (s === 'documents') return 9;
-  return 1;
-}
-
-function aiFeatureForScreen(s: ProjectScreen) {
-  switch (s) {
-    case 'site-visit':     return 'site-visit-audit';
-    case 'preferences':    return 'preference-brief';
-    case 'rough-budget':   return 'rough-budget-estimate';
-    case 'agreement':      return 'agreement-autofill';
-    case 'moodboard':      return 'moodboard-narrative';
-    case 'design-pack':    return 'design-pack-copy';
-    case 'final-budget':   return 'final-budget-suggest';
-    case 'execution':      return 'receipt-scan';
-    case 'reconciliation': return 'reconciliation-variance';
-    case 'handover':       return 'handover-report';
-    default:               return 'owner-update';
-  }
-}
-
-function aiLabelForScreen(s: ProjectScreen): string {
-  switch (s) {
-    case 'site-visit':     return 'Run AI audit';
-    case 'preferences':    return 'Generate brief';
-    case 'rough-budget':   return 'Generate estimate';
-    case 'agreement':      return 'Auto-fill from project';
-    case 'moodboard':      return 'Generate narrative';
-    case 'design-pack':    return 'Generate copy';
-    case 'final-budget':   return 'Suggest items';
-    case 'execution':      return 'Scan receipt';
-    case 'reconciliation': return 'Detect variances';
-    case 'handover':       return 'Generate report';
-    default:               return 'Generate update';
-  }
-}
