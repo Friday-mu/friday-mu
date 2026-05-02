@@ -13,10 +13,26 @@ import {
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { AIPlaceholder } from './design/AIPlaceholder';
+import { ProjectIntake } from './design/ProjectIntake';
+import { fireToast } from '../Toaster';
 
 interface Props {
   subPage: string;
   onChangeSubPage: (id: string) => void;
+}
+
+function syncDrillDownToUrl(pid: string | null, screen: string) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  let changed = false;
+  if (pid) {
+    if (url.searchParams.get('pid') !== pid) { url.searchParams.set('pid', pid); changed = true; }
+    if (url.searchParams.get('stage') !== screen) { url.searchParams.set('stage', screen); changed = true; }
+  } else {
+    if (url.searchParams.has('pid')) { url.searchParams.delete('pid'); changed = true; }
+    if (url.searchParams.has('stage')) { url.searchParams.delete('stage'); changed = true; }
+  }
+  if (changed) window.history.replaceState(null, '', url);
 }
 
 type ProjectScreen =
@@ -51,36 +67,38 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
   const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
 
   // Project drill-down — URL param pid, stage param for inner screen.
-  const [pid, setPid] = useState<string | null>(null);
-  const [screen, setScreen] = useState<ProjectScreen>('overview');
+  // Initial values read directly from URL during state init so the URL-sync
+  // effect doesn't race-strip them on mount.
+  const [pid, setPid] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('pid');
+  });
+  const [screen, setScreen] = useState<ProjectScreen>(() => {
+    if (typeof window === 'undefined') return 'overview';
+    return (new URLSearchParams(window.location.search).get('stage') as ProjectScreen | null) ?? 'overview';
+  });
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlPid = params.get('pid');
-    const urlScreen = params.get('stage') as ProjectScreen | null;
-    if (urlPid) setPid(urlPid);
-    if (urlScreen) setScreen(urlScreen);
-  }, []);
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    let changed = false;
-    if (pid) {
-      if (url.searchParams.get('pid') !== pid) { url.searchParams.set('pid', pid); changed = true; }
-      if (url.searchParams.get('stage') !== screen) { url.searchParams.set('stage', screen); changed = true; }
-    } else {
-      if (url.searchParams.has('pid')) { url.searchParams.delete('pid'); changed = true; }
-      if (url.searchParams.has('stage')) { url.searchParams.delete('stage'); changed = true; }
-    }
-    if (changed) window.history.replaceState(null, '', url);
+    syncDrillDownToUrl(pid, screen);
   }, [pid, screen]);
 
-  // Reset drill-down when sub-page changes (overview/leads/vendors/settings shouldn't carry a pid).
-  useEffect(() => {
-    if (active !== 'projects') setPid(null);
-  }, [active]);
+  // Wrappers that update both local state AND URL synchronously, so the parent's
+  // sub-page change (which remounts this component via <main key=…>) sees a URL
+  // we can rehydrate from on the next mount.
+  const setPidAndUrl = (next: string | null) => { setPid(next); syncDrillDownToUrl(next, screen); };
+  const setScreenAndUrl = (next: ProjectScreen) => { setScreen(next); syncDrillDownToUrl(pid, next); };
 
-  const project = pid ? designClient.projects.get(pid) : null;
+
+  const project = pid && pid !== '__new' ? designClient.projects.get(pid) : null;
+
+  // Intake mode (pid === '__new') renders the new-project form.
+  if (pid === '__new') {
+    return (
+      <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
+        <ProjectIntake onClose={(newId) => setPidAndUrl(newId ?? null)} />
+      </div>
+    );
+  }
 
   // If we're inside a project, render the project shell instead of the tab content.
   if (project) {
@@ -88,8 +106,8 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
       <ProjectShell
         project={project}
         screen={screen}
-        onChangeScreen={setScreen}
-        onClose={() => { setPid(null); onChangeSubPage('projects'); }}
+        onChangeScreen={setScreenAndUrl}
+        onClose={() => setPidAndUrl(null)}
       />
     );
   }
@@ -101,12 +119,12 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
         subtitle="Friday Design OS — interior design projects (FD entity)"
         tabs={tabs}
         activeTab={active}
-        onTabChange={onChangeSubPage}
+        onTabChange={(id) => { setPidAndUrl(null); onChangeSubPage(id); }}
         actions={
           active === 'projects' || active === 'overview' ? (
             <button
               type="button"
-              onClick={() => { onChangeSubPage('projects'); setPid('__new'); setScreen('overview'); }}
+              onClick={() => { setScreenAndUrl('overview'); setPidAndUrl('__new'); }}
               style={{
                 padding: '6px 12px',
                 borderRadius: 'var(--radius-sm)',
@@ -122,8 +140,8 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
         }
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-        {active === 'overview' && <DesignDashboard onOpenProject={(id) => { onChangeSubPage('projects'); setPid(id); setScreen('overview'); }} />}
-        {active === 'projects' && <ProjectsList onOpenProject={(id) => { setPid(id); setScreen('overview'); }} />}
+        {active === 'overview' && <DesignDashboard onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
+        {active === 'projects' && <ProjectsList onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
         {active === 'leads' && <LeadsList />}
         {active === 'vendors' && <VendorsList />}
         {active === 'settings' && <DesignSettings />}
@@ -424,23 +442,87 @@ function cellStyle(align: 'left' | 'right'): React.CSSProperties {
 
 function LeadsList() {
   const leads = designClient.leads.list();
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'accepted' | 'declined' | 'not_needed'>('all');
+  const filtered = statusFilter === 'all' ? leads : leads.filter((l) => l.status === statusFilter);
+
   return (
     <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
-      <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Leads</h3>
-      {leads.length === 0 ? (
-        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>No leads yet.</div>
-      ) : (
-        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {leads.map((l) => (
-            <li key={l.id} style={{ padding: 10, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontWeight: 500 }}>{l.counterpartyName}</div>
-              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{l.propertyHint} · {l.budgetHint}</div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-                Source: {l.source} · Status: {l.status}
-              </div>
-            </li>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Leads <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· pre-project pipeline</span></h3>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(['all', 'draft', 'sent', 'accepted', 'declined'] as const).map((s) => (
+            <FilterChip key={s} label={s === 'all' ? 'All' : s} active={statusFilter === s} onClick={() => setStatusFilter(s)} />
           ))}
-        </ul>
+        </div>
+      </div>
+      {filtered.length === 0 ? (
+        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13, padding: 12, textAlign: 'center' }}>
+          No leads in this status.
+        </div>
+      ) : (
+        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              <th style={cellStyle('left')}>Lead</th>
+              <th style={cellStyle('left')}>Property hint</th>
+              <th style={cellStyle('left')}>Budget</th>
+              <th style={cellStyle('left')}>Source</th>
+              <th style={cellStyle('left')}>Status</th>
+              <th style={cellStyle('right')}>Created</th>
+              <th style={cellStyle('right')}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((l) => (
+              <tr key={l.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                <td style={cellStyle('left')}>
+                  <div style={{ fontWeight: 500 }}>{l.counterpartyName}</div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{l.counterpartyPhone ?? l.counterpartyEmail ?? '—'}</div>
+                </td>
+                <td style={cellStyle('left')}>{l.propertyHint ?? '—'}</td>
+                <td style={cellStyle('left')}>{l.budgetHint ?? '—'}</td>
+                <td style={cellStyle('left')}>{l.source.replace(/_/g, ' ')}</td>
+                <td style={cellStyle('left')}>
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    background: l.status === 'accepted' ? 'var(--color-bg-success)' :
+                                l.status === 'sent'     ? 'var(--color-bg-info)' :
+                                l.status === 'declined' ? 'var(--color-bg-danger)' :
+                                                          'var(--color-background-tertiary)',
+                    color: l.status === 'accepted' ? 'var(--color-text-success)' :
+                           l.status === 'sent'     ? 'var(--color-text-info)' :
+                           l.status === 'declined' ? 'var(--color-text-danger)' :
+                                                     'var(--color-text-secondary)',
+                    fontSize: 10,
+                  }}>
+                    {l.status}
+                  </span>
+                </td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
+                  {l.createdAt.slice(0, 10)}
+                </td>
+                <td style={cellStyle('right')}>
+                  <button
+                    type="button"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: 11,
+                      borderRadius: 'var(--radius-sm)',
+                      background: l.status === 'accepted' ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
+                      color: l.status === 'accepted' ? '#fff' : 'var(--color-text-secondary)',
+                      border: '0.5px solid var(--color-border-tertiary)',
+                    }}
+                    title={l.status === 'accepted' ? 'Convert this lead to a Project' : 'Convert (typically after acceptance)'}
+                    onClick={() => fireToast(`Convert ${l.counterpartyName}'s lead → Project (mock; v0.2 wires to backend)`)}
+                  >
+                    {l.status === 'accepted' ? 'Convert →' : 'Open'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
