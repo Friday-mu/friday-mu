@@ -13,6 +13,7 @@ import {
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
+import { AIPlaceholder } from './design/AIPlaceholder';
 import { SiteVisitStage } from './design/stages/SiteVisitStage';
 import { PreferencesStage } from './design/stages/PreferencesStage';
 import { RoughBudgetStage } from './design/stages/RoughBudgetStage';
@@ -736,7 +737,10 @@ function ProjectOverview({ project }: { project: DesignProject }) {
         </div>
       </div>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Activity</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Activity</h3>
+          <AIPlaceholder feature="owner-update" label="Generate owner update" size="sm" />
+        </div>
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {activity.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>No activity yet.</div>
