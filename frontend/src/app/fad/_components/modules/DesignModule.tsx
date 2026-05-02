@@ -132,51 +132,215 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
   );
 }
 
-// ─────────────────────────── Dashboard (Phase 2 placeholder, real in Phase 2) ───────────────────────────
+// ─────────────────────────── Dashboard (Phase 2) ───────────────────────────
+
+type MetricFilter = 'all' | 'pending_approval' | 'procurement_open' | 'margin_exposure';
 
 function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => void }) {
   const metrics = designClient.projects.metrics();
-  const projects = designClient.projects.list();
+  const allProjects = designClient.projects.list();
+
+  const [stageFilter, setStageFilter] = useState<StageId | 'all'>('all');
+  const [tierFilter, setTierFilter] = useState<'all' | 1 | 2 | 3>('all');
+  const [classFilter, setClassFilter] = useState<'all' | 'renovation' | 'furnishing' | 'mixed'>('all');
+  const [metricFilter, setMetricFilter] = useState<MetricFilter>('all');
+  const [search, setSearch] = useState('');
+
+  const projects = useMemo(() => {
+    let arr = allProjects;
+    if (stageFilter !== 'all') arr = arr.filter((p) => p.currentStage === stageFilter);
+    if (tierFilter !== 'all')  arr = arr.filter((p) => p.tier === tierFilter);
+    if (classFilter !== 'all') arr = arr.filter((p) => p.classification === classFilter);
+    if (metricFilter === 'pending_approval') {
+      const pendingProjectIds = new Set(
+        allProjects
+          .flatMap((p) => designClient.approvals.list(p.id))
+          .filter((a) => a.state === 'sent')
+          .map((a) => a.projectId),
+      );
+      arr = arr.filter((p) => pendingProjectIds.has(p.id));
+    }
+    if (metricFilter === 'procurement_open') {
+      const openProjectIds = new Set(allProjects.flatMap((p) => designClient.budgetItems.list(p.id))
+        .filter((i) => i.status === 'approved' && !['installed','qa_passed'].includes(i.procurement))
+        .map((i) => i.projectId));
+      arr = arr.filter((p) => openProjectIds.has(p.id));
+    }
+    if (metricFilter === 'margin_exposure') {
+      const expProjectIds = new Set(allProjects.flatMap((p) => designClient.budgetItems.list(p.id))
+        .filter((i) => i.status === 'approved' && i.actualPaidMinor === null)
+        .map((i) => i.projectId));
+      arr = arr.filter((p) => expProjectIds.has(p.id));
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      arr = arr.filter((p) => p.name.toLowerCase().includes(q));
+    }
+    return arr;
+  }, [allProjects, stageFilter, tierFilter, classFilter, metricFilter, search]);
+
+  const blockers = useMemo(() => allProjects.filter((p) => p.blocker), [allProjects]);
+
+  const myTodayTasks = useMemo(() => {
+    // @demo:logic — Tag: PROD-DESIGN-2. Real version pulls from §7.SS MyTasks API
+    // filtered to (a) tasks assigned to current user, (b) tagged with the Design module.
+    const all = allProjects.flatMap((p) => designClient.tasks.list(p.id));
+    return all.filter((t) => t.assignedUserId === 'u-bryan' && t.status !== 'completed').slice(0, 6);
+  }, [allProjects]);
+
+  const stageOptions = useMemo(() => {
+    const set = new Set(allProjects.map((p) => p.currentStage));
+    return Array.from(set);
+  }, [allProjects]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-        <MetricCard label="Active projects" value={String(metrics.activeProjects)} />
-        <MetricCard label="Pending owner approvals" value={String(metrics.pendingOwnerApprovals)} tone="warning" />
-        <MetricCard label="Procurement open" value={String(metrics.procurementOpen)} tone="info" />
-        <MetricCard label="Margin exposure" value={formatMUR(metrics.marginExposureMinor)} tone="accent" />
+        <MetricCard label="Active projects" value={String(metrics.activeProjects)} active={metricFilter === 'all'} onClick={() => setMetricFilter('all')} />
+        <MetricCard label="Pending owner approvals" value={String(metrics.pendingOwnerApprovals)} tone="warning" active={metricFilter === 'pending_approval'} onClick={() => setMetricFilter(metricFilter === 'pending_approval' ? 'all' : 'pending_approval')} />
+        <MetricCard label="Procurement open" value={String(metrics.procurementOpen)} tone="info" active={metricFilter === 'procurement_open'} onClick={() => setMetricFilter(metricFilter === 'procurement_open' ? 'all' : 'procurement_open')} />
+        <MetricCard label="Margin exposure" value={formatMUR(metrics.marginExposureMinor)} tone="accent" active={metricFilter === 'margin_exposure'} onClick={() => setMetricFilter(metricFilter === 'margin_exposure' ? 'all' : 'margin_exposure')} />
       </div>
-      <div
-        style={{
-          background: 'var(--color-background-primary)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 'var(--radius-md)',
-          padding: 12,
-        }}
-      >
-        <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}>
-          All projects
-        </h3>
-        <ProjectsTable projects={projects} onOpenProject={onOpenProject} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+        <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}>All projects</h3>
+            <input
+              type="search"
+              placeholder="Search projects…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                padding: '4px 10px',
+                fontSize: 12,
+                background: 'var(--color-background-tertiary)',
+                border: '0.5px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--color-text-primary)',
+                minWidth: 180,
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            <FilterChip label="All stages" active={stageFilter === 'all'} onClick={() => setStageFilter('all')} />
+            {stageOptions.map((s) => (
+              <FilterChip key={s} label={s} active={stageFilter === s} onClick={() => setStageFilter(s)} />
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            <FilterChip label="All tiers" active={tierFilter === 'all'} onClick={() => setTierFilter('all')} />
+            <FilterChip label="Tier 1" active={tierFilter === 1} onClick={() => setTierFilter(1)} />
+            <FilterChip label="Tier 2" active={tierFilter === 2} onClick={() => setTierFilter(2)} />
+            <FilterChip label="Tier 3" active={tierFilter === 3} onClick={() => setTierFilter(3)} />
+            <span style={{ width: 8 }} />
+            <FilterChip label="All classes" active={classFilter === 'all'} onClick={() => setClassFilter('all')} />
+            <FilterChip label="Renovation" active={classFilter === 'renovation'} onClick={() => setClassFilter('renovation')} />
+            <FilterChip label="Furnishing" active={classFilter === 'furnishing'} onClick={() => setClassFilter('furnishing')} />
+            <FilterChip label="Mixed" active={classFilter === 'mixed'} onClick={() => setClassFilter('mixed')} />
+          </div>
+          <ProjectsTable projects={projects} onOpenProject={onOpenProject} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>My Today</h3>
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>Design-related tasks for you (mock §7.SS)</div>
+            {myTodayTasks.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>Nothing on your plate.</div>
+            ) : (
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {myTodayTasks.map((t) => {
+                  const proj = designClient.projects.get(t.projectId);
+                  return (
+                    <li
+                      key={t.id}
+                      style={{ padding: 8, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+                      onClick={() => proj && onOpenProject(proj.id)}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 500 }}>{t.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                        {proj?.name} · due {t.dueDate ?? '—'}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--color-text-danger)' }}>Blockers</h3>
+            {blockers.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No active blockers.</div>
+            ) : (
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {blockers.map((p) => {
+                  const ageDays = Math.max(0, Math.round((Date.now() - new Date(p.updatedAt).getTime()) / 86_400_000));
+                  return (
+                    <li
+                      key={p.id}
+                      style={{ padding: 8, border: '0.5px solid var(--color-bg-danger)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-danger)', cursor: 'pointer' }}
+                      onClick={() => onOpenProject(p.id)}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-danger)' }}>{p.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>{p.blocker}</div>
+                      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4, fontFamily: 'var(--font-mono-fad)' }}>
+                        {ageDays}d old · owner: {p.designLeadUserId?.replace('u-', '') ?? 'unassigned'}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function MetricCard({ label, value, tone }: { label: string; value: string; tone?: 'info' | 'warning' | 'accent' }) {
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '3px 10px',
+        fontSize: 11,
+        borderRadius: 'var(--radius-full)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        background: active ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
+        color: active ? '#fff' : 'var(--color-text-secondary)',
+        fontWeight: active ? 600 : 500,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function MetricCard({ label, value, tone, active, onClick }: { label: string; value: string; tone?: 'info' | 'warning' | 'accent'; active?: boolean; onClick?: () => void }) {
   const color =
     tone === 'info'    ? 'var(--color-text-info)' :
     tone === 'warning' ? 'var(--color-text-warning)' :
     tone === 'accent'  ? 'var(--color-brand-accent)' :
                           'var(--color-text-primary)';
+  const Component: any = onClick ? 'button' : 'div';
   return (
-    <div
+    <Component
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
       style={{
         padding: 14,
         background: 'var(--color-background-primary)',
-        border: '0.5px solid var(--color-border-tertiary)',
+        border: active ? '1px solid var(--color-brand-accent)' : '0.5px solid var(--color-border-tertiary)',
         borderRadius: 'var(--radius-md)',
+        cursor: onClick ? 'pointer' : 'default',
+        textAlign: 'left',
+        width: '100%',
       }}
+      aria-pressed={onClick ? !!active : undefined}
     >
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 500 }}>
         {label}
@@ -184,7 +348,7 @@ function MetricCard({ label, value, tone }: { label: string; value: string; tone
       <div style={{ fontSize: 22, fontWeight: 600, color, marginTop: 4, fontFamily: 'var(--font-mono-fad)' }}>
         {value}
       </div>
-    </div>
+    </Component>
   );
 }
 
