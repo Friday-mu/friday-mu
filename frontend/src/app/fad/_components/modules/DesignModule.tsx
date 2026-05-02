@@ -16,6 +16,8 @@ import { AIPlaceholder } from './design/AIPlaceholder';
 import { ProjectIntake } from './design/ProjectIntake';
 import { SiteVisitStage } from './design/stages/SiteVisitStage';
 import { PreferencesStage } from './design/stages/PreferencesStage';
+import { RoughBudgetStage } from './design/stages/RoughBudgetStage';
+import { AgreementStage } from './design/stages/AgreementStage';
 import { fireToast } from '../Toaster';
 
 interface Props {
@@ -655,6 +657,10 @@ function ProjectScreenContent({ project, screen }: { project: DesignProject; scr
       return <SiteVisitStage project={project} />;
     case 'preferences':
       return <PreferencesStage project={project} />;
+    case 'rough-budget':
+      return <RoughBudgetStage project={project} />;
+    case 'agreement':
+      return <AgreementStage project={project} />;
     default:
       return (
         <div style={{ padding: 24, background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)' }}>
