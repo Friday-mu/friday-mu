@@ -81,7 +81,7 @@ export function AgreementStage({ project }: Props) {
         </p>
       </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="design-agreement-grid">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16 }} className="design-agreement-grid">
         {/* Annex B form */}
         <Card>
           <h4 style={subhead()}>Annex B — Project Summary</h4>

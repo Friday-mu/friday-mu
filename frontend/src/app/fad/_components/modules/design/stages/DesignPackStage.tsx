@@ -44,7 +44,7 @@ export function DesignPackStage({ project }: Props) {
         </div>
       </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 220px) minmax(0, 1fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
         <Card>
           <h4 style={subhead()}>Versions</h4>
           {versions.length === 0 ? (

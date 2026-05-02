@@ -79,6 +79,7 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
               gap: compact ? 0 : 2,
               transition: 'background var(--dur-2) var(--ease)',
               opacity: isFuture ? 0.55 : 1,
+              overflow: 'hidden',
             }}
           >
             <span
@@ -99,7 +100,7 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  maxWidth: 80,
+                  maxWidth: '100%',
                 }}
               >
                 {s.shortLabel}

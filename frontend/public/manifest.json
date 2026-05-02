@@ -72,6 +72,13 @@
       "description": "Approvals, captures, owner statements",
       "url": "/fad?m=finance&sub=overview",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Design",
+      "short_name": "Design",
+      "description": "Friday Design OS — interior design projects",
+      "url": "/fad?m=design&sub=overview",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
