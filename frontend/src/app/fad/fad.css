@@ -5283,6 +5283,26 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   .fad-module-body .btn.sm { font-size: 11px; padding: 4px 8px; }
 }
 
+/* Desktop tabs row scrolls horizontally when content exceeds available width.
+   Modules with many tabs (Design has 14) would otherwise clip past the right
+   edge with no scroll affordance. Active tab auto-scrolls into view per
+   ModuleHeader's effect. */
+.fad-tabs.fad-tabs-desktop {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-secondary) transparent;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+.fad-tabs.fad-tabs-desktop::-webkit-scrollbar { height: 4px; }
+.fad-tabs.fad-tabs-desktop::-webkit-scrollbar-thumb {
+  background: var(--color-border-secondary);
+  border-radius: 2px;
+}
+.fad-tabs.fad-tabs-desktop::-webkit-scrollbar-track { background: transparent; }
+
 /* Tabs overflow — modules with >4 tabs get a "More ▾" menu at <768px */
 .fad-tabs.fad-tabs-mobile { display: none; }
 
