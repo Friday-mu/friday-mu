@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useCanSee } from '../usePermissions';
 import {
@@ -14,21 +14,24 @@ import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
 import { AIPlaceholder } from './design/AIPlaceholder';
-import { SiteVisitStage } from './design/stages/SiteVisitStage';
-import { PreferencesStage } from './design/stages/PreferencesStage';
-import { RoughBudgetStage } from './design/stages/RoughBudgetStage';
-import { AgreementStage } from './design/stages/AgreementStage';
-import { PaymentsStage } from './design/stages/PaymentsStage';
-import { MoodboardStage } from './design/stages/MoodboardStage';
-import { DesignPackStage } from './design/stages/DesignPackStage';
-import { FinalBudgetStage } from './design/stages/FinalBudgetStage';
-import { ProcurementStage } from './design/stages/ProcurementStage';
-import { ExecutionStage } from './design/stages/ExecutionStage';
-import { ReconciliationStage } from './design/stages/ReconciliationStage';
-import { HandoverStage } from './design/stages/HandoverStage';
-import { DocumentsStage } from './design/stages/DocumentsStage';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import { fireToast } from '../Toaster';
+
+// Lazy-load each stage screen so the initial Design bundle only ships the
+// shell + dashboard. Each stage chunk loads on first navigation.
+const SiteVisitStage      = lazy(() => import('./design/stages/SiteVisitStage').then((m) => ({ default: m.SiteVisitStage })));
+const PreferencesStage    = lazy(() => import('./design/stages/PreferencesStage').then((m) => ({ default: m.PreferencesStage })));
+const RoughBudgetStage    = lazy(() => import('./design/stages/RoughBudgetStage').then((m) => ({ default: m.RoughBudgetStage })));
+const AgreementStage      = lazy(() => import('./design/stages/AgreementStage').then((m) => ({ default: m.AgreementStage })));
+const PaymentsStage       = lazy(() => import('./design/stages/PaymentsStage').then((m) => ({ default: m.PaymentsStage })));
+const MoodboardStage      = lazy(() => import('./design/stages/MoodboardStage').then((m) => ({ default: m.MoodboardStage })));
+const DesignPackStage     = lazy(() => import('./design/stages/DesignPackStage').then((m) => ({ default: m.DesignPackStage })));
+const FinalBudgetStage    = lazy(() => import('./design/stages/FinalBudgetStage').then((m) => ({ default: m.FinalBudgetStage })));
+const ProcurementStage    = lazy(() => import('./design/stages/ProcurementStage').then((m) => ({ default: m.ProcurementStage })));
+const ExecutionStage      = lazy(() => import('./design/stages/ExecutionStage').then((m) => ({ default: m.ExecutionStage })));
+const ReconciliationStage = lazy(() => import('./design/stages/ReconciliationStage').then((m) => ({ default: m.ReconciliationStage })));
+const HandoverStage       = lazy(() => import('./design/stages/HandoverStage').then((m) => ({ default: m.HandoverStage })));
+const DocumentsStage      = lazy(() => import('./design/stages/DocumentsStage').then((m) => ({ default: m.DocumentsStage })));
 
 interface Props {
   subPage: string;
@@ -655,8 +658,40 @@ function ProjectShell({
         onTabChange={(id) => onChangeScreen(id as ProjectScreen)}
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-        <ProjectScreenContent project={project} screen={screen} />
+        <Suspense fallback={<StageSkeleton />}>
+          <ProjectScreenContent project={project} screen={screen} />
+        </Suspense>
       </div>
+    </div>
+  );
+}
+
+function StageSkeleton() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          style={{
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--radius-md)',
+            padding: 14,
+            height: i === 0 ? 80 : 140,
+            opacity: 0.6,
+          }}
+        >
+          <div
+            style={{
+              width: '40%', height: 12,
+              background: 'var(--color-background-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              marginBottom: 10,
+            }}
+          />
+          <div style={{ width: '70%', height: 10, background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)' }} />
+        </div>
+      ))}
     </div>
   );
 }

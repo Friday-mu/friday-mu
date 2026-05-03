@@ -276,7 +276,7 @@ function HandoverTab({ project }: { project: DesignProject }) {
           <tbody>
             <tr><td>Approved total</td><td style={{ textAlign: 'right', fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(approved)}</td></tr>
             <tr><td>Actual spent</td><td style={{ textAlign: 'right', fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(paid)}</td></tr>
-            <tr style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}><td><strong>Variance</strong></td><td style={{ textAlign: 'right', fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{formatMUR(paid - approved)}</td></tr>
+            <tr style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}><td><strong>Variance</strong></td><td style={{ textAlign: 'right', fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{(() => { const v = paid - approved; if (v === 0) return formatMUR(0); return `${v > 0 ? '+' : '−'}${formatMUR(Math.abs(v))}`; })()}</td></tr>
           </tbody>
         </table>
       </div>

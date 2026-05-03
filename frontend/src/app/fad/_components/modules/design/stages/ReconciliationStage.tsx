@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   designClient,
   formatMUR,
@@ -65,12 +65,12 @@ export function ReconciliationStage({ project }: Props) {
         <MetricCard label="Total spent" value={formatMUR(totals.paid)} tone="info" />
         <MetricCard
           label="Variance"
-          value={`${totals.variance >= 0 ? '+' : ''}${formatMUR(Math.abs(totals.variance))}`}
+          value={signedMUR(totals.variance)}
           tone={totals.variance > 0 ? 'warning' : totals.variance < 0 ? 'success' : 'neutral'}
         />
         <MetricCard
           label="Variance %"
-          value={`${totals.approved > 0 ? ((totals.variance / totals.approved) * 100).toFixed(1) : '0'}%`}
+          value={signedPct(totals.variance, totals.approved)}
           tone={Math.abs((totals.variance / Math.max(1, totals.approved)) * 100) > 5 ? 'warning' : 'neutral'}
         />
       </div>
@@ -94,9 +94,8 @@ export function ReconciliationStage({ project }: Props) {
               const variancePct = r.approved > 0 ? (r.variance / r.approved) * 100 : 0;
               const flagged = Math.abs(variancePct) > 5;
               return (
-                <>
+                <Fragment key={r.category}>
                   <tr
-                    key={r.category}
                     onClick={() => setOpenCat(openCat === r.category ? null : r.category)}
                     style={{ borderTop: '0.5px solid var(--color-border-tertiary)', cursor: 'pointer' }}
                   >
@@ -105,20 +104,20 @@ export function ReconciliationStage({ project }: Props) {
                     <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(r.approved)}</td>
                     <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(r.paid)}</td>
                     <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', color: flagged ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)' }}>
-                      {r.variance >= 0 ? '+' : ''}{formatMUR(Math.abs(r.variance))}
+                      {signedMUR(r.variance)}
                     </td>
                     <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', color: flagged ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)' }}>
-                      {variancePct.toFixed(1)}%
+                      {variancePct >= 0 ? '+' : ''}{variancePct.toFixed(1)}%
                     </td>
                   </tr>
                   {openCat === r.category && (
-                    <tr key={r.category + '-detail'}>
+                    <tr>
                       <td colSpan={6} style={{ padding: 0 }}>
                         <CategoryDrilldown items={r.items} />
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>
@@ -184,7 +183,7 @@ function CategoryDrilldown({ items }: { items: BudgetItem[] }) {
                 <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(i.finalApprovedCostMinor)}</td>
                 <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(i.actualPaidMinor)}</td>
                 <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', color: v > 0 ? 'var(--color-text-warning)' : v < 0 ? 'var(--color-text-success)' : 'var(--color-text-tertiary)' }}>
-                  {v >= 0 ? '+' : ''}{formatMUR(Math.abs(v))}
+                  {signedMUR(v)}
                 </td>
               </tr>
             );
@@ -193,6 +192,20 @@ function CategoryDrilldown({ items }: { items: BudgetItem[] }) {
       </table>
     </div>
   );
+}
+
+function signedMUR(minor: number): string {
+  if (minor === 0) return formatMUR(0);
+  const sign = minor > 0 ? '+' : '−';
+  return `${sign}${formatMUR(Math.abs(minor)).replace('Rs ', 'Rs ')}`;
+}
+
+function signedPct(numerator: number, denominator: number): string {
+  if (denominator <= 0) return '0%';
+  const pct = (numerator / denominator) * 100;
+  if (pct === 0) return '0%';
+  const sign = pct > 0 ? '+' : '−';
+  return `${sign}${Math.abs(pct).toFixed(1)}%`;
 }
 
 function MetricCard({ label, value, tone }: { label: string; value: string; tone?: 'info' | 'warning' | 'success' | 'neutral' | 'accent' }) {

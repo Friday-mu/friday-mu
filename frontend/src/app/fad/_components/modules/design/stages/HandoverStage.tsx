@@ -119,7 +119,7 @@ export function HandoverStage({ project }: Props) {
             <tr style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
               <td style={cell('left')}><strong>Surplus / refund due</strong></td>
               <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600, color: balance.surplus >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)' }}>
-                {balance.surplus >= 0 ? '+' : ''}{formatMUR(Math.abs(balance.surplus))}
+                {balance.surplus === 0 ? formatMUR(0) : `${balance.surplus > 0 ? '+' : '−'}${formatMUR(Math.abs(balance.surplus))}`}
               </td>
             </tr>
           </tbody>
