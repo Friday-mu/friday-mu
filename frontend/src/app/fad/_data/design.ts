@@ -1934,6 +1934,267 @@ export function deleteSelection(selectionId: string): boolean {
   return true;
 }
 
+// ─────────────────────────── CHANGE ORDERS (cont-17, audit A7) ───────────────────────────
+//
+// Audit A7 / JobTread pattern: change orders link to the live budget. Today,
+// the change-order doc is just a PDF in Documents — no link to FinalBudget,
+// no live delta, no inline owner approval. This makes scope creep invisible
+// to the owner until invoice time.
+//
+// Cont-17 lands the structured object: line items with signed deltas (positive
+// = adds to budget, negative = removes), state machine (draft / sent /
+// approved / rejected) parallel to selections, owner approval inline via the
+// portal Approvals tab. v0.2 backend creates real BudgetItems on approve.
+//
+// @demo:logic — Mutators append to in-memory CHANGE_ORDERS array. Replace
+// with the matching POST/PATCH/DELETE endpoints. Tag: PROD-DESIGN-CHANGE-ORDERS.
+
+/** Signed MUR cents — positive = added to budget, negative = removed. */
+export interface ChangeOrderLineItem {
+  id: string;
+  itemName: string;
+  itemDescription: string | null;
+  category: BudgetCategory;
+  qty: number;
+  /** Signed per-unit cost; line total = qty × costMinor. Negative for removals. */
+  costMinor: number;
+  /** If this line modifies or removes an existing budget item, the link. */
+  budgetItemId: string | null;
+}
+
+export type ChangeOrderState = 'draft' | 'sent' | 'approved' | 'rejected';
+
+export interface ChangeOrder {
+  id: string;
+  projectId: string;
+  /** Human-facing per-project sequence — "CO-001", "CO-002", … */
+  number: string;
+  title: string;
+  /** Why the change. Owner reads this on the approval card. */
+  reason: string;
+  lineItems: ChangeOrderLineItem[];
+  state: ChangeOrderState;
+  ownerComment: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  decidedAt: string | null;
+}
+
+export const CHANGE_ORDERS: ChangeOrder[] = [
+  {
+    id: 'co-ohana-1',
+    projectId: 'p-ohana',
+    number: 'CO-001',
+    title: 'Add powder-room makeover (scope expansion)',
+    reason: 'Owner asked to extend renovation to the powder room next to the kitchen. Wasn\'t in the original brief — adding fixtures, mirror, light fixture, and tile-up to dado height.',
+    lineItems: [
+      { id: 'col-1', itemName: 'Wall-mounted basin + brass tap',  itemDescription: 'White ceramic basin, brass mixer.',         category: 'appliance', qty: 1,  costMinor:  18_500_00, budgetItemId: null },
+      { id: 'col-2', itemName: 'Backlit mirror, 60×80cm',         itemDescription: 'Frosted edge, IP44.',                       category: 'lighting',  qty: 1,  costMinor:   8_900_00, budgetItemId: null },
+      { id: 'col-3', itemName: 'Zellige tile, 10×10cm (matte)',   itemDescription: 'Dado-height feature wall, ~3.2 m² coverage.', category: 'decor',     qty: 32, costMinor:   1_350_00, budgetItemId: null },
+      { id: 'col-4', itemName: 'Plumber + tiler — 2-day install', itemDescription: 'Includes basin install, tiling, sealing.',  category: 'labour',    qty: 2,  costMinor:   6_500_00, budgetItemId: null },
+    ],
+    state: 'sent',
+    ownerComment: null,
+    createdAt: '2026-04-30T10:00:00.000Z',
+    sentAt: '2026-04-30T11:30:00.000Z',
+    decidedAt: null,
+  },
+];
+
+let changeOrderSerial = 100;
+let changeOrderLineSerial = 100;
+
+export function listChangeOrders(projectId: string): ChangeOrder[] {
+  return CHANGE_ORDERS.filter((c) => c.projectId === projectId);
+}
+
+export function listPendingChangeOrders(projectId: string): ChangeOrder[] {
+  return CHANGE_ORDERS.filter((c) => c.projectId === projectId && c.state === 'sent');
+}
+
+/** Sum of approved + sent change orders' deltas. Live reflection of "what
+ *  the owner is committing to beyond the original budget" — drives the
+ *  delta-vs-budget chip in the Final Budget UI. */
+export function sumChangeOrderDelta(projectId: string): { approvedMinor: number; pendingMinor: number } {
+  let approvedMinor = 0;
+  let pendingMinor = 0;
+  for (const co of CHANGE_ORDERS) {
+    if (co.projectId !== projectId) continue;
+    const delta = co.lineItems.reduce((s, li) => s + li.qty * li.costMinor, 0);
+    if (co.state === 'approved') approvedMinor += delta;
+    else if (co.state === 'sent') pendingMinor += delta;
+  }
+  return { approvedMinor, pendingMinor };
+}
+
+export function changeOrderTotal(co: ChangeOrder): number {
+  return co.lineItems.reduce((s, li) => s + li.qty * li.costMinor, 0);
+}
+
+function nextChangeOrderNumber(projectId: string): string {
+  const existing = CHANGE_ORDERS.filter((c) => c.projectId === projectId).length;
+  return `CO-${String(existing + 1).padStart(3, '0')}`;
+}
+
+export interface CreateChangeOrderInput {
+  projectId: string;
+  title: string;
+  reason: string;
+}
+
+export function createChangeOrder(input: CreateChangeOrderInput): ChangeOrder {
+  const at = new Date().toISOString();
+  const co: ChangeOrder = {
+    id: `co-${++changeOrderSerial}`,
+    projectId: input.projectId,
+    number: nextChangeOrderNumber(input.projectId),
+    title: input.title,
+    reason: input.reason,
+    lineItems: [],
+    state: 'draft',
+    ownerComment: null,
+    createdAt: at,
+    sentAt: null,
+    decidedAt: null,
+  };
+  CHANGE_ORDERS.push(co);
+  return co;
+}
+
+export interface UpdateChangeOrderInput {
+  title?: string;
+  reason?: string;
+}
+
+export function updateChangeOrder(coId: string, input: UpdateChangeOrderInput): ChangeOrder | null {
+  const idx = CHANGE_ORDERS.findIndex((c) => c.id === coId);
+  if (idx === -1) return null;
+  if (CHANGE_ORDERS[idx].state !== 'draft') return null;
+  const updated: ChangeOrder = { ...CHANGE_ORDERS[idx] };
+  if (input.title !== undefined) updated.title = input.title;
+  if (input.reason !== undefined) updated.reason = input.reason;
+  CHANGE_ORDERS[idx] = updated;
+  return updated;
+}
+
+export interface AddChangeOrderLineInput {
+  itemName: string;
+  itemDescription: string | null;
+  category: BudgetCategory;
+  qty: number;
+  costMinor: number;
+  budgetItemId: string | null;
+}
+
+export function addChangeOrderLine(coId: string, input: AddChangeOrderLineInput): ChangeOrder | null {
+  const idx = CHANGE_ORDERS.findIndex((c) => c.id === coId);
+  if (idx === -1) return null;
+  if (CHANGE_ORDERS[idx].state !== 'draft') return null;
+  const line: ChangeOrderLineItem = { id: `col-${++changeOrderLineSerial}`, ...input };
+  const updated: ChangeOrder = {
+    ...CHANGE_ORDERS[idx],
+    lineItems: [...CHANGE_ORDERS[idx].lineItems, line],
+  };
+  CHANGE_ORDERS[idx] = updated;
+  return updated;
+}
+
+export function removeChangeOrderLine(coId: string, lineId: string): ChangeOrder | null {
+  const idx = CHANGE_ORDERS.findIndex((c) => c.id === coId);
+  if (idx === -1) return null;
+  if (CHANGE_ORDERS[idx].state !== 'draft') return null;
+  const updated: ChangeOrder = {
+    ...CHANGE_ORDERS[idx],
+    lineItems: CHANGE_ORDERS[idx].lineItems.filter((li) => li.id !== lineId),
+  };
+  CHANGE_ORDERS[idx] = updated;
+  return updated;
+}
+
+/** Flips draft → sent. Requires title + ≥1 line item. Activity-log entry. */
+export function sendChangeOrder(coId: string): ChangeOrder | null {
+  const idx = CHANGE_ORDERS.findIndex((c) => c.id === coId);
+  if (idx === -1) return null;
+  const co = CHANGE_ORDERS[idx];
+  if (co.state !== 'draft') return null;
+  if (co.title.trim().length === 0) return null;
+  if (co.lineItems.length === 0) return null;
+  const at = new Date().toISOString();
+  const updated: ChangeOrder = { ...co, state: 'sent', sentAt: at };
+  CHANGE_ORDERS[idx] = updated;
+  const delta = changeOrderTotal(updated);
+  appendActivity({
+    projectId: co.projectId,
+    at,
+    userId: null,
+    kind: 'send',
+    summary: `Change order ${co.number} sent to owner — "${co.title.slice(0, 60)}" (${delta >= 0 ? '+' : ''}${formatMUR(delta)}).`,
+  });
+  return updated;
+}
+
+export function deleteChangeOrder(coId: string): boolean {
+  const idx = CHANGE_ORDERS.findIndex((c) => c.id === coId);
+  if (idx === -1) return false;
+  if (CHANGE_ORDERS[idx].state !== 'draft') return false;
+  CHANGE_ORDERS.splice(idx, 1);
+  return true;
+}
+
+export interface ApproveChangeOrderInput {
+  comment?: string | null;
+}
+
+/** Owner-side mutator. Flips state to 'approved'. v0.2 server-side equivalent
+ *  also creates real BudgetItems from the line items so the budget table
+ *  reflects the new scope immediately. */
+export function approveChangeOrder(coId: string, input: ApproveChangeOrderInput = {}): ChangeOrder | null {
+  const idx = CHANGE_ORDERS.findIndex((c) => c.id === coId);
+  if (idx === -1) return null;
+  const co = CHANGE_ORDERS[idx];
+  if (co.state !== 'sent') return null;
+  const at = new Date().toISOString();
+  const updated: ChangeOrder = {
+    ...co,
+    state: 'approved',
+    decidedAt: at,
+    ownerComment: input.comment ?? null,
+  };
+  CHANGE_ORDERS[idx] = updated;
+  const delta = changeOrderTotal(updated);
+  appendActivity({
+    projectId: co.projectId,
+    at,
+    userId: null,
+    kind: 'approve',
+    summary: `Owner approved change order ${co.number} (${delta >= 0 ? '+' : ''}${formatMUR(delta)}).`,
+  });
+  return updated;
+}
+
+export function rejectChangeOrder(coId: string, comment: string): ChangeOrder | null {
+  const idx = CHANGE_ORDERS.findIndex((c) => c.id === coId);
+  if (idx === -1) return null;
+  const co = CHANGE_ORDERS[idx];
+  if (co.state !== 'sent') return null;
+  const at = new Date().toISOString();
+  const updated: ChangeOrder = {
+    ...co,
+    state: 'rejected',
+    decidedAt: at,
+    ownerComment: comment,
+  };
+  CHANGE_ORDERS[idx] = updated;
+  appendActivity({
+    projectId: co.projectId,
+    at,
+    userId: null,
+    kind: 'reject',
+    summary: `Owner rejected change order ${co.number} — "${comment.slice(0, 80)}".`,
+  });
+  return updated;
+}
+
 // Approvals (§7.PP mock)
 export const APPROVALS: DesignApproval[] = [
   { id: 'apv-1', projectId: 'p-ohana', artifactType: 'moodboard',       artifactId: 'mb-ohana-2', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-10-22T09:00:00.000Z', decidedAt: '2025-10-25T09:00:00.000Z', decisionMethod: 'whatsapp', comments: 'Yes, this is it.', events: [] },
@@ -2535,6 +2796,20 @@ export const designClient = {
     removeOption: removeSelectionOption,
     send: sendSelection,
     delete: deleteSelection,
+  },
+  changeOrders: {
+    list: listChangeOrders,
+    listPending: listPendingChangeOrders,
+    sumDelta: sumChangeOrderDelta,
+    total: changeOrderTotal,
+    create: createChangeOrder,
+    update: updateChangeOrder,
+    addLine: addChangeOrderLine,
+    removeLine: removeChangeOrderLine,
+    send: sendChangeOrder,
+    delete: deleteChangeOrder,
+    approve: approveChangeOrder,
+    reject: rejectChangeOrder,
   },
   documents: { list: getDocuments },
   activity: { list: getActivity },

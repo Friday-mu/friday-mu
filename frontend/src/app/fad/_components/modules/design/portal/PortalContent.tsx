@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import {
   designClient,
+  type ChangeOrder,
   type DesignApproval,
   type DesignProject,
   type DesignSelection,
@@ -44,7 +45,11 @@ export function PortalContent({
   const [selections, setSelections] = useState<DesignSelection[]>(() =>
     designClient.selections.list(project.id),
   );
+  const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>(() =>
+    designClient.changeOrders.list(project.id),
+  );
   const [pendingChanges, setPendingChanges] = useState<DesignApproval | null>(null);
+  const [pendingCoReject, setPendingCoReject] = useState<ChangeOrder | null>(null);
 
   const refreshApprovals = () => {
     setApprovals(designClient.approvals.list(project.id));
@@ -52,10 +57,25 @@ export function PortalContent({
   const refreshSelections = () => {
     setSelections(designClient.selections.list(project.id));
   };
+  const refreshChangeOrders = () => {
+    setChangeOrders(designClient.changeOrders.list(project.id));
+  };
 
   const handlePickSelectionOption = (selectionId: string, optionId: string) => {
     designClient.selections.pick(selectionId, { optionId });
     refreshSelections();
+  };
+
+  const handleApproveChangeOrder = (coId: string) => {
+    designClient.changeOrders.approve(coId, {});
+    refreshChangeOrders();
+  };
+
+  const handleRejectChangeOrderSubmit = (comment: string) => {
+    if (!pendingCoReject) return;
+    designClient.changeOrders.reject(pendingCoReject.id, comment);
+    setPendingCoReject(null);
+    refreshChangeOrders();
   };
 
   const handleApprove = (approvalId: string) => {
@@ -90,7 +110,8 @@ export function PortalContent({
   const designLeadLabel = friendlyDesignLead(project.designLeadUserId);
   const pendingApprovalCount = approvals.filter((a) => a.state === 'sent').length;
   const pendingSelectionCount = selections.filter((s) => s.state === 'sent').length;
-  const totalPendingActions = pendingApprovalCount + pendingSelectionCount;
+  const pendingChangeOrderCount = changeOrders.filter((c) => c.state === 'sent').length;
+  const totalPendingActions = pendingApprovalCount + pendingSelectionCount + pendingChangeOrderCount;
 
   const tabLabels: Record<PortalTab, string> = {
     overview: 'Overview',
@@ -186,9 +207,12 @@ export function PortalContent({
           <ApprovalsTab
             approvals={approvals}
             selections={selections}
+            changeOrders={changeOrders}
             onApprove={handleApprove}
             onRequestChanges={setPendingChanges}
             onPickSelectionOption={handlePickSelectionOption}
+            onApproveChangeOrder={handleApproveChangeOrder}
+            onRejectChangeOrder={setPendingCoReject}
           />
         )}
         {tab === 'budget' && <BudgetTab items={items} />}
@@ -201,6 +225,14 @@ export function PortalContent({
           approvalLabel={pendingChanges.artifactType.replace(/_/g, ' ')}
           onCancel={() => setPendingChanges(null)}
           onSubmit={handleRequestChangesSubmit}
+        />
+      )}
+
+      {pendingCoReject && (
+        <RequestChangesModal
+          approvalLabel={`change order ${pendingCoReject.number}`}
+          onCancel={() => setPendingCoReject(null)}
+          onSubmit={handleRejectChangeOrderSubmit}
         />
       )}
     </div>

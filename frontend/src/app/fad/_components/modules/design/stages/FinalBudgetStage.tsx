@@ -4,7 +4,10 @@ import { useMemo, useState } from 'react';
 import {
   designClient,
   formatMUR,
+  type BudgetCategory,
   type BudgetItem,
+  type ChangeOrder,
+  type ChangeOrderLineItem,
   type DesignProject,
 } from '../../../../_data/design';
 import { fireToast } from '../../../Toaster';
@@ -43,6 +46,11 @@ export function FinalBudgetStage({ project }: Props) {
   const [ownerView, setOwnerView] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(rooms.map((r) => r.id)));
   const [tab, setTab] = useState<'items' | 'quotes'>('items');
+  // Single rev bumper drives both the totals chip and the change-orders list.
+  // Mutations from ChangeOrdersSection lift this to keep the projected
+  // delta in sync with the underlying CO state.
+  const [coRev, setCoRev] = useState(0);
+  const bumpCoRev = () => setCoRev((r) => r + 1);
 
   const totals = useMemo(() => {
     const approvedSum = allItems.filter((i) => i.status === 'approved').reduce((s, i) => s + (i.finalApprovedCostMinor ?? 0), 0);
@@ -112,13 +120,10 @@ export function FinalBudgetStage({ project }: Props) {
 
       {tab === 'items' && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Project totals */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-        <MetricCard label="Approved total" value={formatMUR(totals.approvedSum)} />
-        <MetricCard label="Actual paid" value={formatMUR(totals.paidSum)} tone="info" />
-        <MetricCard label="Remaining" value={formatMUR(totals.remaining)} tone="warning" />
-        <MetricCard label="Pending approval" value={`${totals.pendingApproval} items`} tone="accent" />
-      </div>
+      {/* Project totals — coRev forces re-read of the change-order delta */}
+      <BudgetTotals project={project} totals={totals} coRev={coRev} />
+
+      <ChangeOrdersSection project={project} onChanged={bumpCoRev} />
 
       {/* Per-room sections */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -254,6 +259,609 @@ function StatusChip({ status }: { status: BudgetItem['status'] }) {
     status === 'rejected' ? { bg: 'var(--color-bg-danger)',  fg: 'var(--color-text-danger)' } :
                              { bg: 'var(--color-bg-info)',    fg: 'var(--color-text-info)' };
   return <span style={{ padding: '1px 6px', background: c.bg, color: c.fg, borderRadius: 'var(--radius-full)', fontSize: 9 }}>{status}</span>;
+}
+
+// ─────────────────────────── BUDGET TOTALS w/ change-order delta (cont-17) ───────────────────────────
+
+interface BudgetTotalsValue {
+  approvedSum: number;
+  paidSum: number;
+  remaining: number;
+  pendingApproval: number;
+}
+
+function BudgetTotals({ project, totals, coRev: _coRev }: { project: DesignProject; totals: BudgetTotalsValue; coRev: number }) {
+  // _coRev unused — its purpose is to invalidate via prop change and trigger a re-read.
+  const coDelta = designClient.changeOrders.sumDelta(project.id);
+  const projectedTotal = totals.approvedSum + coDelta.approvedMinor + coDelta.pendingMinor;
+  const hasChangeOrders = coDelta.approvedMinor !== 0 || coDelta.pendingMinor !== 0;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <MetricCard label="Approved total" value={formatMUR(totals.approvedSum)} />
+        <MetricCard label="Actual paid" value={formatMUR(totals.paidSum)} tone="info" />
+        <MetricCard label="Remaining" value={formatMUR(totals.remaining)} tone="warning" />
+        <MetricCard label="Pending approval" value={`${totals.pendingApproval} items`} tone="accent" />
+      </div>
+      {hasChangeOrders && (
+        <div
+          data-design-co-delta-chip
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 8,
+            padding: '8px 12px',
+            background: 'var(--color-background-tertiary)',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 11,
+          }}
+        >
+          <div style={{ color: 'var(--color-text-secondary)' }}>
+            Change orders affect this budget
+            {coDelta.approvedMinor !== 0 && (
+              <>
+                {' · '}
+                <strong style={{ color: coDelta.approvedMinor >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
+                  {coDelta.approvedMinor >= 0 ? '+' : ''}{formatMUR(coDelta.approvedMinor)}
+                </strong>{' '}
+                approved
+              </>
+            )}
+            {coDelta.pendingMinor !== 0 && (
+              <>
+                {' · '}
+                <strong style={{ color: 'var(--color-text-info)' }}>
+                  {coDelta.pendingMinor >= 0 ? '+' : ''}{formatMUR(coDelta.pendingMinor)}
+                </strong>{' '}
+                pending owner
+              </>
+            )}
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono-fad)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            Projected: {formatMUR(projectedTotal)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────── CHANGE ORDERS (cont-17, audit A7) ───────────────────────────
+
+const CO_CATEGORIES: BudgetCategory[] = [
+  'furniture', 'appliance', 'decor', 'lighting', 'linen', 'contractor', 'labour', 'transport', 'cleaning',
+];
+
+function ChangeOrdersSection({ project, onChanged }: { project: DesignProject; onChanged: () => void }) {
+  // Local rev keeps this component re-rendering after mutations; onChanged
+  // notifies the parent so the totals chip re-reads the delta in lockstep.
+  const [, setRev] = useState(0);
+  const bump = () => { setRev((r) => r + 1); onChanged(); };
+  const [showCreate, setShowCreate] = useState(false);
+  const [openCoId, setOpenCoId] = useState<string | null>(null);
+
+  const orders = designClient.changeOrders.list(project.id);
+  const drafts = orders.filter((c) => c.state === 'draft');
+  const sent = orders.filter((c) => c.state === 'sent');
+  const decided = orders.filter((c) => c.state === 'approved' || c.state === 'rejected');
+
+  return (
+    <Card>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <div>
+          <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Change orders</h4>
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            Scope changes after the budget is signed. Owner sees the delta inline and approves once — feeds back into the budget on accept.
+            {' · '}{drafts.length} draft · {sent.length} awaiting · {decided.length} decided
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCreate((v) => !v)}
+          style={primaryBtnLarge()}
+          data-design-co-new
+        >
+          {showCreate ? 'Cancel' : '+ New change order'}
+        </button>
+      </div>
+
+      {showCreate && (
+        <NewChangeOrderForm
+          project={project}
+          onCancel={() => setShowCreate(false)}
+          onCreated={(co) => {
+            setShowCreate(false);
+            setOpenCoId(co.id);
+            bump();
+          }}
+        />
+      )}
+
+      {orders.length === 0 && !showCreate ? (
+        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0' }}>
+          No change orders yet. Create one when scope shifts after the budget is signed — extra rooms, swapped fixtures, owner upgrades.
+        </div>
+      ) : (
+        <ul style={{ margin: '12px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {orders.map((co) => (
+            <ChangeOrderRow
+              key={co.id}
+              co={co}
+              isOpen={openCoId === co.id}
+              onToggle={() => setOpenCoId((id) => (id === co.id ? null : co.id))}
+              onChanged={bump}
+            />
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function NewChangeOrderForm({
+  project,
+  onCancel,
+  onCreated,
+}: {
+  project: DesignProject;
+  onCancel: () => void;
+  onCreated: (co: ChangeOrder) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [reason, setReason] = useState('');
+  const canCreate = title.trim().length > 0;
+  return (
+    <div
+      data-design-co-new-form
+      style={{
+        background: 'var(--color-background-tertiary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-md)',
+        padding: 12,
+        marginBottom: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <label style={fieldLabel()}>
+        Title
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder='e.g. "Add powder-room makeover (scope expansion)"'
+          style={inputStyle()}
+        />
+      </label>
+      <label style={fieldLabel()}>
+        Reason (owner reads this)
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Why the change. The owner sees this on the approval card."
+          rows={3}
+          style={{ ...inputStyle(), resize: 'vertical', minHeight: 60 }}
+        />
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          disabled={!canCreate}
+          onClick={() => {
+            const co = designClient.changeOrders.create({
+              projectId: project.id,
+              title: title.trim(),
+              reason: reason.trim(),
+            });
+            fireToast(`Draft ${co.number} created — add line items before sending.`);
+            onCreated(co);
+          }}
+          style={canCreate ? primaryBtnLarge() : { ...primaryBtnLarge(), opacity: 0.5, cursor: 'not-allowed' }}
+        >
+          Create draft
+        </button>
+        <button type="button" onClick={onCancel} style={secondaryBtnLarge()}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function ChangeOrderRow({
+  co,
+  isOpen,
+  onToggle,
+  onChanged,
+}: {
+  co: ChangeOrder;
+  isOpen: boolean;
+  onToggle: () => void;
+  onChanged: () => void;
+}) {
+  const total = designClient.changeOrders.total(co);
+  const isDraft = co.state === 'draft';
+  return (
+    <li
+      data-design-co-row={co.id}
+      style={{
+        background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-md)',
+        padding: 12,
+      }}
+    >
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', cursor: 'pointer' }}
+        onClick={onToggle}
+        data-design-co-toggle={co.id}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 500, fontSize: 13 }}>
+            <span style={{ fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)', marginRight: 6, whiteSpace: 'nowrap' }}>{co.number}</span>
+            {co.title || <em style={{ color: 'var(--color-text-tertiary)' }}>Untitled</em>}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+            {co.lineItems.length} line item{co.lineItems.length === 1 ? '' : 's'}
+            {co.sentAt && ` · sent ${co.sentAt.slice(0, 10)}`}
+            {co.decidedAt && ` · decided ${co.decidedAt.slice(0, 10)}`}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontFamily: 'var(--font-mono-fad)', fontWeight: 600, fontSize: 13, color: total >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
+            {total >= 0 ? '+' : ''}{formatMUR(total)}
+          </span>
+          <ChangeOrderStateChip state={co.state} />
+        </div>
+      </div>
+
+      {isOpen && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+          {co.reason && (
+            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: 12 }}>
+              {co.reason}
+            </div>
+          )}
+          {isDraft ? (
+            <DraftCoEditor co={co} onChanged={onChanged} />
+          ) : (
+            <SentCoReadOnly co={co} />
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function DraftCoEditor({ co, onChanged }: { co: ChangeOrder; onChanged: () => void }) {
+  const [showAddLine, setShowAddLine] = useState(false);
+  const total = designClient.changeOrders.total(co);
+  const canSend = co.lineItems.length >= 1 && co.title.trim().length > 0;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)' }}>Line items</div>
+      {co.lineItems.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          No line items yet. Add at least one before sending. Use a negative cost for removals.
+        </div>
+      ) : (
+        <CoLineItemsTable
+          lineItems={co.lineItems}
+          onRemove={(lineId) => {
+            if (designClient.changeOrders.removeLine(co.id, lineId)) {
+              fireToast('Line removed.');
+              onChanged();
+            }
+          }}
+        />
+      )}
+
+      {showAddLine ? (
+        <AddCoLineForm
+          onCancel={() => setShowAddLine(false)}
+          onSubmit={(input) => {
+            if (designClient.changeOrders.addLine(co.id, input)) {
+              fireToast('Line added.');
+              setShowAddLine(false);
+              onChanged();
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowAddLine(true)}
+          style={secondaryBtnLarge()}
+          data-design-co-add-line={co.id}
+        >
+          + Add line item
+        </button>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm(`Delete draft ${co.number}? This cannot be undone.`)) {
+              if (designClient.changeOrders.delete(co.id)) {
+                fireToast('Draft deleted.');
+                onChanged();
+              }
+            }
+          }}
+          style={dangerLinkBtn()}
+          data-design-co-delete={co.id}
+        >
+          Delete draft
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Draft total</span>
+          <span style={{ fontFamily: 'var(--font-mono-fad)', fontWeight: 600, fontSize: 13, color: total >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
+            {total >= 0 ? '+' : ''}{formatMUR(total)}
+          </span>
+          <button
+            type="button"
+            disabled={!canSend}
+            onClick={() => {
+              if (designClient.changeOrders.send(co.id)) {
+                fireToast(`${co.number} sent to owner — visible in their Approvals tab.`);
+                onChanged();
+              }
+            }}
+            style={canSend ? primaryBtnLarge() : { ...primaryBtnLarge(), opacity: 0.5, cursor: 'not-allowed' }}
+            title={canSend ? '' : 'Need a title and at least 1 line item.'}
+            data-design-co-send={co.id}
+          >
+            Send to owner
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CoLineItemsTable({
+  lineItems,
+  onRemove,
+}: {
+  lineItems: ChangeOrderLineItem[];
+  onRemove?: (lineId: string) => void;
+}) {
+  return (
+    <div style={{ overflowX: 'auto', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 460 }}>
+        <thead>
+          <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, background: 'var(--color-background-tertiary)' }}>
+            <th style={cell('left')}>Item</th>
+            <th style={cell('left')}>Cat.</th>
+            <th style={cell('right')}>Qty</th>
+            <th style={cell('right')}>Per unit</th>
+            <th style={cell('right')}>Line total</th>
+            {onRemove && <th style={cell('right')}> </th>}
+          </tr>
+        </thead>
+        <tbody>
+          {lineItems.map((li) => {
+            const lineTotal = li.qty * li.costMinor;
+            return (
+              <tr key={li.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                <td style={cell('left')}>
+                  <div style={{ fontWeight: 500 }}>{li.itemName}</div>
+                  {li.itemDescription && <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{li.itemDescription}</div>}
+                </td>
+                <td style={{ ...cell('left'), color: 'var(--color-text-tertiary)' }}>{li.category}</td>
+                <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{li.qty}</td>
+                <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(li.costMinor)}</td>
+                <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600, color: lineTotal >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
+                  {lineTotal >= 0 ? '+' : ''}{formatMUR(lineTotal)}
+                </td>
+                {onRemove && (
+                  <td style={cell('right')}>
+                    <button
+                      type="button"
+                      onClick={() => onRemove(li.id)}
+                      style={dangerLinkBtn()}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+interface AddCoLineFormValues {
+  itemName: string;
+  itemDescription: string | null;
+  category: BudgetCategory;
+  qty: number;
+  costMinor: number;
+  budgetItemId: string | null;
+}
+
+function AddCoLineForm({
+  onCancel,
+  onSubmit,
+}: {
+  onCancel: () => void;
+  onSubmit: (input: AddCoLineFormValues) => void;
+}) {
+  const [itemName, setItemName] = useState('');
+  const [itemDescription, setItemDescription] = useState('');
+  const [category, setCategory] = useState<BudgetCategory>('furniture');
+  const [qty, setQty] = useState<number>(1);
+  const [costMinor, setCostMinor] = useState<number | ''>('');
+  const [isRemoval, setIsRemoval] = useState(false);
+
+  const canSubmit = itemName.trim().length > 0 && costMinor !== '' && qty > 0;
+
+  return (
+    <div
+      data-design-co-add-line-form
+      style={{
+        background: 'var(--color-background-tertiary)',
+        border: '0.5px dashed var(--color-border-secondary)',
+        borderRadius: 'var(--radius-md)',
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <label style={fieldLabel()}>
+        Item name
+        <input
+          value={itemName}
+          onChange={(e) => setItemName(e.target.value)}
+          placeholder='e.g. "Wall-mounted basin + brass tap"'
+          style={inputStyle()}
+        />
+      </label>
+      <label style={fieldLabel()}>
+        Description (optional)
+        <input
+          value={itemDescription}
+          onChange={(e) => setItemDescription(e.target.value)}
+          placeholder='e.g. "White ceramic basin, brass mixer."'
+          style={inputStyle()}
+        />
+      </label>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+        <label style={fieldLabel()}>
+          Category
+          <select value={category} onChange={(e) => setCategory(e.target.value as BudgetCategory)} style={inputStyle()}>
+            {CO_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label style={fieldLabel()}>
+          Qty
+          <input
+            inputMode="numeric"
+            value={qty}
+            onChange={(e) => setQty(Math.max(1, Number(e.target.value.replace(/[^\d]/g, '')) || 1))}
+            style={inputStyle()}
+          />
+        </label>
+        <label style={fieldLabel()}>
+          Per-unit cost (Rs)
+          <MUInput value={costMinor} onChange={setCostMinor} />
+        </label>
+      </div>
+      <label style={{ ...fieldLabel(), flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={isRemoval}
+          onChange={(e) => setIsRemoval(e.target.checked)}
+        />
+        <span>Removal — record this as a credit (negative line total)</span>
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          disabled={!canSubmit}
+          onClick={() => onSubmit({
+            itemName: itemName.trim(),
+            itemDescription: itemDescription.trim() === '' ? null : itemDescription.trim(),
+            category,
+            qty,
+            costMinor: isRemoval ? -(costMinor as number) : (costMinor as number),
+            budgetItemId: null,
+          })}
+          style={canSubmit ? primaryBtnLarge() : { ...primaryBtnLarge(), opacity: 0.5, cursor: 'not-allowed' }}
+          data-design-co-add-line-submit
+        >
+          Add line
+        </button>
+        <button type="button" onClick={onCancel} style={secondaryBtnLarge()}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function SentCoReadOnly({ co }: { co: ChangeOrder }) {
+  const total = designClient.changeOrders.total(co);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <CoLineItemsTable lineItems={co.lineItems} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          {co.state === 'sent' && 'Sent to owner. Locked from edits — they either approve or reject.'}
+          {co.state === 'approved' && '✓ Approved. Budget reflects this delta.'}
+          {co.state === 'rejected' && 'Rejected by owner. Scope reverts to pre-CO baseline.'}
+        </div>
+        <span style={{ fontFamily: 'var(--font-mono-fad)', fontWeight: 600, fontSize: 13, color: total >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
+          Net {total >= 0 ? '+' : ''}{formatMUR(total)}
+        </span>
+      </div>
+      {co.ownerComment && (
+        <div
+          style={{
+            padding: 10,
+            background: co.state === 'rejected' ? 'var(--color-bg-warning)' : 'var(--color-background-tertiary)',
+            color: co.state === 'rejected' ? 'var(--color-text-warning)' : 'var(--color-text-secondary)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 12,
+          }}
+        >
+          <strong>Owner:</strong> "{co.ownerComment}"
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChangeOrderStateChip({ state }: { state: ChangeOrder['state'] }) {
+  const c =
+    state === 'draft'    ? { bg: 'var(--color-background-tertiary)', fg: 'var(--color-text-tertiary)', label: 'draft' } :
+    state === 'sent'     ? { bg: 'var(--color-bg-info)',             fg: 'var(--color-text-info)',     label: 'awaiting owner' } :
+    state === 'approved' ? { bg: 'var(--color-bg-success)',          fg: 'var(--color-text-success)',  label: 'approved' } :
+                            { bg: 'var(--color-bg-warning)',         fg: 'var(--color-text-warning)',  label: 'rejected' };
+  return <span style={{ padding: '2px 8px', background: c.bg, color: c.fg, borderRadius: 'var(--radius-full)', fontSize: 10, fontWeight: 500, alignSelf: 'flex-start' }}>{c.label}</span>;
+}
+
+function MUInput({ value, onChange }: { value: number | ''; onChange: (v: number | '') => void }) {
+  return (
+    <input
+      inputMode="numeric"
+      value={value === '' ? '' : Math.round((value as number) / 100).toString()}
+      onChange={(e) => {
+        const cleaned = e.target.value.replace(/[^\d]/g, '');
+        if (cleaned === '') return onChange('');
+        onChange(Number(cleaned) * 100);
+      }}
+      placeholder="MUR amount"
+      style={inputStyle()}
+    />
+  );
+}
+
+function fieldLabel(): React.CSSProperties {
+  return { fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 };
+}
+function inputStyle(): React.CSSProperties {
+  return {
+    padding: '6px 8px',
+    fontSize: 12,
+    border: '0.5px solid var(--color-border-tertiary)',
+    borderRadius: 'var(--radius-sm)',
+    background: 'var(--color-background-primary)',
+    color: 'var(--color-text-primary)',
+  };
+}
+function dangerLinkBtn(): React.CSSProperties {
+  return { padding: '4px 0', fontSize: 11, color: 'var(--color-text-danger)', background: 'transparent', textDecoration: 'underline', fontWeight: 500 };
+}
+function primaryBtnLarge(): React.CSSProperties {
+  return { padding: '6px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--color-brand-accent)', color: '#fff', fontSize: 12, fontWeight: 500 };
+}
+function secondaryBtnLarge(): React.CSSProperties {
+  return { padding: '6px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)', fontSize: 12, fontWeight: 500, border: '0.5px solid var(--color-border-tertiary)' };
 }
 
 function MetricCard({ label, value, tone }: { label: string; value: string; tone?: 'info' | 'warning' | 'accent' }) {
