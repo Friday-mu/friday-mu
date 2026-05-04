@@ -1780,6 +1780,160 @@ export function requestSelectionChanges(selectionId: string, comment: string): D
   return updated;
 }
 
+// ─────────────────────────── SELECTIONS — admin authoring (cont-16) ───────────────────────────
+//
+// Design team authors selections in DesignPackStage: create draft → add 2-3
+// options → send to owner. Once sent, the structure is locked; the owner
+// either picks an option or requests changes (which sends it back to draft
+// in v0.2; v0.1 just records the comment).
+//
+// @demo:logic — Mutators append to in-memory SELECTIONS array. Replace with
+// the matching POST/PATCH/DELETE endpoints. Tag: PROD-DESIGN-SELECTIONS.
+
+let selectionSerial = 100;
+let selectionOptionSerial = 100;
+
+export interface CreateSelectionInput {
+  projectId: string;
+  roomId: string | null;
+  packageId: string | null;
+  category: BudgetCategory;
+  prompt: string;
+}
+
+export function createSelection(input: CreateSelectionInput): DesignSelection {
+  const at = new Date().toISOString();
+  const sel: DesignSelection = {
+    id: `sel-${++selectionSerial}`,
+    projectId: input.projectId,
+    roomId: input.roomId,
+    packageId: input.packageId,
+    category: input.category,
+    prompt: input.prompt,
+    options: [],
+    pickedOptionId: null,
+    pickedAt: null,
+    comment: null,
+    state: 'draft',
+    sentAt: null,
+    createdAt: at,
+  };
+  SELECTIONS.push(sel);
+  return sel;
+}
+
+export interface UpdateSelectionInput {
+  prompt?: string;
+  category?: BudgetCategory;
+  roomId?: string | null;
+  packageId?: string | null;
+}
+
+/** Edits the selection envelope. Only allowed while state==='draft'. */
+export function updateSelection(selectionId: string, input: UpdateSelectionInput): DesignSelection | null {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return null;
+  if (SELECTIONS[idx].state !== 'draft') return null;
+  const updated: DesignSelection = { ...SELECTIONS[idx] };
+  if (input.prompt !== undefined) updated.prompt = input.prompt;
+  if (input.category !== undefined) updated.category = input.category;
+  if (input.roomId !== undefined) updated.roomId = input.roomId;
+  if (input.packageId !== undefined) updated.packageId = input.packageId;
+  SELECTIONS[idx] = updated;
+  return updated;
+}
+
+export interface AddSelectionOptionInput {
+  label: string;
+  description: string | null;
+  vendorId: string | null;
+  productLink: string | null;
+  imageUrl: string | null;
+  priceMinor: number;
+  retailMinor: number | null;
+}
+
+/** Adds an option to a draft selection. Returns null if the selection is
+ *  missing or already sent. */
+export function addSelectionOption(
+  selectionId: string,
+  input: AddSelectionOptionInput,
+): DesignSelection | null {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return null;
+  if (SELECTIONS[idx].state !== 'draft') return null;
+  const opt: SelectionOption = { id: `opt-${++selectionOptionSerial}`, ...input };
+  const updated: DesignSelection = {
+    ...SELECTIONS[idx],
+    options: [...SELECTIONS[idx].options, opt],
+  };
+  SELECTIONS[idx] = updated;
+  return updated;
+}
+
+export type UpdateSelectionOptionInput = Partial<AddSelectionOptionInput>;
+
+export function updateSelectionOption(
+  selectionId: string,
+  optionId: string,
+  input: UpdateSelectionOptionInput,
+): DesignSelection | null {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return null;
+  if (SELECTIONS[idx].state !== 'draft') return null;
+  const optIdx = SELECTIONS[idx].options.findIndex((o) => o.id === optionId);
+  if (optIdx === -1) return null;
+  const newOption: SelectionOption = { ...SELECTIONS[idx].options[optIdx], ...input };
+  const newOptions = [...SELECTIONS[idx].options];
+  newOptions[optIdx] = newOption;
+  const updated: DesignSelection = { ...SELECTIONS[idx], options: newOptions };
+  SELECTIONS[idx] = updated;
+  return updated;
+}
+
+export function removeSelectionOption(selectionId: string, optionId: string): DesignSelection | null {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return null;
+  if (SELECTIONS[idx].state !== 'draft') return null;
+  const updated: DesignSelection = {
+    ...SELECTIONS[idx],
+    options: SELECTIONS[idx].options.filter((o) => o.id !== optionId),
+  };
+  SELECTIONS[idx] = updated;
+  return updated;
+}
+
+/** Flips a draft → sent. Requires at least 2 options (the whole point of a
+ *  selection is a choice). Appends an activity-log line. */
+export function sendSelection(selectionId: string): DesignSelection | null {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return null;
+  const s = SELECTIONS[idx];
+  if (s.state !== 'draft') return null;
+  if (s.options.length < 2) return null;
+  const at = new Date().toISOString();
+  const updated: DesignSelection = { ...s, state: 'sent', sentAt: at };
+  SELECTIONS[idx] = updated;
+  appendActivity({
+    projectId: s.projectId,
+    at,
+    userId: null,
+    kind: 'send',
+    summary: `Selection sent to owner — "${s.prompt.slice(0, 60)}" (${s.options.length} options).`,
+  });
+  return updated;
+}
+
+/** Deletes a draft selection. Sent / picked / changes_requested selections
+ *  cannot be deleted (they're an audit-grade record of the owner conversation). */
+export function deleteSelection(selectionId: string): boolean {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return false;
+  if (SELECTIONS[idx].state !== 'draft') return false;
+  SELECTIONS.splice(idx, 1);
+  return true;
+}
+
 // Approvals (§7.PP mock)
 export const APPROVALS: DesignApproval[] = [
   { id: 'apv-1', projectId: 'p-ohana', artifactType: 'moodboard',       artifactId: 'mb-ohana-2', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-10-22T09:00:00.000Z', decidedAt: '2025-10-25T09:00:00.000Z', decisionMethod: 'whatsapp', comments: 'Yes, this is it.', events: [] },
@@ -2374,6 +2528,13 @@ export const designClient = {
     listPending: listPendingSelections,
     pick: pickSelection,
     requestChanges: requestSelectionChanges,
+    create: createSelection,
+    update: updateSelection,
+    addOption: addSelectionOption,
+    updateOption: updateSelectionOption,
+    removeOption: removeSelectionOption,
+    send: sendSelection,
+    delete: deleteSelection,
   },
   documents: { list: getDocuments },
   activity: { list: getActivity },
