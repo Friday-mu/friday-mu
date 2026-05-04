@@ -1829,8 +1829,7 @@ function AnalyticsView() {
   const [range, setRange] = useState<30 | 90 | 180 | 'all'>('all');
   const stages = designClient.analytics.timeInStage(range);
   const funnel = designClient.analytics.funnel(range);
-  const spend = designClient.analytics.spendCurve(range);
-  const revenue = designClient.analytics.revenueCurve(range);
+  const flow = designClient.analytics.flowCurve(range);
   const crmInteriorPrequalCount = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won').length;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }} data-design-analytics>
@@ -1883,19 +1882,11 @@ function AnalyticsView() {
       </div>
 
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
-        <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Spend curve</h4>
+        <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Project flow</h4>
         <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Cumulative <strong style={{ color: 'var(--color-brand-accent)' }}>approved</strong> vs. <strong style={{ color: 'var(--color-text-success)' }}>paid</strong> across all projects, monthly. Gap between curves = open commitments.
+          Cumulative monthly. Toggle series to compare. <strong>Net cash</strong> = revenue received − spend paid; useful as a project cash position, not gross margin (BUDGET_ITEMS spend is owner-funded working capital).
         </p>
-        <SpendCurveChart points={spend} />
-      </div>
-
-      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
-        <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Revenue curve</h4>
-        <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Cumulative <strong style={{ color: 'var(--color-text-success)' }}>total revenue</strong> received from owners — design fees + execution fees + final balance. Excludes pass-through project working capital.
-        </p>
-        <RevenueCurveChart points={revenue} />
+        <FlowCurveChart points={flow} />
       </div>
     </div>
   );
@@ -1982,105 +1973,162 @@ function FunnelChart({ preQualCount, buckets }: { preQualCount: number; buckets:
   );
 }
 
-function SpendCurveChart({ points }: { points: Array<{ month: string; approvedMinor: number; paidMinor: number }> }) {
-  if (points.length === 0) {
-    return <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No spend data in this range.</div>;
-  }
-  const W = 600;
-  const H = 180;
-  const PAD = { top: 10, right: 10, bottom: 24, left: 60 };
-  const innerW = W - PAD.left - PAD.right;
-  const innerH = H - PAD.top - PAD.bottom;
-  const maxValue = Math.max(...points.map((p) => p.approvedMinor));
-  const xStep = points.length === 1 ? innerW : innerW / (points.length - 1);
-  const xAt = (i: number) => PAD.left + i * xStep;
-  const yAt = (v: number) => PAD.top + innerH - (maxValue > 0 ? (v / maxValue) * innerH : 0);
-  const linePath = (key: 'approvedMinor' | 'paidMinor') =>
-    points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(p[key])}`).join(' ');
-  const areaPath = (key: 'approvedMinor' | 'paidMinor') =>
-    `${linePath(key)} L ${xAt(points.length - 1)} ${PAD.top + innerH} L ${xAt(0)} ${PAD.top + innerH} Z`;
-  // Y-axis tick — 4 evenly spaced.
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ v: maxValue * f, y: PAD.top + innerH - f * innerH }));
-  return (
-    <div data-design-analytics-spend style={{ overflowX: 'auto' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', minWidth: 480 }}>
-        {/* gridlines + y-axis labels */}
-        {yTicks.map((t, i) => (
-          <g key={i}>
-            <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke="var(--color-border-tertiary)" strokeDasharray="2 4" strokeWidth={0.5} />
-            <text x={PAD.left - 6} y={t.y + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
-              {formatMURCompact(t.v)}
-            </text>
-          </g>
-        ))}
-        {/* approved area + line */}
-        <path d={areaPath('approvedMinor')} fill="var(--color-brand-accent)" opacity={0.12} />
-        <path d={linePath('approvedMinor')} fill="none" stroke="var(--color-brand-accent)" strokeWidth={2} />
-        {/* paid line on top */}
-        <path d={linePath('paidMinor')} fill="none" stroke="var(--color-text-success)" strokeWidth={2} strokeDasharray="6 3" />
-        {/* x-axis labels */}
-        {points.map((p, i) => (
-          <text key={p.month} x={xAt(i)} y={H - 8} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
-            {p.month}
-          </text>
-        ))}
-      </svg>
-      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-brand-accent)', verticalAlign: 'middle', marginRight: 4 }} />Approved · {formatMUR(points[points.length - 1]?.approvedMinor ?? 0)}</span>
-        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-text-success)', verticalAlign: 'middle', marginRight: 4, borderTop: '1px dashed var(--color-text-success)' }} />Paid · {formatMUR(points[points.length - 1]?.paidMinor ?? 0)}</span>
-      </div>
-    </div>
-  );
+type FlowSeriesKey = 'revenue' | 'spendApproved' | 'spendPaid' | 'netCash';
+
+interface FlowSeriesDef {
+  key: FlowSeriesKey;
+  label: string;
+  pickMinor: (p: { revenueMinor: number; spendApprovedMinor: number; spendPaidMinor: number; netCashMinor: number }) => number;
+  color: string;
+  dashed: boolean;
 }
 
-function RevenueCurveChart({ points }: { points: Array<{ month: string; designFeeMinor: number; executionFeeMinor: number; finalBalanceMinor: number; totalMinor: number }> }) {
+const FLOW_SERIES: FlowSeriesDef[] = [
+  { key: 'revenue',       label: 'Revenue',        pickMinor: (p) => p.revenueMinor,       color: 'var(--color-text-success)', dashed: false },
+  { key: 'spendApproved', label: 'Spend approved', pickMinor: (p) => p.spendApprovedMinor, color: 'var(--color-brand-accent)', dashed: false },
+  { key: 'spendPaid',     label: 'Spend paid',     pickMinor: (p) => p.spendPaidMinor,     color: 'var(--color-brand-accent)', dashed: true },
+  { key: 'netCash',       label: 'Net cash',       pickMinor: (p) => p.netCashMinor,       color: 'var(--color-text-primary)', dashed: false },
+];
+
+function FlowCurveChart({ points }: { points: Array<{ month: string; revenueMinor: number; revenueDesignFeeMinor: number; revenueExecutionFeeMinor: number; revenueFinalBalanceMinor: number; spendApprovedMinor: number; spendPaidMinor: number; netCashMinor: number }> }) {
+  const [active, setActive] = useState<Record<FlowSeriesKey, boolean>>({
+    revenue: true,
+    spendApproved: false,
+    spendPaid: true,
+    netCash: true,
+  });
+  const toggle = (k: FlowSeriesKey) => setActive((s) => ({ ...s, [k]: !s[k] }));
+
   if (points.length === 0) {
-    return <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No revenue received in this range.</div>;
+    return <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No data in this range.</div>;
   }
+
   const W = 600;
-  const H = 180;
+  const H = 200;
   const PAD = { top: 10, right: 10, bottom: 24, left: 60 };
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
-  const maxValue = Math.max(...points.map((p) => p.totalMinor));
+
+  // Scale across visible series only — and ALWAYS include 0 in the y-axis so net-cash dips render correctly.
+  const visibleSeries = FLOW_SERIES.filter((s) => active[s.key]);
+  const allValues = visibleSeries.length > 0
+    ? points.flatMap((p) => visibleSeries.map((s) => s.pickMinor(p)))
+    : [0];
+  const yMax = Math.max(0, ...allValues);
+  const yMin = Math.min(0, ...allValues);
+  const yRange = yMax - yMin || 1;
+
   const xStep = points.length === 1 ? innerW : innerW / (points.length - 1);
   const xAt = (i: number) => PAD.left + i * xStep;
-  const yAt = (v: number) => PAD.top + innerH - (maxValue > 0 ? (v / maxValue) * innerH : 0);
-  const linePath = (key: 'totalMinor' | 'designFeeMinor') =>
-    points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(p[key])}`).join(' ');
-  const areaPath = (key: 'totalMinor') =>
-    `${linePath(key)} L ${xAt(points.length - 1)} ${PAD.top + innerH} L ${xAt(0)} ${PAD.top + innerH} Z`;
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ v: maxValue * f, y: PAD.top + innerH - f * innerH }));
+  const yAt = (v: number) => PAD.top + innerH - ((v - yMin) / yRange) * innerH;
+
+  const linePath = (series: FlowSeriesDef) =>
+    points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(series.pickMinor(p))}`).join(' ');
+
+  // Filled area only for revenue (lead series). Other series render line-only to avoid stacking ambiguity.
+  const revenueAreaPath = () => {
+    if (!active.revenue) return null;
+    const rSeries = FLOW_SERIES.find((s) => s.key === 'revenue')!;
+    return `${linePath(rSeries)} L ${xAt(points.length - 1)} ${yAt(0)} L ${xAt(0)} ${yAt(0)} Z`;
+  };
+
+  // y-axis ticks — 5 evenly spaced including zero baseline if visible
+  const yTickVals = [0, 0.25, 0.5, 0.75, 1].map((f) => yMin + f * yRange);
   const last = points[points.length - 1];
+
   return (
-    <div data-design-analytics-revenue style={{ overflowX: 'auto' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', minWidth: 480 }}>
-        {yTicks.map((t, i) => (
-          <g key={i}>
-            <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke="var(--color-border-tertiary)" strokeDasharray="2 4" strokeWidth={0.5} />
-            <text x={PAD.left - 6} y={t.y + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
-              {formatMURCompact(t.v)}
+    <div data-design-analytics-flow style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Series toggles */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }} data-flow-toggles>
+        {FLOW_SERIES.map((s) => {
+          const on = active[s.key];
+          return (
+            <button
+              key={s.key}
+              type="button"
+              data-flow-series={s.key}
+              data-active={on}
+              onClick={() => toggle(s.key)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                fontSize: 11,
+                fontWeight: on ? 600 : 500,
+                borderRadius: 'var(--radius-full)',
+                border: '0.5px solid ' + (on ? 'transparent' : 'var(--color-border-tertiary)'),
+                background: on ? 'var(--color-background-secondary)' : 'transparent',
+                color: on ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                opacity: on ? 1 : 0.7,
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 14,
+                  height: 0,
+                  borderTop: `2px ${s.dashed ? 'dashed' : 'solid'} ${s.color}`,
+                  verticalAlign: 'middle',
+                }}
+              />
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* SVG chart */}
+      <div style={{ overflowX: 'auto' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', minWidth: 480 }}>
+          {/* gridlines + y-axis labels */}
+          {yTickVals.map((v, i) => {
+            const y = yAt(v);
+            return (
+              <g key={i}>
+                <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="var(--color-border-tertiary)" strokeDasharray="2 4" strokeWidth={0.5} />
+                <text x={PAD.left - 6} y={y + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
+                  {formatMURCompact(v)}
+                </text>
+              </g>
+            );
+          })}
+          {/* zero baseline (slightly stronger) if 0 is inside the range */}
+          {yMin < 0 && (
+            <line x1={PAD.left} y1={yAt(0)} x2={W - PAD.right} y2={yAt(0)} stroke="var(--color-border-secondary)" strokeWidth={0.75} />
+          )}
+          {/* revenue filled area */}
+          {active.revenue && (
+            <path d={revenueAreaPath() ?? ''} fill="var(--color-text-success)" opacity={0.10} />
+          )}
+          {/* series lines */}
+          {visibleSeries.map((s) => (
+            <path
+              key={s.key}
+              d={linePath(s)}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={2}
+              strokeDasharray={s.dashed ? '6 3' : undefined}
+            />
+          ))}
+          {/* x-axis labels */}
+          {points.map((p, i) => (
+            <text key={p.month} x={xAt(i)} y={H - 8} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
+              {p.month}
             </text>
-          </g>
+          ))}
+        </svg>
+      </div>
+
+      {/* Footer totals — only for visible series */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+        {visibleSeries.map((s) => (
+          <span key={s.key}>
+            <strong style={{ color: s.color, fontWeight: 600 }}>{s.label}</strong>
+            <span style={{ marginLeft: 6 }}>{formatMUR(s.pickMinor(last))}</span>
+          </span>
         ))}
-        {/* total revenue area + line */}
-        <path d={areaPath('totalMinor')} fill="var(--color-text-success)" opacity={0.12} />
-        <path d={linePath('totalMinor')} fill="none" stroke="var(--color-text-success)" strokeWidth={2} />
-        {/* design fee line on top (dashed, brand accent) */}
-        <path d={linePath('designFeeMinor')} fill="none" stroke="var(--color-brand-accent)" strokeWidth={2} strokeDasharray="6 3" />
-        {points.map((p, i) => (
-          <text key={p.month} x={xAt(i)} y={H - 8} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
-            {p.month}
-          </text>
-        ))}
-      </svg>
-      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4, flexWrap: 'wrap' }}>
-        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-text-success)', verticalAlign: 'middle', marginRight: 4 }} />Total · {formatMUR(last?.totalMinor ?? 0)}</span>
-        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-brand-accent)', verticalAlign: 'middle', marginRight: 4, borderTop: '1px dashed var(--color-brand-accent)' }} />Design fees · {formatMUR(last?.designFeeMinor ?? 0)}</span>
-        <span style={{ color: 'var(--color-text-tertiary)' }}>Execution · {formatMUR(last?.executionFeeMinor ?? 0)}</span>
-        {last && last.finalBalanceMinor > 0 && (
-          <span style={{ color: 'var(--color-text-tertiary)' }}>Final balance · {formatMUR(last.finalBalanceMinor)}</span>
-        )}
       </div>
     </div>
   );
@@ -2088,9 +2136,11 @@ function RevenueCurveChart({ points }: { points: Array<{ month: string; designFe
 
 function formatMURCompact(minor: number): string {
   const major = minor / 100;
-  if (major >= 1_000_000) return `${(major / 1_000_000).toFixed(1)}M`;
-  if (major >= 1_000) return `${(major / 1_000).toFixed(0)}k`;
-  return major.toFixed(0);
+  const sign = major < 0 ? '-' : '';
+  const abs = Math.abs(major);
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(0)}k`;
+  return `${sign}${abs.toFixed(0)}`;
 }
 
 function NewVendorForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (vendor: Vendor) => void }) {

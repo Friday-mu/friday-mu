@@ -868,6 +868,10 @@ export const VENDORS: Vendor[] = [
   { id: 'v-orion',   name: 'Orion Design',   company: 'Orion Design Ltd',      category: 'structural_engineer', phone: '+230 5333 4455', email: 'office@oriondesign.mu', paymentTerms: 'Per drawing set',           notes: null,                          engagements: [{ projectId: 'p-ohana', totalSpendMinor: 80_000_00, rating: 5 }] },
   { id: 'v-yuvan',   name: 'Yuvan',          company: null,                    category: 'mep_engineer',        phone: '+230 5444 5566', email: 'yuvan@example.com', paymentTerms: 'Per engagement',                  notes: 'M&E coordination',            engagements: [] },
   { id: 'v-jaabir',  name: 'Jaabir',         company: null,                    category: 'interior_designer',   phone: '+230 5555 6677', email: 'jaabir@example.com', paymentTerms: 'Project rate',                   notes: 'External Design Lead, built Ohana plans', engagements: [{ projectId: 'p-ohana', totalSpendMinor: 0, rating: 5 }] },
+  { id: 'v-mfc',     name: 'Devanand',       company: 'Mauritius Furniture Co', category: 'furniture_supplier',  phone: '+230 5666 1010', email: 'sales@mfc.mu',     paymentTerms: '50% deposit, 50% on delivery',     notes: 'Local boucle + linen sofas, 6-week lead time', engagements: [{ projectId: 'p-rc15', totalSpendMinor: 145_000_00, rating: 4.5 }] },
+  { id: 'v-atelier', name: 'Sandrine',       company: 'Atelier Décor',          category: 'decor_supplier',      phone: '+230 5777 4040', email: 'hello@atelierdecor.mu', paymentTerms: 'Net 30',                       notes: 'Rugs, art, accessories — strong on natural fibres', engagements: [{ projectId: 'p-rc15', totalSpendMinor: 39_500_00, rating: 4 }] },
+  { id: 'v-lumen',   name: 'Akil',           company: 'Lumen Lighting',         category: 'lighting_supplier',   phone: '+230 5888 6060', email: 'akil@lumen.mu',     paymentTerms: 'Per quote',                       notes: 'Decorative + architectural; CE certified', engagements: [] },
+  { id: 'v-express', name: 'Roshan',         company: 'Express Logistics',      category: 'transport',           phone: '+230 5999 7070', email: 'ops@expresslog.mu', paymentTerms: 'Per delivery',                    notes: 'Island-wide white-glove delivery + install', engagements: [] },
 ];
 
 export function listVendors(filter?: { category?: VendorCategory; query?: string }): Vendor[] {
@@ -1345,6 +1349,76 @@ export const LEADS: DesignLead[] = [
     notes: 'Site visit done; awaiting proposal version 2 with structural notes.',
     createdAt: '2026-04-22T08:00:00.000Z',
   },
+  {
+    id: 'l-pereybere',
+    entityId: DESIGN_ENTITY_ID,
+    source: 'website',
+    entryPath: 'owner_direct',
+    counterpartyName: 'Anaïs Boucher',
+    counterpartyPhone: '+230 5234 5678',
+    counterpartyEmail: 'anais.b@example.com',
+    propertyHint: 'Pereybere townhouse, 2BR',
+    budgetHint: 'MUR 450k furnishing only',
+    status: 'draft',
+    notes: 'Inbound today via friday.mu; small scope, cash buyer.',
+    createdAt: '2026-05-04T16:20:00.000Z',
+  },
+  {
+    id: 'l-mont-choisy',
+    entityId: DESIGN_ENTITY_ID,
+    source: 'whatsapp',
+    entryPath: 'friday_pitches',
+    counterpartyName: 'Hassen Lalmamod',
+    counterpartyPhone: '+230 5345 1234',
+    counterpartyEmail: null,
+    propertyHint: 'Mont Choisy beachfront, 6BR',
+    budgetHint: 'MUR 5.5M renovation + premium upgrade',
+    status: 'sent',
+    notes: 'High-value lead — wants Tier 1 service, asking for capex breakdown.',
+    createdAt: '2026-05-01T11:00:00.000Z',
+  },
+  {
+    id: 'l-trou-aux-biches',
+    entityId: DESIGN_ENTITY_ID,
+    source: 'existing_owner',
+    entryPath: 'existing_friday_owner',
+    counterpartyName: 'Davisen Nursoo',
+    counterpartyPhone: '+230 5800 4422',
+    counterpartyEmail: 'davisen.nursoo@example.com',
+    propertyHint: 'Trou aux Biches, 3BR (second property)',
+    budgetHint: 'MUR 1.1M furnishing pack',
+    status: 'accepted',
+    notes: 'Repeat owner. Accepted 2026-04-30 via WhatsApp. Site visit booked 2026-05-12.',
+    createdAt: '2026-04-25T09:00:00.000Z',
+  },
+  {
+    id: 'l-souillac',
+    entityId: DESIGN_ENTITY_ID,
+    source: 'friday_outreach',
+    entryPath: 'new_owner_no_str',
+    counterpartyName: 'Jean-Luc Tirvengadum',
+    counterpartyPhone: '+230 5456 7890',
+    counterpartyEmail: 'jl.tirvengadum@example.com',
+    propertyHint: 'Souillac coastal house, 4BR',
+    budgetHint: 'MUR 2M renovation; not on STR yet',
+    status: 'draft',
+    notes: 'Friday outreach — owner interested but unsure about STR-readiness path.',
+    createdAt: '2026-05-03T14:30:00.000Z',
+  },
+  {
+    id: 'l-blue-bay',
+    entityId: DESIGN_ENTITY_ID,
+    source: 'owner_referral',
+    entryPath: 'friday_pitches',
+    counterpartyName: 'Karuna Ramphul',
+    counterpartyPhone: null,
+    counterpartyEmail: 'karuna.r@example.com',
+    propertyHint: 'Blue Bay beachfront, 5BR',
+    budgetHint: 'MUR 2.8M renovation',
+    status: 'sent',
+    notes: 'Referred by Tasleem Peeroo. Proposal v1 sent 2026-04-29.',
+    createdAt: '2026-04-26T16:00:00.000Z',
+  },
 ];
 
 // ─────────────────────────── LEADS — admin authoring (cont-23) ───────────────────────────
@@ -1736,7 +1810,7 @@ export const PAYMENT_GATES: PaymentGate[] = [
     execution_fee_t1: { status: 'received', amountMinor: 31_500_00, receivedAt: '2025-10-01T09:00:00.000Z' },
     project_funds:    { status: 'received', amountMinor: 420_000_00, receivedAt: '2025-10-05T09:00:00.000Z' },
     execution_fee_t2: { status: 'received', amountMinor: 21_000_00, receivedAt: '2026-03-15T09:00:00.000Z' },
-    final_balance:    { status: 'awaiting' },
+    final_balance:    { status: 'received', amountMinor: 8_200_00, receivedAt: '2026-05-02T09:00:00.000Z', bankRef: 'MCB-E5C82' },
   }),
   ...buildGates('p-lb2', {
     agreement_signed: { status: 'received', receivedAt: '2025-05-01T09:00:00.000Z' },
@@ -1754,7 +1828,7 @@ export const PAYMENT_GATES: PaymentGate[] = [
     execution_fee_t1: { status: 'received', amountMinor: 64_800_00, receivedAt: '2025-10-05T09:00:00.000Z' },
     project_funds:    { status: 'received', amountMinor: 720_000_00, receivedAt: '2025-10-10T09:00:00.000Z' },
     execution_fee_t2: { status: 'received', amountMinor: 43_200_00, receivedAt: '2026-03-10T09:00:00.000Z' },
-    final_balance:    { status: 'awaiting' },
+    final_balance:    { status: 'received', amountMinor: 14_800_00, receivedAt: '2026-05-03T11:30:00.000Z', bankRef: 'MCB-E5D14' },
   }),
 ];
 
@@ -2913,6 +2987,20 @@ export const ACTIVITY: ActivityLogEntry[] = [
   { id: 'a-10', projectId: 'p-ohana', at: '2026-04-29T09:00:00.000Z', userId: 'u-jaabir-ext', kind: 'send',          summary: 'Bedroom 2 package sent for approval.' },
   { id: 'a-11', projectId: 'p-albion', at: '2026-04-29T09:00:00.000Z', userId: 'u-ishant', kind: 'create',           summary: 'Project created from accepted lead (Tasleem Peeroo).' },
   { id: 'a-12', projectId: 'p-albion', at: ISO_NOW,                    userId: 'u-mathias', kind: 'stage_transition', summary: 'Site visit started — on-site today.' },
+  // Recent cross-project entries — gives the activity feed and analytics
+  // signal across April/May 2026 instead of clustering on Ohana.
+  { id: 'a-13', projectId: 'p-rc15',   at: '2026-04-22T10:30:00.000Z', userId: 'u-mathias',     kind: 'send',             summary: 'Reconciliation report v1 sent to owner for review.' },
+  { id: 'a-14', projectId: 'p-rc15',   at: '2026-04-28T14:00:00.000Z', userId: 'u-mathias',     kind: 'comment',          summary: 'Owner asked for clarification on lighting variance line — replied with vendor invoice.' },
+  { id: 'a-15', projectId: 'p-rc15',   at: '2026-05-02T09:00:00.000Z', userId: 'u-bryan',       kind: 'receive_payment',  summary: 'Final balance received — Rs 8,200.' },
+  { id: 'a-16', projectId: 'p-lb2',    at: '2026-04-18T11:00:00.000Z', userId: 'u-mathias',     kind: 'update',           summary: 'Variance report compiled — pending Bryan sign-off.' },
+  { id: 'a-17', projectId: 'p-lb2',    at: '2026-04-26T15:30:00.000Z', userId: 'u-bryan',       kind: 'approve',          summary: 'Variance report approved internally — sending to owner.' },
+  { id: 'a-18', projectId: 'p-lb3',    at: '2026-04-15T10:00:00.000Z', userId: 'u-mathias',     kind: 'send',             summary: 'Reconciliation report sent — awaiting owner sign-off.' },
+  { id: 'a-19', projectId: 'p-lb3',    at: '2026-05-03T12:00:00.000Z', userId: 'u-bryan',       kind: 'receive_payment',  summary: 'Final balance received — Rs 14,800.' },
+  { id: 'a-20', projectId: 'p-ohana',  at: '2026-05-01T08:00:00.000Z', userId: 'u-jaabir-ext',  kind: 'send',             summary: 'Living room package re-issued with revised sofa quote.' },
+  { id: 'a-21', projectId: 'p-ohana',  at: '2026-05-03T16:30:00.000Z', userId: 'u-davisen',     kind: 'approve',          summary: 'Master bedroom package approved by owner.' },
+  { id: 'a-22', projectId: 'p-ohana',  at: ISO_NOW,                    userId: 'u-bryan',       kind: 'update',           summary: 'Sevatian quote received for masonry — pending review.' },
+  { id: 'a-23', projectId: 'p-duval',  at: '2026-04-30T09:00:00.000Z', userId: 'u-ishant',      kind: 'comment',          summary: 'Site visit slot offered for 2026-05-15 morning.' },
+  { id: 'a-24', projectId: 'p-albion', at: '2026-05-03T17:00:00.000Z', userId: 'u-mathias',     kind: 'update',           summary: 'Site visit photos + measurements uploaded to drive.' },
 ];
 
 export function getActivity(projectId: string): ActivityLogEntry[] {
@@ -3631,96 +3719,98 @@ export function getLeadConversionFunnel(rangeDays: AnalyticsRange = 'all'): Funn
   return buckets;
 }
 
-export interface SpendCurvePoint {
+export interface FlowCurvePoint {
   /** YYYY-MM bin. */
   month: string;
-  /** Cumulative approved up to and including this month. */
-  approvedMinor: number;
-  /** Cumulative paid up to and including this month. */
-  paidMinor: number;
+  /** Cumulative Friday revenue (design fees + execution fees + final balance gates received). */
+  revenueMinor: number;
+  /** Cumulative design fee revenue (`design_fee_60` + `design_fee_40`). */
+  revenueDesignFeeMinor: number;
+  /** Cumulative execution fee revenue (`execution_fee_t1` + `execution_fee_t2`). */
+  revenueExecutionFeeMinor: number;
+  /** Cumulative final-balance revenue. */
+  revenueFinalBalanceMinor: number;
+  /** Cumulative approved budget items (committed spend). */
+  spendApprovedMinor: number;
+  /** Cumulative actually-paid budget items. */
+  spendPaidMinor: number;
+  /** Cumulative net cash position = revenue − paid. NOT gross margin (BUDGET_ITEMS spend is owner-funded working capital, not Friday's cost) — useful as a project cash-flow visual only. */
+  netCashMinor: number;
 }
 
-/** Aggregate BUDGET_ITEMS into a monthly cumulative curve of approved vs.
- *  paid. Uses `dueDate` as the time anchor (the proxy for "when this item
- *  hit the budget"). Items without dueDate are bucketed into the earliest
- *  month with data. */
-export function getSpendCurve(rangeDays: AnalyticsRange = 'all'): SpendCurvePoint[] {
-  // Bucket by YYYY-MM
-  const byMonth = new Map<string, { approved: number; paid: number }>();
-  let earliestMonth: string | null = null;
-  for (const item of BUDGET_ITEMS) {
-    if (item.internalWork) continue;
-    const anchor = item.dueDate ?? null;
-    if (anchor && !withinRange(anchor, rangeDays)) continue;
-    const month = (anchor ?? '2025-01').slice(0, 7);
-    if (!earliestMonth || month < earliestMonth) earliestMonth = month;
-    const slot = byMonth.get(month) ?? { approved: 0, paid: 0 };
-    if (item.status === 'approved') slot.approved += item.finalApprovedCostMinor ?? 0;
-    if (item.actualPaidMinor) slot.paid += item.actualPaidMinor;
-    byMonth.set(month, slot);
-  }
-  if (byMonth.size === 0) return [];
-  // Walk months in sorted order, accumulating.
-  const months = Array.from(byMonth.keys()).sort();
-  let approvedCum = 0;
-  let paidCum = 0;
-  return months.map((m) => {
-    const slot = byMonth.get(m)!;
-    approvedCum += slot.approved;
-    paidCum += slot.paid;
-    return { month: m, approvedMinor: approvedCum, paidMinor: paidCum };
-  });
-}
-
-export interface RevenueCurvePoint {
-  /** YYYY-MM bin. */
-  month: string;
-  /** Cumulative design fee revenue (gates `design_fee_60` + `design_fee_40`) — Friday's professional services revenue. */
-  designFeeMinor: number;
-  /** Cumulative execution fee revenue (gates `execution_fee_t1` + `execution_fee_t2`) — margin on procurement. */
-  executionFeeMinor: number;
-  /** Cumulative final-balance revenue (gate `final_balance`) — retainer release. */
-  finalBalanceMinor: number;
-  /** Cumulative total revenue (sum of the three). */
-  totalMinor: number;
-}
-
-/** Aggregate received PaymentGates into a monthly cumulative curve of Friday
- *  revenue. Excludes `agreement_signed` (no money) and `project_funds`
- *  (working capital pass-through, not Friday revenue). Anchored on
- *  `receivedAt`. */
-export function getRevenueCurve(rangeDays: AnalyticsRange = 'all'): RevenueCurvePoint[] {
+/** Combined per-month cumulative flow curve for the analytics chart.
+ *
+ *  Sources:
+ *  - Revenue ← PaymentGates filtered to received `design_fee_*`, `execution_fee_*`, `final_balance`.
+ *    Excludes `agreement_signed` (no money) + `project_funds` (working-capital pass-through).
+ *    Anchored on `receivedAt`.
+ *  - Spend ← BUDGET_ITEMS, anchored on `dueDate`. `approved` filters by status,
+ *    `paid` filters by `actualPaidMinor`.
+ *
+ *  Months are merged from both sources so the x-axis is contiguous. Cumulative
+ *  walk forward from earliest month. */
+export function getFlowCurve(rangeDays: AnalyticsRange = 'all'): FlowCurvePoint[] {
   const DESIGN_FEE_GATES: GateId[] = ['design_fee_60', 'design_fee_40'];
   const EXECUTION_FEE_GATES: GateId[] = ['execution_fee_t1', 'execution_fee_t2'];
-  const byMonth = new Map<string, { design: number; execution: number; final: number }>();
+
+  const byMonth = new Map<string, { rDesign: number; rExec: number; rFinal: number; sApproved: number; sPaid: number }>();
+  const slotFor = (m: string) => {
+    let slot = byMonth.get(m);
+    if (!slot) {
+      slot = { rDesign: 0, rExec: 0, rFinal: 0, sApproved: 0, sPaid: 0 };
+      byMonth.set(m, slot);
+    }
+    return slot;
+  };
+
+  // Revenue
   for (const gate of PAYMENT_GATES) {
     if (gate.status !== 'received') continue;
     if (!gate.receivedAt) continue;
     if (!gate.amountMinor) continue;
     if (!withinRange(gate.receivedAt, rangeDays)) continue;
     const month = gate.receivedAt.slice(0, 7);
-    const slot = byMonth.get(month) ?? { design: 0, execution: 0, final: 0 };
-    if (DESIGN_FEE_GATES.includes(gate.id)) slot.design += gate.amountMinor;
-    else if (EXECUTION_FEE_GATES.includes(gate.id)) slot.execution += gate.amountMinor;
-    else if (gate.id === 'final_balance') slot.final += gate.amountMinor;
-    byMonth.set(month, slot);
+    const slot = slotFor(month);
+    if (DESIGN_FEE_GATES.includes(gate.id)) slot.rDesign += gate.amountMinor;
+    else if (EXECUTION_FEE_GATES.includes(gate.id)) slot.rExec += gate.amountMinor;
+    else if (gate.id === 'final_balance') slot.rFinal += gate.amountMinor;
   }
+
+  // Spend (skip internal work — handled inside the project margin calc, not customer-facing)
+  for (const item of BUDGET_ITEMS) {
+    if (item.internalWork) continue;
+    const anchor = item.dueDate ?? null;
+    if (anchor && !withinRange(anchor, rangeDays)) continue;
+    const month = (anchor ?? '2025-01').slice(0, 7);
+    const slot = slotFor(month);
+    if (item.status === 'approved') slot.sApproved += item.finalApprovedCostMinor ?? 0;
+    if (item.actualPaidMinor) slot.sPaid += item.actualPaidMinor;
+  }
+
   if (byMonth.size === 0) return [];
   const months = Array.from(byMonth.keys()).sort();
-  let designCum = 0;
-  let executionCum = 0;
-  let finalCum = 0;
+  let rDesignC = 0;
+  let rExecC = 0;
+  let rFinalC = 0;
+  let sApprovedC = 0;
+  let sPaidC = 0;
   return months.map((m) => {
     const slot = byMonth.get(m)!;
-    designCum += slot.design;
-    executionCum += slot.execution;
-    finalCum += slot.final;
+    rDesignC += slot.rDesign;
+    rExecC += slot.rExec;
+    rFinalC += slot.rFinal;
+    sApprovedC += slot.sApproved;
+    sPaidC += slot.sPaid;
+    const revenueMinor = rDesignC + rExecC + rFinalC;
     return {
       month: m,
-      designFeeMinor: designCum,
-      executionFeeMinor: executionCum,
-      finalBalanceMinor: finalCum,
-      totalMinor: designCum + executionCum + finalCum,
+      revenueMinor,
+      revenueDesignFeeMinor: rDesignC,
+      revenueExecutionFeeMinor: rExecC,
+      revenueFinalBalanceMinor: rFinalC,
+      spendApprovedMinor: sApprovedC,
+      spendPaidMinor: sPaidC,
+      netCashMinor: revenueMinor - sPaidC,
     };
   });
 }
@@ -3854,7 +3944,6 @@ export const designClient = {
   analytics: {
     timeInStage: getTimeInStageDistribution,
     funnel: getLeadConversionFunnel,
-    spendCurve: getSpendCurve,
-    revenueCurve: getRevenueCurve,
+    flowCurve: getFlowCurve,
   },
 };
