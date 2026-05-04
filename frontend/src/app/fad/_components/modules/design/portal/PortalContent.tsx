@@ -5,6 +5,7 @@ import {
   designClient,
   type DesignApproval,
   type DesignProject,
+  type DesignSelection,
 } from '../../../../_data/design';
 import { OverviewTab } from './OverviewTab';
 import { DocsTab } from './DocsTab';
@@ -40,10 +41,21 @@ export function PortalContent({
   const [approvals, setApprovals] = useState<DesignApproval[]>(() =>
     designClient.approvals.list(project.id),
   );
+  const [selections, setSelections] = useState<DesignSelection[]>(() =>
+    designClient.selections.list(project.id),
+  );
   const [pendingChanges, setPendingChanges] = useState<DesignApproval | null>(null);
 
   const refreshApprovals = () => {
     setApprovals(designClient.approvals.list(project.id));
+  };
+  const refreshSelections = () => {
+    setSelections(designClient.selections.list(project.id));
+  };
+
+  const handlePickSelectionOption = (selectionId: string, optionId: string) => {
+    designClient.selections.pick(selectionId, { optionId });
+    refreshSelections();
   };
 
   const handleApprove = (approvalId: string) => {
@@ -77,12 +89,14 @@ export function PortalContent({
   const firstName = counterparty?.fullName?.split(' ')[0] ?? '';
   const designLeadLabel = friendlyDesignLead(project.designLeadUserId);
   const pendingApprovalCount = approvals.filter((a) => a.state === 'sent').length;
+  const pendingSelectionCount = selections.filter((s) => s.state === 'sent').length;
+  const totalPendingActions = pendingApprovalCount + pendingSelectionCount;
 
   const tabLabels: Record<PortalTab, string> = {
     overview: 'Overview',
     documents: docs.length > 0 ? `Documents (${docs.length})` : 'Documents',
     approvals:
-      pendingApprovalCount > 0 ? `Approvals (${pendingApprovalCount})` : 'Approvals',
+      totalPendingActions > 0 ? `Approvals (${totalPendingActions})` : 'Approvals',
     budget: 'Budget',
     progress: 'Progress',
     handover: 'Final handover',
@@ -171,8 +185,10 @@ export function PortalContent({
         {tab === 'approvals' && (
           <ApprovalsTab
             approvals={approvals}
+            selections={selections}
             onApprove={handleApprove}
             onRequestChanges={setPendingChanges}
+            onPickSelectionOption={handlePickSelectionOption}
           />
         )}
         {tab === 'budget' && <BudgetTab items={items} />}

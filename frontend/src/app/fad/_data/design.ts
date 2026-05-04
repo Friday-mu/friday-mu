@@ -1633,6 +1633,153 @@ export function getTasks(projectId: string): DesignTask[] {
   return TASKS.filter((t) => t.projectId === projectId);
 }
 
+// ─────────────────────────── SELECTIONS (cont-15) ───────────────────────────
+//
+// Audit A6: industry research showed CoConstruct's biggest win was making
+// selections (owner picks between 3 sofa options) a structured object
+// instead of a Slack thread. Friday's design-pack approval was binary
+// (approve / request changes). Selections give the owner an explicit
+// "I prefer option B" / "swap just this lamp" affordance that flows
+// directly into the Final Budget.
+
+export interface SelectionOption {
+  id: string;
+  label: string;
+  description: string | null;
+  vendorId: string | null;
+  productLink: string | null;
+  imageUrl: string | null;
+  /** Negotiated MUR cents per unit; the value that becomes the BudgetItem
+   *  when the owner picks this option. */
+  priceMinor: number;
+  /** Optional retail (B3.1 disclosure shape). */
+  retailMinor: number | null;
+}
+
+export type SelectionState = 'draft' | 'sent' | 'picked' | 'changes_requested';
+
+export interface DesignSelection {
+  id: string;
+  projectId: string;
+  roomId: string | null;
+  packageId: string | null;
+  category: BudgetCategory;
+  /** Owner-facing prompt, e.g. "Pick a sofa for the living room". */
+  prompt: string;
+  options: SelectionOption[];
+  pickedOptionId: string | null;
+  pickedAt: string | null;
+  /** Owner free-text comment when picking or requesting changes. */
+  comment: string | null;
+  state: SelectionState;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+export const SELECTIONS: DesignSelection[] = [
+  {
+    id: 'sel-ohana-living-sofa',
+    projectId: 'p-ohana',
+    roomId: 'r-ohana-1',
+    packageId: 'pkg-ohana-living',
+    category: 'furniture',
+    prompt: 'Pick the main sofa for the living room. All three fit the brief; the choice is style and price.',
+    options: [
+      { id: 'opt-a', label: 'Modular sofa, 3-seater + chaise (oatmeal linen)',  description: 'Soft modern. Removable covers. 3-week lead time.', vendorId: 'v-jaabir', productLink: 'https://example.com/sofa-a', imageUrl: null, priceMinor: 155_000_00, retailMinor: 180_000_00 },
+      { id: 'opt-b', label: 'Tufted leather chesterfield, 3-seater (cognac)',   description: 'Classic. Heavier. 6-week lead time.',          vendorId: 'v-jaabir', productLink: 'https://example.com/sofa-b', imageUrl: null, priceMinor: 195_000_00, retailMinor: 240_000_00 },
+      { id: 'opt-c', label: 'Boucle sofa, 2.5-seater (stone)',                  description: 'Compact. In stock locally.',                   vendorId: 'v-jaabir', productLink: 'https://example.com/sofa-c', imageUrl: null, priceMinor: 110_000_00, retailMinor: 135_000_00 },
+    ],
+    pickedOptionId: null,
+    pickedAt: null,
+    comment: null,
+    state: 'sent',
+    sentAt: '2026-04-25T09:00:00.000Z',
+    createdAt: '2026-04-24T14:00:00.000Z',
+  },
+  {
+    id: 'sel-ohana-living-rug',
+    projectId: 'p-ohana',
+    roomId: 'r-ohana-1',
+    packageId: 'pkg-ohana-living',
+    category: 'decor',
+    prompt: 'Pick the living-room rug. All three are wool, low-pile, suitable for villa traffic.',
+    options: [
+      { id: 'opt-a', label: 'Hand-woven wool, 3×4m, ivory + ochre stripes', description: null, vendorId: null, productLink: null, imageUrl: null, priceMinor: 38_000_00, retailMinor: 45_000_00 },
+      { id: 'opt-b', label: 'Berber tribal, 2.5×3.5m, natural',             description: null, vendorId: null, productLink: null, imageUrl: null, priceMinor: 52_000_00, retailMinor: 62_000_00 },
+    ],
+    pickedOptionId: 'opt-a',
+    pickedAt: '2026-04-26T11:30:00.000Z',
+    comment: 'Stripes match the cushions Davisen approved earlier.',
+    state: 'picked',
+    sentAt: '2026-04-25T09:00:00.000Z',
+    createdAt: '2026-04-24T14:00:00.000Z',
+  },
+];
+
+export function listSelections(projectId: string): DesignSelection[] {
+  return SELECTIONS.filter((s) => s.projectId === projectId);
+}
+
+export function listPendingSelections(projectId: string): DesignSelection[] {
+  return SELECTIONS.filter((s) => s.projectId === projectId && s.state === 'sent');
+}
+
+export interface PickSelectionInput {
+  optionId: string;
+  comment?: string | null;
+}
+
+/**
+ * Owner-side mutator. Records the chosen option, flips state to 'picked',
+ * appends an activity log line. v0.2 server-side equivalent also creates a
+ * BudgetItem from the picked option's snapshot.
+ */
+export function pickSelection(selectionId: string, input: PickSelectionInput): DesignSelection | null {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return null;
+  const s = SELECTIONS[idx];
+  const option = s.options.find((o) => o.id === input.optionId);
+  if (!option) return null;
+  const at = new Date().toISOString();
+  const updated: DesignSelection = {
+    ...s,
+    pickedOptionId: input.optionId,
+    pickedAt: at,
+    comment: input.comment ?? null,
+    state: 'picked',
+  };
+  SELECTIONS[idx] = updated;
+  appendActivity({
+    projectId: s.projectId,
+    at,
+    userId: null,
+    kind: 'approve',
+    summary: `Owner picked "${option.label}" for "${s.prompt.slice(0, 60)}".`,
+  });
+  return updated;
+}
+
+export function requestSelectionChanges(selectionId: string, comment: string): DesignSelection | null {
+  const idx = SELECTIONS.findIndex((s) => s.id === selectionId);
+  if (idx === -1) return null;
+  const at = new Date().toISOString();
+  const updated: DesignSelection = {
+    ...SELECTIONS[idx],
+    state: 'changes_requested',
+    comment,
+    pickedAt: at,
+  };
+  SELECTIONS[idx] = updated;
+  appendActivity({
+    projectId: updated.projectId,
+    at,
+    userId: null,
+    kind: 'reject',
+    summary: `Owner requested different options for "${updated.prompt.slice(0, 60)}" — "${comment.slice(0, 80)}".`,
+  });
+  return updated;
+}
+
 // Approvals (§7.PP mock)
 export const APPROVALS: DesignApproval[] = [
   { id: 'apv-1', projectId: 'p-ohana', artifactType: 'moodboard',       artifactId: 'mb-ohana-2', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-10-22T09:00:00.000Z', decidedAt: '2025-10-25T09:00:00.000Z', decisionMethod: 'whatsapp', comments: 'Yes, this is it.', events: [] },
@@ -2221,6 +2368,12 @@ export const designClient = {
     lookup: lookupCatalogItem,
     search: searchCatalog,
     estimate: estimateRoughBudget,
+  },
+  selections: {
+    list: listSelections,
+    listPending: listPendingSelections,
+    pick: pickSelection,
+    requestChanges: requestSelectionChanges,
   },
   documents: { list: getDocuments },
   activity: { list: getActivity },

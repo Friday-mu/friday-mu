@@ -1,22 +1,30 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { DesignApproval } from '../../../../_data/design';
+import {
+  formatMUR,
+  type DesignApproval,
+  type DesignSelection,
+} from '../../../../_data/design';
 
 interface Props {
   approvals: DesignApproval[];
+  selections: DesignSelection[];
   onApprove: (approvalId: string) => void;
   onRequestChanges: (approval: DesignApproval) => void;
+  onPickSelectionOption: (selectionId: string, optionId: string) => void;
 }
 
 const PAST_DECISION_DAYS = 14;
 const PAST_DECISION_MS = PAST_DECISION_DAYS * 24 * 60 * 60 * 1000;
 
-export function ApprovalsTab({ approvals, onApprove, onRequestChanges }: Props) {
+export function ApprovalsTab({ approvals, selections, onApprove, onRequestChanges, onPickSelectionOption }: Props) {
   const [showPast, setShowPast] = useState(false);
   const groups = useMemo(() => groupApprovals(approvals), [approvals]);
+  const pendingSelections = useMemo(() => selections.filter((s) => s.state === 'sent'), [selections]);
+  const decidedSelections = useMemo(() => selections.filter((s) => s.state === 'picked' || s.state === 'changes_requested'), [selections]);
 
-  if (approvals.length === 0) {
+  if (approvals.length === 0 && selections.length === 0) {
     return (
       <div style={{ color: 'var(--color-text-tertiary)' }}>
         Nothing waiting on you right now.
@@ -26,6 +34,18 @@ export function ApprovalsTab({ approvals, onApprove, onRequestChanges }: Props) 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {pendingSelections.length > 0 && (
+        <Section heading={`Pick options (${pendingSelections.length})`}>
+          {pendingSelections.map((s) => (
+            <SelectionPickerCard
+              key={s.id}
+              selection={s}
+              onPick={(optionId) => onPickSelectionOption(s.id, optionId)}
+            />
+          ))}
+        </Section>
+      )}
+
       {groups.pending.length > 0 && (
         <Section heading="Awaiting your decision">
           {groups.pending.map((a) => (
@@ -35,6 +55,14 @@ export function ApprovalsTab({ approvals, onApprove, onRequestChanges }: Props) 
               onApprove={() => onApprove(a.id)}
               onRequestChanges={() => onRequestChanges(a)}
             />
+          ))}
+        </Section>
+      )}
+
+      {decidedSelections.length > 0 && (
+        <Section heading="Recent picks">
+          {decidedSelections.map((s) => (
+            <SelectionPickedRow key={s.id} selection={s} />
           ))}
         </Section>
       )}
@@ -252,6 +280,138 @@ function DecidedRow({ approval, muted = false }: { approval: DesignApproval; mut
           }}
         >
           "{approval.comments}"
+        </div>
+      )}
+    </li>
+  );
+}
+
+function SelectionPickerCard({
+  selection,
+  onPick,
+}: {
+  selection: DesignSelection;
+  onPick: (optionId: string) => void;
+}) {
+  return (
+    <li
+      data-portal-selection-card={selection.id}
+      style={{
+        background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-md)',
+        padding: 14,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+      }}
+    >
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{selection.prompt}</div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+          Pick the one you'd like. We'll order what you choose and update the budget.
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+        {selection.options.map((opt) => (
+          <div
+            key={opt.id}
+            data-portal-option={opt.id}
+            style={{
+              background: 'var(--color-background-tertiary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <div style={{ fontWeight: 500, fontSize: 13 }}>{opt.label}</div>
+            {opt.description && (
+              <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                {opt.description}
+              </div>
+            )}
+            <div style={{ fontFamily: 'var(--font-mono-fad)', fontSize: 13, fontWeight: 600 }}>
+              {formatMUR(opt.priceMinor)}
+              {opt.retailMinor !== null && opt.retailMinor > opt.priceMinor && (
+                <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--color-text-success)', fontWeight: 500 }}>
+                  saves {formatMUR(opt.retailMinor - opt.priceMinor)}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              data-portal-pick={opt.id}
+              onClick={() => onPick(opt.id)}
+              style={{
+                marginTop: 'auto',
+                padding: '6px 12px',
+                fontSize: 12,
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-brand-accent)',
+                color: '#fff',
+                fontWeight: 500,
+              }}
+            >
+              Pick this
+            </button>
+          </div>
+        ))}
+      </div>
+    </li>
+  );
+}
+
+function SelectionPickedRow({ selection }: { selection: DesignSelection }) {
+  const picked = selection.options.find((o) => o.id === selection.pickedOptionId);
+  return (
+    <li
+      style={{
+        background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-md)',
+        padding: 12,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 500, fontSize: 13 }}>{selection.prompt}</div>
+          {picked && (
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>
+              You picked: <strong>{picked.label}</strong> · {formatMUR(picked.priceMinor)}
+            </div>
+          )}
+          {selection.pickedAt && (
+            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+              {selection.pickedAt.slice(0, 10)}
+            </div>
+          )}
+        </div>
+        <span
+          style={{
+            padding: '2px 10px',
+            borderRadius: 'var(--radius-full)',
+            fontSize: 10,
+            fontWeight: 500,
+            background:
+              selection.state === 'picked'
+                ? 'var(--color-bg-success)'
+                : 'var(--color-bg-warning)',
+            color:
+              selection.state === 'picked'
+                ? 'var(--color-text-success)'
+                : 'var(--color-text-warning)',
+            alignSelf: 'flex-start',
+          }}
+        >
+          {selection.state === 'picked' ? 'Picked' : 'Changes requested'}
+        </span>
+      </div>
+      {selection.comment && (
+        <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+          "{selection.comment}"
         </div>
       )}
     </li>
