@@ -15,7 +15,9 @@ import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
+import { OverviewExtras } from './design/OverviewExtras';
 import { fireToast } from '../Toaster';
+import { useCurrentRole } from '../usePermissions';
 
 // Lazy-load each stage screen so the initial Design bundle only ships the
 // shell + dashboard. Each stage chunk loads on first navigation.
@@ -174,6 +176,7 @@ type MetricFilter = 'all' | 'pending_approval' | 'procurement_open' | 'margin_ex
 function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => void }) {
   const metrics = designClient.projects.metrics();
   const allProjects = designClient.projects.list();
+  const role = useCurrentRole();
 
   const [stageFilter, setStageFilter] = useState<StageId | 'all'>('all');
   const [tierFilter, setTierFilter] = useState<'all' | 1 | 2 | 3>('all');
@@ -236,6 +239,8 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
         <MetricCard label="Procurement open" value={String(metrics.procurementOpen)} tone="info" active={metricFilter === 'procurement_open'} onClick={() => setMetricFilter(metricFilter === 'procurement_open' ? 'all' : 'procurement_open')} />
         <MetricCard label="Margin exposure" value={formatMUR(metrics.marginExposureMinor)} tone="accent" active={metricFilter === 'margin_exposure'} onClick={() => setMetricFilter(metricFilter === 'margin_exposure' ? 'all' : 'margin_exposure')} />
       </div>
+
+      <OverviewExtras projects={allProjects} role={role} onOpenProject={onOpenProject} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16, alignItems: 'start' }}>
         <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12, minWidth: 0 }}>

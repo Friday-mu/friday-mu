@@ -87,9 +87,8 @@ export function FinalBudgetStage({ project }: Props) {
         </Card>
       )}
 
-      {tab === 'items' && <>
-
-
+      {tab === 'items' && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Project totals */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
         <MetricCard label="Approved total" value={formatMUR(totals.approvedSum)} />
@@ -162,7 +161,8 @@ export function FinalBudgetStage({ project }: Props) {
           );
         })}
       </div>
-      </>}
+      </div>
+      )}
     </div>
   );
 }

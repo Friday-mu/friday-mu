@@ -21,7 +21,9 @@ export type AIFeature =
   | 'receipt-scan'
   | 'reconciliation-variance'
   | 'owner-update'
-  | 'handover-report';
+  | 'handover-report'
+  /** Portfolio-level overview analysis (added 2026-05-04). */
+  | 'overview-analysis';
 
 interface Props {
   feature: AIFeature;
