@@ -2404,7 +2404,8 @@ function DesignSettings() {
           )}
         </div>
 
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 420 }}>
           <tbody>
             <AnnexARow
               label="Tier 3 design fee (EPC < tier-3 ceiling)"
@@ -2486,6 +2487,7 @@ function DesignSettings() {
             />
           </tbody>
         </table>
+        </div>
       </div>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>Per-tier stage matrix</h3>
