@@ -73,6 +73,108 @@ type ProjectScreen =
   | 'handover'
   | 'documents';
 
+// ─────────────────────────── Phase model ───────────────────────────
+//
+// Cont-10 audit fix. The 17-stage state machine drove a 17-pill clickable
+// tracker AND a 14-tab strip below it. Two parallel navs, several stages
+// without a screen → confusing, didn't feel like a workflow. Industry
+// research (Programa / Mydoma / JobTread) shows 5–7 phases at the top with
+// per-phase task lists is the dominant pattern.
+//
+// We fold the 14 sections into 5 phases + a permanent Brief. Stages remain in
+// the data model — only the IA changes. URL stays `?stage=<screen>` for
+// backward compat; the active phase tab is derived.
+
+type PhaseId =
+  | 'brief'
+  | 'discovery'
+  | 'design'
+  | 'procurement'
+  | 'execution'
+  | 'closeout'
+  | 'all-docs';
+
+interface PhaseDef {
+  id: PhaseId;
+  label: string;
+  /** UI sections (existing ProjectScreen IDs) shown in this phase, in order. */
+  sections: ProjectScreen[];
+  /** State-machine stages whose presence as `currentStage` selects this phase. */
+  stages: StageId[];
+}
+
+const PHASES: PhaseDef[] = [
+  {
+    id: 'brief',
+    label: 'Brief',
+    sections: ['overview'],
+    stages: [],
+  },
+  {
+    id: 'discovery',
+    label: 'Discovery',
+    sections: ['site-visit', 'preferences', 'rough-budget', 'agreement', 'payments'],
+    stages: ['lead', 'proposal', 'doc-request', 'site-visit', 'preferences', 'rough-budget', 'agreement', 'signature', 'payment-gate'],
+  },
+  {
+    id: 'design',
+    label: 'Design',
+    sections: ['moodboard', 'design-pack', 'final-budget'],
+    stages: ['moodboard', 'design-pack', 'design-review', 'final-budget'],
+  },
+  {
+    id: 'procurement',
+    label: 'Procurement',
+    sections: ['procurement'],
+    stages: ['funding-gate'],
+  },
+  {
+    id: 'execution',
+    label: 'Execution',
+    sections: ['execution'],
+    stages: ['execution', 'expense-capture'],
+  },
+  {
+    id: 'closeout',
+    label: 'Closeout',
+    sections: ['reconciliation', 'handover'],
+    stages: ['reconciliation'],
+  },
+  {
+    id: 'all-docs',
+    label: 'Documents',
+    sections: ['documents'],
+    stages: [],
+  },
+];
+
+const SECTION_LABELS: Record<ProjectScreen, string> = {
+  'overview':       'Brief',
+  'site-visit':     'Site visit',
+  'preferences':    'Preferences',
+  'rough-budget':   'Rough budget',
+  'agreement':      'Agreement',
+  'payments':       'Payments',
+  'moodboard':      'Moodboard',
+  'design-pack':    'Design pack',
+  'final-budget':   'Final budget',
+  'procurement':    'Procurement',
+  'execution':      'Execution',
+  'reconciliation': 'Reconciliation',
+  'handover':       'Handover',
+  'documents':      'All documents',
+};
+
+function phaseForSection(sec: ProjectScreen): PhaseId {
+  const found = PHASES.find((p) => p.sections.includes(sec));
+  return found?.id ?? 'brief';
+}
+
+function phaseForCurrentStage(stageId: StageId): PhaseId {
+  const found = PHASES.find((p) => p.stages.includes(stageId));
+  return found?.id ?? 'brief';
+}
+
 // ─────────────────────────── Module shell ───────────────────────────
 
 export function DesignModule({ subPage, onChangeSubPage }: Props) {
@@ -679,33 +781,34 @@ function ProjectShell({
   onClose: () => void;
 }) {
   const [portalOpen, setPortalOpen] = useState(false);
-  // Bump after lifecycle mutations so we re-read the latest project state from
-  // the in-memory store.
   const [lifecycleTick, setLifecycleTick] = useState(0);
   const project = designClient.projects.get(incomingProject.id) ?? incomingProject;
-  // Reference lifecycleTick to keep it in the dependency loop for the re-read.
   void lifecycleTick;
-  const screens: { id: ProjectScreen; label: string }[] = useMemo(
-    () => [
-      { id: 'overview',       label: 'Overview' },
-      { id: 'site-visit',     label: 'Site visit' },
-      { id: 'preferences',    label: 'Preferences' },
-      { id: 'rough-budget',   label: 'Rough budget' },
-      { id: 'agreement',      label: 'Agreement' },
-      { id: 'payments',       label: 'Payments' },
-      { id: 'moodboard',      label: 'Moodboard' },
-      { id: 'design-pack',    label: 'Design pack' },
-      { id: 'final-budget',   label: 'Final budget' },
-      { id: 'procurement',    label: 'Procurement' },
-      { id: 'execution',      label: 'Execution' },
-      { id: 'reconciliation', label: 'Reconciliation' },
-      { id: 'handover',       label: 'Handover' },
-      { id: 'documents',      label: 'Documents' },
-    ],
+
+  // Phase tab is derived from the active section so the URL (`?stage=...`)
+  // stays the source of truth and old links keep working.
+  const activePhase = phaseForSection(screen);
+  // Cont-10 — current-stage indicator inside the phase tabs.
+  const currentPhase = phaseForCurrentStage(project.currentStage);
+
+  const setPhase = (phaseId: PhaseId) => {
+    const phase = PHASES.find((p) => p.id === phaseId);
+    if (!phase) return;
+    // Pick the most-relevant landing section for this phase:
+    //   1. if the project's currentStage is in this phase, the section that
+    //      maps to it (so users land on "where they are");
+    //   2. otherwise, the first section in the phase.
+    const matchingForCurrent =
+      currentPhase === phaseId
+        ? phase.sections.find((s) => stageDef(project.currentStage).route === s) ?? phase.sections[0]
+        : phase.sections[0];
+    onChangeScreen(matchingForCurrent);
+  };
+
+  const phaseTabs = useMemo(
+    () => PHASES.map((p) => ({ id: p.id, label: p.label })),
     [],
   );
-
-  const stageRouteToScreen = (stageId: StageId): ProjectScreen => stageDef(stageId).route as ProjectScreen;
 
   return (
     <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -716,41 +819,317 @@ function ProjectShell({
         onLifecycleChange={() => setLifecycleTick((t) => t + 1)}
       />
       {portalOpen && <OwnerPortalPreview project={project} onClose={() => setPortalOpen(false)} />}
-      <div style={{ padding: '8px 16px', background: 'var(--color-background-primary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-        <StageTracker
-          currentStage={project.currentStage}
-          status={project.stageStatus}
-          onStageSelect={(stageId) => onChangeScreen(stageRouteToScreen(stageId))}
-          optionalStageIds={project.tier ? designClient.settings.annexA().tierStageRules[project.tier].optionalStages : []}
-        />
-      </div>
-      <ModuleHeader
-        title=""
-        tabs={screens}
-        activeTab={screen}
-        onTabChange={(id) => onChangeScreen(id as ProjectScreen)}
+
+      {/* Phase progress strip + 6 phase tabs. The earlier 17-pill stage tracker
+          + 14-tab strip is replaced by this single nav. */}
+      <PhaseNav
+        project={project}
+        activePhase={activePhase}
+        currentPhase={currentPhase}
+        tabs={phaseTabs}
+        onSelectPhase={setPhase}
       />
+
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-        <Suspense fallback={<StageSkeleton />}>
-          <ProjectScreenContent project={project} screen={screen} />
-        </Suspense>
+        <PhaseView
+          project={project}
+          activePhase={activePhase}
+          activeSection={screen}
+          onChangeSection={onChangeScreen}
+        />
       </div>
     </div>
   );
 }
 
-function StageSkeleton() {
+// ─────────────────────────── Phase nav ───────────────────────────
+
+function PhaseNav({
+  project,
+  activePhase,
+  currentPhase,
+  tabs,
+  onSelectPhase,
+}: {
+  project: DesignProject;
+  activePhase: PhaseId;
+  currentPhase: PhaseId;
+  tabs: { id: PhaseId; label: string }[];
+  onSelectPhase: (id: PhaseId) => void;
+}) {
+  // Workflow progress = Discovery → Closeout. Brief and Documents are nav
+  // tabs but not workflow stages; exclude both from the progress math.
+  const workflowPhases: PhaseId[] = ['discovery', 'design', 'procurement', 'execution', 'closeout'];
+  const currentWorkflowIdx = workflowPhases.indexOf(currentPhase);
+  const phaseDef = PHASES.find((p) => p.id === currentPhase);
+  const progressPct =
+    currentWorkflowIdx < 0 ? 0 : Math.min(100, ((currentWorkflowIdx + 1) / workflowPhases.length) * 100);
+
+  return (
+    <div style={{ background: 'var(--color-background-primary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+      {/* Thin progress indicator */}
+      <div style={{ padding: '10px 16px 6px' }}>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+          <span>
+            {currentPhase === 'brief'
+              ? `Stage ${stageDef(project.currentStage).index} of 17 · ${stageDef(project.currentStage).label}`
+              : `Currently in ${phaseDef?.label} · ${stageDef(project.currentStage).label} (${stageStatusLabel(project.stageStatus)})`}
+          </span>
+          {project.lifecycleStatus !== 'active' && (
+            <span style={{ color: project.lifecycleStatus === 'paused' ? 'var(--color-text-warning)' : 'var(--color-text-danger)', fontWeight: 500 }}>
+              {project.lifecycleStatus.toUpperCase()}
+            </span>
+          )}
+        </div>
+        <div style={{ height: 4, background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+          <div
+            style={{
+              width: `${progressPct}%`,
+              height: '100%',
+              background: 'var(--color-brand-accent)',
+              transition: 'width var(--dur-2) var(--ease)',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Phase tabs */}
+      <div role="tablist" aria-label="Project phase" style={{ display: 'flex', gap: 4, padding: '4px 8px 6px', overflowX: 'auto' }}>
+        {tabs.map((t) => {
+          const isActive = t.id === activePhase;
+          const isCurrent = t.id === currentPhase;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              data-phase-tab={t.id}
+              onClick={() => onSelectPhase(t.id)}
+              style={{
+                padding: '6px 14px',
+                fontSize: 12,
+                whiteSpace: 'nowrap',
+                borderRadius: 'var(--radius-sm)',
+                background: isActive ? 'var(--color-brand-accent-soft)' : 'transparent',
+                color: isActive
+                  ? 'var(--color-brand-accent)'
+                  : isCurrent
+                  ? 'var(--color-text-primary)'
+                  : 'var(--color-text-secondary)',
+                fontWeight: isActive || isCurrent ? 600 : 500,
+                position: 'relative',
+              }}
+            >
+              {t.label}
+              {isCurrent && !isActive && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    right: 4,
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: 'var(--color-brand-accent)',
+                  }}
+                  aria-label="current phase"
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────── Phase view (accordion) ───────────────────────────
+
+function PhaseView({
+  project,
+  activePhase,
+  activeSection,
+  onChangeSection,
+}: {
+  project: DesignProject;
+  activePhase: PhaseId;
+  activeSection: ProjectScreen;
+  onChangeSection: (s: ProjectScreen) => void;
+}) {
+  const phase = PHASES.find((p) => p.id === activePhase);
+  if (!phase) return null;
+
+  // Brief is a single section view; render it directly without accordion chrome.
+  if (activePhase === 'brief') {
+    return (
+      <Suspense fallback={<StageSkeleton />}>
+        <ProjectScreenContent project={project} screen="overview" />
+      </Suspense>
+    );
+  }
+
+  const sections = phase.sections;
+  // Default-open: the active section. Other sections collapsed.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {[0, 1, 2].map((i) => (
+      {sections.map((sec) => {
+        const isOpen = sec === activeSection;
+        return (
+          <SectionAccordion
+            key={sec}
+            project={project}
+            section={sec}
+            isOpen={isOpen}
+            onToggle={() => onChangeSection(sec)}
+          >
+            <Suspense fallback={<StageSkeleton compact />}>
+              <ProjectScreenContent project={project} screen={sec} />
+            </Suspense>
+          </SectionAccordion>
+        );
+      })}
+    </div>
+  );
+}
+
+function SectionAccordion({
+  project,
+  section,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  project: DesignProject;
+  section: ProjectScreen;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const status = sectionStatus(project, section);
+  return (
+    <div
+      style={{
+        background: 'var(--color-background-primary)',
+        border: `0.5px solid ${isOpen ? 'var(--color-brand-accent)' : 'var(--color-border-tertiary)'}`,
+        borderRadius: 'var(--radius-md)',
+        overflow: 'hidden',
+      }}
+    >
+      <button
+        type="button"
+        data-section-toggle={section}
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        style={{
+          display: 'flex',
+          width: '100%',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 14px',
+          textAlign: 'left',
+          background: 'transparent',
+          borderBottom: isOpen ? '0.5px solid var(--color-border-tertiary)' : 'none',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{SECTION_LABELS[section]}</span>
+          {status && (
+            <span
+              style={{
+                padding: '1px 8px',
+                fontSize: 10,
+                fontWeight: 500,
+                borderRadius: 'var(--radius-full)',
+                background: status.bg,
+                color: status.color,
+              }}
+            >
+              {status.label}
+            </span>
+          )}
+        </div>
+        <span style={{ color: 'var(--color-text-tertiary)', fontSize: 12 }}>
+          {isOpen ? '▾' : '▸'}
+        </span>
+      </button>
+      {isOpen && <div style={{ padding: 14 }}>{children}</div>}
+    </div>
+  );
+}
+
+interface SectionStatusBadge {
+  label: string;
+  bg: string;
+  color: string;
+}
+
+/**
+ * Compute a status pill for a section header from project state. Drives the
+ * accordion's "checklist" feel — at a glance the user sees what's done, what's
+ * in progress, what's blocked.
+ */
+function sectionStatus(project: DesignProject, section: ProjectScreen): SectionStatusBadge | null {
+  // Documents is a cross-phase record store, not a workflow stage — no badge.
+  if (section === 'documents') return null;
+  const phase = phaseForSection(section);
+  const currentPhase = phaseForCurrentStage(project.currentStage);
+  const phaseOrder: PhaseId[] = ['brief', 'discovery', 'design', 'procurement', 'execution', 'closeout', 'all-docs'];
+  const phaseIdx = phaseOrder.indexOf(phase);
+  const currentIdx = phaseOrder.indexOf(currentPhase);
+
+  if (phaseIdx < currentIdx) {
+    return { label: 'Done', bg: 'var(--color-bg-success)', color: 'var(--color-text-success)' };
+  }
+  if (phaseIdx > currentIdx) {
+    return { label: 'Upcoming', bg: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)' };
+  }
+
+  // Same phase — fine-grained status. If the section maps directly to the
+  // current stage's route, it's the active one; everything before is done,
+  // everything after is upcoming inside this phase.
+  const phaseDef = PHASES.find((p) => p.id === phase);
+  if (!phaseDef) return null;
+  const currentRoute = stageDef(project.currentStage).route as ProjectScreen;
+  const currentSectionIdx = phaseDef.sections.indexOf(currentRoute);
+  const sectionIdx = phaseDef.sections.indexOf(section);
+  if (currentSectionIdx === -1) return null;
+  if (sectionIdx < currentSectionIdx) {
+    return { label: 'Done', bg: 'var(--color-bg-success)', color: 'var(--color-text-success)' };
+  }
+  if (sectionIdx > currentSectionIdx) {
+    return { label: 'Upcoming', bg: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)' };
+  }
+  // Active section — reflect stageStatus.
+  switch (project.stageStatus) {
+    case 'done':
+      return { label: 'Done', bg: 'var(--color-bg-success)', color: 'var(--color-text-success)' };
+    case 'blocked':
+      return { label: 'Blocked', bg: 'var(--color-bg-danger)', color: 'var(--color-text-danger)' };
+    case 'waiting-on-owner':
+      return { label: 'Waiting on owner', bg: 'var(--color-bg-warning)', color: 'var(--color-text-warning)' };
+    case 'in-progress':
+      return { label: 'In progress', bg: 'var(--color-bg-info)', color: 'var(--color-text-info)' };
+    case 'skipped':
+      return { label: 'Skipped', bg: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)' };
+    default:
+      return { label: 'Pending', bg: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)' };
+  }
+}
+
+function StageSkeleton({ compact }: { compact?: boolean } = {}) {
+  const rows = compact ? [0] : [0, 1, 2];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {rows.map((i) => (
         <div
           key={i}
           style={{
             background: 'var(--color-background-primary)',
-            border: '0.5px solid var(--color-border-tertiary)',
+            border: compact ? 'none' : '0.5px solid var(--color-border-tertiary)',
             borderRadius: 'var(--radius-md)',
-            padding: 14,
-            height: i === 0 ? 80 : 140,
+            padding: compact ? 8 : 14,
+            height: compact ? 60 : i === 0 ? 80 : 140,
             opacity: 0.6,
           }}
         >
