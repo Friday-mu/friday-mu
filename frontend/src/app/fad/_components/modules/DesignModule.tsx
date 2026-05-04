@@ -660,6 +660,7 @@ function ProjectShell({
           currentStage={project.currentStage}
           status={project.stageStatus}
           onStageSelect={(stageId) => onChangeScreen(stageRouteToScreen(stageId))}
+          optionalStageIds={project.tier ? designClient.settings.annexA().tierStageRules[project.tier].optionalStages : []}
         />
       </div>
       <ModuleHeader

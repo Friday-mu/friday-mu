@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   designClient,
   formatMUR,
@@ -32,56 +32,91 @@ export function PaymentsStage({ project }: Props) {
       </Card>
 
       <Card>
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-              <th style={cell('left')}>Gate</th>
-              <th style={cell('left')}>Status</th>
-              <th style={cell('right')}>Amount</th>
-              <th style={cell('left')}>Evidence / ref</th>
-              <th style={cell('left')}>Received</th>
-              <th style={cell('right')}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gates.map((g) => (
-              <tr key={g.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-                <td style={cell('left')}>{g.label}</td>
-                <td style={cell('left')}><StatusChip status={g.status} /></td>
-                <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(g.amountMinor)}</td>
-                <td style={{ ...cell('left'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>{g.bankRef ?? '—'}</td>
-                <td style={{ ...cell('left'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
-                  {g.receivedAt ? g.receivedAt.slice(0, 10) : '—'}
-                </td>
-                <td style={cell('right')}>
-                  {g.status === 'awaiting' && (
-                    canMarkReceived ? (
-                      <button
-                        type="button"
-                        onClick={() => setModalGate(g)}
-                        style={primaryBtn()}
-                      >
-                        Mark received
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled
-                        style={disabledBtn()}
-                        title="Only the director can mark payments received."
-                      >
-                        Mark received
-                      </button>
-                    )
-                  )}
-                  {g.status === 'received' && <span style={{ color: 'var(--color-text-success)', fontSize: 11 }}>✓ received</span>}
-                  {g.status === 'pending' && <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>(gated)</span>}
-                </td>
+        {/* Desktop / tablet — table view. Mobile collapses below. */}
+        <div className="fad-design-payments-table" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 560 }}>
+            <thead>
+              <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                <th style={cell('left')}>Gate</th>
+                <th style={cell('left')}>Status</th>
+                <th style={cell('right')}>Amount</th>
+                <th style={cell('left')}>Evidence / ref</th>
+                <th style={cell('left')}>Received</th>
+                <th style={cell('right')}>Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {gates.map((g) => (
+                <tr key={g.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                  <td style={cell('left')}>{g.label}</td>
+                  <td style={cell('left')}><StatusChip status={g.status} /></td>
+                  <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(g.amountMinor)}</td>
+                  <td style={{ ...cell('left'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>{g.bankRef ?? '—'}</td>
+                  <td style={{ ...cell('left'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
+                    {g.receivedAt ? g.receivedAt.slice(0, 10) : '—'}
+                  </td>
+                  <td style={cell('right')}>
+                    {g.status === 'awaiting' && (
+                      canMarkReceived ? (
+                        <button
+                          type="button"
+                          onClick={() => setModalGate(g)}
+                          style={primaryBtn()}
+                        >
+                          Mark received
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          style={disabledBtn()}
+                          title="Only the director can mark payments received."
+                        >
+                          Mark received
+                        </button>
+                      )
+                    )}
+                    {g.status === 'received' && <span style={{ color: 'var(--color-text-success)', fontSize: 11 }}>✓ received</span>}
+                    {g.status === 'pending' && <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>(gated)</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {/* Mobile — card list so the action button isn't clipped. */}
+        <div className="fad-design-payments-cards" style={{ display: 'none', flexDirection: 'column', gap: 8 }}>
+          {gates.map((g) => (
+            <div key={g.id} style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <strong style={{ fontSize: 13 }}>{g.label}</strong>
+                <StatusChip status={g.status} />
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(g.amountMinor)}</div>
+              {g.bankRef && <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>Ref: {g.bankRef}</div>}
+              {g.receivedAt && <div style={{ marginTop: 2, fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>Received {g.receivedAt.slice(0, 10)}</div>}
+              <div style={{ marginTop: 8 }}>
+                {g.status === 'awaiting' && (
+                  canMarkReceived ? (
+                    <button type="button" onClick={() => setModalGate(g)} style={primaryBtn()}>
+                      Mark received
+                    </button>
+                  ) : (
+                    <button type="button" disabled style={disabledBtn()} title="Only the director can mark payments received.">
+                      Mark received
+                    </button>
+                  )
+                )}
+                {g.status === 'received' && <span style={{ color: 'var(--color-text-success)', fontSize: 11 }}>✓ received</span>}
+                {g.status === 'pending' && <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>(gated)</span>}
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
+
+      <ProjectFundLedger projectId={project.id} gates={gates} />
+      <FeeInvoiceLedger gates={gates} />
 
       {modalGate && (
         <MarkReceivedModal
@@ -93,6 +128,124 @@ export function PaymentsStage({ project }: Props) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * B3.8 EPC funds bookkeeping — read-only Project Fund ledger view.
+ *
+ * Credits: project_funds gate received (owner deposit into escrow).
+ * Debits:  budget item actualPaidMinor where ownerBillable (supplier
+ *          payouts disbursed from the fund).
+ *
+ * Mock data layer; the wiring sprint replaces this with the unified escrow
+ * ledger (§7.XX) shared with PM working capital.
+ */
+function ProjectFundLedger({ projectId, gates }: { projectId: string; gates: PaymentGate[] }) {
+  const items = designClient.budgetItems.list(projectId);
+  const lines = useMemo(() => {
+    const out: { date: string; label: string; creditMinor: number; debitMinor: number }[] = [];
+    for (const g of gates) {
+      if (g.id === 'project_funds' && g.status === 'received' && g.receivedAt && g.amountMinor) {
+        out.push({ date: g.receivedAt.slice(0, 10), label: 'Owner deposit (EPC)', creditMinor: g.amountMinor, debitMinor: 0 });
+      }
+    }
+    for (const it of items) {
+      if (it.ownerBillable && !it.internalWork && it.actualPaidMinor != null && it.actualPaidMinor > 0) {
+        out.push({
+          date: '—',
+          label: `Disbursement → ${it.itemName}`,
+          creditMinor: 0,
+          debitMinor: it.actualPaidMinor,
+        });
+      }
+    }
+    return out;
+  }, [gates, items]);
+  const totalCredit = lines.reduce((acc, l) => acc + l.creditMinor, 0);
+  const totalDebit = lines.reduce((acc, l) => acc + l.debitMinor, 0);
+  const balance = totalCredit - totalDebit;
+  return (
+    <Card>
+      <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Project Fund (escrow)</h3>
+      <p style={{ margin: '4px 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+        Owner-deposited EPC held against the project. Disbursements are paid out to suppliers as items land. v0.2 wires to the unified escrow primitive (§7.XX).
+      </p>
+      <LedgerTable lines={lines} balanceLabel="Balance held" balanceMinor={balance} totalCreditMinor={totalCredit} totalDebitMinor={totalDebit} />
+    </Card>
+  );
+}
+
+/**
+ * B3.8 — read-only Fee Invoice ledger. Friday revenue lines (design + P&E
+ * fees, never the EPC). v0.2 wires to invoicing.
+ */
+function FeeInvoiceLedger({ gates }: { gates: PaymentGate[] }) {
+  const FEE_GATES: PaymentGate['id'][] = ['design_fee_60', 'design_fee_40', 'execution_fee_t1', 'execution_fee_t2', 'final_balance'];
+  const lines = useMemo(() => {
+    return gates
+      .filter((g) => FEE_GATES.includes(g.id) && g.status === 'received' && g.amountMinor != null && g.receivedAt)
+      .map((g) => ({
+        date: (g.receivedAt ?? '').slice(0, 10),
+        label: g.label,
+        creditMinor: g.amountMinor as number,
+        debitMinor: 0,
+      }));
+  }, [gates]);
+  const totalCredit = lines.reduce((acc, l) => acc + l.creditMinor, 0);
+  return (
+    <Card>
+      <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Fee Invoice (Friday revenue)</h3>
+      <p style={{ margin: '4px 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+        Design fee + procurement & execution fee receipts. Never commingled with the Project Fund. VAT applied separately at invoice.
+      </p>
+      <LedgerTable lines={lines} balanceLabel="Total received" balanceMinor={totalCredit} totalCreditMinor={totalCredit} totalDebitMinor={0} />
+    </Card>
+  );
+}
+
+interface LedgerLine { date: string; label: string; creditMinor: number; debitMinor: number; }
+
+function LedgerTable({ lines, balanceLabel, balanceMinor, totalCreditMinor, totalDebitMinor }: { lines: LedgerLine[]; balanceLabel: string; balanceMinor: number; totalCreditMinor: number; totalDebitMinor: number }) {
+  if (lines.length === 0) {
+    return <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>No entries yet.</p>;
+  }
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 360 }}>
+        <thead>
+          <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <th style={cell('left')}>Date</th>
+            <th style={cell('left')}>Description</th>
+            <th style={cell('right')}>Credit</th>
+            <th style={cell('right')}>Debit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((l, i) => (
+            <tr key={i} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+              <td style={{ ...cell('left'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>{l.date}</td>
+              <td style={cell('left')}>{l.label}</td>
+              <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', color: l.creditMinor ? 'var(--color-text-success)' : 'var(--color-text-tertiary)' }}>
+                {l.creditMinor ? formatMUR(l.creditMinor) : '—'}
+              </td>
+              <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', color: l.debitMinor ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)' }}>
+                {l.debitMinor ? formatMUR(l.debitMinor) : '—'}
+              </td>
+            </tr>
+          ))}
+          <tr style={{ borderTop: '1px solid var(--color-border-secondary)', fontWeight: 600 }}>
+            <td style={cell('left')} colSpan={2}>Totals</td>
+            <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(totalCreditMinor)}</td>
+            <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)' }}>{totalDebitMinor ? formatMUR(totalDebitMinor) : '—'}</td>
+          </tr>
+          <tr>
+            <td style={cell('left')} colSpan={3}>{balanceLabel}</td>
+            <td style={{ ...cell('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{formatMUR(balanceMinor)}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

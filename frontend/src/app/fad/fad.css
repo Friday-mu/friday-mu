@@ -6178,3 +6178,35 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
     box-shadow: none;
   }
 }
+
+/* ─────────────── Design module — stage tracker responsive pill UX ───────────────
+   Per delta 2c: full short label at desktop, truncated at tablet, numbers-only
+   on mobile with full label still in the title attribute for hover/long-press.
+   --------------------------------------------------------------------------- */
+@media (max-width: 1024px) and (min-width: 769px) {
+  /* Tablet — keep label but tighten padding so more pills fit. */
+  .fad-design-stage-pill {
+    min-width: 48px !important;
+    padding: 6px 2px 4px !important;
+  }
+  .fad-design-stage-pill-label {
+    max-width: 56px;
+  }
+  .fad-design-stage-pill-optional {
+    display: none;
+  }
+}
+@media (max-width: 768px) {
+  /* Mobile — numbers only. Labels remain in aria-label / title. */
+  .fad-design-stage-pill {
+    min-width: 32px !important;
+    padding: 4px 2px !important;
+  }
+  .fad-design-stage-pill-label {
+    display: none;
+  }
+  /* Payments — collapse the wide table to card list at narrow widths. */
+  .fad-design-payments-table { display: none !important; }
+  .fad-design-payments-cards { display: flex !important; }
+}
+

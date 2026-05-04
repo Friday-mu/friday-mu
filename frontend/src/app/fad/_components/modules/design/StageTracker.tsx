@@ -10,6 +10,12 @@ interface Props {
   onStageSelect?: (stageId: StageId) => void;
   /** Compact horizontal pill row for sidebars / dashboards (no labels under). */
   compact?: boolean;
+  /**
+   * B3.9 per-tier rules: stages flagged optional render with muted styling and
+   * a dashed border. Workflow does not block on these. Pass [] (default) for
+   * Tier 1 (all 17 mandatory) or unknown.
+   */
+  optionalStageIds?: StageId[];
 }
 
 const stageTone = (status: StageStatus): SemanticTone => {
@@ -24,10 +30,11 @@ const stageTone = (status: StageStatus): SemanticTone => {
   }
 };
 
-export function StageTracker({ currentStage, status, onStageSelect, compact }: Props) {
+export function StageTracker({ currentStage, status, onStageSelect, compact, optionalStageIds = [] }: Props) {
   const currentIndex = stageDef(currentStage).index;
   const tone = stageTone(status);
   const activeSwatch = toneStyle(tone);
+  const optional = new Set(optionalStageIds);
 
   return (
     <div
@@ -47,11 +54,13 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
         const isActive = s.id === currentStage;
         const isDone = s.index < currentIndex;
         const isFuture = s.index > currentIndex;
+        const isOptional = optional.has(s.id);
         const swatch = isActive
           ? activeSwatch
           : isDone
           ? toneStyle('success')
           : { background: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)' };
+        const titleText = `${s.index}. ${s.label}${isOptional ? ' · optional' : ''}${isActive ? ` · ${status}` : isDone ? ' · done' : ''}`;
         return (
           <button
             key={s.id}
@@ -60,7 +69,9 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
             disabled={!onStageSelect}
             role="listitem"
             aria-current={isActive ? 'step' : undefined}
-            title={`${s.index}. ${s.label}${isActive ? ` · ${status}` : isDone ? ' · done' : ''}`}
+            aria-label={titleText}
+            title={titleText}
+            className={`fad-design-stage-pill ${isOptional ? 'is-optional' : ''} ${isActive ? 'is-active' : ''}`.trim()}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -70,7 +81,11 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
               flex: compact ? '0 0 auto' : '1 1 0',
               padding: compact ? '4px 4px' : '6px 4px 4px',
               borderRadius: 'var(--radius-sm)',
-              border: isActive ? `1px solid var(--color-brand-accent)` : '1px solid transparent',
+              border: isActive
+                ? '1px solid var(--color-brand-accent)'
+                : isOptional && !isDone
+                ? '1px dashed var(--color-border-secondary)'
+                : '1px solid transparent',
               background: swatch.background,
               color: swatch.color,
               cursor: onStageSelect ? 'pointer' : 'default',
@@ -78,11 +93,12 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
               fontWeight: isActive ? 600 : 500,
               gap: compact ? 0 : 2,
               transition: 'background var(--dur-2) var(--ease)',
-              opacity: isFuture ? 0.55 : 1,
+              opacity: isFuture ? (isOptional ? 0.4 : 0.55) : isOptional && !isActive ? 0.7 : 1,
               overflow: 'hidden',
             }}
           >
             <span
+              className="fad-design-stage-pill-num"
               style={{
                 fontFamily: 'var(--font-mono-fad)',
                 fontSize: compact ? 10 : 11,
@@ -93,6 +109,7 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
             </span>
             {!compact && (
               <span
+                className="fad-design-stage-pill-label"
                 style={{
                   fontSize: 10,
                   lineHeight: 1.2,
@@ -104,6 +121,11 @@ export function StageTracker({ currentStage, status, onStageSelect, compact }: P
                 }}
               >
                 {s.shortLabel}
+                {isOptional && (
+                  <span className="fad-design-stage-pill-optional" style={{ marginLeft: 4, fontSize: 9, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                    opt.
+                  </span>
+                )}
               </span>
             )}
           </button>
