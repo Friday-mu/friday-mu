@@ -81,8 +81,9 @@ export function PortalAuthClient() {
     <div className="portal-state">
       <h1>{headline}</h1>
       <p>
-        Ask Friday to send you a new one — they'll WhatsApp it over. Magic links
-        expire after 14 days for your security.
+        Ask Friday to send you a new one — they'll WhatsApp or email it over.
+        Your project link stays valid for the life of the project; if it stops
+        working it's because Friday revoked it.
       </p>
       {linkRequested ? (
         <div

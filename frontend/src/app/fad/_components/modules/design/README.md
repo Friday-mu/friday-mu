@@ -39,8 +39,27 @@
 >   paused/cancelled projects — flag if the original semantics is desired.
 > - **DEMO_CRUFT extensions** — see `frontend/DEMO_CRUFT.md` for new
 >   `PROD-DESIGN-*` rows: portal auth, respond audit, lifecycle, EPC ledgers,
->   tier rules, internal rates, role-aware Needs Attention, and the
->   `designClient` swap target itself (`PROD-DESIGN-5`).
+>   tier rules, internal rates, role-aware Needs Attention, legacy bulk
+>   import, quote-comparison, and the `designClient` swap target itself
+>   (`PROD-DESIGN-5`).
+>
+> **Locked decisions (cont-7) for the v0.2 wiring sprint:**
+>
+> - **`metrics().activeProjects`** — paused/cancelled projects DO NOT count.
+>   Matches the metric card label.
+> - **Portal hosting** — v0.2 routes the owner portal at `portal.friday.mu`
+>   (separate subdomain). Static export bundle is the same; just CNAMEd.
+> - **Magic links are permanent** — no time-based expiry shown to owners.
+>   v0.1 mock TTL bumped to 10 years to mirror the locked behaviour. v0.2
+>   replaces with a backend revocation list + admin "Re-issue link" CTA.
+> - **Magic-link delivery** — both WhatsApp Business API AND email. Owner
+>   email collected on the counterparty record.
+> - **Quote comparison** — design the side-by-side quote table before
+>   backend work begins so v0.2 wires straight in. Director gets a
+>   one-click "approve cheapest reasonable" affordance.
+> - **Legacy closeout import** — bulk-import wizard under ReconciliationStage
+>   ("Import legacy project" CTA). Reused for LB-1 / LB-4 when they go live
+>   in 2027.
 
 
 ## Status

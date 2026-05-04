@@ -1734,7 +1734,11 @@ export const MAGIC_LINKS: MagicLinkRecord[] = [];
 
 const MOCK_JWT_KID = 'mock-2026-q2';
 const MOCK_JWT_KEY = 'design-portal-dev-only-key';
-const MOCK_JWT_DEFAULT_TTL_S = 60 * 60 * 24 * 14; // 14 days
+// v0.1 lock: portal links are permanent for the lifetime of the project. v0.2
+// hosts them at portal.friday.mu and revokes via a backend revocation list
+// rather than via expiry. We keep a notional `exp` claim so the validator
+// shape stays compatible with a future tightened policy.
+const MOCK_JWT_DEFAULT_TTL_S = 60 * 60 * 24 * 365 * 10; // 10 years (effectively permanent)
 
 function base64UrlEncode(input: string): string {
   // btoa works on byte strings; encode UTF-8 first to be safe.
