@@ -71,6 +71,8 @@ export function StageTracker({ currentStage, status, onStageSelect, compact, opt
             aria-current={isActive ? 'step' : undefined}
             aria-label={titleText}
             title={titleText}
+            data-stage-id={s.id}
+            data-stage-optional={isOptional ? 'true' : undefined}
             className={`fad-design-stage-pill ${isOptional ? 'is-optional' : ''} ${isActive ? 'is-active' : ''}`.trim()}
             style={{
               display: 'flex',

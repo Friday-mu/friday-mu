@@ -702,6 +702,21 @@ export function procurementFeeForTier(
   return Math.round(epcMinor * pct);
 }
 
+/** Reconciliation variance threshold — Stage 16 review flags |variance%| > 5. */
+export const VARIANCE_FLAG_THRESHOLD_PCT = 5;
+
+/**
+ * Returns true when the variance between approved and actual-paid exceeds the
+ * stage-16 review threshold (5%). Pure helper extracted so the
+ * ReconciliationStage UI and the test suite can share it.
+ */
+export function isVarianceFlagged(approvedMinor: number, paidMinor: number): boolean {
+  if (approvedMinor <= 0) return false;
+  const variance = paidMinor - approvedMinor;
+  const pct = (variance / approvedMinor) * 100;
+  return Math.abs(pct) > VARIANCE_FLAG_THRESHOLD_PCT;
+}
+
 // ─────────────────────────── FORMATTING (MUR re-export) ───────────────────────────
 
 export const formatMUR = (minor: number | null): string => {
@@ -1661,8 +1676,16 @@ export interface DashboardMetrics {
 }
 
 export function getDashboardMetrics(): DashboardMetrics {
-  const activeProjects = PROJECTS.filter((p) => !['reconciliation'].includes(p.currentStage) || p.stageStatus !== 'done').length;
-  const pendingOwnerApprovals = APPROVALS.filter((a) => a.state === 'sent').length;
+  // "Active" matches the metric card label: lifecycleStatus must be 'active'
+  // (paused / cancelled projects are excluded), and the project must not be a
+  // closed reconciliation. Pre-cont-4 this only filtered on stage; the
+  // lifecycle filter was added once Pause / Cancel landed in cont-2.
+  const activeProjects = PROJECTS.filter(
+    (p) =>
+      p.lifecycleStatus === 'active' &&
+      (p.currentStage !== 'reconciliation' || p.stageStatus !== 'done'),
+  ).length;
+  const pendingOwnerApprovals = listAllPendingApprovals().length;
   const procurementOpen = BUDGET_ITEMS.filter((i) => i.status === 'approved' && !['installed','qa_passed'].includes(i.procurement)).length;
   const marginExposureMinor = BUDGET_ITEMS
     .filter((i) => i.status === 'approved' && i.actualPaidMinor === null)

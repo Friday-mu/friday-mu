@@ -191,10 +191,7 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
     if (classFilter !== 'all') arr = arr.filter((p) => p.classification === classFilter);
     if (metricFilter === 'pending_approval') {
       const pendingProjectIds = new Set(
-        allProjects
-          .flatMap((p) => designClient.approvals.list(p.id))
-          .filter((a) => a.state === 'sent')
-          .map((a) => a.projectId),
+        designClient.approvals.allPending().map((a) => a.projectId),
       );
       arr = arr.filter((p) => pendingProjectIds.has(p.id));
     }

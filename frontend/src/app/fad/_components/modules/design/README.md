@@ -1,5 +1,48 @@
 # Friday Design OS module — v0.1 frontend
 
+> **Continuation status (cont-1 .. cont-6, 2026-05-04):** The post-v0.1
+> continuation extends this module without leaving the frontend. Highlights:
+>
+> - **Per-tier stage matrix** (B3.9) — `ANNEX_A_DEFAULT.tierStageRules` drives
+>   StageTracker's optional-stage rendering.
+> - **Project lifecycle** — `lifecycleStatus` on every project; Pause / Cancel /
+>   Resume via `LifecycleMenu`. In-memory mutators in `_data/design.ts`.
+> - **EPC ledgers** — PaymentsStage now stacks two read-only views (Project
+>   Fund escrow / Fee Invoice) per B3.8.
+> - **Single-approver simplification** (B3.11) — Agreement state machine
+>   collapsed to `draft → sent → viewed → signed → completed`; Mark Received
+>   gated to admin only.
+> - **B3.1 supplier disclosure** — owner Budget tab now shows Retail /
+>   Friday-negotiated / Saved per item, plus a "Saved by Friday" callout.
+> - **Owner-portal route** — `/portal/projects/[slug]` is a real Next.js route
+>   with its own layout (no FAD chrome). The same six tab modules render in
+>   `OwnerPortalPreview` (modal, internal) and the standalone route. See
+>   `portal/PortalContent.tsx`.
+> - **Magic-link auth** — `/portal/auth?token=<jwt>` validates a mock
+>   JWT-shaped token and persists `portal:session:<slug>` to localStorage,
+>   then bounces to the project route. `signMockToken` / `validateMockToken`
+>   match a real HS256 JWT shape so the v0.2 wire is mechanical.
+> - **Approve / Request changes** — wired in OverviewTab action cards AND the
+>   ApprovalsTab queue. `designClient.approvals.respond()` records a full
+>   audit event (decision, comment, IP, UA, portalSession) and flips state.
+> - **Past decisions** — approvals decided > 14 days ago collapse into a
+>   `<details>` group in the queue.
+> - **Internal service rate sheet** — Settings renders the 13-row demo seed
+>   with cleaning hard-stop callout.
+> - **Vitest harness** — `npm run test` runs pure-function and component
+>   sentinel tests (tier/fee/strip/variance/JWT, StageTracker render, owner
+>   Budget forbidden columns, AI feature attribute presence).
+> - **Dashboard metric cleanup** — `metrics().activeProjects` now respects
+>   `lifecycleStatus`, and `pendingOwnerApprovals` reads through
+>   `designClient.approvals.allPending()` so the v0.2 wire is one accessor
+>   swap. *Note:* the 'active' definition was tightened to exclude
+>   paused/cancelled projects — flag if the original semantics is desired.
+> - **DEMO_CRUFT extensions** — see `frontend/DEMO_CRUFT.md` for new
+>   `PROD-DESIGN-*` rows: portal auth, respond audit, lifecycle, EPC ledgers,
+>   tier rules, internal rates, role-aware Needs Attention, and the
+>   `designClient` swap target itself (`PROD-DESIGN-5`).
+
+
 ## Status
 
 v0.1 ships as a **frontend-only** demo. No real backend; no real auth; no real
