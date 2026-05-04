@@ -2,7 +2,7 @@
 
 import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
-import { useCanSee } from '../usePermissions';
+import { useCanSee, useCurrentUserId } from '../usePermissions';
 import {
   designClient,
   formatMUR,
@@ -288,6 +288,7 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
   const metrics = designClient.projects.metrics();
   const allProjects = designClient.projects.list();
   const role = useCurrentRole();
+  const currentUserId = useCurrentUserId();
 
   const [stageFilter, setStageFilter] = useState<StageId | 'all'>('all');
   const [tierFilter, setTierFilter] = useState<'all' | 1 | 2 | 3>('all');
@@ -328,9 +329,10 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
   const myTodayTasks = useMemo(() => {
     // @demo:logic — Tag: PROD-DESIGN-2. Real version pulls from §7.SS MyTasks API
     // filtered to (a) tasks assigned to current user, (b) tagged with the Design module.
+    // Cont-24: respect the View-as switcher — was hardcoded to u-bryan.
     const all = allProjects.flatMap((p) => designClient.tasks.list(p.id));
-    return all.filter((t) => t.assignedUserId === 'u-bryan' && t.status !== 'completed').slice(0, 6);
-  }, [allProjects]);
+    return all.filter((t) => t.assignedUserId === currentUserId && t.status !== 'completed').slice(0, 6);
+  }, [allProjects, currentUserId]);
 
   const stageOptions = useMemo(() => {
     const set = new Set(allProjects.map((p) => p.currentStage));
@@ -486,7 +488,30 @@ function ProjectsList({ onOpenProject }: { onOpenProject: (id: string) => void }
   return <ProjectsTable projects={projects} onOpenProject={onOpenProject} />;
 }
 
+type ProjectSortKey = 'name' | 'counterparty' | 'classification' | 'tier' | 'stage' | 'updated';
+type SortDir = 'asc' | 'desc';
+
 function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[]; onOpenProject: (id: string) => void }) {
+  // Default sort: most-recently-updated first. Click a column header to
+  // toggle (off → asc → desc → off).
+  const [sort, setSort] = useState<{ key: ProjectSortKey; dir: SortDir } | null>({ key: 'updated', dir: 'desc' });
+
+  const sorted = useMemo(() => {
+    if (!sort) return projects;
+    const out = [...projects];
+    const dirMul = sort.dir === 'asc' ? 1 : -1;
+    out.sort((a, b) => dirMul * compareProjects(a, b, sort.key));
+    return out;
+  }, [projects, sort]);
+
+  const onHeader = (key: ProjectSortKey) => {
+    setSort((current) => {
+      if (!current || current.key !== key) return { key, dir: 'asc' };
+      if (current.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  };
+
   if (projects.length === 0) {
     return (
       <div style={{ padding: 24, color: 'var(--color-text-tertiary)', fontSize: 13, textAlign: 'center' }}>
@@ -499,18 +524,18 @@ function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[];
       <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            <th style={cellStyle('left')}>Project</th>
-            <th style={cellStyle('left')}>Counterparty</th>
+            <SortHeader label="Project" k="name" sort={sort} onClick={onHeader} />
+            <SortHeader label="Counterparty" k="counterparty" sort={sort} onClick={onHeader} />
             <th style={cellStyle('left')}>Property</th>
-            <th style={cellStyle('left')}>Class.</th>
-            <th style={cellStyle('left')}>Tier</th>
-            <th style={cellStyle('left')}>Stage</th>
+            <SortHeader label="Class." k="classification" sort={sort} onClick={onHeader} />
+            <SortHeader label="Tier" k="tier" sort={sort} onClick={onHeader} />
+            <SortHeader label="Stage" k="stage" sort={sort} onClick={onHeader} />
             <th style={cellStyle('left')}>Next action</th>
-            <th style={cellStyle('right')}>Updated</th>
+            <SortHeader label="Updated" k="updated" sort={sort} onClick={onHeader} align="right" />
           </tr>
         </thead>
         <tbody>
-          {projects.map((p) => {
+          {sorted.map((p) => {
             const cp = designClient.counterparties.get(p.counterpartyId);
             const prop = designClient.properties.get(p.propertyId);
             return (
@@ -545,6 +570,52 @@ function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[];
 
 function cellStyle(align: 'left' | 'right'): React.CSSProperties {
   return { padding: '8px 10px', textAlign: align, verticalAlign: 'top', whiteSpace: 'nowrap' };
+}
+
+function SortHeader({
+  label,
+  k,
+  sort,
+  onClick,
+  align = 'left',
+}: {
+  label: string;
+  k: ProjectSortKey;
+  sort: { key: ProjectSortKey; dir: SortDir } | null;
+  onClick: (k: ProjectSortKey) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = sort?.key === k;
+  const indicator = active ? (sort!.dir === 'asc' ? ' ↑' : ' ↓') : '';
+  return (
+    <th
+      style={{ ...cellStyle(align), cursor: 'pointer', userSelect: 'none', color: active ? 'var(--color-brand-accent)' : 'var(--color-text-tertiary)' }}
+      onClick={() => onClick(k)}
+      data-projects-sort={k}
+      data-projects-sort-active={active ? sort!.dir : undefined}
+    >
+      {label}{indicator}
+    </th>
+  );
+}
+
+const STAGE_ORDER: Record<string, number> = Object.fromEntries(
+  ['lead','proposal','doc-request','site-visit','preferences','rough-budget','agreement','signature','payment-gate','moodboard','design-pack','design-review','final-budget','funding-gate','execution','expense-capture','reconciliation'].map((s, i) => [s, i]),
+);
+
+function compareProjects(a: DesignProject, b: DesignProject, key: ProjectSortKey): number {
+  switch (key) {
+    case 'name':           return a.name.localeCompare(b.name);
+    case 'counterparty': {
+      const an = designClient.counterparties.get(a.counterpartyId)?.fullName ?? '';
+      const bn = designClient.counterparties.get(b.counterpartyId)?.fullName ?? '';
+      return an.localeCompare(bn);
+    }
+    case 'classification': return a.classification.localeCompare(b.classification);
+    case 'tier':           return (a.tier ?? 99) - (b.tier ?? 99);
+    case 'stage':          return (STAGE_ORDER[a.currentStage] ?? 99) - (STAGE_ORDER[b.currentStage] ?? 99);
+    case 'updated':        return a.updatedAt.localeCompare(b.updatedAt);
+  }
 }
 
 // ─────────────────────────── Leads / Vendors / Settings (Phase 1 stubs) ───────────────────────────
@@ -1325,16 +1396,67 @@ function leadActionBtn(variant: 'primary' | 'secondary'): React.CSSProperties {
 }
 
 function VendorsList() {
-  const rows = designClient.vendors.listPerformance();
+  const allRows = designClient.vendors.listPerformance();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(() => new Set());
+
+  // Categories present in the data — only show chips for vendors that exist.
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const { vendor } of allRows) set.add(vendor.category);
+    return Array.from(set).sort();
+  }, [allRows]);
+
+  const rows = categoryFilter.size === 0
+    ? allRows
+    : allRows.filter(({ vendor }) => categoryFilter.has(vendor.category));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 14 }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Vendor register</h3>
         <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
           Cross-project performance — total spend, items shipped, variance vs. approved cost, and on-time completion rate. Click a row for the per-project breakdown.
-          {' · '}<strong>{rows.length}</strong> vendors · <strong>{rows.filter((r) => r.perf.projectCount > 0).length}</strong> active
+          {' · '}<strong>{rows.length}</strong> shown · <strong>{allRows.filter((r) => r.perf.projectCount > 0).length}</strong> active
         </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginRight: 4 }}>Category:</span>
+          {categories.map((cat) => {
+            const active = categoryFilter.has(cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                data-vendors-cat-chip={cat}
+                onClick={() => setCategoryFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(cat)) next.delete(cat); else next.add(cat);
+                  return next;
+                })}
+                style={{
+                  padding: '2px 10px',
+                  fontSize: 11,
+                  borderRadius: 'var(--radius-full)',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  background: active ? 'var(--color-brand-accent-soft)' : 'transparent',
+                  color: active ? 'var(--color-brand-accent)' : 'var(--color-text-secondary)',
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                {cat.replace(/_/g, ' ')}
+              </button>
+            );
+          })}
+          {categoryFilter.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setCategoryFilter(new Set())}
+              style={{ padding: '2px 8px', fontSize: 10, background: 'transparent', color: 'var(--color-text-tertiary)', textDecoration: 'underline' }}
+            >
+              clear
+            </button>
+          )}
+        </div>
       </div>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
