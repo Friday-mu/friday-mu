@@ -1,7 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { designClient, type MockJwtClaims } from '../../fad/_data/design';
+import {
+  designClient,
+  signMockToken,
+  type MockJwtClaims,
+} from '../../fad/_data/design';
+
+/**
+ * v0.1 demo entry — slug for the project we promote on the sample portal CTA.
+ *
+ * @demo:ui — Remove this CTA when v0.2 ships and only owners with real
+ * magic links should reach `/portal/...`. Tag: PROD-DESIGN-PORTAL-DEMO.
+ */
+const DEMO_PROJECT_SLUG = 'ohana-house';
 
 type AuthState =
   | { phase: 'verifying' }
@@ -109,8 +121,38 @@ export function PortalAuthClient() {
       <a className="portal-cta-secondary" href="https://wa.me/2305712XXXX">
         Or message Friday on WhatsApp
       </a>
+      {/* @demo:ui — sample-portal CTA. Remove in v0.2. Tag: PROD-DESIGN-PORTAL-DEMO. */}
+      <button
+        type="button"
+        className="portal-cta-secondary"
+        data-portal-demo-entry
+        onClick={() => enterDemoPortal(DEMO_PROJECT_SLUG)}
+        style={{ marginTop: 18, opacity: 0.85 }}
+      >
+        View sample portal (Ohana House)
+      </button>
     </div>
   );
+}
+
+/**
+ * @demo:ui — Skips the magic-link round-trip by minting + persisting a
+ * session directly. Same code path the real handler uses, just without
+ * the URL hop.
+ */
+function enterDemoPortal(slug: string) {
+  const project = designClient.projects.getBySlug(slug);
+  if (!project) {
+    window.alert(`Demo project ${slug} not found.`);
+    return;
+  }
+  const { claims } = signMockToken({
+    projectId: project.id,
+    ownerId: project.counterpartyId,
+    slug,
+  });
+  persistSession(claims);
+  window.location.replace(`/portal/projects/${slug}`);
 }
 
 function persistSession(claims: MockJwtClaims) {
