@@ -10,6 +10,7 @@ import {
   type DesignProject,
   type StageId,
 } from '../../_data/design';
+import { LEADS as FAD_LEADS, type Lead as FadLead } from '../../_data/fixtures-tier3';
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
@@ -548,7 +549,14 @@ function LeadsList() {
   // Industry research: every modern PM tool (Programa, JobTread, Houzz Pro)
   // uses kanban for the pre-contract pipeline. Flat table loses funnel
   // intuition.
+  //
+  // Cont-14: cross-wire to FAD's CRM-lite. The Design Leads view is the
+  // focused interior-pipeline subset — pre-qualification leads still live
+  // in the broader CRM (Leads / CRM-lite module). New first column shows
+  // the interior-pipeline leads from FAD_LEADS so the funnel
+  // "CRM intake → Design proposal flow" is visible in one place.
   const leads = designClient.leads.list();
+  const crmInteriorLeads = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won');
   const columns: Array<{ id: 'draft' | 'sent' | 'accepted' | 'declined' | 'not_needed'; label: string; tone: 'neutral' | 'info' | 'success' | 'danger' }> = [
     { id: 'draft',      label: 'Draft',     tone: 'neutral' },
     { id: 'sent',       label: 'Sent',      tone: 'info' },
@@ -561,11 +569,24 @@ function LeadsList() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
-          Leads <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· pre-project pipeline</span>
-        </h3>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
+            Leads <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· interior pipeline</span>
+          </h3>
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            Focused view of the <strong>interior</strong> pipeline from{' '}
+            <a
+              href="#leads"
+              onClick={(e) => { e.preventDefault(); fireToast('CRM-lite Leads module — wire pending'); }}
+              style={{ color: 'var(--color-text-info)', textDecoration: 'none' }}
+            >
+              Leads / CRM-lite
+            </a>
+            . Pre-qualification cards on the left convert into Design proposal drafts.
+          </p>
+        </div>
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          {leads.length} total · {counts.accepted} accepted · {counts.sent} awaiting decision
+          {crmInteriorLeads.length} pre-qualification · {leads.length} in design pipeline · {counts.accepted} accepted · {counts.sent} awaiting decision
         </div>
       </div>
 
@@ -583,6 +604,47 @@ function LeadsList() {
           alignItems: 'stretch',
         }}
       >
+        {/* CRM pre-qualification column — sourced from FAD's interior
+            pipeline. Visually distinct (dashed border) so users
+            understand it's upstream, not part of the design pipeline yet. */}
+        <div
+          role="listitem"
+          data-leads-column="crm-interior"
+          style={{
+            flex: '0 0 280px',
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            background: 'var(--color-background-tertiary)',
+            border: '1px dashed var(--color-border-secondary)',
+            borderRadius: 'var(--radius-md)',
+            padding: 10,
+            maxHeight: 'calc(100vh - 320px)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 4px 6px', borderBottom: '1px solid var(--color-border-secondary)' }}>
+            <div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                Pre-qualification
+              </span>
+              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 1 }}>From CRM-lite</div>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
+              {crmInteriorLeads.length}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', minHeight: 60 }}>
+            {crmInteriorLeads.length === 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: 16 }}>
+                No interior leads in CRM.
+              </div>
+            ) : (
+              crmInteriorLeads.map((l) => <CrmLeadCard key={l.id} lead={l} />)
+            )}
+          </div>
+        </div>
+
         {columns.map((col) => {
           const colLeads = leads.filter((l) => l.status === col.id);
           return (
@@ -716,6 +778,91 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Pre-qualification card sourced from FAD's CRM-lite (interior pipeline).
+ * Distinct visual (dashed border, "CRM" label) from the in-pipeline Design
+ * leads so the funnel "CRM intake → proposal flow" reads clearly.
+ *
+ * @demo:logic — Promote action mocks the cross-module mutation. v0.2 wires
+ * to a single backend endpoint that creates a Design lead from a CRM lead.
+ */
+function CrmLeadCard({ lead }: { lead: FadLead }) {
+  const stageTone =
+    lead.stage === 'proposal' ? 'info' :
+    lead.stage === 'meeting' ? 'success' :
+    lead.stage === 'qualifying' ? 'warning' :
+    'neutral';
+  const stageBg = {
+    info: 'var(--color-bg-info)',
+    success: 'var(--color-bg-success)',
+    warning: 'var(--color-bg-warning)',
+    neutral: 'var(--color-background-primary)',
+  }[stageTone];
+  const stageColor = {
+    info: 'var(--color-text-info)',
+    success: 'var(--color-text-success)',
+    warning: 'var(--color-text-warning)',
+    neutral: 'var(--color-text-secondary)',
+  }[stageTone];
+  return (
+    <div
+      data-lead-card={lead.id}
+      data-lead-source="crm-interior"
+      style={{
+        background: 'var(--color-background-primary)',
+        border: '0.5px dashed var(--color-border-secondary)',
+        borderRadius: 'var(--radius-sm)',
+        padding: 10,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{lead.name}</span>
+        <span
+          style={{
+            fontSize: 10,
+            padding: '1px 8px',
+            borderRadius: 'var(--radius-full)',
+            background: stageBg,
+            color: stageColor,
+            textTransform: 'capitalize',
+          }}
+        >
+          {lead.stage}
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{lead.type}</div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>{lead.value}</div>
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+        via {lead.source} · {lead.owner} · {lead.age}
+      </div>
+      {lead.nextStep && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+          → {lead.nextStep}
+        </div>
+      )}
+      <button
+        type="button"
+        data-lead-action="promote"
+        onClick={() => fireToast(`Promote ${lead.name} to Design pipeline (mock — v0.2 mints a Design lead from this CRM record)`)}
+        style={{
+          marginTop: 4,
+          padding: '4px 10px',
+          fontSize: 11,
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--color-brand-accent)',
+          color: '#fff',
+          fontWeight: 500,
+        }}
+      >
+        Promote to Design pipeline →
+      </button>
     </div>
   );
 }
