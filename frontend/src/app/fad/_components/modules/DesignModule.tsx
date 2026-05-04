@@ -5,11 +5,15 @@ import { ModuleHeader } from '../ModuleHeader';
 import { useCanSee, useCurrentUserId } from '../usePermissions';
 import {
   designClient,
+  designFeeForTier,
   formatMUR,
+  procurementFeeForTier,
   stageDef,
+  tierForEpc,
   type CreateLeadInput,
   type DesignLead,
   type DesignProject,
+  type DesignTier,
   type EntryPath,
   type LeadSource,
   type ProposalStatus,
@@ -1639,11 +1643,162 @@ function DesignSettings() {
           <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-secondary)' }}>{cfg.cleaningHardStopRule}</p>
         </div>
       </div>
+      <TierChangeSimulator />
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>ID Standards Book</h3>
         <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>Coming in v0.2 — central library of approved palettes, materials, vendors, and per-room defaults.</p>
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────── Tier-change simulator (cont-25) ───────────────────────────
+//
+// Internal demo / scoping aid: type an EPC, see exactly which tier it falls
+// into and what design + P&E fees Friday would charge for both classifications.
+// Pure derivation from the published Annex A pricing schedule above — no new
+// state, no decisions. Useful for the team when scoping a project that's
+// borderline between tiers, and for showing an owner "your fee would be X
+// at this EPC."
+
+function TierChangeSimulator() {
+  const cfg = designClient.settings.annexA();
+  const T3_MAX = cfg.tierThresholds.tier3MaxMinor;
+  const T2_MAX = cfg.tierThresholds.tier2MaxMinor;
+  // Default to the Tier 2 threshold so the simulator opens with a meaningful
+  // preview ("at exactly the T2 boundary").
+  const [epcMinor, setEpcMinor] = useState<number>(T3_MAX);
+
+  const tier: DesignTier | null = epcMinor > 0 ? tierForEpc(epcMinor, cfg) : null;
+  const designFee = tier ? designFeeForTier(tier, epcMinor, cfg) : 0;
+  const peRenovation = tier ? procurementFeeForTier(tier, 'renovation', epcMinor, cfg) : 0;
+  const peFurnishing = tier ? procurementFeeForTier(tier, 'furnishing', epcMinor, cfg) : 0;
+  const totalRenovation = designFee + peRenovation;
+  const totalFurnishing = designFee + peFurnishing;
+
+  // Compute the deltas vs. the immediate-neighbour tier so the user can see
+  // "if this project moves from T2 → T1 (or vice-versa), fees change by Δ."
+  const neighbours = neighbourTiers(tier);
+  const neighbourRows = neighbours.map((nb) => {
+    const nbDesign = designFeeForTier(nb, epcMinor, cfg);
+    const nbRen = procurementFeeForTier(nb, 'renovation', epcMinor, cfg);
+    const nbFurn = procurementFeeForTier(nb, 'furnishing', epcMinor, cfg);
+    return {
+      tier: nb,
+      design: nbDesign,
+      renovation: nbDesign + nbRen,
+      furnishing: nbDesign + nbFurn,
+      designDelta: nbDesign - designFee,
+      renovationDelta: (nbDesign + nbRen) - totalRenovation,
+      furnishingDelta: (nbDesign + nbFurn) - totalFurnishing,
+    };
+  });
+
+  return (
+    <div
+      data-design-tier-simulator
+      style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}
+    >
+      <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Tier-change simulator</h3>
+      <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+        Preview Friday fees for any EPC. Useful when a project is borderline between tiers, or when an owner asks
+        "what would the fee be at Rs X?" Live derivation from the Annex A schedule above.
+      </p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          EPC (Rs)
+          <input
+            inputMode="numeric"
+            value={epcMinor === 0 ? '' : Math.round(epcMinor / 100).toString()}
+            onChange={(e) => {
+              const cleaned = e.target.value.replace(/[^\d]/g, '');
+              setEpcMinor(cleaned === '' ? 0 : Number(cleaned) * 100);
+            }}
+            data-tier-sim-epc
+            style={{
+              padding: '6px 8px',
+              fontSize: 13,
+              fontFamily: 'var(--font-mono-fad)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-background-tertiary)',
+              color: 'var(--color-text-primary)',
+            }}
+          />
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+            Try: {Math.round(T3_MAX / 100).toLocaleString()} (T3 ceiling) · {Math.round(T2_MAX / 100).toLocaleString()} (T2 ceiling)
+          </span>
+        </label>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Resolved tier</div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-brand-accent)', fontFamily: 'var(--font-mono-fad)' }}>
+            {tier ? `Tier ${tier}` : '—'}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+            {tier === 3 && 'EPC < T3 ceiling. Flat design fee.'}
+            {tier === 2 && 'T3 ceiling ≤ EPC ≤ T2 ceiling. Flat design fee.'}
+            {tier === 1 && 'EPC > T2 ceiling. Design fee = % of EPC.'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 480 }}>
+          <thead>
+            <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, background: 'var(--color-background-tertiary)' }}>
+              <th style={cellStyle('left')}>Scenario</th>
+              <th style={cellStyle('right')}>Design fee</th>
+              <th style={cellStyle('right')}>+ P&amp;E renovation</th>
+              <th style={cellStyle('right')}>+ P&amp;E furnishing</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderTop: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-brand-accent-softer)' }}>
+              <td style={cellStyle('left')}>
+                <strong>Current — Tier {tier ?? '—'}</strong>
+              </td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(designFee)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{formatMUR(totalRenovation)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{formatMUR(totalFurnishing)}</td>
+            </tr>
+            {neighbourRows.map((nb) => (
+              <tr key={nb.tier} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                <td style={cellStyle('left')}>
+                  If reclassified to <strong>Tier {nb.tier}</strong>
+                </td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
+                  {formatMUR(nb.design)} <DeltaSpan v={nb.designDelta} />
+                </td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
+                  {formatMUR(nb.renovation)} <DeltaSpan v={nb.renovationDelta} />
+                </td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
+                  {formatMUR(nb.furnishing)} <DeltaSpan v={nb.furnishingDelta} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function neighbourTiers(current: DesignTier | null): DesignTier[] {
+  if (current === null) return [];
+  if (current === 1) return [2, 3];
+  if (current === 2) return [1, 3];
+  return [2, 1];
+}
+
+function DeltaSpan({ v }: { v: number }) {
+  if (v === 0) return null;
+  const positive = v > 0;
+  return (
+    <span style={{ marginLeft: 4, fontSize: 10, color: positive ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
+      ({positive ? '+' : '−'}{formatMUR(Math.abs(v))})
+    </span>
   );
 }
 
