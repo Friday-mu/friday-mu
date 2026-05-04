@@ -4,12 +4,9 @@ import { useMemo } from 'react';
 import {
   designClient,
   formatMUR,
-  STAGES,
   stageDef,
   type DesignProject,
-  type StageId,
 } from '../../../_data/design';
-import { AIPlaceholder } from './AIPlaceholder';
 
 interface NeedsAttentionItem {
   id: string;
@@ -27,135 +24,71 @@ interface Props {
 }
 
 /**
- * Three additions to the Design module Overview, requested 2026-05-04.
- *
- *  1. StagePipelineChart — pure-SVG stacked bar showing how many active
- *     projects sit at each stage. Visual at-a-glance pipeline health.
- *  2. AIAnalysisCard — placeholder for the v0.2 LLM-backed portfolio summary
- *     ("Friday's read on the portfolio"). Carries data-ai-feature for the
- *     wiring sprint to attach.
- *  3. NeedsAttentionQueue — role-aware list of actions Friday should take
- *     today (pending sends, awaiting payments, blockers). Computed from
- *     real project state so it's accurate without a server fan-out.
+ * Composes the Overview side panels: a one-line portfolio summary + the
+ * role-aware Needs Attention queue. The earlier "Pipeline by stage" chart
+ * was dropped (cont-9 audit) — with 6 projects across 17 stages the chart
+ * was almost entirely empty bars. The All Projects table covers the same
+ * information density without the dead pixels.
  */
 export function OverviewExtras({ projects, role, onOpenProject }: Props) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <AIAnalysisCard projects={projects} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16, alignItems: 'start' }}>
-        <StagePipelineChart projects={projects} />
-        <NeedsAttentionQueue projects={projects} role={role} onOpenProject={onOpenProject} />
-      </div>
-    </div>
+    <NeedsAttentionQueue
+      projects={projects}
+      role={role}
+      onOpenProject={onOpenProject}
+    />
   );
 }
 
-// ─────────────────────────── AI analysis ───────────────────────────
+// ─────────────────────────── Portfolio summary ───────────────────────────
 
-function AIAnalysisCard({ projects }: { projects: DesignProject[] }) {
-  const active = projects.filter((p) => p.lifecycleStatus === 'active');
-  const totalEpc = active.reduce((s, p) => s + (p.epcMinor ?? 0), 0);
-  const blocked = active.filter((p) => p.blocker).length;
-  const tier1Count = active.filter((p) => p.tier === 1).length;
-  // @demo:ai — Tag: PROD-DESIGN-AI / overview-analysis. v0.2 swaps this with
-  // an LLM call whose prompt anchors are in build doc §5.2.
-  const summary = active.length === 0
-    ? 'No active projects to analyse yet.'
-    : `${active.length} active project${active.length === 1 ? '' : 's'} representing ${formatMUR(totalEpc)} EPC. ${tier1Count} at Tier 1${blocked ? ` · ${blocked} blocked, owner action needed` : ' · pipeline healthy'}.`;
-  return (
-    <div style={cardStyle()} data-ai-feature="overview-analysis">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Friday&apos;s read on the portfolio</h3>
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            AI summary — refreshes when projects change. The wiring sprint connects this to a live LLM run.
-          </p>
-        </div>
-        <AIPlaceholder feature="overview-analysis" label="Refresh analysis" size="sm" />
-      </div>
-      <p style={{ margin: '12px 0 0', fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.5 }}>
-        {summary}
-      </p>
-    </div>
-  );
-}
-
-// ─────────────────────────── Stage pipeline chart ───────────────────────────
-
-function StagePipelineChart({ projects }: { projects: DesignProject[] }) {
-  const counts = useMemo(() => {
+/**
+ * Plain one-liner summary of the active portfolio. No card, no AI framing —
+ * just the data sentence. Cont-9 audit: the previous "Friday's read on the
+ * portfolio" card padded the page with meta-copy ("AI summary — refreshes
+ * when projects change…") that wasn't itself information. Drop the framing,
+ * keep the line.
+ *
+ * @demo:ai — when v0.2 lands, swap this useMemo for an LLM-rendered narrative
+ * pulled from the activity log. Tag: PROD-DESIGN-AI / overview-analysis.
+ */
+export function OverviewSummaryLine({ projects }: { projects: DesignProject[] }) {
+  const summary = useMemo(() => {
     const active = projects.filter((p) => p.lifecycleStatus === 'active');
-    const map = new Map<StageId, number>();
-    for (const s of STAGES) map.set(s.id, 0);
-    for (const p of active) map.set(p.currentStage, (map.get(p.currentStage) ?? 0) + 1);
-    return STAGES.map((s) => ({ stage: s, count: map.get(s.id) ?? 0 }));
+    if (active.length === 0) return 'No active projects.';
+    const totalEpc = active.reduce((s, p) => s + (p.epcMinor ?? 0), 0);
+    const blocked = active.filter((p) => p.blocker).length;
+    const tier1 = active.filter((p) => p.tier === 1).length;
+    const tail = blocked > 0 ? `${blocked} blocked, owner action needed` : 'pipeline healthy';
+    return `${active.length} active project${active.length === 1 ? '' : 's'} · ${formatMUR(totalEpc)} EPC · ${tier1} at Tier 1 · ${tail}.`;
   }, [projects]);
 
-  const maxCount = Math.max(1, ...counts.map((c) => c.count));
-  const width = 340;
-  const height = 160;
-  const barWidth = width / counts.length;
-
   return (
-    <div style={cardStyle()}>
-      <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Pipeline by stage</h3>
-      <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-        Active projects at each of the 17 stages. Hover or tap a bar for stage label.
-      </p>
-      <div style={{ overflowX: 'auto' }}>
-        <svg
-          role="img"
-          aria-label="Stage pipeline chart"
-          width={width}
-          height={height + 28}
-          style={{ display: 'block', minWidth: width }}
-        >
-          {counts.map((c, i) => {
-            const barH = c.count === 0 ? 2 : (c.count / maxCount) * height;
-            const x = i * barWidth + 2;
-            const y = height - barH;
-            const w = barWidth - 4;
-            const fill = c.count === 0
-              ? 'var(--color-background-tertiary)'
-              : 'var(--color-brand-accent)';
-            return (
-              <g key={c.stage.id}>
-                <title>{`${c.stage.index}. ${c.stage.label} — ${c.count} project${c.count === 1 ? '' : 's'}`}</title>
-                <rect x={x} y={y} width={w} height={barH} fill={fill} rx={2} />
-                {c.count > 0 && (
-                  <text
-                    x={x + w / 2}
-                    y={y - 4}
-                    textAnchor="middle"
-                    fill="var(--color-text-secondary)"
-                    fontSize={10}
-                    fontFamily="var(--font-mono-fad)"
-                  >
-                    {c.count}
-                  </text>
-                )}
-                <text
-                  x={x + w / 2}
-                  y={height + 14}
-                  textAnchor="middle"
-                  fill="var(--color-text-tertiary)"
-                  fontSize={9}
-                  fontFamily="var(--font-mono-fad)"
-                >
-                  {c.stage.index}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-    </div>
+    <p
+      data-ai-feature="overview-analysis"
+      style={{
+        margin: 0,
+        fontSize: 13,
+        color: 'var(--color-text-secondary)',
+        lineHeight: 1.5,
+      }}
+    >
+      {summary}
+    </p>
   );
 }
 
 // ─────────────────────────── Needs attention queue ───────────────────────────
 
-function NeedsAttentionQueue({ projects, role, onOpenProject }: { projects: DesignProject[]; role: string; onOpenProject: (id: string, screen?: string) => void }) {
+export function NeedsAttentionQueue({
+  projects,
+  role,
+  onOpenProject,
+}: {
+  projects: DesignProject[];
+  role: string;
+  onOpenProject: (id: string, screen?: string) => void;
+}) {
   const items = useMemo(() => {
     const active = projects.filter((p) => p.lifecycleStatus === 'active');
     const out: NeedsAttentionItem[] = [];
@@ -253,10 +186,12 @@ function NeedsAttentionQueue({ projects, role, onOpenProject }: { projects: Desi
     <div style={cardStyle()}>
       <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Needs attention</h3>
       <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-        Items derived from current project state. Filtered to your role.
+        Filtered to your role. Click any row to open the project.
       </p>
       {items.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>Nothing waiting on you. Pipeline clean.</p>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          Nothing waiting on you. Pipeline clean.
+        </p>
       ) : (
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {items.map((it) => (
@@ -271,9 +206,15 @@ function NeedsAttentionQueue({ projects, role, onOpenProject }: { projects: Desi
               }}
               onClick={() => onOpenProject(it.projectId)}
             >
-              <div style={{ fontSize: 12, fontWeight: 600, color: textForTone(it.tone) }}>{it.label}</div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>{it.projectName}</div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>{it.hint}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: textForTone(it.tone) }}>
+                {it.label}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                {it.projectName}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                {it.hint}
+              </div>
             </li>
           ))}
         </ul>

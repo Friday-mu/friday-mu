@@ -15,7 +15,10 @@ import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
-import { OverviewExtras } from './design/OverviewExtras';
+import {
+  NeedsAttentionQueue,
+  OverviewSummaryLine,
+} from './design/OverviewExtras';
 import { fireToast } from '../Toaster';
 import { useCurrentRole } from '../usePermissions';
 
@@ -214,8 +217,6 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
     return arr;
   }, [allProjects, stageFilter, tierFilter, classFilter, metricFilter, search]);
 
-  const blockers = useMemo(() => allProjects.filter((p) => p.blocker), [allProjects]);
-
   const myTodayTasks = useMemo(() => {
     // @demo:logic — Tag: PROD-DESIGN-2. Real version pulls from §7.SS MyTasks API
     // filtered to (a) tasks assigned to current user, (b) tagged with the Design module.
@@ -230,6 +231,7 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Metric strip — clickable cards filter the project list below. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
         <MetricCard label="Active projects" value={String(metrics.activeProjects)} active={metricFilter === 'all'} onClick={() => setMetricFilter('all')} />
         <MetricCard label="Pending owner approvals" value={String(metrics.pendingOwnerApprovals)} tone="warning" active={metricFilter === 'pending_approval'} onClick={() => setMetricFilter(metricFilter === 'pending_approval' ? 'all' : 'pending_approval')} />
@@ -237,9 +239,11 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
         <MetricCard label="Margin exposure" value={formatMUR(metrics.marginExposureMinor)} tone="accent" active={metricFilter === 'margin_exposure'} onClick={() => setMetricFilter(metricFilter === 'margin_exposure' ? 'all' : 'margin_exposure')} />
       </div>
 
-      <OverviewExtras projects={allProjects} role={role} onOpenProject={onOpenProject} />
+      {/* Plain summary sentence — no card chrome, no AI framing. */}
+      <OverviewSummaryLine projects={allProjects} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 16, alignItems: 'start' }}>
+        {/* All projects (primary work surface) */}
         <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}>All projects</h3>
@@ -279,10 +283,13 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
           <ProjectsTable projects={projects} onOpenProject={onOpenProject} />
         </div>
 
+        {/* Action sidebar — Needs Attention (folds in old "Blockers" panel as
+            "danger"-toned rows) on top, My Today below. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          <NeedsAttentionQueue projects={allProjects} role={role} onOpenProject={onOpenProject} />
           <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
             <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>My Today</h3>
-            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>Design-related tasks for you (mock §7.SS)</div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>Design-related tasks assigned to you.</div>
             {myTodayTasks.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>Nothing on your plate.</div>
             ) : (
@@ -298,31 +305,6 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
                       <div style={{ fontSize: 12, fontWeight: 500 }}>{t.title}</div>
                       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
                         {proj?.name} · due {t.dueDate ?? '—'}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-          <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
-            <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--color-text-danger)' }}>Blockers</h3>
-            {blockers.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No active blockers.</div>
-            ) : (
-              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {blockers.map((p) => {
-                  const ageDays = Math.max(0, Math.round((Date.now() - new Date(p.updatedAt).getTime()) / 86_400_000));
-                  return (
-                    <li
-                      key={p.id}
-                      style={{ padding: 8, border: '0.5px solid var(--color-bg-danger)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-danger)', cursor: 'pointer' }}
-                      onClick={() => onOpenProject(p.id)}
-                    >
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-danger)' }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>{p.blocker}</div>
-                      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4, fontFamily: 'var(--font-mono-fad)' }}>
-                        {ageDays}d old · owner: {p.designLeadUserId?.replace('u-', '') ?? 'unassigned'}
                       </div>
                     </li>
                   );
