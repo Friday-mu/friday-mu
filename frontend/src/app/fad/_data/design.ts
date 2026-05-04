@@ -1544,7 +1544,28 @@ const ohanaItems: BudgetItem[] = [
   { id: 'bi-19', projectId: 'p-ohana', roomId: 'r-ohana-1', packageId: 'pkg-ohana-internal', itemName: 'Friday styling hours (final install)', itemDescription: 'Internal service line',     category: 'labour',     qty: 1, vendorId: null,        productLink: null, imageUrl: null, retailCostMinor: 0,           negotiatedCostMinor: 0,           finalApprovedCostMinor: 35_000_00,  actualPaidMinor: null,        vatMinor: 5_250_00,  ownerBillable: false, internalWork: true,  status: 'approved', procurement: 'to_source',  receiptUrl: null,             assignedUserId: 'u-mathias', dueDate: '2026-08-15', notes: null },
 ];
 
-export const BUDGET_ITEMS: BudgetItem[] = ohanaItems;
+// Cross-project historical items (cont-19). Adds a small spread of approved
+// lines on Albion / Lagon Bleu / Camelia so the catalog rollup + vendor
+// performance + where-used UIs have real data to aggregate. Names overlap
+// with Ohana on purpose — that's what triggers the "where used" affordance.
+const crossProjectHistoricalItems: BudgetItem[] = [
+  // Albion (Tasleem) — finished furnishing project, repeats items Friday installs often.
+  { id: 'bi-x1',  projectId: 'p-albion', roomId: 'r-albion-1', packageId: 'pkg-albion-living', itemName: 'Modular sofa, 3-seater + chaise', itemDescription: 'Boucle, ivory',           category: 'furniture',  qty: 1, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 175_000_00, negotiatedCostMinor: 148_000_00, finalApprovedCostMinor: 148_000_00, actualPaidMinor: 148_000_00, vatMinor: 22_200_00, ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x1.pdf', assignedUserId: 'u-bryan', dueDate: '2025-09-10', notes: null },
+  { id: 'bi-x2',  projectId: 'p-albion', roomId: 'r-albion-1', packageId: 'pkg-albion-living', itemName: 'Coffee table, oak',                itemDescription: 'Square, 1m',              category: 'furniture',  qty: 1, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 30_000_00,  negotiatedCostMinor: 26_000_00,  finalApprovedCostMinor: 26_000_00,  actualPaidMinor: 26_000_00,  vatMinor: 3_900_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x2.pdf', assignedUserId: 'u-bryan', dueDate: '2025-09-10', notes: null },
+  { id: 'bi-x3',  projectId: 'p-albion', roomId: 'r-albion-1', packageId: 'pkg-albion-living', itemName: 'Floor lamp, rattan + brass',       itemDescription: null,                       category: 'lighting',   qty: 2, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 17_000_00,  negotiatedCostMinor: 14_500_00,  finalApprovedCostMinor: 14_500_00,  actualPaidMinor: 14_500_00,  vatMinor: 2_175_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x3.pdf', assignedUserId: 'u-bryan', dueDate: '2025-09-10', notes: null },
+  { id: 'bi-x4',  projectId: 'p-albion', roomId: 'r-albion-1', packageId: 'pkg-albion-living', itemName: 'Area rug, wool, 3×4m',             itemDescription: 'Berber pattern',           category: 'decor',      qty: 1, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 48_000_00,  negotiatedCostMinor: 41_000_00,  finalApprovedCostMinor: 41_000_00,  actualPaidMinor: 41_000_00,  vatMinor: 6_150_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x4.pdf', assignedUserId: 'u-bryan', dueDate: '2025-09-15', notes: null },
+  { id: 'bi-x5',  projectId: 'p-albion', roomId: 'r-albion-2', packageId: 'pkg-albion-master', itemName: 'King bed frame, oak',              itemDescription: null,                       category: 'furniture',  qty: 1, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 92_000_00,  negotiatedCostMinor: 80_000_00,  finalApprovedCostMinor: 80_000_00,  actualPaidMinor: 80_000_00,  vatMinor: 12_000_00, ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x5.pdf', assignedUserId: 'u-bryan', dueDate: '2025-09-20', notes: null },
+  { id: 'bi-x6',  projectId: 'p-albion', roomId: 'r-albion-2', packageId: 'pkg-albion-master', itemName: 'Bedside tables, pair',              itemDescription: null,                       category: 'furniture',  qty: 2, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 26_000_00,  negotiatedCostMinor: 22_500_00,  finalApprovedCostMinor: 22_500_00,  actualPaidMinor: 22_500_00,  vatMinor: 3_375_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x6.pdf', assignedUserId: 'u-bryan', dueDate: '2025-09-20', notes: null },
+  { id: 'bi-x7',  projectId: 'p-albion', roomId: 'r-albion-3', packageId: 'pkg-albion-kitchen', itemName: 'Custom cabinetry, oak veneer',    itemDescription: 'Galley layout',            category: 'furniture',  qty: 1, vendorId: 'v-jsev',    productLink: null, imageUrl: null, retailCostMinor: 210_000_00, negotiatedCostMinor: 188_000_00, finalApprovedCostMinor: 188_000_00, actualPaidMinor: 188_000_00, vatMinor: 28_200_00, ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x7.pdf', assignedUserId: 'u-bryan', dueDate: '2025-10-01', notes: null },
+  { id: 'bi-x8',  projectId: 'p-albion', roomId: 'r-albion-3', packageId: 'pkg-albion-kitchen', itemName: 'Dishwasher, 60cm',                 itemDescription: null,                       category: 'appliance',  qty: 1, vendorId: null,        productLink: null, imageUrl: null, retailCostMinor: 36_000_00,  negotiatedCostMinor: 31_000_00,  finalApprovedCostMinor: 31_000_00,  actualPaidMinor: 31_000_00,  vatMinor: 4_650_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x8.pdf', assignedUserId: 'u-bryan', dueDate: '2025-10-05', notes: null },
+  { id: 'bi-x9',  projectId: 'p-albion', roomId: 'r-albion-3', packageId: 'pkg-albion-kitchen', itemName: 'Induction hob + extractor',        itemDescription: null,                       category: 'appliance',  qty: 1, vendorId: null,        productLink: null, imageUrl: null, retailCostMinor: 62_000_00,  negotiatedCostMinor: 55_000_00,  finalApprovedCostMinor: 55_000_00,  actualPaidMinor: 55_000_00,  vatMinor: 8_250_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x9.pdf', assignedUserId: 'u-bryan', dueDate: '2025-10-05', notes: null },
+  // Lagon Bleu LB-2 — earlier renovation, electrician overlap with Ohana.
+  { id: 'bi-x10', projectId: 'p-lb2',    roomId: 'r-lb2-1',   packageId: 'pkg-lb2-living',    itemName: 'Re-wire living + ambient lighting circuit', itemDescription: null,            category: 'contractor', qty: 1, vendorId: 'v-faiz',    productLink: null, imageUrl: null, retailCostMinor: 65_000_00,  negotiatedCostMinor: 65_000_00,  finalApprovedCostMinor: 65_000_00,  actualPaidMinor: 65_000_00,  vatMinor: 9_750_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x10.pdf', assignedUserId: 'u-bryan', dueDate: '2025-07-15', notes: null },
+  { id: 'bi-x11', projectId: 'p-lb2',    roomId: 'r-lb2-1',   packageId: 'pkg-lb2-living',    itemName: 'Floor lamp, rattan + brass',       itemDescription: null,                       category: 'lighting',   qty: 1, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 17_500_00,  negotiatedCostMinor: 15_500_00,  finalApprovedCostMinor: 15_500_00,  actualPaidMinor: 15_500_00,  vatMinor: 2_325_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x11.pdf', assignedUserId: 'u-bryan', dueDate: '2025-07-20', notes: null },
+  { id: 'bi-x12', projectId: 'p-lb2',    roomId: 'r-lb2-1',   packageId: 'pkg-lb2-living',    itemName: 'Coffee table, oak',                itemDescription: 'Round, 1.1m',              category: 'furniture',  qty: 1, vendorId: 'v-jaabir',  productLink: null, imageUrl: null, retailCostMinor: 33_000_00,  negotiatedCostMinor: 29_000_00,  finalApprovedCostMinor: 29_000_00,  actualPaidMinor: 29_000_00,  vatMinor: 4_350_00,  ownerBillable: true, internalWork: false, status: 'approved', procurement: 'qa_passed',  receiptUrl: 'drive://r-x12.pdf', assignedUserId: 'u-bryan', dueDate: '2025-07-25', notes: null },
+];
+
+export const BUDGET_ITEMS: BudgetItem[] = [...ohanaItems, ...crossProjectHistoricalItems];
 
 export function getBudgetItems(projectId: string): BudgetItem[] {
   return BUDGET_ITEMS.filter((i) => i.projectId === projectId);
@@ -2954,6 +2975,148 @@ export function searchCatalog(query: string, limit = 20): CatalogItem[] {
     .slice(0, limit);
 }
 
+// ─────────────────────────── PORTFOLIO INSIGHTS (cont-19, moat #3) ───────────────────────────
+//
+// Audit Section 4 moat #3: multi-property portfolio layer. Friday has 24+
+// properties; the per-project view alone can't surface "this vendor went
+// over budget on every kitchen we used them for" or "this catalog item has
+// shown up in 6 villas — fastest-moving line we sell."
+//
+// Cont-19 lands two cross-project aggregators that read straight from
+// existing fixtures:
+//  - VendorPerformance: per vendor, count of projects, total spend, average
+//    variance vs. approved cost, on-time delivery rate (proxy: status
+//    reaching delivered/installed/qa_passed without an explicit "blocked"
+//    note in the v0.1 fixture).
+//  - CatalogUsage: per catalog key, list of project usages with qty + date.
+//
+// @demo:logic — Both aggregators read in-memory BUDGET_ITEMS. v0.2 backend
+// computes server-side per the PROD-DESIGN-PORTFOLIO row.
+
+export interface VendorPerformance {
+  vendorId: string;
+  projectCount: number;
+  itemCount: number;
+  totalSpendMinor: number;
+  /** Sum (paid - approved) across delivered items where both are populated. */
+  varianceMinor: number;
+  /** Variance / approved, as a fraction. 0 if no approved spend. */
+  variancePct: number;
+  /** % of items that reached qa_passed / installed / delivered. */
+  deliveryCompletionPct: number;
+  /** Most recent project the vendor was used on. */
+  mostRecentProjectId: string | null;
+  /** Per-project breakdown for the drill-in row. */
+  projects: Array<{
+    projectId: string;
+    projectName: string;
+    itemCount: number;
+    spendMinor: number;
+  }>;
+}
+
+const COMPLETED_PROCUREMENT_STATES: ProcurementStatus[] = ['delivered', 'installed', 'qa_passed'];
+
+export function getVendorPerformance(vendorId: string): VendorPerformance {
+  const items = BUDGET_ITEMS.filter((i) => i.vendorId === vendorId);
+  const byProject = new Map<string, BudgetItem[]>();
+  for (const it of items) {
+    const arr = byProject.get(it.projectId) ?? [];
+    arr.push(it);
+    byProject.set(it.projectId, arr);
+  }
+  let totalSpendMinor = 0;
+  let totalApprovedMinor = 0;
+  let varianceMinor = 0;
+  let completedCount = 0;
+  let countWithStatus = 0;
+  for (const it of items) {
+    const paid = it.actualPaidMinor ?? 0;
+    const approved = it.finalApprovedCostMinor ?? 0;
+    totalSpendMinor += paid;
+    totalApprovedMinor += approved;
+    if (paid > 0 && approved > 0) varianceMinor += paid - approved;
+    if (it.procurement) {
+      countWithStatus += 1;
+      if (COMPLETED_PROCUREMENT_STATES.includes(it.procurement)) completedCount += 1;
+    }
+  }
+  const projects: VendorPerformance['projects'] = [];
+  let mostRecent: { projectId: string; updatedAt: string } | null = null;
+  for (const [projectId, arr] of byProject) {
+    const project = getProject(projectId);
+    const spend = arr.reduce((s, i) => s + (i.actualPaidMinor ?? 0), 0);
+    projects.push({
+      projectId,
+      projectName: project?.name ?? projectId,
+      itemCount: arr.length,
+      spendMinor: spend,
+    });
+    if (project && (mostRecent === null || (project.updatedAt ?? '') > mostRecent.updatedAt)) {
+      mostRecent = { projectId, updatedAt: project.updatedAt ?? '' };
+    }
+  }
+  projects.sort((a, b) => b.spendMinor - a.spendMinor);
+  return {
+    vendorId,
+    projectCount: byProject.size,
+    itemCount: items.length,
+    totalSpendMinor,
+    varianceMinor,
+    variancePct: totalApprovedMinor > 0 ? varianceMinor / totalApprovedMinor : 0,
+    deliveryCompletionPct: countWithStatus > 0 ? completedCount / countWithStatus : 0,
+    mostRecentProjectId: mostRecent?.projectId ?? null,
+    projects,
+  };
+}
+
+export function listVendorPerformance(): Array<{ vendor: Vendor; perf: VendorPerformance }> {
+  return VENDORS
+    .map((v) => ({ vendor: v, perf: getVendorPerformance(v.id) }))
+    .sort((a, b) => b.perf.totalSpendMinor - a.perf.totalSpendMinor);
+}
+
+export interface CatalogUsage {
+  /** Same key shape as `CatalogItem.key`. */
+  key: string;
+  occurrences: Array<{
+    projectId: string;
+    projectName: string;
+    itemId: string;
+    itemName: string;
+    qty: number;
+    perUnitMinor: number;
+    purchasedAt: string | null;
+    status: BudgetItemStatus;
+  }>;
+}
+
+/** Returns every BUDGET_ITEMS row that matches the normalised name key. Same
+ *  rollup the catalog uses internally — exposed for the where-used drill-in. */
+export function getCatalogUsage(itemNameOrKey: string): CatalogUsage {
+  const key = normaliseItemKey(itemNameOrKey);
+  const occ: CatalogUsage['occurrences'] = [];
+  for (const it of BUDGET_ITEMS) {
+    if (it.internalWork) continue;
+    if (it.status !== 'approved') continue;
+    if (normaliseItemKey(it.itemName) !== key) continue;
+    const project = getProject(it.projectId);
+    occ.push({
+      projectId: it.projectId,
+      projectName: project?.name ?? it.projectId,
+      itemId: it.id,
+      itemName: it.itemName,
+      qty: it.qty,
+      perUnitMinor: Math.round((it.negotiatedCostMinor ?? 0) / Math.max(1, it.qty)),
+      purchasedAt: it.dueDate ?? null,
+      status: it.status,
+    });
+  }
+  // Most recent first when due dates exist; falls back to insertion order.
+  occ.sort((a, b) => (b.purchasedAt ?? '').localeCompare(a.purchasedAt ?? ''));
+  return { key, occurrences: occ };
+}
+
 export interface RoughBudgetEstimateLine {
   itemName: string;
   qty: number;
@@ -3030,6 +3193,8 @@ export const designClient = {
   vendors: {
     list: listVendors,
     get: getVendor,
+    performance: getVendorPerformance,
+    listPerformance: listVendorPerformance,
   },
   rooms: { list: getRooms },
   photos: { list: (projectId: string) => PHOTOS.filter((p) => p.projectId === projectId) },
@@ -3064,6 +3229,7 @@ export const designClient = {
     lookup: lookupCatalogItem,
     search: searchCatalog,
     estimate: estimateRoughBudget,
+    usage: getCatalogUsage,
   },
   selections: {
     list: listSelections,

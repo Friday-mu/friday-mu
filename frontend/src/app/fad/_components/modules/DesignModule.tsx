@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useCanSee } from '../usePermissions';
 import {
@@ -889,28 +889,93 @@ function leadActionBtn(variant: 'primary' | 'secondary'): React.CSSProperties {
 }
 
 function VendorsList() {
-  const vendors = designClient.vendors.list();
+  const rows = designClient.vendors.listPerformance();
+  const [openId, setOpenId] = useState<string | null>(null);
   return (
-    <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
-      <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Vendor register (§7.YY)</h3>
-      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Vendor register</h3>
+        <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Cross-project performance — total spend, items shipped, variance vs. approved cost, and on-time completion rate. Click a row for the per-project breakdown.
+          {' · '}<strong>{rows.length}</strong> vendors · <strong>{rows.filter((r) => r.perf.projectCount > 0).length}</strong> active
+        </p>
+      </div>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 720 }}>
+            <thead>
+              <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, background: 'var(--color-background-tertiary)' }}>
+                <th style={cellStyle('left')}>Vendor</th>
+                <th style={cellStyle('left')}>Category</th>
+                <th style={cellStyle('right')}>Projects</th>
+                <th style={cellStyle('right')}>Items</th>
+                <th style={cellStyle('right')}>Total spend</th>
+                <th style={cellStyle('right')}>Variance</th>
+                <th style={cellStyle('right')}>On-time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ vendor, perf }) => {
+                const isOpen = openId === vendor.id;
+                const variancePctText = perf.variancePct === 0 ? '—' : `${perf.variancePct > 0 ? '+' : ''}${(perf.variancePct * 100).toFixed(1)}%`;
+                const varianceFlagged = Math.abs(perf.variancePct) > 0.05;
+                return (
+                  <Fragment key={vendor.id}>
+                    <tr
+                      data-design-vendor-row={vendor.id}
+                      onClick={() => setOpenId(isOpen ? null : vendor.id)}
+                      style={{ borderTop: '0.5px solid var(--color-border-tertiary)', cursor: perf.projects.length > 0 ? 'pointer' : 'default' }}
+                    >
+                      <td style={cellStyle('left')}>
+                        <div style={{ fontWeight: 500 }}>{vendor.name} {perf.projects.length > 0 && <span style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>{isOpen ? '▾' : '▸'}</span>}</div>
+                        {vendor.company && <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{vendor.company}</div>}
+                      </td>
+                      <td style={{ ...cellStyle('left'), color: 'var(--color-text-tertiary)' }}>{vendor.category.replace(/_/g, ' ')}</td>
+                      <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{perf.projectCount}</td>
+                      <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{perf.itemCount}</td>
+                      <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 500 }}>{perf.totalSpendMinor > 0 ? formatMUR(perf.totalSpendMinor) : '—'}</td>
+                      <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: varianceFlagged ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)' }}>
+                        {variancePctText}
+                      </td>
+                      <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: perf.deliveryCompletionPct >= 0.8 ? 'var(--color-text-success)' : perf.deliveryCompletionPct < 0.5 && perf.itemCount > 0 ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)' }}>
+                        {perf.itemCount === 0 ? '—' : `${Math.round(perf.deliveryCompletionPct * 100)}%`}
+                      </td>
+                    </tr>
+                    {isOpen && perf.projects.length > 0 && (
+                      <tr>
+                        <td colSpan={7} style={{ padding: 0 }}>
+                          <VendorProjectBreakdown projects={perf.projects} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VendorProjectBreakdown({ projects }: { projects: Array<{ projectId: string; projectName: string; itemCount: number; spendMinor: number }> }) {
+  return (
+    <div style={{ background: 'var(--color-background-tertiary)', padding: 10 }} data-design-vendor-breakdown>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
         <thead>
-          <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            <th style={cellStyle('left')}>Name</th>
-            <th style={cellStyle('left')}>Company</th>
-            <th style={cellStyle('left')}>Category</th>
-            <th style={cellStyle('left')}>Phone</th>
-            <th style={cellStyle('left')}>Engagements</th>
+          <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>
+            <th style={cellStyle('left')}>Project</th>
+            <th style={cellStyle('right')}>Items</th>
+            <th style={cellStyle('right')}>Spend</th>
           </tr>
         </thead>
         <tbody>
-          {vendors.map((v) => (
-            <tr key={v.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-              <td style={cellStyle('left')}>{v.name}</td>
-              <td style={cellStyle('left')}>{v.company ?? '—'}</td>
-              <td style={cellStyle('left')}>{v.category.replace(/_/g, ' ')}</td>
-              <td style={cellStyle('left')}>{v.phone ?? '—'}</td>
-              <td style={cellStyle('left')}>{v.engagements.length}</td>
+          {projects.map((p) => (
+            <tr key={p.projectId} style={{ borderTop: '0.5px dashed var(--color-border-tertiary)' }}>
+              <td style={cellStyle('left')}>{p.projectName}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{p.itemCount}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{p.spendMinor > 0 ? formatMUR(p.spendMinor) : '—'}</td>
             </tr>
           ))}
         </tbody>

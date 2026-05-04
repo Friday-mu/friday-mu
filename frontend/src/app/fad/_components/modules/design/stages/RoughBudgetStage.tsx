@@ -264,6 +264,7 @@ function ItemRowEditor({
   canRemove: boolean;
 }) {
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showWhereUsed, setShowWhereUsed] = useState(false);
   const suggestions = useMemo<CatalogItem[]>(
     () => (row.itemName.trim() ? designClient.catalog.search(row.itemName, 6) : []),
     [row.itemName],
@@ -271,6 +272,10 @@ function ItemRowEditor({
   const exactMatch = useMemo(
     () => designClient.catalog.lookup(row.itemName),
     [row.itemName],
+  );
+  const usage = useMemo(
+    () => (exactMatch ? designClient.catalog.usage(exactMatch.key) : null),
+    [exactMatch],
   );
 
   return (
@@ -344,15 +349,69 @@ function ItemRowEditor({
         )}
 
         {exactMatch ? (
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: 11,
-              color: 'var(--color-text-info)',
-            }}
-          >
-            <strong>{formatMUR(exactMatch.medianMinor)}</strong> median · {formatMUR(exactMatch.minMinor)}–{formatMUR(exactMatch.maxMinor)} · {exactMatch.sampleCount} prior sample{exactMatch.sampleCount === 1 ? '' : 's'}
-          </div>
+          <>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 11,
+                color: 'var(--color-text-info)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>
+                <strong>{formatMUR(exactMatch.medianMinor)}</strong> median · {formatMUR(exactMatch.minMinor)}–{formatMUR(exactMatch.maxMinor)} · {exactMatch.sampleCount} prior sample{exactMatch.sampleCount === 1 ? '' : 's'}
+              </span>
+              {usage && usage.occurrences.length > 0 && (
+                <button
+                  type="button"
+                  data-catalog-where-used={exactMatch.key}
+                  onClick={() => setShowWhereUsed((v) => !v)}
+                  style={{
+                    padding: '1px 6px',
+                    fontSize: 10,
+                    background: 'var(--color-background-tertiary)',
+                    color: 'var(--color-text-secondary)',
+                    border: '0.5px solid var(--color-border-tertiary)',
+                    borderRadius: 'var(--radius-full)',
+                  }}
+                >
+                  {showWhereUsed ? 'hide' : 'where used'}
+                </button>
+              )}
+            </div>
+            {showWhereUsed && usage && usage.occurrences.length > 0 && (
+              <ul
+                data-catalog-where-used-list
+                style={{
+                  margin: '6px 0 0',
+                  padding: '8px 10px',
+                  listStyle: 'none',
+                  background: 'var(--color-background-primary)',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  fontSize: 11,
+                }}
+              >
+                {usage.occurrences.map((o) => (
+                  <li key={o.itemId} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ minWidth: 0 }}>
+                      <strong>{o.projectName}</strong>
+                      <span style={{ color: 'var(--color-text-tertiary)' }}> · qty {o.qty}</span>
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
+                      {formatMUR(o.perUnitMinor)}/unit
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         ) : row.itemName.trim() ? (
           <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-warning)' }}>
             No historical match — won&apos;t be priced. Pick from suggestions or rename.
