@@ -19,6 +19,7 @@ export function FinalBudgetStage({ project }: Props) {
   const rooms = designClient.rooms.list(project.id);
   const [ownerView, setOwnerView] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(rooms.map((r) => r.id)));
+  const [tab, setTab] = useState<'items' | 'quotes'>('items');
 
   const totals = useMemo(() => {
     const approvedSum = allItems.filter((i) => i.status === 'approved').reduce((s, i) => s + (i.finalApprovedCostMinor ?? 0), 0);
@@ -49,7 +50,45 @@ export function FinalBudgetStage({ project }: Props) {
             <AIPlaceholder feature="final-budget-suggest" label="Suggest items" size="sm" />
           </div>
         </div>
+        <div role="tablist" aria-label="Final budget views" style={{ display: 'flex', gap: 4, marginTop: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+          {(['items', 'quotes'] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
+              style={{
+                padding: '8px 14px',
+                fontSize: 12,
+                fontWeight: tab === id ? 600 : 500,
+                color: tab === id ? 'var(--color-brand-accent)' : 'var(--color-text-secondary)',
+                borderBottom: tab === id ? '2px solid var(--color-brand-accent)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >
+              {id === 'items' ? 'Items' : 'Quotes'}
+            </button>
+          ))}
+        </div>
       </Card>
+
+      {tab === 'quotes' && (
+        <Card>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 16px', textAlign: 'center', gap: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 'var(--radius-full)', background: 'var(--color-brand-accent-soft)', color: 'var(--color-brand-accent)' }}>
+              Coming in the wiring sprint
+            </div>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Quote comparison</h4>
+            <p style={{ margin: 0, maxWidth: 480, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              Side-by-side view of vendor quotes per package (e.g. masonry, M&amp;E, custom cabinetry). Procurement staff capture quotes here so the director can approve the cheapest reasonable bid in one click. Routes through the wiring sprint when the vendor module ships its quotes endpoint.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {tab === 'items' && <>
+
 
       {/* Project totals */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
@@ -123,6 +162,7 @@ export function FinalBudgetStage({ project }: Props) {
           );
         })}
       </div>
+      </>}
     </div>
   );
 }

@@ -597,6 +597,83 @@ function DesignSettings() {
         </table>
       </div>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>Per-tier stage matrix</h3>
+        <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+          B3.9 lock — stages flagged optional may be skipped without blocking workflow progress. Tier 1 (EPC &gt; Rs 1.5M) runs all 17 stages mandatory.
+        </p>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 360 }}>
+            <thead>
+              <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                <th style={cellStyle('left')}>Tier</th>
+                <th style={cellStyle('left')}>Optional stages</th>
+              </tr>
+            </thead>
+            <tbody>
+              {([1, 2, 3] as const).map((tier) => {
+                const opt = cfg.tierStageRules[tier].optionalStages;
+                return (
+                  <tr key={tier} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                    <td style={cellStyle('left')}><strong>Tier {tier}</strong></td>
+                    <td style={cellStyle('left')}>
+                      {opt.length === 0
+                        ? <span style={{ color: 'var(--color-text-tertiary)' }}>All 17 stages mandatory.</span>
+                        : opt.map((s) => stageDef(s).label).join(', ')}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>Internal service rate sheet</h3>
+        <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+          Demo rates — real rates lock during the post-build training-module work. Pass-through categories carry no markup.
+        </p>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 480 }}>
+            <thead>
+              <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                <th style={cellStyle('left')}>Category</th>
+                <th style={cellStyle('left')}>Unit</th>
+                <th style={cellStyle('right')}>Rate</th>
+                <th style={cellStyle('left')}>Bills owner?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cfg.internalServiceRates.map((r, i) => {
+                const rateText = r.rateMinor != null
+                  ? formatMUR(r.rateMinor) + (r.rangeMinMinor != null && r.rangeMaxMinor != null ? ` (${formatMUR(r.rangeMinMinor)}–${formatMUR(r.rangeMaxMinor)})` : '')
+                  : r.passThrough
+                  ? 'pass-through'
+                  : '—';
+                const billed = r.billed === 'billed' ? 'Yes'
+                  : r.billed === 'covered_by_pe' ? 'Covered by P&E fee'
+                  : r.billed === 'no_charge' ? 'No charge'
+                  : 'Conditional';
+                return (
+                  <tr key={i} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                    <td style={cellStyle('left')}>{r.category}</td>
+                    <td style={{ ...cellStyle('left'), color: 'var(--color-text-tertiary)' }}>{r.unit}</td>
+                    <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{rateText}</td>
+                    <td style={cellStyle('left')}>
+                      {billed}
+                      {r.note && <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>{r.note}</div>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 12, padding: 12, borderLeft: '2px solid var(--color-text-warning)', background: 'var(--color-bg-warning)', borderRadius: 'var(--radius-sm)' }}>
+          <strong style={{ fontSize: 11, color: 'var(--color-text-warning)' }}>Cleaning hard-stop rule</strong>
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-secondary)' }}>{cfg.cleaningHardStopRule}</p>
+        </div>
+      </div>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>ID Standards Book</h3>
         <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>Coming in v0.2 — central library of approved palettes, materials, vendors, and per-room defaults.</p>
       </div>
