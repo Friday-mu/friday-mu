@@ -2195,6 +2195,287 @@ export function rejectChangeOrder(coId: string, comment: string): ChangeOrder | 
   return updated;
 }
 
+// ─────────────────────────── CLOSEOUT BINDER (cont-18, audit B6) ───────────────────────────
+//
+// Audit B6: today the owner-facing handover is incomplete — Reconciliation
+// is a variance summary + internal profitability table, but there's no
+// structured closeout deliverable. The owner gets a PDF of the budget
+// reconciliation and that's it. No warranties indexed per item, no
+// maintenance schedule, no snag list with sign-off.
+//
+// Cont-18 lands the structured object: 1 binder per project, with three
+// flat lists (warranties, maintenance guides, snag items) and an umbrella
+// state machine (`draft → sent → signed_off`). Snag items have their own
+// owner-side accept/reject flow inside the binder. v0.2 backend persists
+// each list as its own table; the binder header is the umbrella record.
+//
+// @demo:logic — Mutators append to in-memory CLOSEOUT_BINDERS array.
+// Replace with the matching POST/PATCH/DELETE endpoints. Tag:
+// PROD-DESIGN-BINDER.
+
+export type WarrantyDuration = 12 | 24 | 36 | 60 | 120;
+
+export interface WarrantyRecord {
+  id: string;
+  itemName: string;
+  /** Snapshot — vendor name at handover time. Vendor record may change later. */
+  vendorName: string;
+  vendorId: string | null;
+  /** Months from purchase. Drives expiresAt computation downstream. */
+  durationMonths: WarrantyDuration;
+  /** ISO date — when the warranty starts. */
+  purchaseDate: string;
+  certificateUrl: string | null;
+  notes: string | null;
+}
+
+export type MaintenanceFrequency = 'weekly' | 'monthly' | 'quarterly' | 'biannually' | 'annually' | 'as_needed';
+
+export interface MaintenanceGuide {
+  id: string;
+  /** Free-text area label, e.g. "Kitchen worktop", "Master bathroom". */
+  area: string;
+  title: string;
+  frequency: MaintenanceFrequency;
+  /** Plain-text instructions. v0.2 supports markdown / per-step photos. */
+  instructions: string;
+}
+
+export type SnagSeverity = 'cosmetic' | 'functional' | 'critical';
+export type SnagStatus = 'open' | 'fixed' | 'accepted';
+
+export interface SnagItem {
+  id: string;
+  roomId: string | null;
+  title: string;
+  description: string;
+  severity: SnagSeverity;
+  status: SnagStatus;
+  reportedAt: string;
+  fixedAt: string | null;
+  /** Owner's verdict at sign-off time. */
+  ownerSignOff: 'pending' | 'accepted' | 'rejected';
+}
+
+export type CloseoutBinderState = 'draft' | 'sent' | 'signed_off';
+
+export interface CloseoutBinder {
+  id: string;
+  projectId: string;
+  state: CloseoutBinderState;
+  warranties: WarrantyRecord[];
+  maintenance: MaintenanceGuide[];
+  snags: SnagItem[];
+  createdAt: string;
+  sentAt: string | null;
+  signedOffAt: string | null;
+  signOffComment: string | null;
+}
+
+export const CLOSEOUT_BINDERS: CloseoutBinder[] = [
+  {
+    id: 'bind-rc15',
+    projectId: 'p-rc15',
+    state: 'sent',
+    warranties: [
+      { id: 'wty-1', itemName: 'Bosch dishwasher SMS6ZCI42E',     vendorName: 'Cuisine Pro Mauritius',  vendorId: null, durationMonths: 24, purchaseDate: '2026-02-12', certificateUrl: 'https://example.com/cert/bosch-dw.pdf', notes: 'Manufacturer warranty. Receipt required for service.' },
+      { id: 'wty-2', itemName: 'Induction hob, 4-zone',           vendorName: 'Cuisine Pro Mauritius',  vendorId: null, durationMonths: 24, purchaseDate: '2026-02-12', certificateUrl: null,                                  notes: null },
+      { id: 'wty-3', itemName: 'Custom oak cabinetry — kitchen',  vendorName: 'John Sevatian Joinery',  vendorId: null, durationMonths: 36, purchaseDate: '2026-03-04', certificateUrl: null,                                  notes: 'Workmanship warranty. Excludes water damage.' },
+      { id: 'wty-4', itemName: 'Vanity unit — master bath',       vendorName: 'John Sevatian Joinery',  vendorId: null, durationMonths: 36, purchaseDate: '2026-03-22', certificateUrl: null,                                  notes: null },
+      { id: 'wty-5', itemName: 'M&E re-wire',                     vendorName: 'Yuvan Ramburn',          vendorId: null, durationMonths: 60, purchaseDate: '2026-02-28', certificateUrl: null,                                  notes: 'Electrical workmanship — covered for first owner.' },
+    ],
+    maintenance: [
+      { id: 'mnt-1', area: 'Kitchen worktop',     title: 'Re-seal granite edges',          frequency: 'annually',  instructions: 'Apply impregnating sealer to all edges and corners. ~30 min job. Wait 24h before food prep.' },
+      { id: 'mnt-2', area: 'Master bath',         title: 'Regrout shower screen frame',    frequency: 'biannually', instructions: 'Inspect silicone seal between glass and tile. Replace any blackened or cracked sections with anti-mould silicone (Mapesil AC).' },
+      { id: 'mnt-3', area: 'AC units (3 zones)',  title: 'Filter clean + coil inspection', frequency: 'quarterly', instructions: 'Remove + wash filters with mild soap. Have technician inspect coils + drainage tray annually (Daikin recommends Tristan @ Cool Air).' },
+      { id: 'mnt-4', area: 'Custom cabinetry',    title: 'Hinge + drawer-runner check',    frequency: 'annually',  instructions: 'Check Blum hinges for slack. Tighten with PH2 driver. Lubricate runners with PTFE spray (NOT WD-40).' },
+    ],
+    snags: [
+      { id: 'snag-1', roomId: null, title: 'Touch-up paint — living room west wall',   description: 'Two small dings near the corner from furniture install. ~10cm patch each.', severity: 'cosmetic',  status: 'fixed', reportedAt: '2026-04-12T09:00:00.000Z', fixedAt: '2026-04-15T16:00:00.000Z', ownerSignOff: 'pending' },
+      { id: 'snag-2', roomId: null, title: 'Bathroom 2 — towel rail loose',            description: 'Wall-mounted rail came loose from the plug. Re-anchored with M6 sleeves.', severity: 'functional', status: 'fixed', reportedAt: '2026-04-14T09:00:00.000Z', fixedAt: '2026-04-18T11:00:00.000Z', ownerSignOff: 'pending' },
+      { id: 'snag-3', roomId: null, title: 'Kitchen — drawer 3 catches on opening',    description: 'Slight rub on the front edge. Sanded back, re-fitted runners.',              severity: 'cosmetic',   status: 'open',  reportedAt: '2026-04-22T09:00:00.000Z', fixedAt: null,                       ownerSignOff: 'pending' },
+    ],
+    createdAt: '2026-04-10T09:00:00.000Z',
+    sentAt: '2026-04-25T09:00:00.000Z',
+    signedOffAt: null,
+    signOffComment: null,
+  },
+];
+
+let binderSerial = 100;
+let warrantySerial = 1000;
+let maintenanceSerial = 1000;
+let snagSerial = 1000;
+
+export function getCloseoutBinder(projectId: string): CloseoutBinder | null {
+  return CLOSEOUT_BINDERS.find((b) => b.projectId === projectId) ?? null;
+}
+
+/** Lazily creates a draft binder if the project doesn't have one yet. Used by
+ *  ReconciliationStage on first render so admins always have something to
+ *  edit. */
+export function ensureCloseoutBinder(projectId: string): CloseoutBinder {
+  const existing = getCloseoutBinder(projectId);
+  if (existing) return existing;
+  const at = new Date().toISOString();
+  const binder: CloseoutBinder = {
+    id: `bind-${++binderSerial}`,
+    projectId,
+    state: 'draft',
+    warranties: [],
+    maintenance: [],
+    snags: [],
+    createdAt: at,
+    sentAt: null,
+    signedOffAt: null,
+    signOffComment: null,
+  };
+  CLOSEOUT_BINDERS.push(binder);
+  return binder;
+}
+
+function mutateBinder(binderId: string, mut: (b: CloseoutBinder) => CloseoutBinder | null): CloseoutBinder | null {
+  const idx = CLOSEOUT_BINDERS.findIndex((b) => b.id === binderId);
+  if (idx === -1) return null;
+  const updated = mut(CLOSEOUT_BINDERS[idx]);
+  if (!updated) return null;
+  CLOSEOUT_BINDERS[idx] = updated;
+  return updated;
+}
+
+export interface AddWarrantyInput {
+  itemName: string;
+  vendorName: string;
+  vendorId: string | null;
+  durationMonths: WarrantyDuration;
+  purchaseDate: string;
+  certificateUrl: string | null;
+  notes: string | null;
+}
+
+export function addWarranty(binderId: string, input: AddWarrantyInput): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'signed_off') return null;
+    const w: WarrantyRecord = { id: `wty-${++warrantySerial}`, ...input };
+    return { ...b, warranties: [...b.warranties, w] };
+  });
+}
+
+export function removeWarranty(binderId: string, warrantyId: string): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'signed_off') return null;
+    return { ...b, warranties: b.warranties.filter((w) => w.id !== warrantyId) };
+  });
+}
+
+export interface AddMaintenanceInput {
+  area: string;
+  title: string;
+  frequency: MaintenanceFrequency;
+  instructions: string;
+}
+
+export function addMaintenance(binderId: string, input: AddMaintenanceInput): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'signed_off') return null;
+    const m: MaintenanceGuide = { id: `mnt-${++maintenanceSerial}`, ...input };
+    return { ...b, maintenance: [...b.maintenance, m] };
+  });
+}
+
+export function removeMaintenance(binderId: string, mId: string): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'signed_off') return null;
+    return { ...b, maintenance: b.maintenance.filter((m) => m.id !== mId) };
+  });
+}
+
+export interface AddSnagInput {
+  roomId: string | null;
+  title: string;
+  description: string;
+  severity: SnagSeverity;
+}
+
+export function addSnag(binderId: string, input: AddSnagInput): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'signed_off') return null;
+    const at = new Date().toISOString();
+    const s: SnagItem = {
+      id: `snag-${++snagSerial}`,
+      roomId: input.roomId,
+      title: input.title,
+      description: input.description,
+      severity: input.severity,
+      status: 'open',
+      reportedAt: at,
+      fixedAt: null,
+      ownerSignOff: 'pending',
+    };
+    return { ...b, snags: [...b.snags, s] };
+  });
+}
+
+export function markSnagFixed(binderId: string, snagId: string): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'signed_off') return null;
+    const at = new Date().toISOString();
+    const snags = b.snags.map((s) => s.id === snagId ? { ...s, status: 'fixed' as SnagStatus, fixedAt: at } : s);
+    return { ...b, snags };
+  });
+}
+
+export function removeSnag(binderId: string, snagId: string): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'signed_off') return null;
+    return { ...b, snags: b.snags.filter((s) => s.id !== snagId) };
+  });
+}
+
+/** Owner-side. Marks an individual snag as accepted. The umbrella binder
+ *  sign-off is separate. */
+export function acceptSnag(binderId: string, snagId: string): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state === 'draft') return null;
+    const snags = b.snags.map((s) => s.id === snagId ? { ...s, status: 'accepted' as SnagStatus, ownerSignOff: 'accepted' as const } : s);
+    return { ...b, snags };
+  });
+}
+
+export function sendCloseoutBinder(binderId: string): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state !== 'draft') return null;
+    const at = new Date().toISOString();
+    const updated: CloseoutBinder = { ...b, state: 'sent', sentAt: at };
+    appendActivity({
+      projectId: b.projectId,
+      at,
+      userId: null,
+      kind: 'send',
+      summary: `Closeout binder sent to owner — ${b.warranties.length} warranties, ${b.maintenance.length} maintenance entries, ${b.snags.length} snags.`,
+    });
+    return updated;
+  });
+}
+
+export function signOffCloseoutBinder(binderId: string, comment: string | null): CloseoutBinder | null {
+  return mutateBinder(binderId, (b) => {
+    if (b.state !== 'sent') return null;
+    const at = new Date().toISOString();
+    const updated: CloseoutBinder = { ...b, state: 'signed_off', signedOffAt: at, signOffComment: comment };
+    appendActivity({
+      projectId: b.projectId,
+      at,
+      userId: null,
+      kind: 'approve',
+      summary: comment
+        ? `Owner signed off closeout binder — "${comment.slice(0, 80)}".`
+        : 'Owner signed off closeout binder.',
+    });
+    return updated;
+  });
+}
+
 // Approvals (§7.PP mock)
 export const APPROVALS: DesignApproval[] = [
   { id: 'apv-1', projectId: 'p-ohana', artifactType: 'moodboard',       artifactId: 'mb-ohana-2', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-10-22T09:00:00.000Z', decidedAt: '2025-10-25T09:00:00.000Z', decisionMethod: 'whatsapp', comments: 'Yes, this is it.', events: [] },
@@ -2810,6 +3091,20 @@ export const designClient = {
     delete: deleteChangeOrder,
     approve: approveChangeOrder,
     reject: rejectChangeOrder,
+  },
+  binder: {
+    get: getCloseoutBinder,
+    ensure: ensureCloseoutBinder,
+    addWarranty,
+    removeWarranty,
+    addMaintenance,
+    removeMaintenance,
+    addSnag,
+    markSnagFixed,
+    removeSnag,
+    acceptSnag,
+    send: sendCloseoutBinder,
+    signOff: signOffCloseoutBinder,
   },
   documents: { list: getDocuments },
   activity: { list: getActivity },
