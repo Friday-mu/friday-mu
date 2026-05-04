@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   designClient,
   type ChangeOrder,
@@ -15,6 +15,7 @@ import { BudgetTab } from './BudgetTab';
 import { ProgressTab } from './ProgressTab';
 import { HandoverTab } from './HandoverTab';
 import { RequestChangesModal } from './RequestChangesModal';
+import { getLastSeen, isNewSince, markSeen } from './lastSeen';
 import { PORTAL_TABS, type PortalTab } from './types';
 
 interface Props {
@@ -123,6 +124,33 @@ export function PortalContent({
     handover: 'Final handover',
   };
 
+  // ─── what's new since last visit (cont-22, moat #5) ─────────────────────
+  // Compute per-tab "newness" against the persisted last-seen timestamp
+  // for each tab. The currently-active tab is always treated as seen so
+  // the badge for it doesn't flash on entry.
+  const newCounts = useMemo<Record<PortalTab, number>>(() => {
+    const since = (t: PortalTab) => (t === tab ? new Date().toISOString() : getLastSeen(project.slug, t));
+    const binder = designClient.binder.get(project.id);
+    return {
+      overview: 0,
+      documents: docs.filter((d) => isNewSince(d.generatedAt, since('documents'))).length,
+      approvals:
+        approvals.filter((a) => isNewSince(a.sentAt, since('approvals'))).length +
+        selections.filter((s) => isNewSince(s.sentAt, since('approvals'))).length +
+        changeOrders.filter((c) => isNewSince(c.sentAt, since('approvals'))).length,
+      budget: 0,
+      progress: photos.filter((p) => isNewSince(p.uploadedAt, since('progress'))).length,
+      handover: binder && isNewSince(binder.sentAt, since('handover')) ? 1 : 0,
+    };
+  }, [project.id, project.slug, tab, approvals, selections, changeOrders, docs, photos]);
+
+  // Mark the active tab as seen on mount + whenever it changes. Persists
+  // the timestamp for the next visit; the active tab itself reads as 0
+  // via the active-tab branch in `since()` above.
+  useEffect(() => {
+    markSeen(project.slug, tab);
+  }, [project.slug, tab]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div
@@ -169,27 +197,50 @@ export function PortalContent({
           overflowX: 'auto',
         }}
       >
-        {PORTAL_TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            aria-selected={tab === t}
-            data-portal-tab={t}
-            onClick={() => setTab(t)}
-            style={{
-              padding: '6px 14px',
-              fontSize: 12,
-              borderRadius: 'var(--radius-sm)',
-              background: tab === t ? 'var(--color-brand-accent-soft)' : 'transparent',
-              color: tab === t ? 'var(--color-brand-accent)' : 'var(--color-text-secondary)',
-              fontWeight: tab === t ? 600 : 500,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {tabLabels[t]}
-          </button>
-        ))}
+        {PORTAL_TABS.map((t) => {
+          const newCount = newCounts[t];
+          const showDot = newCount > 0;
+          return (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              data-portal-tab={t}
+              data-portal-tab-new={showDot ? newCount : undefined}
+              onClick={() => setTab(t)}
+              style={{
+                padding: '6px 14px',
+                fontSize: 12,
+                borderRadius: 'var(--radius-sm)',
+                background: tab === t ? 'var(--color-brand-accent-soft)' : 'transparent',
+                color: tab === t ? 'var(--color-brand-accent)' : 'var(--color-text-secondary)',
+                fontWeight: tab === t ? 600 : 500,
+                whiteSpace: 'nowrap',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+              aria-label={showDot ? `${tabLabels[t]} (${newCount} new since last visit)` : tabLabels[t]}
+            >
+              {tabLabels[t]}
+              {showDot && (
+                <span
+                  aria-hidden
+                  title={`${newCount} new since your last visit`}
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: 'var(--color-text-success)',
+                    display: 'inline-block',
+                    flexShrink: 0,
+                  }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
