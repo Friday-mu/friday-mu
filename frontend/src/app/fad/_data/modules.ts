@@ -84,6 +84,7 @@ export const MODULES: ModuleDef[] = [
     { id: 'projects', label: 'Projects' },
     { id: 'leads', label: 'Leads' },
     { id: 'vendors', label: 'Vendors' },
+    { id: 'analytics', label: 'Analytics' },
     { id: 'settings', label: 'Settings' },
   ] },
   { id: 'agency', label: 'Agency', group: 'Units', tier: 'tease', ship: 'TBD', icon: 'IconAgency', path: '/gms/agency' },

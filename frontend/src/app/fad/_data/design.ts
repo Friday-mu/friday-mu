@@ -3392,6 +3392,145 @@ export function estimateRoughBudget(lines: RoughBudgetEstimateLine[]): RoughBudg
   };
 }
 
+// ─────────────────────────── ANALYTICS (cont-29) ───────────────────────────
+//
+// Cross-project rollups for the Analytics sub-tab. Three views — kept small
+// on purpose so each renders with hand-rolled SVG (no chart-lib dependency).
+//
+// All accessors take an optional `rangeDays` argument. v0.1: the seed data
+// doesn't span much real time so the range filter is mostly cosmetic, but
+// the shape is the v0.2 backend swap target.
+//
+// @demo:logic — Replace with `GET /api/design/analytics/...` endpoints
+// returning the same shapes. Tag: PROD-DESIGN-ANALYTICS.
+
+export type AnalyticsRange = 30 | 90 | 180 | 'all';
+
+function withinRange(iso: string | null, rangeDays: AnalyticsRange): boolean {
+  if (rangeDays === 'all') return true;
+  if (!iso) return false;
+  const ageDays = (Date.now() - new Date(iso).getTime()) / 86_400_000;
+  return ageDays <= rangeDays;
+}
+
+export interface TimeInStageBucket {
+  stageId: StageId;
+  stageLabel: string;
+  /** Number of active projects currently sitting in this stage. */
+  count: number;
+  /** Median days the cohort has been in this stage (using `updatedAt` as proxy
+   *  — there's no `stageEnteredAt` in v0.1). */
+  medianDays: number;
+  /** Max days for the worst-stuck project. */
+  maxDays: number;
+}
+
+export function getTimeInStageDistribution(rangeDays: AnalyticsRange = 'all'): TimeInStageBucket[] {
+  const now = Date.now();
+  const byStage = new Map<StageId, number[]>();
+  for (const p of PROJECTS) {
+    if (p.lifecycleStatus !== 'active') continue;
+    if (!withinRange(p.updatedAt, rangeDays)) continue;
+    const ageDays = Math.max(0, Math.floor((now - new Date(p.updatedAt).getTime()) / 86_400_000));
+    const arr = byStage.get(p.currentStage) ?? [];
+    arr.push(ageDays);
+    byStage.set(p.currentStage, arr);
+  }
+  const out: TimeInStageBucket[] = [];
+  for (const [stageId, ages] of byStage) {
+    const sorted = [...ages].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 === 0
+      ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+      : sorted[mid];
+    out.push({
+      stageId,
+      stageLabel: stageDef(stageId).shortLabel,
+      count: ages.length,
+      medianDays: median,
+      maxDays: sorted[sorted.length - 1],
+    });
+  }
+  // Sort by 17-stage workflow ordinal so the chart reads left-to-right
+  // through the funnel.
+  const stageOrder: Record<StageId, number> = Object.fromEntries(STAGES.map((s, i) => [s.id, i])) as Record<StageId, number>;
+  out.sort((a, b) => stageOrder[a.stageId] - stageOrder[b.stageId]);
+  return out;
+}
+
+export interface FunnelBucket {
+  label: string;
+  count: number;
+  /** Conversion rate from the previous bucket. Null for the first bucket. */
+  conversionFromPrev: number | null;
+}
+
+/** Pipeline shape: pre-qualification (CRM interior leads) → Design draft →
+ *  Sent → Accepted → Won (in-progress projects). Each bucket sums the
+ *  current count. v0.2 backend should walk a per-lead-state-transition
+ *  table for true cohort retention; v0.1 just snapshots current state. */
+export function getLeadConversionFunnel(rangeDays: AnalyticsRange = 'all'): FunnelBucket[] {
+  // Pre-qualification = CRM-lite interior leads not yet won/lost. Held in
+  // FAD_LEADS, separate from design.LEADS — but we can't import here without
+  // a circular ref, so pass a count via the accessor (callers will provide
+  // it). Default to 0; the UI passes the real count.
+  const inDesignPipeline = LEADS.filter((l) => withinRange(l.createdAt, rangeDays));
+  const draft = inDesignPipeline.filter((l) => l.status === 'draft').length;
+  const sent = inDesignPipeline.filter((l) => l.status === 'sent').length;
+  const accepted = inDesignPipeline.filter((l) => l.status === 'accepted').length;
+  const won = PROJECTS.filter((p) => p.lifecycleStatus === 'active' && withinRange(p.createdAt, rangeDays)).length;
+  // We expose the funnel without the pre-qual count — the UI wraps it in.
+  const cum = (n: number, prev: number | null) => prev === null ? null : prev > 0 ? n / prev : 0;
+  const buckets: FunnelBucket[] = [
+    { label: 'Draft',    count: draft,    conversionFromPrev: null },
+    { label: 'Sent',     count: sent,     conversionFromPrev: cum(sent, draft) },
+    { label: 'Accepted', count: accepted, conversionFromPrev: cum(accepted, sent) },
+    { label: 'Won',      count: won,      conversionFromPrev: cum(won, accepted) },
+  ];
+  return buckets;
+}
+
+export interface SpendCurvePoint {
+  /** YYYY-MM bin. */
+  month: string;
+  /** Cumulative approved up to and including this month. */
+  approvedMinor: number;
+  /** Cumulative paid up to and including this month. */
+  paidMinor: number;
+}
+
+/** Aggregate BUDGET_ITEMS into a monthly cumulative curve of approved vs.
+ *  paid. Uses `dueDate` as the time anchor (the proxy for "when this item
+ *  hit the budget"). Items without dueDate are bucketed into the earliest
+ *  month with data. */
+export function getSpendCurve(rangeDays: AnalyticsRange = 'all'): SpendCurvePoint[] {
+  // Bucket by YYYY-MM
+  const byMonth = new Map<string, { approved: number; paid: number }>();
+  let earliestMonth: string | null = null;
+  for (const item of BUDGET_ITEMS) {
+    if (item.internalWork) continue;
+    const anchor = item.dueDate ?? null;
+    if (anchor && !withinRange(anchor, rangeDays)) continue;
+    const month = (anchor ?? '2025-01').slice(0, 7);
+    if (!earliestMonth || month < earliestMonth) earliestMonth = month;
+    const slot = byMonth.get(month) ?? { approved: 0, paid: 0 };
+    if (item.status === 'approved') slot.approved += item.finalApprovedCostMinor ?? 0;
+    if (item.actualPaidMinor) slot.paid += item.actualPaidMinor;
+    byMonth.set(month, slot);
+  }
+  if (byMonth.size === 0) return [];
+  // Walk months in sorted order, accumulating.
+  const months = Array.from(byMonth.keys()).sort();
+  let approvedCum = 0;
+  let paidCum = 0;
+  return months.map((m) => {
+    const slot = byMonth.get(m)!;
+    approvedCum += slot.approved;
+    paidCum += slot.paid;
+    return { month: m, approvedMinor: approvedCum, paidMinor: paidCum };
+  });
+}
+
 // ─────────────────────────── MOCK CLIENT (interface mirrors future real client) ───────────────────────────
 //
 // @demo:logic — Swap this object for a real `fetch`-backed client. Same shape,
@@ -3516,5 +3655,10 @@ export const designClient = {
     updateAnnexA: updateAnnexAConfig,
     resetAnnexA: resetAnnexAConfig,
     annexAAudit: getAnnexAAudit,
+  },
+  analytics: {
+    timeInStage: getTimeInStageDistribution,
+    funnel: getLeadConversionFunnel,
+    spendCurve: getSpendCurve,
   },
 };

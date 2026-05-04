@@ -199,6 +199,7 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
     { id: 'projects',  label: 'Projects' },
     { id: 'leads',     label: 'Leads' },
     { id: 'vendors',   label: 'Vendors' },
+    { id: 'analytics', label: 'Analytics' },
     canSeeSettings && { id: 'settings', label: 'Settings' },
   ].filter((t): t is { id: string; label: string } => Boolean(t));
 
@@ -282,6 +283,7 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
         {active === 'projects' && <ProjectsList onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
         {active === 'leads' && <LeadsList />}
         {active === 'vendors' && <VendorsList />}
+        {active === 'analytics' && <AnalyticsView />}
         {active === 'settings' && <DesignSettings />}
       </div>
     </div>
@@ -1669,6 +1671,221 @@ function VendorProjectBreakdown({ projects }: { projects: Array<{ projectId: str
       </table>
     </div>
   );
+}
+
+// ─────────────────────────── Analytics view (cont-29) ───────────────────────────
+
+const ANALYTICS_RANGES: Array<{ id: 30 | 90 | 180 | 'all'; label: string }> = [
+  { id: 30, label: 'Last 30d' },
+  { id: 90, label: 'Last 90d' },
+  { id: 180, label: 'Last 180d' },
+  { id: 'all', label: 'All time' },
+];
+
+function AnalyticsView() {
+  const [range, setRange] = useState<30 | 90 | 180 | 'all'>('all');
+  const stages = designClient.analytics.timeInStage(range);
+  const funnel = designClient.analytics.funnel(range);
+  const spend = designClient.analytics.spendCurve(range);
+  const crmInteriorPrequalCount = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won').length;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }} data-design-analytics>
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Analytics</h3>
+            <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              Cross-project rollups derived live from the same data the per-project tabs read. Three views: time-in-stage (where projects bottleneck), lead conversion funnel (Source → Won), spend curve (cumulative paid vs. approved over time).
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {ANALYTICS_RANGES.map((r) => (
+              <button
+                key={String(r.id)}
+                type="button"
+                data-analytics-range={r.id}
+                onClick={() => setRange(r.id)}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: 11,
+                  borderRadius: 'var(--radius-sm)',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  background: range === r.id ? 'var(--color-brand-accent)' : 'transparent',
+                  color: range === r.id ? '#fff' : 'var(--color-text-secondary)',
+                  fontWeight: range === r.id ? 600 : 500,
+                }}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Time in stage</h4>
+        <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Active projects, grouped by their current stage. Median + max days reveal which stages bottleneck.
+        </p>
+        <TimeInStageChart buckets={stages} />
+      </div>
+
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Lead conversion funnel</h4>
+        <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Pre-qualification (CRM-lite interior leads) → Design pipeline. Conversion ratios annotate each step.
+        </p>
+        <FunnelChart preQualCount={crmInteriorPrequalCount} buckets={funnel} />
+      </div>
+
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Spend curve</h4>
+        <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Cumulative <strong style={{ color: 'var(--color-brand-accent)' }}>approved</strong> vs. <strong style={{ color: 'var(--color-text-success)' }}>paid</strong> across all projects, monthly. Gap between curves = open commitments.
+        </p>
+        <SpendCurveChart points={spend} />
+      </div>
+    </div>
+  );
+}
+
+function TimeInStageChart({ buckets }: { buckets: Array<{ stageId: string; stageLabel: string; count: number; medianDays: number; maxDays: number }> }) {
+  if (buckets.length === 0) {
+    return <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No active projects in this range.</div>;
+  }
+  const maxScale = Math.max(30, ...buckets.map((b) => b.maxDays));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {buckets.map((b) => {
+        const medianPct = (b.medianDays / maxScale) * 100;
+        const maxPct = (b.maxDays / maxScale) * 100;
+        const flagged = b.medianDays > 14;
+        return (
+          <div key={b.stageId} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 80px', gap: 10, alignItems: 'center' }}>
+            <div style={{ fontSize: 12 }}>
+              <strong>{b.stageLabel}</strong>
+              <span style={{ color: 'var(--color-text-tertiary)', marginLeft: 4 }}>· {b.count}</span>
+            </div>
+            <div style={{ position: 'relative', height: 16, background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${maxPct}%`, background: 'var(--color-bg-warning)', borderRadius: 'var(--radius-sm)', opacity: 0.4 }} />
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${medianPct}%`, background: flagged ? 'var(--color-text-warning)' : 'var(--color-brand-accent)', borderRadius: 'var(--radius-sm)' }} />
+            </div>
+            <div style={{ fontSize: 11, fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
+              {b.medianDays}d · {b.maxDays}d max
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 6, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+        <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--color-brand-accent)', borderRadius: 2, marginRight: 4 }} />median</span>
+        <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--color-bg-warning)', borderRadius: 2, marginRight: 4, opacity: 0.6 }} />max (worst-stuck)</span>
+      </div>
+    </div>
+  );
+}
+
+function FunnelChart({ preQualCount, buckets }: { preQualCount: number; buckets: Array<{ label: string; count: number; conversionFromPrev: number | null }> }) {
+  // Render pre-qualification + design buckets together, widest at the top.
+  const all = [{ label: 'Pre-qualification (CRM)', count: preQualCount, conversionFromPrev: null }, ...buckets];
+  const maxCount = Math.max(1, ...all.map((b) => b.count));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {all.map((b, i) => {
+        const widthPct = (b.count / maxCount) * 100;
+        const isPrequal = i === 0;
+        return (
+          <div key={b.label} style={{ display: 'grid', gridTemplateColumns: '170px 1fr 90px', gap: 10, alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: isPrequal ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)' }}>
+              {b.label}
+            </div>
+            <div style={{ height: 22, background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', position: 'relative' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${widthPct}%`,
+                  background: isPrequal ? 'var(--color-background-tertiary)' : 'var(--color-brand-accent)',
+                  border: isPrequal ? '0.5px dashed var(--color-border-secondary)' : 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  paddingLeft: 8,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: isPrequal ? 'var(--color-text-secondary)' : '#fff',
+                }}
+              >
+                {b.count}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
+              {b.conversionFromPrev !== null ? `${(b.conversionFromPrev * 100).toFixed(0)}%` : '—'}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4, textAlign: 'right' }}>
+        Right column = conversion from previous stage
+      </div>
+    </div>
+  );
+}
+
+function SpendCurveChart({ points }: { points: Array<{ month: string; approvedMinor: number; paidMinor: number }> }) {
+  if (points.length === 0) {
+    return <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No spend data in this range.</div>;
+  }
+  const W = 600;
+  const H = 180;
+  const PAD = { top: 10, right: 10, bottom: 24, left: 60 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+  const maxValue = Math.max(...points.map((p) => p.approvedMinor));
+  const xStep = points.length === 1 ? innerW : innerW / (points.length - 1);
+  const xAt = (i: number) => PAD.left + i * xStep;
+  const yAt = (v: number) => PAD.top + innerH - (maxValue > 0 ? (v / maxValue) * innerH : 0);
+  const linePath = (key: 'approvedMinor' | 'paidMinor') =>
+    points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(p[key])}`).join(' ');
+  const areaPath = (key: 'approvedMinor' | 'paidMinor') =>
+    `${linePath(key)} L ${xAt(points.length - 1)} ${PAD.top + innerH} L ${xAt(0)} ${PAD.top + innerH} Z`;
+  // Y-axis tick — 4 evenly spaced.
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ v: maxValue * f, y: PAD.top + innerH - f * innerH }));
+  return (
+    <div data-design-analytics-spend style={{ overflowX: 'auto' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', minWidth: 480 }}>
+        {/* gridlines + y-axis labels */}
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke="var(--color-border-tertiary)" strokeDasharray="2 4" strokeWidth={0.5} />
+            <text x={PAD.left - 6} y={t.y + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
+              {formatMURCompact(t.v)}
+            </text>
+          </g>
+        ))}
+        {/* approved area + line */}
+        <path d={areaPath('approvedMinor')} fill="var(--color-brand-accent)" opacity={0.12} />
+        <path d={linePath('approvedMinor')} fill="none" stroke="var(--color-brand-accent)" strokeWidth={2} />
+        {/* paid line on top */}
+        <path d={linePath('paidMinor')} fill="none" stroke="var(--color-text-success)" strokeWidth={2} strokeDasharray="6 3" />
+        {/* x-axis labels */}
+        {points.map((p, i) => (
+          <text key={p.month} x={xAt(i)} y={H - 8} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
+            {p.month}
+          </text>
+        ))}
+      </svg>
+      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-brand-accent)', verticalAlign: 'middle', marginRight: 4 }} />Approved · {formatMUR(points[points.length - 1]?.approvedMinor ?? 0)}</span>
+        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-text-success)', verticalAlign: 'middle', marginRight: 4, borderTop: '1px dashed var(--color-text-success)' }} />Paid · {formatMUR(points[points.length - 1]?.paidMinor ?? 0)}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatMURCompact(minor: number): string {
+  const major = minor / 100;
+  if (major >= 1_000_000) return `${(major / 1_000_000).toFixed(1)}M`;
+  if (major >= 1_000) return `${(major / 1_000).toFixed(0)}k`;
+  return major.toFixed(0);
 }
 
 function NewVendorForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (vendor: Vendor) => void }) {
