@@ -3738,6 +3738,15 @@ export interface FlowCurvePoint {
   netCashMinor: number;
 }
 
+/** Optional project-dimension filters for the flow curve. Each array narrows
+ *  the projects whose gates / budget items contribute to the chart. Empty or
+ *  undefined arrays mean "include all". v0.2 backend can resolve these into
+ *  a single SQL WHERE clause; v0.1 walks PROJECTS once and filters by id. */
+export interface FlowCurveFilters {
+  tiers?: DesignTier[];
+  classifications?: ProjectClassification[];
+}
+
 /** Combined per-month cumulative flow curve for the analytics chart.
  *
  *  Sources:
@@ -3749,9 +3758,20 @@ export interface FlowCurvePoint {
  *
  *  Months are merged from both sources so the x-axis is contiguous. Cumulative
  *  walk forward from earliest month. */
-export function getFlowCurve(rangeDays: AnalyticsRange = 'all'): FlowCurvePoint[] {
+export function getFlowCurve(rangeDays: AnalyticsRange = 'all', filters: FlowCurveFilters = {}): FlowCurvePoint[] {
   const DESIGN_FEE_GATES: GateId[] = ['design_fee_60', 'design_fee_40'];
   const EXECUTION_FEE_GATES: GateId[] = ['execution_fee_t1', 'execution_fee_t2'];
+
+  // Resolve allowed project ids once based on filters. Untiered projects
+  // (tier null) only flow through when no tier filter is active.
+  const tierFilter = filters.tiers && filters.tiers.length > 0 ? new Set(filters.tiers) : null;
+  const classFilter = filters.classifications && filters.classifications.length > 0 ? new Set(filters.classifications) : null;
+  const allowedProjectIds = new Set(
+    PROJECTS
+      .filter((p) => tierFilter ? (p.tier !== null && tierFilter.has(p.tier)) : true)
+      .filter((p) => classFilter ? classFilter.has(p.classification) : true)
+      .map((p) => p.id),
+  );
 
   const byMonth = new Map<string, { rDesign: number; rExec: number; rFinal: number; sApproved: number; sPaid: number }>();
   const slotFor = (m: string) => {
@@ -3765,6 +3785,7 @@ export function getFlowCurve(rangeDays: AnalyticsRange = 'all'): FlowCurvePoint[
 
   // Revenue
   for (const gate of PAYMENT_GATES) {
+    if (!allowedProjectIds.has(gate.projectId)) continue;
     if (gate.status !== 'received') continue;
     if (!gate.receivedAt) continue;
     if (!gate.amountMinor) continue;
@@ -3778,6 +3799,7 @@ export function getFlowCurve(rangeDays: AnalyticsRange = 'all'): FlowCurvePoint[
 
   // Spend (skip internal work — handled inside the project margin calc, not customer-facing)
   for (const item of BUDGET_ITEMS) {
+    if (!allowedProjectIds.has(item.projectId)) continue;
     if (item.internalWork) continue;
     const anchor = item.dueDate ?? null;
     if (anchor && !withinRange(anchor, rangeDays)) continue;

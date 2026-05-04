@@ -1825,12 +1825,21 @@ const ANALYTICS_RANGES: Array<{ id: 30 | 90 | 180 | 'all'; label: string }> = [
   { id: 'all', label: 'All time' },
 ];
 
+const FLOW_TIERS: DesignTier[] = [1, 2, 3];
+const FLOW_CLASSIFICATIONS: ProjectClassification[] = ['renovation', 'furnishing', 'mixed'];
+
 function AnalyticsView() {
   const [range, setRange] = useState<30 | 90 | 180 | 'all'>('all');
+  const [flowTiers, setFlowTiers] = useState<DesignTier[]>([]);
+  const [flowClasses, setFlowClasses] = useState<ProjectClassification[]>([]);
   const stages = designClient.analytics.timeInStage(range);
   const funnel = designClient.analytics.funnel(range);
-  const flow = designClient.analytics.flowCurve(range);
+  const flow = designClient.analytics.flowCurve(range, { tiers: flowTiers, classifications: flowClasses });
   const crmInteriorPrequalCount = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won').length;
+  const toggleTier = (t: DesignTier) => setFlowTiers((s) => s.includes(t) ? s.filter((x) => x !== t) : [...s, t]);
+  const toggleClass = (c: ProjectClassification) => setFlowClasses((s) => s.includes(c) ? s.filter((x) => x !== c) : [...s, c]);
+  const clearFlowFilters = () => { setFlowTiers([]); setFlowClasses([]); };
+  const flowFilterActive = flowTiers.length > 0 || flowClasses.length > 0;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }} data-design-analytics>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 14 }}>
@@ -1838,7 +1847,7 @@ function AnalyticsView() {
           <div>
             <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Analytics</h3>
             <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              Cross-project rollups derived live from the same data the per-project tabs read. Three views: time-in-stage (where projects bottleneck), lead conversion funnel (Source → Won), spend curve (cumulative paid vs. approved over time).
+              Cross-project rollups derived live from the same data the per-project tabs read. Three views: time-in-stage (where projects bottleneck), lead conversion funnel (Source → Won), and a P&amp;L flow chart (revenue, spend, net cash by month).
             </p>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
@@ -1868,7 +1877,7 @@ function AnalyticsView() {
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Time in stage</h4>
         <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Active projects, grouped by their current stage. Median + max days reveal which stages bottleneck.
+          Active projects, grouped by their current stage. Median + max days reveal which stages bottleneck. <em>Days are computed from <code style={{ fontFamily: 'var(--font-mono-fad)' }}>updatedAt</code> as a v0.1 proxy — v0.2 wires explicit per-stage entry timestamps.</em>
         </p>
         <TimeInStageChart buckets={stages} />
       </div>
@@ -1876,7 +1885,7 @@ function AnalyticsView() {
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Lead conversion funnel</h4>
         <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Pre-qualification (CRM-lite interior leads) → Design pipeline. Conversion ratios annotate each step.
+          Pre-qualification (CRM-lite interior leads) → Design pipeline. Conversion ratios annotate each step. <em>Won counts currently-active won projects, not true cohort conversion — v0.2 walks per-lead state transitions for real retention math.</em>
         </p>
         <FunnelChart preQualCount={crmInteriorPrequalCount} buckets={funnel} />
       </div>
@@ -1884,12 +1893,70 @@ function AnalyticsView() {
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Project flow</h4>
         <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Cumulative monthly. Toggle series to compare. <strong>Net cash</strong> = revenue received − spend paid; useful as a project cash position, not gross margin (BUDGET_ITEMS spend is owner-funded working capital).
+          Cumulative monthly. Toggle series to compare. <strong>Net cash</strong> = revenue received − spend paid; useful as a project cash position, not gross margin (BUDGET_ITEMS spend is owner-funded working capital). Taxes (VAT pass-through, Mauritius corp tax) are out of scope at v0.1.
         </p>
+        <div data-flow-filters style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12, fontSize: 11 }}>
+          <span style={{ color: 'var(--color-text-tertiary)' }}>Tier:</span>
+          {FLOW_TIERS.map((t) => {
+            const on = flowTiers.includes(t);
+            return (
+              <button
+                key={t}
+                type="button"
+                data-flow-tier={t}
+                data-active={on}
+                onClick={() => toggleTier(t)}
+                style={flowFilterChip(on)}
+              >
+                Tier {t}
+              </button>
+            );
+          })}
+          <span style={{ color: 'var(--color-text-tertiary)', marginLeft: 8 }}>Scope:</span>
+          {FLOW_CLASSIFICATIONS.map((c) => {
+            const on = flowClasses.includes(c);
+            return (
+              <button
+                key={c}
+                type="button"
+                data-flow-class={c}
+                data-active={on}
+                onClick={() => toggleClass(c)}
+                style={flowFilterChip(on)}
+              >
+                {c}
+              </button>
+            );
+          })}
+          {flowFilterActive && (
+            <button
+              type="button"
+              data-flow-clear
+              onClick={clearFlowFilters}
+              style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-brand-accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              clear filters
+            </button>
+          )}
+        </div>
         <FlowCurveChart points={flow} />
       </div>
     </div>
   );
+}
+
+function flowFilterChip(on: boolean): React.CSSProperties {
+  return {
+    padding: '3px 9px',
+    fontSize: 11,
+    borderRadius: 'var(--radius-full)',
+    border: '0.5px solid ' + (on ? 'transparent' : 'var(--color-border-tertiary)'),
+    background: on ? 'var(--color-brand-accent)' : 'transparent',
+    color: on ? '#fff' : 'var(--color-text-secondary)',
+    fontWeight: on ? 600 : 500,
+    cursor: 'pointer',
+    textTransform: 'capitalize' as const,
+  };
 }
 
 function TimeInStageChart({ buckets }: { buckets: Array<{ stageId: string; stageLabel: string; count: number; medianDays: number; maxDays: number }> }) {
@@ -2036,6 +2103,9 @@ function FlowCurveChart({ points }: { points: Array<{ month: string; revenueMino
   const yTickVals = [0, 0.25, 0.5, 0.75, 1].map((f) => yMin + f * yRange);
   const last = points[points.length - 1];
 
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const hovered = hoverIdx !== null ? points[hoverIdx] : null;
+
   return (
     <div data-design-analytics-flow style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Series toggles */}
@@ -2080,7 +2150,20 @@ function FlowCurveChart({ points }: { points: Array<{ month: string; revenueMino
 
       {/* SVG chart */}
       <div style={{ overflowX: 'auto' }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', minWidth: 480 }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ width: '100%', height: 'auto', minWidth: 480, cursor: points.length > 0 ? 'crosshair' : 'default' }}
+          onPointerMove={(e) => {
+            const svg = e.currentTarget as SVGSVGElement;
+            const rect = svg.getBoundingClientRect();
+            // map clientX into the viewBox coordinate space
+            const vbX = ((e.clientX - rect.left) / rect.width) * W;
+            const i = Math.round((vbX - PAD.left) / xStep);
+            if (i >= 0 && i < points.length) setHoverIdx(i);
+            else setHoverIdx(null);
+          }}
+          onPointerLeave={() => setHoverIdx(null)}
+        >
           {/* gridlines + y-axis labels */}
           {yTickVals.map((v, i) => {
             const y = yAt(v);
@@ -2118,8 +2201,29 @@ function FlowCurveChart({ points }: { points: Array<{ month: string; revenueMino
               {p.month}
             </text>
           ))}
+          {/* hover guide + dots when a point is hovered */}
+          {hoverIdx !== null && hovered && (
+            <g pointerEvents="none">
+              <line x1={xAt(hoverIdx)} y1={PAD.top} x2={xAt(hoverIdx)} y2={PAD.top + innerH} stroke="var(--color-border-secondary)" strokeWidth={0.75} strokeDasharray="3 3" />
+              {visibleSeries.map((s) => (
+                <circle key={s.key} cx={xAt(hoverIdx)} cy={yAt(s.pickMinor(hovered))} r={3.5} fill={s.color} stroke="var(--color-background-primary)" strokeWidth={1} />
+              ))}
+            </g>
+          )}
         </svg>
       </div>
+      {/* hover tooltip — renders below the chart so it never clips off the right edge */}
+      {hovered && (
+        <div data-flow-tooltip style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 12, fontSize: 11, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-tertiary)' }}>
+          <strong style={{ fontFamily: 'var(--font-mono-fad)' }}>{hovered.month}</strong>
+          {visibleSeries.map((s) => (
+            <span key={s.key}>
+              <span style={{ color: s.color, fontWeight: 600 }}>{s.label}</span>
+              <span style={{ marginLeft: 6, color: 'var(--color-text-secondary)' }}>{formatMUR(s.pickMinor(hovered))}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Footer totals — only for visible series */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
