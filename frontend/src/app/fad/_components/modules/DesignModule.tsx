@@ -1830,6 +1830,7 @@ function AnalyticsView() {
   const stages = designClient.analytics.timeInStage(range);
   const funnel = designClient.analytics.funnel(range);
   const spend = designClient.analytics.spendCurve(range);
+  const revenue = designClient.analytics.revenueCurve(range);
   const crmInteriorPrequalCount = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won').length;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }} data-design-analytics>
@@ -1887,6 +1888,14 @@ function AnalyticsView() {
           Cumulative <strong style={{ color: 'var(--color-brand-accent)' }}>approved</strong> vs. <strong style={{ color: 'var(--color-text-success)' }}>paid</strong> across all projects, monthly. Gap between curves = open commitments.
         </p>
         <SpendCurveChart points={spend} />
+      </div>
+
+      <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
+        <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Revenue curve</h4>
+        <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Cumulative <strong style={{ color: 'var(--color-text-success)' }}>total revenue</strong> received from owners — design fees + execution fees + final balance. Excludes pass-through project working capital.
+        </p>
+        <RevenueCurveChart points={revenue} />
       </div>
     </div>
   );
@@ -2019,6 +2028,59 @@ function SpendCurveChart({ points }: { points: Array<{ month: string; approvedMi
       <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
         <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-brand-accent)', verticalAlign: 'middle', marginRight: 4 }} />Approved · {formatMUR(points[points.length - 1]?.approvedMinor ?? 0)}</span>
         <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-text-success)', verticalAlign: 'middle', marginRight: 4, borderTop: '1px dashed var(--color-text-success)' }} />Paid · {formatMUR(points[points.length - 1]?.paidMinor ?? 0)}</span>
+      </div>
+    </div>
+  );
+}
+
+function RevenueCurveChart({ points }: { points: Array<{ month: string; designFeeMinor: number; executionFeeMinor: number; finalBalanceMinor: number; totalMinor: number }> }) {
+  if (points.length === 0) {
+    return <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', textAlign: 'center' }}>No revenue received in this range.</div>;
+  }
+  const W = 600;
+  const H = 180;
+  const PAD = { top: 10, right: 10, bottom: 24, left: 60 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+  const maxValue = Math.max(...points.map((p) => p.totalMinor));
+  const xStep = points.length === 1 ? innerW : innerW / (points.length - 1);
+  const xAt = (i: number) => PAD.left + i * xStep;
+  const yAt = (v: number) => PAD.top + innerH - (maxValue > 0 ? (v / maxValue) * innerH : 0);
+  const linePath = (key: 'totalMinor' | 'designFeeMinor') =>
+    points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(p[key])}`).join(' ');
+  const areaPath = (key: 'totalMinor') =>
+    `${linePath(key)} L ${xAt(points.length - 1)} ${PAD.top + innerH} L ${xAt(0)} ${PAD.top + innerH} Z`;
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ v: maxValue * f, y: PAD.top + innerH - f * innerH }));
+  const last = points[points.length - 1];
+  return (
+    <div data-design-analytics-revenue style={{ overflowX: 'auto' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', minWidth: 480 }}>
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke="var(--color-border-tertiary)" strokeDasharray="2 4" strokeWidth={0.5} />
+            <text x={PAD.left - 6} y={t.y + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
+              {formatMURCompact(t.v)}
+            </text>
+          </g>
+        ))}
+        {/* total revenue area + line */}
+        <path d={areaPath('totalMinor')} fill="var(--color-text-success)" opacity={0.12} />
+        <path d={linePath('totalMinor')} fill="none" stroke="var(--color-text-success)" strokeWidth={2} />
+        {/* design fee line on top (dashed, brand accent) */}
+        <path d={linePath('designFeeMinor')} fill="none" stroke="var(--color-brand-accent)" strokeWidth={2} strokeDasharray="6 3" />
+        {points.map((p, i) => (
+          <text key={p.month} x={xAt(i)} y={H - 8} textAnchor="middle" fontSize={9} fontFamily="var(--font-mono-fad)" fill="var(--color-text-tertiary)">
+            {p.month}
+          </text>
+        ))}
+      </svg>
+      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4, flexWrap: 'wrap' }}>
+        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-text-success)', verticalAlign: 'middle', marginRight: 4 }} />Total · {formatMUR(last?.totalMinor ?? 0)}</span>
+        <span><span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--color-brand-accent)', verticalAlign: 'middle', marginRight: 4, borderTop: '1px dashed var(--color-brand-accent)' }} />Design fees · {formatMUR(last?.designFeeMinor ?? 0)}</span>
+        <span style={{ color: 'var(--color-text-tertiary)' }}>Execution · {formatMUR(last?.executionFeeMinor ?? 0)}</span>
+        {last && last.finalBalanceMinor > 0 && (
+          <span style={{ color: 'var(--color-text-tertiary)' }}>Final balance · {formatMUR(last.finalBalanceMinor)}</span>
+        )}
       </div>
     </div>
   );

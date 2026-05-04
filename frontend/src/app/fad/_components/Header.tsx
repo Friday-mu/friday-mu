@@ -87,18 +87,7 @@ export function Header({
           onClick={onGoHome}
           title="Home · Inbox"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/friday-logo.jpg"
-            alt="Friday"
-            className="fad-brand-logo"
-            width={32}
-            height={32}
-          />
-          <span className="fad-brand-name">
-            friday.mu
-            <span className="fad-brand-sub">Admin</span>
-          </span>
+          <span className="fad-brand-wordmark">fridayOS</span>
         </button>
       </div>
 

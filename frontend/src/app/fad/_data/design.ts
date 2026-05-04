@@ -3672,6 +3672,59 @@ export function getSpendCurve(rangeDays: AnalyticsRange = 'all'): SpendCurvePoin
   });
 }
 
+export interface RevenueCurvePoint {
+  /** YYYY-MM bin. */
+  month: string;
+  /** Cumulative design fee revenue (gates `design_fee_60` + `design_fee_40`) — Friday's professional services revenue. */
+  designFeeMinor: number;
+  /** Cumulative execution fee revenue (gates `execution_fee_t1` + `execution_fee_t2`) — margin on procurement. */
+  executionFeeMinor: number;
+  /** Cumulative final-balance revenue (gate `final_balance`) — retainer release. */
+  finalBalanceMinor: number;
+  /** Cumulative total revenue (sum of the three). */
+  totalMinor: number;
+}
+
+/** Aggregate received PaymentGates into a monthly cumulative curve of Friday
+ *  revenue. Excludes `agreement_signed` (no money) and `project_funds`
+ *  (working capital pass-through, not Friday revenue). Anchored on
+ *  `receivedAt`. */
+export function getRevenueCurve(rangeDays: AnalyticsRange = 'all'): RevenueCurvePoint[] {
+  const DESIGN_FEE_GATES: GateId[] = ['design_fee_60', 'design_fee_40'];
+  const EXECUTION_FEE_GATES: GateId[] = ['execution_fee_t1', 'execution_fee_t2'];
+  const byMonth = new Map<string, { design: number; execution: number; final: number }>();
+  for (const gate of PAYMENT_GATES) {
+    if (gate.status !== 'received') continue;
+    if (!gate.receivedAt) continue;
+    if (!gate.amountMinor) continue;
+    if (!withinRange(gate.receivedAt, rangeDays)) continue;
+    const month = gate.receivedAt.slice(0, 7);
+    const slot = byMonth.get(month) ?? { design: 0, execution: 0, final: 0 };
+    if (DESIGN_FEE_GATES.includes(gate.id)) slot.design += gate.amountMinor;
+    else if (EXECUTION_FEE_GATES.includes(gate.id)) slot.execution += gate.amountMinor;
+    else if (gate.id === 'final_balance') slot.final += gate.amountMinor;
+    byMonth.set(month, slot);
+  }
+  if (byMonth.size === 0) return [];
+  const months = Array.from(byMonth.keys()).sort();
+  let designCum = 0;
+  let executionCum = 0;
+  let finalCum = 0;
+  return months.map((m) => {
+    const slot = byMonth.get(m)!;
+    designCum += slot.design;
+    executionCum += slot.execution;
+    finalCum += slot.final;
+    return {
+      month: m,
+      designFeeMinor: designCum,
+      executionFeeMinor: executionCum,
+      finalBalanceMinor: finalCum,
+      totalMinor: designCum + executionCum + finalCum,
+    };
+  });
+}
+
 // ─────────────────────────── MOCK CLIENT (interface mirrors future real client) ───────────────────────────
 //
 // @demo:logic — Swap this object for a real `fetch`-backed client. Same shape,
@@ -3802,5 +3855,6 @@ export const designClient = {
     timeInStage: getTimeInStageDistribution,
     funnel: getLeadConversionFunnel,
     spendCurve: getSpendCurve,
+    revenueCurve: getRevenueCurve,
   },
 };
