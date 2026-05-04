@@ -12,7 +12,7 @@ interface Props {
 
 export function HandoverTab({ project }: Props) {
   const isClosed =
-    project.currentStage === 'reconciliation' && project.stageStatus === 'done';
+    project.currentStage === 'reconciliation' || project.stageStatus === 'done';
 
   if (!isClosed) {
     return (

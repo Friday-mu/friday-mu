@@ -8,16 +8,23 @@ interface Props {
   slug: string;
 }
 
+interface PortalSession {
+  projectSlug: string;
+  ownerId: string;
+  portalSession: string;
+  expiresAt: string;
+}
+
 type SessionState =
   | { phase: 'loading' }
   | { phase: 'redirecting'; reason: string }
-  | { phase: 'ready'; project: DesignProject };
+  | { phase: 'ready'; project: DesignProject; session: PortalSession };
 
 /**
  * Owner-side standalone portal route.
  *
- * @demo:auth — session check is localStorage-only, written by /portal/auth
- * after a magic-link validates. Tag: PROD-DESIGN-PORTAL-AUTH.
+ * @demo:auth — session validation is localStorage-only, written by /portal/auth
+ * after the magic-link JWT validates. Tag: PROD-DESIGN-PORTAL-AUTH.
  */
 export function PortalProjectClient({ slug }: Props) {
   const project = useMemo(() => designClient.projects.getBySlug(slug), [slug]);
@@ -31,26 +38,40 @@ export function PortalProjectClient({ slug }: Props) {
     }
     const raw = window.localStorage.getItem(sessionKey(slug));
     if (!raw) {
-      // No session yet — redirect to /portal/auth so the magic-link handler can
-      // either pick a fresh token from the URL or ask the owner to request one.
       setState({ phase: 'redirecting', reason: 'session_required' });
-      window.location.replace(`/portal/auth?error=session_required&slug=${encodeURIComponent(slug)}`);
+      window.location.replace(
+        `/portal/auth?error=session_required&slug=${encodeURIComponent(slug)}`,
+      );
       return;
     }
-    // Phase 4: any value passes. Phase 5 swaps this for JWT signature + scope
-    // (`pid` claim must match this slug, `exp` must be in the future).
-    let parsed: { projectSlug?: string } | null = null;
+    let parsed: Partial<PortalSession> | null = null;
     try {
-      parsed = JSON.parse(raw) as { projectSlug?: string };
+      parsed = JSON.parse(raw) as Partial<PortalSession>;
     } catch {
       parsed = null;
     }
-    if (!parsed || parsed.projectSlug !== slug) {
+    if (
+      !parsed ||
+      parsed.projectSlug !== slug ||
+      !parsed.ownerId ||
+      !parsed.portalSession ||
+      !parsed.expiresAt
+    ) {
       setState({ phase: 'redirecting', reason: 'scope_mismatch' });
-      window.location.replace(`/portal/auth?error=scope_mismatch&slug=${encodeURIComponent(slug)}`);
+      window.location.replace(
+        `/portal/auth?error=scope_mismatch&slug=${encodeURIComponent(slug)}`,
+      );
       return;
     }
-    setState({ phase: 'ready', project });
+    if (new Date(parsed.expiresAt).getTime() < Date.now()) {
+      window.localStorage.removeItem(sessionKey(slug));
+      setState({ phase: 'redirecting', reason: 'expired' });
+      window.location.replace(
+        `/portal/auth?error=expired&slug=${encodeURIComponent(slug)}`,
+      );
+      return;
+    }
+    setState({ phase: 'ready', project, session: parsed as PortalSession });
   }, [project, slug]);
 
   if (state.phase === 'loading') {
@@ -66,14 +87,16 @@ export function PortalProjectClient({ slug }: Props) {
       <div className="portal-state">
         <h1>You'll need a fresh link.</h1>
         <p>
-          Your session has expired or the link doesn't match this project. We're sending you back
-          so Friday can issue a new one.
+          Your session has expired or doesn't match this project. We're sending you back so Friday
+          can issue a new one.
         </p>
       </div>
     );
   }
 
-  return <PortalContent project={state.project} />;
+  return (
+    <PortalContent project={state.project} portalSession={state.session.portalSession} />
+  );
 }
 
 export function sessionKey(slug: string): string {

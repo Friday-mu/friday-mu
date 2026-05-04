@@ -13,9 +13,11 @@ interface Props {
   project: DesignProject;
   approvals: DesignApproval[];
   docs: DesignDocument[];
+  onApprove: (approvalId: string) => void;
+  onRequestChanges: (approval: DesignApproval) => void;
 }
 
-export function OverviewTab({ project, approvals, docs }: Props) {
+export function OverviewTab({ project, approvals, docs, onApprove, onRequestChanges }: Props) {
   const pending = approvals.filter((a) => a.state === 'sent');
   const currentIndex = stageDef(project.currentStage).index;
   const latestUpdate = docs.find((d) => d.type === 'weekly_update');
@@ -92,6 +94,7 @@ export function OverviewTab({ project, approvals, docs }: Props) {
                 <button
                   type="button"
                   data-portal-approve={a.id}
+                  onClick={() => onApprove(a.id)}
                   style={{
                     padding: '4px 10px',
                     fontSize: 11,
@@ -105,6 +108,7 @@ export function OverviewTab({ project, approvals, docs }: Props) {
                 <button
                   type="button"
                   data-portal-request-changes={a.id}
+                  onClick={() => onRequestChanges(a)}
                   style={{
                     padding: '4px 10px',
                     fontSize: 11,

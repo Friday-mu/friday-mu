@@ -10,6 +10,29 @@ import {
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
+/**
+ * Mock-only stand-in for the authenticated FAD user. Phase 5 lock — Ishant is
+ * the sole approver, so the magic-link issuance logs his ID. v0.2 reads from
+ * real auth.
+ *
+ * @demo:auth — Replace with real session id. Tag: PROD-DESIGN-PORTAL-AUTH.
+ */
+const MOCK_BY_USER_ID = 'u-ishant';
+
+function sendPackageForApproval(project: DesignProject, pkgId: string) {
+  const link = designClient.magicLinks.issue({
+    projectId: project.id,
+    byUserId: MOCK_BY_USER_ID,
+    forArtifactId: pkgId,
+    forArtifactType: 'budget_package',
+  });
+  if (!link) {
+    fireToast(`Couldn't send: project not found`);
+    return;
+  }
+  fireToast(`Magic link issued for ${pkgId} — paste from activity log into WhatsApp`);
+}
+
 interface Props {
   project: DesignProject;
 }
@@ -146,7 +169,11 @@ export function FinalBudgetStage({ project }: Props) {
                             {pkgPending && <span style={{ color: 'var(--color-text-warning)' }}>· pending</span>}
                           </div>
                           {!ownerView && pkgPending && (
-                            <button type="button" onClick={() => fireToast(`Approval request sent to owner: ${pkgId}`)} style={primaryBtn()}>
+                            <button
+                              type="button"
+                              onClick={() => sendPackageForApproval(project, pkgId)}
+                              style={primaryBtn()}
+                            >
                               Send package for approval
                             </button>
                           )}

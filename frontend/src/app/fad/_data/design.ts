@@ -517,6 +517,22 @@ export interface DesignTask {
   evidenceUrl: string | null;
 }
 
+/**
+ * Single audit event on an approval — decision + signed-context that the
+ * portal session produced. v0.2 will compute these server-side from the JWT
+ * claims and the request context.
+ */
+export interface ApprovalEvent {
+  decision: 'approved' | 'revision_requested';
+  comment: string | null;
+  timestamp: string;
+  /** Mock IP. v0.2 reads from request headers. */
+  ipAddress: string;
+  userAgent: string;
+  /** Magic-link session ID this decision was made within. */
+  portalSession: string;
+}
+
 export interface DesignApproval {
   id: string;
   projectId: string;
@@ -529,6 +545,8 @@ export interface DesignApproval {
   decidedAt: string | null;
   decisionMethod: 'portal' | 'whatsapp' | 'email' | 'verbal' | null;
   comments: string | null;
+  /** Append-only audit trail of decisions taken on this approval via the portal. */
+  events: ApprovalEvent[];
 }
 
 export type DocumentType =
@@ -1560,9 +1578,9 @@ export function getTasks(projectId: string): DesignTask[] {
 
 // Approvals (§7.PP mock)
 export const APPROVALS: DesignApproval[] = [
-  { id: 'apv-1', projectId: 'p-ohana', artifactType: 'moodboard',       artifactId: 'mb-ohana-2', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-10-22T09:00:00.000Z', decidedAt: '2025-10-25T09:00:00.000Z', decisionMethod: 'whatsapp', comments: 'Yes, this is it.' },
-  { id: 'apv-2', projectId: 'p-ohana', artifactType: 'design_pack',     artifactId: 'dp-ohana-1', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-12-01T09:00:00.000Z', decidedAt: '2025-12-08T09:00:00.000Z', decisionMethod: 'email',    comments: 'Approved.' },
-  { id: 'apv-3', projectId: 'p-ohana', artifactType: 'budget_package',  artifactId: 'pkg-ohana-bd2',  state: 'sent', ownerId: 'cp-davisen', sentAt: '2026-04-29T09:00:00.000Z', decidedAt: null,                    decisionMethod: null,        comments: null },
+  { id: 'apv-1', projectId: 'p-ohana', artifactType: 'moodboard',       artifactId: 'mb-ohana-2', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-10-22T09:00:00.000Z', decidedAt: '2025-10-25T09:00:00.000Z', decisionMethod: 'whatsapp', comments: 'Yes, this is it.', events: [] },
+  { id: 'apv-2', projectId: 'p-ohana', artifactType: 'design_pack',     artifactId: 'dp-ohana-1', state: 'approved', ownerId: 'cp-davisen', sentAt: '2025-12-01T09:00:00.000Z', decidedAt: '2025-12-08T09:00:00.000Z', decisionMethod: 'email',    comments: 'Approved.',         events: [] },
+  { id: 'apv-3', projectId: 'p-ohana', artifactType: 'budget_package',  artifactId: 'pkg-ohana-bd2',  state: 'sent', ownerId: 'cp-davisen', sentAt: '2026-04-29T09:00:00.000Z', decidedAt: null,                    decisionMethod: null,        comments: null,               events: [] },
 ];
 
 export function getApprovals(projectId: string): DesignApproval[] {
@@ -1652,6 +1670,269 @@ export function getDashboardMetrics(): DashboardMetrics {
   return { activeProjects, pendingOwnerApprovals, procurementOpen, marginExposureMinor };
 }
 
+// ─────────────────────────── PORTAL MAGIC LINKS + JWT (mock) ───────────────────────────
+//
+// @demo:auth — All of this is replaced wholesale in the wiring sprint by a
+// real JWT validator + email/WhatsApp dispatch. Token shape is intentionally
+// matched to the real spec so the swap is mechanical. Tag: PROD-DESIGN-PORTAL-AUTH.
+//
+// Format mirrors a real JWT: `<header>.<payload>.<signature>`, base64url-encoded.
+//   header  = { alg: 'HS256', kid, typ: 'JWT' }
+//   payload = { aud: 'portal', sub: <ownerId>, pid: <projectId>, slug, iat, exp, jti }
+//   signature = mock 'HS256' over `<header>.<payload>` using a fixed dev key
+//                — checked for shape only; real HMAC plugs in v0.2.
+
+export interface MockJwtClaims {
+  aud: 'portal';
+  sub: string; // owner_id (counterparty)
+  pid: string; // project_id
+  slug: string;
+  iat: number; // issued-at, seconds since epoch
+  exp: number; // expires-at, seconds since epoch
+  jti: string; // unique id (also used as portalSession)
+}
+
+export interface MagicLinkRecord {
+  id: string;
+  projectId: string;
+  ownerId: string;
+  slug: string;
+  token: string;
+  url: string;
+  /** Audience-tagged context for the activity log line. */
+  forArtifactId: string | null;
+  forArtifactType: DesignApproval['artifactType'] | null;
+  issuedAt: string;
+  expiresAt: string;
+  issuedByUserId: string;
+}
+
+export const MAGIC_LINKS: MagicLinkRecord[] = [];
+
+const MOCK_JWT_KID = 'mock-2026-q2';
+const MOCK_JWT_KEY = 'design-portal-dev-only-key';
+const MOCK_JWT_DEFAULT_TTL_S = 60 * 60 * 24 * 14; // 14 days
+
+function base64UrlEncode(input: string): string {
+  // btoa works on byte strings; encode UTF-8 first to be safe.
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlDecode(input: string): string | null {
+  try {
+    const padded = input.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
+    const binary = atob(padded + pad);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mock signature: deterministic over (header + payload + key) so a tampered
+ * token won't validate. NOT cryptographically sound — wiring sprint replaces
+ * with a real HMAC.
+ */
+function mockSign(headerB64: string, payloadB64: string): string {
+  const seed = `${headerB64}.${payloadB64}.${MOCK_JWT_KEY}`;
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+  }
+  return base64UrlEncode(`mock-${(h >>> 0).toString(36)}`);
+}
+
+export interface SignMagicLinkInput {
+  projectId: string;
+  ownerId: string;
+  slug: string;
+  ttlSeconds?: number;
+}
+
+export function signMockToken(input: SignMagicLinkInput): { token: string; claims: MockJwtClaims } {
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = input.ttlSeconds ?? MOCK_JWT_DEFAULT_TTL_S;
+  const claims: MockJwtClaims = {
+    aud: 'portal',
+    sub: input.ownerId,
+    pid: input.projectId,
+    slug: input.slug,
+    iat: now,
+    exp: now + ttl,
+    jti: `s-${now}-${Math.random().toString(36).slice(2, 10)}`,
+  };
+  const headerB64 = base64UrlEncode(JSON.stringify({ alg: 'HS256', kid: MOCK_JWT_KID, typ: 'JWT' }));
+  const payloadB64 = base64UrlEncode(JSON.stringify(claims));
+  const sig = mockSign(headerB64, payloadB64);
+  return { token: `${headerB64}.${payloadB64}.${sig}`, claims };
+}
+
+export type ValidateResult =
+  | { valid: true; claims: MockJwtClaims }
+  | { valid: false; error: 'malformed' | 'bad_signature' | 'expired' | 'wrong_audience' | 'wrong_scope' };
+
+export function validateMockToken(token: string, expectedSlug?: string): ValidateResult {
+  const parts = token.split('.');
+  if (parts.length !== 3) return { valid: false, error: 'malformed' };
+  const [headerB64, payloadB64, sig] = parts;
+  if (mockSign(headerB64, payloadB64) !== sig) return { valid: false, error: 'bad_signature' };
+  const payloadJson = base64UrlDecode(payloadB64);
+  if (!payloadJson) return { valid: false, error: 'malformed' };
+  let claims: MockJwtClaims;
+  try {
+    claims = JSON.parse(payloadJson) as MockJwtClaims;
+  } catch {
+    return { valid: false, error: 'malformed' };
+  }
+  if (claims.aud !== 'portal') return { valid: false, error: 'wrong_audience' };
+  const now = Math.floor(Date.now() / 1000);
+  if (claims.exp < now) return { valid: false, error: 'expired' };
+  if (expectedSlug && claims.slug !== expectedSlug) return { valid: false, error: 'wrong_scope' };
+  return { valid: true, claims };
+}
+
+let magicLinkSerial = 1;
+
+export interface IssueMagicLinkInput {
+  projectId: string;
+  byUserId: string;
+  forArtifactId?: string;
+  forArtifactType?: DesignApproval['artifactType'];
+  ttlSeconds?: number;
+}
+
+/**
+ * Mints a magic link for the project's primary owner. Logs the issuance to
+ * MAGIC_LINKS + the project activity log + console.info so admin can copy the
+ * URL into WhatsApp. NO real email send in v0.1.
+ */
+export function issueMagicLink(input: IssueMagicLinkInput): MagicLinkRecord | null {
+  const project = getProject(input.projectId);
+  if (!project) return null;
+  const owner = project.counterpartyId;
+  const ttl = input.ttlSeconds ?? MOCK_JWT_DEFAULT_TTL_S;
+  const { token, claims } = signMockToken({
+    projectId: project.id,
+    ownerId: owner,
+    slug: project.slug,
+    ttlSeconds: ttl,
+  });
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : 'https://friday-dashboard';
+  const url = `${origin}/portal/auth?token=${encodeURIComponent(token)}`;
+  const record: MagicLinkRecord = {
+    id: `ml-${magicLinkSerial++}`,
+    projectId: project.id,
+    ownerId: owner,
+    slug: project.slug,
+    token,
+    url,
+    forArtifactId: input.forArtifactId ?? null,
+    forArtifactType: input.forArtifactType ?? null,
+    issuedAt: new Date(claims.iat * 1000).toISOString(),
+    expiresAt: new Date(claims.exp * 1000).toISOString(),
+    issuedByUserId: input.byUserId,
+  };
+  MAGIC_LINKS.push(record);
+
+  const summary = input.forArtifactType
+    ? `Magic link issued for ${input.forArtifactType.replace(/_/g, ' ')} — paste into WhatsApp: ${url}`
+    : `Magic link issued for owner portal — paste into WhatsApp: ${url}`;
+  appendActivity({
+    projectId: project.id,
+    at: record.issuedAt,
+    userId: input.byUserId,
+    kind: 'send',
+    summary,
+  });
+  // Dev-console echo so the admin can copy the link from there too.
+  if (typeof console !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.info('[portal] magic link:', url);
+  }
+  return record;
+}
+
+export function listMagicLinks(projectId: string): MagicLinkRecord[] {
+  return MAGIC_LINKS.filter((m) => m.projectId === projectId);
+}
+
+// ─────────────────────────── APPROVAL RESPOND (portal-side) ───────────────────────────
+
+let approvalEventSerial = 1;
+
+export interface RespondInput {
+  decision: 'approved' | 'revision_requested';
+  comment: string | null;
+  /** Mock IP — defaults to '127.0.0.1' if not provided. */
+  ipAddress?: string;
+  /** User agent string — defaults to navigator.userAgent or 'unknown'. */
+  userAgent?: string;
+  /** The portal session (jti claim) the response was made within. */
+  portalSession: string;
+}
+
+/**
+ * Owner-side decision recorder. Updates the approval state, appends an
+ * audit-grade event, writes an activity-log line, and returns the updated
+ * approval. Pure-frontend mock — server does this in v0.2.
+ */
+export function respondToApproval(approvalId: string, input: RespondInput): DesignApproval | null {
+  const idx = APPROVALS.findIndex((a) => a.id === approvalId);
+  if (idx === -1) return null;
+  const existing = APPROVALS[idx];
+  const at = new Date().toISOString();
+  const ev: ApprovalEvent = {
+    decision: input.decision,
+    comment: input.comment,
+    timestamp: at,
+    ipAddress: input.ipAddress ?? '127.0.0.1',
+    userAgent:
+      input.userAgent ??
+      (typeof navigator !== 'undefined' && navigator.userAgent ? navigator.userAgent : 'unknown'),
+    portalSession: input.portalSession,
+  };
+  const updated: DesignApproval = {
+    ...existing,
+    state: input.decision === 'approved' ? 'approved' : 'revision_requested',
+    decidedAt: at,
+    decisionMethod: 'portal',
+    comments: input.comment,
+    events: [...existing.events, ev],
+  };
+  APPROVALS[idx] = updated;
+  appendActivity({
+    projectId: existing.projectId,
+    at,
+    userId: existing.ownerId,
+    kind: input.decision === 'approved' ? 'approve' : 'reject',
+    summary:
+      input.decision === 'approved'
+        ? `Owner approved ${existing.artifactType.replace(/_/g, ' ')} via portal.`
+        : `Owner requested changes on ${existing.artifactType.replace(/_/g, ' ')} — "${(
+            input.comment ?? ''
+          ).slice(0, 80)}".`,
+  });
+  // Bump serial so every event id is distinct in dev tools too.
+  approvalEventSerial += 1;
+  return updated;
+}
+
+/**
+ * Cross-project pending-approvals accessor. Used by the dashboard "Pending
+ * owner approvals" metric so it doesn't fan out client-side. Pure refactor —
+ * the v0.2 server endpoint will return the same shape.
+ */
+export function listAllPendingApprovals(): DesignApproval[] {
+  return APPROVALS.filter((a) => a.state === 'sent');
+}
+
 // ─────────────────────────── MOCK CLIENT (interface mirrors future real client) ───────────────────────────
 //
 // @demo:logic — Swap this object for a real `fetch`-backed client. Same shape,
@@ -1702,7 +1983,16 @@ export const designClient = {
         .map(stripForOwner),
   },
   tasks: { list: getTasks },
-  approvals: { list: getApprovals },
+  approvals: {
+    list: getApprovals,
+    allPending: listAllPendingApprovals,
+    respond: respondToApproval,
+  },
+  magicLinks: {
+    issue: issueMagicLink,
+    list: listMagicLinks,
+    validate: validateMockToken,
+  },
   documents: { list: getDocuments },
   activity: { list: getActivity },
   settings: { annexA: () => ANNEX_A_DEFAULT },
