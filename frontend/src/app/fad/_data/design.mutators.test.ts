@@ -333,7 +333,7 @@ describe('portfolio insights — vendor performance + catalog usage (cont-19)', 
 
   it('getVendorPerformance(v-jaabir) reflects cross-project totals from the seed', () => {
     const perf = getVendorPerformance('v-jaabir');
-    // Jaabir is on Ohana + Albion + LB-2 in the cont-19 seed expansion.
+    // Jaabir is on Ohana + Albion + LB-2 (cont-19 seed) + RC-15 (cont-27 seed).
     expect(perf.projectCount).toBeGreaterThanOrEqual(2);
     expect(perf.itemCount).toBeGreaterThan(5);
     expect(perf.totalSpendMinor).toBeGreaterThan(0);
