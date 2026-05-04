@@ -6,8 +6,8 @@ import {
   formatMUR,
   STAGES,
   stageDef,
-  stripForOwner,
   type DesignProject,
+  type OwnerBudgetItem,
 } from '../../../_data/design';
 
 interface Props {
@@ -24,7 +24,7 @@ export function OwnerPortalPreview({ project, onClose }: Props) {
   const approvals = designClient.approvals.list(project.id);
   const docs = designClient.documents.list(project.id).filter((d) => d.audience === 'owner' && d.status !== 'not_yet');
   const photos = designClient.photos.list(project.id).filter((p) => p.ownerVisible);
-  const items = designClient.budgetItems.list(project.id).map(stripForOwner);
+  const items = designClient.budgetItems.listForOwner(project.id);
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -188,7 +188,7 @@ function ApprovalsTab({ approvals }: { approvals: ReturnType<typeof designClient
   );
 }
 
-function BudgetTab({ items }: { items: ReturnType<typeof stripForOwner>[] }) {
+function BudgetTab({ items }: { items: OwnerBudgetItem[] }) {
   const total = items.filter((i) => i.status === 'approved').reduce((s, i) => s + (i.finalApprovedCostMinor ?? 0), 0);
   return (
     <div>

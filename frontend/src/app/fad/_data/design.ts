@@ -41,6 +41,16 @@ export type StageStatus =
   | 'done'
   | 'skipped';
 
+/**
+ * Project-level lifecycle, orthogonal to stage progress.
+ *  - active: normal flow.
+ *  - paused: workflow halted, all data preserved, resumable. Friday-side decision
+ *            (e.g. agreement signature slips past loan window).
+ *  - cancelled: terminal. Project closed, fee retained per discretion, items
+ *               procured may be transferred to Friday inventory.
+ */
+export type LifecycleStatus = 'active' | 'paused' | 'cancelled';
+
 export interface StageDef {
   id: StageId;
   index: number;
@@ -139,6 +149,18 @@ export interface DesignProject {
   updatedAt: string;
   startDate: string | null;
   estimatedCompletion: string | null;
+  /** Project-level lifecycle status, orthogonal to stage progress. Defaults to 'active'. */
+  lifecycleStatus: LifecycleStatus;
+  /** Set when lifecycleStatus transitions to 'paused'. */
+  pausedAt: string | null;
+  pausedReason: string | null;
+  pausedByUserId: string | null;
+  /** Set when lifecycleStatus transitions to 'cancelled'. */
+  cancelledAt: string | null;
+  cancelledReason: string | null;
+  cancelledByUserId: string | null;
+  /** Whether procured items were transferred to Friday inventory on cancel. */
+  cancelTransferToInventory: boolean | null;
 }
 
 export interface DesignLead {
@@ -426,9 +448,9 @@ export interface BudgetItem {
   vendorId: string | null;
   productLink: string | null;
   imageUrl: string | null;
-  /** Internal-only — never owner-visible. */
+  /** Disclosed to owner per B3.1 (supplier discount disclosure). */
   retailCostMinor: number | null;
-  /** Internal-only — never owner-visible. */
+  /** Disclosed to owner per B3.1 — owner sees the negotiated rate Friday secured. */
   negotiatedCostMinor: number | null;
   finalApprovedCostMinor: number | null;
   actualPaidMinor: number | null;
@@ -442,6 +464,8 @@ export interface BudgetItem {
   assignedUserId: string | null;
   dueDate: string | null;
   notes: string | null;
+  /** Set true if the item was transferred to Friday inventory on project cancel. */
+  transferredToInventory?: boolean;
 }
 
 // ─────────────────────────── VENDORS (mock §7.YY) ───────────────────────────
@@ -542,13 +566,45 @@ export interface ActivityLogEntry {
 
 // ─────────────────────────── ANNEX A (pricing schedule) ───────────────────────────
 
+/** Per-tier mandatory vs optional stage matrix (B3.9). */
+export interface TierStageRules {
+  /** Stage IDs that may be skipped without blocking workflow progress. */
+  optionalStages: StageId[];
+}
+
+/** Owner-billed status for an internal service line. */
+export type OwnerBilledMode =
+  | 'billed'         // flat rate or pass-through, owner is invoiced
+  | 'covered_by_pe'  // already included in the procurement & execution fee
+  | 'no_charge'      // captured internally, never invoiced to owner
+  | 'conditional';   // depends on property handover destination
+
+export interface InternalServiceRate {
+  category: string;
+  unit: string;
+  /** Demo rate in MUR cents; null when not flat (covered_by_pe / no_charge / pass-through). */
+  rateMinor: number | null;
+  /** Range bounds (MUR cents) when the rate has variance. */
+  rangeMinMinor?: number;
+  rangeMaxMinor?: number;
+  billed: OwnerBilledMode;
+  /** Pass-through (transport, disposal) — no markup, costs flow to owner at supplier price. */
+  passThrough?: boolean;
+  /** Copy explaining the rule when the rate isn't a simple flat. */
+  note?: string;
+}
+
 export interface AnnexAConfig {
   designFee: { tier3FlatMinor: number; tier2FlatMinor: number; tier1PercentOfEpc: number };
   procurementFurnishing: { tier3Pct: number; tier2Pct: number; tier1Pct: number };
   procurementRenovation: { tier3Pct: number; tier2Pct: number; tier1Pct: number };
   /** EPC thresholds in MUR cents. */
   tierThresholds: { tier3MaxMinor: number; tier2MaxMinor: number };
-  internalServiceRates: { label: string; ratePerHourMinor: number | null }[];
+  internalServiceRates: InternalServiceRate[];
+  /** Hard-stop rule copy surfaced as a callout under the rate sheet. */
+  cleaningHardStopRule: string;
+  /** B3.9 — per-tier mandatory/optional stage matrix. */
+  tierStageRules: Record<DesignTier, TierStageRules>;
   agreementTemplateVersion: string;
 }
 
@@ -562,11 +618,29 @@ export const ANNEX_A_DEFAULT: AnnexAConfig = {
   procurementFurnishing: { tier3Pct: 0.125, tier2Pct: 0.10, tier1Pct: 0.075 },
   procurementRenovation: { tier3Pct: 0.175, tier2Pct: 0.15, tier1Pct: 0.125 },
   tierThresholds: { tier3MaxMinor: 500_000_00, tier2MaxMinor: 1_500_000_00 },
+  // Demo seed — real rates locked during the post-build training-module work.
   internalServiceRates: [
-    { label: 'Design hours', ratePerHourMinor: null },
-    { label: 'Project mgmt hours', ratePerHourMinor: null },
-    { label: 'Site supervision hours', ratePerHourMinor: null },
+    { category: 'Internal labour (Bryan, Alex)',         unit: 'per job',      rateMinor: 250_000,                                                                billed: 'billed' },
+    { category: 'Site supervision',                       unit: '—',         rateMinor: null,                                                                   billed: 'covered_by_pe', note: 'Covered by the procurement & execution fee.' },
+    { category: 'Project management',                     unit: '—',         rateMinor: null,                                                                   billed: 'covered_by_pe', note: 'Covered by the procurement & execution fee.' },
+    { category: 'Deep cleaning post-renovation',          unit: 'per property', rateMinor: 450_000, rangeMinMinor: 300_000, rangeMaxMinor: 600_000,                billed: 'billed',        note: 'Range varies by property size.' },
+    { category: 'Standard cleaning during ID phase',      unit: 'per visit',    rateMinor: 200_000, rangeMinMinor: 150_000, rangeMaxMinor: 250_000,                billed: 'billed',        note: 'ID-phase only — see hard-stop rule below.' },
+    { category: 'Transport / van runs',                   unit: 'per run',      rateMinor: null,                                                                   billed: 'billed',        passThrough: true, note: 'Pass-through, no markup. Charged at supplier rate.' },
+    { category: 'Waste / disposal',                       unit: 'per load',     rateMinor: null,                                                                   billed: 'billed',        passThrough: true, note: 'Pass-through, no markup. Charged at supplier rate.' },
+    { category: 'Electrical (in-house)',                  unit: 'per job',      rateMinor: 350_000,                                                                billed: 'billed' },
+    { category: 'Plumbing (in-house)',                    unit: 'per job',      rateMinor: 350_000,                                                                billed: 'billed' },
+    { category: 'Furniture assembly / installation',      unit: 'per job',      rateMinor: 200_000,                                                                billed: 'billed' },
+    { category: 'Styling day',                            unit: '—',         rateMinor: null,                                                                   billed: 'covered_by_pe', note: 'Included in the procurement & execution fee.' },
+    { category: 'Pre-renovation photos',                  unit: '—',         rateMinor: null,                                                                   billed: 'no_charge',     note: 'Captured internally, no charge.' },
+    { category: 'Professional post-photos',               unit: 'per shoot',    rateMinor: null,                                                                   billed: 'conditional',   note: 'Charged when the property does not go on to Friday PM. Waived when handed over to Friday PM.' },
   ],
+  cleaningHardStopRule:
+    'Standard cleaning rate applies only during the ID-phase execution. Once the property goes live on Guesty (PM phase), cleaning costs flow through the guest cleaning fee, not the ID project.',
+  tierStageRules: {
+    1: { optionalStages: [] },
+    2: { optionalStages: ['doc-request'] },
+    3: { optionalStages: ['doc-request', 'moodboard', 'design-pack', 'design-review'] },
+  },
   agreementTemplateVersion: '2025-09-nursoo',
 };
 
@@ -618,7 +692,9 @@ export const COUNTERPARTIES: Counterparty[] = [
   { id: 'cp-tasleem',  fullName: 'Tasleem Peeroo',     phone: '+230 5400 1100', email: 'tasleem.peeroo@example.com',  nic: null, kind: 'owner' },
   { id: 'cp-davisen',  fullName: 'Davisen Nursoo',     phone: '+230 5800 4422', email: 'davisen.nursoo@example.com',  nic: 'N1903730912045', kind: 'owner' },
   { id: 'cp-matthieu', fullName: 'Matthieu Duval',     phone: '+230 5900 7733', email: 'matthieu.duval@example.com',  nic: null, kind: 'owner' },
-  { id: 'cp-rc15',     fullName: 'Lagon Bleu RC-15 Owner', phone: null,         email: 'rc15-owner@example.com',      nic: null, kind: 'owner' },
+  { id: 'cp-rc15',     fullName: 'Residence Camelia 15 Owner', phone: null,     email: 'rc15-owner@example.com',      nic: null, kind: 'owner' },
+  { id: 'cp-lb2',      fullName: 'Lagon Bleu LB-2 Owner',      phone: null,     email: 'lb2-owner@example.com',       nic: null, kind: 'owner' },
+  { id: 'cp-lb3',      fullName: 'Lagon Bleu LB-3 Owner',      phone: null,     email: 'lb3-owner@example.com',       nic: null, kind: 'owner' },
 ];
 
 export function getCounterparty(id: string): Counterparty | null {
@@ -637,7 +713,9 @@ export const PROPERTIES: DesignProperty[] = [
   { id: 'pr-albion',   pmPropertyId: null,    name: 'Albion residence',     address: 'Albion, west coast', region: 'West',   bedrooms: 4, bathrooms: 3 },
   { id: 'pr-ohana',    pmPropertyId: 'OH-1',  name: 'Ohana House',          address: 'Royal Road, Pereybere',  region: 'North',  bedrooms: 5, bathrooms: 4 },
   { id: 'pr-flicflac', pmPropertyId: null,    name: 'Duval — Flic en Flac', address: 'Flic en Flac',           region: 'West',   bedrooms: 3, bathrooms: 2 },
-  { id: 'pr-rc15',     pmPropertyId: 'LB-RC15', name: 'Lagon Bleu RC-15',   address: 'Lagon Bleu Complex',     region: 'North',  bedrooms: 2, bathrooms: 2 },
+  { id: 'pr-rc15',     pmPropertyId: 'RC-15',   name: 'Residence Camelia 15', address: 'Beau Plan',              region: 'North',  bedrooms: 2, bathrooms: 2 },
+  { id: 'pr-lb2',      pmPropertyId: 'LB-2',    name: 'Lagon Bleu LB-2',      address: 'Lagon Bleu Complex',     region: 'North',  bedrooms: 3, bathrooms: 2 },
+  { id: 'pr-lb3',      pmPropertyId: 'LB-3',    name: 'Lagon Bleu LB-3',      address: 'Lagon Bleu Complex',     region: 'North',  bedrooms: 3, bathrooms: 2 },
 ];
 
 export function getProperty(id: string): DesignProperty | null {
@@ -693,6 +771,14 @@ export const PROJECTS: DesignProject[] = [
     updatedAt: ISO_NOW,
     startDate: '2026-05-02',
     estimatedCompletion: '2026-07-02',
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    cancelledByUserId: null,
+    cancelTransferToInventory: null,
   },
   {
     id: 'p-ohana',
@@ -719,6 +805,14 @@ export const PROJECTS: DesignProject[] = [
     updatedAt: ISO_NOW,
     startDate: '2025-10-01',
     estimatedCompletion: '2026-09-30',
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    cancelledByUserId: null,
+    cancelTransferToInventory: null,
   },
   {
     id: 'p-duval',
@@ -745,11 +839,19 @@ export const PROJECTS: DesignProject[] = [
     updatedAt: ISO_NOW,
     startDate: null,
     estimatedCompletion: null,
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    cancelledByUserId: null,
+    cancelTransferToInventory: null,
   },
   {
     id: 'p-rc15',
     entityId: DESIGN_ENTITY_ID,
-    name: 'Lagon Bleu RC-15 — closeout',
+    name: 'Residence Camelia 15 — closeout',
     counterpartyId: 'cp-rc15',
     propertyId: 'pr-rc15',
     classification: 'furnishing',
@@ -771,6 +873,82 @@ export const PROJECTS: DesignProject[] = [
     updatedAt: ISO_NOW,
     startDate: '2025-07-01',
     estimatedCompletion: '2026-04-30',
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    cancelledByUserId: null,
+    cancelTransferToInventory: null,
+  },
+  {
+    id: 'p-lb2',
+    entityId: DESIGN_ENTITY_ID,
+    name: 'Lagon Bleu LB-2 — closeout',
+    counterpartyId: 'cp-lb2',
+    propertyId: 'pr-lb2',
+    classification: 'renovation',
+    tier: 2,
+    epcMinor: 850_000_00,
+    designFeeMinor: 45_000_00,
+    procurementFeeMinor: 127_500_00,
+    goals: ['renovation', 'furnishing'],
+    outcomes: ['list_property'],
+    budgetExpectationMinor: 850_000_00,
+    urgency: null,
+    pmLink: 'managed_by_friday',
+    designLeadUserId: 'u-mathias',
+    currentStage: 'reconciliation',
+    stageStatus: 'in-progress',
+    blocker: null,
+    nextAction: 'Compile final variance report with Bryan.',
+    createdAt: '2025-04-10T08:00:00.000Z',
+    updatedAt: ISO_NOW,
+    startDate: '2025-05-01',
+    estimatedCompletion: '2026-03-15',
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    cancelledByUserId: null,
+    cancelTransferToInventory: null,
+  },
+  {
+    id: 'p-lb3',
+    entityId: DESIGN_ENTITY_ID,
+    name: 'Lagon Bleu LB-3 — closeout',
+    counterpartyId: 'cp-lb3',
+    propertyId: 'pr-lb3',
+    classification: 'renovation',
+    tier: 2,
+    epcMinor: 720_000_00,
+    designFeeMinor: 45_000_00,
+    procurementFeeMinor: 108_000_00,
+    goals: ['renovation', 'furnishing'],
+    outcomes: ['list_property'],
+    budgetExpectationMinor: 720_000_00,
+    urgency: null,
+    pmLink: 'managed_by_friday',
+    designLeadUserId: 'u-mathias',
+    currentStage: 'reconciliation',
+    stageStatus: 'waiting-on-owner',
+    blocker: 'Owner sign-off on final reconciliation pending',
+    nextAction: 'Send reconciliation report to owner for sign-off.',
+    createdAt: '2025-05-20T08:00:00.000Z',
+    updatedAt: ISO_NOW,
+    startDate: '2025-06-15',
+    estimatedCompletion: '2026-04-15',
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    cancelledByUserId: null,
+    cancelTransferToInventory: null,
   },
 ];
 
@@ -841,9 +1019,17 @@ export const ROOMS: Room[] = [
     utilitiesNotes: i === 1 ? 'Re-route for dishwasher (M&E flagged by Yuvan).' : null,
     photoCount: 6,
   })),
-  // RC-15 minimal
+  // RC-15 minimal (Residence Camelia 15 — standalone, not Lagon Bleu)
   { id: 'r-rc15-1', projectId: 'p-rc15', name: 'Living Room', lengthM: 4.5, widthM: 3.8, heightM: 2.7, windows: 1, doors: 1, conditionNotes: 'Closeout — no new work.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 4 },
   { id: 'r-rc15-2', projectId: 'p-rc15', name: 'Bedroom',     lengthM: 3.5, widthM: 3.2, heightM: 2.7, windows: 1, doors: 1, conditionNotes: 'Closeout — no new work.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 3 },
+  // LB-2 minimal (Lagon Bleu Complex apartment 2)
+  { id: 'r-lb2-1',  projectId: 'p-lb2',  name: 'Living Room', lengthM: 5.2, widthM: 4.0, heightM: 2.8, windows: 2, doors: 1, conditionNotes: 'Closeout — renovation complete.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 4 },
+  { id: 'r-lb2-2',  projectId: 'p-lb2',  name: 'Master bedroom', lengthM: 4.5, widthM: 3.8, heightM: 2.8, windows: 1, doors: 1, conditionNotes: 'Closeout — renovation complete.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 3 },
+  { id: 'r-lb2-3',  projectId: 'p-lb2',  name: 'Bedroom 2',  lengthM: 3.6, widthM: 3.2, heightM: 2.8, windows: 1, doors: 1, conditionNotes: 'Closeout — renovation complete.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 2 },
+  // LB-3 minimal (Lagon Bleu Complex apartment 3)
+  { id: 'r-lb3-1',  projectId: 'p-lb3',  name: 'Living Room', lengthM: 5.0, widthM: 4.0, heightM: 2.8, windows: 2, doors: 1, conditionNotes: 'Closeout — renovation complete.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 3 },
+  { id: 'r-lb3-2',  projectId: 'p-lb3',  name: 'Master bedroom', lengthM: 4.4, widthM: 3.8, heightM: 2.8, windows: 1, doors: 1, conditionNotes: 'Closeout — renovation complete.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 3 },
+  { id: 'r-lb3-3',  projectId: 'p-lb3',  name: 'Bedroom 2',  lengthM: 3.5, widthM: 3.2, heightM: 2.8, windows: 1, doors: 1, conditionNotes: 'Closeout — renovation complete.', issues: null, keepFurniture: null, removeFurniture: null, designOpportunity: null, accessNotes: null, utilitiesNotes: null, photoCount: 2 },
 ];
 
 export function getRooms(projectId: string): Room[] {
@@ -869,6 +1055,8 @@ export const SITE_VISITS: SiteVisit[] = [
   { projectId: 'p-albion', visitedAt: null, visitedByUserId: 'u-mathias', walkthroughVideoUrl: null, notes: null, marketingPhotoConsent: true, status: 'in_progress' },
   { projectId: 'p-ohana',  visitedAt: '2025-09-15T10:00:00.000Z', visitedByUserId: 'u-mathias', walkthroughVideoUrl: 'drive://ohana-walkthrough.mp4', notes: 'Owner present, full access granted. Generator on rooftop noted.', marketingPhotoConsent: true, status: 'closed' },
   { projectId: 'p-rc15',   visitedAt: '2025-06-20T09:00:00.000Z', visitedByUserId: 'u-mathias', walkthroughVideoUrl: null, notes: 'Closeout visit only.', marketingPhotoConsent: true, status: 'closed' },
+  { projectId: 'p-lb2',    visitedAt: '2025-04-15T09:00:00.000Z', visitedByUserId: 'u-mathias', walkthroughVideoUrl: 'drive://lb2-walkthrough.mp4', notes: 'Renovation complete; photo capture pending closeout sign-off.', marketingPhotoConsent: true, status: 'closed' },
+  { projectId: 'p-lb3',    visitedAt: '2025-05-25T09:00:00.000Z', visitedByUserId: 'u-mathias', walkthroughVideoUrl: 'drive://lb3-walkthrough.mp4', notes: 'Renovation complete; awaiting owner sign-off on reconciliation.', marketingPhotoConsent: true, status: 'closed' },
 ];
 
 export function getSiteVisit(projectId: string): SiteVisit | null {
@@ -1018,6 +1206,24 @@ export const PAYMENT_GATES: PaymentGate[] = [
     execution_fee_t2: { status: 'received', amountMinor: 21_000_00, receivedAt: '2026-03-15T09:00:00.000Z' },
     final_balance:    { status: 'awaiting' },
   }),
+  ...buildGates('p-lb2', {
+    agreement_signed: { status: 'received', receivedAt: '2025-05-01T09:00:00.000Z' },
+    design_fee_60:    { status: 'received', amountMinor: 27_000_00, receivedAt: '2025-05-02T09:00:00.000Z' },
+    design_fee_40:    { status: 'received', amountMinor: 18_000_00, receivedAt: '2025-08-15T09:00:00.000Z' },
+    execution_fee_t1: { status: 'received', amountMinor: 76_500_00, receivedAt: '2025-09-01T09:00:00.000Z' },
+    project_funds:    { status: 'received', amountMinor: 850_000_00, receivedAt: '2025-09-08T09:00:00.000Z' },
+    execution_fee_t2: { status: 'received', amountMinor: 51_000_00, receivedAt: '2026-02-20T09:00:00.000Z' },
+    final_balance:    { status: 'received', amountMinor: 12_500_00, receivedAt: '2026-04-05T09:00:00.000Z' },
+  }),
+  ...buildGates('p-lb3', {
+    agreement_signed: { status: 'received', receivedAt: '2025-06-15T09:00:00.000Z' },
+    design_fee_60:    { status: 'received', amountMinor: 27_000_00, receivedAt: '2025-06-16T09:00:00.000Z' },
+    design_fee_40:    { status: 'received', amountMinor: 18_000_00, receivedAt: '2025-09-20T09:00:00.000Z' },
+    execution_fee_t1: { status: 'received', amountMinor: 64_800_00, receivedAt: '2025-10-05T09:00:00.000Z' },
+    project_funds:    { status: 'received', amountMinor: 720_000_00, receivedAt: '2025-10-10T09:00:00.000Z' },
+    execution_fee_t2: { status: 'received', amountMinor: 43_200_00, receivedAt: '2026-03-10T09:00:00.000Z' },
+    final_balance:    { status: 'awaiting' },
+  }),
 ];
 
 export function getPaymentGates(projectId: string): PaymentGate[] {
@@ -1147,6 +1353,12 @@ export interface OwnerBudgetItem {
   vendorName: string | null;
   productLink: string | null;
   imageUrl: string | null;
+  /** B3.1 disclosure — retail price the supplier lists. */
+  retailCostMinor: number | null;
+  /** B3.1 disclosure — the price Friday negotiated, passed through to owner. */
+  negotiatedCostMinor: number | null;
+  /** Computed: retail − negotiated, when both present. */
+  savedMinor: number | null;
   finalApprovedCostMinor: number | null;
   vatMinor: number;
   status: BudgetItemStatus;
@@ -1154,7 +1366,25 @@ export interface OwnerBudgetItem {
   receiptUrl: string | null;
 }
 
+/**
+ * Owner-side budget shape per B3.1 (supplier discount disclosure).
+ *
+ * Disclosed: itemName, qty, vendorName, retailCostMinor, negotiatedCostMinor,
+ * savedMinor, finalApprovedCostMinor, vat. Receipt only when ownerBillable.
+ *
+ * Stripped (never owner-visible): internalWork, actualPaidMinor (timing
+ * detail), supplier negotiation history, internal-margin computations,
+ * receiptUrl on internal-work / non-owner-billable lines.
+ */
 export function stripForOwner(item: BudgetItem): OwnerBudgetItem {
+  // Internal-work lines are stripped from the owner view entirely upstream;
+  // here we still null retail/negotiated as a defence-in-depth check so an
+  // accidentally-included internal line never leaks numbers.
+  const showCosts = !item.internalWork;
+  const retail = showCosts ? item.retailCostMinor : null;
+  const negotiated = showCosts ? item.negotiatedCostMinor : null;
+  const saved =
+    retail !== null && negotiated !== null && retail > negotiated ? retail - negotiated : null;
   return {
     id: item.id,
     itemName: item.itemName,
@@ -1164,8 +1394,11 @@ export function stripForOwner(item: BudgetItem): OwnerBudgetItem {
     vendorName: item.vendorId ? getVendor(item.vendorId)?.name ?? null : null,
     productLink: item.productLink,
     imageUrl: item.imageUrl,
-    finalApprovedCostMinor: item.finalApprovedCostMinor,
-    vatMinor: item.vatMinor,
+    retailCostMinor: retail,
+    negotiatedCostMinor: negotiated,
+    savedMinor: saved,
+    finalApprovedCostMinor: showCosts ? item.finalApprovedCostMinor : null,
+    vatMinor: showCosts ? item.vatMinor : 0,
     status: item.status,
     procurement: item.procurement,
     receiptUrl: item.ownerBillable ? item.receiptUrl : null,
@@ -1322,7 +1555,11 @@ export const designClient = {
   designPacks: { list: getDesignPacks },
   budgetItems: {
     list: getBudgetItems,
-    listForOwner: (projectId: string) => getBudgetItems(projectId).map(stripForOwner),
+    /** Owner-facing: internal-work lines filtered out, remaining lines stripped per B3.1. */
+    listForOwner: (projectId: string) =>
+      getBudgetItems(projectId)
+        .filter((i) => !i.internalWork)
+        .map(stripForOwner),
   },
   tasks: { list: getTasks },
   approvals: { list: getApprovals },
