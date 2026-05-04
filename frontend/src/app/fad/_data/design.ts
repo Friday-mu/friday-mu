@@ -1960,6 +1960,160 @@ export function listAllPendingApprovals(): DesignApproval[] {
   return APPROVALS.filter((a) => a.state === 'sent');
 }
 
+// ─────────────────────────── PORTFOLIO ITEM CATALOG ───────────────────────────
+//
+// Aggregates BudgetItems across past projects so a Rough Budget can be
+// estimated from "what we've actually paid" rather than gut-feel ranges.
+// This is the portfolio-intelligence moat the audit (cont-10) called out:
+// no incumbent design tool has historical procurement data because they
+// serve firms billing clients, not operators.
+//
+// v0.1: in-memory rollup over BUDGET_ITEMS. v0.2: replace with a real
+// `GET /api/design/catalog` endpoint (PROD-DESIGN-CATALOG row in DEMO_CRUFT).
+
+export interface CatalogItem {
+  /** Normalised lookup key — lowercase, single-spaced. */
+  key: string;
+  /** Display name (case preserved from most recent occurrence). */
+  displayName: string;
+  category: BudgetCategory;
+  /** Number of past project lines that match this normalised name. */
+  sampleCount: number;
+  /** Per-unit MUR cents stats across samples (negotiatedCostMinor / qty). */
+  minMinor: number;
+  medianMinor: number;
+  meanMinor: number;
+  maxMinor: number;
+  /** Sample project IDs (up to first 5) for traceability. */
+  sourceProjectIds: string[];
+}
+
+function normaliseItemKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Build the catalog from approved historical BudgetItems with a real
+ * negotiated price. Internal-work lines and items without a per-unit price
+ * are skipped (they don't help estimate furniture/material costs).
+ */
+export function buildItemCatalog(): CatalogItem[] {
+  const groups = new Map<string, { items: BudgetItem[]; latest: BudgetItem }>();
+  for (const item of BUDGET_ITEMS) {
+    if (item.internalWork) continue;
+    if (item.status !== 'approved') continue;
+    if (item.qty <= 0) continue;
+    const negotiated = item.negotiatedCostMinor;
+    if (negotiated === null || negotiated <= 0) continue;
+    const key = normaliseItemKey(item.itemName);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+      existing.latest = item;
+    } else {
+      groups.set(key, { items: [item], latest: item });
+    }
+  }
+  const out: CatalogItem[] = [];
+  for (const [key, { items, latest }] of groups) {
+    const perUnit = items
+      .map((i) => Math.round((i.negotiatedCostMinor ?? 0) / Math.max(1, i.qty)))
+      .sort((a, b) => a - b);
+    const min = perUnit[0];
+    const max = perUnit[perUnit.length - 1];
+    const sum = perUnit.reduce((s, x) => s + x, 0);
+    const mean = Math.round(sum / perUnit.length);
+    // Median — for even N, average of two middles; for odd N, middle value.
+    const mid = Math.floor(perUnit.length / 2);
+    const median =
+      perUnit.length % 2 === 0
+        ? Math.round((perUnit[mid - 1] + perUnit[mid]) / 2)
+        : perUnit[mid];
+    out.push({
+      key,
+      displayName: latest.itemName,
+      category: latest.category,
+      sampleCount: items.length,
+      minMinor: min,
+      medianMinor: median,
+      meanMinor: mean,
+      maxMinor: max,
+      sourceProjectIds: Array.from(new Set(items.map((i) => i.projectId))).slice(0, 5),
+    });
+  }
+  // Sort by sampleCount desc, then displayName for stable browsing.
+  out.sort((a, b) => b.sampleCount - a.sampleCount || a.displayName.localeCompare(b.displayName));
+  return out;
+}
+
+let _catalogCache: CatalogItem[] | null = null;
+function getCatalog(): CatalogItem[] {
+  if (_catalogCache === null) _catalogCache = buildItemCatalog();
+  return _catalogCache;
+}
+
+export function listCatalogItems(): CatalogItem[] {
+  return getCatalog();
+}
+
+export function lookupCatalogItem(name: string): CatalogItem | null {
+  const key = normaliseItemKey(name);
+  return getCatalog().find((c) => c.key === key) ?? null;
+}
+
+export function searchCatalog(query: string, limit = 20): CatalogItem[] {
+  const q = normaliseItemKey(query);
+  if (!q) return getCatalog().slice(0, limit);
+  return getCatalog()
+    .filter((c) => c.key.includes(q) || c.displayName.toLowerCase().includes(q))
+    .slice(0, limit);
+}
+
+export interface RoughBudgetEstimateLine {
+  itemName: string;
+  qty: number;
+}
+
+export interface RoughBudgetEstimateResult {
+  lowMinor: number;
+  midMinor: number;
+  highMinor: number;
+  matched: Array<{ line: RoughBudgetEstimateLine; catalog: CatalogItem }>;
+  unmatched: RoughBudgetEstimateLine[];
+}
+
+/**
+ * Sum a list of {itemName, qty} lines into Low / Mid / High totals using the
+ * catalog's per-unit price stats. Lines whose itemName isn't in the catalog
+ * are returned in `unmatched` so the UI can prompt for manual entry.
+ */
+export function estimateRoughBudget(lines: RoughBudgetEstimateLine[]): RoughBudgetEstimateResult {
+  let lowSum = 0;
+  let midSum = 0;
+  let highSum = 0;
+  const matched: RoughBudgetEstimateResult['matched'] = [];
+  const unmatched: RoughBudgetEstimateLine[] = [];
+  for (const line of lines) {
+    const cat = lookupCatalogItem(line.itemName);
+    if (!cat) {
+      unmatched.push(line);
+      continue;
+    }
+    const qty = Math.max(0, line.qty);
+    lowSum += cat.minMinor * qty;
+    midSum += cat.medianMinor * qty;
+    highSum += cat.maxMinor * qty;
+    matched.push({ line, catalog: cat });
+  }
+  return {
+    lowMinor: lowSum,
+    midMinor: midSum,
+    highMinor: highSum,
+    matched,
+    unmatched,
+  };
+}
+
 // ─────────────────────────── MOCK CLIENT (interface mirrors future real client) ───────────────────────────
 //
 // @demo:logic — Swap this object for a real `fetch`-backed client. Same shape,
@@ -2019,6 +2173,12 @@ export const designClient = {
     issue: issueMagicLink,
     list: listMagicLinks,
     validate: validateMockToken,
+  },
+  catalog: {
+    list: listCatalogItems,
+    lookup: lookupCatalogItem,
+    search: searchCatalog,
+    estimate: estimateRoughBudget,
   },
   documents: { list: getDocuments },
   activity: { list: getActivity },
