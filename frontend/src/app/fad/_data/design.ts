@@ -126,6 +126,11 @@ export interface DesignProject {
   id: string;
   entityId: DesignEntityId;
   name: string;
+  /**
+   * URL-safe identifier for the owner portal route (`/portal/projects/<slug>`).
+   * Stable for the lifetime of a project — never derived at render time.
+   */
+  slug: string;
   counterpartyId: string;
   propertyId: string;
   classification: ProjectClassification;
@@ -762,6 +767,7 @@ export const PROJECTS: DesignProject[] = [
     id: 'p-albion',
     entityId: DESIGN_ENTITY_ID,
     name: 'Albion — Tasleem',
+    slug: 'albion-tasleem',
     counterpartyId: 'cp-tasleem',
     propertyId: 'pr-albion',
     classification: 'mixed',
@@ -796,6 +802,7 @@ export const PROJECTS: DesignProject[] = [
     id: 'p-ohana',
     entityId: DESIGN_ENTITY_ID,
     name: 'Ohana House — Nursoo',
+    slug: 'ohana-house',
     counterpartyId: 'cp-davisen',
     propertyId: 'pr-ohana',
     classification: 'renovation',
@@ -830,6 +837,7 @@ export const PROJECTS: DesignProject[] = [
     id: 'p-duval',
     entityId: DESIGN_ENTITY_ID,
     name: 'Duval — Flic en Flac',
+    slug: 'duval-flicflac',
     counterpartyId: 'cp-matthieu',
     propertyId: 'pr-flicflac',
     classification: 'renovation',
@@ -864,6 +872,7 @@ export const PROJECTS: DesignProject[] = [
     id: 'p-rc15',
     entityId: DESIGN_ENTITY_ID,
     name: 'Residence Camelia 15 — closeout',
+    slug: 'residence-camelia-15',
     counterpartyId: 'cp-rc15',
     propertyId: 'pr-rc15',
     classification: 'furnishing',
@@ -898,6 +907,7 @@ export const PROJECTS: DesignProject[] = [
     id: 'p-lb2',
     entityId: DESIGN_ENTITY_ID,
     name: 'Lagon Bleu LB-2 — closeout',
+    slug: 'lagon-bleu-lb-2',
     counterpartyId: 'cp-lb2',
     propertyId: 'pr-lb2',
     classification: 'renovation',
@@ -932,6 +942,7 @@ export const PROJECTS: DesignProject[] = [
     id: 'p-lb3',
     entityId: DESIGN_ENTITY_ID,
     name: 'Lagon Bleu LB-3 — closeout',
+    slug: 'lagon-bleu-lb-3',
     counterpartyId: 'cp-lb3',
     propertyId: 'pr-lb3',
     classification: 'renovation',
@@ -977,6 +988,13 @@ export function listProjects(filter?: { stage?: StageId; tier?: DesignTier; clas
 }
 export function getProject(id: string): DesignProject | null {
   return PROJECTS.find((p) => p.id === id) ?? null;
+}
+export function getProjectBySlug(slug: string): DesignProject | null {
+  return PROJECTS.find((p) => p.slug === slug) ?? null;
+}
+/** All slugs in fixture order — used by the owner-portal static-export route. */
+export function listProjectSlugs(): string[] {
+  return PROJECTS.map((p) => p.slug);
 }
 
 // ─────────────────────────── PROJECT LIFECYCLE MUTATORS ───────────────────────────
@@ -1643,6 +1661,8 @@ export const designClient = {
   projects: {
     list: listProjects,
     get: getProject,
+    getBySlug: getProjectBySlug,
+    listSlugs: listProjectSlugs,
     metrics: getDashboardMetrics,
     pause: pauseProject,
     cancel: cancelProject,
