@@ -2802,6 +2802,30 @@ export function getActivity(projectId: string): ActivityLogEntry[] {
   return ACTIVITY.filter((a) => a.projectId === projectId).sort((a, b) => (a.at < b.at ? 1 : -1));
 }
 
+// Owner-visible filter (cont-30). The activity log is internal-first — some
+// entries leak admin context (magic-link copy, internal user assignment
+// chatter, override audits). v0.1 uses a heuristic content filter; v0.2
+// should add an explicit `audience` field to ActivityLogEntry and have
+// every appendActivity() call site declare its audience.
+//
+// @demo:logic — Replace heuristic with explicit field. Tag:
+// PROD-DESIGN-ACTIVITY-OWNER.
+const OWNER_HIDDEN_KINDS: ActivityLogEntry['kind'][] = ['override'];
+const OWNER_HIDDEN_PHRASES = [
+  'magic link',
+  'paste',
+  'internal',
+  'WhatsApp',
+];
+
+export function getOwnerVisibleActivity(projectId: string): ActivityLogEntry[] {
+  return ACTIVITY
+    .filter((a) => a.projectId === projectId)
+    .filter((a) => !OWNER_HIDDEN_KINDS.includes(a.kind))
+    .filter((a) => !OWNER_HIDDEN_PHRASES.some((p) => a.summary.toLowerCase().includes(p.toLowerCase())))
+    .sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
 // ─────────────────────────── DASHBOARD AGGREGATES ───────────────────────────
 
 export interface DashboardMetrics {
@@ -3649,7 +3673,7 @@ export const designClient = {
     signOff: signOffCloseoutBinder,
   },
   documents: { list: getDocuments },
-  activity: { list: getActivity },
+  activity: { list: getActivity, listForOwner: getOwnerVisibleActivity },
   settings: {
     annexA: () => ANNEX_A_DEFAULT,
     updateAnnexA: updateAnnexAConfig,

@@ -11,6 +11,7 @@ import {
 import { OverviewTab } from './OverviewTab';
 import { DocsTab } from './DocsTab';
 import { ApprovalsTab } from './ApprovalsTab';
+import { ActivityTab } from './ActivityTab';
 import { BudgetTab } from './BudgetTab';
 import { ProgressTab } from './ProgressTab';
 import { HandoverTab } from './HandoverTab';
@@ -121,8 +122,11 @@ export function PortalContent({
       totalPendingActions > 0 ? `Approvals (${totalPendingActions})` : 'Approvals',
     budget: 'Budget',
     progress: 'Progress',
+    activity: 'Activity',
     handover: 'Final handover',
   };
+
+  const activityEntries = designClient.activity.listForOwner(project.id);
 
   // ─── what's new since last visit (cont-22, moat #5) ─────────────────────
   // Compute per-tab "newness" against the persisted last-seen timestamp
@@ -140,9 +144,10 @@ export function PortalContent({
         changeOrders.filter((c) => isNewSince(c.sentAt, since('approvals'))).length,
       budget: 0,
       progress: photos.filter((p) => isNewSince(p.uploadedAt, since('progress'))).length,
+      activity: activityEntries.filter((a) => isNewSince(a.at, since('activity'))).length,
       handover: binder && isNewSince(binder.sentAt, since('handover')) ? 1 : 0,
     };
-  }, [project.id, project.slug, tab, approvals, selections, changeOrders, docs, photos]);
+  }, [project.id, project.slug, tab, approvals, selections, changeOrders, docs, photos, activityEntries]);
 
   // Mark the active tab as seen on mount + whenever it changes. Persists
   // the timestamp for the next visit; the active tab itself reads as 0
@@ -268,6 +273,7 @@ export function PortalContent({
         )}
         {tab === 'budget' && <BudgetTab items={items} />}
         {tab === 'progress' && <ProgressTab project={project} photos={photos} />}
+        {tab === 'activity' && <ActivityTab project={project} />}
         {tab === 'handover' && <HandoverTab project={project} />}
       </div>
 

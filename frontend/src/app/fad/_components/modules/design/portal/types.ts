@@ -4,6 +4,7 @@ export type PortalTab =
   | 'approvals'
   | 'budget'
   | 'progress'
+  | 'activity'
   | 'handover';
 
 export const PORTAL_TABS: PortalTab[] = [
@@ -12,5 +13,6 @@ export const PORTAL_TABS: PortalTab[] = [
   'approvals',
   'budget',
   'progress',
+  'activity',
   'handover',
 ];
