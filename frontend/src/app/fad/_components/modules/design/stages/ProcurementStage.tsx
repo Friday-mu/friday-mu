@@ -9,6 +9,7 @@ import {
   type ProcurementStatus as ProcStatus,
 } from '../../../../_data/design';
 import { fireToast } from '../../../Toaster';
+import { ProcurementChainDrawer } from './ProcurementChainDrawer';
 
 interface Props {
   project: DesignProject;
@@ -32,6 +33,8 @@ export function ProcurementStage({ project }: Props) {
   const [roomFilter, setRoomFilter] = useState<'all' | string>('all');
   const [vendorFilter, setVendorFilter] = useState<'all' | string>('all');
   const [items, setItems] = useState<BudgetItem[]>(allItems);
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const openItem = openItemId ? items.find((i) => i.id === openItemId) ?? null : null;
 
   const filtered = useMemo(() => {
     let arr = items;
@@ -68,6 +71,8 @@ export function ProcurementStage({ project }: Props) {
         </div>
       </Card>
 
+      {openItem && <ProcurementChainDrawer item={openItem} onClose={() => setOpenItemId(null)} />}
+
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
         {COLUMNS.map((col) => {
           const colItems = filtered.filter((i) => i.procurement === col.id);
@@ -101,6 +106,7 @@ export function ProcurementStage({ project }: Props) {
                       vendorName={v?.name ?? '—'}
                       roomName={room?.name ?? '—'}
                       onMove={(to) => moveItem(i.id, to)}
+                      onOpen={() => setOpenItemId(i.id)}
                       currentStatus={col.id}
                     />
                   );
@@ -119,16 +125,29 @@ export function ProcurementStage({ project }: Props) {
   );
 }
 
-function KanbanCard({ item, vendorName, roomName, onMove, currentStatus }: { item: BudgetItem; vendorName: string; roomName: string; onMove: (to: ProcStatus) => void; currentStatus: ProcStatus }) {
+function KanbanCard({ item, vendorName, roomName, onMove, onOpen, currentStatus }: { item: BudgetItem; vendorName: string; roomName: string; onMove: (to: ProcStatus) => void; onOpen: () => void; currentStatus: ProcStatus }) {
   return (
-    <div style={{ padding: 8, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)' }}>
+    <div
+      data-procurement-card={item.id}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}
+      style={{
+        padding: 8,
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+        background: 'var(--color-background-tertiary)',
+        cursor: 'pointer',
+      }}
+    >
       <div style={{ fontSize: 12, fontWeight: 500 }}>{item.itemName}</div>
       <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
         {roomName} · qty {item.qty} · {vendorName}
       </div>
       <div style={{ fontSize: 11, fontFamily: 'var(--font-mono-fad)', marginTop: 4 }}>{formatMUR(item.finalApprovedCostMinor)}</div>
       {item.dueDate && <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>due {item.dueDate}</div>}
-      <div style={{ display: 'flex', gap: 3, marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 3, marginTop: 6 }} onClick={(e) => e.stopPropagation()}>
         {COLUMNS.map((c) => (
           <button
             key={c.id}
