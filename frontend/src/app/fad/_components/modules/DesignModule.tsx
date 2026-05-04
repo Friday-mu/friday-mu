@@ -11,6 +11,7 @@ import {
   stageDef,
   tierForEpc,
   type CreateLeadInput,
+  type CreateVendorInput,
   type DesignLead,
   type DesignProject,
   type DesignTier,
@@ -18,6 +19,8 @@ import {
   type LeadSource,
   type ProposalStatus,
   type StageId,
+  type Vendor,
+  type VendorCategory,
 } from '../../_data/design';
 import { LEADS as FAD_LEADS, type Lead as FadLead } from '../../_data/fixtures-tier3';
 import { ProjectContextBar } from './design/ProjectContextBar';
@@ -535,6 +538,7 @@ function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[];
             <SortHeader label="Tier" k="tier" sort={sort} onClick={onHeader} />
             <SortHeader label="Stage" k="stage" sort={sort} onClick={onHeader} />
             <th style={cellStyle('left')}>Next action</th>
+            <th style={cellStyle('left')}>Signals</th>
             <SortHeader label="Updated" k="updated" sort={sort} onClick={onHeader} align="right" />
           </tr>
         </thead>
@@ -542,11 +546,12 @@ function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[];
           {sorted.map((p) => {
             const cp = designClient.counterparties.get(p.counterpartyId);
             const prop = designClient.properties.get(p.propertyId);
+            const signals = computeProjectSignals(p);
             return (
               <tr
                 key={p.id}
                 onClick={() => onOpenProject(p.id)}
-                style={{ cursor: 'pointer', borderTop: '0.5px solid var(--color-border-tertiary)' }}
+                style={{ cursor: 'pointer', borderTop: '0.5px solid var(--color-border-tertiary)', opacity: p.lifecycleStatus === 'cancelled' ? 0.55 : 1 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-brand-accent-softer)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
@@ -558,8 +563,14 @@ function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[];
                 <td style={cellStyle('left')}>
                   <span style={{ color: 'var(--color-text-info)', fontWeight: 500 }}>{p.currentStage}</span>{' '}
                   <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>({stageStatusLabel(p.stageStatus)})</span>
+                  <span style={{ color: signals.daysInStage > 14 ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)', fontSize: 10, fontFamily: 'var(--font-mono-fad)', marginLeft: 6 }}>
+                    · {signals.daysInStage}d
+                  </span>
                 </td>
                 <td style={cellStyle('left')}>{p.nextAction ?? '—'}</td>
+                <td style={cellStyle('left')}>
+                  <ProjectSignalChips project={p} signals={signals} />
+                </td>
                 <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
                   {p.updatedAt.slice(0, 10)}
                 </td>
@@ -620,6 +631,82 @@ function compareProjects(a: DesignProject, b: DesignProject, key: ProjectSortKey
     case 'stage':          return (STAGE_ORDER[a.currentStage] ?? 99) - (STAGE_ORDER[b.currentStage] ?? 99);
     case 'updated':        return a.updatedAt.localeCompare(b.updatedAt);
   }
+}
+
+interface ProjectSignals {
+  daysInStage: number;
+  varianceFlagged: boolean;
+  pendingOwnerActions: number;
+  blocked: boolean;
+}
+
+/**
+ * Cross-cuts a few accessors to surface what the row should warn about.
+ * `daysInStage` uses `updatedAt` as a proxy — there's no `stageEnteredAt`
+ * timestamp on DesignProject in v0.1. v0.2 backend should track stage
+ * transitions properly.
+ */
+function computeProjectSignals(p: DesignProject): ProjectSignals {
+  const daysInStage = Math.max(0, Math.floor((Date.now() - new Date(p.updatedAt).getTime()) / 86_400_000));
+  const items = designClient.budgetItems.list(p.id);
+  const varianceFlagged = items.some((i) => {
+    const approved = i.finalApprovedCostMinor ?? 0;
+    const paid = i.actualPaidMinor ?? 0;
+    if (approved === 0 || paid === 0) return false;
+    return Math.abs(paid - approved) / approved > 0.05;
+  });
+  const approvalsPending = designClient.approvals.list(p.id).filter((a) => a.state === 'sent').length;
+  const selectionsPending = designClient.selections.listPending(p.id).length;
+  const changeOrdersPending = designClient.changeOrders.listPending(p.id).length;
+  return {
+    daysInStage,
+    varianceFlagged,
+    pendingOwnerActions: approvalsPending + selectionsPending + changeOrdersPending,
+    blocked: !!p.blocker,
+  };
+}
+
+function ProjectSignalChips({ project, signals }: { project: DesignProject; signals: ProjectSignals }) {
+  const chips: React.ReactNode[] = [];
+  if (project.lifecycleStatus === 'paused') {
+    chips.push(<SignalChip key="paused" label="paused" tone="warning" title={project.pausedReason ?? 'Project paused'} />);
+  }
+  if (project.lifecycleStatus === 'cancelled') {
+    chips.push(<SignalChip key="cancelled" label="cancelled" tone="danger" title={project.cancelledReason ?? 'Project cancelled'} />);
+  }
+  if (signals.blocked) {
+    chips.push(<SignalChip key="blocked" label="blocked" tone="danger" title={project.blocker ?? ''} />);
+  }
+  if (signals.pendingOwnerActions > 0) {
+    chips.push(
+      <SignalChip
+        key="pending"
+        label={`${signals.pendingOwnerActions} owner`}
+        tone="info"
+        title={`${signals.pendingOwnerActions} owner action${signals.pendingOwnerActions === 1 ? '' : 's'} awaiting`}
+      />,
+    );
+  }
+  if (signals.varianceFlagged) {
+    chips.push(<SignalChip key="variance" label="Δ >5%" tone="warning" title="One or more items paid >5% over approved cost" />);
+  }
+  if (chips.length === 0) {
+    return <span style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>—</span>;
+  }
+  return <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{chips}</div>;
+}
+
+function SignalChip({ label, tone, title }: { label: string; tone: 'info' | 'warning' | 'danger' | 'success'; title?: string }) {
+  const bg = { info: 'var(--color-bg-info)', warning: 'var(--color-bg-warning)', danger: 'var(--color-bg-danger)', success: 'var(--color-bg-success)' }[tone];
+  const fg = { info: 'var(--color-text-info)', warning: 'var(--color-text-warning)', danger: 'var(--color-text-danger)', success: 'var(--color-text-success)' }[tone];
+  return (
+    <span
+      title={title}
+      style={{ padding: '1px 6px', fontSize: 10, fontWeight: 500, borderRadius: 'var(--radius-full)', background: bg, color: fg, whiteSpace: 'nowrap' }}
+    >
+      {label}
+    </span>
+  );
 }
 
 // ─────────────────────────── Leads / Vendors / Settings (Phase 1 stubs) ───────────────────────────
@@ -1399,7 +1486,12 @@ function leadActionBtn(variant: 'primary' | 'secondary'): React.CSSProperties {
   };
 }
 
+const VENDOR_CATEGORIES: VendorCategory[] = ['electrician', 'general_contractor', 'structural_engineer', 'mep_engineer', 'interior_designer', 'furniture_supplier', 'decor_supplier', 'lighting_supplier', 'transport', 'cleaning', 'other'];
+
 function VendorsList() {
+  const [, setRev] = useState(0);
+  const bump = () => setRev((r) => r + 1);
+  const [showCreate, setShowCreate] = useState(false);
   const allRows = designClient.vendors.listPerformance();
   const [openId, setOpenId] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(() => new Set());
@@ -1418,11 +1510,30 @@ function VendorsList() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 14 }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Vendor register</h3>
-        <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Cross-project performance — total spend, items shipped, variance vs. approved cost, and on-time completion rate. Click a row for the per-project breakdown.
-          {' · '}<strong>{rows.length}</strong> shown · <strong>{allRows.filter((r) => r.perf.projectCount > 0).length}</strong> active
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Vendor register</h3>
+            <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              Cross-project performance — total spend, items shipped, variance vs. approved cost, and on-time completion rate. Click a row for the per-project breakdown.
+              {' · '}<strong>{rows.length}</strong> shown · <strong>{allRows.filter((r) => r.perf.projectCount > 0).length}</strong> active
+            </p>
+          </div>
+          <button
+            type="button"
+            data-vendors-new
+            onClick={() => setShowCreate((v) => !v)}
+            style={{
+              padding: '6px 12px',
+              fontSize: 12,
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-brand-accent)',
+              color: '#fff',
+              fontWeight: 500,
+            }}
+          >
+            {showCreate ? 'Cancel' : '+ New vendor'}
+          </button>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
           <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginRight: 4 }}>Category:</span>
           {categories.map((cat) => {
@@ -1462,6 +1573,19 @@ function VendorsList() {
           )}
         </div>
       </div>
+
+      {showCreate && (
+        <NewVendorForm
+          onCancel={() => setShowCreate(false)}
+          onCreated={(v) => {
+            setShowCreate(false);
+            setOpenId(v.id);
+            bump();
+            fireToast(`Vendor "${v.name}" created.`);
+          }}
+        />
+      )}
+
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 720 }}>
@@ -1542,6 +1666,87 @@ function VendorProjectBreakdown({ projects }: { projects: Array<{ projectId: str
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function NewVendorForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (vendor: Vendor) => void }) {
+  const [name, setName] = useState('');
+  const [company, setCompany] = useState('');
+  const [category, setCategory] = useState<VendorCategory>('general_contractor');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('Per engagement');
+  const [notes, setNotes] = useState('');
+  const canSubmit = name.trim().length > 0;
+  return (
+    <div
+      data-vendors-new-form
+      style={{
+        background: 'var(--color-background-tertiary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-md)',
+        padding: 14,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        <label style={leadFieldLabel()}>
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Vendor / contact name" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Company (optional)
+          <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company name" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Category
+          <select value={category} onChange={(e) => setCategory(e.target.value as VendorCategory)} style={leadInput()}>
+            {VENDOR_CATEGORIES.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
+          </select>
+        </label>
+        <label style={leadFieldLabel()}>
+          Phone (optional)
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+230 …" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Email (optional)
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="…@example.com" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Payment terms
+          <input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 50% deposit, milestone-based" style={leadInput()} />
+        </label>
+      </div>
+      <label style={leadFieldLabel()}>
+        Notes (optional)
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Engagement style, reliability, anything Friday should remember." style={{ ...leadInput(), resize: 'vertical', minHeight: 50 }} />
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          disabled={!canSubmit}
+          data-vendors-new-submit
+          onClick={() => {
+            const input: CreateVendorInput = {
+              name: name.trim(),
+              company: company.trim() === '' ? null : company.trim(),
+              category,
+              phone: phone.trim() === '' ? null : phone.trim(),
+              email: email.trim() === '' ? null : email.trim(),
+              paymentTerms: paymentTerms.trim() || 'Per engagement',
+              notes: notes.trim() === '' ? null : notes.trim(),
+            };
+            onCreated(designClient.vendors.create(input));
+          }}
+          style={canSubmit ? leadActionBtn('primary') : { ...leadActionBtn('primary'), opacity: 0.5, cursor: 'not-allowed' }}
+        >
+          Create vendor
+        </button>
+        <button type="button" onClick={onCancel} style={leadActionBtn('secondary')}>Cancel</button>
+      </div>
     </div>
   );
 }

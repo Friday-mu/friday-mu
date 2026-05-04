@@ -794,6 +794,52 @@ export function getVendor(id: string): Vendor | null {
   return VENDORS.find((v) => v.id === id) ?? null;
 }
 
+// Vendor mutators (cont-26).
+//
+// @demo:logic — Mutators append to in-memory VENDORS array. Tag:
+// PROD-DESIGN-VENDORS.
+let vendorSerial = 1000;
+
+export interface CreateVendorInput {
+  name: string;
+  company: string | null;
+  category: VendorCategory;
+  phone: string | null;
+  email: string | null;
+  paymentTerms: string;
+  notes: string | null;
+}
+
+export function createVendor(input: CreateVendorInput): Vendor {
+  const v: Vendor = {
+    id: `v-${++vendorSerial}`,
+    ...input,
+    engagements: [],
+  };
+  VENDORS.push(v);
+  return v;
+}
+
+export type UpdateVendorInput = Partial<Omit<CreateVendorInput, never>>;
+
+export function updateVendor(vendorId: string, input: UpdateVendorInput): Vendor | null {
+  const idx = VENDORS.findIndex((v) => v.id === vendorId);
+  if (idx === -1) return null;
+  const updated: Vendor = { ...VENDORS[idx], ...input };
+  VENDORS[idx] = updated;
+  return updated;
+}
+
+export function deleteVendor(vendorId: string): boolean {
+  const idx = VENDORS.findIndex((v) => v.id === vendorId);
+  if (idx === -1) return false;
+  // Don't delete vendors that are wired to budget items — would orphan
+  // historical lines. Caller can soft-archive instead.
+  if (BUDGET_ITEMS.some((i) => i.vendorId === vendorId)) return false;
+  VENDORS.splice(idx, 1);
+  return true;
+}
+
 // Projects
 export const PROJECTS: DesignProject[] = [
   {
@@ -3269,6 +3315,9 @@ export const designClient = {
     get: getVendor,
     performance: getVendorPerformance,
     listPerformance: listVendorPerformance,
+    create: createVendor,
+    update: updateVendor,
+    delete: deleteVendor,
   },
   rooms: { list: getRooms },
   photos: { list: (projectId: string) => PHOTOS.filter((p) => p.projectId === projectId) },
