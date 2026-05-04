@@ -679,6 +679,95 @@ export const ANNEX_A_DEFAULT: AnnexAConfig = {
   agreementTemplateVersion: '2025-09-nursoo',
 };
 
+// ─────────────────────────── Annex A — editable overlay (cont-28) ───────────────────────────
+//
+// Annex A is the single source of truth for Friday's pricing schedule. v0.2
+// will store it server-side per tenant; v0.1 lets the director edit it
+// in-place from the Settings tab and persist to localStorage so the demo
+// carries across sessions.
+//
+// Mutations are applied as **mutations on the same object reference**, not a
+// reassignment, because every consumer (designClient.settings.annexA,
+// tierForEpc, designFeeForTier, …) reads through `ANNEX_A_DEFAULT`. Changes
+// propagate to the next render of any component that re-reads.
+//
+// Effective scope: changes are **retroactive** — every fee derivation in
+// the codebase reads ANNEX_A_DEFAULT live, so any project rendered after
+// a save sees the new schedule. v0.2 should snapshot the schedule on
+// project create + carry it through, but v0.1 keeps it simple.
+//
+// @demo:config + @demo:state — Tag: PROD-DESIGN-3 / PROD-DESIGN-ANNEX-EDIT.
+
+const ANNEX_A_STORAGE_KEY = 'fad:annex-a-overrides';
+const ANNEX_A_AUDIT_STORAGE_KEY = 'fad:annex-a-last-change';
+
+export interface AnnexAAudit {
+  /** ISO timestamp of the last save. */
+  changedAt: string;
+  /** User ID — currently always 'u-ishant' (single-approver lock). */
+  changedByUserId: string;
+}
+
+export function getAnnexAAudit(): AnnexAAudit | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(ANNEX_A_AUDIT_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AnnexAAudit;
+  } catch {
+    return null;
+  }
+}
+
+/** Merges localStorage overrides into the in-memory ANNEX_A_DEFAULT. Idempotent
+ *  — safe to call repeatedly. Runs at module load and again whenever the
+ *  storage changes (cross-tab). */
+function loadAnnexAOverrides(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(ANNEX_A_STORAGE_KEY);
+    if (!raw) return;
+    const overrides = JSON.parse(raw) as Partial<AnnexAConfig>;
+    Object.assign(ANNEX_A_DEFAULT, overrides);
+  } catch {
+    // Bad JSON or localStorage failure — ignore, keep defaults.
+  }
+}
+
+loadAnnexAOverrides();
+
+/**
+ * Replace the live Annex A schedule with `next` and persist the diff vs.
+ * the seed defaults to localStorage. Records an audit entry. Returns the
+ * updated config (same reference as `ANNEX_A_DEFAULT`).
+ */
+export function updateAnnexAConfig(next: AnnexAConfig, byUserId: string): AnnexAConfig {
+  Object.assign(ANNEX_A_DEFAULT, next);
+  const audit: AnnexAAudit = { changedAt: new Date().toISOString(), changedByUserId: byUserId };
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(ANNEX_A_STORAGE_KEY, JSON.stringify(ANNEX_A_DEFAULT));
+      window.localStorage.setItem(ANNEX_A_AUDIT_STORAGE_KEY, JSON.stringify(audit));
+    } catch {
+      // localStorage failure — in-memory edit still applies for this session.
+    }
+  }
+  return ANNEX_A_DEFAULT;
+}
+
+/** Wipe localStorage overrides + the audit entry. Caller should reload to
+ *  reset the in-memory ANNEX_A_DEFAULT to seed values. */
+export function resetAnnexAConfig(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(ANNEX_A_STORAGE_KEY);
+      window.localStorage.removeItem(ANNEX_A_AUDIT_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export function tierForEpc(epcMinor: number, cfg: AnnexAConfig = ANNEX_A_DEFAULT): DesignTier {
   if (epcMinor < cfg.tierThresholds.tier3MaxMinor) return 3;
   if (epcMinor <= cfg.tierThresholds.tier2MaxMinor) return 2;
@@ -3422,5 +3511,10 @@ export const designClient = {
   },
   documents: { list: getDocuments },
   activity: { list: getActivity },
-  settings: { annexA: () => ANNEX_A_DEFAULT },
+  settings: {
+    annexA: () => ANNEX_A_DEFAULT,
+    updateAnnexA: updateAnnexAConfig,
+    resetAnnexA: resetAnnexAConfig,
+    annexAAudit: getAnnexAAudit,
+  },
 };

@@ -10,6 +10,7 @@ import {
   procurementFeeForTier,
   stageDef,
   tierForEpc,
+  type AnnexAConfig,
   type CreateLeadInput,
   type CreateVendorInput,
   type DesignLead,
@@ -1752,22 +1753,161 @@ function NewVendorForm({ onCancel, onCreated }: { onCancel: () => void; onCreate
 }
 
 function DesignSettings() {
+  const role = useCurrentRole();
+  const userId = useCurrentUserId();
+  const isDirector = role === 'director';
+  const [editing, setEditing] = useState(false);
+  const [, setRev] = useState(0);
+  const bumpRev = () => setRev((r) => r + 1);
+
   const cfg = designClient.settings.annexA();
+  const audit = designClient.settings.annexAAudit();
+
+  // Working copy held in state. Reset whenever entering edit mode so cancel
+  // truly reverts.
+  const [draft, setDraft] = useState<AnnexAConfig>(() => cloneAnnexA(cfg));
+
+  const startEdit = () => {
+    setDraft(cloneAnnexA(cfg));
+    setEditing(true);
+  };
+  const cancelEdit = () => {
+    setEditing(false);
+  };
+  const saveEdit = () => {
+    designClient.settings.updateAnnexA(draft, userId);
+    setEditing(false);
+    bumpRev();
+    fireToast('Annex A schedule saved. Live projects recompute fees on next open.');
+  };
+  const reset = () => {
+    if (!window.confirm('Reset Annex A to codebase defaults? This wipes saved overrides and reloads the page.')) return;
+    designClient.settings.resetAnnexA();
+    window.location.reload();
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }} data-design-settings>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Annex A — Pricing schedule</h3>
-        <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-          Default pricing tiers used when generating new agreements. Annex B in each project carries the negotiated overrides.
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <div>
+            <h3 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600 }}>Annex A — Pricing schedule</h3>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              Default pricing tiers used when generating new agreements. Annex B in each project carries the negotiated overrides.
+              {' '}<strong>Edits apply retroactively</strong> — every project's fees are derived live from this schedule.
+            </p>
+            {audit && (
+              <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                Last changed by <strong>{audit.changedByUserId.replace(/^u-/, '')}</strong> on {audit.changedAt.slice(0, 10)} at {audit.changedAt.slice(11, 16)}
+                {' · '}<button type="button" onClick={reset} style={{ background: 'transparent', color: 'var(--color-text-danger)', textDecoration: 'underline', fontSize: 11 }}>reset to defaults</button>
+              </div>
+            )}
+          </div>
+          {!editing ? (
+            <button
+              type="button"
+              data-annex-edit-toggle
+              disabled={!isDirector}
+              title={isDirector ? '' : 'Director-only. View as Director to edit.'}
+              onClick={startEdit}
+              style={{
+                padding: '6px 12px', fontSize: 12, borderRadius: 'var(--radius-sm)', fontWeight: 500,
+                background: isDirector ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
+                color: isDirector ? '#fff' : 'var(--color-text-tertiary)',
+                cursor: isDirector ? 'pointer' : 'not-allowed',
+                opacity: isDirector ? 1 : 0.6,
+              }}
+            >
+              Edit
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" data-annex-save onClick={saveEdit} style={{ padding: '6px 12px', fontSize: 12, borderRadius: 'var(--radius-sm)', background: 'var(--color-text-success)', color: '#fff', fontWeight: 500 }}>Save</button>
+              <button type="button" onClick={cancelEdit} style={{ padding: '6px 12px', fontSize: 12, borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-secondary)', border: '0.5px solid var(--color-border-tertiary)' }}>Cancel</button>
+            </div>
+          )}
+        </div>
+
         <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
           <tbody>
-            <tr><td style={cellStyle('left')}>Tier 3 design fee (EPC &lt; Rs 500K)</td><td style={cellStyle('right')}>{formatMUR(cfg.designFee.tier3FlatMinor)} flat</td></tr>
-            <tr><td style={cellStyle('left')}>Tier 2 design fee (Rs 500K–1.5M)</td><td style={cellStyle('right')}>{formatMUR(cfg.designFee.tier2FlatMinor)} flat</td></tr>
-            <tr><td style={cellStyle('left')}>Tier 1 design fee (EPC &gt; Rs 1.5M)</td><td style={cellStyle('right')}>{(cfg.designFee.tier1PercentOfEpc * 100).toFixed(1)}% of EPC</td></tr>
-            <tr><td style={cellStyle('left')}>P&amp;E Furnishing</td><td style={cellStyle('right')}>{(cfg.procurementFurnishing.tier3Pct * 100).toFixed(1)}% / {(cfg.procurementFurnishing.tier2Pct * 100).toFixed(1)}% / {(cfg.procurementFurnishing.tier1Pct * 100).toFixed(1)}%</td></tr>
-            <tr><td style={cellStyle('left')}>P&amp;E Renovation</td><td style={cellStyle('right')}>{(cfg.procurementRenovation.tier3Pct * 100).toFixed(1)}% / {(cfg.procurementRenovation.tier2Pct * 100).toFixed(1)}% / {(cfg.procurementRenovation.tier1Pct * 100).toFixed(1)}%</td></tr>
-            <tr><td style={cellStyle('left')}>Agreement template</td><td style={cellStyle('right')}>{cfg.agreementTemplateVersion}</td></tr>
+            <AnnexARow
+              label="Tier 3 design fee (EPC < tier-3 ceiling)"
+              editing={editing}
+              renderView={() => `${formatMUR(cfg.designFee.tier3FlatMinor)} flat`}
+              renderEdit={() => <MUInputCell value={draft.designFee.tier3FlatMinor} onChange={(v) => setDraft((d) => ({ ...d, designFee: { ...d.designFee, tier3FlatMinor: v } }))} />}
+            />
+            <AnnexARow
+              label="Tier 2 design fee (between ceilings)"
+              editing={editing}
+              renderView={() => `${formatMUR(cfg.designFee.tier2FlatMinor)} flat`}
+              renderEdit={() => <MUInputCell value={draft.designFee.tier2FlatMinor} onChange={(v) => setDraft((d) => ({ ...d, designFee: { ...d.designFee, tier2FlatMinor: v } }))} />}
+            />
+            <AnnexARow
+              label="Tier 1 design fee (EPC > tier-2 ceiling)"
+              editing={editing}
+              renderView={() => `${(cfg.designFee.tier1PercentOfEpc * 100).toFixed(2)}% of EPC`}
+              renderEdit={() => <PctInputCell value={cfg.designFee.tier1PercentOfEpc} onChange={(v) => setDraft((d) => ({ ...d, designFee: { ...d.designFee, tier1PercentOfEpc: v } }))} valueDraft={draft.designFee.tier1PercentOfEpc} />}
+            />
+            <AnnexARow
+              label="P&E Furnishing — T3 / T2 / T1"
+              editing={editing}
+              renderView={() => `${(cfg.procurementFurnishing.tier3Pct * 100).toFixed(2)}% / ${(cfg.procurementFurnishing.tier2Pct * 100).toFixed(2)}% / ${(cfg.procurementFurnishing.tier1Pct * 100).toFixed(2)}%`}
+              renderEdit={() => (
+                <ThreeTierPctRow
+                  value={draft.procurementFurnishing}
+                  onChange={(v) => setDraft((d) => ({ ...d, procurementFurnishing: v }))}
+                />
+              )}
+            />
+            <AnnexARow
+              label="P&E Renovation — T3 / T2 / T1"
+              editing={editing}
+              renderView={() => `${(cfg.procurementRenovation.tier3Pct * 100).toFixed(2)}% / ${(cfg.procurementRenovation.tier2Pct * 100).toFixed(2)}% / ${(cfg.procurementRenovation.tier1Pct * 100).toFixed(2)}%`}
+              renderEdit={() => (
+                <ThreeTierPctRow
+                  value={draft.procurementRenovation}
+                  onChange={(v) => setDraft((d) => ({ ...d, procurementRenovation: v }))}
+                />
+              )}
+            />
+            <AnnexARow
+              label={(
+                <>
+                  <span style={{ color: 'var(--color-text-warning)' }}>⚠</span> Tier-3 ceiling (Rs)
+                  <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 400 }}>
+                    Changing this re-tiers existing projects.
+                  </div>
+                </>
+              )}
+              editing={editing}
+              renderView={() => `${formatMUR(cfg.tierThresholds.tier3MaxMinor)}`}
+              renderEdit={() => <MUInputCell value={draft.tierThresholds.tier3MaxMinor} onChange={(v) => setDraft((d) => ({ ...d, tierThresholds: { ...d.tierThresholds, tier3MaxMinor: v } }))} />}
+            />
+            <AnnexARow
+              label={(
+                <>
+                  <span style={{ color: 'var(--color-text-warning)' }}>⚠</span> Tier-2 ceiling (Rs)
+                  <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 400 }}>
+                    Changing this re-tiers existing projects.
+                  </div>
+                </>
+              )}
+              editing={editing}
+              renderView={() => `${formatMUR(cfg.tierThresholds.tier2MaxMinor)}`}
+              renderEdit={() => <MUInputCell value={draft.tierThresholds.tier2MaxMinor} onChange={(v) => setDraft((d) => ({ ...d, tierThresholds: { ...d.tierThresholds, tier2MaxMinor: v } }))} />}
+            />
+            <AnnexARow
+              label="Agreement template version"
+              editing={editing}
+              renderView={() => cfg.agreementTemplateVersion}
+              renderEdit={() => (
+                <input
+                  value={draft.agreementTemplateVersion}
+                  onChange={(e) => setDraft((d) => ({ ...d, agreementTemplateVersion: e.target.value }))}
+                  style={{ ...leadInput(), textAlign: 'right', fontFamily: 'var(--font-mono-fad)' }}
+                />
+              )}
+            />
           </tbody>
         </table>
       </div>
@@ -1818,7 +1958,7 @@ function DesignSettings() {
               </tr>
             </thead>
             <tbody>
-              {cfg.internalServiceRates.map((r, i) => {
+              {(editing ? draft.internalServiceRates : cfg.internalServiceRates).map((r, i) => {
                 const rateText = r.rateMinor != null
                   ? formatMUR(r.rateMinor) + (r.rangeMinMinor != null && r.rangeMaxMinor != null ? ` (${formatMUR(r.rangeMinMinor)}–${formatMUR(r.rangeMaxMinor)})` : '')
                   : r.passThrough
@@ -1832,7 +1972,20 @@ function DesignSettings() {
                   <tr key={i} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
                     <td style={cellStyle('left')}>{r.category}</td>
                     <td style={{ ...cellStyle('left'), color: 'var(--color-text-tertiary)' }}>{r.unit}</td>
-                    <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{rateText}</td>
+                    <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
+                      {editing && r.rateMinor != null ? (
+                        <MUInputCell
+                          value={r.rateMinor}
+                          onChange={(v) => setDraft((d) => {
+                            const rates = [...d.internalServiceRates];
+                            rates[i] = { ...rates[i], rateMinor: v };
+                            return { ...d, internalServiceRates: rates };
+                          })}
+                        />
+                      ) : (
+                        rateText
+                      )}
+                    </td>
                     <td style={cellStyle('left')}>
                       {billed}
                       {r.note && <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>{r.note}</div>}
@@ -1855,6 +2008,90 @@ function DesignSettings() {
       </div>
     </div>
   );
+}
+
+// ─────────────────────────── Annex A — edit helpers (cont-28) ───────────────────────────
+
+function cloneAnnexA(cfg: AnnexAConfig): AnnexAConfig {
+  // Structured clone — JSON round-trip is fine here since AnnexAConfig is
+  // pure-data (no functions, no Dates).
+  return JSON.parse(JSON.stringify(cfg)) as AnnexAConfig;
+}
+
+function AnnexARow({
+  label,
+  editing,
+  renderView,
+  renderEdit,
+}: {
+  label: React.ReactNode;
+  editing: boolean;
+  renderView: () => React.ReactNode;
+  renderEdit: () => React.ReactNode;
+}) {
+  return (
+    <tr style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+      <td style={cellStyle('left')}>{label}</td>
+      <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
+        {editing ? renderEdit() : renderView()}
+      </td>
+    </tr>
+  );
+}
+
+function MUInputCell({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  // value is in MUR cents; we render the integer-major value to keep edit
+  // sane.
+  return (
+    <input
+      inputMode="numeric"
+      value={Math.round(value / 100).toString()}
+      onChange={(e) => {
+        const cleaned = e.target.value.replace(/[^\d]/g, '');
+        onChange(cleaned === '' ? 0 : Number(cleaned) * 100);
+      }}
+      style={{ width: 140, padding: '4px 6px', textAlign: 'right', fontFamily: 'var(--font-mono-fad)', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)' }}
+    />
+  );
+}
+
+function PctInputCell({ value, onChange, valueDraft }: { value: number; onChange: (v: number) => void; valueDraft: number }) {
+  // Stored as 0-1 fraction; rendered as percentage.
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <input
+        inputMode="decimal"
+        value={(valueDraft * 100).toFixed(2)}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange(n / 100);
+        }}
+        style={{ width: 70, padding: '4px 6px', textAlign: 'right', fontFamily: 'var(--font-mono-fad)', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)' }}
+      />
+      <span style={{ color: 'var(--color-text-tertiary)' }}>%</span>
+    </span>
+  );
+}
+
+function ThreeTierPctRow({ value, onChange }: { value: { tier3Pct: number; tier2Pct: number; tier1Pct: number }; onChange: (v: { tier3Pct: number; tier2Pct: number; tier1Pct: number }) => void }) {
+  const pct = (n: number) => (n * 100).toFixed(2);
+  const setN = (key: 'tier3Pct' | 'tier2Pct' | 'tier1Pct', n: number) => {
+    onChange({ ...value, [key]: n });
+  };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+      <input inputMode="decimal" value={pct(value.tier3Pct)} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setN('tier3Pct', n / 100); }} style={threePctInput()} />
+      <span>/</span>
+      <input inputMode="decimal" value={pct(value.tier2Pct)} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setN('tier2Pct', n / 100); }} style={threePctInput()} />
+      <span>/</span>
+      <input inputMode="decimal" value={pct(value.tier1Pct)} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) setN('tier1Pct', n / 100); }} style={threePctInput()} />
+      <span style={{ color: 'var(--color-text-tertiary)' }}>%</span>
+    </span>
+  );
+}
+
+function threePctInput(): React.CSSProperties {
+  return { width: 56, padding: '4px 6px', textAlign: 'right', fontFamily: 'var(--font-mono-fad)', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)' };
 }
 
 // ─────────────────────────── Tier-change simulator (cont-25) ───────────────────────────
