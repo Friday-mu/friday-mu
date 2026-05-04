@@ -1,6 +1,6 @@
 # Friday Design OS module — v0.1 frontend
 
-> **Continuation status (cont-1 → cont-20, last touched 2026-05-04):** Module
+> **Continuation status (cont-1 → cont-30, last touched 2026-05-04):** Module
 > is well past v0.1 — see commit log on `fad-design-os-v01-frontend` for the
 > full per-commit narrative. Headline state:
 >
@@ -64,9 +64,41 @@
 > - Design Leads view sources from `FAD_LEADS` filtered to interior pipeline
 >   (cont-14) — first concrete CRM-lite ↔ Design wiring.
 >
+> **Sub-tab filling-out (cont-23 → cont-30)**
+> - **Leads** — detail drawer with edit-in-place, "+ New lead" intake,
+>   source filter chips, real status mutators replace the toast-only mocks
+>   from cont-12. Convert → Project remains a mock toast (cross-module).
+> - **Vendors** — "+ New vendor" intake, category filter chips on top of
+>   the cont-19 cross-project performance table.
+> - **Settings** — Tier-change simulator (EPC input + live tier resolution
+>   + neighbour-tier delta table). **Editable Annex A** (director-only,
+>   localStorage persistence, retroactive — every fee derivation re-reads
+>   on next render). Tier ceilings flagged with ⚠ since changing them
+>   re-tiers existing projects.
+> - **Overview / Projects** — projects table gained sortable column
+>   headers, lifecycle pill on row, days-in-stage inline, "Signals"
+>   column (variance flag, owner-action count, blocked chip). My Today
+>   now respects the View-as switcher instead of being hardcoded.
+> - **Analytics** — new sub-tab. Three hand-rolled SVG charts:
+>   time-in-stage bars, lead conversion funnel, spend curve. 30d / 90d
+>   / 180d / all range toggle. Funnel "Won" bucket counts active
+>   projects, not actual cohort conversions — flagged for v0.2 backend.
+>
+> **Owner portal extension**
+> - Activity tab (cont-30) — day-grouped timeline of every meaningful
+>   action Friday has logged. Heuristic content filter hides admin /
+>   internal entries. Wired to the cont-22 what's-new badge so new
+>   entries since last visit get the green dot.
+>
+> **Seed expansion (cont-27)**
+> - RC-15 (Camelia) gained 13 BUDGET_ITEMS (was empty). Reconciliation,
+>   vendor performance breakdown, and catalog where-used now all
+>   include the closeout project.
+>
 > **Hygiene**
-> - Vitest harness: 72 tests (cont-20 added 30 mutator tests for selections /
->   change orders / binder / portfolio aggregators).
+> - Vitest harness: 82 tests (cont-20 added 30 mutator tests for
+>   selections / change orders / binder / portfolio aggregators;
+>   cont-22 added 10 lastSeen tests).
 > - `tsconfig.tsbuildinfo` gitignored to stop dev↔build path churn.
 >
 > **Locked decisions (don't re-litigate without explicit Ishant direction)**
@@ -143,19 +175,31 @@ modules/
 │   │   └── DocumentsStage.tsx         master-detail of all 14 doc types
 │   └── portal/
 │       ├── PortalContent.tsx          tabbed shell, mutator state mirror,
-│       │                              modal orchestration
+│       │                              modal orchestration, what's-new
+│       │                              badge wiring (cont-22)
 │       ├── OverviewTab.tsx            owner Hi + action cards
 │       ├── ApprovalsTab.tsx           approvals + selections + change orders
 │       │                              queue (cont-15/16/17 added)
 │       ├── BudgetTab.tsx              owner Budget — B3.1 disclosure
 │       ├── DocsTab.tsx                downloadable docs list
 │       ├── ProgressTab.tsx            owner-visible photos + stage progress
+│       ├── ActivityTab.tsx            day-grouped action timeline (cont-30)
 │       ├── HandoverTab.tsx            closeout binder render + sign-off
 │       │                              (rewritten cont-18)
 │       ├── RequestChangesModal.tsx    comment-required reject modal (reused
 │       │                              for selection request + CO reject)
+│       ├── lastSeen.ts                per-tab "what's new since last visit"
+│       │                              localStorage utility (cont-22)
 │       └── types.ts                   PORTAL_TABS list + PortalTab type
 ```
+
+The DesignModule.tsx file also hosts (kept inline rather than split out
+because they share the cellStyle/leadInput helpers): `LeadsList` +
+`LeadCard` + `LeadDetailDrawer` + `NewLeadForm` (cont-12/14/23),
+`VendorsList` + `VendorProjectBreakdown` + `NewVendorForm` (cont-19/26),
+`AnalyticsView` + `TimeInStageChart` + `FunnelChart` + `SpendCurveChart`
+(cont-29), `DesignSettings` + `TierChangeSimulator` + Annex A edit
+helpers (cont-25/28).
 
 ## Data + mock client
 
@@ -191,10 +235,11 @@ query-param + module-internal state pattern:
 | URL | Renders |
 |---|---|
 | `/fad?m=design&sub=overview` | Dashboard (ATC view) |
-| `/fad?m=design&sub=projects` | Projects list |
-| `/fad?m=design&sub=leads` | Leads kanban (cont-12) |
-| `/fad?m=design&sub=vendors` | Vendor register — cross-project performance (cont-19) |
-| `/fad?m=design&sub=settings` | Annex A pricing config |
+| `/fad?m=design&sub=projects` | Projects list — sortable, with Signals column (cont-26) |
+| `/fad?m=design&sub=leads` | Leads kanban + drawer + intake (cont-12/14/23) |
+| `/fad?m=design&sub=vendors` | Vendor register — performance + intake (cont-19/26) |
+| `/fad?m=design&sub=analytics` | Analytics sub-tab — time-in-stage / funnel / spend curve (cont-29) |
+| `/fad?m=design&sub=settings` | Annex A pricing — editable (director-only, cont-28) |
 | `/fad?m=design&sub=overview&pid=p-ohana&phase=design` | Project drill-down at the Design phase |
 | `/fad?m=design&sub=overview&pid=p-ohana&stage=site-visit` | Backward-compat — `?stage=` still works, mapped to its containing phase |
 | `/fad?m=design&pid=__new` | + New project intake form |
@@ -251,11 +296,16 @@ All mocked behind interfaces matching the real APIs:
 
 - **Type check**: `npx tsc --noEmit` from `frontend/` — clean.
 - **Build**: `npm run build` from `frontend/` — clean.
-- **Vitest**: `npm run test` — 72 tests across 5 files. Mutator coverage for
-  cont-15 → cont-19 lives in `_data/design.mutators.test.ts`; pure-function
-  + JWT coverage in `_data/design.test.ts`; component sentinels in
-  `design/StageTracker.test.tsx`, `design/AIPlaceholder.test.ts`,
-  `portal/BudgetTab.test.tsx`.
+- **Vitest**: `npm run test` — 82 tests across 6 files. Mutator coverage for
+  cont-15 → cont-19 in `_data/design.mutators.test.ts`; pure-function +
+  JWT coverage in `_data/design.test.ts`; lastSeen utility coverage in
+  `portal/lastSeen.test.ts` (cont-22, with a localStorage polyfill since
+  jsdom in this repo's vitest config exposes only an empty `{}`); component
+  sentinels in `design/StageTracker.test.tsx`,
+  `design/AIPlaceholder.test.ts`, `portal/BudgetTab.test.tsx`. **No
+  component-level coverage yet for the cont-23..30 surfaces** (lead
+  drawer, vendor intake, analytics, annex edit, activity feed) — light
+  follow-up on the punch list.
 - **Manual happy path**: dashboard → click Ohana → walk every phase tab.
   Mobile sweep at 375 (CLAUDE.md UI-verification rule — FAD is mobile-first).
 
