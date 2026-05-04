@@ -307,10 +307,13 @@ export interface RoughBudget {
 
 // ─────────────────────────── AGREEMENT / ANNEX B ───────────────────────────
 
+/**
+ * Per B3.11 the role-gated "approve to send" intermediate states are dropped
+ * — Friday's director (Ishant) is the sole approver. Single transition from
+ * draft to sent, gated only on Annex B form completeness.
+ */
 export type AgreementStatus =
   | 'draft'
-  | 'pending_internal_approval'
-  | 'approved_to_send'
   | 'sent'
   | 'viewed_by_client'
   | 'signed_by_client'
@@ -342,9 +345,6 @@ export interface Agreement {
   annexB: AnnexBData;
   /** Audit trail of status transitions. */
   events: { at: string; userId: string | null; status: AgreementStatus; note?: string }[];
-  /** Approver who clicked "approve to send" (Mary's old role, now FAD-gated). */
-  internalApproverId: string | null;
-  internalApprovedAt: string | null;
   sentAt: string | null;
   signedAt: string | null;
 }
@@ -560,7 +560,19 @@ export interface ActivityLogEntry {
   projectId: string;
   at: string;
   userId: string | null;
-  kind: 'create' | 'update' | 'approve' | 'reject' | 'send' | 'receive_payment' | 'override' | 'stage_transition' | 'comment';
+  kind:
+    | 'create'
+    | 'update'
+    | 'approve'
+    | 'reject'
+    | 'send'
+    | 'receive_payment'
+    | 'override'
+    | 'stage_transition'
+    | 'comment'
+    | 'pause'
+    | 'cancel'
+    | 'resume';
   summary: string;
 }
 
@@ -967,6 +979,114 @@ export function getProject(id: string): DesignProject | null {
   return PROJECTS.find((p) => p.id === id) ?? null;
 }
 
+// ─────────────────────────── PROJECT LIFECYCLE MUTATORS ───────────────────────────
+//
+// In-memory mutations for v0.1 frontend. The fixture arrays hold module-scope
+// state, so subsequent reads see updates within the same SPA session. v0.2 wires
+// these to PATCH endpoints that update server state.
+
+let activitySerial = 1000;
+function appendActivity(entry: Omit<ActivityLogEntry, 'id'>) {
+  ACTIVITY.push({ id: `a-${++activitySerial}`, ...entry });
+}
+
+export interface PauseProjectInput {
+  reason: string | null;
+  byUserId: string;
+}
+
+export function pauseProject(projectId: string, input: PauseProjectInput): DesignProject | null {
+  const idx = PROJECTS.findIndex((p) => p.id === projectId);
+  if (idx === -1) return null;
+  const at = new Date().toISOString();
+  const updated: DesignProject = {
+    ...PROJECTS[idx],
+    lifecycleStatus: 'paused',
+    pausedAt: at,
+    pausedReason: input.reason,
+    pausedByUserId: input.byUserId,
+    updatedAt: at,
+  };
+  PROJECTS[idx] = updated;
+  appendActivity({
+    projectId,
+    at,
+    userId: input.byUserId,
+    kind: 'pause',
+    summary: input.reason
+      ? `Project paused — ${input.reason}`
+      : 'Project paused.',
+  });
+  return updated;
+}
+
+export interface CancelProjectInput {
+  reason: string;
+  byUserId: string;
+  transferToInventory: boolean;
+  retainFee: boolean;
+}
+
+export function cancelProject(projectId: string, input: CancelProjectInput): DesignProject | null {
+  const idx = PROJECTS.findIndex((p) => p.id === projectId);
+  if (idx === -1) return null;
+  const at = new Date().toISOString();
+  const updated: DesignProject = {
+    ...PROJECTS[idx],
+    lifecycleStatus: 'cancelled',
+    cancelledAt: at,
+    cancelledReason: input.reason,
+    cancelledByUserId: input.byUserId,
+    cancelTransferToInventory: input.transferToInventory,
+    updatedAt: at,
+  };
+  PROJECTS[idx] = updated;
+  if (input.transferToInventory) {
+    BUDGET_ITEMS.forEach((bi, biIdx) => {
+      if (bi.projectId === projectId && (bi.procurement === 'delivered' || bi.procurement === 'installed')) {
+        BUDGET_ITEMS[biIdx] = { ...bi, transferredToInventory: true };
+      }
+    });
+  }
+  const inventoryNote = input.transferToInventory ? '; procured items moved to Friday inventory' : '';
+  const feeNote = input.retainFee ? '; design + procurement fees retained' : '; fees waived';
+  appendActivity({
+    projectId,
+    at,
+    userId: input.byUserId,
+    kind: 'cancel',
+    summary: `Project cancelled — ${input.reason}${feeNote}${inventoryNote}.`,
+  });
+  return updated;
+}
+
+export interface ResumeProjectInput {
+  byUserId: string;
+}
+
+export function resumeProject(projectId: string, input: ResumeProjectInput): DesignProject | null {
+  const idx = PROJECTS.findIndex((p) => p.id === projectId);
+  if (idx === -1 || PROJECTS[idx].lifecycleStatus !== 'paused') return null;
+  const at = new Date().toISOString();
+  const updated: DesignProject = {
+    ...PROJECTS[idx],
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    updatedAt: at,
+  };
+  PROJECTS[idx] = updated;
+  appendActivity({
+    projectId,
+    at,
+    userId: input.byUserId,
+    kind: 'resume',
+    summary: 'Project resumed.',
+  });
+  return updated;
+}
+
 // Leads
 export const LEADS: DesignLead[] = [
   {
@@ -1143,14 +1263,11 @@ export const AGREEMENTS: Agreement[] = [
       effectiveDate: '2025-09-28',
     },
     events: [
-      { at: '2025-09-26T14:00:00.000Z', userId: 'u-ishant', status: 'approved_to_send', note: 'Internal pre-departure approval.' },
-      { at: '2025-09-26T14:30:00.000Z', userId: 'u-ishant', status: 'sent' },
+      { at: '2025-09-26T14:30:00.000Z', userId: 'u-ishant', status: 'sent', note: 'Sent for signature.' },
       { at: '2025-09-27T08:00:00.000Z', userId: 'u-davisen', status: 'viewed_by_client' },
       { at: '2025-09-28T16:00:00.000Z', userId: 'u-davisen', status: 'signed_by_client' },
       { at: '2025-09-28T16:30:00.000Z', userId: 'u-ishant', status: 'completed' },
     ],
-    internalApproverId: 'u-ishant',
-    internalApprovedAt: '2025-09-26T14:00:00.000Z',
     sentAt: '2025-09-26T14:30:00.000Z',
     signedAt: '2025-09-28T16:00:00.000Z',
   },
@@ -1483,7 +1600,7 @@ export const ACTIVITY: ActivityLogEntry[] = [
   { id: 'a-1',  projectId: 'p-ohana', at: '2025-09-12T10:00:00.000Z', userId: 'u-ishant', kind: 'create',           summary: 'Project created from accepted proposal.' },
   { id: 'a-2',  projectId: 'p-ohana', at: '2025-09-15T10:00:00.000Z', userId: 'u-mathias', kind: 'stage_transition', summary: 'Site visit completed.' },
   { id: 'a-3',  projectId: 'p-ohana', at: '2025-09-22T09:00:00.000Z', userId: 'u-mathias', kind: 'update',           summary: 'Preference profile completed.' },
-  { id: 'a-4',  projectId: 'p-ohana', at: '2025-09-26T14:00:00.000Z', userId: 'u-ishant', kind: 'approve',           summary: 'Agreement approved-to-send (internal gate).' },
+  { id: 'a-4',  projectId: 'p-ohana', at: '2025-09-26T14:30:00.000Z', userId: 'u-ishant', kind: 'send',              summary: 'Agreement sent for signature.' },
   { id: 'a-5',  projectId: 'p-ohana', at: '2025-09-28T16:00:00.000Z', userId: 'u-davisen', kind: 'approve',          summary: 'Agreement signed by client.' },
   { id: 'a-6',  projectId: 'p-ohana', at: '2025-09-29T09:00:00.000Z', userId: 'u-ishant', kind: 'receive_payment',   summary: 'Design fee deposit (60%) received — Rs 51,000.' },
   { id: 'a-7',  projectId: 'p-ohana', at: '2025-10-25T09:00:00.000Z', userId: 'u-davisen', kind: 'approve',          summary: 'Moodboard v2 approved by owner.' },
@@ -1527,6 +1644,9 @@ export const designClient = {
     list: listProjects,
     get: getProject,
     metrics: getDashboardMetrics,
+    pause: pauseProject,
+    cancel: cancelProject,
+    resume: resumeProject,
   },
   leads: {
     list: () => LEADS,

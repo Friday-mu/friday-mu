@@ -12,7 +12,6 @@ import {
   type DesignTier,
   type ProjectClassification,
 } from '../../../../_data/design';
-import { useCurrentRole } from '../../../usePermissions';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -22,8 +21,6 @@ interface Props {
 
 const STATUS_LABEL: Record<AgreementStatus, string> = {
   draft: 'Draft',
-  pending_internal_approval: 'Pending internal approval',
-  approved_to_send: 'Approved to send',
   sent: 'Sent for signature',
   viewed_by_client: 'Viewed by client',
   signed_by_client: 'Signed by client',
@@ -35,7 +32,6 @@ export function AgreementStage({ project }: Props) {
   const existing = designClient.agreement.get(project.id);
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
-  const role = useCurrentRole();
 
   // ── Annex B form state ─────────────────────────────────────────
   const [clientName, setClientName] = useState(existing?.annexB.clientName ?? counterparty?.fullName ?? '');
@@ -63,8 +59,16 @@ export function AgreementStage({ project }: Props) {
   }), [clientName, clientAddress, clientNic, projectAddress, classification, tier, designFeeMinor, epcMinor, procurementFeeMinor, totalEstimateMinor, startDate, estimatedCompletion, saleOfFurniture, strWorkingCapital, customInclusions, effectiveDate]);
 
   const status = existing?.status ?? 'draft';
-  const canApproveToSend = role === 'director' || role === 'commercial_marketing';
-  const canSend = status === 'approved_to_send' && canApproveToSend;
+  // B3.11: single approver. Send is gated only on Annex B form completeness.
+  const formComplete =
+    clientName.trim().length > 0 &&
+    clientAddress.trim().length > 0 &&
+    projectAddress.trim().length > 0 &&
+    epcMinor > 0 &&
+    designFeeMinor > 0 &&
+    procurementFeeMinor > 0 &&
+    effectiveDate.trim().length > 0;
+  const canSend = status === 'draft' && formComplete;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -153,26 +157,19 @@ export function AgreementStage({ project }: Props) {
       <Card>
         <Row>
           <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-            {status === 'draft' && 'Save as draft, then have an admin approve to send.'}
-            {status === 'approved_to_send' && 'Approved internally. Ready to send for signature via Eversign primitive (§7.QQ).'}
+            {status === 'draft' && (formComplete
+              ? 'Annex B complete. Send for signature when ready.'
+              : 'Complete the required Annex B fields to enable send.')}
             {(status === 'sent' || status === 'viewed_by_client' || status === 'signed_by_client' || status === 'completed') && 'Sent — see audit trail below.'}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" style={secondaryBtn()} onClick={() => fireToast('Draft saved (mock)')}>Save draft</button>
             <button
               type="button"
-              disabled={!canApproveToSend || status !== 'draft'}
-              onClick={() => fireToast('Approved to send — replaces Mary\'s pre-departure validator role')}
-              style={canApproveToSend && status === 'draft' ? secondaryBtn() : disabledBtn()}
-              title={canApproveToSend ? '' : 'Admin / Commercial only'}
-            >
-              Approve to send
-            </button>
-            <button
-              type="button"
               disabled={!canSend}
-              onClick={() => fireToast('Sent for signature (mock — §7.QQ Eversign rebuild ships v0.2)')}
+              onClick={() => fireToast('Sent for signature (mock — §7.QQ Eversign rebuild ships in the wiring sprint)')}
               style={canSend ? primaryBtn() : disabledBtn()}
+              title={canSend ? '' : status !== 'draft' ? 'Already sent' : 'Annex B form incomplete'}
             >
               Send for signature
             </button>
@@ -200,18 +197,14 @@ export function AgreementStage({ project }: Props) {
 
 function StatusBadge({ status }: { status: AgreementStatus }) {
   const tone =
-    status === 'completed' ? 'success' :
-    status === 'signed_by_client' ? 'success' :
+    status === 'completed' || status === 'signed_by_client' ? 'success' :
     status === 'sent' || status === 'viewed_by_client' ? 'info' :
-    status === 'approved_to_send' ? 'accent' :
     'neutral';
   const bg = tone === 'success' ? 'var(--color-bg-success)' :
              tone === 'info'    ? 'var(--color-bg-info)' :
-             tone === 'accent'  ? 'var(--color-brand-accent-soft)' :
                                   'var(--color-background-tertiary)';
   const fg = tone === 'success' ? 'var(--color-text-success)' :
              tone === 'info'    ? 'var(--color-text-info)' :
-             tone === 'accent'  ? 'var(--color-brand-accent)' :
                                   'var(--color-text-secondary)';
   return (
     <span style={{ padding: '2px 10px', borderRadius: 'var(--radius-full)', background: bg, color: fg, fontSize: 11, fontWeight: 500 }}>

@@ -607,7 +607,7 @@ function DesignSettings() {
 // ─────────────────────────── Project shell (drill-down) ───────────────────────────
 
 function ProjectShell({
-  project,
+  project: incomingProject,
   screen,
   onChangeScreen,
   onClose,
@@ -618,6 +618,12 @@ function ProjectShell({
   onClose: () => void;
 }) {
   const [portalOpen, setPortalOpen] = useState(false);
+  // Bump after lifecycle mutations so we re-read the latest project state from
+  // the in-memory store.
+  const [lifecycleTick, setLifecycleTick] = useState(0);
+  const project = designClient.projects.get(incomingProject.id) ?? incomingProject;
+  // Reference lifecycleTick to keep it in the dependency loop for the re-read.
+  void lifecycleTick;
   const screens: { id: ProjectScreen; label: string }[] = useMemo(
     () => [
       { id: 'overview',       label: 'Overview' },
@@ -642,7 +648,12 @@ function ProjectShell({
 
   return (
     <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <ProjectContextBar project={project} onBack={onClose} onOpenOwnerPortal={() => setPortalOpen(true)} />
+      <ProjectContextBar
+        project={project}
+        onBack={onClose}
+        onOpenOwnerPortal={() => setPortalOpen(true)}
+        onLifecycleChange={() => setLifecycleTick((t) => t + 1)}
+      />
       {portalOpen && <OwnerPortalPreview project={project} onClose={() => setPortalOpen(false)} />}
       <div style={{ padding: '8px 16px', background: 'var(--color-background-primary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
         <StageTracker

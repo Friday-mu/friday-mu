@@ -19,14 +19,15 @@ export function PaymentsStage({ project }: Props) {
   const role = useCurrentRole();
   const gates = designClient.payments.list(project.id);
   const [modalGate, setModalGate] = useState<PaymentGate | null>(null);
-  const canMarkReceived = role === 'director' || role === 'commercial_marketing';
+  // B3.11: director-only. Drop the Finance branch (single approver in v0.1).
+  const canMarkReceived = role === 'director';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card>
         <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Payment gates</h3>
         <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Bank transfer manual confirmation only. Authority: Admin or Finance. Override available with logged reason.
+          Bank transfer manual confirmation only. Director-only authority. Override available with logged reason.
         </p>
       </Card>
 
@@ -53,14 +54,25 @@ export function PaymentsStage({ project }: Props) {
                   {g.receivedAt ? g.receivedAt.slice(0, 10) : '—'}
                 </td>
                 <td style={cell('right')}>
-                  {g.status === 'awaiting' && canMarkReceived && (
-                    <button
-                      type="button"
-                      onClick={() => setModalGate(g)}
-                      style={primaryBtn()}
-                    >
-                      Mark received
-                    </button>
+                  {g.status === 'awaiting' && (
+                    canMarkReceived ? (
+                      <button
+                        type="button"
+                        onClick={() => setModalGate(g)}
+                        style={primaryBtn()}
+                      >
+                        Mark received
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        style={disabledBtn()}
+                        title="Only the director can mark payments received."
+                      >
+                        Mark received
+                      </button>
+                    )
                   )}
                   {g.status === 'received' && <span style={{ color: 'var(--color-text-success)', fontSize: 11 }}>✓ received</span>}
                   {g.status === 'pending' && <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>(gated)</span>}
@@ -141,4 +153,5 @@ function inputStyle(): React.CSSProperties {
   return { width: '100%', padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-sm)', border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' };
 }
 function primaryBtn(): React.CSSProperties { return { padding: '4px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--color-brand-accent)', color: '#fff', fontSize: 11, fontWeight: 500 }; }
+function disabledBtn(): React.CSSProperties { return { padding: '4px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)', fontSize: 11, fontWeight: 500, cursor: 'not-allowed' }; }
 function secondaryBtn(): React.CSSProperties { return { padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)', fontSize: 12 }; }

@@ -8,11 +8,14 @@ import {
 } from '../../../_data/design';
 import { toneStyle } from '../../palette';
 import { stageStatusLabel } from './StageTracker';
+import { LifecycleMenu } from './LifecycleMenu';
 
 interface Props {
   project: DesignProject;
   onOpenOwnerPortal?: () => void;
   onBack?: () => void;
+  /** Called after the lifecycle menu mutates the project (pause/cancel/resume). */
+  onLifecycleChange?: () => void;
 }
 
 const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warning' | 'danger' | 'neutral' | 'accent' }) => {
@@ -36,7 +39,7 @@ const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warn
   );
 };
 
-export function ProjectContextBar({ project, onOpenOwnerPortal, onBack }: Props) {
+export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange }: Props) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
 
@@ -47,6 +50,12 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack }: Props)
     project.stageStatus === 'blocked'          ? 'danger' :
     project.stageStatus === 'done'             ? 'success' :
                                                   'neutral';
+  const lifecyclePill =
+    project.lifecycleStatus === 'paused'
+      ? { label: 'Paused', tone: 'warning' as const }
+      : project.lifecycleStatus === 'cancelled'
+      ? { label: 'Cancelled', tone: 'danger' as const }
+      : null;
 
   return (
     <div
@@ -93,6 +102,7 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack }: Props)
           <Chip label={formatClassification(project.classification)} tone="neutral" />
           <Chip label={formatTier(project.tier)} tone={tierTone} />
           <Chip label={stageStatusLabel(project.stageStatus)} tone={stageTone} />
+          {lifecyclePill && <Chip label={lifecyclePill.label} tone={lifecyclePill.tone} />}
         </div>
         <div
           style={{
@@ -127,7 +137,7 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack }: Props)
           </span>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         {onOpenOwnerPortal && (
           <button
             type="button"
@@ -145,6 +155,7 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack }: Props)
             Open owner portal preview
           </button>
         )}
+        <LifecycleMenu project={project} onChange={() => onLifecycleChange?.()} />
       </div>
     </div>
   );
