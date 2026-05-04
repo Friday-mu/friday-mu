@@ -544,91 +544,201 @@ function cellStyle(align: 'left' | 'right'): React.CSSProperties {
 // ─────────────────────────── Leads / Vendors / Settings (Phase 1 stubs) ───────────────────────────
 
 function LeadsList() {
+  // Renamed-in-place from a flat table to a kanban (cont-12, audit A5).
+  // Industry research: every modern PM tool (Programa, JobTread, Houzz Pro)
+  // uses kanban for the pre-contract pipeline. Flat table loses funnel
+  // intuition.
   const leads = designClient.leads.list();
-  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'accepted' | 'declined' | 'not_needed'>('all');
-  const filtered = statusFilter === 'all' ? leads : leads.filter((l) => l.status === statusFilter);
+  const columns: Array<{ id: 'draft' | 'sent' | 'accepted' | 'declined' | 'not_needed'; label: string; tone: 'neutral' | 'info' | 'success' | 'danger' }> = [
+    { id: 'draft',      label: 'Draft',     tone: 'neutral' },
+    { id: 'sent',       label: 'Sent',      tone: 'info' },
+    { id: 'accepted',   label: 'Accepted',  tone: 'success' },
+    { id: 'declined',   label: 'Declined',  tone: 'danger' },
+    { id: 'not_needed', label: 'Archived',  tone: 'neutral' },
+  ];
+  const counts: Record<string, number> = Object.fromEntries(columns.map((c) => [c.id, leads.filter((l) => l.status === c.id).length]));
 
   return (
-    <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Leads <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· pre-project pipeline</span></h3>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {(['all', 'draft', 'sent', 'accepted', 'declined'] as const).map((s) => (
-            <FilterChip key={s} label={s === 'all' ? 'All' : s} active={statusFilter === s} onClick={() => setStatusFilter(s)} />
-          ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
+          Leads <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· pre-project pipeline</span>
+        </h3>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          {leads.length} total · {counts.accepted} accepted · {counts.sent} awaiting decision
         </div>
       </div>
-      {filtered.length === 0 ? (
-        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13, padding: 12, textAlign: 'center' }}>
-          No leads in this status.
-        </div>
-      ) : (
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-              <th style={cellStyle('left')}>Lead</th>
-              <th style={cellStyle('left')}>Property hint</th>
-              <th style={cellStyle('left')}>Budget</th>
-              <th style={cellStyle('left')}>Source</th>
-              <th style={cellStyle('left')}>Status</th>
-              <th style={cellStyle('right')}>Created</th>
-              <th style={cellStyle('right')}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((l) => (
-              <tr key={l.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-                <td style={cellStyle('left')}>
-                  <div style={{ fontWeight: 500 }}>{l.counterpartyName}</div>
-                  <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{l.counterpartyPhone ?? l.counterpartyEmail ?? '—'}</div>
-                </td>
-                <td style={cellStyle('left')}>{l.propertyHint ?? '—'}</td>
-                <td style={cellStyle('left')}>{l.budgetHint ?? '—'}</td>
-                <td style={cellStyle('left')}>{l.source.replace(/_/g, ' ')}</td>
-                <td style={cellStyle('left')}>
-                  <span style={{
-                    padding: '2px 8px',
-                    borderRadius: 'var(--radius-full)',
-                    background: l.status === 'accepted' ? 'var(--color-bg-success)' :
-                                l.status === 'sent'     ? 'var(--color-bg-info)' :
-                                l.status === 'declined' ? 'var(--color-bg-danger)' :
-                                                          'var(--color-background-tertiary)',
-                    color: l.status === 'accepted' ? 'var(--color-text-success)' :
-                           l.status === 'sent'     ? 'var(--color-text-info)' :
-                           l.status === 'declined' ? 'var(--color-text-danger)' :
-                                                     'var(--color-text-secondary)',
-                    fontSize: 10,
-                  }}>
-                    {l.status}
-                  </span>
-                </td>
-                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
-                  {l.createdAt.slice(0, 10)}
-                </td>
-                <td style={cellStyle('right')}>
-                  <button
-                    type="button"
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: 11,
-                      borderRadius: 'var(--radius-sm)',
-                      background: l.status === 'accepted' ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
-                      color: l.status === 'accepted' ? '#fff' : 'var(--color-text-secondary)',
-                      border: '0.5px solid var(--color-border-tertiary)',
-                    }}
-                    title={l.status === 'accepted' ? 'Convert this lead to a Project' : 'Convert (typically after acceptance)'}
-                    onClick={() => fireToast(`Convert ${l.counterpartyName}'s lead → Project (mock; v0.2 wires to backend)`)}
-                  >
-                    {l.status === 'accepted' ? 'Convert →' : 'Open'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+
+      {/* Horizontal-scrolling kanban. Each column is a fixed-width lane so
+          mobile users swipe through columns rather than collapsing the
+          board to a list. */}
+      <div
+        role="list"
+        aria-label="Leads pipeline"
+        style={{
+          display: 'flex',
+          gap: 12,
+          overflowX: 'auto',
+          paddingBottom: 8,
+          alignItems: 'stretch',
+        }}
+      >
+        {columns.map((col) => {
+          const colLeads = leads.filter((l) => l.status === col.id);
+          return (
+            <div
+              key={col.id}
+              role="listitem"
+              data-leads-column={col.id}
+              style={{
+                flex: '0 0 280px',
+                minWidth: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                background: 'var(--color-background-tertiary)',
+                borderRadius: 'var(--radius-md)',
+                padding: 10,
+                maxHeight: 'calc(100vh - 320px)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 4px 6px', borderBottom: `1px solid ${leadColumnTone(col.tone).border}` }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: leadColumnTone(col.tone).text, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  {col.label}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
+                  {colLeads.length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', minHeight: 60 }}>
+                {colLeads.length === 0 ? (
+                  <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: 16 }}>
+                    No leads here.
+                  </div>
+                ) : (
+                  colLeads.map((l) => <LeadCard key={l.id} lead={l} />)
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[number] }) {
+  const ageDays = Math.max(0, Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86_400_000));
+  const stale = lead.status === 'sent' && ageDays > 7;
+  return (
+    <div
+      data-lead-card={lead.id}
+      style={{
+        background: 'var(--color-background-primary)',
+        border: stale ? '1px solid var(--color-text-warning)' : '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+        padding: 10,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{lead.counterpartyName}</span>
+        <span style={{ fontSize: 10, color: stale ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)', whiteSpace: 'nowrap' }}>
+          {ageDays === 0 ? 'today' : `${ageDays}d`}
+        </span>
+      </div>
+      {lead.propertyHint && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{lead.propertyHint}</div>
+      )}
+      {lead.budgetHint && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>{lead.budgetHint}</div>
+      )}
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+        via {lead.source.replace(/_/g, ' ')}
+        {lead.counterpartyPhone ? ` · ${lead.counterpartyPhone}` : lead.counterpartyEmail ? ` · ${lead.counterpartyEmail}` : ''}
+      </div>
+      {lead.notes && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic', marginTop: 2 }}>
+          {lead.notes}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+        {lead.status === 'draft' && (
+          <button
+            type="button"
+            data-lead-action="send"
+            onClick={() => fireToast(`Send proposal to ${lead.counterpartyName} (mock — v0.2 wires to email)`)}
+            style={leadActionBtn('primary')}
+          >
+            Send proposal
+          </button>
+        )}
+        {lead.status === 'sent' && (
+          <>
+            <button
+              type="button"
+              data-lead-action="accept"
+              onClick={() => fireToast(`Mark ${lead.counterpartyName} as accepted (mock — v0.2 wires)`)}
+              style={leadActionBtn('primary')}
+            >
+              Mark accepted
+            </button>
+            <button
+              type="button"
+              data-lead-action="decline"
+              onClick={() => fireToast(`Mark ${lead.counterpartyName} as declined`)}
+              style={leadActionBtn('secondary')}
+            >
+              Decline
+            </button>
+          </>
+        )}
+        {lead.status === 'accepted' && (
+          <button
+            type="button"
+            data-lead-action="convert"
+            onClick={() => fireToast(`Convert ${lead.counterpartyName}'s lead → Project (mock — v0.2 wires)`)}
+            style={leadActionBtn('primary')}
+          >
+            Convert → Project
+          </button>
+        )}
+        {(lead.status === 'declined' || lead.status === 'not_needed') && (
+          <button
+            type="button"
+            data-lead-action="reopen"
+            onClick={() => fireToast(`Reopen ${lead.counterpartyName}'s lead`)}
+            style={leadActionBtn('secondary')}
+          >
+            Reopen
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function leadColumnTone(tone: 'neutral' | 'info' | 'success' | 'danger') {
+  switch (tone) {
+    case 'info':    return { border: 'var(--color-text-info)', text: 'var(--color-text-info)' };
+    case 'success': return { border: 'var(--color-text-success)', text: 'var(--color-text-success)' };
+    case 'danger':  return { border: 'var(--color-text-danger)', text: 'var(--color-text-danger)' };
+    default:        return { border: 'var(--color-border-secondary)', text: 'var(--color-text-tertiary)' };
+  }
+}
+
+function leadActionBtn(variant: 'primary' | 'secondary'): React.CSSProperties {
+  return {
+    padding: '4px 10px',
+    fontSize: 11,
+    borderRadius: 'var(--radius-sm)',
+    background: variant === 'primary' ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
+    color: variant === 'primary' ? '#fff' : 'var(--color-text-secondary)',
+    border: '0.5px solid var(--color-border-tertiary)',
+    fontWeight: 500,
+  };
 }
 
 function VendorsList() {
