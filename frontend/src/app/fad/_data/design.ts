@@ -1212,6 +1212,76 @@ export const LEADS: DesignLead[] = [
   },
 ];
 
+// ─────────────────────────── LEADS — admin authoring (cont-23) ───────────────────────────
+//
+// Cont-12 landed the kanban view; cont-23 closes the loop with manual lead
+// intake (`+ New lead`), in-place editing via a side drawer, and concrete
+// status transitions instead of toast-only mocks.
+//
+// @demo:logic — Mutators append to in-memory LEADS array. Replace with the
+// matching POST/PATCH endpoints. Tag: PROD-DESIGN-LEADS.
+
+let leadSerial = 1000;
+
+export interface CreateLeadInput {
+  source: LeadSource;
+  entryPath: EntryPath;
+  counterpartyName: string;
+  counterpartyPhone: string | null;
+  counterpartyEmail: string | null;
+  propertyHint: string | null;
+  budgetHint: string | null;
+  notes: string | null;
+}
+
+export function createLead(input: CreateLeadInput): DesignLead {
+  const lead: DesignLead = {
+    id: `l-${++leadSerial}`,
+    entityId: DESIGN_ENTITY_ID,
+    source: input.source,
+    entryPath: input.entryPath,
+    counterpartyName: input.counterpartyName,
+    counterpartyPhone: input.counterpartyPhone,
+    counterpartyEmail: input.counterpartyEmail,
+    propertyHint: input.propertyHint,
+    budgetHint: input.budgetHint,
+    status: 'draft',
+    notes: input.notes,
+    createdAt: new Date().toISOString(),
+  };
+  LEADS.push(lead);
+  return lead;
+}
+
+export type UpdateLeadInput = Partial<Omit<CreateLeadInput, never>>;
+
+export function updateLead(leadId: string, input: UpdateLeadInput): DesignLead | null {
+  const idx = LEADS.findIndex((l) => l.id === leadId);
+  if (idx === -1) return null;
+  const updated: DesignLead = { ...LEADS[idx], ...input };
+  LEADS[idx] = updated;
+  return updated;
+}
+
+export function setLeadStatus(leadId: string, status: ProposalStatus): DesignLead | null {
+  const idx = LEADS.findIndex((l) => l.id === leadId);
+  if (idx === -1) return null;
+  if (LEADS[idx].status === status) return LEADS[idx];
+  const updated: DesignLead = { ...LEADS[idx], status };
+  LEADS[idx] = updated;
+  // No activity-log entry — leads aren't projects, and the ACTIVITY array is
+  // project-scoped (`projectId` is required and downstream queries filter
+  // by it). Lead-side status changes surface via Toaster + the kanban move.
+  return updated;
+}
+
+export function deleteLead(leadId: string): boolean {
+  const idx = LEADS.findIndex((l) => l.id === leadId);
+  if (idx === -1) return false;
+  LEADS.splice(idx, 1);
+  return true;
+}
+
 // Rooms (Ohana fully populated; Albion empty for site-visit-day demo)
 export const ROOMS: Room[] = [
   ...['Living Room','Kitchen','Master bedroom','Bedroom 2','Bedroom 3','Bedroom 4','Bathroom 1','Bathroom 2'].map((name, i) => ({
@@ -3181,6 +3251,10 @@ export const designClient = {
   leads: {
     list: () => LEADS,
     get: (id: string) => LEADS.find((l) => l.id === id) ?? null,
+    create: createLead,
+    update: updateLead,
+    setStatus: setLeadStatus,
+    delete: deleteLead,
   },
   counterparties: {
     get: getCounterparty,

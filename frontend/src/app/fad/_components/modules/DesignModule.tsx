@@ -7,7 +7,12 @@ import {
   designClient,
   formatMUR,
   stageDef,
+  type CreateLeadInput,
+  type DesignLead,
   type DesignProject,
+  type EntryPath,
+  type LeadSource,
+  type ProposalStatus,
   type StageId,
 } from '../../_data/design';
 import { LEADS as FAD_LEADS, type Lead as FadLead } from '../../_data/fixtures-tier3';
@@ -544,6 +549,18 @@ function cellStyle(align: 'left' | 'right'): React.CSSProperties {
 
 // ─────────────────────────── Leads / Vendors / Settings (Phase 1 stubs) ───────────────────────────
 
+const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
+  friday_outreach: 'Friday outreach',
+  owner_referral: 'Owner referral',
+  website: 'Website',
+  whatsapp: 'WhatsApp',
+  existing_owner: 'Existing owner',
+  walk_in: 'Walk-in',
+  other: 'Other',
+};
+const LEAD_SOURCES: LeadSource[] = ['friday_outreach', 'owner_referral', 'website', 'whatsapp', 'existing_owner', 'walk_in', 'other'];
+const LEAD_ENTRY_PATHS: EntryPath[] = ['friday_pitches', 'owner_direct', 'existing_friday_owner', 'new_owner_no_str'];
+
 function LeadsList() {
   // Renamed-in-place from a flat table to a kanban (cont-12, audit A5).
   // Industry research: every modern PM tool (Programa, JobTread, Houzz Pro)
@@ -555,7 +572,18 @@ function LeadsList() {
   // in the broader CRM (Leads / CRM-lite module). New first column shows
   // the interior-pipeline leads from FAD_LEADS so the funnel
   // "CRM intake → Design proposal flow" is visible in one place.
-  const leads = designClient.leads.list();
+  //
+  // Cont-23: + New lead intake form, source filter chips, and side drawer
+  // with edit-in-place + concrete status transitions instead of toast-only
+  // mocks.
+  const [, setRev] = useState(0);
+  const bump = () => setRev((r) => r + 1);
+  const [showCreate, setShowCreate] = useState(false);
+  const [openLeadId, setOpenLeadId] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<Set<LeadSource>>(() => new Set());
+
+  const allLeads = designClient.leads.list();
+  const leads = sourceFilter.size === 0 ? allLeads : allLeads.filter((l) => sourceFilter.has(l.source));
   const crmInteriorLeads = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won');
   const columns: Array<{ id: 'draft' | 'sent' | 'accepted' | 'declined' | 'not_needed'; label: string; tone: 'neutral' | 'info' | 'success' | 'danger' }> = [
     { id: 'draft',      label: 'Draft',     tone: 'neutral' },
@@ -565,6 +593,8 @@ function LeadsList() {
     { id: 'not_needed', label: 'Archived',  tone: 'neutral' },
   ];
   const counts: Record<string, number> = Object.fromEntries(columns.map((c) => [c.id, leads.filter((l) => l.status === c.id).length]));
+
+  const openLead = openLeadId ? designClient.leads.get(openLeadId) : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -585,10 +615,72 @@ function LeadsList() {
             . Pre-qualification cards on the left convert into Design proposal drafts.
           </p>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          {crmInteriorLeads.length} pre-qualification · {leads.length} in design pipeline · {counts.accepted} accepted · {counts.sent} awaiting decision
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            {crmInteriorLeads.length} pre-qualification · {allLeads.length} in design pipeline · {counts.accepted} accepted · {counts.sent} awaiting decision
+          </span>
+          <button
+            type="button"
+            data-leads-new
+            onClick={() => setShowCreate((v) => !v)}
+            style={leadActionBtn('primary')}
+          >
+            {showCreate ? 'Cancel' : '+ New lead'}
+          </button>
         </div>
       </div>
+
+      {/* Source filter chips. Click to toggle each source on/off. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginRight: 4 }}>Source:</span>
+        {LEAD_SOURCES.map((src) => {
+          const active = sourceFilter.has(src);
+          return (
+            <button
+              key={src}
+              type="button"
+              data-leads-source-chip={src}
+              onClick={() => setSourceFilter((prev) => {
+                const next = new Set(prev);
+                if (next.has(src)) next.delete(src); else next.add(src);
+                return next;
+              })}
+              style={{
+                padding: '2px 10px',
+                fontSize: 11,
+                borderRadius: 'var(--radius-full)',
+                border: '0.5px solid var(--color-border-tertiary)',
+                background: active ? 'var(--color-brand-accent-soft)' : 'transparent',
+                color: active ? 'var(--color-brand-accent)' : 'var(--color-text-secondary)',
+                fontWeight: active ? 600 : 500,
+              }}
+            >
+              {LEAD_SOURCE_LABEL[src]}
+            </button>
+          );
+        })}
+        {sourceFilter.size > 0 && (
+          <button
+            type="button"
+            onClick={() => setSourceFilter(new Set())}
+            style={{ padding: '2px 8px', fontSize: 10, background: 'transparent', color: 'var(--color-text-tertiary)', textDecoration: 'underline' }}
+          >
+            clear
+          </button>
+        )}
+      </div>
+
+      {showCreate && (
+        <NewLeadForm
+          onCancel={() => setShowCreate(false)}
+          onCreated={(lead) => {
+            setShowCreate(false);
+            setOpenLeadId(lead.id);
+            bump();
+            fireToast(`Lead "${lead.counterpartyName}" created in Draft.`);
+          }}
+        />
+      )}
 
       {/* Horizontal-scrolling kanban. Each column is a fixed-width lane so
           mobile users swipe through columns rather than collapsing the
@@ -678,23 +770,45 @@ function LeadsList() {
                     No leads here.
                   </div>
                 ) : (
-                  colLeads.map((l) => <LeadCard key={l.id} lead={l} />)
+                  colLeads.map((l) => (
+                    <LeadCard
+                      key={l.id}
+                      lead={l}
+                      onOpen={() => setOpenLeadId(l.id)}
+                      onChanged={bump}
+                    />
+                  ))
                 )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {openLead && (
+        <LeadDetailDrawer
+          lead={openLead}
+          onClose={() => setOpenLeadId(null)}
+          onChanged={bump}
+        />
+      )}
     </div>
   );
 }
 
-function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[number] }) {
+function LeadCard({ lead, onOpen, onChanged }: { lead: DesignLead; onOpen: () => void; onChanged: () => void }) {
   const ageDays = Math.max(0, Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86_400_000));
   const stale = lead.status === 'sent' && ageDays > 7;
+  // Stop card-level click bubbling when an action button is pressed so the
+  // detail drawer doesn't open behind the toast.
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
     <div
       data-lead-card={lead.id}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
       style={{
         background: 'var(--color-background-primary)',
         border: stale ? '1px solid var(--color-text-warning)' : '0.5px solid var(--color-border-tertiary)',
@@ -703,6 +817,7 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
+        cursor: 'pointer',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
@@ -726,12 +841,17 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
           {lead.notes}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }} onClick={stop}>
         {lead.status === 'draft' && (
           <button
             type="button"
             data-lead-action="send"
-            onClick={() => fireToast(`Send proposal to ${lead.counterpartyName} (mock — v0.2 wires to email)`)}
+            onClick={() => {
+              if (designClient.leads.setStatus(lead.id, 'sent')) {
+                fireToast(`Sent proposal to ${lead.counterpartyName}.`);
+                onChanged();
+              }
+            }}
             style={leadActionBtn('primary')}
           >
             Send proposal
@@ -742,7 +862,12 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
             <button
               type="button"
               data-lead-action="accept"
-              onClick={() => fireToast(`Mark ${lead.counterpartyName} as accepted (mock — v0.2 wires)`)}
+              onClick={() => {
+                if (designClient.leads.setStatus(lead.id, 'accepted')) {
+                  fireToast(`${lead.counterpartyName} marked accepted.`);
+                  onChanged();
+                }
+              }}
               style={leadActionBtn('primary')}
             >
               Mark accepted
@@ -750,7 +875,12 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
             <button
               type="button"
               data-lead-action="decline"
-              onClick={() => fireToast(`Mark ${lead.counterpartyName} as declined`)}
+              onClick={() => {
+                if (designClient.leads.setStatus(lead.id, 'declined')) {
+                  fireToast(`${lead.counterpartyName} marked declined.`);
+                  onChanged();
+                }
+              }}
               style={leadActionBtn('secondary')}
             >
               Decline
@@ -761,7 +891,7 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
           <button
             type="button"
             data-lead-action="convert"
-            onClick={() => fireToast(`Convert ${lead.counterpartyName}'s lead → Project (mock — v0.2 wires)`)}
+            onClick={() => fireToast(`Convert ${lead.counterpartyName}'s lead → Project (mock — v0.2 wires the cross-module create)`)}
             style={leadActionBtn('primary')}
           >
             Convert → Project
@@ -771,7 +901,12 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
           <button
             type="button"
             data-lead-action="reopen"
-            onClick={() => fireToast(`Reopen ${lead.counterpartyName}'s lead`)}
+            onClick={() => {
+              if (designClient.leads.setStatus(lead.id, 'draft')) {
+                fireToast(`${lead.counterpartyName} reopened to draft.`);
+                onChanged();
+              }
+            }}
             style={leadActionBtn('secondary')}
           >
             Reopen
@@ -780,6 +915,307 @@ function LeadCard({ lead }: { lead: ReturnType<typeof designClient.leads.list>[n
       </div>
     </div>
   );
+}
+
+// ─────────────────── New lead intake form ───────────────────
+
+function NewLeadForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (lead: DesignLead) => void }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [propertyHint, setPropertyHint] = useState('');
+  const [budgetHint, setBudgetHint] = useState('');
+  const [source, setSource] = useState<LeadSource>('website');
+  const [entryPath, setEntryPath] = useState<EntryPath>('owner_direct');
+  const [notes, setNotes] = useState('');
+  const canSubmit = name.trim().length > 0;
+  return (
+    <div
+      data-leads-new-form
+      style={{
+        background: 'var(--color-background-tertiary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-md)',
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        <label style={leadFieldLabel()}>
+          Counterparty name
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Owner / contact name" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Phone (optional)
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+230 …" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Email (optional)
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="…@example.com" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Property hint
+          <input value={propertyHint} onChange={(e) => setPropertyHint(e.target.value)} placeholder="e.g. Tamarin villa, 4BR" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Budget hint
+          <input value={budgetHint} onChange={(e) => setBudgetHint(e.target.value)} placeholder="e.g. MUR 1.5M renovation" style={leadInput()} />
+        </label>
+        <label style={leadFieldLabel()}>
+          Source
+          <select value={source} onChange={(e) => setSource(e.target.value as LeadSource)} style={leadInput()}>
+            {LEAD_SOURCES.map((s) => <option key={s} value={s}>{LEAD_SOURCE_LABEL[s]}</option>)}
+          </select>
+        </label>
+        <label style={leadFieldLabel()}>
+          Entry path
+          <select value={entryPath} onChange={(e) => setEntryPath(e.target.value as EntryPath)} style={leadInput()}>
+            {LEAD_ENTRY_PATHS.map((p) => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
+          </select>
+        </label>
+      </div>
+      <label style={leadFieldLabel()}>
+        Notes (what's the brief / context)
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything Friday should know going in." style={{ ...leadInput(), resize: 'vertical', minHeight: 50 }} />
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          disabled={!canSubmit}
+          data-leads-new-submit
+          onClick={() => {
+            const input: CreateLeadInput = {
+              source,
+              entryPath,
+              counterpartyName: name.trim(),
+              counterpartyPhone: phone.trim() === '' ? null : phone.trim(),
+              counterpartyEmail: email.trim() === '' ? null : email.trim(),
+              propertyHint: propertyHint.trim() === '' ? null : propertyHint.trim(),
+              budgetHint: budgetHint.trim() === '' ? null : budgetHint.trim(),
+              notes: notes.trim() === '' ? null : notes.trim(),
+            };
+            const lead = designClient.leads.create(input);
+            onCreated(lead);
+          }}
+          style={canSubmit ? leadActionBtn('primary') : { ...leadActionBtn('primary'), opacity: 0.5, cursor: 'not-allowed' }}
+        >
+          Create lead
+        </button>
+        <button type="button" onClick={onCancel} style={leadActionBtn('secondary')}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────── Lead detail drawer ───────────────────
+
+function LeadDetailDrawer({ lead, onClose, onChanged }: { lead: DesignLead; onClose: () => void; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(lead.counterpartyName);
+  const [phone, setPhone] = useState(lead.counterpartyPhone ?? '');
+  const [email, setEmail] = useState(lead.counterpartyEmail ?? '');
+  const [propertyHint, setPropertyHint] = useState(lead.propertyHint ?? '');
+  const [budgetHint, setBudgetHint] = useState(lead.budgetHint ?? '');
+  const [source, setSource] = useState<LeadSource>(lead.source);
+  const [notes, setNotes] = useState(lead.notes ?? '');
+  const ageDays = Math.max(0, Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86_400_000));
+  const stale = lead.status === 'sent' && ageDays > 7;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Lead detail"
+      data-lead-drawer={lead.id}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 80,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex',
+        justifyContent: 'flex-end',
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(420px, 100%)',
+          height: '100%',
+          background: 'var(--color-background-primary)',
+          borderLeft: '0.5px solid var(--color-border-secondary)',
+          padding: 20,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>
+              Lead · {LEAD_SOURCE_LABEL[lead.source]} · {ageDays === 0 ? 'today' : `${ageDays}d old`}
+            </div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, lineHeight: 1.3 }}>{lead.counterpartyName}</h3>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <LeadStatusChip status={lead.status} stale={stale} />
+            <button type="button" data-lead-drawer-close onClick={onClose} aria-label="Close" style={{ padding: '2px 8px', fontSize: 14, color: 'var(--color-text-tertiary)', background: 'transparent' }}>×</button>
+          </div>
+        </div>
+
+        {!editing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <DrawerField label="Phone" value={lead.counterpartyPhone} mono />
+            <DrawerField label="Email" value={lead.counterpartyEmail} />
+            <DrawerField label="Property" value={lead.propertyHint} />
+            <DrawerField label="Budget hint" value={lead.budgetHint} mono />
+            <DrawerField label="Entry path" value={lead.entryPath.replace(/_/g, ' ')} />
+            <DrawerField label="Notes" value={lead.notes} multiline />
+            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              <button type="button" data-lead-drawer-edit onClick={() => setEditing(true)} style={leadActionBtn('secondary')}>Edit details</button>
+              <LeadStatusActions lead={lead} onChanged={() => { onChanged(); }} />
+              <button
+                type="button"
+                data-lead-drawer-delete
+                onClick={() => {
+                  if (window.confirm(`Delete the lead from ${lead.counterpartyName}? This can't be undone.`)) {
+                    if (designClient.leads.delete(lead.id)) {
+                      fireToast('Lead deleted.');
+                      onChanged();
+                      onClose();
+                    }
+                  }
+                }}
+                style={{ ...leadActionBtn('secondary'), color: 'var(--color-text-danger)' }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label style={leadFieldLabel()}>
+              Name
+              <input value={name} onChange={(e) => setName(e.target.value)} style={leadInput()} />
+            </label>
+            <label style={leadFieldLabel()}>
+              Phone
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} style={leadInput()} />
+            </label>
+            <label style={leadFieldLabel()}>
+              Email
+              <input value={email} onChange={(e) => setEmail(e.target.value)} style={leadInput()} />
+            </label>
+            <label style={leadFieldLabel()}>
+              Property hint
+              <input value={propertyHint} onChange={(e) => setPropertyHint(e.target.value)} style={leadInput()} />
+            </label>
+            <label style={leadFieldLabel()}>
+              Budget hint
+              <input value={budgetHint} onChange={(e) => setBudgetHint(e.target.value)} style={leadInput()} />
+            </label>
+            <label style={leadFieldLabel()}>
+              Source
+              <select value={source} onChange={(e) => setSource(e.target.value as LeadSource)} style={leadInput()}>
+                {LEAD_SOURCES.map((s) => <option key={s} value={s}>{LEAD_SOURCE_LABEL[s]}</option>)}
+              </select>
+            </label>
+            <label style={leadFieldLabel()}>
+              Notes
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...leadInput(), resize: 'vertical', minHeight: 60 }} />
+            </label>
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              <button
+                type="button"
+                data-lead-drawer-save
+                onClick={() => {
+                  designClient.leads.update(lead.id, {
+                    counterpartyName: name.trim() || lead.counterpartyName,
+                    counterpartyPhone: phone.trim() === '' ? null : phone.trim(),
+                    counterpartyEmail: email.trim() === '' ? null : email.trim(),
+                    propertyHint: propertyHint.trim() === '' ? null : propertyHint.trim(),
+                    budgetHint: budgetHint.trim() === '' ? null : budgetHint.trim(),
+                    source,
+                    notes: notes.trim() === '' ? null : notes.trim(),
+                  });
+                  fireToast('Lead updated.');
+                  onChanged();
+                  setEditing(false);
+                }}
+                style={leadActionBtn('primary')}
+              >
+                Save
+              </button>
+              <button type="button" onClick={() => setEditing(false)} style={leadActionBtn('secondary')}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LeadStatusChip({ status, stale }: { status: ProposalStatus; stale: boolean }) {
+  const tone = status === 'accepted' ? 'success' : status === 'declined' ? 'danger' : status === 'sent' ? (stale ? 'warning' : 'info') : 'neutral';
+  const bg = { success: 'var(--color-bg-success)', danger: 'var(--color-bg-danger)', info: 'var(--color-bg-info)', warning: 'var(--color-bg-warning)', neutral: 'var(--color-background-tertiary)' }[tone];
+  const fg = { success: 'var(--color-text-success)', danger: 'var(--color-text-danger)', info: 'var(--color-text-info)', warning: 'var(--color-text-warning)', neutral: 'var(--color-text-tertiary)' }[tone];
+  return <span style={{ padding: '2px 10px', fontSize: 10, fontWeight: 500, borderRadius: 'var(--radius-full)', background: bg, color: fg }}>{stale ? 'sent · stale' : status}</span>;
+}
+
+function LeadStatusActions({ lead, onChanged }: { lead: DesignLead; onChanged: () => void }) {
+  const transition = (next: ProposalStatus, msg: string) => {
+    if (designClient.leads.setStatus(lead.id, next)) {
+      fireToast(msg);
+      onChanged();
+    }
+  };
+  return (
+    <>
+      {lead.status === 'draft' && <button type="button" onClick={() => transition('sent', 'Marked sent.')} style={leadActionBtn('primary')}>Mark sent</button>}
+      {lead.status === 'sent' && (
+        <>
+          <button type="button" onClick={() => transition('accepted', 'Marked accepted.')} style={leadActionBtn('primary')}>Mark accepted</button>
+          <button type="button" onClick={() => transition('declined', 'Marked declined.')} style={leadActionBtn('secondary')}>Decline</button>
+        </>
+      )}
+      {(lead.status === 'declined' || lead.status === 'not_needed') && (
+        <button type="button" onClick={() => transition('draft', 'Reopened to draft.')} style={leadActionBtn('secondary')}>Reopen</button>
+      )}
+      {lead.status !== 'not_needed' && lead.status !== 'accepted' && (
+        <button type="button" onClick={() => transition('not_needed', 'Archived.')} style={leadActionBtn('secondary')}>Archive</button>
+      )}
+    </>
+  );
+}
+
+function DrawerField({ label, value, mono = false, multiline = false }: { label: string; value: string | null; mono?: boolean; multiline?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>{label}</div>
+      <div
+        style={{
+          fontSize: 12,
+          color: value ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+          fontFamily: mono && value ? 'var(--font-mono-fad)' : 'inherit',
+          fontStyle: value ? 'normal' : 'italic',
+          whiteSpace: multiline ? 'pre-wrap' : 'normal',
+          lineHeight: multiline ? 1.5 : 1.3,
+        }}
+      >
+        {value ?? '—'}
+      </div>
+    </div>
+  );
+}
+
+function leadFieldLabel(): React.CSSProperties {
+  return { fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 };
+}
+
+function leadInput(): React.CSSProperties {
+  return { padding: '6px 8px', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' };
 }
 
 /**
