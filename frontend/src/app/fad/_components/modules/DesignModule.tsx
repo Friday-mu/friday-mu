@@ -18,6 +18,7 @@ import {
   type DesignTier,
   type EntryPath,
   type LeadSource,
+  type ProjectClassification,
   type ProposalStatus,
   type StageId,
   type Vendor,
@@ -281,7 +282,7 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
         {active === 'overview' && <DesignDashboard onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
         {active === 'projects' && <ProjectsList onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
-        {active === 'leads' && <LeadsList />}
+        {active === 'leads' && <LeadsList onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
         {active === 'vendors' && <VendorsList />}
         {active === 'analytics' && <AnalyticsView />}
         {active === 'settings' && <DesignSettings />}
@@ -726,7 +727,7 @@ const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
 const LEAD_SOURCES: LeadSource[] = ['friday_outreach', 'owner_referral', 'website', 'whatsapp', 'existing_owner', 'walk_in', 'other'];
 const LEAD_ENTRY_PATHS: EntryPath[] = ['friday_pitches', 'owner_direct', 'existing_friday_owner', 'new_owner_no_str'];
 
-function LeadsList() {
+function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => void }) {
   // Renamed-in-place from a flat table to a kanban (cont-12, audit A5).
   // Industry research: every modern PM tool (Programa, JobTread, Houzz Pro)
   // uses kanban for the pre-contract pipeline. Flat table loses funnel
@@ -741,10 +742,15 @@ function LeadsList() {
   // Cont-23: + New lead intake form, source filter chips, and side drawer
   // with edit-in-place + concrete status transitions instead of toast-only
   // mocks.
+  //
+  // Cont-32: Convert → Project flow opens a modal pre-filled from the
+  // lead. On submit, mints a draft project + new counterparty + new
+  // property, marks the lead accepted, opens the new project.
   const [, setRev] = useState(0);
   const bump = () => setRev((r) => r + 1);
   const [showCreate, setShowCreate] = useState(false);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
+  const [convertingLeadId, setConvertingLeadId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<Set<LeadSource>>(() => new Set());
 
   const allLeads = designClient.leads.list();
@@ -941,6 +947,7 @@ function LeadsList() {
                       lead={l}
                       onOpen={() => setOpenLeadId(l.id)}
                       onChanged={bump}
+                      onConvert={() => setConvertingLeadId(l.id)}
                     />
                   ))
                 )}
@@ -955,13 +962,27 @@ function LeadsList() {
           lead={openLead}
           onClose={() => setOpenLeadId(null)}
           onChanged={bump}
+          onConvert={() => setConvertingLeadId(openLead.id)}
+        />
+      )}
+
+      {convertingLeadId && (
+        <ConvertLeadModal
+          lead={designClient.leads.get(convertingLeadId)!}
+          onClose={() => setConvertingLeadId(null)}
+          onConverted={(projectId) => {
+            setConvertingLeadId(null);
+            setOpenLeadId(null);
+            bump();
+            onOpenProject(projectId);
+          }}
         />
       )}
     </div>
   );
 }
 
-function LeadCard({ lead, onOpen, onChanged }: { lead: DesignLead; onOpen: () => void; onChanged: () => void }) {
+function LeadCard({ lead, onOpen, onChanged, onConvert }: { lead: DesignLead; onOpen: () => void; onChanged: () => void; onConvert: () => void }) {
   const ageDays = Math.max(0, Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86_400_000));
   const stale = lead.status === 'sent' && ageDays > 7;
   // Stop card-level click bubbling when an action button is pressed so the
@@ -1056,7 +1077,7 @@ function LeadCard({ lead, onOpen, onChanged }: { lead: DesignLead; onOpen: () =>
           <button
             type="button"
             data-lead-action="convert"
-            onClick={() => fireToast(`Convert ${lead.counterpartyName}'s lead → Project (mock — v0.2 wires the cross-module create)`)}
+            onClick={onConvert}
             style={leadActionBtn('primary')}
           >
             Convert → Project
@@ -1176,7 +1197,7 @@ function NewLeadForm({ onCancel, onCreated }: { onCancel: () => void; onCreated:
 
 // ─────────────────── Lead detail drawer ───────────────────
 
-function LeadDetailDrawer({ lead, onClose, onChanged }: { lead: DesignLead; onClose: () => void; onChanged: () => void }) {
+function LeadDetailDrawer({ lead, onClose, onChanged, onConvert }: { lead: DesignLead; onClose: () => void; onChanged: () => void; onConvert: () => void }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(lead.counterpartyName);
   const [phone, setPhone] = useState(lead.counterpartyPhone ?? '');
@@ -1240,6 +1261,9 @@ function LeadDetailDrawer({ lead, onClose, onChanged }: { lead: DesignLead; onCl
             <DrawerField label="Notes" value={lead.notes} multiline />
             <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
               <button type="button" data-lead-drawer-edit onClick={() => setEditing(true)} style={leadActionBtn('secondary')}>Edit details</button>
+              {lead.status === 'accepted' && (
+                <button type="button" data-lead-drawer-convert onClick={onConvert} style={leadActionBtn('primary')}>Convert → Project</button>
+              )}
               <LeadStatusActions lead={lead} onChanged={() => { onChanged(); }} />
               <button
                 type="button"
@@ -1320,6 +1344,125 @@ function LeadDetailDrawer({ lead, onClose, onChanged }: { lead: DesignLead; onCl
       </div>
     </div>
   );
+}
+
+// Convert Lead → Project modal (cont-32). Pre-fills classification from a
+// budget-hint heuristic + lets the director pick a design lead. On submit,
+// mints project + counterparty + property, navigates the user to the new
+// project drill-down.
+function ConvertLeadModal({ lead, onClose, onConverted }: { lead: DesignLead; onClose: () => void; onConverted: (projectId: string) => void }) {
+  const userId = useCurrentUserId();
+  const heuristicClassification = guessClassification(lead.budgetHint, lead.notes);
+  const [classification, setClassification] = useState<ProjectClassification>(heuristicClassification);
+  const [designLeadUserId, setDesignLeadUserId] = useState<string | null>(userId);
+  const defaultName = lead.propertyHint
+    ? `${lead.counterpartyName.split(' ')[0]} — ${lead.propertyHint}`.slice(0, 80)
+    : `${lead.counterpartyName} — new project`;
+  const [projectName, setProjectName] = useState(defaultName);
+
+  const submit = () => {
+    const result = designClient.leads.convertToProject(lead.id, {
+      classification,
+      designLeadUserId,
+      projectName: projectName.trim() || undefined,
+    });
+    if (result) {
+      fireToast(`Project "${result.project.name}" created from lead.`);
+      onConverted(result.project.id);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Convert lead to project"
+      data-lead-convert-modal
+      style={{
+        position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.55)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-background-tertiary)',
+          width: '100%', maxWidth: 520, borderRadius: 'var(--radius-lg)',
+          padding: 20, display: 'flex', flexDirection: 'column', gap: 14,
+        }}
+      >
+        <div>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Convert lead → Project</h3>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+            Mints a new draft project from <strong>{lead.counterpartyName}</strong>'s lead, plus a fresh counterparty + property record. Lead stays as <em>accepted</em> for the audit trail.
+          </p>
+        </div>
+
+        <div style={{ background: 'var(--color-background-primary)', padding: 10, borderRadius: 'var(--radius-sm)', fontSize: 11, color: 'var(--color-text-secondary)' }}>
+          <div><strong>{lead.counterpartyName}</strong> · {LEAD_SOURCE_LABEL[lead.source]}</div>
+          {lead.propertyHint && <div style={{ marginTop: 2 }}>{lead.propertyHint}</div>}
+          {lead.budgetHint && <div style={{ marginTop: 2, color: 'var(--color-text-tertiary)' }}>{lead.budgetHint}</div>}
+        </div>
+
+        <label style={leadFieldLabel()}>
+          Project name
+          <input value={projectName} onChange={(e) => setProjectName(e.target.value)} style={leadInput()} />
+        </label>
+
+        <label style={leadFieldLabel()}>
+          Classification
+          <select value={classification} onChange={(e) => setClassification(e.target.value as ProjectClassification)} style={leadInput()}>
+            <option value="furnishing">Furnishing</option>
+            <option value="renovation">Renovation</option>
+            <option value="mixed">Mixed (renovation + furnishing)</option>
+          </select>
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+            Heuristic guess: <strong>{heuristicClassification}</strong> from the lead's budget hint / notes.
+          </span>
+        </label>
+
+        <label style={leadFieldLabel()}>
+          Design lead
+          <select value={designLeadUserId ?? ''} onChange={(e) => setDesignLeadUserId(e.target.value || null)} style={leadInput()}>
+            <option value="">— assign later —</option>
+            <option value={userId}>You ({userId.replace(/^u-/, '')})</option>
+            <option value="u-jaabir">Jaabir (external lead)</option>
+            <option value="u-mathias">Mathias</option>
+            <option value="u-bryan">Bryan</option>
+          </select>
+        </label>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button type="button" onClick={onClose} style={{ padding: '8px 14px', fontSize: 12, borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--color-text-secondary)', border: '0.5px solid var(--color-border-secondary)' }}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-lead-convert-submit
+            onClick={submit}
+            disabled={projectName.trim().length === 0}
+            style={{
+              padding: '8px 14px', fontSize: 12, borderRadius: 'var(--radius-sm)',
+              background: projectName.trim() ? 'var(--color-brand-accent)' : 'var(--color-background-primary)',
+              color: projectName.trim() ? '#fff' : 'var(--color-text-tertiary)',
+              fontWeight: 500,
+              cursor: projectName.trim() ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Create project
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function guessClassification(budgetHint: string | null, notes: string | null): ProjectClassification {
+  const text = `${budgetHint ?? ''} ${notes ?? ''}`.toLowerCase();
+  if (/furniture|furnishing|fitout|fit-out|styling/.test(text)) return 'furnishing';
+  if (/renov|reno|extension|rebuild|gut|structural|m[\W_]*&[\W_]*e|roof|wall|kitchen rebuild/.test(text)) return 'renovation';
+  return 'renovation'; // safer default — most Friday work is renovation-led
 }
 
 function LeadStatusChip({ status, stale }: { status: ProposalStatus; stale: boolean }) {

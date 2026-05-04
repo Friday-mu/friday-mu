@@ -1417,6 +1417,123 @@ export function deleteLead(leadId: string): boolean {
   return true;
 }
 
+// ─────────────────────────── Lead → Project conversion (cont-32) ───────────────────────────
+//
+// Turns an accepted lead into a draft project. Mints a new counterparty
+// (owner) + new property record from the lead's intake fields, mints the
+// project, marks the lead `accepted` (if not already), writes an activity
+// entry on the new project. Returns the project.
+//
+// @demo:logic — Backend equivalent is `POST /api/design/leads/:id/convert`
+// returning the new project. Server should idempotency-key on the leadId
+// so a double-click doesn't double-create. Tag: PROD-DESIGN-LEAD-CONVERT.
+
+let projectSerial = 1000;
+let counterpartySerial = 1000;
+let propertySerial = 1000;
+
+export interface ConvertLeadInput {
+  classification: ProjectClassification;
+  designLeadUserId: string | null;
+  /** Override the auto-generated project name. Defaults to "<counterparty>
+   *  — <property hint>" truncated. */
+  projectName?: string;
+}
+
+export interface ConvertedLead {
+  project: DesignProject;
+  counterpartyCreated: Counterparty;
+  propertyCreated: DesignProperty;
+}
+
+export function convertLeadToProject(leadId: string, input: ConvertLeadInput): ConvertedLead | null {
+  const lead = LEADS.find((l) => l.id === leadId);
+  if (!lead) return null;
+
+  // Mint counterparty from the lead intake.
+  const counterparty: Counterparty = {
+    id: `cp-${++counterpartySerial}`,
+    fullName: lead.counterpartyName,
+    phone: lead.counterpartyPhone,
+    email: lead.counterpartyEmail,
+    nic: null,
+    kind: 'owner',
+  };
+  COUNTERPARTIES.push(counterparty);
+
+  // Mint property from the propertyHint.
+  const property: DesignProperty = {
+    id: `prop-${++propertySerial}`,
+    pmPropertyId: null,
+    name: lead.propertyHint || `${lead.counterpartyName}'s property`,
+    address: lead.propertyHint || '—',
+    region: 'TBD',
+    bedrooms: null,
+    bathrooms: null,
+  };
+  PROPERTIES.push(property);
+
+  const projectName = input.projectName?.trim() || (
+    lead.propertyHint
+      ? `${lead.counterpartyName.split(' ')[0]} — ${lead.propertyHint}`.slice(0, 80)
+      : `${lead.counterpartyName} — new project`
+  );
+  const slug = projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+
+  const now = new Date().toISOString();
+  const project: DesignProject = {
+    id: `p-${++projectSerial}`,
+    entityId: DESIGN_ENTITY_ID,
+    name: projectName,
+    slug,
+    counterpartyId: counterparty.id,
+    propertyId: property.id,
+    classification: input.classification,
+    tier: null,
+    epcMinor: null,
+    designFeeMinor: null,
+    procurementFeeMinor: null,
+    goals: [],
+    outcomes: [],
+    budgetExpectationMinor: null,
+    urgency: null,
+    pmLink: 'not_managed',
+    designLeadUserId: input.designLeadUserId,
+    currentStage: 'lead',
+    stageStatus: 'in-progress',
+    blocker: null,
+    nextAction: 'Scope project from lead intake; book site visit.',
+    createdAt: now,
+    updatedAt: now,
+    startDate: null,
+    estimatedCompletion: null,
+    lifecycleStatus: 'active',
+    pausedAt: null,
+    pausedReason: null,
+    pausedByUserId: null,
+    cancelledAt: null,
+    cancelledReason: null,
+    cancelledByUserId: null,
+    cancelTransferToInventory: null,
+  };
+  PROJECTS.push(project);
+
+  // Promote the lead to accepted (if not already).
+  if (lead.status !== 'accepted') {
+    setLeadStatus(leadId, 'accepted');
+  }
+
+  appendActivity({
+    projectId: project.id,
+    at: now,
+    userId: null,
+    kind: 'create',
+    summary: `Project created from lead "${lead.counterpartyName}" (source: ${lead.source.replace(/_/g, ' ')}).`,
+  });
+
+  return { project, counterpartyCreated: counterparty, propertyCreated: property };
+}
+
 // Rooms (Ohana fully populated; Albion empty for site-visit-day demo)
 export const ROOMS: Room[] = [
   ...['Living Room','Kitchen','Master bedroom','Bedroom 2','Bedroom 3','Bedroom 4','Bathroom 1','Bathroom 2'].map((name, i) => ({
@@ -3578,6 +3695,7 @@ export const designClient = {
     update: updateLead,
     setStatus: setLeadStatus,
     delete: deleteLead,
+    convertToProject: convertLeadToProject,
   },
   counterparties: {
     get: getCounterparty,
