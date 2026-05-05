@@ -8,6 +8,8 @@ import { CloseoutBinderPreview } from '../../_components/CloseoutBinderPreview';
 import { MoodboardPreview } from '../../_components/MoodboardPreview';
 import { DesignPackPreview } from '../../_components/DesignPackPreview';
 import { ChangeOrderPreview } from '../../_components/ChangeOrderPreview';
+import { FeeInvoicePreview } from '../../_components/FeeInvoicePreview';
+import { QuoteComparisonPreview } from '../../_components/QuoteComparisonPreview';
 import { UnknownDoc } from './UnknownDoc';
 
 export const dynamic = 'force-static';
@@ -26,7 +28,8 @@ const DOC_TYPES = [
   'moodboard',
   'design-pack',
   'change-order',
-  // cont-43 registers additional doc types here as their components ship.
+  'fee-invoice',
+  'quote-comparison',
 ] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
@@ -67,6 +70,10 @@ export default async function DesignDocPage({ params }: PageProps) {
       return <DesignPackPreview project={project} />;
     case 'change-order':
       return <ChangeOrderPreview project={project} />;
+    case 'fee-invoice':
+      return <FeeInvoicePreview project={project} />;
+    case 'quote-comparison':
+      return <QuoteComparisonPreview project={project} />;
   }
 }
 
