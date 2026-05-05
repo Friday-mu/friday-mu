@@ -5,6 +5,8 @@ import { RoughBudgetPreview } from '../../_components/RoughBudgetPreview';
 import { FinalBudgetPreview } from '../../_components/FinalBudgetPreview';
 import { ReconciliationPreview } from '../../_components/ReconciliationPreview';
 import { CloseoutBinderPreview } from '../../_components/CloseoutBinderPreview';
+import { MoodboardPreview } from '../../_components/MoodboardPreview';
+import { DesignPackPreview } from '../../_components/DesignPackPreview';
 import { UnknownDoc } from './UnknownDoc';
 
 export const dynamic = 'force-static';
@@ -20,7 +22,9 @@ const DOC_TYPES = [
   'final-budget',
   'reconciliation',
   'closeout-binder',
-  // cont-41..42 register additional doc types here as their components ship.
+  'moodboard',
+  'design-pack',
+  // cont-42 registers additional doc types here as their components ship.
 ] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
@@ -55,6 +59,10 @@ export default async function DesignDocPage({ params }: PageProps) {
       return <ReconciliationPreview project={project} />;
     case 'closeout-binder':
       return <CloseoutBinderPreview project={project} />;
+    case 'moodboard':
+      return <MoodboardPreview project={project} />;
+    case 'design-pack':
+      return <DesignPackPreview project={project} />;
   }
 }
 
