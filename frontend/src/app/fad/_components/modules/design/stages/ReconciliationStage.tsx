@@ -161,8 +161,16 @@ export function ReconciliationStage({ project }: Props) {
         </Card>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <button type="button" onClick={() => fireToast('Reconciliation report generated (mock)')} style={secondaryBtn()}>Generate reconciliation report</button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+        <a
+          href={`/design-docs/${project.slug}/reconciliation`}
+          target="_blank"
+          rel="noopener"
+          data-doc-link="reconciliation"
+          style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+        >
+          Open reconciliation print preview ↗
+        </a>
         {canSeeProfitability && <button type="button" onClick={() => fireToast('Internal profitability report generated — admin only PDF')} style={primaryBtn()}>Generate profitability report</button>}
       </div>
     </div>

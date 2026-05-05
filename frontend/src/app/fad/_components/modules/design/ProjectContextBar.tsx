@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import {
   designClient,
   formatClassification,
@@ -9,6 +10,20 @@ import {
 import { toneStyle } from '../../palette';
 import { stageStatusLabel } from './StageTracker';
 import { LifecycleMenu } from './LifecycleMenu';
+
+const PRINT_DOCS: Array<{ slug: string; label: string; group: string }> = [
+  { slug: 'project-summary',  label: 'Project summary',           group: 'Reference' },
+  { slug: 'rough-budget',     label: 'Rough budget',              group: 'Pre-agreement' },
+  { slug: 'agreement',        label: 'Agreement (Annex A + B)',   group: 'Pre-agreement' },
+  { slug: 'fee-invoice',      label: 'Fee invoices',              group: 'Finance' },
+  { slug: 'moodboard',        label: 'Moodboard',                 group: 'Design' },
+  { slug: 'design-pack',      label: 'Design pack',               group: 'Design' },
+  { slug: 'final-budget',     label: 'Final procurement budget',  group: 'Procurement' },
+  { slug: 'change-order',     label: 'Change orders',             group: 'Procurement' },
+  { slug: 'quote-comparison', label: 'Quote comparison',          group: 'Procurement' },
+  { slug: 'reconciliation',   label: 'Reconciliation report',     group: 'Closeout' },
+  { slug: 'closeout-binder',  label: 'Closeout binder',           group: 'Closeout' },
+];
 
 interface Props {
   project: DesignProject;
@@ -155,29 +170,111 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
             Open owner portal preview
           </button>
         )}
-        <a
-          href={`/design-docs/${project.slug}/project-summary`}
-          target="_blank"
-          rel="noopener"
-          data-doc-link="project-summary"
-          style={{
-            padding: '6px 12px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--color-border-secondary)',
-            background: 'var(--color-background-primary)',
-            color: 'var(--color-text-primary)',
-            fontSize: 12,
-            fontWeight: 500,
-            textDecoration: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          Print previews ↗
-        </a>
+        <PrintPreviewMenu project={project} />
         <LifecycleMenu project={project} onChange={() => onLifecycleChange?.()} />
       </div>
+    </div>
+  );
+}
+
+function PrintPreviewMenu({ project }: { project: DesignProject }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  // Group docs for the menu (preserves PRINT_DOCS array order within each group).
+  const groups = new Map<string, typeof PRINT_DOCS>();
+  for (const d of PRINT_DOCS) {
+    const arr = groups.get(d.group) ?? [];
+    arr.push(d);
+    groups.set(d.group, arr);
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        data-print-previews-toggle
+        aria-expanded={open}
+        style={{
+          padding: '6px 12px',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid var(--color-border-secondary)',
+          background: open ? 'var(--color-background-secondary)' : 'var(--color-background-primary)',
+          color: 'var(--color-text-primary)',
+          fontSize: 12,
+          fontWeight: 500,
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        Print previews ↗
+        <span style={{ fontSize: 9, opacity: 0.6 }}>{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          data-print-previews-menu
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            right: 0,
+            zIndex: 30,
+            minWidth: 240,
+            maxHeight: 'min(60vh, 480px)',
+            overflowY: 'auto',
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.18)',
+            padding: '4px 0',
+          }}
+        >
+          {Array.from(groups.entries()).map(([group, docs]) => (
+            <div key={group}>
+              <div style={{ padding: '6px 12px 2px', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-tertiary)' }}>
+                {group}
+              </div>
+              {docs.map((d) => (
+                <a
+                  key={d.slug}
+                  href={`/design-docs/${project.slug}/${d.slug}`}
+                  target="_blank"
+                  rel="noopener"
+                  data-doc-link={d.slug}
+                  onClick={() => setOpen(false)}
+                  style={{
+                    display: 'block',
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    color: 'var(--color-text-primary)',
+                    textDecoration: 'none',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = 'var(--color-background-secondary)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'; }}
+                >
+                  {d.label}
+                </a>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

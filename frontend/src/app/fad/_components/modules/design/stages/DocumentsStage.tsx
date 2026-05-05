@@ -30,6 +30,20 @@ const DOC_LABEL: Record<DocumentType, string> = {
   before_after_case_study: 'Before/after case study',
 };
 
+// Mapping of DocumentType → /design-docs/[slug]/[doc] route segment for the
+// 11 in-app print previews shipped in cont-37..43. Types without a preview
+// component fall back to the existing pdfUrl Download link.
+const PREVIEW_ROUTE: Partial<Record<DocumentType, string>> = {
+  rough_budget_pdf: 'rough-budget',
+  agreement_annex_b: 'agreement',
+  moodboard_pdf: 'moodboard',
+  design_pack_pdf: 'design-pack',
+  final_budget_pdf: 'final-budget',
+  change_order: 'change-order',
+  final_handover: 'closeout-binder',
+  budget_reconciliation: 'reconciliation',
+};
+
 export function DocumentsStage({ project }: Props) {
   const docs = designClient.documents.list(project.id);
   const [activeId, setActiveId] = useState<string | null>(docs.find((d) => d.status !== 'not_yet')?.id ?? docs[0]?.id ?? null);
@@ -113,7 +127,17 @@ export function DocumentsStage({ project }: Props) {
               {(active.status === 'draft' || active.status === 'sent') && (
                 <button type="button" onClick={() => fireToast(`Re-generated ${DOC_LABEL[active.type]} v${active.version + 1}`)} style={secondaryBtn()}>Regenerate</button>
               )}
-              {active.pdfUrl && <a href={active.pdfUrl} style={secondaryBtn()}>Download</a>}
+              {PREVIEW_ROUTE[active.type] && active.status !== 'not_yet' && (
+                <a
+                  href={`/design-docs/${project.slug}/${PREVIEW_ROUTE[active.type]}`}
+                  target="_blank"
+                  rel="noopener"
+                  data-doc-link={PREVIEW_ROUTE[active.type]}
+                  style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                >
+                  Open print preview ↗
+                </a>
+              )}
               {active.status !== 'not_yet' && active.audience === 'owner' && (
                 <button type="button" onClick={() => setSendModalFor(active)} style={secondaryBtn()}>Send to owner</button>
               )}

@@ -243,7 +243,15 @@ export function RoughBudgetStage({ project }: Props) {
       </Card>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <button type="button" style={secondaryBtn()}>Preview PDF</button>
+        <a
+          href={`/design-docs/${project.slug}/rough-budget`}
+          target="_blank"
+          rel="noopener"
+          data-doc-link="rough-budget"
+          style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+        >
+          Preview PDF ↗
+        </a>
         <button type="button" style={primaryBtn()}>Save new version</button>
       </div>
     </div>

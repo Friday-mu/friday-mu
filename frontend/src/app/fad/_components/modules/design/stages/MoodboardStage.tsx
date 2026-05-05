@@ -87,11 +87,23 @@ export function MoodboardStage({ project }: Props) {
 }
 
 function VersionDetail({ version }: { version: MoodboardVersion }) {
+  const project = designClient.projects.get(version.projectId);
   return (
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>v{version.version} · {version.state.replace(/_/g, ' ')}</h4>
         <div style={{ display: 'flex', gap: 8 }}>
+          {project && (
+            <a
+              href={`/design-docs/${project.slug}/moodboard`}
+              target="_blank"
+              rel="noopener"
+              data-doc-link="moodboard"
+              style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+            >
+              Open print preview ↗
+            </a>
+          )}
           {version.state === 'draft' && <button type="button" style={secondaryBtn()} onClick={() => fireToast('Sent to owner via portal preview link (mock)')}>Send to owner</button>}
           {version.state === 'sent' && <button type="button" style={primaryBtn()} onClick={() => fireToast('Marked approved (logs §7.PP approval record)')}>Mark approved</button>}
           {version.state === 'approved' && <span style={{ fontSize: 11, color: 'var(--color-text-success)' }}>✓ Owner-approved {version.approvedAt?.slice(0, 10)}</span>}

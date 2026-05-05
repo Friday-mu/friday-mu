@@ -538,6 +538,7 @@ function DraftCoEditor({ co, onChanged }: { co: ChangeOrder; onChanged: () => vo
   const [showAddLine, setShowAddLine] = useState(false);
   const total = designClient.changeOrders.total(co);
   const canSend = co.lineItems.length >= 1 && co.title.trim().length > 0;
+  const project = designClient.projects.get(co.projectId);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)' }}>Line items</div>
@@ -600,6 +601,17 @@ function DraftCoEditor({ co, onChanged }: { co: ChangeOrder; onChanged: () => vo
           <span style={{ fontFamily: 'var(--font-mono-fad)', fontWeight: 600, fontSize: 13, color: total >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
             {total >= 0 ? '+' : ''}{formatMUR(total)}
           </span>
+          {project && (
+            <a
+              href={`/design-docs/${project.slug}/change-order?co=${co.id}`}
+              target="_blank"
+              rel="noopener"
+              data-doc-link="change-order"
+              style={{ ...secondaryBtnLarge(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+            >
+              Preview ↗
+            </a>
+          )}
           <button
             type="button"
             disabled={!canSend}
@@ -786,6 +798,7 @@ function AddCoLineForm({
 
 function SentCoReadOnly({ co }: { co: ChangeOrder }) {
   const total = designClient.changeOrders.total(co);
+  const project = designClient.projects.get(co.projectId);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <CoLineItemsTable lineItems={co.lineItems} />
@@ -795,9 +808,22 @@ function SentCoReadOnly({ co }: { co: ChangeOrder }) {
           {co.state === 'approved' && '✓ Approved. Budget reflects this delta.'}
           {co.state === 'rejected' && 'Rejected by owner. Scope reverts to pre-CO baseline.'}
         </div>
-        <span style={{ fontFamily: 'var(--font-mono-fad)', fontWeight: 600, fontSize: 13, color: total >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
-          Net {total >= 0 ? '+' : ''}{formatMUR(total)}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {project && (
+            <a
+              href={`/design-docs/${project.slug}/change-order?co=${co.id}`}
+              target="_blank"
+              rel="noopener"
+              data-doc-link="change-order"
+              style={{ fontSize: 11, color: 'var(--color-brand-accent)', textDecoration: 'none' }}
+            >
+              Preview ↗
+            </a>
+          )}
+          <span style={{ fontFamily: 'var(--font-mono-fad)', fontWeight: 600, fontSize: 13, color: total >= 0 ? 'var(--color-text-warning)' : 'var(--color-text-success)' }}>
+            Net {total >= 0 ? '+' : ''}{formatMUR(total)}
+          </span>
+        </div>
       </div>
       {co.ownerComment && (
         <div

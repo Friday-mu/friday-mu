@@ -130,7 +130,15 @@ export function HandoverStage({ project }: Props) {
       </Card>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={() => fireToast('Handover bundle PDF generated (mock)')} style={secondaryBtn()}>Generate handover bundle</button>
+        <a
+          href={`/design-docs/${project.slug}/closeout-binder`}
+          target="_blank"
+          rel="noopener"
+          data-doc-link="closeout-binder"
+          style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+        >
+          Open closeout binder preview ↗
+        </a>
         <button type="button" onClick={() => fireToast('Sent to owner via portal + email (mock)')} style={secondaryBtn()}>Send to owner</button>
         <button type="button" onClick={() => fireToast('Project marked complete (mock)')} style={primaryBtn()}>Mark project complete</button>
       </div>

@@ -163,6 +163,15 @@ export function AgreementStage({ project }: Props) {
             {(status === 'sent' || status === 'viewed_by_client' || status === 'signed_by_client' || status === 'completed') && 'Sent — see audit trail below.'}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a
+              href={`/design-docs/${project.slug}/agreement`}
+              target="_blank"
+              rel="noopener"
+              data-doc-link="agreement"
+              style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+            >
+              Open print preview ↗
+            </a>
             <button type="button" style={secondaryBtn()} onClick={() => fireToast('Draft saved (mock)')}>Save draft</button>
             <button
               type="button"
