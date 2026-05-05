@@ -85,8 +85,12 @@ export function DocumentPage({
     <article className="doc-page" data-doc-page>
       <header className="doc-letterhead">
         <div className="doc-letterhead-left">
-          <div className="doc-brand">Friday Retreats</div>
-          <div className="doc-brand-sub">interior design · str hospitality · mauritius</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/friday-logo.jpg" alt="Friday Retreats" className="doc-brand-logo" />
+          <div>
+            <div className="doc-brand">Friday Retreats</div>
+            <div className="doc-brand-sub">interior design · str hospitality · mauritius</div>
+          </div>
         </div>
         <div className="doc-letterhead-right">
           <div className="doc-doc-title">{meta.title}</div>
@@ -117,7 +121,7 @@ const DOC_PRINT_CSS = `
   background: #e8e6e0;
   min-height: 100vh;
   font-family: 'Georgia', 'Times New Roman', serif;
-  color: #14233d;
+  color: #0F1836;
   padding: 24px 12px 60px;
   box-sizing: border-box;
 }
@@ -131,14 +135,15 @@ const DOC_PRINT_CSS = `
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 12px;
 }
-.doc-toolbar-link { color: #14233d; text-decoration: none; }
+.doc-toolbar-link { color: #0F1836; text-decoration: none; }
 .doc-toolbar-link:hover { text-decoration: underline; }
 .doc-toolbar-btn {
-  background: #14233d; color: #f8f4ec; border: none; padding: 8px 16px;
+  background: #2B4A93; color: #f8f4ec; border: none; padding: 8px 16px;
   border-radius: 4px; font-size: 12px; cursor: pointer;
   font-family: inherit;
+  font-weight: 500;
 }
-.doc-toolbar-btn:hover { background: #1f3358; }
+.doc-toolbar-btn:hover { background: #0F1836; }
 
 .doc-pages { display: flex; flex-direction: column; gap: 16px; align-items: center; }
 
@@ -159,10 +164,22 @@ const DOC_PRINT_CSS = `
 .doc-letterhead {
   display: grid;
   grid-template-columns: 1fr auto;
-  align-items: flex-start;
-  padding-bottom: 12mm;
-  border-bottom: 0.5pt solid #14233d;
-  margin-bottom: 12mm;
+  align-items: center;
+  padding-bottom: 10mm;
+  border-bottom: 1pt solid #0F1836;
+  margin-bottom: 10mm;
+}
+.doc-letterhead-left {
+  display: flex;
+  align-items: center;
+  gap: 14pt;
+}
+.doc-brand-logo {
+  width: 18mm;
+  height: 18mm;
+  object-fit: contain;
+  border-radius: 2pt;
+  flex-shrink: 0;
 }
 .doc-brand {
   font-family: 'Georgia', serif;
@@ -170,13 +187,14 @@ const DOC_PRINT_CSS = `
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
+  color: #0F1836;
 }
 .doc-brand-sub {
   margin-top: 4pt;
   font-size: 8pt;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #5b6776;
+  color: #2B4A93;
 }
 .doc-letterhead-right {
   text-align: right;
@@ -186,6 +204,7 @@ const DOC_PRINT_CSS = `
   font-size: 14pt;
   font-weight: 600;
   letter-spacing: 0.02em;
+  color: #0F1836;
 }
 .doc-doc-version {
   font-size: 9pt;
@@ -213,11 +232,13 @@ const DOC_PRINT_CSS = `
   margin: 0 0 8pt;
   padding-bottom: 4pt;
   border-bottom: 0.5pt solid #c8c2b3;
+  color: #0F1836;
 }
 .doc-body h3 {
   font-size: 11pt;
   font-weight: 700;
   margin: 14pt 0 4pt;
+  color: #0F1836;
 }
 .doc-body p { margin: 0 0 8pt; }
 .doc-body ul { margin: 0 0 8pt; padding-left: 18pt; }
@@ -230,7 +251,7 @@ const DOC_PRINT_CSS = `
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #5b6776;
-  border-bottom: 0.5pt solid #14233d;
+  border-bottom: 0.5pt solid #0F1836;
   padding: 6pt 8pt 4pt;
 }
 .doc-body td {
@@ -241,8 +262,8 @@ const DOC_PRINT_CSS = `
 }
 .doc-body td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .doc-body .doc-callout {
-  background: #f0eadb;
-  border-left: 2pt solid #14233d;
+  background: rgba(43, 74, 147, 0.06);
+  border-left: 2pt solid #2B4A93;
   padding: 8pt 12pt;
   margin: 8pt 0;
   font-size: 10pt;
@@ -259,14 +280,14 @@ const DOC_PRINT_CSS = `
   margin-top: 18pt;
 }
 .doc-body .doc-sig-block {
-  border-top: 0.5pt solid #14233d;
+  border-top: 0.5pt solid #0F1836;
   padding-top: 6pt;
   font-size: 9pt;
   color: #5b6776;
 }
 .doc-body .doc-sig-name {
   font-size: 11pt;
-  color: #14233d;
+  color: #0F1836;
   margin-bottom: 18pt;
 }
 
@@ -292,8 +313,13 @@ const DOC_PRINT_CSS = `
 }
 
 @media (max-width: 220mm) {
-  .doc-page { width: 100%; padding: 18mm 14mm; min-height: auto; }
-  .doc-letterhead { padding-bottom: 8mm; margin-bottom: 8mm; }
+  .doc-page { width: 100%; padding: 14mm 10mm; min-height: auto; }
+  .doc-letterhead { grid-template-columns: 1fr; gap: 6mm; padding-bottom: 6mm; margin-bottom: 8mm; }
+  .doc-letterhead-right { text-align: left; }
+  .doc-brand { font-size: 18pt; }
+  .doc-brand-logo { width: 14mm; height: 14mm; }
   .doc-body .doc-signatures { grid-template-columns: 1fr; }
+  .doc-body table { font-size: 10pt; }
+  .doc-body td, .doc-body th { padding: 4pt 6pt; }
 }
 `;
