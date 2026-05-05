@@ -1,9 +1,4 @@
-// Final procurement budget preview — line-item budget for owner approval.
-//
-// Sourced from designClient.budgetItems.list. Items are grouped by room +
-// package; internal-only lines are stripped (owners never see them). Renders
-// across as many pages as the line count requires — natural page breaks
-// happen between room groups.
+// Final procurement budget — line-item budget for owner approval.
 
 import {
   designClient,
@@ -14,19 +9,18 @@ import {
   type BudgetItem,
 } from '../../fad/_data/design';
 import { DocumentLayout, DocumentPage } from './DocumentLayout';
+import { FRIDAY, deriveInitials, fridayDocNumber, formatDocDate } from './fridayParticulars';
 
 export function FinalBudgetPreview({ project }: { project: DesignProject }) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
   const rooms = designClient.rooms.list(project.id);
-  // Owner-facing: skip internal-only and not-yet-approved drafts.
   const items = designClient.budgetItems.list(project.id).filter((i) => !i.internalWork);
   const totalApproved = items.reduce((s, i) => s + (i.finalApprovedCostMinor ?? 0), 0);
   const totalRetail = items.reduce((s, i) => s + (i.retailCostMinor ?? i.finalApprovedCostMinor ?? 0), 0);
   const totalSavings = totalRetail - totalApproved;
   const roomMap = new Map<string, { name: string; items: BudgetItem[] }>();
   for (const r of rooms) roomMap.set(r.id, { name: r.name, items: [] });
-  // Catch items whose roomId isn't in the rooms list (rare, but be defensive).
   const orphan: BudgetItem[] = [];
   for (const item of items) {
     const slot = roomMap.get(item.roomId);
@@ -34,56 +28,65 @@ export function FinalBudgetPreview({ project }: { project: DesignProject }) {
     else orphan.push(item);
   }
 
-  const meta = {
-    title: 'Final procurement budget',
-    version: items.length === 0 ? 'pending' : items.every((i) => i.status === 'approved') ? 'final' : 'draft',
-  };
+  const initials = deriveInitials(counterparty?.fullName);
+  const docNumber = fridayDocNumber(initials, 1, { service: 'FB' });
+  const status = items.length === 0 ? 'pending' : items.every((i) => i.status === 'approved') ? 'final' : 'draft';
 
   return (
-    <DocumentLayout meta={meta} project={project}>
-      <DocumentPage project={project} meta={meta} pageLabel="Final budget · Cover">
-        <h2>Final procurement budget — {project.name}</h2>
+    <DocumentLayout meta={{ title: docNumber }} project={project}>
+      <DocumentPage>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4mm' }}>
+          <div>
+            <h1 style={{ marginBottom: '2pt' }}>Final Procurement Budget</h1>
+            <div style={{ fontSize: '10pt', color: '#5b6776' }}>{project.name}</div>
+          </div>
+          <div style={{ fontSize: '10pt', textAlign: 'right' }}>
+            <div><span style={{ fontWeight: 600 }}>REF:</span> <span style={{ fontFamily: 'var(--font-mono-fad), monospace' }}>{docNumber}</span></div>
+            <div><span style={{ fontWeight: 600 }}>DATE:</span> {formatDocDate(new Date().toISOString())}</div>
+            <div><span style={{ fontWeight: 600 }}>STATUS:</span> {status}</div>
+          </div>
+        </div>
+
         <p>
-          Owner-facing line-item budget for sign-off before procurement begins.
-          Friday Retreats discloses retail and negotiated rates per item per
-          B3.1; the right-most column is the figure the owner is approving for
-          procurement. Internal labour and Friday-borne lines are not shown.
+          Owner-facing line-item budget submitted for sign-off before
+          procurement begins. Per Agreement clause 3, retail and negotiated
+          rates are disclosed alongside the approved figure. Internal labour
+          and Friday-borne lines are not shown.
         </p>
 
-        <table>
+        <h2>Prepared for</h2>
+        <table className="doc-table-bare">
           <tbody>
-            <tr><td style={{ width: '30%' }}>Owner</td><td>{counterparty?.fullName ?? '—'}</td></tr>
-            <tr><td>Property</td><td>{property?.name ?? '—'}</td></tr>
-            <tr><td>Project</td><td>{project.name} ({project.id})</td></tr>
-            <tr><td>Classification / tier</td><td>{formatClassification(project.classification)} · {formatTier(project.tier)}</td></tr>
+            <tr><td style={{ width: '32%', fontWeight: 600 }}>Client</td><td>{counterparty?.fullName ?? '—'}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Property</td><td>{property?.name ?? '—'}{property?.address ? ` · ${property.address}` : ''}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Classification / Tier</td><td>{formatClassification(project.classification)} · {formatTier(project.tier)}</td></tr>
           </tbody>
         </table>
 
         {items.length === 0 ? (
           <div className="doc-callout">
-            <strong>Final budget not yet captured.</strong> Items appear here
-            after the design pack is approved and the final procurement
-            budget is built. Until then, only the rough-budget range is on
-            file.
+            <strong>Final budget pending.</strong> Items appear here after
+            the design pack is approved and the final procurement budget is
+            built. Until then, only the rough-budget range is on file.
           </div>
         ) : (
           <>
-            <h3>Summary</h3>
+            <h2>Summary</h2>
             <table>
               <tbody>
-                <tr><td style={{ width: '40%' }}>Line items (owner-billable)</td><td className="num">{items.length}</td></tr>
+                <tr><td style={{ width: '50%' }}>Line items</td><td className="num">{items.length}</td></tr>
                 <tr><td>Total at retail rates</td><td className="num">{formatMUR(totalRetail)}</td></tr>
-                <tr><td>Total at negotiated / approved rates</td><td className="num">{formatMUR(totalApproved)}</td></tr>
+                <tr><td><strong>Total at approved rates</strong></td><td className="num"><strong>{formatMUR(totalApproved)}</strong></td></tr>
                 <tr style={{ color: '#5b6776' }}>
-                  <td style={{ fontSize: '9pt' }}>Friday savings disclosed</td>
+                  <td style={{ fontSize: '9pt' }}>Friday-negotiated savings</td>
                   <td className="num" style={{ fontSize: '9pt' }}>{formatMUR(totalSavings)} · {totalRetail > 0 ? Math.round((totalSavings / totalRetail) * 100) : 0}%</td>
                 </tr>
               </tbody>
             </table>
 
-            <h3>By room</h3>
+            <h2>By room</h2>
             <table>
-              <thead><tr><th>Room</th><th style={{ textAlign: 'right' }}>Items</th><th style={{ textAlign: 'right' }}>Approved</th></tr></thead>
+              <thead><tr><th>Room</th><th className="num">Items</th><th className="num">Approved</th></tr></thead>
               <tbody>
                 {Array.from(roomMap.values()).filter((r) => r.items.length > 0).map((r) => {
                   const sum = r.items.reduce((s, i) => s + (i.finalApprovedCostMinor ?? 0), 0);
@@ -114,25 +117,25 @@ export function FinalBudgetPreview({ project }: { project: DesignProject }) {
       </DocumentPage>
 
       {items.length > 0 && (
-        <DocumentPage project={project} meta={meta} pageLabel="Final budget · Line items">
-          <h2>Line items</h2>
+        <DocumentPage>
+          <h1>Line items</h1>
           <p style={{ fontSize: '9pt', color: '#5b6776' }}>
-            Grouped by room. Quantities are unit-counts; rates are MUR per
-            unit. Approved is final per-line at owner sign-off; any later
-            change requires a change order (separate document).
+            Grouped by room. Quantities are unit counts; rates in MUR per
+            unit. Approved is final at sign-off; any later change requires a
+            separate Change Order.
           </p>
 
           {Array.from(roomMap.entries()).filter(([, r]) => r.items.length > 0).map(([roomId, r]) => (
             <div key={roomId}>
-              <h3>{r.name}</h3>
+              <h2>{r.name}</h2>
               <table>
                 <thead>
                   <tr>
                     <th>Item</th>
-                    <th style={{ textAlign: 'right' }}>Qty</th>
-                    <th style={{ textAlign: 'right' }}>Retail</th>
-                    <th style={{ textAlign: 'right' }}>Negotiated</th>
-                    <th style={{ textAlign: 'right' }}>Approved</th>
+                    <th className="num">Qty</th>
+                    <th className="num">Retail</th>
+                    <th className="num">Negotiated</th>
+                    <th className="num">Approved</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -159,23 +162,25 @@ export function FinalBudgetPreview({ project }: { project: DesignProject }) {
 
           <hr className="doc-divider" />
 
-          <h3>Owner sign-off</h3>
+          <h2>Owner sign-off</h2>
           <p>
-            By signing below, the Owner approves the line items above for
-            procurement at the rates shown. Any subsequent change to a line
-            item — substitution, quantity change, or scope addition — will
-            be captured by a change order and re-presented for sign-off.
+            By signing below, the Client approves the line items above for
+            procurement at the rates shown. Any subsequent change &mdash;
+            substitution, quantity change, or scope addition &mdash; will be
+            captured by a Change Order and re-presented for sign-off.
           </p>
           <div className="doc-signatures">
             <div className="doc-sig-block">
-              <div className="doc-sig-name">{counterparty?.fullName ?? '[ Owner name ]'}</div>
-              <div>For and on behalf of the Client</div>
-              <div>Date: ___________________</div>
+              <div>{FRIDAY.legalName}</div>
+              <div>Representative: {FRIDAY.signatories.director.name}</div>
+              <div className="doc-sig-line">Signature</div>
+              <div style={{ marginTop: '8pt' }}>Date: <span className="doc-fill" style={{ minWidth: '80pt' }} /></div>
             </div>
             <div className="doc-sig-block">
-              <div className="doc-sig-name">Ishant Gangaram</div>
-              <div>Director, Friday Retreats Ltd</div>
-              <div>Date: ___________________</div>
+              <div>Client</div>
+              <div>Client Name: <span className="doc-fill" style={{ minWidth: '120pt' }}>{counterparty?.fullName ?? ''}</span></div>
+              <div className="doc-sig-line">Signature</div>
+              <div style={{ marginTop: '8pt' }}>Date: <span className="doc-fill" style={{ minWidth: '80pt' }} /></div>
             </div>
           </div>
         </DocumentPage>

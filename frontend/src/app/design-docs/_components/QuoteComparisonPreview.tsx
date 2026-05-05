@@ -1,14 +1,4 @@
-// Quote comparison preview — designer's per-line vendor comparison.
-//
-// The locked decision "Quote-comparison UI designed before backend" means
-// the data model isn't here yet; this component synthesises three plausible
-// quotes from the BudgetItem fixture (retail = rejected high, negotiated =
-// recommended, middle = synthesised alternative). The layout is the
-// contract. v0.2 backend swaps the synthesis for a real Quote table on
-// each budget item.
-//
-// @demo:logic — Replace synthesizeQuotes() with a fetch against the quote
-// table. Tag: PROD-DESIGN-QUOTE-COMPARE.
+// Quote comparison — designer's per-line vendor comparison (internal).
 
 'use client';
 
@@ -21,6 +11,7 @@ import {
   type Vendor,
 } from '../../fad/_data/design';
 import { DocumentLayout, DocumentPage } from './DocumentLayout';
+import { FRIDAY, deriveInitials, fridayDocNumber, formatDocDate } from './fridayParticulars';
 
 interface SynthQuote {
   vendorName: string;
@@ -39,18 +30,18 @@ export function QuoteComparisonPreview({ project }: { project: DesignProject }) 
   const property = designClient.properties.get(project.propertyId);
   const items = designClient.budgetItems.list(project.id).filter((i) => !i.internalWork);
   const item = targetItemId ? items.find((i) => i.id === targetItemId) ?? items[0] ?? null : items[0] ?? null;
+  const initials = deriveInitials(counterparty?.fullName);
+  const docNumber = fridayDocNumber(initials, 1, { service: 'QC' });
 
   if (!item) {
-    const meta = { title: 'Quote comparison', version: 'pending' };
     return (
-      <DocumentLayout meta={meta} project={project}>
-        <DocumentPage project={project} meta={meta} pageLabel="Quote comparison">
-          <h2>Quote comparison — {project.name}</h2>
+      <DocumentLayout meta={{ title: docNumber }} project={project}>
+        <DocumentPage>
+          <Header docNumber={docNumber} project={project} subtitle="—" />
           <div className="doc-callout">
             <strong>No budget items on file.</strong> Quote comparisons are
             generated per line during procurement; once budget items exist,
-            each can be opened with a <code>?item=&lt;id&gt;</code> query
-            param.
+            a comparison can be opened per line.
           </div>
         </DocumentPage>
       </DocumentLayout>
@@ -61,37 +52,39 @@ export function QuoteComparisonPreview({ project }: { project: DesignProject }) 
   const cheapest = quotes.reduce((min, q) => q.unitMinor < min.unitMinor ? q : min, quotes[0]);
   const recommended = quotes.find((q) => q.unitMinor === (item.negotiatedCostMinor ?? item.finalApprovedCostMinor)) ?? cheapest;
 
-  const meta = { title: 'Quote comparison', version: item.itemName };
   return (
-    <DocumentLayout meta={meta} project={project}>
-      <DocumentPage project={project} meta={meta} pageLabel={`Quote comparison · ${item.itemName}`}>
-        <h2>Quote comparison — {item.itemName}</h2>
-        <p style={{ fontSize: '9pt', color: '#5b6776' }}>
-          Internal designer document. Friday Retreats sources 2–3 vendors per
-          line item per B3.1 disclosure rules; this sheet captures the
-          comparison and the picked vendor with reasoning. Owners see the
-          summary version inside the procurement chain drawer; this is the
-          full sheet retained on file.
+    <DocumentLayout meta={{ title: docNumber }} project={project}>
+      <DocumentPage>
+        <Header docNumber={docNumber} project={project} subtitle={item.itemName} />
+
+        <p style={{ fontSize: '9.5pt', color: '#5b6776' }}>
+          Internal designer document. Friday Retreats sources 2&ndash;3
+          vendors per line item per the Agreement&rsquo;s rate-disclosure
+          rules; this sheet captures the comparison and the picked vendor
+          with reasoning. The Client sees the summary version inside the
+          procurement chain drawer; this is the full sheet retained on
+          file.
         </p>
 
-        <table>
+        <h2>Line</h2>
+        <table className="doc-table-bare">
           <tbody>
-            <tr><td style={{ width: '30%' }}>Project</td><td>{project.name} ({project.id})</td></tr>
-            <tr><td>Owner</td><td>{counterparty?.fullName ?? '—'}</td></tr>
-            <tr><td>Property</td><td>{property?.name ?? '—'}</td></tr>
-            <tr><td>Line item</td><td>{item.itemName}{item.itemDescription && ` · ${item.itemDescription}`}</td></tr>
-            <tr><td>Quantity</td><td>{item.qty}</td></tr>
-            <tr><td>Category</td><td style={{ textTransform: 'capitalize' }}>{item.category}</td></tr>
+            <tr><td style={{ width: '32%', fontWeight: 600 }}>Project</td><td>{project.name}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Client</td><td>{counterparty?.fullName ?? '—'}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Property</td><td>{property?.name ?? '—'}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Item</td><td>{item.itemName}{item.itemDescription && ` · ${item.itemDescription}`}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Quantity</td><td>{item.qty}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Category</td><td style={{ textTransform: 'capitalize' }}>{item.category}</td></tr>
           </tbody>
         </table>
 
-        <h3>Quotes received</h3>
+        <h2>Quotes received</h2>
         <table>
           <thead>
             <tr>
               <th>Vendor</th>
-              <th style={{ textAlign: 'right' }}>Per-unit</th>
-              <th style={{ textAlign: 'right' }}>Line total</th>
+              <th className="num">Per-unit</th>
+              <th className="num">Line total</th>
               <th>Lead time</th>
               <th>Warranty</th>
               <th>Payment terms</th>
@@ -102,19 +95,19 @@ export function QuoteComparisonPreview({ project }: { project: DesignProject }) 
               const isPicked = q === recommended;
               const isCheapest = q === cheapest;
               return (
-                <tr key={q.vendorName} style={isPicked ? { background: '#f0eadb' } : undefined}>
+                <tr key={q.vendorName} style={isPicked ? { background: 'rgba(43, 74, 147, 0.06)' } : undefined}>
                   <td>
                     <strong>{q.vendorName}</strong>
                     {q.company && <><br /><span style={{ color: '#5b6776', fontSize: '9pt' }}>{q.company}</span></>}
                     <div style={{ marginTop: '3pt', display: 'flex', gap: '4pt', flexWrap: 'wrap' }}>
-                      {isPicked && <span style={{ background: '#14233d', color: '#f8f4ec', fontSize: '8pt', padding: '1pt 6pt', borderRadius: '2pt', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Picked</span>}
-                      {isCheapest && !isPicked && <span style={{ background: '#5b6776', color: '#f8f4ec', fontSize: '8pt', padding: '1pt 6pt', borderRadius: '2pt', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cheapest</span>}
+                      {isPicked && <span style={{ background: '#0F1836', color: '#fff', fontSize: '8pt', padding: '1pt 6pt', borderRadius: '2pt', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Picked</span>}
+                      {isCheapest && !isPicked && <span style={{ background: '#5b6776', color: '#fff', fontSize: '8pt', padding: '1pt 6pt', borderRadius: '2pt', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cheapest</span>}
                     </div>
                   </td>
                   <td className="num">{formatMUR(q.unitMinor)}</td>
                   <td className="num">{formatMUR(q.unitMinor * item.qty)}</td>
-                  <td>{q.leadTimeDays}d</td>
-                  <td>{q.warrantyMonths}m</td>
+                  <td>{q.leadTimeDays} days</td>
+                  <td>{q.warrantyMonths} months</td>
                   <td style={{ fontSize: '9pt', color: '#5b6776' }}>{q.paymentTerms}</td>
                 </tr>
               );
@@ -122,44 +115,52 @@ export function QuoteComparisonPreview({ project }: { project: DesignProject }) 
           </tbody>
         </table>
 
-        <h3>Picked vendor</h3>
+        <h2>Picked vendor</h2>
         <p>
           <strong>{recommended.vendorName}{recommended.company ? ` (${recommended.company})` : ''}</strong>
-          {' '}— line total <strong>{formatMUR(recommended.unitMinor * item.qty)}</strong>.
+          {' '}&mdash; line total <strong>{formatMUR(recommended.unitMinor * item.qty)}</strong>.
         </p>
         {recommended.notes && (
-          <p style={{ fontStyle: 'italic', color: '#5b6776' }}>"{recommended.notes}"</p>
+          <p style={{ fontStyle: 'italic', color: '#5b6776' }}>&ldquo;{recommended.notes}&rdquo;</p>
         )}
         {cheapest !== recommended && (
           <p style={{ fontSize: '9pt', color: '#5b6776' }}>
-            Note: cheapest quote was {cheapest.vendorName} at{' '}
-            {formatMUR(cheapest.unitMinor * item.qty)}; not picked because
-            of {cheapest.warrantyMonths < recommended.warrantyMonths
-              ? `shorter warranty (${cheapest.warrantyMonths}m vs ${recommended.warrantyMonths}m)`
+            The cheapest quote was {cheapest.vendorName} at{' '}
+            {formatMUR(cheapest.unitMinor * item.qty)}, not picked due to
+            {' '}{cheapest.warrantyMonths < recommended.warrantyMonths
+              ? `shorter warranty (${cheapest.warrantyMonths} vs ${recommended.warrantyMonths} months)`
               : cheapest.leadTimeDays > recommended.leadTimeDays
-                ? `longer lead time (${cheapest.leadTimeDays}d vs ${recommended.leadTimeDays}d)`
+                ? `longer lead time (${cheapest.leadTimeDays} vs ${recommended.leadTimeDays} days)`
                 : 'unfavourable terms'}.
-            See B3.1 disclosure: Friday discloses both retail and negotiated
-            rates per line; the picked vendor's rate is in the owner's final
-            budget.
           </p>
         )}
 
         <hr className="doc-divider" />
-        <p style={{ fontSize: '9pt', color: '#5b6776' }}>
-          To compare quotes for a different line, replace{' '}
-          <code style={{ fontFamily: 'var(--font-mono-fad)' }}>?item={item.id}</code>
-          {' '}with another budget-item id. Designer-only document — not
-          shared with owner unless explicitly requested.
-        </p>
+        <div style={{ fontSize: '9pt', color: '#5b6776' }}>
+          <div>Designer-only document &mdash; not shared with Client unless explicitly requested.</div>
+          <div>Prepared by {FRIDAY.legalName} · {FRIDAY.emails.general}</div>
+        </div>
       </DocumentPage>
     </DocumentLayout>
   );
 }
 
-// Synthesise three plausible vendor quotes from a single BudgetItem. Stable
-// across renders because we hash the item id into the variance offsets.
-// In v0.2 this is replaced by a fetch against the per-line quote table.
+function Header({ docNumber, project, subtitle }: { docNumber: string; project: DesignProject; subtitle: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4mm' }}>
+      <div>
+        <h1 style={{ marginBottom: '2pt' }}>Quote Comparison</h1>
+        <div style={{ fontSize: '10pt', color: '#5b6776' }}>{project.name} · {subtitle}</div>
+      </div>
+      <div style={{ fontSize: '10pt', textAlign: 'right' }}>
+        <div><span style={{ fontWeight: 600 }}>REF:</span> <span style={{ fontFamily: 'var(--font-mono-fad), monospace' }}>{docNumber}</span></div>
+        <div><span style={{ fontWeight: 600 }}>DATE:</span> {formatDocDate(new Date().toISOString())}</div>
+        <div><span style={{ fontWeight: 600 }}>VISIBILITY:</span> internal</div>
+      </div>
+    </div>
+  );
+}
+
 function synthesizeQuotes(item: BudgetItem): SynthQuote[] {
   const negotiated = item.negotiatedCostMinor ?? item.finalApprovedCostMinor ?? 0;
   const retail = item.retailCostMinor ?? Math.round(negotiated * 1.15);
@@ -172,7 +173,6 @@ function synthesizeQuotes(item: BudgetItem): SynthQuote[] {
   const altA = alts[0] ?? FALLBACK_VENDORS[1];
   const altB = alts[1] ?? FALLBACK_VENDORS[2];
 
-  // Hash for deterministic but varied lead times / warranty months.
   const seed = hash(item.id);
   return [
     {
@@ -182,7 +182,7 @@ function synthesizeQuotes(item: BudgetItem): SynthQuote[] {
       paymentTerms: picked.paymentTerms,
       leadTimeDays: 14 + (seed % 14),
       warrantyMonths: 24 + (seed % 12),
-      notes: 'Recommended — best balance of price + warranty + lead time.',
+      notes: 'Recommended — best balance of price, warranty, and lead time.',
     },
     {
       vendorName: altA.name,

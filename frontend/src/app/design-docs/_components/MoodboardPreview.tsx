@@ -1,9 +1,4 @@
-// Moodboard preview — owner-facing design direction.
-//
-// Renders the latest version (highest .version) of the project's moodboard.
-// Includes cover image, narrative, palette swatches, materials, inspiration
-// links, and the approval state. Earlier versions fold into a small history
-// summary at the bottom rather than getting their own pages.
+// Moodboard — owner-facing design direction.
 
 import {
   designClient,
@@ -11,30 +6,38 @@ import {
   type MoodboardVersion,
 } from '../../fad/_data/design';
 import { DocumentLayout, DocumentPage } from './DocumentLayout';
+import { FRIDAY, deriveInitials, fridayDocNumber, formatDocDate } from './fridayParticulars';
 
 export function MoodboardPreview({ project }: { project: DesignProject }) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
   const all = designClient.moodboards.list(project.id);
-  // designClient already sorts desc by version; defensively re-sort.
   const sorted = [...all].sort((a, b) => b.version - a.version);
   const latest: MoodboardVersion | null = sorted[0] ?? null;
   const history = sorted.slice(1);
-  const meta = {
-    title: 'Moodboard',
-    version: latest ? `v${latest.version} · ${formatState(latest.state)}` : 'pending',
-  };
+  const initials = deriveInitials(counterparty?.fullName);
+  const docNumber = fridayDocNumber(initials, latest?.version ?? 1, { service: 'MB' });
 
   return (
-    <DocumentLayout meta={meta} project={project}>
-      <DocumentPage project={project} meta={meta} pageLabel={`Moodboard ${latest ? `v${latest.version}` : 'pending'}`}>
-        <h2>Moodboard — {project.name}</h2>
+    <DocumentLayout meta={{ title: docNumber }} project={project}>
+      <DocumentPage>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4mm' }}>
+          <div>
+            <h1 style={{ marginBottom: '2pt' }}>Moodboard</h1>
+            <div style={{ fontSize: '10pt', color: '#5b6776' }}>{project.name}</div>
+          </div>
+          <div style={{ fontSize: '10pt', textAlign: 'right' }}>
+            <div><span style={{ fontWeight: 600 }}>REF:</span> <span style={{ fontFamily: 'var(--font-mono-fad), monospace' }}>{docNumber}</span></div>
+            <div><span style={{ fontWeight: 600 }}>DATE:</span> {formatDocDate(latest?.sentAt ?? latest?.createdAt ?? new Date().toISOString())}</div>
+            {latest && <div><span style={{ fontWeight: 600 }}>VERSION:</span> v{latest.version} · {formatState(latest.state)}</div>}
+          </div>
+        </div>
 
         {!latest ? (
           <div className="doc-callout">
-            <strong>Moodboard not yet shared.</strong> Friday Retreats sends
-            the moodboard at the moodboard stage; it captures the design
-            direction (palette, materials, narrative) for owner approval
+            <strong>Moodboard pending.</strong> Friday Retreats sends the
+            moodboard at the moodboard stage; it captures the design
+            direction (palette, materials, narrative) for Client approval
             before any room-level work begins.
           </div>
         ) : (
@@ -42,6 +45,7 @@ export function MoodboardPreview({ project }: { project: DesignProject }) {
             <p>{latest.narrative}</p>
 
             <div style={{ margin: '12pt 0', textAlign: 'center' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={latest.coverImageUrl}
                 alt={`${project.name} moodboard cover`}
@@ -49,28 +53,39 @@ export function MoodboardPreview({ project }: { project: DesignProject }) {
               />
             </div>
 
-            <h3>Palette</h3>
-            <div style={{ display: 'flex', gap: '8pt', flexWrap: 'wrap', margin: '6pt 0' }}>
+            <h2>Prepared for</h2>
+            <table className="doc-table-bare">
+              <tbody>
+                <tr><td style={{ width: '32%', fontWeight: 600 }}>Client</td><td>{counterparty?.fullName ?? '—'}</td></tr>
+                <tr><td style={{ fontWeight: 600 }}>Property</td><td>{property?.name ?? '—'}</td></tr>
+                {latest.sentAt && <tr><td style={{ fontWeight: 600 }}>Sent</td><td>{formatDocDate(latest.sentAt)}</td></tr>}
+                {latest.approvedAt && <tr><td style={{ fontWeight: 600 }}>Approved</td><td>{formatDocDate(latest.approvedAt)}</td></tr>}
+                {latest.ownerComments && <tr><td style={{ fontWeight: 600 }}>Client comment</td><td>&ldquo;{latest.ownerComments}&rdquo;</td></tr>}
+              </tbody>
+            </table>
+
+            <h2>Palette</h2>
+            <div style={{ display: 'flex', gap: '10pt', flexWrap: 'wrap', margin: '6pt 0' }}>
               {latest.palette.map((c) => (
                 <div key={c} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4pt' }}>
-                  <div style={{ width: '36pt', height: '36pt', background: c, border: '0.5pt solid #14233d' }} />
-                  <span style={{ fontFamily: 'var(--font-mono-fad)', fontSize: '8.5pt', color: '#5b6776' }}>{c}</span>
+                  <div style={{ width: '40pt', height: '40pt', background: c, border: '0.5pt solid #c8c8c8' }} />
+                  <span style={{ fontFamily: 'var(--font-mono-fad), monospace', fontSize: '8.5pt', color: '#5b6776' }}>{c}</span>
                 </div>
               ))}
             </div>
 
-            <h3>Materials</h3>
+            <h2>Materials</h2>
             <p style={{ textTransform: 'capitalize' }}>{latest.materials.join(' · ')}</p>
 
             {latest.inspiration.length > 0 && (
               <>
-                <h3>Inspiration</h3>
+                <h2>Inspiration</h2>
                 <ul>
                   {latest.inspiration.map((ins, i) => (
                     <li key={i}>
                       <strong>{ins.sourceLabel}</strong>
                       <br />
-                      <span style={{ fontFamily: 'var(--font-mono-fad)', fontSize: '9pt', color: '#5b6776' }}>{ins.url}</span>
+                      <span style={{ fontFamily: 'var(--font-mono-fad), monospace', fontSize: '9pt', color: '#5b6776' }}>{ins.url}</span>
                     </li>
                   ))}
                 </ul>
@@ -79,25 +94,15 @@ export function MoodboardPreview({ project }: { project: DesignProject }) {
 
             {latest.designerNotes && (
               <>
-                <h3>Designer notes</h3>
+                <h2>Designer notes</h2>
                 <p style={{ fontStyle: 'italic', color: '#5b6776' }}>{latest.designerNotes}</p>
               </>
             )}
 
-            <h3>Approval state</h3>
-            <table>
-              <tbody>
-                <tr><td style={{ width: '30%' }}>Status</td><td>{formatState(latest.state)}</td></tr>
-                <tr><td>Sent to owner</td><td>{latest.sentAt?.slice(0, 10) ?? '—'}</td></tr>
-                <tr><td>Approved on</td><td>{latest.approvedAt?.slice(0, 10) ?? '—'}</td></tr>
-                {latest.ownerComments && <tr><td>Owner comments</td><td>"{latest.ownerComments}"</td></tr>}
-              </tbody>
-            </table>
-
             {history.length > 0 && (
               <>
                 <hr className="doc-divider" />
-                <h3>Earlier versions</h3>
+                <h2>Previous versions</h2>
                 <table>
                   <thead>
                     <tr><th>Version</th><th>Sent</th><th>State</th><th>Comments</th></tr>
@@ -106,7 +111,7 @@ export function MoodboardPreview({ project }: { project: DesignProject }) {
                     {history.map((h) => (
                       <tr key={h.id}>
                         <td>v{h.version}</td>
-                        <td>{h.sentAt?.slice(0, 10) ?? '—'}</td>
+                        <td>{h.sentAt ? formatDocDate(h.sentAt) : '—'}</td>
                         <td>{formatState(h.state)}</td>
                         <td style={{ color: '#5b6776' }}>{h.ownerComments ?? '—'}</td>
                       </tr>
@@ -116,10 +121,11 @@ export function MoodboardPreview({ project }: { project: DesignProject }) {
               </>
             )}
 
-            <p style={{ fontSize: '9pt', color: '#5b6776', marginTop: '12pt' }}>
-              Prepared for {counterparty?.fullName ?? 'the Owner'} ·{' '}
-              {property?.name ?? project.name} ({project.entityId})
-            </p>
+            <hr className="doc-divider" />
+            <div style={{ fontSize: '9pt', color: '#5b6776' }}>
+              <div>Prepared by {FRIDAY.legalName}</div>
+              <div>{FRIDAY.address.line1}, {FRIDAY.address.city} · {FRIDAY.phone} · {FRIDAY.emails.general}</div>
+            </div>
           </>
         )}
       </DocumentPage>

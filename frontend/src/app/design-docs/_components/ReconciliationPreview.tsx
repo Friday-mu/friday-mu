@@ -1,9 +1,4 @@
 // Reconciliation report — closeout-stage planned vs actual + variance.
-//
-// Owner-facing report sent at the reconciliation stage. Compares
-// finalApprovedCostMinor (locked at funding gate) against actualPaidMinor
-// (drawn from receipt capture during execution). Variance > 5% per the
-// VARIANCE_FLAG_THRESHOLD_PCT constant is highlighted.
 
 import {
   designClient,
@@ -16,6 +11,7 @@ import {
   type DesignProject,
 } from '../../fad/_data/design';
 import { DocumentLayout, DocumentPage } from './DocumentLayout';
+import { FRIDAY, deriveInitials, fridayDocNumber, formatDocDate } from './fridayParticulars';
 
 export function ReconciliationPreview({ project }: { project: DesignProject }) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
@@ -28,8 +24,6 @@ export function ReconciliationPreview({ project }: { project: DesignProject }) {
   const flaggedItems = items.filter((i) => isVarianceFlagged(i.finalApprovedCostMinor ?? 0, i.actualPaidMinor ?? 0));
   const unpaidCount = items.filter((i) => i.actualPaidMinor === null).length;
 
-  // Group by category for the summary table — gives a tighter picture than
-  // per-room when the report is read post-hoc.
   const byCategory = new Map<string, { approved: number; paid: number; count: number }>();
   for (const i of items) {
     const slot = byCategory.get(i.category) ?? { approved: 0, paid: 0, count: 0 };
@@ -39,36 +33,46 @@ export function ReconciliationPreview({ project }: { project: DesignProject }) {
     byCategory.set(i.category, slot);
   }
 
-  const meta = {
-    title: 'Reconciliation report',
-    version: project.stageStatus === 'done' ? 'final' : 'draft',
-  };
+  const initials = deriveInitials(counterparty?.fullName);
+  const docNumber = fridayDocNumber(initials, 1, { service: 'RC' });
+  const status = project.stageStatus === 'done' ? 'final' : 'draft';
 
   return (
-    <DocumentLayout meta={meta} project={project}>
-      <DocumentPage project={project} meta={meta} pageLabel="Reconciliation · Summary">
-        <h2>Reconciliation report — {project.name}</h2>
+    <DocumentLayout meta={{ title: docNumber }} project={project}>
+      <DocumentPage>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4mm' }}>
+          <div>
+            <h1 style={{ marginBottom: '2pt' }}>Reconciliation Report</h1>
+            <div style={{ fontSize: '10pt', color: '#5b6776' }}>{project.name}</div>
+          </div>
+          <div style={{ fontSize: '10pt', textAlign: 'right' }}>
+            <div><span style={{ fontWeight: 600 }}>REF:</span> <span style={{ fontFamily: 'var(--font-mono-fad), monospace' }}>{docNumber}</span></div>
+            <div><span style={{ fontWeight: 600 }}>DATE:</span> {formatDocDate(new Date().toISOString())}</div>
+            <div><span style={{ fontWeight: 600 }}>STATUS:</span> {status}</div>
+          </div>
+        </div>
+
         <p>
-          Closeout reconciliation comparing the line-item budget the Owner
+          Closeout reconciliation comparing the line-item budget the Client
           approved at funding gate against the receipts captured during
-          execution. Friday Retreats is committed to closing within ±{VARIANCE_FLAG_THRESHOLD_PCT}%
-          of the approved budget; any line outside that band is flagged
-          below for owner review.
+          execution. Per Agreement clause 4, the project is reconciled at
+          completion; lines outside the ±{VARIANCE_FLAG_THRESHOLD_PCT}%
+          threshold are flagged for transparency.
         </p>
 
-        <table>
+        <h2>Prepared for</h2>
+        <table className="doc-table-bare">
           <tbody>
-            <tr><td style={{ width: '30%' }}>Owner</td><td>{counterparty?.fullName ?? '—'}</td></tr>
-            <tr><td>Property</td><td>{property?.name ?? '—'}</td></tr>
-            <tr><td>Project</td><td>{project.name} ({project.id})</td></tr>
-            <tr><td>Classification / tier</td><td>{formatClassification(project.classification)} · {formatTier(project.tier)}</td></tr>
+            <tr><td style={{ width: '32%', fontWeight: 600 }}>Client</td><td>{counterparty?.fullName ?? '—'}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Property</td><td>{property?.name ?? '—'}</td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Classification / Tier</td><td>{formatClassification(project.classification)} · {formatTier(project.tier)}</td></tr>
           </tbody>
         </table>
 
-        <h3>1. Headline figures</h3>
+        <h2>1. Headline figures</h2>
         <table>
           <tbody>
-            <tr><td style={{ width: '40%' }}>Approved budget (Owner sign-off at funding gate)</td><td className="num">{formatMUR(totalApproved)}</td></tr>
+            <tr><td style={{ width: '50%' }}>Approved budget (sign-off at funding gate)</td><td className="num">{formatMUR(totalApproved)}</td></tr>
             <tr><td>Actual spend (receipts captured)</td><td className="num">{formatMUR(totalPaid)}</td></tr>
             <tr>
               <td><strong>Variance</strong></td>
@@ -88,9 +92,8 @@ export function ReconciliationPreview({ project }: { project: DesignProject }) {
         {flaggedItems.length > 0 ? (
           <div className="doc-callout">
             <strong>{flaggedItems.length} line{flaggedItems.length === 1 ? '' : 's'} flagged ±{VARIANCE_FLAG_THRESHOLD_PCT}%.</strong>{' '}
-            Each flagged line is detailed on page 2 with the supporting context. None
-            require owner repayment unless explicitly noted; flagged lines are
-            for transparency.
+            Detailed on the following page with supporting context. None
+            require Client repayment unless explicitly noted.
           </div>
         ) : items.length > 0 ? (
           <div className="doc-callout">
@@ -99,10 +102,10 @@ export function ReconciliationPreview({ project }: { project: DesignProject }) {
           </div>
         ) : null}
 
-        <h3>2. By category</h3>
+        <h2>2. By category</h2>
         <table>
           <thead>
-            <tr><th>Category</th><th style={{ textAlign: 'right' }}>Items</th><th style={{ textAlign: 'right' }}>Approved</th><th style={{ textAlign: 'right' }}>Paid</th><th style={{ textAlign: 'right' }}>Δ</th></tr>
+            <tr><th>Category</th><th className="num">Items</th><th className="num">Approved</th><th className="num">Paid</th><th className="num">Δ</th></tr>
           </thead>
           <tbody>
             {Array.from(byCategory.entries()).sort(([, a], [, b]) => b.approved - a.approved).map(([cat, c]) => {
@@ -124,55 +127,52 @@ export function ReconciliationPreview({ project }: { project: DesignProject }) {
       </DocumentPage>
 
       {flaggedItems.length > 0 && (
-        <DocumentPage project={project} meta={meta} pageLabel="Reconciliation · Flagged lines">
-          <h2>3. Flagged lines</h2>
+        <DocumentPage>
+          <h1>3. Flagged lines</h1>
           <p>
-            Lines below paid more than ±{VARIANCE_FLAG_THRESHOLD_PCT}% off the
-            owner-approved figure. Notes capture the reason recorded during
-            execution.
+            Lines below settled more than ±{VARIANCE_FLAG_THRESHOLD_PCT}%
+            from the approved figure. Notes capture the reason recorded
+            during execution.
           </p>
-
           <table>
             <thead>
-              <tr><th>Line</th><th style={{ textAlign: 'right' }}>Approved</th><th style={{ textAlign: 'right' }}>Paid</th><th style={{ textAlign: 'right' }}>Δ %</th></tr>
+              <tr><th>Line</th><th className="num">Approved</th><th className="num">Paid</th><th className="num">Δ %</th></tr>
             </thead>
-            <tbody>
-              {flaggedItems.map(varianceRow)}
-            </tbody>
+            <tbody>{flaggedItems.map(varianceRow)}</tbody>
           </table>
         </DocumentPage>
       )}
 
-      <DocumentPage project={project} meta={meta} pageLabel="Reconciliation · Sign-off">
-        <h2>4. Owner sign-off</h2>
+      <DocumentPage>
+        <h1>4. Client sign-off</h1>
         <p>
-          By signing below, the Owner confirms that the figures on pages 1–
-          {flaggedItems.length > 0 ? '2' : '1'}{' '}
-          have been reviewed and the project is accepted as reconciled.
-          Sign-off triggers the final balance gate — any residual due to
+          By signing below, the Client confirms the figures above have been
+          reviewed and the project is accepted as reconciled. Sign-off
+          triggers the final balance gate &mdash; any residual due to
           either party is settled within 14 days.
         </p>
 
         <div className="doc-signatures">
           <div className="doc-sig-block">
-            <div className="doc-sig-name">{counterparty?.fullName ?? '[ Owner name ]'}</div>
-            <div>For and on behalf of the Client</div>
-            <div>Date: ___________________</div>
+            <div>{FRIDAY.legalName}</div>
+            <div>Representative: {FRIDAY.signatories.director.name}</div>
+            <div className="doc-sig-line">Signature</div>
+            <div style={{ marginTop: '8pt' }}>Date: <span className="doc-fill" style={{ minWidth: '80pt' }} /></div>
           </div>
           <div className="doc-sig-block">
-            <div className="doc-sig-name">Ishant Gangaram</div>
-            <div>Director, Friday Retreats Ltd</div>
-            <div>Date: ___________________</div>
+            <div>Client</div>
+            <div>Client Name: <span className="doc-fill" style={{ minWidth: '120pt' }}>{counterparty?.fullName ?? ''}</span></div>
+            <div className="doc-sig-line">Signature</div>
+            <div style={{ marginTop: '8pt' }}>Date: <span className="doc-fill" style={{ minWidth: '80pt' }} /></div>
           </div>
         </div>
 
         <hr className="doc-divider" />
-
         <p style={{ fontSize: '9pt', color: '#5b6776' }}>
-          Reconciliation is the last numerical step of the project. The
-          closeout binder (warranties, maintenance schedule, snag list) is
-          delivered as a separate document at handover and remains valid for
-          the warranty durations stated on each line.
+          The closeout binder &mdash; warranties, maintenance schedule, and
+          snag list &mdash; is delivered as a separate document at
+          handover and remains valid for the warranty durations stated on
+          each item.
         </p>
       </DocumentPage>
     </DocumentLayout>
