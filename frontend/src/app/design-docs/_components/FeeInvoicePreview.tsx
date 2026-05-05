@@ -1,8 +1,15 @@
-// Fee invoice preview — Friday Retreats invoice for a specific payment gate.
+// Fee invoice preview — Friday Retreats Pro-Forma Invoice.
 //
-// Reads designClient.payments.list and renders one invoice per received
-// gate (or one specific gate if `?gate=<id>` is passed). Project_funds is
-// excluded — that gate is owner working capital, not a Friday invoice.
+// MATCHES the real FR-ID-DN-004 pro-forma (Feb 2026) layout exactly:
+// title top-left "PRO-FORMA INVOICE", wordmark top-right (NOT centered
+// like other docs), Friday particulars left block, ISSUED TO + invoice
+// metadata right block, single-line table, Subtotal / VAT (15%) / Total
+// rows, PAYMENT DETAILS at the bottom.
+//
+// Routing: by default renders one invoice page per Friday-revenue gate
+// (design fees + execution fees + final balance, project_funds excluded
+// because it's owner working capital not Friday revenue). Pass
+// `?gate=<id>` to render a single specific invoice.
 
 'use client';
 
@@ -14,6 +21,7 @@ import {
   type PaymentGate,
 } from '../../fad/_data/design';
 import { DocumentLayout, DocumentPage } from './DocumentLayout';
+import { FRIDAY, deriveInitials, fridayDocNumber, formatDocDateNumeric } from './fridayParticulars';
 
 const FRIDAY_REVENUE_GATES: PaymentGate['id'][] = [
   'design_fee_60',
@@ -23,24 +31,26 @@ const FRIDAY_REVENUE_GATES: PaymentGate['id'][] = [
   'final_balance',
 ];
 
-// VAT in Mauritius is 15%. Real backend computes from the line; here we
-// derive from the gross amount for the demo. Tag: PROD-DESIGN-INVOICE-VAT.
-const VAT_RATE = 0.15;
+const GATE_DESCRIPTION: Record<string, string> = {
+  design_fee_60: 'Design Fee — first tranche (60%)',
+  design_fee_40: 'Design Fee — final tranche (40%)',
+  execution_fee_t1: 'Procurement & Execution Fee — first tranche',
+  execution_fee_t2: 'Procurement & Execution Fee — second tranche',
+  final_balance: 'Final balance',
+};
 
 export function FeeInvoicePreview({ project }: { project: DesignProject }) {
   const params = useSearchParams();
   const gateId = params?.get('gate') ?? null;
   const counterparty = designClient.counterparties.get(project.counterpartyId);
-  const property = designClient.properties.get(project.propertyId);
   const allGates = designClient.payments.list(project.id);
   const billable = allGates.filter((g) => FRIDAY_REVENUE_GATES.includes(g.id));
 
   if (billable.length === 0) {
-    const meta = { title: 'Fee invoices', version: 'pending' };
     return (
-      <DocumentLayout meta={meta} project={project}>
-        <DocumentPage project={project} meta={meta} pageLabel="Fee invoices">
-          <h2>Fee invoices — {project.name}</h2>
+      <DocumentLayout meta={{ title: 'Pro-Forma Invoice' }} project={project}>
+        <DocumentPage>
+          <h1>Pro-Forma Invoice</h1>
           <div className="doc-callout">
             <strong>No payment gates on file.</strong> Invoices are issued
             against each fee tranche after the agreement is signed and the
@@ -51,132 +61,153 @@ export function FeeInvoicePreview({ project }: { project: DesignProject }) {
     );
   }
 
-  // If a specific gate is passed, render only that one.
   const target = gateId ? billable.find((g) => g.id === gateId) : null;
   const toRender = target ? [target] : billable;
+  const initials = deriveInitials(counterparty?.fullName);
 
-  const meta = {
-    title: target ? `Invoice — ${target.label}` : 'Fee invoices',
-    version: target ? `INV-${invoiceRef(project, target)}` : `${toRender.length} invoice${toRender.length === 1 ? '' : 's'}`,
-  };
+  // Sequence number per project, mirroring Friday's real numbering. The
+  // Davisen invoice was FR-ID-DN-004 — the design-fee gates received
+  // before this one were 001/002/003, so we start at 1 and walk in gate
+  // order to get plausible per-project sequencing.
+  const sequenceById = new Map<string, number>();
+  billable.forEach((g, i) => sequenceById.set(g.id, i + 1));
 
   return (
-    <DocumentLayout meta={meta} project={project}>
+    <DocumentLayout meta={{ title: 'Pro-Forma Invoice' }} project={project}>
       {toRender.map((g) => (
-        <InvoicePage
+        <ProFormaInvoicePage
           key={g.id}
           project={project}
           gate={g}
           counterparty={counterparty}
-          property={property}
+          sequence={sequenceById.get(g.id) ?? 1}
+          initials={initials}
         />
       ))}
     </DocumentLayout>
   );
 }
 
-function InvoicePage({
+function ProFormaInvoicePage({
   project,
   gate,
   counterparty,
-  property,
+  sequence,
+  initials,
 }: {
   project: DesignProject;
   gate: PaymentGate;
   counterparty: ReturnType<typeof designClient.counterparties.get>;
-  property: ReturnType<typeof designClient.properties.get>;
+  sequence: number;
+  initials: string;
 }) {
-  const ref = invoiceRef(project, gate);
-  const issued = gate.receivedAt ? gate.receivedAt.slice(0, 10) : null;
-  const status = gate.status === 'received' ? 'paid' : gate.status === 'awaiting' ? 'awaiting payment' : 'pending issue';
-  const meta = { title: `Invoice ${ref}`, version: status };
-  const grossMinor = gate.amountMinor ?? 0;
-  // Demo invoice splits gross into net + VAT for display only — the receipts
-  // captured against this gate may have line-item VAT distinct from this.
-  const netMinor = Math.round(grossMinor / (1 + VAT_RATE));
-  const vatMinor = grossMinor - netMinor;
+  const docNumber = fridayDocNumber(initials, sequence);
+  const issued = gate.receivedAt ?? new Date().toISOString();
+  const dateStr = formatDocDateNumeric(issued);
 
+  // Real Friday pro-formas show a single line "Final payment for First
+  // Tranche of Part 1 with Main Contractor"-style description, NOT the
+  // structured fee-tranche label. Use the stored description override if
+  // present (gate.notes), else fall back to the gate-id template above.
+  const description = gate.notes ?? GATE_DESCRIPTION[gate.id] ?? gate.label;
+  // Per agreement §3.3 "All fees quoted are exclusive of VAT" — gate
+  // amountMinor is the net subtotal; VAT is added on top.
+  const subtotalMinor = gate.amountMinor ?? 0;
+  const vatMinor = Math.round(subtotalMinor * FRIDAY.invoice.vatRate);
+  const grossMinor = subtotalMinor + vatMinor;
+
+  // The real invoice we matched against shows the sub-total figure as the
+  // primary line amount (amount excl. VAT). We mirror that.
   return (
-    <DocumentPage project={project} meta={meta} pageLabel={`Invoice ${ref}`}>
-      <h2>Tax invoice</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12pt' }}>
-        <div>
-          <h3 style={{ marginTop: 0 }}>Bill to</h3>
-          <div>{counterparty?.fullName ?? '—'}</div>
-          {counterparty?.email && <div style={{ color: '#5b6776' }}>{counterparty.email}</div>}
-          {counterparty?.phone && <div style={{ color: '#5b6776' }}>{counterparty.phone}</div>}
-          {property?.address && <div style={{ color: '#5b6776', marginTop: '4pt' }}>Re: {property.name} · {property.address}</div>}
+    <DocumentPage showLogo={false}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8mm' }}>
+        <div style={{ fontSize: '13pt', fontWeight: 700, color: '#0F1836', letterSpacing: '0.02em' }}>
+          PRO-FORMA INVOICE
         </div>
-        <div>
-          <h3 style={{ marginTop: 0 }}>From</h3>
-          <div><strong>Friday Retreats Ltd</strong></div>
-          <div style={{ color: '#5b6776' }}>Mauritius · entity {project.entityId}</div>
-          <div style={{ color: '#5b6776' }}>hello@friday.mu</div>
+        <span className="doc-brand-mark" style={{ fontSize: '20pt' }} aria-label="Friday Retreats">
+          <span className="doc-brand-friday">friday</span><span className="doc-brand-retreats">Retreats</span>
+        </span>
+      </div>
+
+      {/* Friday Retreats particulars (left block) */}
+      <div style={{ marginBottom: '8mm', fontSize: '10pt' }}>
+        <div style={{ fontWeight: 700 }}>{FRIDAY.legalName}</div>
+        <div>{FRIDAY.address.line1}</div>
+        <div>{FRIDAY.address.line2}</div>
+        <div>{FRIDAY.address.city}, {FRIDAY.address.country}</div>
+        <div>{FRIDAY.phone}</div>
+        <div>{FRIDAY.emails.finance}</div>
+        <div>BRN: {FRIDAY.brn}</div>
+        <div>VAT Reg. No: {FRIDAY.vatNumber}</div>
+      </div>
+
+      {/* Issued to + invoice metadata (split row) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16pt', alignItems: 'flex-start', marginBottom: '12mm' }}>
+        <div style={{ fontSize: '10pt' }}>
+          <div style={{ fontWeight: 700, marginBottom: '2pt' }}>ISSUED TO:</div>
+          <div>{counterparty?.fullName ?? '—'}</div>
+          {counterparty?.email && <div>{counterparty.email}</div>}
+          {counterparty?.phone && <div>{counterparty.phone}</div>}
+          <div style={{ marginTop: '4pt', color: '#5b6776' }}>Re: {project.name}</div>
+        </div>
+        <div style={{ fontSize: '10pt' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '6pt 12pt' }}>
+            <span style={{ fontWeight: 600 }}>PRO-FORMA NO:</span>
+            <span style={{ fontFamily: 'var(--font-mono-fad), monospace' }}>{docNumber}</span>
+            <span style={{ fontWeight: 600 }}>DATE:</span>
+            <span>{dateStr}</span>
+          </div>
         </div>
       </div>
 
-      <table>
-        <tbody>
-          <tr><td style={{ width: '30%' }}>Invoice ref</td><td style={{ fontFamily: 'var(--font-mono-fad)' }}>{ref}</td></tr>
-          <tr><td>Project</td><td>{project.name} ({project.id})</td></tr>
-          <tr><td>Gate</td><td>{gate.label}</td></tr>
-          <tr><td>Issued</td><td>{issued ?? '—'}</td></tr>
-          <tr><td>Status</td><td style={{ textTransform: 'capitalize' }}>{status}</td></tr>
-          {gate.bankRef && <tr><td>Bank reference</td><td style={{ fontFamily: 'var(--font-mono-fad)' }}>{gate.bankRef}</td></tr>}
-        </tbody>
-      </table>
-
-      <h3>Line</h3>
-      <table>
+      {/* Centered single-line table */}
+      <table style={{ marginTop: '4mm', marginBottom: '6mm' }}>
         <thead>
-          <tr><th>Description</th><th style={{ textAlign: 'right' }}>Amount (excl. VAT)</th></tr>
+          <tr>
+            <th style={{ width: '70%', textAlign: 'center', letterSpacing: '0.06em' }}>DESCRIPTION</th>
+            <th style={{ textAlign: 'center', letterSpacing: '0.06em' }}>AMOUNT (MUR)</th>
+          </tr>
         </thead>
         <tbody>
           <tr>
-            <td>
-              <strong>{gate.label}</strong>
-              <br /><span style={{ color: '#5b6776', fontSize: '9pt' }}>Friday Retreats fee tranche, per agreement schedule.</span>
-            </td>
-            <td className="num">{formatMUR(netMinor)}</td>
+            <td style={{ textAlign: 'center', padding: '12pt 8pt' }}>{description}</td>
+            <td className="num" style={{ padding: '12pt 8pt' }}>{(subtotalMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
           </tr>
           <tr>
-            <td style={{ textAlign: 'right', color: '#5b6776' }}>VAT @ 15%</td>
-            <td className="num" style={{ color: '#5b6776' }}>{formatMUR(vatMinor)}</td>
+            <td style={{ textAlign: 'right' }}>Subtotal (Excl. VAT)</td>
+            <td className="num">{(subtotalMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
           </tr>
           <tr>
-            <td style={{ textAlign: 'right' }}><strong>Total payable</strong></td>
-            <td className="num"><strong>{formatMUR(grossMinor)}</strong></td>
+            <td style={{ textAlign: 'right' }}>VAT ({(FRIDAY.invoice.vatRate * 100).toFixed(0)}%)</td>
+            <td className="num">{(vatMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>
+          <tr>
+            <td style={{ textAlign: 'right', fontWeight: 700 }}>Total (Incl. VAT)</td>
+            <td className="num" style={{ fontWeight: 700 }}>{(grossMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
           </tr>
         </tbody>
       </table>
 
-      <h3>Payment</h3>
-      <p>
-        Settle by bank transfer to Friday Retreats Ltd, MCB. Reference{' '}
-        <code style={{ fontFamily: 'var(--font-mono-fad)' }}>{ref}</code> on the
-        transfer. For queries: hello@friday.mu.
-      </p>
+      {/* Payment Details (bottom-left) */}
+      <div style={{ marginTop: '14mm', fontSize: '10pt' }}>
+        <div style={{ fontWeight: 700, marginBottom: '4pt' }}>PAYMENT DETAILS</div>
+        <div>Account Number: {FRIDAY.bank.accountNumber}</div>
+        <div>Beneficiary Name: {FRIDAY.bank.beneficiary}</div>
+        <div>Bank Name: {FRIDAY.bank.name}</div>
+        <div>IBAN Number: <span style={{ fontFamily: 'var(--font-mono-fad), monospace' }}>{FRIDAY.bank.iban}</span></div>
+      </div>
 
       {gate.status === 'received' && gate.receivedAt && (
-        <div className="doc-callout" style={{ background: '#dde9d6', borderLeftColor: '#2a7a3a' }}>
-          <strong>Received — {gate.receivedAt.slice(0, 10)}.</strong>
-          {gate.bankRef && <> Bank ref <code style={{ fontFamily: 'var(--font-mono-fad)' }}>{gate.bankRef}</code>.</>}{' '}
-          This invoice is closed.
+        <div style={{ marginTop: '8mm', fontSize: '9pt', color: '#2a7a3a', borderTop: '0.5pt solid #d8d8d8', paddingTop: '6pt' }}>
+          ✓ Received {gate.receivedAt.slice(0, 10)}
+          {gate.bankRef && <> · Ref <span style={{ fontFamily: 'var(--font-mono-fad), monospace' }}>{gate.bankRef}</span></>}
         </div>
       )}
 
-      <hr className="doc-divider" />
-      <p style={{ fontSize: '9pt', color: '#5b6776' }}>
-        VAT split shown above is informational; binding figures are the
-        per-line VAT recorded against the receipts captured for this
-        project. v0.2 invoice generation will derive both from the line
-        ledger rather than an estimated 15% split.
-      </p>
+      <div style={{ marginTop: '6mm', fontSize: '8.5pt', color: '#5b6776' }}>
+        Payment due within {FRIDAY.invoice.dueDays} calendar days of issuance per Agreement clause 3.5.
+        Late balances accrue interest at {(FRIDAY.invoice.latePaymentRatePerMonth * 100).toFixed(0)}% per month, compounded monthly.
+      </div>
     </DocumentPage>
   );
-}
-
-function invoiceRef(project: DesignProject, gate: PaymentGate): string {
-  const slug = project.slug.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return `${slug.slice(0, 6)}-${gate.id.toUpperCase().replace(/_/g, '')}`;
 }
