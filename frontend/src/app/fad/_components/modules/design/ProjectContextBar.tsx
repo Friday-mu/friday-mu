@@ -233,9 +233,15 @@ function PrintPreviewMenu({ project }: { project: DesignProject }) {
           style={{
             position: 'absolute',
             top: 'calc(100% + 4px)',
-            right: 0,
+            // Anchor to button's left edge — works at any viewport because
+            // the menu then grows rightward and only needs to fit in the
+            // remaining viewport width (capped via maxWidth below). The
+            // earlier `right: 0` anchoring overflowed left when the button
+            // wrapped to the start of its row on mobile.
+            left: 0,
             zIndex: 30,
-            minWidth: 240,
+            minWidth: 220,
+            maxWidth: 'min(280px, calc(100vw - 32px))',
             maxHeight: 'min(60vh, 480px)',
             overflowY: 'auto',
             background: 'var(--color-background-primary)',
