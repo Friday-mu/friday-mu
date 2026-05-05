@@ -7,6 +7,7 @@ import { ReconciliationPreview } from '../../_components/ReconciliationPreview';
 import { CloseoutBinderPreview } from '../../_components/CloseoutBinderPreview';
 import { MoodboardPreview } from '../../_components/MoodboardPreview';
 import { DesignPackPreview } from '../../_components/DesignPackPreview';
+import { ChangeOrderPreview } from '../../_components/ChangeOrderPreview';
 import { UnknownDoc } from './UnknownDoc';
 
 export const dynamic = 'force-static';
@@ -24,7 +25,8 @@ const DOC_TYPES = [
   'closeout-binder',
   'moodboard',
   'design-pack',
-  // cont-42 registers additional doc types here as their components ship.
+  'change-order',
+  // cont-43 registers additional doc types here as their components ship.
 ] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
@@ -63,6 +65,8 @@ export default async function DesignDocPage({ params }: PageProps) {
       return <MoodboardPreview project={project} />;
     case 'design-pack':
       return <DesignPackPreview project={project} />;
+    case 'change-order':
+      return <ChangeOrderPreview project={project} />;
   }
 }
 
