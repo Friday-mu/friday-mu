@@ -1,6 +1,8 @@
 import { listProjectSlugs, getProjectBySlug } from '../../../fad/_data/design';
 import { ProjectSummaryPreview } from '../../_components/ProjectSummaryPreview';
 import { AgreementPreview } from '../../_components/AgreementPreview';
+import { RoughBudgetPreview } from '../../_components/RoughBudgetPreview';
+import { FinalBudgetPreview } from '../../_components/FinalBudgetPreview';
 import { UnknownDoc } from './UnknownDoc';
 
 export const dynamic = 'force-static';
@@ -12,7 +14,9 @@ export const dynamic = 'force-static';
 const DOC_TYPES = [
   'project-summary',
   'agreement',
-  // cont-39..42 register additional doc types here as their components ship.
+  'rough-budget',
+  'final-budget',
+  // cont-40..42 register additional doc types here as their components ship.
 ] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
@@ -39,6 +43,10 @@ export default async function DesignDocPage({ params }: PageProps) {
       return <ProjectSummaryPreview project={project} />;
     case 'agreement':
       return <AgreementPreview project={project} />;
+    case 'rough-budget':
+      return <RoughBudgetPreview project={project} />;
+    case 'final-budget':
+      return <FinalBudgetPreview project={project} />;
   }
 }
 
