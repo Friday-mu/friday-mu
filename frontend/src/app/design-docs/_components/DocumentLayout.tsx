@@ -47,7 +47,10 @@ function useDocDate(generatedAt?: string): string | null {
 }
 
 interface DocumentPageProps {
-  project: DesignProject;
+  /** Legacy props from cont-37..43 — accepted but unused by the new layout.
+   *  Kept optional so existing previews still compile until each is
+   *  rewritten in cont-46+ . */
+  project?: DesignProject;
   meta?: DocumentMeta;
   /** Optional override for the bottom-right page label. Default is the
    *  computed page number. */
@@ -131,23 +134,6 @@ export function DocumentPage({
       </footer>
     </article>
   );
-}
-
-/** Reusable formatted-date helper — used in doc bodies for date fields. */
-export function formatDocDate(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(',', '');
-}
-
-/** dd.mm.yyyy — used by invoice numbering / formal headers. */
-export function formatDocDateNumeric(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = d.getFullYear();
-  return `${dd}.${mm}.${yy}`;
 }
 
 // All doc styles inlined as one block. Anything global enough to belong in
