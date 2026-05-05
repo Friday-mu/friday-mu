@@ -137,7 +137,7 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
           </span>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {onOpenOwnerPortal && (
           <button
             type="button"
@@ -155,6 +155,27 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
             Open owner portal preview
           </button>
         )}
+        <a
+          href={`/design-docs/${project.slug}/project-summary`}
+          target="_blank"
+          rel="noopener"
+          data-doc-link="project-summary"
+          style={{
+            padding: '6px 12px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--color-border-secondary)',
+            background: 'var(--color-background-primary)',
+            color: 'var(--color-text-primary)',
+            fontSize: 12,
+            fontWeight: 500,
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          Print previews ↗
+        </a>
         <LifecycleMenu project={project} onChange={() => onLifecycleChange?.()} />
       </div>
     </div>
