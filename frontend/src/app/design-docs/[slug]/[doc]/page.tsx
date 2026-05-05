@@ -1,5 +1,6 @@
 import { listProjectSlugs, getProjectBySlug } from '../../../fad/_data/design';
 import { ProjectSummaryPreview } from '../../_components/ProjectSummaryPreview';
+import { AgreementPreview } from '../../_components/AgreementPreview';
 import { UnknownDoc } from './UnknownDoc';
 
 export const dynamic = 'force-static';
@@ -10,7 +11,8 @@ export const dynamic = 'force-static';
 // hit them by URL to produce PDFs in v0.2.
 const DOC_TYPES = [
   'project-summary',
-  // cont-38..42 register additional doc types here as their components ship.
+  'agreement',
+  // cont-39..42 register additional doc types here as their components ship.
 ] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
@@ -35,6 +37,8 @@ export default async function DesignDocPage({ params }: PageProps) {
   switch (doc) {
     case 'project-summary':
       return <ProjectSummaryPreview project={project} />;
+    case 'agreement':
+      return <AgreementPreview project={project} />;
   }
 }
 
