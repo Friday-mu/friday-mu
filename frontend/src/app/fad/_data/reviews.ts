@@ -630,8 +630,12 @@ function daysAgo(iso: string): number {
   return Math.round((new Date(TODAY_ISO).getTime() - new Date(iso).getTime()) / (24 * 60 * 60 * 1000));
 }
 
-export function reviewsInWindow(days: number): Review[] {
-  return REVIEWS.filter((rv) => daysAgo(rv.submittedAt) <= days);
+// Helpers accept an optional `source` array so live data from useLiveReviews()
+// can feed them. Default REVIEWS keeps every existing call site working
+// unchanged while the migration to live data rolls out per sub-page.
+
+export function reviewsInWindow(days: number, source: Review[] = REVIEWS): Review[] {
+  return source.filter((rv) => daysAgo(rv.submittedAt) <= days);
 }
 
 export function avgRating(reviews: Review[]): number {
@@ -645,25 +649,25 @@ export function ratingDistribution(reviews: Review[]): Record<1 | 2 | 3 | 4 | 5,
   return dist;
 }
 
-export function reviewsByCohort(): Record<Cohort, Review[]> {
+export function reviewsByCohort(source: Review[] = REVIEWS): Record<Cohort, Review[]> {
   const out: Record<Cohort, Review[]> = {
     flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
   };
-  for (const rv of REVIEWS) out[rv.cohort].push(rv);
+  for (const rv of source) out[rv.cohort].push(rv);
   return out;
 }
 
-export function reviewsByChannel(): Record<ReviewChannel, Review[]> {
+export function reviewsByChannel(source: Review[] = REVIEWS): Record<ReviewChannel, Review[]> {
   const out: Record<ReviewChannel, Review[]> = {
     airbnb: [], booking: [], vrbo: [], google: [], direct: [],
   };
-  for (const rv of REVIEWS) out[rv.channel].push(rv);
+  for (const rv of source) out[rv.channel].push(rv);
   return out;
 }
 
-export function reviewsByProperty(): Record<string, Review[]> {
+export function reviewsByProperty(source: Review[] = REVIEWS): Record<string, Review[]> {
   const out: Record<string, Review[]> = {};
-  for (const rv of REVIEWS) {
+  for (const rv of source) {
     (out[rv.propertyCode] = out[rv.propertyCode] || []).push(rv);
   }
   return out;
@@ -731,14 +735,14 @@ export function staffPerformance(role: StaffRole): StaffPerf[] {
   });
 }
 
-export function lowRatedReviews(): Review[] {
-  return REVIEWS.filter((rv) => rv.rating <= 3).sort(
+export function lowRatedReviews(source: Review[] = REVIEWS): Review[] {
+  return source.filter((rv) => rv.rating <= 3).sort(
     (a, b) => b.submittedAt.localeCompare(a.submittedAt),
   );
 }
 
-export function unrepliedReviews(): Review[] {
-  return REVIEWS.filter((rv) => rv.replyStatus === 'unreplied').sort(
+export function unrepliedReviews(source: Review[] = REVIEWS): Review[] {
+  return source.filter((rv) => rv.replyStatus === 'unreplied').sort(
     (a, b) => b.submittedAt.localeCompare(a.submittedAt),
   );
 }
