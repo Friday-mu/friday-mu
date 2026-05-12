@@ -9,6 +9,7 @@ import {
   type InternalNote,
   type StayStatus,
 } from '../../_data/fixtures';
+import { useLiveConversations, useThreadDetail } from '../../_data/inboxClient';
 import { TASK_USERS, TASK_USER_BY_ID } from '../../_data/tasks';
 import { TEAM_CHANNELS, TEAM_DMS } from '../../_data/teamInbox';
 import {
@@ -117,15 +118,20 @@ export function InboxModule({ onAskFriday }: Props) {
   const [summaryOn, setSummaryOn] = useState(true);
   const [translateOn, setTranslateOn] = useState(false);
 
+  // Live GMS data via FAD backend proxy; falls back to fixture INBOX_THREADS
+  // during initial load or on backend failure so the inbox never blanks out.
+  const { threads: liveThreads, loading: inboxLoading, error: inboxError } = useLiveConversations();
+  const sourceThreads = liveThreads ?? INBOX_THREADS;
+
   const counts = useMemo(() => {
-    const byEntity: Record<string, number> = { guest: 0, owner: 0, vendor: 0, all: INBOX_THREADS.length };
-    for (const t of INBOX_THREADS) {
+    const byEntity: Record<string, number> = { guest: 0, owner: 0, vendor: 0, all: sourceThreads.length };
+    for (const t of sourceThreads) {
       byEntity[t.entity] = (byEntity[t.entity] || 0) + 1;
     }
     return { byEntity };
-  }, []);
+  }, [sourceThreads]);
 
-  const filtered = INBOX_THREADS.filter((t) => {
+  const filtered = sourceThreads.filter((t) => {
     if (entityFilter !== 'all' && entityFilter !== 'team' && t.entity !== entityFilter) return false;
     if (triageFilter === 'unread' && !t.unread) return false;
     if (triageFilter === 'review' && t.triageStatus !== 'review') return false;
@@ -136,8 +142,14 @@ export function InboxModule({ onAskFriday }: Props) {
     return true;
   });
 
-  const thread = filtered.find((t) => t.id === selected) || filtered[0] || INBOX_THREADS[0];
-  const unread = INBOX_THREADS.filter((t) => t.unread).length;
+  // Thread shown in the detail pane. List response gives summary metadata only;
+  // useThreadDetail lazily fetches full messages + reservation when selection
+  // changes. Falls back to the list-version while detail loads so the pane
+  // doesn't blank between selections.
+  const listThread = filtered.find((t) => t.id === selected) || filtered[0] || sourceThreads[0];
+  const { thread: detailThread } = useThreadDetail(listThread?.id ?? null);
+  const thread = detailThread || listThread;
+  const unread = sourceThreads.filter((t) => t.unread).length;
 
   const activeFilterCount =
     (triageFilter !== 'all' ? 1 : 0) +
