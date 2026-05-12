@@ -829,6 +829,11 @@ guestyAPI.interceptors.request.use(async (config) => {
 // default with a "Show original" toggle on the frontend.
 const { translateText } = require('./src/ai/translate');
 
+// HR routes — FAD-owned tables, direct pg access. JWT-gated per
+// Director permission matrix (see src/hr/auth.js).
+const hrStaffRoutes = require('./src/hr/staff');
+app.use('/api/hr/staff', hrStaffRoutes);
+
 // Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
 // rarely; the index lets us resolve raw channel listing IDs to friendly
 // nicknames (MV-7, GBH-C8) in the reviews response without a per-review API
