@@ -11,21 +11,22 @@ import {
   stageDef,
   tierForEpc,
   type AnnexAConfig,
-  type CreateLeadInput,
   type CreateVendorInput,
-  type DesignLead,
   type DesignProject,
   type DesignTier,
-  type EntryPath,
   type LeadSource,
   type ProjectClassification,
-  type ProposalStatus,
   type StageId,
   type Vendor,
   type VendorCategory,
 } from '../../_data/design';
-import { LEADS as FAD_LEADS, type Lead as FadLead } from '../../_data/fixtures-tier3';
-import { useHydrateDesignTopLevel, useHydrateDesignProject } from '../../_data/designClient';
+import {
+  useHydrateDesignTopLevel,
+  useHydrateDesignProject,
+  createLead as apiCreateLead,
+  convertLeadToProject as apiConvertLeadToProject,
+  type ApiLead,
+} from '../../_data/designClient';
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
@@ -755,80 +756,111 @@ const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   other: 'Other',
 };
 const LEAD_SOURCES: LeadSource[] = ['friday_outreach', 'owner_referral', 'website', 'whatsapp', 'existing_owner', 'walk_in', 'other'];
-const LEAD_ENTRY_PATHS: EntryPath[] = ['friday_pitches', 'owner_direct', 'existing_friday_owner', 'new_owner_no_str'];
+
+// Hydrated DesignLead — what's actually in `designClient.leads.list()` after
+// hydration via apiLeadToFixture (designClient.ts). Mirrors the ApiLead shape
+// because the LEADS fixture array is mutated in-place with API rows on mount.
+// The legacy DesignLead fixture type (counterpartyName, propertyHint, etc.)
+// is no longer used at runtime. Tracked field set: id, name, email, phone,
+// source, status, staleness_days, owner_user_id, created_at, notes.
+type LiveLeadStatus = 'lead' | 'qualified' | 'converted' | 'lost';
+
+const LEAD_STATUS_COLUMNS: Array<{
+  id: LiveLeadStatus;
+  label: string;
+  tone: 'info' | 'success' | 'neutral' | 'danger';
+}> = [
+  { id: 'lead',      label: 'Lead',       tone: 'neutral' },
+  { id: 'qualified', label: 'Qualified',  tone: 'info' },
+  { id: 'converted', label: 'Converted',  tone: 'success' },
+  { id: 'lost',      label: 'Lost',       tone: 'danger' },
+];
 
 function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => void }) {
-  // Renamed-in-place from a flat table to a kanban (cont-12, audit A5).
-  // Industry research: every modern PM tool (Programa, JobTread, Houzz Pro)
-  // uses kanban for the pre-contract pipeline. Flat table loses funnel
-  // intuition.
-  //
-  // Cont-14: cross-wire to FAD's CRM-lite. The Design Leads view is the
-  // focused interior-pipeline subset — pre-qualification leads still live
-  // in the broader CRM (Leads / CRM-lite module). New first column shows
-  // the interior-pipeline leads from FAD_LEADS so the funnel
-  // "CRM intake → Design proposal flow" is visible in one place.
-  //
-  // Cont-23: + New lead intake form, source filter chips, and side drawer
-  // with edit-in-place + concrete status transitions instead of toast-only
-  // mocks.
-  //
-  // Cont-32: Convert → Project flow opens a modal pre-filled from the
-  // lead. On submit, mints a draft project + new counterparty + new
-  // property, marks the lead accepted, opens the new project.
-  const [, setRev] = useState(0);
+  // Flat status-grouped list of live design leads from /api/design/leads
+  // (hydrated into LEADS via designClient.useHydrateDesignTopLevel). Replaces
+  // the prior kanban — kanban columns keyed off ProposalStatus
+  // (draft/sent/accepted) which no longer matches the live API status set
+  // (lead/qualified/converted/lost). Drops the legacy CRM "pre-qualification"
+  // column sourced from fixtures-tier3 demo data.
+  const [rev, setRev] = useState(0);
   const bump = () => setRev((r) => r + 1);
-  const [showCreate, setShowCreate] = useState(false);
-  const [openLeadId, setOpenLeadId] = useState<string | null>(null);
-  const [convertingLeadId, setConvertingLeadId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<Set<LeadSource>>(() => new Set());
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const allLeads = designClient.leads.list();
-  const leads = sourceFilter.size === 0 ? allLeads : allLeads.filter((l) => sourceFilter.has(l.source));
-  const crmInteriorLeads = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won');
-  const columns: Array<{ id: 'draft' | 'sent' | 'accepted' | 'declined' | 'not_needed'; label: string; tone: 'neutral' | 'info' | 'success' | 'danger' }> = [
-    { id: 'draft',      label: 'Draft',     tone: 'neutral' },
-    { id: 'sent',       label: 'Sent',      tone: 'info' },
-    { id: 'accepted',   label: 'Accepted',  tone: 'success' },
-    { id: 'declined',   label: 'Declined',  tone: 'danger' },
-    { id: 'not_needed', label: 'Archived',  tone: 'neutral' },
-  ];
-  const counts: Record<string, number> = Object.fromEntries(columns.map((c) => [c.id, leads.filter((l) => l.status === c.id).length]));
+  const allLeads = designClient.leads.list() as unknown as ApiLead[];
+  const leads = sourceFilter.size === 0
+    ? allLeads
+    : allLeads.filter((l) => sourceFilter.has((l.source as LeadSource) ?? 'other'));
 
-  const openLead = openLeadId ? designClient.leads.get(openLeadId) : null;
+  const handleNewLead = async () => {
+    if (typeof window === 'undefined') return;
+    const name = window.prompt('New lead — name?')?.trim();
+    if (!name) return;
+    const email = window.prompt('Email (optional)')?.trim() || undefined;
+    const phone = window.prompt('Phone (optional)')?.trim() || undefined;
+    const sourceInput = window.prompt(
+      'Source? Options: friday_outreach, owner_referral, website, whatsapp, existing_owner, walk_in, other',
+      'website',
+    )?.trim();
+    const source = LEAD_SOURCES.includes(sourceInput as LeadSource) ? sourceInput : undefined;
+    setBusy('create');
+    try {
+      const created = await apiCreateLead({
+        name,
+        email: email ?? null,
+        phone: phone ?? null,
+        source: source ?? null,
+      });
+      // Splice the new row into the local LEADS array so it shows up without
+      // a full refetch. Hydrated leads are stored as API-shape.
+      (designClient.leads.list() as unknown as ApiLead[]).push(created);
+      fireToast(`Lead "${created.name}" created.`);
+      bump();
+    } catch (e) {
+      fireToast(`Failed to create lead: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleConvert = async (lead: ApiLead) => {
+    setBusy(lead.id);
+    try {
+      const result = await apiConvertLeadToProject(lead.id, {});
+      // Update local lead row (status → converted) and open the new project.
+      const localLeads = designClient.leads.list() as unknown as ApiLead[];
+      const idx = localLeads.findIndex((l) => l.id === lead.id);
+      if (idx !== -1) localLeads[idx] = result.lead;
+      fireToast(`Project "${result.project.name}" created from lead.`);
+      onOpenProject(result.project.id);
+    } catch (e) {
+      fireToast(`Failed to convert lead: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-design-leads data-rev={rev}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
-            Leads <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· interior pipeline</span>
+            Leads <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· {allLeads.length} live</span>
           </h3>
           <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            Focused view of the <strong>interior</strong> pipeline from{' '}
-            <a
-              href="#leads"
-              onClick={(e) => { e.preventDefault(); fireToast('CRM-lite Leads module — wire pending'); }}
-              style={{ color: 'var(--color-text-info)', textDecoration: 'none' }}
-            >
-              Leads / CRM-lite
-            </a>
-            . Pre-qualification cards on the left convert into Design proposal drafts.
+            Live from <code style={{ fontFamily: 'var(--font-mono-fad)' }}>/api/design/leads</code>. Convert qualified leads to drill into a draft project.
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            {crmInteriorLeads.length} pre-qualification · {allLeads.length} in design pipeline · {counts.accepted} accepted · {counts.sent} awaiting decision
-          </span>
-          <button
-            type="button"
-            data-leads-new
-            onClick={() => setShowCreate((v) => !v)}
-            style={leadActionBtn('primary')}
-          >
-            {showCreate ? 'Cancel' : '+ New lead'}
-          </button>
-        </div>
+        <button
+          type="button"
+          data-leads-new
+          onClick={handleNewLead}
+          disabled={busy === 'create'}
+          style={leadActionBtn('primary')}
+        >
+          {busy === 'create' ? 'Creating…' : '+ New lead'}
+        </button>
       </div>
 
       {/* Source filter chips. Click to toggle each source on/off. */}
@@ -871,724 +903,82 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
         )}
       </div>
 
-      {showCreate && (
-        <NewLeadForm
-          onCancel={() => setShowCreate(false)}
-          onCreated={(lead) => {
-            setShowCreate(false);
-            setOpenLeadId(lead.id);
-            bump();
-            fireToast(`Lead "${lead.counterpartyName}" created in Draft.`);
-          }}
-        />
-      )}
-
-      {/* Horizontal-scrolling kanban. Each column is a fixed-width lane so
-          mobile users swipe through columns rather than collapsing the
-          board to a list. */}
-      <div
-        role="list"
-        aria-label="Leads pipeline"
-        style={{
-          display: 'flex',
-          gap: 12,
-          overflowX: 'auto',
-          paddingBottom: 8,
-          alignItems: 'stretch',
-        }}
-      >
-        {/* CRM pre-qualification column — sourced from FAD's interior
-            pipeline. Visually distinct (dashed border) so users
-            understand it's upstream, not part of the design pipeline yet. */}
+      {allLeads.length === 0 && (
         <div
-          role="listitem"
-          data-leads-column="crm-interior"
+          data-leads-empty
           style={{
-            flex: '0 0 280px',
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            background: 'var(--color-background-tertiary)',
-            border: '1px dashed var(--color-border-secondary)',
+            padding: 24,
+            textAlign: 'center',
+            fontSize: 12,
+            color: 'var(--color-text-tertiary)',
+            border: '0.5px dashed var(--color-border-tertiary)',
             borderRadius: 'var(--radius-md)',
-            padding: 10,
-            maxHeight: 'calc(100vh - 320px)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 4px 6px', borderBottom: '1px solid var(--color-border-secondary)' }}>
-            <div>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                Pre-qualification
+          No leads yet. Click <strong>+ New lead</strong> to add the first one.
+        </div>
+      )}
+
+      {/* Flat status-grouped sections. Each status renders inline rather than
+          as a horizontal kanban lane — the live dataset is small enough that
+          stacked sections read better than scrolling columns. */}
+      {LEAD_STATUS_COLUMNS.map((col) => {
+        const rows = leads.filter((l) => l.status === col.id);
+        if (rows.length === 0 && sourceFilter.size > 0) return null;
+        return (
+          <section
+            key={col.id}
+            data-leads-section={col.id}
+            style={{
+              background: 'var(--color-background-primary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+            }}
+          >
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${leadColumnTone(col.tone).border}` }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: leadColumnTone(col.tone).text, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                {col.label}
               </span>
-              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 1 }}>From CRM-lite</div>
-            </div>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
-              {crmInteriorLeads.length}
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', minHeight: 60 }}>
-            {crmInteriorLeads.length === 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: 16 }}>
-                No interior leads in CRM.
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
+                {rows.length}
+              </span>
+            </header>
+            {rows.length === 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: 12 }}>
+                No leads in {col.label.toLowerCase()}.
               </div>
             ) : (
-              crmInteriorLeads.map((l) => <CrmLeadCard key={l.id} lead={l} />)
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {rows.map((l) => (
+                  <LeadCard
+                    key={l.id}
+                    lead={l}
+                    busy={busy === l.id}
+                    onConvert={() => handleConvert(l)}
+                  />
+                ))}
+              </div>
             )}
-          </div>
-        </div>
-
-        {columns.map((col) => {
-          const colLeads = leads.filter((l) => l.status === col.id);
-          return (
-            <div
-              key={col.id}
-              role="listitem"
-              data-leads-column={col.id}
-              style={{
-                flex: '0 0 280px',
-                minWidth: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                background: 'var(--color-background-tertiary)',
-                borderRadius: 'var(--radius-md)',
-                padding: 10,
-                maxHeight: 'calc(100vh - 320px)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 4px 6px', borderBottom: `1px solid ${leadColumnTone(col.tone).border}` }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: leadColumnTone(col.tone).text, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  {col.label}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
-                  {colLeads.length}
-                </span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', minHeight: 60 }}>
-                {colLeads.length === 0 ? (
-                  <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: 16 }}>
-                    No leads here.
-                  </div>
-                ) : (
-                  colLeads.map((l) => (
-                    <LeadCard
-                      key={l.id}
-                      lead={l}
-                      onOpen={() => setOpenLeadId(l.id)}
-                      onChanged={bump}
-                      onConvert={() => setConvertingLeadId(l.id)}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {openLead && (
-        <LeadDetailDrawer
-          lead={openLead}
-          onClose={() => setOpenLeadId(null)}
-          onChanged={bump}
-          onConvert={() => setConvertingLeadId(openLead.id)}
-        />
-      )}
-
-      {convertingLeadId && (
-        <ConvertLeadModal
-          lead={designClient.leads.get(convertingLeadId)!}
-          onClose={() => setConvertingLeadId(null)}
-          onConverted={(projectId) => {
-            setConvertingLeadId(null);
-            setOpenLeadId(null);
-            bump();
-            onOpenProject(projectId);
-          }}
-        />
-      )}
+          </section>
+        );
+      })}
     </div>
   );
 }
 
-function LeadCard({ lead, onOpen, onChanged, onConvert }: { lead: DesignLead; onOpen: () => void; onChanged: () => void; onConvert: () => void }) {
-  const ageDays = Math.max(0, Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86_400_000));
-  const stale = lead.status === 'sent' && ageDays > 7;
-  // Stop card-level click bubbling when an action button is pressed so the
-  // detail drawer doesn't open behind the toast.
-  const stop = (e: React.MouseEvent) => e.stopPropagation();
+function LeadCard({ lead, busy, onConvert }: { lead: ApiLead; busy: boolean; onConvert: () => void }) {
+  const sourceLabel = LEAD_SOURCE_LABEL[(lead.source as LeadSource) ?? 'other'] ?? lead.source ?? 'Other';
+  const contact = lead.email || lead.phone || null;
+  const staleness = formatLeadStaleness(lead);
+  const canConvert = lead.status === 'lead' || lead.status === 'qualified';
   return (
     <div
       data-lead-card={lead.id}
-      onClick={onOpen}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
-      style={{
-        background: 'var(--color-background-primary)',
-        border: stale ? '1px solid var(--color-text-warning)' : '0.5px solid var(--color-border-tertiary)',
-        borderRadius: 'var(--radius-sm)',
-        padding: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        cursor: 'pointer',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{lead.counterpartyName}</span>
-        <span style={{ fontSize: 10, color: stale ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)', whiteSpace: 'nowrap' }}>
-          {ageDays === 0 ? 'today' : `${ageDays}d`}
-        </span>
-      </div>
-      {lead.propertyHint && (
-        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{lead.propertyHint}</div>
-      )}
-      {lead.budgetHint && (
-        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>{lead.budgetHint}</div>
-      )}
-      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-        via {lead.source.replace(/_/g, ' ')}
-        {lead.counterpartyPhone ? ` · ${lead.counterpartyPhone}` : lead.counterpartyEmail ? ` · ${lead.counterpartyEmail}` : ''}
-      </div>
-      {lead.notes && (
-        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic', marginTop: 2 }}>
-          {lead.notes}
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }} onClick={stop}>
-        {lead.status === 'draft' && (
-          <button
-            type="button"
-            data-lead-action="send"
-            onClick={() => {
-              if (designClient.leads.setStatus(lead.id, 'sent')) {
-                fireToast(`Sent proposal to ${lead.counterpartyName}.`);
-                onChanged();
-              }
-            }}
-            style={leadActionBtn('primary')}
-          >
-            Send proposal
-          </button>
-        )}
-        {lead.status === 'sent' && (
-          <>
-            <button
-              type="button"
-              data-lead-action="accept"
-              onClick={() => {
-                if (designClient.leads.setStatus(lead.id, 'accepted')) {
-                  fireToast(`${lead.counterpartyName} marked accepted.`);
-                  onChanged();
-                }
-              }}
-              style={leadActionBtn('primary')}
-            >
-              Mark accepted
-            </button>
-            <button
-              type="button"
-              data-lead-action="decline"
-              onClick={() => {
-                if (designClient.leads.setStatus(lead.id, 'declined')) {
-                  fireToast(`${lead.counterpartyName} marked declined.`);
-                  onChanged();
-                }
-              }}
-              style={leadActionBtn('secondary')}
-            >
-              Decline
-            </button>
-          </>
-        )}
-        {lead.status === 'accepted' && (
-          <button
-            type="button"
-            data-lead-action="convert"
-            onClick={onConvert}
-            style={leadActionBtn('primary')}
-          >
-            Convert → Project
-          </button>
-        )}
-        {(lead.status === 'declined' || lead.status === 'not_needed') && (
-          <button
-            type="button"
-            data-lead-action="reopen"
-            onClick={() => {
-              if (designClient.leads.setStatus(lead.id, 'draft')) {
-                fireToast(`${lead.counterpartyName} reopened to draft.`);
-                onChanged();
-              }
-            }}
-            style={leadActionBtn('secondary')}
-          >
-            Reopen
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────── New lead intake form ───────────────────
-
-function NewLeadForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (lead: DesignLead) => void }) {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [propertyHint, setPropertyHint] = useState('');
-  const [budgetHint, setBudgetHint] = useState('');
-  const [source, setSource] = useState<LeadSource>('website');
-  const [entryPath, setEntryPath] = useState<EntryPath>('owner_direct');
-  const [notes, setNotes] = useState('');
-  const canSubmit = name.trim().length > 0;
-  return (
-    <div
-      data-leads-new-form
+      data-lead-status={lead.status}
       style={{
         background: 'var(--color-background-tertiary)',
         border: '0.5px solid var(--color-border-tertiary)',
-        borderRadius: 'var(--radius-md)',
-        padding: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
-    >
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-        <label style={leadFieldLabel()}>
-          Counterparty name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Owner / contact name" style={leadInput()} />
-        </label>
-        <label style={leadFieldLabel()}>
-          Phone (optional)
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+230 …" style={leadInput()} />
-        </label>
-        <label style={leadFieldLabel()}>
-          Email (optional)
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="…@example.com" style={leadInput()} />
-        </label>
-        <label style={leadFieldLabel()}>
-          Property hint
-          <input value={propertyHint} onChange={(e) => setPropertyHint(e.target.value)} placeholder="e.g. Tamarin villa, 4BR" style={leadInput()} />
-        </label>
-        <label style={leadFieldLabel()}>
-          Budget hint
-          <input value={budgetHint} onChange={(e) => setBudgetHint(e.target.value)} placeholder="e.g. MUR 1.5M renovation" style={leadInput()} />
-        </label>
-        <label style={leadFieldLabel()}>
-          Source
-          <select value={source} onChange={(e) => setSource(e.target.value as LeadSource)} style={leadInput()}>
-            {LEAD_SOURCES.map((s) => <option key={s} value={s}>{LEAD_SOURCE_LABEL[s]}</option>)}
-          </select>
-        </label>
-        <label style={leadFieldLabel()}>
-          Entry path
-          <select value={entryPath} onChange={(e) => setEntryPath(e.target.value as EntryPath)} style={leadInput()}>
-            {LEAD_ENTRY_PATHS.map((p) => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
-          </select>
-        </label>
-      </div>
-      <label style={leadFieldLabel()}>
-        Notes (what's the brief / context)
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything Friday should know going in." style={{ ...leadInput(), resize: 'vertical', minHeight: 50 }} />
-      </label>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          type="button"
-          disabled={!canSubmit}
-          data-leads-new-submit
-          onClick={() => {
-            const input: CreateLeadInput = {
-              source,
-              entryPath,
-              counterpartyName: name.trim(),
-              counterpartyPhone: phone.trim() === '' ? null : phone.trim(),
-              counterpartyEmail: email.trim() === '' ? null : email.trim(),
-              propertyHint: propertyHint.trim() === '' ? null : propertyHint.trim(),
-              budgetHint: budgetHint.trim() === '' ? null : budgetHint.trim(),
-              notes: notes.trim() === '' ? null : notes.trim(),
-            };
-            const lead = designClient.leads.create(input);
-            onCreated(lead);
-          }}
-          style={canSubmit ? leadActionBtn('primary') : { ...leadActionBtn('primary'), opacity: 0.5, cursor: 'not-allowed' }}
-        >
-          Create lead
-        </button>
-        <button type="button" onClick={onCancel} style={leadActionBtn('secondary')}>Cancel</button>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────── Lead detail drawer ───────────────────
-
-function LeadDetailDrawer({ lead, onClose, onChanged, onConvert }: { lead: DesignLead; onClose: () => void; onChanged: () => void; onConvert: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(lead.counterpartyName);
-  const [phone, setPhone] = useState(lead.counterpartyPhone ?? '');
-  const [email, setEmail] = useState(lead.counterpartyEmail ?? '');
-  const [propertyHint, setPropertyHint] = useState(lead.propertyHint ?? '');
-  const [budgetHint, setBudgetHint] = useState(lead.budgetHint ?? '');
-  const [source, setSource] = useState<LeadSource>(lead.source);
-  const [notes, setNotes] = useState(lead.notes ?? '');
-  const ageDays = Math.max(0, Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86_400_000));
-  const stale = lead.status === 'sent' && ageDays > 7;
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Lead detail"
-      data-lead-drawer={lead.id}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 80,
-        background: 'rgba(0,0,0,0.55)',
-        display: 'flex',
-        justifyContent: 'flex-end',
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(420px, 100%)',
-          height: '100%',
-          background: 'var(--color-background-primary)',
-          borderLeft: '0.5px solid var(--color-border-secondary)',
-          padding: 20,
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>
-              Lead · {LEAD_SOURCE_LABEL[lead.source]} · {ageDays === 0 ? 'today' : `${ageDays}d old`}
-            </div>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, lineHeight: 1.3 }}>{lead.counterpartyName}</h3>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <LeadStatusChip status={lead.status} stale={stale} />
-            <button type="button" data-lead-drawer-close onClick={onClose} aria-label="Close" style={{ padding: '2px 8px', fontSize: 14, color: 'var(--color-text-tertiary)', background: 'transparent' }}>×</button>
-          </div>
-        </div>
-
-        {!editing ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <DrawerField label="Phone" value={lead.counterpartyPhone} mono />
-            <DrawerField label="Email" value={lead.counterpartyEmail} />
-            <DrawerField label="Property" value={lead.propertyHint} />
-            <DrawerField label="Budget hint" value={lead.budgetHint} mono />
-            <DrawerField label="Entry path" value={lead.entryPath.replace(/_/g, ' ')} />
-            <DrawerField label="Notes" value={lead.notes} multiline />
-            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-              <button type="button" data-lead-drawer-edit onClick={() => setEditing(true)} style={leadActionBtn('secondary')}>Edit details</button>
-              {lead.status === 'accepted' && (
-                <button type="button" data-lead-drawer-convert onClick={onConvert} style={leadActionBtn('primary')}>Convert → Project</button>
-              )}
-              <LeadStatusActions lead={lead} onChanged={() => { onChanged(); }} />
-              <button
-                type="button"
-                data-lead-drawer-delete
-                onClick={() => {
-                  if (window.confirm(`Delete the lead from ${lead.counterpartyName}? This can't be undone.`)) {
-                    if (designClient.leads.delete(lead.id)) {
-                      fireToast('Lead deleted.');
-                      onChanged();
-                      onClose();
-                    }
-                  }
-                }}
-                style={{ ...leadActionBtn('secondary'), color: 'var(--color-text-danger)' }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <label style={leadFieldLabel()}>
-              Name
-              <input value={name} onChange={(e) => setName(e.target.value)} style={leadInput()} />
-            </label>
-            <label style={leadFieldLabel()}>
-              Phone
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} style={leadInput()} />
-            </label>
-            <label style={leadFieldLabel()}>
-              Email
-              <input value={email} onChange={(e) => setEmail(e.target.value)} style={leadInput()} />
-            </label>
-            <label style={leadFieldLabel()}>
-              Property hint
-              <input value={propertyHint} onChange={(e) => setPropertyHint(e.target.value)} style={leadInput()} />
-            </label>
-            <label style={leadFieldLabel()}>
-              Budget hint
-              <input value={budgetHint} onChange={(e) => setBudgetHint(e.target.value)} style={leadInput()} />
-            </label>
-            <label style={leadFieldLabel()}>
-              Source
-              <select value={source} onChange={(e) => setSource(e.target.value as LeadSource)} style={leadInput()}>
-                {LEAD_SOURCES.map((s) => <option key={s} value={s}>{LEAD_SOURCE_LABEL[s]}</option>)}
-              </select>
-            </label>
-            <label style={leadFieldLabel()}>
-              Notes
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...leadInput(), resize: 'vertical', minHeight: 60 }} />
-            </label>
-            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              <button
-                type="button"
-                data-lead-drawer-save
-                onClick={() => {
-                  designClient.leads.update(lead.id, {
-                    counterpartyName: name.trim() || lead.counterpartyName,
-                    counterpartyPhone: phone.trim() === '' ? null : phone.trim(),
-                    counterpartyEmail: email.trim() === '' ? null : email.trim(),
-                    propertyHint: propertyHint.trim() === '' ? null : propertyHint.trim(),
-                    budgetHint: budgetHint.trim() === '' ? null : budgetHint.trim(),
-                    source,
-                    notes: notes.trim() === '' ? null : notes.trim(),
-                  });
-                  fireToast('Lead updated.');
-                  onChanged();
-                  setEditing(false);
-                }}
-                style={leadActionBtn('primary')}
-              >
-                Save
-              </button>
-              <button type="button" onClick={() => setEditing(false)} style={leadActionBtn('secondary')}>Cancel</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Convert Lead → Project modal (cont-32). Pre-fills classification from a
-// budget-hint heuristic + lets the director pick a design lead. On submit,
-// mints project + counterparty + property, navigates the user to the new
-// project drill-down.
-function ConvertLeadModal({ lead, onClose, onConverted }: { lead: DesignLead; onClose: () => void; onConverted: (projectId: string) => void }) {
-  const userId = useCurrentUserId();
-  const heuristicClassification = guessClassification(lead.budgetHint, lead.notes);
-  const [classification, setClassification] = useState<ProjectClassification>(heuristicClassification);
-  const [designLeadUserId, setDesignLeadUserId] = useState<string | null>(userId);
-  const defaultName = lead.propertyHint
-    ? `${lead.counterpartyName.split(' ')[0]} — ${lead.propertyHint}`.slice(0, 80)
-    : `${lead.counterpartyName} — new project`;
-  const [projectName, setProjectName] = useState(defaultName);
-
-  const submit = () => {
-    const result = designClient.leads.convertToProject(lead.id, {
-      classification,
-      designLeadUserId,
-      projectName: projectName.trim() || undefined,
-    });
-    if (result) {
-      fireToast(`Project "${result.project.name}" created from lead.`);
-      onConverted(result.project.id);
-    }
-  };
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Convert lead to project"
-      data-lead-convert-modal
-      style={{
-        position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.55)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--color-background-tertiary)',
-          width: '100%', maxWidth: 520, borderRadius: 'var(--radius-lg)',
-          padding: 20, display: 'flex', flexDirection: 'column', gap: 14,
-        }}
-      >
-        <div>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Convert lead → Project</h3>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-            Mints a new draft project from <strong>{lead.counterpartyName}</strong>'s lead, plus a fresh counterparty + property record. Lead stays as <em>accepted</em> for the audit trail.
-          </p>
-        </div>
-
-        <div style={{ background: 'var(--color-background-primary)', padding: 10, borderRadius: 'var(--radius-sm)', fontSize: 11, color: 'var(--color-text-secondary)' }}>
-          <div><strong>{lead.counterpartyName}</strong> · {LEAD_SOURCE_LABEL[lead.source]}</div>
-          {lead.propertyHint && <div style={{ marginTop: 2 }}>{lead.propertyHint}</div>}
-          {lead.budgetHint && <div style={{ marginTop: 2, color: 'var(--color-text-tertiary)' }}>{lead.budgetHint}</div>}
-        </div>
-
-        <label style={leadFieldLabel()}>
-          Project name
-          <input value={projectName} onChange={(e) => setProjectName(e.target.value)} style={leadInput()} />
-        </label>
-
-        <label style={leadFieldLabel()}>
-          Classification
-          <select value={classification} onChange={(e) => setClassification(e.target.value as ProjectClassification)} style={leadInput()}>
-            <option value="furnishing">Furnishing</option>
-            <option value="renovation">Renovation</option>
-            <option value="mixed">Mixed (renovation + furnishing)</option>
-          </select>
-          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-            Heuristic guess: <strong>{heuristicClassification}</strong> from the lead's budget hint / notes.
-          </span>
-        </label>
-
-        <label style={leadFieldLabel()}>
-          Design lead
-          <select value={designLeadUserId ?? ''} onChange={(e) => setDesignLeadUserId(e.target.value || null)} style={leadInput()}>
-            <option value="">— assign later —</option>
-            <option value={userId}>You ({userId.replace(/^u-/, '')})</option>
-            <option value="u-jaabir">Jaabir (external lead)</option>
-            <option value="u-mathias">Mathias</option>
-            <option value="u-bryan">Bryan</option>
-          </select>
-        </label>
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button type="button" onClick={onClose} style={{ padding: '8px 14px', fontSize: 12, borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--color-text-secondary)', border: '0.5px solid var(--color-border-secondary)' }}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            data-lead-convert-submit
-            onClick={submit}
-            disabled={projectName.trim().length === 0}
-            style={{
-              padding: '8px 14px', fontSize: 12, borderRadius: 'var(--radius-sm)',
-              background: projectName.trim() ? 'var(--color-brand-accent)' : 'var(--color-background-primary)',
-              color: projectName.trim() ? '#fff' : 'var(--color-text-tertiary)',
-              fontWeight: 500,
-              cursor: projectName.trim() ? 'pointer' : 'not-allowed',
-            }}
-          >
-            Create project
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function guessClassification(budgetHint: string | null, notes: string | null): ProjectClassification {
-  const text = `${budgetHint ?? ''} ${notes ?? ''}`.toLowerCase();
-  if (/furniture|furnishing|fitout|fit-out|styling/.test(text)) return 'furnishing';
-  if (/renov|reno|extension|rebuild|gut|structural|m[\W_]*&[\W_]*e|roof|wall|kitchen rebuild/.test(text)) return 'renovation';
-  return 'renovation'; // safer default — most Friday work is renovation-led
-}
-
-function LeadStatusChip({ status, stale }: { status: ProposalStatus; stale: boolean }) {
-  const tone = status === 'accepted' ? 'success' : status === 'declined' ? 'danger' : status === 'sent' ? (stale ? 'warning' : 'info') : 'neutral';
-  const bg = { success: 'var(--color-bg-success)', danger: 'var(--color-bg-danger)', info: 'var(--color-bg-info)', warning: 'var(--color-bg-warning)', neutral: 'var(--color-background-tertiary)' }[tone];
-  const fg = { success: 'var(--color-text-success)', danger: 'var(--color-text-danger)', info: 'var(--color-text-info)', warning: 'var(--color-text-warning)', neutral: 'var(--color-text-tertiary)' }[tone];
-  return <span style={{ padding: '2px 10px', fontSize: 10, fontWeight: 500, borderRadius: 'var(--radius-full)', background: bg, color: fg }}>{stale ? 'sent · stale' : status}</span>;
-}
-
-function LeadStatusActions({ lead, onChanged }: { lead: DesignLead; onChanged: () => void }) {
-  const transition = (next: ProposalStatus, msg: string) => {
-    if (designClient.leads.setStatus(lead.id, next)) {
-      fireToast(msg);
-      onChanged();
-    }
-  };
-  return (
-    <>
-      {lead.status === 'draft' && <button type="button" onClick={() => transition('sent', 'Marked sent.')} style={leadActionBtn('primary')}>Mark sent</button>}
-      {lead.status === 'sent' && (
-        <>
-          <button type="button" onClick={() => transition('accepted', 'Marked accepted.')} style={leadActionBtn('primary')}>Mark accepted</button>
-          <button type="button" onClick={() => transition('declined', 'Marked declined.')} style={leadActionBtn('secondary')}>Decline</button>
-        </>
-      )}
-      {(lead.status === 'declined' || lead.status === 'not_needed') && (
-        <button type="button" onClick={() => transition('draft', 'Reopened to draft.')} style={leadActionBtn('secondary')}>Reopen</button>
-      )}
-      {lead.status !== 'not_needed' && lead.status !== 'accepted' && (
-        <button type="button" onClick={() => transition('not_needed', 'Archived.')} style={leadActionBtn('secondary')}>Archive</button>
-      )}
-    </>
-  );
-}
-
-function DrawerField({ label, value, mono = false, multiline = false }: { label: string; value: string | null; mono?: boolean; multiline?: boolean }) {
-  return (
-    <div>
-      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>{label}</div>
-      <div
-        style={{
-          fontSize: 12,
-          color: value ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
-          fontFamily: mono && value ? 'var(--font-mono-fad)' : 'inherit',
-          fontStyle: value ? 'normal' : 'italic',
-          whiteSpace: multiline ? 'pre-wrap' : 'normal',
-          lineHeight: multiline ? 1.5 : 1.3,
-        }}
-      >
-        {value ?? '—'}
-      </div>
-    </div>
-  );
-}
-
-function leadFieldLabel(): React.CSSProperties {
-  return { fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 };
-}
-
-function leadInput(): React.CSSProperties {
-  return { padding: '6px 8px', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' };
-}
-
-/**
- * Pre-qualification card sourced from FAD's CRM-lite (interior pipeline).
- * Distinct visual (dashed border, "CRM" label) from the in-pipeline Design
- * leads so the funnel "CRM intake → proposal flow" reads clearly.
- *
- * @demo:logic — Promote action mocks the cross-module mutation. v0.2 wires
- * to a single backend endpoint that creates a Design lead from a CRM lead.
- */
-function CrmLeadCard({ lead }: { lead: FadLead }) {
-  const stageTone =
-    lead.stage === 'proposal' ? 'info' :
-    lead.stage === 'meeting' ? 'success' :
-    lead.stage === 'qualifying' ? 'warning' :
-    'neutral';
-  const stageBg = {
-    info: 'var(--color-bg-info)',
-    success: 'var(--color-bg-success)',
-    warning: 'var(--color-bg-warning)',
-    neutral: 'var(--color-background-primary)',
-  }[stageTone];
-  const stageColor = {
-    info: 'var(--color-text-info)',
-    success: 'var(--color-text-success)',
-    warning: 'var(--color-text-warning)',
-    neutral: 'var(--color-text-secondary)',
-  }[stageTone];
-  return (
-    <div
-      data-lead-card={lead.id}
-      data-lead-source="crm-interior"
-      style={{
-        background: 'var(--color-background-primary)',
-        border: '0.5px dashed var(--color-border-secondary)',
         borderRadius: 'var(--radius-sm)',
         padding: 10,
         display: 'flex',
@@ -1598,47 +988,85 @@ function CrmLeadCard({ lead }: { lead: FadLead }) {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, fontWeight: 600 }}>{lead.name}</span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)', whiteSpace: 'nowrap' }}>
+          {staleness}
+        </span>
+      </div>
+      {contact && (
+        <div
+          style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontFamily: lead.email ? 'inherit' : 'var(--font-mono-fad)' }}
+          data-lead-contact={lead.email ? 'email' : 'phone'}
+        >
+          {contact}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <LeadStatusChip status={lead.status} />
         <span
           style={{
             fontSize: 10,
             padding: '1px 8px',
             borderRadius: 'var(--radius-full)',
-            background: stageBg,
-            color: stageColor,
-            textTransform: 'capitalize',
+            background: 'var(--color-background-primary)',
+            color: 'var(--color-text-tertiary)',
+            border: '0.5px solid var(--color-border-tertiary)',
           }}
         >
-          {lead.stage}
+          {sourceLabel}
         </span>
       </div>
-      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{lead.type}</div>
-      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>{lead.value}</div>
-      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-        via {lead.source} · {lead.owner} · {lead.age}
-      </div>
-      {lead.nextStep && (
+      {lead.notes && (
         <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
-          → {lead.nextStep}
+          {lead.notes}
         </div>
       )}
-      <button
-        type="button"
-        data-lead-action="promote"
-        onClick={() => fireToast(`Promote ${lead.name} to Design pipeline (mock — v0.2 mints a Design lead from this CRM record)`)}
-        style={{
-          marginTop: 4,
-          padding: '4px 10px',
-          fontSize: 11,
-          borderRadius: 'var(--radius-sm)',
-          background: 'var(--color-brand-accent)',
-          color: '#fff',
-          fontWeight: 500,
-        }}
-      >
-        Promote to Design pipeline →
-      </button>
+      {canConvert && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          <button
+            type="button"
+            data-lead-action="convert"
+            onClick={onConvert}
+            disabled={busy}
+            style={busy ? { ...leadActionBtn('primary'), opacity: 0.6, cursor: 'wait' } : leadActionBtn('primary')}
+          >
+            {busy ? 'Converting…' : 'Convert to project'}
+          </button>
+        </div>
+      )}
     </div>
   );
+}
+
+function LeadStatusChip({ status }: { status: LiveLeadStatus }) {
+  const tone =
+    status === 'converted' ? 'success' :
+    status === 'lost' ? 'danger' :
+    status === 'qualified' ? 'info' :
+    'neutral';
+  const bg = { success: 'var(--color-bg-success)', danger: 'var(--color-bg-danger)', info: 'var(--color-bg-info)', neutral: 'var(--color-background-tertiary)' }[tone];
+  const fg = { success: 'var(--color-text-success)', danger: 'var(--color-text-danger)', info: 'var(--color-text-info)', neutral: 'var(--color-text-tertiary)' }[tone];
+  return <span style={{ padding: '2px 10px', fontSize: 10, fontWeight: 500, borderRadius: 'var(--radius-full)', background: bg, color: fg }}>{status}</span>;
+}
+
+/** "today" / "Nd ago" / "N mo ago" from staleness_days when present, else
+ *  derived from created_at. Returns '—' if neither is parseable. */
+function formatLeadStaleness(lead: ApiLead): string {
+  const fromDays = (days: number): string => {
+    if (days < 1) return 'today';
+    if (days < 60) return `${days}d ago`;
+    return `${Math.round(days / 30)} mo ago`;
+  };
+  if (typeof lead.staleness_days === 'number' && lead.staleness_days >= 0) {
+    return fromDays(Math.floor(lead.staleness_days));
+  }
+  if (lead.created_at) {
+    const t = new Date(lead.created_at).getTime();
+    if (!isNaN(t)) {
+      const days = Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
+      return fromDays(days);
+    }
+  }
+  return '—';
 }
 
 function leadColumnTone(tone: 'neutral' | 'info' | 'success' | 'danger') {
@@ -1660,6 +1088,16 @@ function leadActionBtn(variant: 'primary' | 'secondary'): React.CSSProperties {
     border: '0.5px solid var(--color-border-tertiary)',
     fontWeight: 500,
   };
+}
+
+// Shared form-row helpers (legacy names retained — also used by NewVendorForm
+// and the DesignSettings tier-edit inputs).
+function leadFieldLabel(): React.CSSProperties {
+  return { fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 };
+}
+
+function leadInput(): React.CSSProperties {
+  return { padding: '6px 8px', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' };
 }
 
 const VENDOR_CATEGORIES: VendorCategory[] = ['electrician', 'general_contractor', 'structural_engineer', 'mep_engineer', 'interior_designer', 'furniture_supplier', 'decor_supplier', 'lighting_supplier', 'transport', 'cleaning', 'other'];
@@ -1865,7 +1303,10 @@ function AnalyticsView() {
   const stages = designClient.analytics.timeInStage(range);
   const funnel = designClient.analytics.funnel(range);
   const flow = designClient.analytics.flowCurve(range, { tiers: flowTiers, classifications: flowClasses });
-  const crmInteriorPrequalCount = FAD_LEADS.filter((l) => l.pipeline === 'interior' && l.stage !== 'lost' && l.stage !== 'won').length;
+  // Pre-qualification count: design leads in the 'lead' status (not yet
+  // qualified, not converted/lost). Hydrated from /api/design/leads.
+  const crmInteriorPrequalCount = (designClient.leads.list() as unknown as ApiLead[])
+    .filter((l) => l.status === 'lead').length;
   const toggleTier = (t: DesignTier) => setFlowTiers((s) => s.includes(t) ? s.filter((x) => x !== t) : [...s, t]);
   const toggleClass = (c: ProjectClassification) => setFlowClasses((s) => s.includes(c) ? s.filter((x) => x !== c) : [...s, c]);
   const clearFlowFilters = () => { setFlowTiers([]); setFlowClasses([]); };
