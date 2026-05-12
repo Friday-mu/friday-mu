@@ -117,7 +117,7 @@ async function emitTask({ projectId, trigger, targetId, title, assigneeUserId, s
   const { rows } = await query(
     `INSERT INTO design_tasks (project_id, title, assignee_user_id, stage_key, status, notes, external_ref)
      VALUES ($1, $2, $3, $4, 'todo', $5, $6)
-     ON CONFLICT (project_id, external_ref) WHERE (external_ref IS NOT NULL AND status <> 'done')
+     ON CONFLICT (project_id, external_ref) WHERE external_ref IS NOT NULL AND status <> 'done'
      DO NOTHING
      RETURNING id`,
     [
