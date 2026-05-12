@@ -25,11 +25,14 @@ import {
   useHydrateDesignProject,
   createLead as apiCreateLead,
   convertLeadToProject as apiConvertLeadToProject,
+  reopenStage as apiReopenStage,
+  StageReopenLockedError,
   type ApiLead,
 } from '../../_data/designClient';
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
+import { ProjectEditDrawer } from './design/ProjectEditDrawer';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import {
@@ -244,7 +247,7 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
   // way to invalidate downstream useMemo([allProjects, ...]) calls,
   // since mutating an array doesn't change its identity.
   const { rev: topRev, error: hydrateError } = useHydrateDesignTopLevel();
-  const { rev: projectRev } = useHydrateDesignProject(pid && pid !== '__new' ? pid : null);
+  const { rev: projectRev, refetch: refetchProject } = useHydrateDesignProject(pid && pid !== '__new' ? pid : null);
   if (typeof window !== 'undefined' && hydrateError) {
     console.warn('[design] top-level hydration error:', hydrateError);
   }
@@ -279,6 +282,8 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
         screen={screen}
         onChangeScreen={setScreenAndUrl}
         onClose={() => setPidAndUrl(null)}
+        onRefetch={refetchProject}
+        projectRev={projectRev}
       />
     );
   }
@@ -2300,16 +2305,24 @@ function ProjectShell({
   screen,
   onChangeScreen,
   onClose,
+  onRefetch,
+  projectRev,
 }: {
   project: DesignProject;
   screen: ProjectScreen;
   onChangeScreen: (s: ProjectScreen) => void;
   onClose: () => void;
+  onRefetch: () => void;
+  projectRev: number;
 }) {
   const [portalOpen, setPortalOpen] = useState(false);
   const [lifecycleTick, setLifecycleTick] = useState(0);
+  const [showEdit, setShowEdit] = useState(false);
+  const role = useCurrentRole();
+  const isDirector = role === 'director';
   const project = designClient.projects.get(incomingProject.id) ?? incomingProject;
   void lifecycleTick;
+  void projectRev;
 
   // Phase tab is derived from the active section so the URL (`?stage=...`)
   // stays the source of truth and old links keep working.
@@ -2336,15 +2349,44 @@ function ProjectShell({
     [],
   );
 
+  // design-be-10: stage rewind. Director-only. Surfaces a 17-pill admin
+  // strip with reopen buttons on done stages. Lock checks are server-side;
+  // a 409 here means a downstream document blocks the rewind.
+  const handleReopenStage = async (stageId: StageId) => {
+    try {
+      await apiReopenStage(project.id, stageId);
+      onRefetch();
+      fireToast('Stage reopened');
+    } catch (e) {
+      if (e instanceof StageReopenLockedError) {
+        const list = e.lockedBy
+          .map((l) => `${l.type} (${l.status})`)
+          .join(', ');
+        fireToast(`Cannot reopen — locked by: ${list || 'downstream documents'}`);
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        fireToast(`Failed to reopen stage: ${msg}`);
+      }
+    }
+  };
+
   return (
     <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <ProjectContextBar
         project={project}
         onBack={onClose}
         onOpenOwnerPortal={() => setPortalOpen(true)}
-        onLifecycleChange={() => setLifecycleTick((t) => t + 1)}
+        onLifecycleChange={() => { setLifecycleTick((t) => t + 1); onRefetch(); }}
+        onEditProject={isDirector ? () => setShowEdit(true) : undefined}
       />
       {portalOpen && <OwnerPortalPreview project={project} onClose={() => setPortalOpen(false)} />}
+      {showEdit && (
+        <ProjectEditDrawer
+          project={project}
+          onSaved={onRefetch}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
 
       {/* Phase progress strip + 6 phase tabs. The earlier 17-pill stage tracker
           + 14-tab strip is replaced by this single nav. */}
@@ -2355,6 +2397,21 @@ function ProjectShell({
         tabs={phaseTabs}
         onSelectPhase={setPhase}
       />
+
+      {/* design-be-10: Director-only stage admin strip — the 17-pill
+          StageTracker exposes ↶ reopen buttons on completed stages. */}
+      {isDirector && (
+        <div style={{ padding: '6px 16px 4px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Stage admin
+          </div>
+          <StageTracker
+            currentStage={project.currentStage}
+            status={project.stageStatus}
+            onReopenStage={handleReopenStage}
+          />
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
         <PhaseView
