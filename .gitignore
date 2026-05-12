@@ -10,3 +10,6 @@ backend/.guesty-listings-cache.json
 
 # Translation cache (dev convenience)
 backend/.translations-cache.json
+
+# Nanobanana image-gen cache (dev convenience)
+backend/.nanobanana-cache.json
