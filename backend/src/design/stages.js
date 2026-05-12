@@ -22,17 +22,22 @@ const UPSERT_FIELDS = ['status', 'entered_at', 'completed_at', 'owner_user_id', 
 // downstream document statuses block the operation. Designer must rewind
 // the document first (or accept the lock).
 //
-// Keep this aligned with the fixture in frontend/src/app/fad/_data/design.ts —
-// stage_key values must match StageId.
+// `idCol` differs because design_agreements + design_closeout_binders are
+// single-row-per-project tables keyed by project_id directly (no `id`
+// column), while design_moodboards / design_packs / design_change_orders
+// have their own `id` PK with multiple rows possible per project.
+//
+// Keep stage_key values aligned with StageId in
+// frontend/src/app/fad/_data/design.ts.
 const STAGE_LOCK_CHECKS = {
-  agreement:        [{ table: 'design_agreements',       label: 'agreement',       statuses: ['sent', 'signed'] }],
-  signature:        [{ table: 'design_agreements',       label: 'agreement',       statuses: ['sent', 'signed'] }],
-  'payment-gate':   [{ table: 'design_agreements',       label: 'agreement',       statuses: ['sent', 'signed'] }],
-  moodboard:        [{ table: 'design_moodboards',       label: 'moodboard',       statuses: ['approved'] }],
-  'design-pack':    [{ table: 'design_packs',            label: 'design pack',     statuses: ['approved'] }],
-  'design-review':  [{ table: 'design_packs',            label: 'design pack',     statuses: ['approved'] }],
-  execution:        [{ table: 'design_change_orders',    label: 'change order',    statuses: ['approved', 'rejected'] }],
-  reconciliation:   [{ table: 'design_closeout_binders', label: 'closeout binder', statuses: ['signed'] }],
+  agreement:        [{ table: 'design_agreements',       idCol: 'project_id', label: 'agreement',       statuses: ['sent', 'signed'] }],
+  signature:        [{ table: 'design_agreements',       idCol: 'project_id', label: 'agreement',       statuses: ['sent', 'signed'] }],
+  'payment-gate':   [{ table: 'design_agreements',       idCol: 'project_id', label: 'agreement',       statuses: ['sent', 'signed'] }],
+  moodboard:        [{ table: 'design_moodboards',       idCol: 'id',         label: 'moodboard',       statuses: ['approved'] }],
+  'design-pack':    [{ table: 'design_packs',            idCol: 'id',         label: 'design pack',     statuses: ['approved'] }],
+  'design-review':  [{ table: 'design_packs',            idCol: 'id',         label: 'design pack',     statuses: ['approved'] }],
+  execution:        [{ table: 'design_change_orders',    idCol: 'id',         label: 'change order',    statuses: ['approved', 'rejected'] }],
+  reconciliation:   [{ table: 'design_closeout_binders', idCol: 'project_id', label: 'closeout binder', statuses: ['signed'] }],
 };
 
 // GET /api/design/stages?project_id=... — list stage rows for a project.
@@ -133,17 +138,21 @@ router.post('/:project_id/:stage_key/reopen', requireDesignPerm('design:write'),
       return res.status(404).json({ error: 'Stage is not in done status; nothing to reopen' });
     }
 
-    // Lock checks for this stage_key.
+    // Lock checks for this stage_key. Tables with their own `id` PK
+    // (moodboards, packs, change_orders) return that; tables keyed by
+    // project_id (agreements, closeout_binders) return the project_id
+    // as their identifier so the locked_by entries are still uniquely
+    // citable in the UI.
     const checks = STAGE_LOCK_CHECKS[stageKey] || [];
     const lockedBy = [];
     for (const check of checks) {
       const { rows: lockRows } = await query(
-        `SELECT id, status FROM ${check.table}
+        `SELECT ${check.idCol} AS row_id, status FROM ${check.table}
          WHERE project_id = $1 AND status = ANY($2::text[])`,
         [projectId, check.statuses],
       );
       for (const r of lockRows) {
-        lockedBy.push({ type: check.label, id: r.id, status: r.status });
+        lockedBy.push({ type: check.label, id: r.row_id, status: r.status });
       }
     }
     if (lockedBy.length > 0) {
