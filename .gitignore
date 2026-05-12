@@ -1,3 +1,6 @@
 node_modules/
 .next/
 .vercel
+
+# backend secrets (tracked legacy — moved to gitignore 2026-05-12 after Guesty creds added)
+backend/.env

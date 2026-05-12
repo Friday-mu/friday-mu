@@ -783,7 +783,11 @@ setInterval(pollGMSForUpdates, POLL_INTERVAL);
 // expiry. Used for direct Guesty integrations (reviews, listings, etc.)
 // that don't need to route through GMS.
 
-const GUESTY_BASE_URL = process.env.GUESTY_BASE_URL || 'https://open-api.guesty.com';
+// GUESTY_BASE_URL convention matches friday-gms: it INCLUDES the /v1
+// version prefix (e.g. https://open-api.guesty.com/v1). API calls below
+// append the resource path only (e.g. '/reviews', not '/v1/reviews').
+// Token endpoint sits outside /v1 (separate URL).
+const GUESTY_BASE_URL = process.env.GUESTY_BASE_URL || 'https://open-api.guesty.com/v1';
 const GUESTY_TOKEN_URL = process.env.GUESTY_TOKEN_URL || 'https://open-api.guesty.com/oauth2/token';
 
 let guestyTokenCache = { token: null, expiresAt: 0 };
@@ -951,7 +955,7 @@ app.get('/api/inbox/conversations/:id/reservation', requireAuth, asyncHandler((r
 
 app.get('/api/reviews/list', requireAuth, asyncHandler(async (req, res) => {
   try {
-    const { data } = await guestyAPI.get('/v1/reviews', { params: req.query });
+    const { data } = await guestyAPI.get('/reviews', { params: req.query });
     res.json(data);
   } catch (e) {
     logUpstreamFailure('reviews/list (Guesty)', e);
