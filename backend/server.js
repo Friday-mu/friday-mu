@@ -873,6 +873,55 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // ====================================================================
+// Inbox — proxies to GMS, forwards the end-user JWT (no service token).
+// ====================================================================
+// User-scoped: GMS validates the JWT and applies RLS. FAD backend stays
+// stateless — just a pass-through with auth headers preserved.
+
+function userScopedGms(req) {
+  return axios.create({
+    baseURL: GMS_BASE_URL,
+    timeout: 30000,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: req.headers.authorization,
+    },
+  });
+}
+
+async function gmsProxy(req, res, gmsPath, method = 'get') {
+  try {
+    const client = userScopedGms(req);
+    const opts = method === 'get' ? { params: req.query } : {};
+    const { data } = await (method === 'get'
+      ? client.get(gmsPath, opts)
+      : client[method](gmsPath, req.body));
+    res.json(data);
+  } catch (e) {
+    const status = e.response?.status || 502;
+    res.status(status).json({
+      error: e.response?.data?.error || e.message || 'Upstream error',
+    });
+  }
+}
+
+app.get('/api/inbox/conversations', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, '/api/conversations')
+));
+
+app.get('/api/inbox/conversations/:id', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}`)
+));
+
+app.get('/api/inbox/conversations/:id/messages', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}/messages`)
+));
+
+app.get('/api/inbox/conversations/:id/reservation', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}/reservation`)
+));
+
+// ====================================================================
 // Reviews — Guesty direct (service credentials)
 // ====================================================================
 // Guesty Open-API path: GET /v1/reviews. Pass-through pagination via query.
