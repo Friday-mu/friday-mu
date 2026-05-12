@@ -274,6 +274,11 @@ function shapePaymentGate(row) {
     id: row.id,
     project_id: row.project_id,
     gate_id: row.gate_id,
+    // Two-ledger split (migration 006). ledger_type partitions the table
+    // into fee_invoice (Friday revenue) vs project_fund (owner escrow).
+    // direction is debit/credit, used by the reconciliation rollup.
+    ledger_type: row.ledger_type || 'fee_invoice',
+    direction: row.direction || 'credit',
     status: row.status,
     amount_minor: row.amount_minor,
     due_date: row.due_date,
