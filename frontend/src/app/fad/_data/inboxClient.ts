@@ -73,64 +73,108 @@ function channelLabel(key: InboxChannel): string {
 }
 
 // ───────── shape adapters ─────────
+//
+// Real GMS conversation shape (verified 2026-05-12):
+//   list (GET /api/inbox/conversations) returns { conversations: [...], total }.
+//   Each conversation row: id, guesty_conversation_id, guesty_reservation_id,
+//     property_id, guest_name, guest_email, property_name, channel, status
+//     (active|done|spam|snoozed), last_message_at, check_in_date,
+//     check_out_date, num_guests, notes, conversation_summary, created_at,
+//     updated_at, reservation_id, first_response_minutes, sentiment,
+//     last_detected_language, latest_draft_state, latest_draft_id,
+//     latest_draft_confidence, inbound_count, last_message_body,
+//     last_message_direction, is_unread.
+//
+//   detail (GET /api/inbox/conversations/:id) returns BUNDLE:
+//     { conversation, messages, drafts, reservation, whatsapp_window_open,
+//       whatsapp_window_expires_at, available_channels, recommended_channel,
+//       seen_by }
+//   No separate /messages call needed.
+//
+// Real GMS message shape: id, conversation_id, guesty_message_id, direction
+//   ('inbound'|'outbound'), body, original_language, translated_body,
+//   sender_name, created_at, sentiment, is_auto_response, sent_by,
+//   sent_via_system, attachments, module_type.
 
 function transformGmsMessage(raw: Record<string, unknown>): InboxMessage {
   const direction = String(raw.direction ?? 'inbound');
+  // Prefer translated_body (English) when available; falls back to original.
+  // Translation toggle in the UI can show the original later (bw-8 wiring).
+  const body = String(raw.translated_body || raw.body || '');
   return {
     from: direction === 'outbound' ? 'us' : 'them',
-    name: String(raw.author_name || raw.guest_name || raw.from_name || (direction === 'outbound' ? 'Friday' : 'Guest')),
-    time: String(raw.created_at || raw.timestamp || new Date().toISOString()),
-    body: String(raw.translated_body || raw.body || raw.content || ''),
+    name: String(raw.sender_name || (direction === 'outbound' ? 'Friday' : 'Guest')),
+    time: String(raw.created_at || new Date().toISOString()),
+    body,
   };
+}
+
+interface WhatsAppWindowInfo {
+  open: boolean;
+  expiresAt?: string;
 }
 
 export function transformGmsConversation(
   raw: Record<string, unknown>,
   messagesRaw?: Record<string, unknown>[],
+  waWindow?: WhatsAppWindowInfo,
 ): InboxThread {
-  const channelKey = mapChannelKey(raw.channel ?? raw.channel_type);
+  const channelKey = mapChannelKey(raw.channel ?? raw.communication_channel);
   const status = raw.status;
   const sentiment = raw.sentiment;
-  const urgencyScore = typeof raw.urgency_score === 'number' ? raw.urgency_score : undefined;
+  const confidence = typeof raw.latest_draft_confidence === 'number'
+    ? raw.latest_draft_confidence
+    : undefined;
+  // Treat low-confidence drafts as "amber" urgency signal alongside sentiment.
+  // (1 - confidence) gives an urgency proxy; 0.5+ confidence-gap → amber.
+  const draftUrgency = confidence !== undefined ? 1 - confidence : undefined;
 
-  const latestMessage = (raw.latest_message as Record<string, unknown>) ?? {};
-  const preview = String(
-    latestMessage.body || raw.preview || raw.latest_message_text || raw.conversation_summary || ''
-  ).slice(0, 200);
+  const preview = String(raw.last_message_body || raw.conversation_summary || '').slice(0, 200);
+  const summary = raw.conversation_summary ? String(raw.conversation_summary) : undefined;
+  // GMS has no subject field — guests just send messages. Use summary as
+  // "subject line" when present; fall back to first 80 chars of preview.
+  const subject = summary
+    ? summary.split(/[.!?]/)[0].slice(0, 100)
+    : (preview ? preview.slice(0, 80) : '(no subject)');
 
   const messages: InboxMessage[] | undefined = messagesRaw
     ? messagesRaw.map(transformGmsMessage)
     : undefined;
 
-  const waOpen = !!raw.whatsapp_window_open;
-  const waExpiresMin =
-    typeof raw.whatsapp_window_expires_in === 'number'
-      ? raw.whatsapp_window_expires_in
-      : undefined;
+  // WhatsApp window: GMS gives `whatsapp_window_open` (bool) +
+  // `whatsapp_window_expires_at` (ISO timestamp). Convert to "minutes until
+  // expiry" for the existing FAD UI chip.
+  let whatsappWindow: InboxThread['whatsappWindow'];
+  if (channelKey === 'whatsapp' && waWindow) {
+    let expiresInMinutes: number | undefined;
+    if (waWindow.expiresAt) {
+      const ms = new Date(waWindow.expiresAt).getTime() - Date.now();
+      expiresInMinutes = Math.max(0, Math.round(ms / 60_000));
+    }
+    whatsappWindow = { open: waWindow.open, expiresInMinutes };
+  }
 
   return {
-    id: String(raw.id || raw._id || raw.conversation_id || `conv-${Math.random().toString(36).slice(2, 9)}`),
-    unread: Boolean(raw.unread_count && Number(raw.unread_count) > 0) || Boolean(raw.unread),
-    urgent: mapUrgent(sentiment, urgencyScore),
-    guest: String(raw.guest_name || raw.author || 'Guest'),
-    subject: String(raw.subject || raw.latest_subject || (preview ? preview.slice(0, 80) : '(no subject)')),
+    id: String(raw.id || `conv-${Math.random().toString(36).slice(2, 9)}`),
+    unread: Boolean(raw.is_unread),
+    urgent: mapUrgent(sentiment, draftUrgency),
+    guest: String(raw.guest_name || 'Guest'),
+    subject,
     preview,
     channel: channelLabel(channelKey),
     entity: 'guest',
     channelKey,
-    property: String(raw.property_name || raw.property_code || ''),
-    time: String(raw.updated_at || raw.latest_message_time || raw.created_at || new Date().toISOString()),
+    property: String(raw.property_name || ''),
+    time: String(raw.last_message_at || raw.updated_at || raw.created_at || new Date().toISOString()),
     triageStatus: mapTriage(status),
-    stayStatus: undefined, // derived from reservation lookup at render time
+    stayStatus: undefined, // could derive from reservation.check_in/out_date in detail view
     reservationId: raw.reservation_id ? String(raw.reservation_id) : undefined,
-    mentionsMe: Boolean(raw.mentions_current_user),
+    mentionsMe: false, // GMS has no @-mention concept yet
     messages,
-    summary: raw.conversation_summary ? String(raw.conversation_summary) : undefined,
+    summary,
     sentiment: mapSentiment(sentiment),
-    language: mapLanguage(raw.last_detected_language ?? raw.language),
-    whatsappWindow: channelKey === 'whatsapp'
-      ? { open: waOpen, expiresInMinutes: waExpiresMin }
-      : undefined,
+    language: mapLanguage(raw.last_detected_language),
+    whatsappWindow,
   };
 }
 
@@ -138,33 +182,35 @@ export function transformGmsConversation(
 
 interface ConvListResp {
   conversations?: unknown;
-  results?: unknown;
-  data?: unknown;
+  total?: number;
+}
+
+interface ConvDetailResp {
+  conversation: Record<string, unknown>;
+  messages?: Record<string, unknown>[];
+  drafts?: Record<string, unknown>[];
+  reservation?: Record<string, unknown>;
+  whatsapp_window_open?: boolean;
+  whatsapp_window_expires_at?: string;
 }
 
 export async function loadConversations(): Promise<InboxThread[]> {
   const data = await apiFetch('/api/inbox/conversations') as ConvListResp;
-  const raw =
-    (Array.isArray(data) ? data : data?.conversations || data?.results || data?.data || []) as Record<
-      string,
-      unknown
-    >[];
+  const raw = (data?.conversations || []) as Record<string, unknown>[];
   return raw.map((c) => transformGmsConversation(c));
 }
 
 export async function loadThreadDetail(id: string): Promise<InboxThread> {
-  // Fetch detail + messages in parallel — GMS exposes both at /:id and /:id/messages.
-  const [detail, messagesResp] = await Promise.all([
-    apiFetch(`/api/inbox/conversations/${id}`) as Promise<Record<string, unknown>>,
-    apiFetch(`/api/inbox/conversations/${id}/messages`).catch(() => ({ messages: [] })) as Promise<
-      Record<string, unknown>
-    >,
-  ]);
-  const messagesRaw =
-    (Array.isArray(messagesResp)
-      ? messagesResp
-      : messagesResp?.messages || messagesResp?.results || []) as Record<string, unknown>[];
-  return transformGmsConversation(detail, messagesRaw);
+  // GMS /:id bundles conversation + messages + drafts + reservation +
+  // whatsapp window state in one response. No separate fetch needed.
+  const data = await apiFetch(`/api/inbox/conversations/${id}`) as ConvDetailResp;
+  const conv = data.conversation || {};
+  const messages = data.messages || [];
+  const waWindow: WhatsAppWindowInfo = {
+    open: !!data.whatsapp_window_open,
+    expiresAt: data.whatsapp_window_expires_at,
+  };
+  return transformGmsConversation(conv, messages, waWindow);
 }
 
 // ───────── hooks ─────────
