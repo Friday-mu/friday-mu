@@ -64,6 +64,83 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   }
 });
 
+// GET /api/design/payment_gates/reconciliation?project_id=<id>
+// Two-ledger handover rollup. Returns:
+//   fee_invoice: { total_billed_minor, total_received_minor,
+//                  outstanding_minor, gates: [...] }
+//   project_fund: { total_deposited_minor, total_drawn_minor,
+//                   balance_minor, movements: [...] }
+// All money values are stringified BigInts to avoid JS-Number precision
+// loss on large minor-unit sums. Waived fee_invoice rows are excluded
+// from both billed and received (they were neither billed nor paid).
+router.get('/reconciliation', requireDesignPerm('design:read'), async (req, res) => {
+  try {
+    const projectId = req.query.project_id;
+    if (typeof projectId !== 'string') {
+      return res.status(400).json({ error: 'project_id query param is required' });
+    }
+    if (!(await assertProjectExists(projectId))) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    const { rows } = await query(
+      `SELECT * FROM design_payment_gates
+       WHERE project_id = $1
+       ORDER BY ledger_type, due_date NULLS LAST, created_at`,
+      [projectId],
+    );
+
+    const feeRows = rows.filter((r) => (r.ledger_type || 'fee_invoice') === 'fee_invoice');
+    const fundRows = rows.filter((r) => r.ledger_type === 'project_fund');
+
+    // fee_invoice: billed = sum(amount_minor) excluding waived rows.
+    // received = sum(received_amount_minor) on status='received'.
+    let feeBilled = 0n;
+    let feeReceived = 0n;
+    for (const r of feeRows) {
+      if (r.status === 'waived') continue;
+      feeBilled += BigInt(r.amount_minor || 0);
+      if (r.status === 'received') {
+        feeReceived += BigInt(
+          r.received_amount_minor != null ? r.received_amount_minor : r.amount_minor || 0,
+        );
+      }
+    }
+
+    // project_fund: credit movements (top-ups) deposit, debit movements
+    // draw. Balance = deposited - drawn. Movements always insert with
+    // received_amount_minor populated (see /project_fund/movement), so
+    // we read from that field with amount_minor as a fallback.
+    let fundDeposited = 0n;
+    let fundDrawn = 0n;
+    for (const r of fundRows) {
+      const amount = BigInt(
+        r.received_amount_minor != null ? r.received_amount_minor : r.amount_minor || 0,
+      );
+      if (r.direction === 'debit') fundDrawn += amount;
+      else fundDeposited += amount;
+    }
+
+    res.json({
+      project_id: projectId,
+      fee_invoice: {
+        total_billed_minor: feeBilled.toString(),
+        total_received_minor: feeReceived.toString(),
+        outstanding_minor: (feeBilled - feeReceived).toString(),
+        gates: feeRows.map(shapePaymentGate),
+      },
+      project_fund: {
+        total_deposited_minor: fundDeposited.toString(),
+        total_drawn_minor: fundDrawn.toString(),
+        balance_minor: (fundDeposited - fundDrawn).toString(),
+        movements: fundRows.map(shapePaymentGate),
+      },
+    });
+  } catch (e) {
+    console.error('[design/payment_gates] reconciliation error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // PUT /api/design/payment_gates/:project_id/:gate_id — upsert (set
 // amount + due_date for a fee_invoice gate). Idempotent.
 //
