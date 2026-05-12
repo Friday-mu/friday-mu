@@ -10,6 +10,24 @@ import {
   type StayStatus,
 } from '../../_data/fixtures';
 import { useLiveConversations, useThreadDetail } from '../../_data/inboxClient';
+
+// Human-readable relative time. Used in list rows + message bubbles.
+// Returns "now", "5m", "2h", "yesterday", "Mar 14" depending on age.
+function formatRelative(iso: string): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  const diffMs = Date.now() - t;
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return 'now';
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return 'yesterday';
+  if (diffD < 7) return `${diffD}d`;
+  return new Date(t).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
 import { TASK_USERS, TASK_USER_BY_ID } from '../../_data/tasks';
 import { TEAM_CHANNELS, TEAM_DMS } from '../../_data/teamInbox';
 import {
@@ -365,7 +383,7 @@ export function InboxModule({ onAskFriday }: Props) {
                   <span>{t.property}</span>
                 </div>
               </div>
-              <span className="row-time">{t.time}</span>
+              <span className="row-time">{formatRelative(t.time)}</span>
             </div>
           ))}
         </div>
@@ -505,7 +523,7 @@ export function InboxModule({ onAskFriday }: Props) {
                       ? (m.name && m.name !== 'Guest' ? m.name : thread.guest)
                       : (m.name || 'Friday')}
                     {' · '}
-                    {m.time}
+                    {formatRelative(m.time)}
                     {translateOn && thread.language && thread.language !== 'EN' && m.from === 'them' && (
                       <span style={{ marginLeft: 8, color: 'var(--color-brand-accent)' }}>
                         translated from {thread.language}
@@ -518,7 +536,7 @@ export function InboxModule({ onAskFriday }: Props) {
             ) : (
               <div className="msg-bubble them">
                 <div className="msg-meta">
-                  {thread.guest} · {thread.time}
+                  {thread.guest} · {formatRelative(thread.time)}
                 </div>
                 <div className="msg-body">{thread.preview}</div>
               </div>
@@ -586,9 +604,9 @@ export function InboxModule({ onAskFriday }: Props) {
                   className="inbox-compose-textarea"
                   placeholder="Write a reply…"
                   defaultValue={
-                    thread.id === 't1'
-                      ? 'Bonjour Thibault — confirming Ravi will meet you at SSR arrivals at 15:20 with a Friday sign. Early check-in 14:30 approved. À tout bientôt, Friday team.'
-                      : ''
+                    // Empty by default — fixture-era seeded a French reply for
+                    // the demo 't1' thread; not relevant on live data.
+                    ''
                   }
                 />
                 <div
