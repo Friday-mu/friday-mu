@@ -21,6 +21,20 @@ const WRITABLE_FIELDS = [
   'next_action', 'start_date', 'estimated_completion',
 ];
 
+// Mirrors the 17-stage workflow + 6 stage statuses from the frontend
+// fixture (frontend/src/app/fad/_data/design.ts). Kept inline to avoid
+// pulling the frontend module into the backend; if the fixture grows,
+// update both sides.
+const VALID_STAGE_IDS = new Set([
+  'lead', 'proposal', 'doc-request', 'site-visit', 'preferences',
+  'rough-budget', 'agreement', 'signature', 'payment-gate', 'moodboard',
+  'design-pack', 'design-review', 'final-budget', 'funding-gate', 'execution',
+  'expense-capture', 'reconciliation',
+]);
+const VALID_STAGE_STATUSES = new Set([
+  'pending', 'in-progress', 'waiting-on-owner', 'blocked', 'done', 'skipped',
+]);
+
 // GET /api/design/projects — list with optional lifecycle / stage filters.
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
@@ -107,9 +121,35 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
 });
 
 // PATCH /api/design/projects/:id — partial update.
+//
+// Validation:
+//   - current_stage / stage_status must match the fixture enums when present.
+//   - lifecycle_status changes are rejected — route through /pause /resume
+//     /cancel so the audit trail is consistent. PATCH is too easy to abuse.
 router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
+
+    if (Object.prototype.hasOwnProperty.call(body, 'lifecycle_status')) {
+      return res.status(400).json({
+        error: 'lifecycle_status cannot be set via PATCH; use /pause, /resume, or /cancel',
+      });
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(body, 'current_stage') &&
+      body.current_stage != null &&
+      !VALID_STAGE_IDS.has(body.current_stage)
+    ) {
+      return res.status(400).json({ error: `Invalid current_stage: ${body.current_stage}` });
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(body, 'stage_status') &&
+      body.stage_status != null &&
+      !VALID_STAGE_STATUSES.has(body.stage_status)
+    ) {
+      return res.status(400).json({ error: `Invalid stage_status: ${body.stage_status}` });
+    }
+
     const sets = [];
     const params = [DEFAULT_TENANT_ID, req.params.id];
     let idx = 3;
