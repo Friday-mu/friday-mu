@@ -9,6 +9,7 @@
 
 const express = require('express');
 const { requireDesignPerm } = require('./auth');
+const { runAutoTaskScan } = require('./jobs/auto_tasks');
 
 const router = express.Router();
 
@@ -22,6 +23,20 @@ router.get('/health', requireDesignPerm('design:read'), (req, res) => {
     user: req.identity.userId,
     role: req.identity.userRole,
   });
+});
+
+// One-shot admin route — fires the auto-task scanner immediately and
+// returns its result. Useful for debugging without waiting for the 5min
+// scheduler tick. Same Director write-perm as the rest of the surface;
+// no body needed.
+router.post('/jobs/run-auto-tasks', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const result = await runAutoTaskScan();
+    res.json(result);
+  } catch (e) {
+    console.error('[design/jobs] run-auto-tasks error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Sub-routers. Each owns a single resource family; see the per-file

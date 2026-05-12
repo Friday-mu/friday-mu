@@ -1260,8 +1260,21 @@ const port = process.env.PORT || 3001;
 // already-applied files are skipped via fad_schema_migrations table.
 // Failures log but don't crash the server (HR routes will return 500
 // until the migration is fixed manually).
+//
+// Once migrations are in place, boot the design auto-task scheduler.
+// It's a 5min setInterval that runs runAutoTaskScan() and writes
+// follow-up tasks per Notion §7.SS. Disabled when NODE_ENV=test. We
+// don't await the migration result before starting the scheduler — the
+// scheduler's first tick fires 5min in, by which point migrations have
+// settled (or surfaced their failure in logs).
 const { runMigrations } = require('./src/database/migrate');
-runMigrations().catch((e) => console.error('[migrate] fatal:', e.message));
+const { startAutoTaskScheduler } = require('./src/design/jobs/scheduler');
+runMigrations()
+  .then(() => {
+    startAutoTaskScheduler();
+    console.log('[auto-tasks] scheduler started');
+  })
+  .catch((e) => console.error('[migrate] fatal:', e.message));
 
 server.listen(port, () => {
   console.log(`🚀 Friday Admin Dashboard Backend running on port ${port}`);
