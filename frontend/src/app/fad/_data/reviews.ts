@@ -262,9 +262,9 @@ export interface TagAgg {
   trendingDelta?: number;
 }
 
-export function tagAggregate(window: 'all' | 30 | 90 = 'all'): TagAgg[] {
+export function tagAggregate(window: 'all' | 30 | 90 = 'all', source: Review[] = REVIEWS): TagAgg[] {
   const reviewIds = new Set(
-    (window === 'all' ? REVIEWS : reviewsInWindow(window)).map((r) => r.id),
+    (window === 'all' ? source : reviewsInWindow(window, source)).map((r) => r.id),
   );
   const denom = reviewIds.size || 1;
   const counts: Record<string, { sentiment: TagSentiment; count: number }> = {};
