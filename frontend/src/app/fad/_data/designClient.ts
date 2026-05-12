@@ -34,6 +34,8 @@ import {
   ACTIVITY as FIXTURE_ACTIVITY,
   APPROVALS as FIXTURE_APPROVALS,
   tierForEpc,
+  designFeeForTier,
+  procurementFeeForTier,
 } from './design';
 import type {
   DesignProject as FixtureProject,
@@ -658,35 +660,34 @@ export const useLiveDesignAnnexA = () => useResource(() => loadAnnexA(), []);
 // types directly these adapters can shrink.
 // ════════════════════════════════════════════════════════════════════
 
-// Locked Annex A percentages per Notion FAD Design scoping pack v0.1
-// (LOCKED 2026-05-02). The fixture's ANNEX_A_DEFAULT in _data/design.ts
-// is a stale demo placeholder that uses flat fees for Tier 2/3 — wrong
-// against the locked rule. These percentages are the source of truth
-// until the Settings tab pipes a live AnnexA fetch into the adapter.
-const LOCKED_FEE_PCT = {
-  1: { design: 0.12, procurement_furnishing: 0.08, procurement_renovation: 0.10 },
-  2: { design: 0.10, procurement_furnishing: 0.07, procurement_renovation: 0.09 },
-  3: { design: 0.08, procurement_furnishing: 0.06, procurement_renovation: 0.08 },
-} as const;
-
 export function apiProjectToFixture(api: ApiProject): FixtureProject {
-  // Derive missing fees from tier + budget. When the backend hasn't
-  // persisted explicit fee values (common during onboarding) fall back
-  // to budget_expectation_minor as the EPC proxy and compute both fees
-  // from the locked Notion percentages above.
+  // Tier + fees derive from Annex A — the editable pricing schedule
+  // in _data/design.ts (ANNEX_A_DEFAULT). EPC drives both. When the
+  // backend hasn't persisted explicit values (common during onboarding)
+  // we fall back to budget_expectation_minor as the EPC proxy.
+  //
+  // Annex A locks (current schedule):
+  //   Tier 1 (EPC > Rs 1.5M):  3% of EPC for design
+  //   Tier 2 (Rs 500K–1.5M):   flat Rs 45,000 for design
+  //   Tier 3 (EPC < Rs 500K):  flat Rs 25,000 for design
+  //   Procurement (renovation): T1 12.5% · T2 15% · T3 17.5% of EPC
+  //   Procurement (furnishing): T1  7.5% · T2 10% · T3 12.5% of EPC
+  //
+  // Tier is derived from EPC each render — we deliberately ignore
+  // api.tier even when persisted so the math stays correct after a
+  // budget change. If you need to manually override tier (e.g. a
+  // Director downgrade) wire a separate tier_override column.
   const classification = (api.classification as ProjectClassification) ?? 'mixed';
   const persistedEpc = api.epc_minor ?? 0;
   const budgetExpectation = api.budget_expectation_minor ?? 0;
   const effectiveEpc = persistedEpc > 0 ? persistedEpc : budgetExpectation;
-  const tier: DesignTier = (api.tier as DesignTier) ?? (effectiveEpc > 0 ? tierForEpc(effectiveEpc) : 1);
-  const pcts = LOCKED_FEE_PCT[tier];
-  const procurementPct = classification === 'renovation' ? pcts.procurement_renovation : pcts.procurement_furnishing;
+  const tier: DesignTier = effectiveEpc > 0 ? tierForEpc(effectiveEpc) : ((api.tier as DesignTier) ?? 1);
   const designFee = (api.design_fee_minor && api.design_fee_minor > 0)
     ? api.design_fee_minor
-    : Math.round(effectiveEpc * pcts.design);
+    : (effectiveEpc > 0 ? designFeeForTier(tier, effectiveEpc) : 0);
   const procurementFee = (api.procurement_fee_minor && api.procurement_fee_minor > 0)
     ? api.procurement_fee_minor
-    : Math.round(effectiveEpc * procurementPct);
+    : (effectiveEpc > 0 ? procurementFeeForTier(tier, classification, effectiveEpc) : 0);
 
   return {
     id: api.id,
