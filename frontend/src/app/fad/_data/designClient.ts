@@ -151,6 +151,11 @@ export interface ApiProject {
   cancel_transfer_to_inventory?: boolean | null;
   start_date?: string | null;
   estimated_completion?: string | null;
+  // sha256 of the canonical clean site plan for this project. Set by
+  // POST /api/design/ai_images/generate-site-plan with
+  // set_as_project_plan: true. Resolve to the asset row via
+  // loadProjectSitePlan(projectId).
+  site_plan_image_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -342,6 +347,39 @@ export interface ApiAnnexA {
   annex_a: Record<string, unknown>;
   updated_at?: string | null;
   updated_by_user_id?: string | null;
+}
+
+// Shared asset shape returned by /api/design/ai_images/* and the
+// /api/design/projects/:id/site-plan join. Mirrors the backend
+// `shapeAsset` adapter (sha256-keyed, source = 'upload' | 'nanobanana' |
+// 'external'). Site-plan responses additionally carry `kind: 'site_plan'`
+// and the generate-site-plan endpoint stamps `project_updated` +
+// `original_input_sha256`.
+export interface ApiAsset {
+  sha256: string;
+  mime_type: string | null;
+  byte_size: number | null;
+  storage_url: string | null;
+  source: 'upload' | 'nanobanana' | 'external' | null;
+  generator_prompt: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  kind?: string | null;
+}
+
+export interface SitePlanGenerationResult extends ApiAsset {
+  stub?: boolean;
+  duration_ms?: number | null;
+  cached?: boolean;
+  project_updated?: boolean;
+  original_input_sha256?: string;
+}
+
+export interface GenerateSitePlanPayload {
+  project_id: string;
+  source_image: { mimeType: string; base64: string };
+  prompt_hint?: string;
+  set_as_project_plan?: boolean;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -568,6 +606,33 @@ export const mintMagicLink = (projectId: string, opts: { delivery_channel?: stri
 export const revokeMagicLink = (id: string) =>
   apiFetch(`/api/design/magic_links/${id}/revoke`, { method: 'POST' }) as Promise<ApiMagicLink>;
 
+// ── Site plan ──
+// loadProjectSitePlan resolves the currently-pinned clean site plan for
+// a project via the FK join. Returns null on 404 (no plan set) — callers
+// shouldn't need to special-case the missing-plan path with try/catch.
+export const loadProjectSitePlan = async (projectId: string): Promise<ApiAsset | null> => {
+  try {
+    return await apiFetch(`/api/design/projects/${projectId}/site-plan`) as ApiAsset;
+  } catch (e) {
+    // The backend returns 404 with `{ error: 'No site plan set for this project' }`
+    // when site_plan_image_id is null. apiFetch translates this into an
+    // Error whose message starts with the backend's error text.
+    if (e instanceof Error && /No site plan|Project not found|HTTP 404/i.test(e.message)) return null;
+    throw e;
+  }
+};
+
+// generateSitePlan POSTs the messy floor plan + optional hint to the
+// site-plan-cleanup endpoint. Returns the asset row plus the metadata
+// the endpoint appends (project_updated, original_input_sha256, stub,
+// duration_ms, cached). Callers typically set set_as_project_plan: true
+// so the project's site_plan_image_id is updated in the same call.
+export const generateSitePlan = (payload: GenerateSitePlanPayload) =>
+  apiFetch('/api/design/ai_images/generate-site-plan', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<SitePlanGenerationResult>;
+
 // ════════════════════════════════════════════════════════════════════
 // HOOKS — simple list/detail wrappers around the fetchers above
 // ════════════════════════════════════════════════════════════════════
@@ -724,6 +789,7 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     cancelledReason: api.cancelled_reason ?? undefined,
     cancelledByUserId: api.cancelled_by_user_id ?? undefined,
     cancelTransferToInventory: api.cancel_transfer_to_inventory ?? undefined,
+    sitePlanImageId: api.site_plan_image_id ?? null,
   } as FixtureProject;
 }
 
