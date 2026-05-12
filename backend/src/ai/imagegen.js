@@ -36,9 +36,10 @@ const STUB_IMAGE_URL = 'https://via.placeholder.com/1024x768.png?text=Nanobanana
 
 // ────────────────── disk cache ──────────────────
 //
-// Keyed by sha256(prompt + referenceImageUrl). Survives nodemon reload.
-// Cache value is the full result object so a re-call returns immediately
-// with `cached: true` (callers can use this to skip re-uploading).
+// Keyed by sha256(prompt + referenceImageUrl + inlineImage sha256s).
+// Survives nodemon reload. Cache value is the full result object so a
+// re-call returns immediately with `cached: true` (callers can use
+// this to skip re-uploading).
 
 const CACHE_FILE = path.join(__dirname, '..', '..', '.nanobanana-cache.json');
 let cache = readCache();
@@ -59,11 +60,23 @@ function writeCache() {
   }
 }
 
-function cacheKey(prompt, referenceImageUrl) {
+function cacheKey(prompt, referenceImageUrl, inlineImages) {
   const h = crypto.createHash('sha256');
   h.update(String(prompt || ''));
   h.update('\n');
   h.update(String(referenceImageUrl || ''));
+  // Hash each inline image by its own sha256 so the cache key flips
+  // when the user swaps reference photos. Hashing the raw base64 bytes
+  // would also work but is wasteful — we already have a content hash.
+  if (Array.isArray(inlineImages) && inlineImages.length > 0) {
+    for (const img of inlineImages) {
+      h.update('\n');
+      if (img && typeof img.base64 === 'string') {
+        const imgHash = crypto.createHash('sha256').update(img.base64).digest('hex');
+        h.update(imgHash);
+      }
+    }
+  }
   return h.digest('hex');
 }
 
@@ -102,19 +115,38 @@ function isRetryable(err) {
 
 // ────────────────── model call ──────────────────
 
-async function callNanobanana({ prompt, referenceImageUrl, size }) {
+async function callNanobanana({ prompt, referenceImageUrl, size, inlineImages }) {
   return USES_PREDICT_API
     ? callImagenPredict({ prompt, referenceImageUrl, size })
-    : callGeminiGenerateContent({ prompt, referenceImageUrl, size });
+    : callGeminiGenerateContent({ prompt, referenceImageUrl, size, inlineImages });
 }
 
 // Gemini 2.5 Flash Image (Nanobanana) — Google AI Studio surface.
-// Body shape: { contents: [{parts: [{text}]}], generationConfig: { responseModalities: ['IMAGE'] } }
+// Body shape: { contents: [{parts: [...inlineData parts, {text}]}], generationConfig: { responseModalities: ['IMAGE'] } }
+// When `inlineImages` is supplied, each entry is prepended as an
+// `inlineData` part before the text — the Gemini API conditions on
+// them as multi-modal context (so a moodboard rendered for a property
+// can pick up the actual building's tones / materials). Order matters:
+// images first, prompt last, matches the documented "few-shot" shape
+// in Google's image-conditioning examples.
 // Response: candidates[0].content.parts[*].inlineData.{mimeType, data(base64)}.
-async function callGeminiGenerateContent({ prompt, size }) {
+async function callGeminiGenerateContent({ prompt, size, inlineImages }) {
   const url = `${NANOBANANA_BASE_URL}/models/${NANOBANANA_MODEL}:generateContent`;
+  const parts = [];
+  if (Array.isArray(inlineImages)) {
+    for (const img of inlineImages) {
+      if (!img || typeof img.base64 !== 'string' || !img.base64) continue;
+      parts.push({
+        inlineData: {
+          mimeType: img.mimeType || 'image/jpeg',
+          data: img.base64,
+        },
+      });
+    }
+  }
+  parts.push({ text: String(prompt || '') });
   const body = {
-    contents: [{ parts: [{ text: String(prompt || '') }] }],
+    contents: [{ parts }],
     generationConfig: {
       responseModalities: ['IMAGE'],
       // aspectRatio hint via prompt suffix — generationConfig.imageConfig
@@ -124,7 +156,9 @@ async function callGeminiGenerateContent({ prompt, size }) {
   };
   const aspect = aspectRatioForSize(size);
   if (aspect && aspect !== '4:3') {
-    body.contents[0].parts[0].text += ` (aspect ratio: ${aspect})`;
+    // Append the directive to the LAST part (the text part) so the
+    // aspect hint stays adjacent to the prompt the model is reading.
+    parts[parts.length - 1].text += ` (aspect ratio: ${aspect})`;
   }
   const start = Date.now();
   const { data } = await axios.post(url, body, {
@@ -134,8 +168,8 @@ async function callGeminiGenerateContent({ prompt, size }) {
     },
     timeout: 60_000,
   });
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find((p) => p?.inlineData?.data);
+  const respParts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = respParts.find((p) => p?.inlineData?.data);
   if (!imgPart) {
     throw new Error('Nanobanana returned no image part (candidates[0].content.parts had no inlineData)');
   }
@@ -203,7 +237,7 @@ function aspectRatioForSize(size) {
 
 // ────────────────── public API ──────────────────
 
-async function generateImage({ prompt, referenceImageUrl, style, size } = {}) {
+async function generateImage({ prompt, referenceImageUrl, style, size, inlineImages } = {}) {
   if (!prompt || typeof prompt !== 'string') {
     throw new Error('generateImage: prompt is required');
   }
@@ -211,6 +245,25 @@ async function generateImage({ prompt, referenceImageUrl, style, size } = {}) {
   // style channel, and prepending the directive is the documented
   // recommendation. Keep style optional so callers can pass a clean prompt.
   const generatorPrompt = style ? `${style}. ${prompt}` : prompt;
+
+  // Normalise inlineImages — accept either {mimeType, base64} or a
+  // bare base64 string. Filter out anything that's clearly not an
+  // image part so we don't poison the request body.
+  const normalizedInline = Array.isArray(inlineImages)
+    ? inlineImages
+        .map((img) => {
+          if (!img) return null;
+          if (typeof img === 'string') return { mimeType: 'image/jpeg', base64: img };
+          if (typeof img.base64 === 'string' && img.base64.length > 0) {
+            return { mimeType: img.mimeType || 'image/jpeg', base64: img.base64 };
+          }
+          return null;
+        })
+        .filter(Boolean)
+    : [];
+  // Imagen 3 predict path doesn't support inline images (separate
+  // surface, separate body shape). Silently ignore when on that path.
+  const inlineForCall = USES_PREDICT_API ? [] : normalizedInline;
 
   // ── stub path ──
   if (!process.env.NANOBANANA_API_KEY) {
@@ -221,11 +274,12 @@ async function generateImage({ prompt, referenceImageUrl, style, size } = {}) {
       generatorPrompt,
       durationMs: 0,
       stub: true,
+      inlineImageCount: inlineForCall.length,
     };
   }
 
   // ── cache ──
-  const key = cacheKey(generatorPrompt, referenceImageUrl);
+  const key = cacheKey(generatorPrompt, referenceImageUrl, inlineForCall);
   const hit = cache[key];
   if (hit) {
     return { ...hit, cached: true };
@@ -235,7 +289,7 @@ async function generateImage({ prompt, referenceImageUrl, style, size } = {}) {
   let lastErr;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const result = await callNanobanana({ prompt: generatorPrompt, referenceImageUrl, size });
+      const result = await callNanobanana({ prompt: generatorPrompt, referenceImageUrl, size, inlineImages: inlineForCall });
       const out = {
         imageUrl: result.imageUrl,
         sha256: result.sha256,
@@ -244,6 +298,7 @@ async function generateImage({ prompt, referenceImageUrl, style, size } = {}) {
         generatorPrompt,
         durationMs: result.durationMs,
         stub: false,
+        inlineImageCount: inlineForCall.length,
       };
       cache[key] = out;
       writeCache();
