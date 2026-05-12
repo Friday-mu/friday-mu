@@ -34,8 +34,6 @@ import {
   ACTIVITY as FIXTURE_ACTIVITY,
   APPROVALS as FIXTURE_APPROVALS,
   tierForEpc,
-  designFeeForTier,
-  procurementFeeForTier,
 } from './design';
 import type {
   DesignProject as FixtureProject,
@@ -660,22 +658,35 @@ export const useLiveDesignAnnexA = () => useResource(() => loadAnnexA(), []);
 // types directly these adapters can shrink.
 // ════════════════════════════════════════════════════════════════════
 
+// Locked Annex A percentages per Notion FAD Design scoping pack v0.1
+// (LOCKED 2026-05-02). The fixture's ANNEX_A_DEFAULT in _data/design.ts
+// is a stale demo placeholder that uses flat fees for Tier 2/3 — wrong
+// against the locked rule. These percentages are the source of truth
+// until the Settings tab pipes a live AnnexA fetch into the adapter.
+const LOCKED_FEE_PCT = {
+  1: { design: 0.12, procurement_furnishing: 0.08, procurement_renovation: 0.10 },
+  2: { design: 0.10, procurement_furnishing: 0.07, procurement_renovation: 0.09 },
+  3: { design: 0.08, procurement_furnishing: 0.06, procurement_renovation: 0.08 },
+} as const;
+
 export function apiProjectToFixture(api: ApiProject): FixtureProject {
-  // Derive missing fees from tier + budget. When the backend hasn't been
-  // populated with explicit epc/fee values (common during onboarding) we
-  // fall back to budget_expectation_minor as the EPC proxy and compute
-  // both fees from the locked Annex A schedule.
+  // Derive missing fees from tier + budget. When the backend hasn't
+  // persisted explicit fee values (common during onboarding) fall back
+  // to budget_expectation_minor as the EPC proxy and compute both fees
+  // from the locked Notion percentages above.
   const classification = (api.classification as ProjectClassification) ?? 'mixed';
   const persistedEpc = api.epc_minor ?? 0;
   const budgetExpectation = api.budget_expectation_minor ?? 0;
   const effectiveEpc = persistedEpc > 0 ? persistedEpc : budgetExpectation;
   const tier: DesignTier = (api.tier as DesignTier) ?? (effectiveEpc > 0 ? tierForEpc(effectiveEpc) : 1);
+  const pcts = LOCKED_FEE_PCT[tier];
+  const procurementPct = classification === 'renovation' ? pcts.procurement_renovation : pcts.procurement_furnishing;
   const designFee = (api.design_fee_minor && api.design_fee_minor > 0)
     ? api.design_fee_minor
-    : (effectiveEpc > 0 ? designFeeForTier(tier, effectiveEpc) : 0);
+    : Math.round(effectiveEpc * pcts.design);
   const procurementFee = (api.procurement_fee_minor && api.procurement_fee_minor > 0)
     ? api.procurement_fee_minor
-    : (effectiveEpc > 0 ? procurementFeeForTier(tier, classification, effectiveEpc) : 0);
+    : Math.round(effectiveEpc * procurementPct);
 
   return {
     id: api.id,

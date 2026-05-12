@@ -22,10 +22,15 @@ const path = require('path');
 
 const NANOBANANA_BASE_URL = process.env.NANOBANANA_BASE_URL
   || 'https://generativelanguage.googleapis.com/v1beta';
-// imagen-3.0-generate-002 is the GA Imagen 3 model on the
-// generativelanguage REST surface as of 2026-05. When Google rotates the
-// SKU, override via env rather than editing this file.
-const NANOBANANA_MODEL = process.env.NANOBANANA_MODEL || 'imagen-3.0-generate-002';
+// "Nanobanana" is Google's codename for the Gemini 2.5 Flash Image
+// model, served via Google AI Studio's generativelanguage REST API on
+// the generateContent endpoint (NOT the Vertex AI predict endpoint —
+// Imagen 3 lives there and needs a different key kind). We support
+// both surfaces via the model-name detector below: anything starting
+// with "imagen" goes Vertex/predict, anything else goes Gemini/
+// generateContent. Default is the current Nanobanana SKU.
+const NANOBANANA_MODEL = process.env.NANOBANANA_MODEL || 'gemini-2.5-flash-image-preview';
+const USES_PREDICT_API = /^imagen/i.test(NANOBANANA_MODEL);
 const MAX_RETRIES = 3;
 const STUB_IMAGE_URL = 'https://via.placeholder.com/1024x768.png?text=Nanobanana+stub+(no+API+key+set)';
 
@@ -78,13 +83,19 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// 429 + 5xx are retryable. 4xx other than 429 are not — they're caller
-// errors (bad prompt / quota exhausted / safety filter) and won't resolve
-// by retrying.
+// 429 + 5xx are retryable in theory, but Google AI Studio returns 429
+// for BOTH per-minute rate limits AND daily-quota exhaustion. Retrying
+// on quota-exhausted burns more of the budget without recovering, so
+// we inspect the error message and refuse to retry when 'quota' is
+// mentioned. Pure 4xx (bad prompt / safety filter) never retries.
 function isRetryable(err) {
   const status = err?.response?.status;
   if (status == null) return true; // network/timeout — retry
-  if (status === 429) return true;
+  if (status === 429) {
+    const msg = String(err?.response?.data?.error?.message || err?.message || '').toLowerCase();
+    if (msg.includes('quota')) return false;
+    return true; // pure rate-limit — backoff helps
+  }
   if (status >= 500 && status < 600) return true;
   return false;
 }
@@ -92,24 +103,29 @@ function isRetryable(err) {
 // ────────────────── model call ──────────────────
 
 async function callNanobanana({ prompt, referenceImageUrl, size }) {
-  const url = `${NANOBANANA_BASE_URL}/models/${NANOBANANA_MODEL}:predict`;
+  return USES_PREDICT_API
+    ? callImagenPredict({ prompt, referenceImageUrl, size })
+    : callGeminiGenerateContent({ prompt, referenceImageUrl, size });
+}
 
-  // Imagen 3 predict-endpoint body shape. The reference image, if
-  // supplied, goes in `instances[].image.bytesBase64Encoded` — we accept
-  // a URL and fetch+encode here so callers don't have to. We deliberately
-  // skip referenceImageUrl in v1 because the predict surface treats it as
-  // an editing operation, not a conditioning hint, and our use case
-  // (moodboard / pack inspiration) is purely prompt-driven. When the
-  // editing pathway is needed, extend this function with a separate body
-  // shape rather than overloading the field.
+// Gemini 2.5 Flash Image (Nanobanana) — Google AI Studio surface.
+// Body shape: { contents: [{parts: [{text}]}], generationConfig: { responseModalities: ['IMAGE'] } }
+// Response: candidates[0].content.parts[*].inlineData.{mimeType, data(base64)}.
+async function callGeminiGenerateContent({ prompt, size }) {
+  const url = `${NANOBANANA_BASE_URL}/models/${NANOBANANA_MODEL}:generateContent`;
   const body = {
-    instances: [{ prompt: String(prompt || '') }],
-    parameters: {
-      sampleCount: 1,
-      aspectRatio: aspectRatioForSize(size),
+    contents: [{ parts: [{ text: String(prompt || '') }] }],
+    generationConfig: {
+      responseModalities: ['IMAGE'],
+      // aspectRatio hint via prompt suffix — generationConfig.imageConfig
+      // is only honoured on some preview surfaces; embedding in the
+      // prompt is the documented portable path.
     },
   };
-
+  const aspect = aspectRatioForSize(size);
+  if (aspect && aspect !== '4:3') {
+    body.contents[0].parts[0].text += ` (aspect ratio: ${aspect})`;
+  }
   const start = Date.now();
   const { data } = await axios.post(url, body, {
     headers: {
@@ -118,23 +134,50 @@ async function callNanobanana({ prompt, referenceImageUrl, size }) {
     },
     timeout: 60_000,
   });
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find((p) => p?.inlineData?.data);
+  if (!imgPart) {
+    throw new Error('Nanobanana returned no image part (candidates[0].content.parts had no inlineData)');
+  }
+  const b64 = imgPart.inlineData.data;
+  const mimeType = imgPart.inlineData.mimeType || 'image/png';
+  const bytes = Buffer.from(b64, 'base64');
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  const imageUrl = `data:${mimeType};base64,${b64}`;
+  return {
+    imageUrl,
+    sha256,
+    mimeType,
+    byteSize: bytes.length,
+    durationMs: Date.now() - start,
+  };
+}
 
-  // Imagen returns predictions[].bytesBase64Encoded (raw image bytes).
-  // We compute sha256 over those bytes for dedup and surface a data: URL
-  // if the API doesn't give us a hosted URL directly. Future work: pipe
-  // the bytes to S3 and store the S3 URL in storage_url. For v1 the
-  // data: URL is fine — the design surface inlines images on PDF/portal
-  // export, not in long-lived HTML.
+// Imagen 3 (Vertex AI) — predict endpoint, base64 bytes under
+// predictions[].bytesBase64Encoded. Requires a Vertex API key, not a
+// Google AI Studio one. Kept for ops who switch to Vertex.
+async function callImagenPredict({ prompt, size }) {
+  const url = `${NANOBANANA_BASE_URL}/models/${NANOBANANA_MODEL}:predict`;
+  const body = {
+    instances: [{ prompt: String(prompt || '') }],
+    parameters: { sampleCount: 1, aspectRatio: aspectRatioForSize(size) },
+  };
+  const start = Date.now();
+  const { data } = await axios.post(url, body, {
+    headers: {
+      'x-goog-api-key': process.env.NANOBANANA_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    timeout: 60_000,
+  });
   const pred = data?.predictions?.[0];
   const b64 = pred?.bytesBase64Encoded;
   if (!b64 || typeof b64 !== 'string') {
-    throw new Error('Nanobanana returned no image bytes');
+    throw new Error('Imagen returned no image bytes');
   }
   const bytes = Buffer.from(b64, 'base64');
   const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
   const mimeType = pred?.mimeType || 'image/png';
-  // Imagen does not host the result; we surface a data: URL. Storage
-  // upload happens (eventually) downstream — see ai_images.js.
   const imageUrl = `data:${mimeType};base64,${b64}`;
   return {
     imageUrl,
