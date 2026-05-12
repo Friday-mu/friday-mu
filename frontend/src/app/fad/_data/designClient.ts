@@ -803,13 +803,29 @@ export function apiVendorToFixture(api: ApiVendor): FixtureVendor {
 }
 
 export function apiMoodboardToFixture(api: ApiMoodboard): FixtureMoodboard {
+  const links = api.links || [];
+  // Surface the first image link as the fixture's coverImageUrl so the
+  // existing MoodboardStage cover renderer can display it without
+  // shape changes. The full `links` array is attached as an extra
+  // field for the gallery view (cast via unknown lets us add it).
   return {
     id: api.id,
     projectId: api.project_id,
     versionNumber: api.version_number,
+    version: api.version_number,
     status: api.status,
+    state: api.status === 'changes_requested' ? 'revision_requested' : api.status,
+    coverImageUrl: links[0]?.url ?? '',
+    narrative: api.notes ?? '',
+    inspiration: links.map((l) => ({ url: l.url, sourceLabel: l.caption ?? 'Image' })),
+    palette: [],
+    materials: [],
+    designerNotes: null,
+    sentAt: api.sent_at ?? null,
+    approvedAt: api.approved_at ?? null,
+    ownerComments: null,
     createdAt: api.created_at,
-    links: (api.links || []).map((l) => l.url),
+    links,
   } as unknown as FixtureMoodboard;
 }
 

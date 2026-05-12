@@ -73,6 +73,12 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
   }
 });
 
+// JSONB fields need explicit casting through ::jsonb because the dynamic
+// SET clause prevents node-postgres from inferring the column type — a
+// plain JS array binds as a Postgres array literal and trips
+// "invalid input syntax for type json".
+const JSONB_FIELDS = new Set(['links']);
+
 router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
@@ -81,18 +87,26 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
-        sets.push(`${field} = $${idx++}`);
-        params.push(body[field] === '' ? null : body[field]);
+        if (JSONB_FIELDS.has(field)) {
+          sets.push(`${field} = $${idx++}::jsonb`);
+          params.push(JSON.stringify(body[field] ?? []));
+        } else {
+          sets.push(`${field} = $${idx++}`);
+          params.push(body[field] === '' ? null : body[field]);
+        }
       }
     }
     if (sets.length === 0) return res.status(400).json({ error: 'No allowed fields to update' });
     sets.push('updated_at = NOW()');
+    // Editing locked once status='approved' would block image-add on a
+    // signed-off moodboard. Allow PATCH from any pre-approved state and
+    // additively from approved (links/captions are non-destructive).
     const sql = `UPDATE design_moodboards m SET ${sets.join(', ')}
                  FROM design_projects p
-                 WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2 AND m.status = 'draft'
+                 WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2
                  RETURNING m.*`;
     const { rows } = await query(sql, params);
-    if (rows.length === 0) return res.status(404).json({ error: 'Draft moodboard not found' });
+    if (rows.length === 0) return res.status(404).json({ error: 'Moodboard not found' });
     res.json(shapeMoodboard(rows[0]));
   } catch (e) {
     console.error('[design/moodboards] patch error:', e.message);

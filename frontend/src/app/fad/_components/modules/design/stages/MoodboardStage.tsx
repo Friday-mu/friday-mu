@@ -7,8 +7,21 @@ import {
   type DesignProject,
   type MoodboardVersion,
 } from '../../../../_data/design';
+import { useHydrateDesignProject } from '../../../../_data/designClient';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
+import { MoodboardImageGenerator } from '../MoodboardImageGenerator';
+
+// The adapter (apiMoodboardToFixture) attaches a `links` array that
+// the fixture type doesn't carry — read it via a typed widening here.
+type MoodboardWithLinks = MoodboardVersion & {
+  links?: Array<{ url: string; caption?: string; image_id?: string }>;
+};
+
+function isImageUrl(u: string | null | undefined): u is string {
+  if (!u) return false;
+  return u.startsWith('data:image') || /^https?:\/\//.test(u);
+}
 
 interface Props {
   project: DesignProject;
@@ -88,11 +101,24 @@ export function MoodboardStage({ project }: Props) {
 
 function VersionDetail({ version }: { version: MoodboardVersion }) {
   const project = designClient.projects.get(version.projectId);
+  const versionWithLinks = version as MoodboardWithLinks;
+  const links = versionWithLinks.links ?? [];
+  const [showGenerator, setShowGenerator] = useState(false);
+  const { refetch } = useHydrateDesignProject(version.projectId);
+
   return (
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>v{version.version} · {version.state.replace(/_/g, ' ')}</h4>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            style={secondaryBtn()}
+            onClick={() => setShowGenerator(true)}
+            title="Generate a concept image with Nanobanana (Gemini 2.5 Flash Image)"
+          >
+            ✨ Generate image
+          </button>
           {project && (
             <a
               href={`/design-docs/${project.slug}/moodboard`}
@@ -111,9 +137,44 @@ function VersionDetail({ version }: { version: MoodboardVersion }) {
       </div>
 
       {/* Cover */}
-      <div style={{ aspectRatio: '16 / 9', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)', fontSize: 12, marginBottom: 12 }}>
-        Cover image — {version.coverImageUrl}
+      <div style={{ aspectRatio: '16 / 9', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)', fontSize: 12, marginBottom: 12 }}>
+        {isImageUrl(version.coverImageUrl) ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={version.coverImageUrl} alt={`Moodboard v${version.version} cover`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : version.coverImageUrl ? (
+          <span>Cover image — {version.coverImageUrl}</span>
+        ) : (
+          <span>No cover image yet — click ✨ Generate image</span>
+        )}
       </div>
+
+      {/* Gallery */}
+      {links.length > 1 && (
+        <Block title={`Gallery (${links.length})`}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+            {links.map((l, idx) => (
+              <div key={idx} style={{ aspectRatio: '1 / 1', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                {isImageUrl(l.url) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={l.url} alt={l.caption ?? `image ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} title={l.caption} />
+                ) : (
+                  <div style={{ padding: 8, fontSize: 10, color: 'var(--color-text-tertiary)' }}>{l.caption ?? l.url}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Block>
+      )}
+
+      {showGenerator && (
+        <MoodboardImageGenerator
+          projectId={version.projectId}
+          moodboardId={version.id}
+          existingLinks={links}
+          onSaved={() => { setShowGenerator(false); refetch(); fireToast('Image added to moodboard'); }}
+          onClose={() => setShowGenerator(false)}
+        />
+      )}
 
       <Block title="Narrative">
         <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{version.narrative}</p>
