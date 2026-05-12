@@ -28,7 +28,10 @@ app.use(limiter);
 // ====================================================================
 // GMS API Configuration
 // ====================================================================
-const GMS_BASE_URL = process.env.GMS_BASE_URL || 'https://gms.friday.mu';
+// GMS lives at admin.friday.mu (both UI + API on same nginx). gms.friday.mu
+// is reserved but not in use as of 2026-05. If you split API onto its own
+// subdomain later, update this default + .env on every FAD backend deploy.
+const GMS_BASE_URL = process.env.GMS_BASE_URL || 'https://admin.friday.mu';
 const GMS_AUTH_TOKEN = process.env.GMS_AUTH_TOKEN;
 
 // Create axios instance for GMS API calls

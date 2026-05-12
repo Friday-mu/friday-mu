@@ -182,10 +182,13 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     setError(null)
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL || ''
+      // GMS auth contract expects `username` (free-form — email works fine as
+      // the value). Sending `email` instead returns 400 "Username and password
+      // required". Pre-rebuild page.tsx had this right; the rewrite drifted.
       const res = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmed, password }),
+        body: JSON.stringify({ username: trimmed, password }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data?.token) {
