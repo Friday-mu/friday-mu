@@ -99,6 +99,14 @@ router.get('/spend-curve', requireDesignPerm('design:read_sensitive'), async (re
 
 // GET /api/design/analytics/revenue-curve?days=180 — daily received fee
 // rollup from payment_gates. Director-sensitive.
+//
+// Two-ledger filter (migration 006): only fee_invoice rows count as
+// Friday revenue. project_fund credits are owner-deposited escrow money
+// (we hold it, we don't earn it) and would silently double the revenue
+// curve if not excluded. The filter is explicit rather than relying on
+// the DEFAULT 'fee_invoice' because rows from migration 006's backfill
+// have ledger_type set, and any future project_fund row that lands
+// here without the filter would corrupt the timeline.
 router.get('/revenue-curve', requireDesignPerm('design:read_sensitive'), async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days, 10) || 180, 730);
@@ -107,7 +115,9 @@ router.get('/revenue-curve', requireDesignPerm('design:read_sensitive'), async (
               SUM(COALESCE(g.received_amount_minor, g.amount_minor, 0))::bigint AS revenue_minor
        FROM design_payment_gates g
        JOIN design_projects p ON p.id = g.project_id
-       WHERE p.tenant_id = $1 AND g.status = 'received'
+       WHERE p.tenant_id = $1
+         AND g.status = 'received'
+         AND g.ledger_type = 'fee_invoice'
          AND g.received_at >= NOW() - ($2 || ' days')::interval
        GROUP BY day
        ORDER BY day`,
