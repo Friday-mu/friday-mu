@@ -774,6 +774,64 @@ const POLL_INTERVAL = 30000; // 30 seconds
 setInterval(pollGMSForUpdates, POLL_INTERVAL);
 
 // ====================================================================
+// Guesty Open-API client (OAuth2 client-credentials)
+// ====================================================================
+// Service-level credentials. Tokens cached in-memory; refresh ≥60s before
+// expiry. Used for direct Guesty integrations (reviews, listings, etc.)
+// that don't need to route through GMS.
+
+const GUESTY_BASE_URL = process.env.GUESTY_BASE_URL || 'https://open-api.guesty.com';
+const GUESTY_TOKEN_URL = process.env.GUESTY_TOKEN_URL || 'https://open-api.guesty.com/oauth2/token';
+
+let guestyTokenCache = { token: null, expiresAt: 0 };
+
+async function getGuestyAccessToken() {
+  if (guestyTokenCache.token && Date.now() < guestyTokenCache.expiresAt - 60_000) {
+    return guestyTokenCache.token;
+  }
+  if (!process.env.GUESTY_CLIENT_ID || !process.env.GUESTY_CLIENT_SECRET) {
+    throw new Error('GUESTY_CLIENT_ID / GUESTY_CLIENT_SECRET not configured');
+  }
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    scope: 'open-api',
+    client_id: process.env.GUESTY_CLIENT_ID,
+    client_secret: process.env.GUESTY_CLIENT_SECRET,
+  });
+  const { data } = await axios.post(GUESTY_TOKEN_URL, body.toString(), {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    timeout: 15000,
+  });
+  guestyTokenCache = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in || 86400) * 1000,
+  };
+  console.log(`[Guesty] OAuth token refreshed (expires in ${data.expires_in}s)`);
+  return guestyTokenCache.token;
+}
+
+const guestyAPI = axios.create({ baseURL: GUESTY_BASE_URL, timeout: 30000 });
+guestyAPI.interceptors.request.use(async (config) => {
+  const token = await getGuestyAccessToken();
+  config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// ====================================================================
+// requireAuth — lightweight check that an Authorization header exists.
+// Real JWT validation is delegated to GMS for proxied user-scoped calls.
+// For service-credential routes (Guesty direct), this gates the public
+// surface so unauthenticated browsers can't hit /api/reviews/* etc.
+// ====================================================================
+
+function requireAuth(req, res, next) {
+  if (!req.headers.authorization) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// ====================================================================
 // Auth — user-scoped, proxies to GMS /api/auth/*
 // ====================================================================
 // User-level auth is NOT service-to-service: do not inject GMS_AUTH_TOKEN.
@@ -813,6 +871,26 @@ app.post('/api/auth/logout', (req, res) => {
   // Endpoint exists so the frontend has a single conventional path.
   res.json({ ok: true });
 });
+
+// ====================================================================
+// Reviews — Guesty direct (service credentials)
+// ====================================================================
+// Guesty Open-API path: GET /v1/reviews. Pass-through pagination via query.
+// Returns the raw Guesty shape; transformation to FAD's Review interface
+// happens in `_data/reviews.ts` so the contract is owned by the frontend.
+
+app.get('/api/reviews/list', requireAuth, asyncHandler(async (req, res) => {
+  try {
+    const { data } = await guestyAPI.get('/v1/reviews', { params: req.query });
+    res.json(data);
+  } catch (e) {
+    const status = e.response?.status || 502;
+    console.error('[Reviews] Guesty fetch failed:', e.response?.data || e.message);
+    res.status(status).json({
+      error: e.response?.data?.error || e.message || 'Reviews fetch failed',
+    });
+  }
+}));
 
 // ====================================================================
 // Error Handling Middleware
