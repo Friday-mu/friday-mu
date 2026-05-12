@@ -59,6 +59,22 @@ interface Props {
   onChangeSubPage: (id: string) => void;
 }
 
+/** Format a date string (ISO or YYYY-MM-DD) for the Summary panel. Drops
+ *  the time portion and adds a friendly relative suffix ("3 mo ago" /
+ *  "in 4 mo"). Returns '—' when the input is null/undefined. */
+function formatProjectDate(input: string | null | undefined): string {
+  if (!input) return '—';
+  const d = new Date(input);
+  if (isNaN(d.getTime())) return input;
+  const iso = d.toISOString().slice(0, 10);
+  const diffDays = Math.round((d.getTime() - Date.now()) / 86400000);
+  let rel = '';
+  if (Math.abs(diffDays) < 1) rel = ' · today';
+  else if (Math.abs(diffDays) < 60) rel = ` · ${diffDays > 0 ? 'in ' : ''}${Math.abs(diffDays)}d${diffDays < 0 ? ' ago' : ''}`;
+  else rel = ` · ${diffDays > 0 ? 'in ' : ''}${Math.round(Math.abs(diffDays) / 30)} mo${diffDays < 0 ? ' ago' : ''}`;
+  return `${iso}${rel}`;
+}
+
 function syncDrillDownToUrl(pid: string | null, screen: string) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
@@ -3270,8 +3286,8 @@ function ProjectOverview({ project }: { project: DesignProject }) {
           <SummaryRow label="EPC"           value={formatMUR(project.epcMinor)} />
           <SummaryRow label="Design fee"    value={formatMUR(project.designFeeMinor)} />
           <SummaryRow label="Procurement fee" value={formatMUR(project.procurementFeeMinor)} />
-          <SummaryRow label="Start"         value={project.startDate ?? '—'} />
-          <SummaryRow label="Est. completion" value={project.estimatedCompletion ?? '—'} />
+          <SummaryRow label="Start"         value={formatProjectDate(project.startDate)} />
+          <SummaryRow label="Est. completion" value={formatProjectDate(project.estimatedCompletion)} />
           <SummaryRow label="Design lead"   value={project.designLeadUserId?.replace('u-', '') ?? '—'} />
           <SummaryRow label="Blocker"       value={project.blocker ?? '—'} tone={project.blocker ? 'danger' : undefined} />
           <SummaryRow label="Next action"   value={project.nextAction ?? '—'} />
