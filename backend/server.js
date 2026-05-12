@@ -824,6 +824,29 @@ guestyAPI.interceptors.request.use(async (config) => {
   return config;
 });
 
+// Guesty listings cache — 5min TTL. Listings change rarely; the index lets us
+// resolve raw channel listing IDs to friendly nicknames (MV-7, GBH-C8) in the
+// reviews response without a per-review API call. Also serves /api/properties/list.
+let guestyListingsCache = { listings: [], byId: new Map(), fetchedAt: 0 };
+const LISTINGS_TTL_MS = 5 * 60 * 1000;
+
+async function getGuestyListings() {
+  if (guestyListingsCache.listings.length > 0 &&
+      Date.now() - guestyListingsCache.fetchedAt < LISTINGS_TTL_MS) {
+    return guestyListingsCache;
+  }
+  // FR has 24+ properties; one page covers it. Revisit if count grows past 100.
+  const { data } = await guestyAPI.get('/listings', { params: { limit: 100 } });
+  const listings = data?.results || (Array.isArray(data) ? data : []);
+  const byId = new Map();
+  for (const listing of listings) {
+    if (listing?._id) byId.set(String(listing._id), listing);
+  }
+  guestyListingsCache = { listings, byId, fetchedAt: Date.now() };
+  console.log(`[Guesty] Listings cache refreshed (${listings.length} listings)`);
+  return guestyListingsCache;
+}
+
 // ====================================================================
 // requireAuth — lightweight check that an Authorization header exists.
 // Real JWT validation is delegated to GMS for proxied user-scoped calls.
@@ -955,13 +978,67 @@ app.get('/api/inbox/conversations/:id/reservation', requireAuth, asyncHandler((r
 
 app.get('/api/reviews/list', requireAuth, asyncHandler(async (req, res) => {
   try {
-    const { data } = await guestyAPI.get('/reviews', { params: req.query });
-    res.json(data);
+    // Reviews + listings fetched in parallel. If listings fail, reviews still
+    // return with raw listing IDs — degrades gracefully rather than 502'ing.
+    const [reviewsResp, listingsIndex] = await Promise.all([
+      guestyAPI.get('/reviews', { params: req.query }),
+      getGuestyListings().catch((e) => {
+        logUpstreamFailure('listings (during reviews enrichment)', e);
+        return { byId: new Map() };
+      }),
+    ]);
+    // Guesty's envelope shape varies — reviews land in `data` (current), but
+    // we keep `results` and top-level array as fallbacks. Whichever field
+    // held them gets overwritten with the enriched list; other fields pass
+    // through untouched (pagination metadata etc).
+    const payload = reviewsResp.data;
+    let listKey = null;
+    let list = null;
+    if (Array.isArray(payload?.results)) { listKey = 'results'; list = payload.results; }
+    else if (Array.isArray(payload?.reviews)) { listKey = 'reviews'; list = payload.reviews; }
+    else if (Array.isArray(payload?.data)) { listKey = 'data'; list = payload.data; }
+    else if (Array.isArray(payload)) { list = payload; }
+    else { list = []; }
+    const enriched = list.map((rv) => {
+      const listing = rv?.listingId ? listingsIndex.byId.get(String(rv.listingId)) : null;
+      if (!listing) return rv;
+      return {
+        ...rv,
+        propertyNickname: listing.nickname || undefined,
+        propertyTitle: listing.title || undefined,
+        propertyAddress: listing.address?.full || listing.address?.formatted || undefined,
+      };
+    });
+    if (listKey) {
+      res.json({ ...payload, [listKey]: enriched });
+    } else {
+      res.json(enriched);
+    }
   } catch (e) {
     logUpstreamFailure('reviews/list (Guesty)', e);
     const status = e.response?.status || 502;
     res.status(status).json({
       error: e.response?.data?.error || e.message || (e.response ? 'Reviews fetch failed' : 'Guesty unreachable'),
+    });
+  }
+}));
+
+// ====================================================================
+// Properties — Guesty direct (service credentials)
+// ====================================================================
+// Returns Guesty listings (cached, 5min TTL). Same backing store as the
+// review-enrichment join, so calling /properties/list warms the cache for
+// the next /reviews/list and vice-versa.
+
+app.get('/api/properties/list', requireAuth, asyncHandler(async (req, res) => {
+  try {
+    const { listings } = await getGuestyListings();
+    res.json({ results: listings });
+  } catch (e) {
+    logUpstreamFailure('properties/list (Guesty)', e);
+    const status = e.response?.status || 502;
+    res.status(status).json({
+      error: e.response?.data?.error || e.message || (e.response ? 'Properties fetch failed' : 'Guesty unreachable'),
     });
   }
 }));

@@ -62,7 +62,10 @@ function transformAirbnb(raw: Record<string, unknown>, rawReview: Record<string,
   const rating = Number(rawReview.overall_rating ?? 0);
   const guestId = String(raw.guestId || '');
   const guestName = guestId ? `Guest ${guestId.slice(-6)}` : 'Guest';
-  const propertyCode = String(raw.externalListingId || raw.listingId || '???');
+  // propertyNickname is enriched server-side from the Guesty listings index
+  // (= friendly code like "MV-7"). Falls back to raw channel listing ID
+  // when the listing isn't in Guesty's catalogue or the join didn't resolve.
+  const propertyCode = String(raw.propertyNickname || raw.externalListingId || raw.listingId || '???');
   const replies = (raw.reviewReplies as unknown[]) || [];
   const replied = Array.isArray(replies) && replies.length > 0;
   const firstReply = replied ? (replies[0] as Record<string, unknown>) : {};
@@ -127,7 +130,7 @@ function transformBooking(raw: Record<string, unknown>, rawReview: Record<string
   const replied = !!rawReview.reply;
   const reply = (rawReview.reply as Record<string, unknown>) || {};
 
-  const propertyCode = String(raw.externalListingId || raw.listingId || '???');
+  const propertyCode = String(raw.propertyNickname || raw.externalListingId || raw.listingId || '???');
   const normSub = (v: unknown): number => (v != null ? Number(v) / 2 : rating);
 
   return {
