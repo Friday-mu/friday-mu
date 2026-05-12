@@ -33,6 +33,9 @@ import {
   BUDGET_ITEMS as FIXTURE_BUDGET_ITEMS,
   ACTIVITY as FIXTURE_ACTIVITY,
   APPROVALS as FIXTURE_APPROVALS,
+  tierForEpc,
+  designFeeForTier,
+  procurementFeeForTier,
 } from './design';
 import type {
   DesignProject as FixtureProject,
@@ -658,6 +661,22 @@ export const useLiveDesignAnnexA = () => useResource(() => loadAnnexA(), []);
 // ════════════════════════════════════════════════════════════════════
 
 export function apiProjectToFixture(api: ApiProject): FixtureProject {
+  // Derive missing fees from tier + budget. When the backend hasn't been
+  // populated with explicit epc/fee values (common during onboarding) we
+  // fall back to budget_expectation_minor as the EPC proxy and compute
+  // both fees from the locked Annex A schedule.
+  const classification = (api.classification as ProjectClassification) ?? 'mixed';
+  const persistedEpc = api.epc_minor ?? 0;
+  const budgetExpectation = api.budget_expectation_minor ?? 0;
+  const effectiveEpc = persistedEpc > 0 ? persistedEpc : budgetExpectation;
+  const tier: DesignTier = (api.tier as DesignTier) ?? (effectiveEpc > 0 ? tierForEpc(effectiveEpc) : 1);
+  const designFee = (api.design_fee_minor && api.design_fee_minor > 0)
+    ? api.design_fee_minor
+    : (effectiveEpc > 0 ? designFeeForTier(tier, effectiveEpc) : 0);
+  const procurementFee = (api.procurement_fee_minor && api.procurement_fee_minor > 0)
+    ? api.procurement_fee_minor
+    : (effectiveEpc > 0 ? procurementFeeForTier(tier, classification, effectiveEpc) : 0);
+
   return {
     id: api.id,
     entityId: 'FD',
@@ -665,11 +684,11 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     slug: api.slug,
     counterpartyId: api.counterparty_id ?? '',
     propertyId: api.property_id ?? '',
-    classification: (api.classification as ProjectClassification) ?? 'mixed',
-    tier: (api.tier as DesignTier) ?? 1,
-    epcMinor: api.epc_minor ?? 0,
-    designFeeMinor: api.design_fee_minor ?? 0,
-    procurementFeeMinor: api.procurement_fee_minor ?? 0,
+    classification,
+    tier,
+    epcMinor: effectiveEpc,
+    designFeeMinor: designFee,
+    procurementFeeMinor: procurementFee,
     goals: api.goals || [],
     outcomes: api.outcomes || [],
     budgetExpectationMinor: api.budget_expectation_minor ?? null,

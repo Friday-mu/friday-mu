@@ -79,11 +79,11 @@ async function portalAuth(req, res, next) {
   }
 }
 
-async function logPortalEvent({ projectId, magicLinkId, eventType, payload, userAgent }) {
+async function logPortalEvent({ projectId, magicLinkId, eventType, payload, userAgent, ipAddress }) {
   return query(
-    `INSERT INTO design_portal_log (project_id, magic_link_id, event_type, payload, user_agent)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [projectId, magicLinkId, eventType, payload || {}, userAgent || null],
+    `INSERT INTO design_portal_log (project_id, magic_link_id, event_type, payload, user_agent, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [projectId, magicLinkId, eventType, payload || {}, userAgent || null, ipAddress || null],
   ).catch((e) => console.warn('[portal] log failed:', e.message));
 }
 
@@ -104,6 +104,7 @@ router.get('/me', async (req, res) => {
       eventType: 'view',
       payload: { surface: 'me' },
       userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
     });
     res.json({ project: shapeProject(rows[0]) });
   } catch (e) {
@@ -260,6 +261,7 @@ router.post('/selections/:id/pick', async (req, res) => {
       eventType: 'approval',
       payload: { kind: 'selection.pick', selection_id: req.params.id, picked_option_id },
       userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
     });
     res.json(shapeSelection(upd.rows[0]));
   } catch (e) {
@@ -293,6 +295,7 @@ router.post('/selections/:id/request-changes', async (req, res) => {
       eventType: 'comment',
       payload: { kind: 'selection.changes_requested', selection_id: req.params.id },
       userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
     });
     res.json(shapeSelection(rows[0]));
   } catch (e) {
@@ -337,6 +340,7 @@ router.post('/approvals/:id/respond', async (req, res) => {
       eventType: 'approval',
       payload: { approval_id: req.params.id, decision },
       userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
     });
     res.json({
       approval_id: req.params.id,

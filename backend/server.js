@@ -15,11 +15,19 @@ const io = socketIo(server, {
   }
 });
 
-// Rate limiting
+// Rate limiting. Production caps at 100 req / 15min per IP. Dev disables
+// the limiter entirely — HMR + StrictMode + Guesty polling burns through
+// the budget in seconds and there's no value to throttling local traffic.
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  skip: () => process.env.NODE_ENV !== 'production',
 });
+
+// Trust the first proxy hop so req.ip respects X-Forwarded-For when the
+// backend lives behind nginx in production. Required for the portal-log
+// IP audit trail (Notion §B3.7) — without it req.ip is always 127.0.0.1.
+app.set('trust proxy', 1);
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
