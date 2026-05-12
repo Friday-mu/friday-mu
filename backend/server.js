@@ -774,6 +774,47 @@ const POLL_INTERVAL = 30000; // 30 seconds
 setInterval(pollGMSForUpdates, POLL_INTERVAL);
 
 // ====================================================================
+// Auth — user-scoped, proxies to GMS /api/auth/*
+// ====================================================================
+// User-level auth is NOT service-to-service: do not inject GMS_AUTH_TOKEN.
+// FAD frontend posts {email,password} → we forward to GMS → return its JWT.
+// Subsequent FAD requests carry that JWT, which GMS signs and validates.
+
+const userGmsCall = axios.create({
+  baseURL: GMS_BASE_URL,
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+app.post('/api/auth/login', asyncHandler(async (req, res) => {
+  try {
+    const { data } = await userGmsCall.post('/api/auth/login', req.body);
+    res.json(data);
+  } catch (e) {
+    const status = e.response?.status || 502;
+    res.status(status).json({ error: e.response?.data?.error || 'Login failed' });
+  }
+}));
+
+app.get('/api/auth/me', asyncHandler(async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { data } = await userGmsCall.get('/api/auth/me', { headers: { Authorization: auth } });
+    res.json(data);
+  } catch (e) {
+    const status = e.response?.status || 502;
+    res.status(status).json({ error: e.response?.data?.error || 'Auth check failed' });
+  }
+}));
+
+app.post('/api/auth/logout', (req, res) => {
+  // JWT is client-side; clearing localStorage in the frontend is sufficient.
+  // Endpoint exists so the frontend has a single conventional path.
+  res.json({ ok: true });
+});
+
+// ====================================================================
 // Error Handling Middleware
 // ====================================================================
 

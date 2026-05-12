@@ -71,6 +71,16 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
+  // Auth guard — the shell is post-login. Missing token → back to /.
+  // Token is set by LoginScreen on successful /api/auth/login; cleared by
+  // apiFetch on any 401 from the backend.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!localStorage.getItem('gms_token')) {
+      window.location.href = '/';
+    }
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let urlMod = params.get('m');
