@@ -14,6 +14,7 @@ import {
   type ReviewTag,
 } from '../../../_data/reviews';
 import { useLiveReviews } from '../../../_data/reviewsClient';
+import { useTranslation } from '../../../_data/translateClient';
 import { TASK_PROPERTY_BY_CODE, TASK_USER_BY_ID } from '../../../_data/tasks';
 import { RESERVATION_BY_ID } from '../../../_data/reservations';
 import { CreateTaskDrawer } from '../operations/CreateTaskDrawer';
@@ -301,11 +302,11 @@ function ReviewDetail({
         </span>
       </div>
 
-      {/* Title + body */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{rv.title}</div>
-        <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>{rv.reviewText}</div>
-      </div>
+      {/* Title + body — auto-translated to English when source is non-EN.
+          Toggle reveals original. Translation cached per review-id both
+          client- and server-side. */}
+      <ReviewBody rv={rv} />
+
 
       {/* Tags */}
       {tags.length > 0 && (
@@ -508,6 +509,75 @@ function TagChip({ tag }: { tag: ReviewTag }) {
     >
       {tag.tag}
     </span>
+  );
+}
+
+// Detail-panel body. Auto-translates to English on mount; toggle reveals
+// original. When no AI providers are configured the backend returns the
+// original text unchanged and the toggle/footer message reflects that.
+function ReviewBody({ rv }: { rv: Review }) {
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  // Translate body (always non-empty for both channels) + title (Booking only).
+  const bodyT = useTranslation(rv.reviewText, `r:${rv.id}:body`);
+  const titleT = useTranslation(rv.title || undefined, `r:${rv.id}:title`);
+
+  const titleTranslated = titleT.result?.translated || rv.title;
+  const bodyTranslated = bodyT.result?.translated || rv.reviewText;
+
+  // Only offer the toggle when we actually translated (translated text
+  // differs from original AND something was picked).
+  const wasTranslated = !!(bodyT.result?.picked && bodyT.result.translated && bodyT.result.translated !== bodyT.result.original);
+
+  const showTitle = showOriginal ? rv.title : titleTranslated;
+  const showBody = showOriginal ? rv.reviewText : bodyTranslated;
+
+  // Provider attribution surfaces which model produced the translation —
+  // useful during the dual-model eval phase. Drops out when only one model
+  // configured.
+  const picked = bodyT.result?.picked;
+  const kimiOk = bodyT.result?.kimi?.ok;
+  const anthropicOk = bodyT.result?.anthropic?.ok;
+  const bothRan = kimiOk !== undefined && anthropicOk !== undefined && (kimiOk || anthropicOk);
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      {rv.title && (
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{showTitle}</div>
+      )}
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+        {showBody}
+      </div>
+      {bodyT.loading && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>
+          Translating…
+        </div>
+      )}
+      {wasTranslated && (
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => setShowOriginal((v) => !v)}
+            style={{ fontSize: 11 }}
+          >
+            {showOriginal ? 'Show translated' : 'Show original'}
+            {bodyT.result?.sourceLang ? ` · ${bodyT.result.sourceLang}` : ''}
+          </button>
+          {bothRan && picked && (
+            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+              via {picked === 'kimi' ? 'Kimi' : 'Anthropic'}
+              {kimiOk && anthropicOk ? ' (both succeeded)' : ''}
+            </span>
+          )}
+        </div>
+      )}
+      {bodyT.error && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>
+          Translation unavailable · {bodyT.error}
+        </div>
+      )}
+    </div>
   );
 }
 

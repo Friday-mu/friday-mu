@@ -7,3 +7,6 @@ backend/.env
 
 # Guesty listings disk cache (dev convenience)
 backend/.guesty-listings-cache.json
+
+# Translation cache (dev convenience)
+backend/.translations-cache.json

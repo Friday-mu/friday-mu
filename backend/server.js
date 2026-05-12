@@ -824,6 +824,11 @@ guestyAPI.interceptors.request.use(async (config) => {
   return config;
 });
 
+// Dual-model translation (Kimi + Anthropic Opus). See backend/src/ai/translate.js
+// for the picking heuristic. Used to render non-English reviews in English by
+// default with a "Show original" toggle on the frontend.
+const { translateText } = require('./src/ai/translate');
+
 // Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
 // rarely; the index lets us resolve raw channel listing IDs to friendly
 // nicknames (MV-7, GBH-C8) in the reviews response without a per-review API
@@ -1159,6 +1164,23 @@ app.get('/api/system/status', requireAuth, asyncHandler(async (req, res) => {
     },
     channels: channelCounts,
   });
+}));
+
+// On-demand translation. Frontend calls this for reviews whose original
+// language isn't English. Result is cached server-side keyed by cacheKey
+// (typically the review id), so repeat calls are free and instant.
+app.post('/api/ai/translate', requireAuth, asyncHandler(async (req, res) => {
+  const { text, cacheKey, sourceLang } = req.body || {};
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'text is required (string)' });
+  }
+  try {
+    const result = await translateText(text, { cacheKey, sourceLang });
+    res.json(result);
+  } catch (e) {
+    console.error('[ai/translate] error:', e.message);
+    res.status(500).json({ error: e.message || 'Translation failed' });
+  }
 }));
 
 // Ping endpoint hits each configured upstream once for the Settings "Test"
