@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../../../components/types';
-import type { InboxThread, InboxMessage, InboxChannel } from './fixtures';
+import type { InboxThread, InboxMessage, InboxChannel, InboxReservation } from './fixtures';
 
 // ───────── enum mappers ─────────
 
@@ -114,10 +114,35 @@ interface WhatsAppWindowInfo {
   expiresAt?: string;
 }
 
+function transformGmsReservation(raw: Record<string, unknown>): InboxReservation {
+  const num = (v: unknown): number | undefined =>
+    v == null ? undefined : (Number.isFinite(Number(v)) ? Number(v) : undefined);
+  return {
+    id: String(raw.id || raw.guesty_reservation_id || ''),
+    guestyReservationId: raw.guesty_reservation_id ? String(raw.guesty_reservation_id) : undefined,
+    listingName: raw.listing_name ? String(raw.listing_name) : undefined,
+    status: raw.status ? String(raw.status) : undefined,
+    channel: raw.channel ? String(raw.channel) : (raw.source ? String(raw.source) : undefined),
+    checkIn: raw.check_in ? String(raw.check_in) : undefined,
+    checkOut: raw.check_out ? String(raw.check_out) : undefined,
+    numberOfNights: num(raw.number_of_nights),
+    numGuests: num(raw.num_guests),
+    guestName: raw.guest_name ? String(raw.guest_name) : undefined,
+    guestEmail: raw.guest_email ? String(raw.guest_email) : undefined,
+    guestPhone: raw.guest_phone ? String(raw.guest_phone) : undefined,
+    totalPrice: num(raw.total_price),
+    currency: raw.currency ? String(raw.currency) : undefined,
+    cleaningFee: num(raw.cleaning_fee),
+    nightlyRate: num(raw.nightly_rate),
+    specialRequests: raw.special_requests ? String(raw.special_requests) : undefined,
+  };
+}
+
 export function transformGmsConversation(
   raw: Record<string, unknown>,
   messagesRaw?: Record<string, unknown>[],
   waWindow?: WhatsAppWindowInfo,
+  reservationRaw?: Record<string, unknown>,
 ): InboxThread {
   const channelKey = mapChannelKey(raw.channel ?? raw.communication_channel);
   const status = raw.status;
@@ -175,6 +200,7 @@ export function transformGmsConversation(
     sentiment: mapSentiment(sentiment),
     language: mapLanguage(raw.last_detected_language),
     whatsappWindow,
+    reservation: reservationRaw ? transformGmsReservation(reservationRaw) : undefined,
   };
 }
 
@@ -210,7 +236,7 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
     open: !!data.whatsapp_window_open,
     expiresAt: data.whatsapp_window_expires_at,
   };
-  return transformGmsConversation(conv, messages, waWindow);
+  return transformGmsConversation(conv, messages, waWindow, data.reservation);
 }
 
 // ───────── hooks ─────────

@@ -62,6 +62,32 @@ export interface InboxThread {
   sentiment?: 'positive' | 'neutral' | 'negative' | 'urgent';
   language?: 'EN' | 'FR' | 'PT' | 'IT' | 'NL';
   whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  /** Reservation context bundled in the thread-detail response. Optional —
+   *  list view doesn't carry it, only the detail fetch does. */
+  reservation?: InboxReservation;
+}
+
+/** Reservation detail flattened from GMS's bundled response. Only the fields
+ *  the Inbox right panel needs are surfaced; the full Guesty reservation has
+ *  many more, fetched on-demand from the Reservations module. */
+export interface InboxReservation {
+  id: string;
+  guestyReservationId?: string;
+  listingName?: string;
+  status?: string;
+  channel?: string;
+  checkIn?: string;
+  checkOut?: string;
+  numberOfNights?: number;
+  numGuests?: number;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  totalPrice?: number;
+  currency?: string;
+  cleaningFee?: number;
+  nightlyRate?: number;
+  specialRequests?: string;
 }
 
 export const INBOX_THREADS: InboxThread[] = [];

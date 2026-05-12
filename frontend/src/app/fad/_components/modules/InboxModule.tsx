@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   INBOX_INTERNAL_NOTES,
   INBOX_THREADS,
@@ -167,6 +167,15 @@ export function InboxModule({ onAskFriday }: Props) {
   const listThread = filtered.find((t) => t.id === selected) || filtered[0] || sourceThreads[0];
   const { thread: detailThread } = useThreadDetail(listThread?.id ?? null);
   const thread = detailThread || listThread;
+
+  // Auto-scroll to the latest message when the thread changes or its messages
+  // load. Otherwise the pane lands at the top of long threads and the user
+  // has to scroll down every time.
+  const threadBodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = threadBodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [selected, thread?.messages?.length]);
   const unread = sourceThreads.filter((t) => t.unread).length;
 
   const activeFilterCount =
@@ -512,7 +521,7 @@ export function InboxModule({ onAskFriday }: Props) {
             )}
             </div>
           </div>
-          <div className="inbox-thread-body">
+          <div className="inbox-thread-body" ref={threadBodyRef}>
             {/* Render full message thread when available (live data path). Falls
                 back to a single preview bubble for fixture/empty states. */}
             {thread.messages && thread.messages.length > 0 ? (
@@ -680,69 +689,145 @@ export function InboxModule({ onAskFriday }: Props) {
               <span>Reservation</span>
             </div>
           )}
-          <div className="inbox-right-section">
-            <h4>Reservation</h4>
-            <div className="inbox-right-row">
-              <span className="label">Property</span>
-              <span className="value">VAZ</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Check-in</span>
-              <span className="value">Apr 17</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Check-out</span>
-              <span className="value">Apr 24</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Guests</span>
-              <span className="value">2A + 2C</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Total</span>
-              <span className="value">€ 2,940</span>
-            </div>
-          </div>
-          <div className="inbox-right-section">
-            <h4>Guest</h4>
-            <div className="inbox-right-row">
-              <span className="label">Stays with us</span>
-              <span className="value">2nd</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Language</span>
-              <span className="value">FR</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Prev rating</span>
-              <span className="value">5.0</span>
-            </div>
-          </div>
-          <div className="inbox-right-section">
-            <h4>Suggested actions</h4>
-            <button
-              className="btn sm"
-              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 6 }}
-            >
-              <IconCheck size={12} /> Confirm airport transfer
-            </button>
-            <button
-              className="btn sm"
-              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 6 }}
-            >
-              <IconCheck size={12} /> Approve 14:30 early check-in
-            </button>
-            <button
-              className="btn sm"
-              style={{ width: '100%', justifyContent: 'flex-start' }}
-              onClick={onAskFriday}
-            >
-              <IconSparkle size={12} /> Ask Friday to draft reply
-            </button>
-          </div>
+          <ReservationRightPanel
+            thread={thread}
+            onAskFriday={onAskFriday}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+// Right-side reservation panel — wired to thread.reservation from the
+// bundled detail response. Falls back to an empty state when the detail
+// fetch hasn't landed yet or the conversation has no linked reservation.
+function ReservationRightPanel({
+  thread,
+  onAskFriday,
+}: {
+  thread: InboxThread | undefined;
+  onAskFriday: () => void;
+}) {
+  // thread can be undefined briefly before the conversation list resolves.
+  if (!thread) return null;
+  const r = thread.reservation;
+
+  const fmtDate = (iso?: string): string => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  };
+
+  // Currency-aware total. GMS stores numeric prices + ISO currency codes.
+  // Falls back to MUR when currency missing (FR's home market).
+  const fmtMoney = (amount?: number, currency?: string): string => {
+    if (amount == null || !Number.isFinite(amount)) return '—';
+    try {
+      return new Intl.NumberFormat('en-GB', {
+        style: 'currency',
+        currency: currency || 'MUR',
+        maximumFractionDigits: 0,
+      }).format(amount);
+    } catch {
+      return `${amount} ${currency ?? ''}`.trim();
+    }
+  };
+
+  const statusLabel = (s?: string): string => {
+    if (!s) return '—';
+    return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
+  };
+
+  return (
+    <>
+      <div className="inbox-right-section">
+        <h4>Reservation</h4>
+        {!r ? (
+          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            No reservation linked.
+          </div>
+        ) : (
+          <>
+            <div className="inbox-right-row">
+              <span className="label">Property</span>
+              <span className="value">{r.listingName || thread.property || '—'}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Status</span>
+              <span className="value">{statusLabel(r.status)}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Check-in</span>
+              <span className="value">{fmtDate(r.checkIn)}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Check-out</span>
+              <span className="value">
+                {fmtDate(r.checkOut)}
+                {r.numberOfNights ? (
+                  <span style={{ color: 'var(--color-text-tertiary)', marginLeft: 4 }}>
+                    · {r.numberOfNights}n
+                  </span>
+                ) : null}
+              </span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Guests</span>
+              <span className="value">{r.numGuests ?? '—'}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Total</span>
+              <span className="value">{fmtMoney(r.totalPrice, r.currency)}</span>
+            </div>
+            {r.specialRequests && (
+              <div className="inbox-right-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                <span className="label">Special requests</span>
+                <span className="value" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                  {r.specialRequests}
+                </span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="inbox-right-section">
+        <h4>Guest</h4>
+        <div className="inbox-right-row">
+          <span className="label">Name</span>
+          <span className="value">{r?.guestName || thread.guest || '—'}</span>
+        </div>
+        <div className="inbox-right-row">
+          <span className="label">Language</span>
+          <span className="value">{thread.language || '—'}</span>
+        </div>
+        {r?.guestEmail && (
+          <div className="inbox-right-row">
+            <span className="label">Email</span>
+            <span className="value" style={{ fontSize: 11 }}>{r.guestEmail}</span>
+          </div>
+        )}
+        {r?.guestPhone && (
+          <div className="inbox-right-row">
+            <span className="label">Phone</span>
+            <span className="value" style={{ fontSize: 11 }}>{r.guestPhone}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="inbox-right-section">
+        <h4>Actions</h4>
+        <button
+          className="btn sm"
+          style={{ width: '100%', justifyContent: 'flex-start' }}
+          onClick={onAskFriday}
+        >
+          <IconSparkle size={12} /> Ask Friday to draft reply
+        </button>
+      </div>
+    </>
   );
 }
 
