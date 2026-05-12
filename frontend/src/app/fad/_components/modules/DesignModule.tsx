@@ -25,6 +25,7 @@ import {
   type VendorCategory,
 } from '../../_data/design';
 import { LEADS as FAD_LEADS, type Lead as FadLead } from '../../_data/fixtures-tier3';
+import { useHydrateDesignTopLevel, useHydrateDesignProject } from '../../_data/designClient';
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
@@ -218,6 +219,19 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
     return (new URLSearchParams(window.location.search).get('stage') as ProjectScreen | null) ?? 'overview';
   });
 
+  // Live data hydration. Top-level runs on mount (projects, leads,
+  // counterparties, properties, vendors). Per-project runs whenever a
+  // pid is set. Both hooks splice the fixture arrays in place and bump
+  // a rev counter; we feed `rev` into the dashboard subtree as a React
+  // key so each tab remounts after hydration — that's the only reliable
+  // way to invalidate downstream useMemo([allProjects, ...]) calls,
+  // since mutating an array doesn't change its identity.
+  const { rev: topRev, error: hydrateError } = useHydrateDesignTopLevel();
+  const { rev: projectRev } = useHydrateDesignProject(pid && pid !== '__new' ? pid : null);
+  if (typeof window !== 'undefined' && hydrateError) {
+    console.warn('[design] top-level hydration error:', hydrateError);
+  }
+
   useEffect(() => {
     syncDrillDownToUrl(pid, screen);
   }, [pid, screen]);
@@ -279,7 +293,7 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
           ) : null
         }
       />
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} key={`tab-${topRev}-${projectRev}`}>
         {active === 'overview' && <DesignDashboard onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
         {active === 'projects' && <ProjectsList onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}
         {active === 'leads' && <LeadsList onOpenProject={(id) => { setScreenAndUrl('overview'); setPidAndUrl(id); }} />}

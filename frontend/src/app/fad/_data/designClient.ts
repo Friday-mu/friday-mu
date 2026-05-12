@@ -6,11 +6,34 @@
 // adapters that convert API shape → fixture shape for callers that
 // still render against the fixture types.
 //
+// Hydration strategy: the legacy designClient (in _data/design.ts) is
+// synchronous and read-from-fixture-arrays. Rather than rewrite every
+// one of the 32+ consumer files to async, this client mutates the
+// fixture arrays IN PLACE on hydration so synchronous consumers
+// automatically see live data on the next render. useHydrateDesign*
+// hooks trigger the hydration + force a re-render via state increment.
+//
 // Owner portal endpoints are NOT covered here — they live in
 // portalClient.ts because they use magic-link auth, not the staff JWT.
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { apiFetch } from '../../../components/types';
+import {
+  PROJECTS as FIXTURE_PROJECTS,
+  LEADS as FIXTURE_LEADS,
+  COUNTERPARTIES as FIXTURE_COUNTERPARTIES,
+  PROPERTIES as FIXTURE_PROPERTIES,
+  VENDORS as FIXTURE_VENDORS,
+  MOODBOARDS as FIXTURE_MOODBOARDS,
+  DESIGN_PACKS as FIXTURE_PACKS,
+  AGREEMENTS as FIXTURE_AGREEMENTS,
+  PAYMENT_GATES as FIXTURE_PAYMENT_GATES,
+  SELECTIONS as FIXTURE_SELECTIONS,
+  CHANGE_ORDERS as FIXTURE_CHANGE_ORDERS,
+  BUDGET_ITEMS as FIXTURE_BUDGET_ITEMS,
+  ACTIVITY as FIXTURE_ACTIVITY,
+  APPROVALS as FIXTURE_APPROVALS,
+} from './design';
 import type {
   DesignProject as FixtureProject,
   DesignLead as FixtureLead,
@@ -687,9 +710,14 @@ export function apiLeadToFixture(api: ApiLead): FixtureLead {
 }
 
 export function apiCounterpartyToFixture(api: ApiCounterparty): FixtureCounterparty {
+  // fixture Counterparty fields: id, fullName, nic, kind, email, phone, entity_id.
+  // The backend only stores name/email/phone — synthesize a reasonable kind
+  // and leave nic blank until the schema extension lands.
   return {
     id: api.id,
-    name: api.name,
+    fullName: api.name,
+    nic: '',
+    kind: 'owner',
     email: api.email ?? '',
     phone: api.phone ?? '',
     entity_id: api.entity_id,
@@ -697,26 +725,39 @@ export function apiCounterpartyToFixture(api: ApiCounterparty): FixtureCounterpa
 }
 
 export function apiPropertyToFixture(api: ApiProperty): FixtureProperty {
+  // fixture DesignProperty fields: id, pmPropertyId, name, address, region,
+  // bedrooms, bathrooms. The backend doesn't track bedroom/bathroom counts
+  // yet — leave as 0/null so the UI renders "—" placeholders.
+  const region: 'North' | 'West' | 'South' | 'East' | 'Central' | null =
+    api.city === 'Albion' ? 'West'
+    : api.city === 'Grand Baie' || api.city === 'Mont Choisy' || api.city === 'Pereybere' ? 'North'
+    : api.city === 'Flic en Flac' || api.city === 'Tamarin' ? 'West'
+    : null;
   return {
     id: api.id,
+    pmPropertyId: api.guesty_listing_id ?? null,
     name: api.name,
     address: api.address ?? '',
-    city: api.city ?? '',
-    state: api.state ?? '',
-    zipcode: api.zipcode ?? '',
-    sqft: api.sqft ?? 0,
-    constructionType: api.construction_type ?? null,
-    yearBuilt: api.year_built ?? null,
+    region,
+    bedrooms: 0,
+    bathrooms: 0,
   } as unknown as FixtureProperty;
 }
 
 export function apiVendorToFixture(api: ApiVendor): FixtureVendor {
+  // fixture Vendor: id, name, company, category, email, phone, paymentTerms,
+  // notes, engagements (cross-project history — derived, leave empty until
+  // the analytics endpoint feeds it back).
   return {
     id: api.id,
     name: api.name,
+    company: api.name,
     category: api.category ?? '',
     email: api.email ?? '',
     phone: api.phone ?? '',
+    paymentTerms: '',
+    notes: api.notes ?? '',
+    engagements: [],
     entity_id: api.entity_id,
   } as unknown as FixtureVendor;
 }
@@ -793,3 +834,151 @@ export function apiApprovalToFixture(api: ApiApproval): FixtureApproval {
     respondentName: api.respondent_name ?? null,
   } as unknown as FixtureApproval;
 }
+
+// ════════════════════════════════════════════════════════════════════
+// HYDRATION — splice live API data into the fixture arrays so the
+// existing synchronous designClient + 30+ component consumers see
+// real data without per-file rewrites.
+// ════════════════════════════════════════════════════════════════════
+
+function replaceArray<T>(target: T[], next: T[]): void {
+  target.length = 0;
+  target.push(...next);
+}
+
+function removeMatching<T>(target: T[], pred: (row: T) => boolean): void {
+  for (let i = target.length - 1; i >= 0; i--) {
+    if (pred(target[i])) target.splice(i, 1);
+  }
+}
+
+/** Hydrate the top-level reference + project fixtures from the API.
+ *  Per-project artifact arrays (moodboards, packs, payments, etc.) are
+ *  cleared so stale fixture rows don't survive alongside live projects;
+ *  per-project hydration (below) repopulates them on drill-down. */
+export async function hydrateDesignTopLevel(): Promise<void> {
+  const [projects, leads, counterparties, properties, vendors] = await Promise.all([
+    loadProjects().catch(() => []),
+    loadLeads().catch(() => []),
+    loadCounterparties().catch(() => []),
+    loadProperties().catch(() => []),
+    loadVendors().catch(() => []),
+  ]);
+
+  replaceArray(FIXTURE_PROJECTS, projects.map(apiProjectToFixture));
+  replaceArray(FIXTURE_LEADS, leads.map(apiLeadToFixture));
+  replaceArray(FIXTURE_COUNTERPARTIES, counterparties.map(apiCounterpartyToFixture));
+  replaceArray(FIXTURE_PROPERTIES, properties.map(apiPropertyToFixture));
+  replaceArray(FIXTURE_VENDORS, vendors.map(apiVendorToFixture));
+
+  // Clear all per-project fixture rows — they reference IDs from the
+  // old fixture and would be orphaned alongside the new live projects.
+  // hydrateDesignProject() repopulates per project on drill-down.
+  const liveIds = new Set(projects.map((p) => p.id));
+  removeMatching(FIXTURE_MOODBOARDS, (m) => !liveIds.has(m.projectId));
+  removeMatching(FIXTURE_PACKS, (p) => !liveIds.has(p.projectId));
+  removeMatching(FIXTURE_AGREEMENTS, (a) => !liveIds.has((a as { projectId: string }).projectId));
+  removeMatching(FIXTURE_PAYMENT_GATES, (g) => !liveIds.has((g as { projectId: string }).projectId));
+  removeMatching(FIXTURE_SELECTIONS, (s) => !liveIds.has((s as { projectId: string }).projectId));
+  removeMatching(FIXTURE_CHANGE_ORDERS, (c) => !liveIds.has((c as { projectId: string }).projectId));
+  removeMatching(FIXTURE_BUDGET_ITEMS, (b) => !liveIds.has((b as { projectId: string }).projectId));
+  removeMatching(FIXTURE_APPROVALS, (a) => !liveIds.has((a as { projectId: string }).projectId));
+  removeMatching(FIXTURE_ACTIVITY, (a) => !liveIds.has((a as { projectId: string }).projectId));
+}
+
+/** Hydrate per-project artifact arrays for a single project. Splices
+ *  any existing rows for this project, then appends fresh live rows.
+ *  Called lazily when the user opens a project drill-down. */
+export async function hydrateDesignProject(projectId: string): Promise<void> {
+  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals] = await Promise.all([
+    loadMoodboards(projectId).catch(() => []),
+    loadPacks(projectId).catch(() => []),
+    loadAgreement(projectId).catch(() => null as ApiAgreement | null),
+    loadPayments(projectId).catch(() => []),
+    loadSelections(projectId).catch(() => []),
+    loadChangeOrders(projectId).catch(() => []),
+    loadBudgetItems(projectId).catch(() => []),
+    loadActivities(projectId).catch(() => []),
+    loadApprovals(projectId).catch(() => []),
+  ]);
+
+  removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
+  FIXTURE_MOODBOARDS.push(...moodboards.map(apiMoodboardToFixture));
+
+  removeMatching(FIXTURE_PACKS, (p) => p.projectId === projectId);
+  FIXTURE_PACKS.push(...packs.map(apiPackToFixture));
+
+  removeMatching(FIXTURE_AGREEMENTS, (a) => (a as { projectId: string }).projectId === projectId);
+  if (agreement) FIXTURE_AGREEMENTS.push(apiAgreementToFixture(agreement));
+
+  removeMatching(FIXTURE_PAYMENT_GATES, (g) => (g as { projectId: string }).projectId === projectId);
+  FIXTURE_PAYMENT_GATES.push(...payments.map(apiPaymentToFixture));
+
+  removeMatching(FIXTURE_SELECTIONS, (s) => (s as { projectId: string }).projectId === projectId);
+  // Selections fixture shape is rich (option ids, version, etc.); pass through unknown.
+  FIXTURE_SELECTIONS.push(...(selections as unknown as Array<typeof FIXTURE_SELECTIONS[number]>));
+
+  removeMatching(FIXTURE_CHANGE_ORDERS, (c) => (c as { projectId: string }).projectId === projectId);
+  FIXTURE_CHANGE_ORDERS.push(...(changeOrders as unknown as Array<typeof FIXTURE_CHANGE_ORDERS[number]>));
+
+  removeMatching(FIXTURE_BUDGET_ITEMS, (b) => (b as { projectId: string }).projectId === projectId);
+  FIXTURE_BUDGET_ITEMS.push(...(budgetItems as unknown as Array<typeof FIXTURE_BUDGET_ITEMS[number]>));
+
+  removeMatching(FIXTURE_ACTIVITY, (a) => (a as { projectId: string }).projectId === projectId);
+  FIXTURE_ACTIVITY.push(...activities.map(apiActivityToFixture));
+
+  removeMatching(FIXTURE_APPROVALS, (a) => (a as { projectId: string }).projectId === projectId);
+  FIXTURE_APPROVALS.push(...approvals.map(apiApprovalToFixture));
+}
+
+/** Hook: hydrate top-level fixtures on mount. Returns { hydrated,
+ *  error, refetch, rev } where `rev` is a version counter that
+ *  consumers can include in a useEffect/useMemo dep list to re-derive
+ *  state after live data arrives. */
+export function useHydrateDesignTopLevel(): { hydrated: boolean; loading: boolean; error: string | null; refetch: () => void; rev: number } {
+  const [hydrated, setHydrated] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
+
+  const refetch = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    hydrateDesignTopLevel()
+      .then(() => { setHydrated(true); setRev((r) => r + 1); })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  return { hydrated, loading, error, refetch, rev };
+}
+
+/** Hook: hydrate a single project's per-resource arrays. Returns
+ *  { hydrated, error, refetch, rev } same as the top-level hook. */
+export function useHydrateDesignProject(projectId: string | null): { hydrated: boolean; loading: boolean; error: string | null; refetch: () => void; rev: number } {
+  const [hydratedFor, setHydratedFor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
+
+  const refetch = useCallback(() => {
+    if (!projectId) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    hydrateDesignProject(projectId)
+      .then(() => { setHydratedFor(projectId); setRev((r) => r + 1); })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [projectId]);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  return { hydrated: hydratedFor === projectId, loading, error, refetch, rev };
+}
+
+// useMemo import was added for completeness; current hooks do not
+// require it but downstream wiring (e.g. project pickers, table sort
+// memoisation) commonly does, so keep the import live.
+void useMemo;
