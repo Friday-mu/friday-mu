@@ -17,15 +17,37 @@
 // dedicated column in a follow-up.
 
 const express = require('express');
+const crypto = require('crypto');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { DEFAULT_TENANT_ID, shapeAsset } = require('./adapters');
 const { generateImage } = require('../ai/imagegen');
+const { appendActivity } = require('./activities');
 
 const router = express.Router();
 
 const ALLOWED_KINDS = new Set(['moodboard', 'pack']);
 const KIND_PREFIX_RE = /^\[kind:([a-z]+)\]\s+/;
+
+// Nanobanana accepts PDFs inline (no per-page extraction needed) plus
+// the usual raster formats. svg/heic deliberately omitted — they break
+// the inlineData encoder on Google AI Studio.
+const ALLOWED_SITE_PLAN_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']);
+
+// ~5MB raw cap on the source image. base64 expands bytes by 4/3 so the
+// pre-decode ceiling is ~6.67MB of b64 text — we recompute the raw size
+// (floor(b64.length * 0.75)) per the brief.
+const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
+
+// Fixed system directive prepended to the user's optional hint. Phrasing
+// is locked to what reliably gets Nanobanana to produce a CAD-style
+// cleanup rather than a stylised re-render. Keep this in sync with the
+// frontend placeholder copy in SitePlanGenerator.tsx.
+const SITE_PLAN_SYSTEM_PROMPT =
+  'Clean architectural floor plan, top-down view, single-line walls in dark grey on white background, '
+  + 'labelled rooms in a sans-serif font, minimal furniture symbols, north arrow in top-right corner, '
+  + 'dimensions in metric, no shadows or color fills, suitable as a base layer for interior design plans. '
+  + 'Match the layout of the reference image exactly — same walls, same room arrangement, same door positions.';
 
 function encodeKindIntoPrompt(kind, prompt) {
   return `[kind:${kind}] ${prompt}`;
@@ -120,6 +142,175 @@ router.post('/generate', requireDesignPerm('design:write'), async (req, res) => 
     return res.status(201).json(shaped);
   } catch (e) {
     console.error('[design/ai_images] generate error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ────────────────── POST /generate-site-plan ──────────────────
+//
+// Takes a messy client floor plan (PDF / sketch / photo) and asks
+// Nanobanana to redraw it as a clean top-view layout we can use as the
+// canvas for design packs. Unlike /generate, this route accepts an
+// inline source image rather than just a prompt — Nanobanana 2.5 Flash
+// Image supports multi-modal inputs.
+//
+// Body:
+//   project_id            — required, ownership-checked
+//   source_image          — required, { mimeType, base64 }
+//   prompt_hint           — optional, free-text guidance appended to the
+//                            system directive
+//   set_as_project_plan   — optional bool. When true, also UPDATEs
+//                            design_projects.site_plan_image_id with the
+//                            new asset sha256 so the project pins this
+//                            canonical site plan.
+//
+// Response: 201 with the standard asset row shape plus
+//   { project_updated: boolean, original_input_sha256: string }
+// — the input sha lets the frontend reference what client image this
+// derives from without us persisting the raw upload.
+
+router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const { project_id: projectId, source_image: sourceImage, prompt_hint: promptHint, set_as_project_plan: setAsProjectPlan } = body;
+    if (!projectId) return res.status(400).json({ error: 'project_id is required' });
+    if (!sourceImage || typeof sourceImage !== 'object') {
+      return res.status(400).json({ error: 'source_image is required' });
+    }
+    const { mimeType, base64 } = sourceImage;
+    if (!base64 || typeof base64 !== 'string' || base64.length === 0) {
+      return res.status(400).json({ error: 'source_image.base64 is required (non-empty)' });
+    }
+    if (!ALLOWED_SITE_PLAN_MIME.has(mimeType)) {
+      return res.status(400).json({
+        error: `source_image.mimeType must be one of ${[...ALLOWED_SITE_PLAN_MIME].join(', ')}`,
+      });
+    }
+    // Approximate decoded size — floor(b64.length * 0.75) matches the
+    // brief's spec. We avoid actually decoding into a Buffer here to dodge
+    // memory pressure on oversize uploads (Buffer.from would still allocate
+    // the full byte range before we could reject it).
+    const rawBytes = Math.floor(base64.length * 0.75);
+    if (rawBytes > MAX_SOURCE_BYTES) {
+      return res.status(413).json({
+        error: `source_image too large (${rawBytes} bytes, max ${MAX_SOURCE_BYTES})`,
+      });
+    }
+
+    const ownerCheck = await query(
+      `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
+      [DEFAULT_TENANT_ID, projectId],
+    );
+    if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
+
+    // Compose the prompt — system directive is locked, the optional hint
+    // is appended verbatim so designers can steer (e.g. "north points
+    // to the top of the page, label master bedroom as Suite Parentale").
+    const hintTrimmed = typeof promptHint === 'string' ? promptHint.trim() : '';
+    const prompt = hintTrimmed
+      ? `${SITE_PLAN_SYSTEM_PROMPT} ${hintTrimmed}`
+      : SITE_PLAN_SYSTEM_PROMPT;
+
+    // sha256 of the raw input bytes — surfaced to the frontend so it can
+    // reference "this clean plan was derived from upload XYZ" without us
+    // persisting the messy original (which is the client's, not ours).
+    const inputBuf = Buffer.from(base64, 'base64');
+    const originalInputSha256 = crypto.createHash('sha256').update(inputBuf).digest('hex');
+
+    let result;
+    try {
+      result = await generateImage({
+        prompt,
+        inlineImages: [{ mimeType, base64 }],
+      });
+    } catch (e) {
+      console.error('[design/ai_images] site-plan generation error:', e.message);
+      return res.status(502).json({ error: `Image generation failed: ${e.message}` });
+    }
+
+    // Tag the stored prompt as a site_plan kind so /generate listings
+    // can filter it later if needed. Reuses the same [kind:…] prefix
+    // marker convention as moodboard/pack, but skips ALLOWED_KINDS since
+    // site_plan isn't part of the kind-filter API.
+    const storedPrompt = `[kind:site_plan] ${result.generatorPrompt}`;
+
+    const insert = await query(
+      `INSERT INTO design_assets
+         (sha256, tenant_id, mime_type, byte_size, storage_url, source, generator_prompt, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (sha256) DO NOTHING
+       RETURNING *`,
+      [
+        result.sha256,
+        DEFAULT_TENANT_ID,
+        result.mimeType || 'image/png',
+        result.byteSize || null,
+        result.imageUrl,
+        'nanobanana',
+        storedPrompt,
+        req.identity.userId,
+      ],
+    );
+
+    let row = insert.rows[0];
+    if (!row) {
+      const existing = await query(
+        `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
+        [result.sha256, DEFAULT_TENANT_ID],
+      );
+      row = existing.rows[0];
+    }
+    if (!row) {
+      return res.status(500).json({ error: 'Asset row missing after insert' });
+    }
+
+    // Pin the asset as the project's canonical site plan when requested.
+    // The migration's FK ensures the asset exists before we set the
+    // pointer (it does — we just inserted it).
+    let projectUpdated = false;
+    if (setAsProjectPlan === true) {
+      const upd = await query(
+        `UPDATE design_projects
+           SET site_plan_image_id = $3, updated_at = NOW()
+         WHERE tenant_id = $1 AND id = $2
+         RETURNING id`,
+        [DEFAULT_TENANT_ID, projectId, result.sha256],
+      );
+      projectUpdated = upd.rows.length > 0;
+    }
+
+    // Activity row — internal only. Owners don't need to see every
+    // regenerate; the cleaned plan itself surfaces once attached to a
+    // pack. Best-effort: failure to log shouldn't fail the request.
+    try {
+      await appendActivity({
+        projectId,
+        actorUserId: req.identity.userId,
+        actorName: req.identity.displayName || req.identity.username,
+        action: 'project.site_plan.generated',
+        payload: {
+          asset_sha256: result.sha256,
+          original_input_sha256: originalInputSha256,
+          source_mime: mimeType,
+          set_as_project_plan: projectUpdated,
+          stub: result.stub === true,
+          cached: result.cached === true,
+        },
+        visibility: 'internal',
+      });
+    } catch (e) {
+      console.warn('[design/ai_images] activity log failed:', e.message);
+    }
+
+    const shaped = shapeAiAsset(row);
+    shaped.stub = result.stub === true;
+    shaped.duration_ms = result.durationMs ?? null;
+    shaped.cached = result.cached === true;
+    shaped.project_updated = projectUpdated;
+    shaped.original_input_sha256 = originalInputSha256;
+    return res.status(201).json(shaped);
+  } catch (e) {
+    console.error('[design/ai_images] generate-site-plan error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

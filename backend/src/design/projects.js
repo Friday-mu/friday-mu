@@ -9,7 +9,24 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeProject } = require('./adapters');
+const { DEFAULT_TENANT_ID, shapeProject, shapeAsset } = require('./adapters');
+
+// Mirror of the same constant in ai_images.js — strip the kind marker
+// from the generator_prompt before handing the asset row back. Kept
+// locally so projects.js doesn't need to import from a sibling router.
+const KIND_PREFIX_RE = /^\[kind:([a-z_]+)\]\s+/;
+function shapeSitePlanAsset(row) {
+  const base = shapeAsset(row);
+  if (!base) return null;
+  const m = base.generator_prompt?.match(KIND_PREFIX_RE);
+  if (m) {
+    base.kind = m[1];
+    base.generator_prompt = base.generator_prompt.slice(m[0].length);
+  } else {
+    base.kind = null;
+  }
+  return base;
+}
 
 const router = express.Router();
 
@@ -74,6 +91,31 @@ router.get('/:id', requireDesignPerm('design:read'), async (req, res) => {
     res.json(shapeProject(rows[0]));
   } catch (e) {
     console.error('[design/projects] detail error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/design/projects/:id/site-plan — resolve the current site plan
+// asset row via the design_projects.site_plan_image_id FK (set by the
+// site-plan generator on POST /api/design/ai_images/generate-site-plan
+// when called with set_as_project_plan: true). Returns 404 if either the
+// project doesn't exist or no site plan is pinned. The asset row shape
+// matches what /api/design/ai_images/:sha256 returns, with an extra
+// `kind: 'site_plan'` tag for clarity.
+router.get('/:id/site-plan', requireDesignPerm('design:read'), async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT a.*
+         FROM design_projects p
+         JOIN design_assets a
+           ON a.sha256 = p.site_plan_image_id
+        WHERE p.tenant_id = $1 AND p.id = $2`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'No site plan set for this project' });
+    res.json(shapeSitePlanAsset(rows[0]));
+  } catch (e) {
+    console.error('[design/projects] site-plan error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
