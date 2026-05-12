@@ -727,15 +727,24 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
 }
 
 export function apiLeadToFixture(api: ApiLead): FixtureLead {
+  // The legacy DesignLead fixture shape (counterpartyName, propertyHint, etc.)
+  // is no longer used at runtime. Hydration writes the API shape directly into
+  // the LEADS array and the Design Leads UI casts back to ApiLead. The
+  // 'as unknown as FixtureLead' cast is preserved so the legacy fixture
+  // typing on LEADS keeps compiling; the runtime shape mirrors ApiLead.
   return {
     id: api.id,
     name: api.name,
-    email: api.email ?? '',
-    phone: api.phone ?? '',
+    email: api.email ?? null,
+    phone: api.phone ?? null,
     source: (api.source as LeadSource) ?? 'other',
-    status: api.status === 'converted' ? 'converted' : (api.status === 'qualified' ? 'qualified' : 'lead'),
-    staleness: typeof api.staleness_days === 'number' ? api.staleness_days : 0,
-    owner: api.owner_user_id ?? null,
+    status: api.status,
+    staleness_days: typeof api.staleness_days === 'number' ? api.staleness_days : null,
+    owner_user_id: api.owner_user_id ?? null,
+    converted_project_id: api.converted_project_id ?? null,
+    notes: api.notes ?? null,
+    created_at: api.created_at,
+    updated_at: api.updated_at,
   } as unknown as FixtureLead;
 }
 
