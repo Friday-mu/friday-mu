@@ -836,6 +836,12 @@ const hrTimeOffRoutes = require('./src/hr/time-off');
 app.use('/api/hr/staff', hrStaffRoutes);
 app.use('/api/hr/time-off', hrTimeOffRoutes);
 
+// Design module routes — FAD-owned tables (design_*), Director-gated.
+// Sub-routers land progressively per design-be-N slices. See
+// src/design/index.js for the aggregator + auth.js for the perm matrix.
+const designRoutes = require('./src/design');
+app.use('/api/design', designRoutes);
+
 // Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
 // rarely; the index lets us resolve raw channel listing IDs to friendly
 // nicknames (MV-7, GBH-C8) in the reviews response without a per-review API
