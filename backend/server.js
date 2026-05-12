@@ -1234,6 +1234,14 @@ app.use((req, res) => {
 // ====================================================================
 
 const port = process.env.PORT || 3001;
+
+// Run FAD-owned migrations before opening the listener. Idempotent —
+// already-applied files are skipped via fad_schema_migrations table.
+// Failures log but don't crash the server (HR routes will return 500
+// until the migration is fixed manually).
+const { runMigrations } = require('./src/database/migrate');
+runMigrations().catch((e) => console.error('[migrate] fatal:', e.message));
+
 server.listen(port, () => {
   console.log(`🚀 Friday Admin Dashboard Backend running on port ${port}`);
   console.log(`📡 WebSocket server ready for connections`);
