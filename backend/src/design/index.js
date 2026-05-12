@@ -43,5 +43,12 @@ router.use('/preferences', require('./preferences'));
 router.use('/rough_budgets', require('./rough_budgets'));
 router.use('/agreements', require('./agreements'));
 router.use('/payment_gates', require('./payment_gates'));
+router.use('/moodboards', require('./moodboards'));
+router.use('/packs', require('./packs'));
+router.use('/selections', require('./selections'));
+router.use('/change_orders', require('./change_orders'));
+router.use('/budget_items', require('./budget_items'));
+router.use('/closeout_binders', require('./closeout_binders'));
+router.use('/approvals', require('./approvals'));
 
 module.exports = router;
