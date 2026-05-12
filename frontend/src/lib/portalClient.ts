@@ -283,6 +283,13 @@ export function useHydratePortal(): UseHydratePortalResult {
       const urlToken = new URLSearchParams(window.location.search).get('token');
       if (urlToken) setPortalToken(urlToken);
     }
+    // If still no token, don't bother firing a request that will 401. Caller
+    // is expected to route to /portal/auth based on the absence of a token.
+    if (!getPortalToken()) {
+      setLoading(false);
+      setError('Missing portal token');
+      return;
+    }
     setLoading(true);
     setError(null);
     hydratePortal()
