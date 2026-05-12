@@ -36,5 +36,12 @@ router.use('/documents', require('./documents'));
 router.use('/decisions', require('./decisions'));
 router.use('/activities', require('./activities'));
 router.use('/tasks', require('./tasks'));
+router.use('/site_visits', require('./site_visits'));
+router.use('/rooms', require('./rooms'));
+router.use('/photos', require('./photos'));
+router.use('/preferences', require('./preferences'));
+router.use('/rough_budgets', require('./rough_budgets'));
+router.use('/agreements', require('./agreements'));
+router.use('/payment_gates', require('./payment_gates'));
 
 module.exports = router;
