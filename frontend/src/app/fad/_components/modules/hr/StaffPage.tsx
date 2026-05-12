@@ -9,6 +9,12 @@ import { IconPlus } from '../../icons';
 import { fireToast } from '../../Toaster';
 import { TASKS } from '../../../_data/tasks';
 import { staffStatusTone, toneStyle } from '../../palette';
+import {
+  useStaff,
+  staffToTaskUserLike,
+  createStaff,
+  archiveStaff as apiArchiveStaff,
+} from '../../../_data/hrClient';
 
 // @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
 // Hardcoded demo date. Replace with new Date() (server-aware).
@@ -40,11 +46,19 @@ export function StaffPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<{ kind: 'create' } | { kind: 'edit'; userId: string } | null>(null);
-  const [, setRev] = useState(0);
-  const bumpRev = () => setRev((n) => n + 1);
+
+  // Live staff list from FAD HR backend. Falls back to TASK_USERS fixture
+  // during loading / when the API is unreachable, so the page never blanks.
+  const { staff: liveStaff, refetch: refetchStaff } = useStaff();
+  const liveAdapted = useMemo(
+    () => (liveStaff ? liveStaff.map(staffToTaskUserLike) : null),
+    [liveStaff],
+  );
+  const sourceStaff = liveAdapted ?? TASK_USERS;
+  const bumpRev = refetchStaff;
 
   const visibleStaff = useMemo(() => {
-    let staff = TASK_USERS.filter((u) => u.role !== 'external');
+    let staff = sourceStaff.filter((u) => u.role !== 'external');
 
     // Field role: only see own row
     if (role === 'field') {
@@ -64,9 +78,9 @@ export function StaffPage() {
       staff = staff.filter((u) => u.name.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q));
     }
     return staff;
-  }, [statusFilter, roleFilter, search, role, currentUserId]);
+  }, [statusFilter, roleFilter, search, role, currentUserId, sourceStaff]);
 
-  const selected = TASK_USERS.find((u) => u.id === selectedId) ?? visibleStaff[0];
+  const selected = sourceStaff.find((u) => u.id === selectedId) ?? visibleStaff[0];
 
   return (
     <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
@@ -242,6 +256,8 @@ function StaffDetail({
 }) {
   const status = staffStatus(user);
   const openTasks = TASKS.filter((t) => t.assigneeIds.includes(user.id) && t.status !== 'completed' && t.status !== 'cancelled');
+  // reassignTo still reads TASK_USERS — the operations module isn't live-wired
+  // yet, so the destinations for task-reassignment stay fixture-driven.
   const reassignTo = TASK_USERS.filter((u) => u.role === 'field' && u.id !== user.id && u.active);
   const [reassignTarget, setReassignTarget] = useState<string>('');
 

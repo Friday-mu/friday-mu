@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import { TASK_USER_BY_ID, TASK_USERS } from '../../../_data/tasks';
 import { type TimeOffRequest } from '../../../_data/timeOff';
-import { createTimeOffRequest } from '../../../_data/breezeway';
+import { submitTimeOffRequest, apiRequestToFixtureShape } from '../../../_data/hrClient';
 import { useCurrentUserId } from '../../usePermissions';
+import { fireToast } from '../../Toaster';
 import { IconClose } from '../../icons';
 
 type Mode = { kind: 'new' } | { kind: 'detail'; id: string };
@@ -28,8 +29,22 @@ export function TimeOffDrawer({ mode, canApprove, onClose, onSaved }: Props) {
   const [reason, setReason] = useState('');
 
   const submit = async () => {
-    const req = await createTimeOffRequest({ userId, startDate, endDate, type, reason: reason || undefined });
-    onSaved(req);
+    // userId field is decorative in the live API — the backend resolves
+    // staff_id from the JWT, so users submit only for themselves. Selecting
+    // a different user in the dropdown is ignored server-side.
+    try {
+      const apiType = type === 'personal' ? 'other' : type;
+      const req = await submitTimeOffRequest({
+        start_date: startDate,
+        end_date: endDate,
+        type: apiType as 'annual' | 'sick' | 'unpaid' | 'family' | 'other',
+        reason: reason || undefined,
+      });
+      fireToast(`Time-off request submitted · ${startDate} → ${endDate}`);
+      onSaved(apiRequestToFixtureShape(req));
+    } catch (e) {
+      fireToast(`Submit failed · ${e instanceof Error ? e.message : 'unknown error'}`);
+    }
   };
 
   if (mode.kind !== 'new') return null;
