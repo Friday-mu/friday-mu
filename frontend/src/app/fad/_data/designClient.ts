@@ -810,15 +810,63 @@ export function apiPaymentToFixture(api: ApiPaymentGate): FixturePayment {
   } as unknown as FixturePayment;
 }
 
+// Fixture ActivityLogEntry.kind is a constrained enum; map the verb out of
+// our flexible API `action` string. Falls back to 'update' for anything
+// unrecognised so the renderer never crashes.
+const API_ACTION_TO_KIND: Record<string, FixtureActivity['kind']> = {
+  'project.created': 'create',
+  'project.updated': 'update',
+  'project.paused': 'pause',
+  'project.cancelled': 'cancel',
+  'project.resumed': 'resume',
+  'stage.entered': 'stage_transition',
+  'agreement.sent': 'send',
+  'agreement.signed': 'approve',
+  'payment.received': 'receive_payment',
+  'payment.waived': 'override',
+  'moodboard.sent': 'send',
+  'moodboard.approved': 'approve',
+  'design_pack.sent': 'send',
+  'design_pack.approved': 'approve',
+  'selection.sent': 'send',
+  'selection.picked': 'approve',
+  'selection.picked.by_owner': 'approve',
+  'selection.changes_requested': 'reject',
+  'selection.changes_requested.by_owner': 'reject',
+  'change_order.sent': 'send',
+  'change_order.approved': 'approve',
+  'change_order.rejected': 'reject',
+  'approval.approved': 'approve',
+  'approval.rejected': 'reject',
+  'approval.approved.by_owner': 'approve',
+  'approval.rejected.by_owner': 'reject',
+  'closeout_binder.sent': 'send',
+  'closeout_binder.signed': 'approve',
+};
+
+function describeAction(action: string, payload: Record<string, unknown>): string {
+  // Light-weight summary derivation. Falls back to the action verb itself
+  // so the activity timeline always has something to render.
+  if (action === 'stage.entered' && typeof payload?.stage === 'string') return `Entered ${payload.stage} stage`;
+  if (action === 'payment.received' && typeof payload?.gate_id === 'string') return `Payment received: ${payload.gate_id}`;
+  if (action === 'moodboard.sent' && typeof payload?.version_number === 'number') return `Moodboard v${payload.version_number} sent`;
+  if (action === 'moodboard.approved' && typeof payload?.version_number === 'number') return `Moodboard v${payload.version_number} approved`;
+  if (action === 'design_pack.sent' && typeof payload?.version_number === 'number') return `Design pack v${payload.version_number} sent`;
+  if (action === 'design_pack.approved' && typeof payload?.version_number === 'number') return `Design pack v${payload.version_number} approved`;
+  if (action === 'agreement.sent') return 'Agreement sent for signature';
+  if (action === 'agreement.signed') return 'Agreement signed';
+  if (action === 'project.created') return 'Project created';
+  return action.replace(/[._]/g, ' ');
+}
+
 export function apiActivityToFixture(api: ApiActivity): FixtureActivity {
   return {
     id: api.id,
     projectId: api.project_id,
-    actor: api.actor_name ?? 'System',
-    action: api.action,
-    detail: typeof api.payload === 'object' && api.payload !== null ? JSON.stringify(api.payload) : String(api.payload ?? ''),
-    timestamp: api.created_at,
-    visibility: api.visibility,
+    at: api.created_at,
+    userId: api.actor_user_id ?? null,
+    kind: API_ACTION_TO_KIND[api.action] ?? 'update',
+    summary: describeAction(api.action, api.payload || {}),
   } as unknown as FixtureActivity;
 }
 
