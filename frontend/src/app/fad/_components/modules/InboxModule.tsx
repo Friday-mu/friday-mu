@@ -5,6 +5,7 @@ import {
   INBOX_INTERNAL_NOTES,
   INBOX_THREADS,
   type InboxEntity,
+  type InboxMessage,
   type InboxThread,
   type InternalNote,
   type StayStatus,
@@ -523,24 +524,12 @@ export function InboxModule({ onAskFriday }: Props) {
           </div>
           <div className="inbox-thread-body" ref={threadBodyRef}>
             {/* Render full message thread when available (live data path). Falls
-                back to a single preview bubble for fixture/empty states. */}
+                back to a single preview bubble for fixture/empty states.
+                Per-message Show-original toggle when GMS detected a non-EN
+                source and translated the body. */}
             {thread.messages && thread.messages.length > 0 ? (
               thread.messages.map((m, idx) => (
-                <div key={idx} className={`msg-bubble ${m.from}`}>
-                  <div className="msg-meta">
-                    {m.from === 'them'
-                      ? (m.name && m.name !== 'Guest' ? m.name : thread.guest)
-                      : (m.name || 'Friday')}
-                    {' · '}
-                    {formatRelative(m.time)}
-                    {translateOn && thread.language && thread.language !== 'EN' && m.from === 'them' && (
-                      <span style={{ marginLeft: 8, color: 'var(--color-brand-accent)' }}>
-                        translated from {thread.language}
-                      </span>
-                    )}
-                  </div>
-                  <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
-                </div>
+                <MessageBubble key={idx} m={m} threadGuest={thread.guest} />
               ))
             ) : (
               <div className="msg-bubble them">
@@ -702,6 +691,39 @@ export function InboxModule({ onAskFriday }: Props) {
 // Right-side reservation panel — wired to thread.reservation from the
 // bundled detail response. Falls back to an empty state when the detail
 // fetch hasn't landed yet or the conversation has no linked reservation.
+// Single message bubble. When GMS translated an inbound message
+// (m.bodyOriginal present, different from m.body), shows the translated
+// version with a "Show original · {lang}" toggle. Outbound messages
+// never carry a translation; the toggle is hidden for them.
+function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: string }) {
+  const [showOriginal, setShowOriginal] = useState(false);
+  const hasTranslation = !!(m.bodyOriginal && m.bodyOriginal !== m.body);
+  const body = hasTranslation && showOriginal ? m.bodyOriginal! : m.body;
+  return (
+    <div className={`msg-bubble ${m.from}`}>
+      <div className="msg-meta">
+        {m.from === 'them'
+          ? (m.name && m.name !== 'Guest' ? m.name : threadGuest)
+          : (m.name || 'Friday')}
+        {' · '}
+        {formatRelative(m.time)}
+      </div>
+      <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{body}</div>
+      {hasTranslation && (
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => setShowOriginal((v) => !v)}
+          style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}
+        >
+          {showOriginal ? 'Show translated' : 'Show original'}
+          {m.bodyLang ? ` · ${m.bodyLang}` : ''}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ReservationRightPanel({
   thread,
   onAskFriday,

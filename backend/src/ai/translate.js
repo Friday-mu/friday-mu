@@ -1,50 +1,53 @@
 'use strict';
 
-// Dual-model translation pipeline — Kimi (Moonshot) + Anthropic (Claude).
+// Translation pipeline — Kimi (Moonshot) only.
 //
-// Mirrors the GMS detect+translate pattern from
-// `friday-gms/src/services/draft-generator.ts:detectLanguage()` — a single
-// LLM call returns BOTH the source language ISO code AND the English
-// translation (null when already English). FAD then runs this against
-// two providers in parallel for the current evaluation phase and picks
-// between them. Long-term direction is Kimi-only; this file is the
-// single point to retire when that happens.
+// Functional parity with friday-gms/src/services/draft-generator.ts:
+// detectLanguage() — same JSON `{language, translation}` contract, same
+// language coverage (~25 named + "any other" catch-all), same BLOCKED_LANG_
+// CODES filter, same emoji-only short-circuit. Long-term direction is
+// Kimi-only across all FR AI work; this file is the single point of contact
+// for translation.
 
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-let Anthropic = null;
-try {
-  Anthropic = require('@anthropic-ai/sdk').default || require('@anthropic-ai/sdk');
-} catch (e) {
-  console.warn('[translate] @anthropic-ai/sdk not available:', e.message);
-}
-
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-// `moonshot-v1-8k` is the broadly-available Moonshot model on standard plans.
-// Newer K2/K2.6 previews require a different plan tier — override via
-// KIMI_MODEL env var when those become available on this account.
+// moonshot-v1-8k is the broadly-available Moonshot model. Newer K2/K2.6
+// previews require a different plan tier — override via KIMI_MODEL env var
+// when those become available on this account.
 const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
-// Per user direction: Opus during the dual-model evaluation phase. Long-
-// term will swap to Haiku-class (which is what GMS uses for detectLanguage,
-// at ~5% the cost). Set ANTHROPIC_MODEL=claude-haiku-4-5-20251001 to switch.
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-7';
 
-const SYSTEM_PROMPT = `You are a language detection and translation assistant. Detect the language of the user's text and translate it to English if it is not already English. Support ALL languages: Chinese (zh / zh-TW), Japanese (ja), Korean (ko), Thai (th), Vietnamese (vi), Hindi (hi), Bahasa Indonesia (id), Bahasa Malay (ms), Russian (ru), Arabic (ar), Hebrew (he), French (fr), German (de), Spanish (es), Italian (it), Portuguese (pt), Dutch (nl), Danish (da), Swedish (sv), Norwegian (no), Finnish (fi), Polish (pl), Czech (cs), Turkish (tr), and any other. Use ISO 639-1 codes. Preserve tone, emoji, and punctuation. Respond with ONLY valid JSON, no other text:
+const SYSTEM_PROMPT = `You are a language detection and translation assistant. Detect the language of the user's text and translate it to English if it is not already English. Support ALL languages: Chinese (Simplified zh, Traditional zh-TW), Japanese (ja), Korean (ko), Thai (th), Vietnamese (vi), Hindi (hi), Bahasa Indonesia (id), Bahasa Malay (ms), Russian (ru), Ukrainian (uk), Arabic (ar), Hebrew (he), French (fr), German (de), Spanish (es), Italian (it), Portuguese (pt), Dutch (nl), Danish (da), Swedish (sv), Norwegian (no), Finnish (fi), Polish (pl), Czech (cs), Turkish (tr), Greek (el), Romanian (ro), Hungarian (hu), Bulgarian (bg), and any other. Use ISO 639-1 codes. Preserve tone, emoji, and punctuation. Respond with ONLY valid JSON, no other text:
 { "language": "xx", "translation": "<english translation>" }
 If the text is already English, set translation to null:
 { "language": "en", "translation": null }`;
 
-// Codes the LLM occasionally hallucinates that we want to ignore (treat as
-// unknown — fall back to 'en' downstream). Mirrors GMS BLOCKED_LANG_CODES.
+// Codes the LLM occasionally hallucinates that we want to ignore. Mirrors
+// the BLOCKED_LANG_CODES filter in friday-gms detectLanguage().
 const BLOCKED_LANG_CODES = ['xx', 'und', 'unk', 'unknown', ''];
 
-// ────────────────── short-circuit English ──────────────────
-// Cheap regex pre-check to skip LLM calls on text that's obviously English.
-// Conservative on purpose — false negatives are fine (we just spend a few
-// extra cents per non-English call); false positives mean a non-English
-// review never gets translated, which is the worse failure.
+// ────────────────── emoji-only short-circuit ──────────────────
+// Matches GMS's isEmojiOnly() — text consisting entirely of emoji +
+// whitespace is meaningless to translate. Returns language='en',
+// translation=null (caller renders original). Without this, a single 🙏
+// message would cost a full LLM call for no useful output.
+const EMOJI_RANGES = /[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{1F300}-\u{1F9FF}‍️]/u;
+const NON_EMOJI = /[^\s\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{1F300}-\u{1F9FF}‍️]/u;
+
+function isEmojiOnly(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (!t) return false;
+  // Has at least one emoji AND no non-emoji-non-whitespace characters.
+  return EMOJI_RANGES.test(t) && !NON_EMOJI.test(t);
+}
+
+// ────────────────── English short-circuit ──────────────────
+// Skip the LLM round-trip for clearly English text. Conservative on
+// purpose — false negatives just spend a few extra cents per call;
+// false positives leave non-English text untranslated which is worse.
 
 const ENGLISH_MARKERS = new Set([
   'the', 'and', 'was', 'were', 'with', 'that', 'this', 'has', 'have',
@@ -53,12 +56,21 @@ const ENGLISH_MARKERS = new Set([
   'great', 'nice', 'beautiful', 'amazing', 'perfect', 'recommend',
 ]);
 
+// Matches a single character outside the Latin / Latin-Extended scripts —
+// CJK, Cyrillic, Arabic, Hebrew, Thai, Devanagari, Greek, Korean, etc.
+// Any presence of these is a strong "not English" signal.
+const NON_LATIN_SCRIPT = /[Ͱ-ϿЀ-ӿԀ-ԯ֐-׿؀-ۿ฀-๿ऀ-ॿ一-鿿぀-ゟ゠-ヿ가-힯]/;
+
 function looksEnglish(text) {
   if (!text || typeof text !== 'string') return true;
   const trimmed = text.trim();
   if (trimmed.length < 15) return true;
+  // Any non-Latin script character → definitely not English. Must NOT
+  // short-circuit, must call the LLM. (Earlier bug: Japanese / Russian
+  // text returned 0 Latin words and falsely tripped the "too short" gate.)
+  if (NON_LATIN_SCRIPT.test(trimmed)) return false;
   const words = trimmed.toLowerCase().match(/\b[a-zà-ÿ]+\b/g) || [];
-  if (words.length < 6) return true;
+  if (words.length < 6) return false; // Latin script but too few words to be confident
   const distinctHits = new Set();
   for (const w of words) if (ENGLISH_MARKERS.has(w)) distinctHits.add(w);
   const density = distinctHits.size === 0 ? 0 :
@@ -104,7 +116,7 @@ function parseModelJson(raw) {
   } catch { return null; }
 }
 
-// ────────────────── model calls ──────────────────
+// ────────────────── model call ──────────────────
 
 async function callKimi(text) {
   if (!process.env.KIMI_API_KEY) return { ok: false, error: 'KIMI_API_KEY not set' };
@@ -138,108 +150,74 @@ async function callKimi(text) {
   }
 }
 
-async function callAnthropic(text) {
-  if (!Anthropic || !process.env.ANTHROPIC_API_KEY) {
-    return { ok: false, error: 'ANTHROPIC_API_KEY not set or SDK missing' };
-  }
-  const start = Date.now();
-  try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const msg = await client.messages.create({
-      model: ANTHROPIC_MODEL,
-      max_tokens: 2000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: text }],
-    });
-    const raw = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-    const parsed = parseModelJson(raw);
-    if (!parsed) return { ok: false, error: 'Anthropic returned unparseable JSON', latencyMs: Date.now() - start, raw };
-    return { ok: true, parsed, latencyMs: Date.now() - start, model: ANTHROPIC_MODEL };
-  } catch (e) {
-    return { ok: false, error: e.message, latencyMs: Date.now() - start };
-  }
-}
-
-// ────────────────── pick best ──────────────────
-
-/** Picks between two model responses. Prefer Kimi when both ok (long-term
- *  target). When one fails, take the other. When both fail, null. */
-function pickBest(kimi, anthropic) {
-  if (kimi.ok && anthropic.ok) {
-    return { picked: 'kimi', ...kimi.parsed, reason: 'both ok — preferring kimi' };
-  }
-  if (kimi.ok) return { picked: 'kimi', ...kimi.parsed, reason: 'anthropic failed' };
-  if (anthropic.ok) return { picked: 'anthropic', ...anthropic.parsed, reason: 'kimi failed' };
-  return null;
-}
-
 // ────────────────── public API ──────────────────
 
 async function translateText(text, opts = {}) {
-  if (!text || typeof text !== 'string') {
-    return emptyResult(text);
-  }
+  if (!text || typeof text !== 'string') return emptyResult(text);
   const trimmed = text.trim();
   if (!trimmed) return emptyResult(text);
 
-  // Source-language hint short-circuit. Booking gives content.language_code
-  // straight in the review payload; trust it.
+  // Emoji-only short-circuit (matches GMS).
+  if (isEmojiOnly(trimmed)) {
+    return { translated: trimmed, original: trimmed, sourceLang: 'en', cached: false, model: null, latencyMs: 0, reason: 'emoji-only' };
+  }
+
+  // Channel-supplied language hint (Booking has content.language_code).
   const hint = opts.sourceLang ? String(opts.sourceLang).toLowerCase() : null;
   if (hint === 'en' || hint === 'en-us' || hint === 'en-gb') {
     return englishResult(trimmed, 'en');
   }
 
-  // Heuristic short-circuit. Saves a round-trip to both models for clearly
-  // English text. False negatives just mean we hit the LLMs needlessly —
-  // safe failure mode.
   if (!hint && looksEnglish(trimmed)) {
     return englishResult(trimmed, 'en (heuristic)');
   }
 
-  // Cache hit. Backend cache survives nodemon restarts via disk; frontend
-  // hook also memoizes within a session.
+  // Disk cache. Backend cache survives nodemon restarts; frontend hook
+  // also memoizes within a session.
   const key = opts.cacheKey || hashKey(trimmed);
   const hit = cache[key];
   if (hit && hit.original === trimmed) {
     return { ...hit, cached: true };
   }
 
-  // Both models run in parallel. Each one's failure is independent.
-  const [kimi, anthropic] = await Promise.all([callKimi(trimmed), callAnthropic(trimmed)]);
-  const picked = pickBest(kimi, anthropic);
+  const kimi = await callKimi(trimmed);
+  if (!kimi.ok) {
+    return {
+      translated: null,
+      original: trimmed,
+      sourceLang: null,
+      cached: false,
+      model: KIMI_MODEL,
+      latencyMs: kimi.latencyMs ?? null,
+      error: kimi.error,
+    };
+  }
 
-  const detectedLang = picked?.language || kimi.parsed?.language || anthropic.parsed?.language || null;
-  // If LLM says English, we don't have a translation — use the original.
-  const finalTranslated = (detectedLang === 'en' || !picked?.translation) ? trimmed : picked.translation;
+  const detectedLang = kimi.parsed.language;
+  // LLM says English → no translation needed, return original.
+  const finalTranslated = (detectedLang === 'en' || !kimi.parsed.translation)
+    ? trimmed
+    : kimi.parsed.translation;
 
   const result = {
     translated: finalTranslated,
     original: trimmed,
     sourceLang: detectedLang,
-    picked: picked?.picked ?? null,
-    pickReason: picked?.reason ?? null,
-    kimi: kimi.ok
-      ? { ok: true, latencyMs: kimi.latencyMs, language: kimi.parsed.language, translation: kimi.parsed.translation }
-      : { ok: false, error: kimi.error, latencyMs: kimi.latencyMs },
-    anthropic: anthropic.ok
-      ? { ok: true, latencyMs: anthropic.latencyMs, language: anthropic.parsed.language, translation: anthropic.parsed.translation }
-      : { ok: false, error: anthropic.error, latencyMs: anthropic.latencyMs },
     cached: false,
+    model: KIMI_MODEL,
+    latencyMs: kimi.latencyMs,
   };
 
-  // Cache only successful translations (not failures — retry next call).
-  if (picked) {
-    cache[key] = result;
-    writeCache();
-  }
+  cache[key] = result;
+  writeCache();
   return result;
 }
 
 function emptyResult(text) {
-  return { translated: null, original: text || '', sourceLang: null, picked: null, pickReason: null, kimi: null, anthropic: null, cached: false };
+  return { translated: null, original: text || '', sourceLang: null, cached: false, model: null, latencyMs: 0 };
 }
 function englishResult(text, lang) {
-  return { translated: text, original: text, sourceLang: lang, picked: null, pickReason: 'english short-circuit', kimi: null, anthropic: null, cached: false };
+  return { translated: text, original: text, sourceLang: lang, cached: false, model: null, latencyMs: 0, reason: 'english short-circuit' };
 }
 
 function hashKey(s) {
@@ -258,5 +236,6 @@ function getCacheStats() {
 module.exports = {
   translateText,
   looksEnglish,
+  isEmojiOnly,
   getCacheStats,
 };

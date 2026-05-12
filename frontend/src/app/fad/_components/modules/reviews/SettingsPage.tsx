@@ -253,7 +253,7 @@ function AiCard({ status }: { status: { kimi: IntegrationStatus; anthropic: Inte
         AI providers
       </div>
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 10, lineHeight: 1.5 }}>
-        Both Kimi and Anthropic are used in parallel during the current evaluation phase (translation, tag extraction, suggested actions). Results are compared and the better/combined output is taken. Long-term target is Kimi-only.
+        All FAD AI work (translation, tag extraction, suggested actions, anomaly detection) runs through Kimi.
       </div>
       <IntegrationRow
         name="Kimi (Moonshot)"
@@ -264,18 +264,6 @@ function AiCard({ status }: { status: { kimi: IntegrationStatus; anthropic: Inte
           )
         }
       />
-      <IntegrationRow
-        name="Anthropic (Claude Opus)"
-        configured={status.anthropic.configured}
-        actions={
-          status.anthropic.configured ? null : (
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Set ANTHROPIC_API_KEY</span>
-          )
-        }
-      />
-      {status.openai.configured && (
-        <IntegrationRow name="OpenAI" configured={true} actions={<span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>fallback</span>} />
-      )}
     </div>
   );
 }

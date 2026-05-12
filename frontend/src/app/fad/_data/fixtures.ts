@@ -5,7 +5,15 @@ export interface InboxMessage {
   from: 'them' | 'us';
   name: string;
   time: string;
+  /** Displayed body. When the message arrived in a non-English language and
+   *  GMS translated it, this is the English translation. */
   body: string;
+  /** Original (untranslated) body when GMS detected a non-English source
+   *  and produced a translation. Undefined when no translation exists
+   *  (text was already English, or pre-translation rows). */
+  bodyOriginal?: string;
+  /** ISO 639-1 source-language code from GMS's detectLanguage(). */
+  bodyLang?: string;
 }
 
 export type InboxEntity = 'guest' | 'owner' | 'vendor';

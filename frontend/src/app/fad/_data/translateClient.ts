@@ -15,10 +15,11 @@ export interface TranslateResult {
   translated: string | null;
   original: string;
   sourceLang: string | null;
-  picked: 'kimi' | 'anthropic' | null;
   cached: boolean;
-  kimi?: { ok: boolean; error?: string };
-  anthropic?: { ok: boolean; error?: string };
+  model?: string | null;
+  latencyMs?: number | null;
+  error?: string;
+  reason?: string;
 }
 
 const memo = new Map<string, TranslateResult>();

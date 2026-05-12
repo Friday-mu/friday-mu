@@ -525,20 +525,14 @@ function ReviewBody({ rv }: { rv: Review }) {
   const titleTranslated = titleT.result?.translated || rv.title;
   const bodyTranslated = bodyT.result?.translated || rv.reviewText;
 
-  // Only offer the toggle when we actually translated (translated text
-  // differs from original AND something was picked).
-  const wasTranslated = !!(bodyT.result?.picked && bodyT.result.translated && bodyT.result.translated !== bodyT.result.original);
+  // Only offer the toggle when translated text differs from original.
+  const wasTranslated = !!(
+    bodyT.result?.translated
+    && bodyT.result.translated !== bodyT.result.original
+  );
 
   const showTitle = showOriginal ? rv.title : titleTranslated;
   const showBody = showOriginal ? rv.reviewText : bodyTranslated;
-
-  // Provider attribution surfaces which model produced the translation —
-  // useful during the dual-model eval phase. Drops out when only one model
-  // configured.
-  const picked = bodyT.result?.picked;
-  const kimiOk = bodyT.result?.kimi?.ok;
-  const anthropicOk = bodyT.result?.anthropic?.ok;
-  const bothRan = kimiOk !== undefined && anthropicOk !== undefined && (kimiOk || anthropicOk);
 
   return (
     <div style={{ marginBottom: 12 }}>
@@ -554,23 +548,15 @@ function ReviewBody({ rv }: { rv: Review }) {
         </div>
       )}
       {wasTranslated && (
-        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            type="button"
-            className="btn ghost sm"
-            onClick={() => setShowOriginal((v) => !v)}
-            style={{ fontSize: 11 }}
-          >
-            {showOriginal ? 'Show translated' : 'Show original'}
-            {bodyT.result?.sourceLang ? ` · ${bodyT.result.sourceLang}` : ''}
-          </button>
-          {bothRan && picked && (
-            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-              via {picked === 'kimi' ? 'Kimi' : 'Anthropic'}
-              {kimiOk && anthropicOk ? ' (both succeeded)' : ''}
-            </span>
-          )}
-        </div>
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => setShowOriginal((v) => !v)}
+          style={{ fontSize: 11, marginTop: 8 }}
+        >
+          {showOriginal ? 'Show translated' : 'Show original'}
+          {bodyT.result?.sourceLang ? ` · ${bodyT.result.sourceLang}` : ''}
+        </button>
       )}
       {bodyT.error && (
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>

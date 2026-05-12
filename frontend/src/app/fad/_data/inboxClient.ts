@@ -98,14 +98,19 @@ function channelLabel(key: InboxChannel): string {
 
 function transformGmsMessage(raw: Record<string, unknown>): InboxMessage {
   const direction = String(raw.direction ?? 'inbound');
-  // Prefer translated_body (English) when available; falls back to original.
-  // Translation toggle in the UI can show the original later (bw-8 wiring).
-  const body = String(raw.translated_body || raw.body || '');
+  // When GMS's translateConversationMessages populated translated_body,
+  // display the English translation by default and stash the original so
+  // the UI can offer a "Show original" toggle.
+  const translated = raw.translated_body ? String(raw.translated_body) : '';
+  const original = raw.body ? String(raw.body) : '';
+  const hasTranslation = translated && translated !== original;
   return {
     from: direction === 'outbound' ? 'us' : 'them',
     name: String(raw.sender_name || (direction === 'outbound' ? 'Friday' : 'Guest')),
     time: String(raw.created_at || new Date().toISOString()),
-    body,
+    body: hasTranslation ? translated : (original || translated),
+    bodyOriginal: hasTranslation ? original : undefined,
+    bodyLang: raw.original_language ? String(raw.original_language) : undefined,
   };
 }
 
