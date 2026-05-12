@@ -28,7 +28,7 @@ app.use(limiter);
 // ====================================================================
 // GMS API Configuration
 // ====================================================================
-const GMS_BASE_URL = process.env.GMS_BASE_URL || 'http://admin.friday.mu:8080';
+const GMS_BASE_URL = process.env.GMS_BASE_URL || 'https://gms.friday.mu';
 const GMS_AUTH_TOKEN = process.env.GMS_AUTH_TOKEN;
 
 // Create axios instance for GMS API calls
@@ -844,13 +844,27 @@ const userGmsCall = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Log every upstream failure so 502s aren't silent in the backend logs.
+// Includes whether the failure was at TCP-layer (no e.response — connection
+// refused / DNS / timeout) or HTTP-layer (e.response exists with status).
+function logUpstreamFailure(label, e) {
+  if (e.response) {
+    console.error(`[${label}] upstream ${e.response.status}:`, e.response.data || e.message);
+  } else {
+    console.error(`[${label}] upstream unreachable (${e.code || 'unknown'}):`, e.message);
+  }
+}
+
 app.post('/api/auth/login', asyncHandler(async (req, res) => {
   try {
     const { data } = await userGmsCall.post('/api/auth/login', req.body);
     res.json(data);
   } catch (e) {
+    logUpstreamFailure('auth/login', e);
     const status = e.response?.status || 502;
-    res.status(status).json({ error: e.response?.data?.error || 'Login failed' });
+    res.status(status).json({
+      error: e.response?.data?.error || (e.response ? 'Login failed' : 'GMS unreachable'),
+    });
   }
 }));
 
@@ -861,8 +875,11 @@ app.get('/api/auth/me', asyncHandler(async (req, res) => {
     const { data } = await userGmsCall.get('/api/auth/me', { headers: { Authorization: auth } });
     res.json(data);
   } catch (e) {
+    logUpstreamFailure('auth/me', e);
     const status = e.response?.status || 502;
-    res.status(status).json({ error: e.response?.data?.error || 'Auth check failed' });
+    res.status(status).json({
+      error: e.response?.data?.error || (e.response ? 'Auth check failed' : 'GMS unreachable'),
+    });
   }
 }));
 
@@ -898,9 +915,10 @@ async function gmsProxy(req, res, gmsPath, method = 'get') {
       : client[method](gmsPath, req.body));
     res.json(data);
   } catch (e) {
+    logUpstreamFailure(`inbox ${method.toUpperCase()} ${gmsPath}`, e);
     const status = e.response?.status || 502;
     res.status(status).json({
-      error: e.response?.data?.error || e.message || 'Upstream error',
+      error: e.response?.data?.error || e.message || (e.response ? 'Upstream error' : 'GMS unreachable'),
     });
   }
 }
@@ -933,10 +951,10 @@ app.get('/api/reviews/list', requireAuth, asyncHandler(async (req, res) => {
     const { data } = await guestyAPI.get('/v1/reviews', { params: req.query });
     res.json(data);
   } catch (e) {
+    logUpstreamFailure('reviews/list (Guesty)', e);
     const status = e.response?.status || 502;
-    console.error('[Reviews] Guesty fetch failed:', e.response?.data || e.message);
     res.status(status).json({
-      error: e.response?.data?.error || e.message || 'Reviews fetch failed',
+      error: e.response?.data?.error || e.message || (e.response ? 'Reviews fetch failed' : 'Guesty unreachable'),
     });
   }
 }));
