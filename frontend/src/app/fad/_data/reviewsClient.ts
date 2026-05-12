@@ -34,54 +34,68 @@ function initials(name: string): string {
   );
 }
 
+// Guesty Open-API review shape (verified 2026-05-12 via /v1/reviews):
+//   top level: _id, channelId, externalReviewId, guestId, listingId,
+//              externalListingId, externalReservationId, reservationId,
+//              createdAt, updatedAt, reviewReplies[]
+//   rawReview: { id, reviewer_role, reviewer_id, reviewee_role, reviewee_id,
+//                listing_id, reservation_confirmation_code, hidden, submitted,
+//                overall_rating, public_review, category_ratings[],
+//                category_ratings_cleanliness, _accuracy, _checkin,
+//                _communication, _location, _value, submitted_at, ... }
+//
+// guestName is NOT in the response — Guesty returns only guestId. To get the
+// real name we'd need a separate /guests/:id call per review (heavy). For v1
+// we display "Guest" + last-6-of-guestId so each card is distinguishable.
+// Channel detection lives in channelId (opaque ID) — collapsed to 'direct'
+// until we map Guesty's channel UUIDs to our enum.
+
 export function transformGuestyReview(raw: Record<string, unknown>): Review {
-  const guestName = String(
-    (raw.guestName as string) ||
-      ((raw.guest as Record<string, unknown>)?.fullName as string) ||
-      (raw.author as string) ||
-      'Guest',
-  );
-  const rating = Number(raw.overallRating ?? raw.rating ?? raw.stars ?? 0);
-  const channel = mapChannel(raw.channel ?? raw.source ?? raw.platform);
+  const rawReview = (raw.rawReview as Record<string, unknown>) || {};
+  const rating = Number(rawReview.overall_rating ?? raw.overallRating ?? raw.rating ?? 0);
+
+  // Guest fallback name: "Guest a3c0bec" — gives each card a unique label
+  // until guest-lookup ships.
+  const guestId = String(raw.guestId || '');
+  const guestName = guestId ? `Guest ${guestId.slice(-6)}` : 'Guest';
+
   const propertyCode = String(
-    raw.propertyCode ||
-      raw.listingNickname ||
-      ((raw.listing as Record<string, unknown>)?.nickname as string) ||
-      raw.listingId ||
-      '???',
+    raw.externalListingId || raw.listingId || rawReview.listing_id || '???',
   );
-  const response = (raw.response as Record<string, unknown>) || {};
-  const replied = !!(response.text || raw.reply || raw.respondedAt);
-  const sub = (raw.subRatings as Record<string, number>) || {};
+
+  const replies = (raw.reviewReplies as unknown[]) || [];
+  const replied = Array.isArray(replies) && replies.length > 0;
+  const firstReply = replied ? (replies[0] as Record<string, unknown>) : {};
 
   return {
-    id: String(raw._id || raw.id || raw.externalId || `rv-live-${Math.random().toString(36).slice(2, 10)}`),
-    externalId: String(raw._id || raw.externalId || raw.id || ''),
-    channel,
-    channelReviewId: (raw.channelReviewId as string) || (raw.externalReviewId as string),
-    channelUrl: (raw.channelUrl as string) || (raw.publicUrl as string),
-    reservationId:
-      (raw.reservationId as string) || ((raw.reservation as Record<string, unknown>)?._id as string),
+    id: String(raw._id || rawReview.id || `rv-live-${Math.random().toString(36).slice(2, 10)}`),
+    externalId: String(raw.externalReviewId || rawReview.id || raw._id || ''),
+    channel: mapChannel(raw.channelId ?? raw.channel),
+    channelReviewId: (raw.externalReviewId as string) || (rawReview.id as string),
+    channelUrl: undefined,
+    reservationId: raw.reservationId ? String(raw.reservationId) : undefined,
     propertyCode,
     cohort: PROPERTY_COHORT[propertyCode] ?? 'flic_en_flac',
     guestName,
     guestInitials: initials(guestName),
     rating,
     subRatings: {
-      accuracy: Number(sub.accuracy ?? rating),
-      checkin: Number(sub.checkin ?? rating),
-      cleanliness: Number(sub.cleanliness ?? rating),
-      communication: Number(sub.communication ?? rating),
-      location: Number(sub.location ?? rating),
-      value: Number(sub.value ?? rating),
+      accuracy: Number(rawReview.category_ratings_accuracy ?? rating),
+      checkin: Number(rawReview.category_ratings_checkin ?? rating),
+      cleanliness: Number(rawReview.category_ratings_cleanliness ?? rating),
+      communication: Number(rawReview.category_ratings_communication ?? rating),
+      location: Number(rawReview.category_ratings_location ?? rating),
+      value: Number(rawReview.category_ratings_value ?? rating),
     },
-    title: String(raw.title || ''),
-    reviewText: String(raw.publicReview || raw.comments || raw.text || raw.body || ''),
-    submittedAt: String(raw.submittedAt || raw.createdAt || raw.date || new Date().toISOString()),
+    title: '', // Guesty reviews don't have a separate title field
+    reviewText: String(rawReview.public_review || ''),
+    submittedAt: String(
+      rawReview.submitted_at || rawReview.first_completed_at || raw.createdAt || new Date().toISOString(),
+    ),
     sentiment: rating >= 4.5 ? 'positive' : rating >= 3 ? 'mixed' : 'negative',
     replyStatus: replied ? 'sent' : 'unreplied',
-    replyText: (response.text as string) || (raw.reply as string),
-    replySentAt: (response.sentAt as string) || (raw.respondedAt as string),
+    replyText: (firstReply.text as string) || undefined,
+    replySentAt: (firstReply.created_at as string) || undefined,
   };
 }
 
