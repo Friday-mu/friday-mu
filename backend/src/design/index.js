@@ -24,4 +24,10 @@ router.get('/health', requireDesignPerm('design:read'), (req, res) => {
   });
 });
 
+// Sub-routers. Each owns a single resource family; see the per-file
+// header for endpoint inventory.
+router.use('/projects', require('./projects'));
+router.use('/leads', require('./leads'));
+router.use('/counterparties', require('./counterparties'));
+
 module.exports = router;
