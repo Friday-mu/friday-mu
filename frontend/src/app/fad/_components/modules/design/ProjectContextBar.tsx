@@ -31,6 +31,8 @@ interface Props {
   onBack?: () => void;
   /** Called after the lifecycle menu mutates the project (pause/cancel/resume). */
   onLifecycleChange?: () => void;
+  /** design-be-10: opens the edit drawer. Director-only — parent gates the prop. */
+  onEditProject?: () => void;
 }
 
 const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warning' | 'danger' | 'neutral' | 'accent' }) => {
@@ -54,7 +56,7 @@ const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warn
   );
 };
 
-export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange }: Props) {
+export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange, onEditProject }: Props) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
 
@@ -153,6 +155,25 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {onEditProject && (
+          <button
+            type="button"
+            onClick={onEditProject}
+            data-project-edit-button
+            title="Edit project details"
+            style={{
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-border-secondary)',
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-primary)',
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            ✏️ Edit project
+          </button>
+        )}
         {onOpenOwnerPortal && (
           <button
             type="button"
