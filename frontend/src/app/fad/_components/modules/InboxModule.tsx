@@ -495,17 +495,34 @@ export function InboxModule({ onAskFriday }: Props) {
             </div>
           </div>
           <div className="inbox-thread-body">
-            <div className="msg-bubble them">
-              <div className="msg-meta">
-                {thread.guest} · {thread.time}
-                {translateOn && thread.language && thread.language !== 'EN' && (
-                  <span style={{ marginLeft: 8, color: 'var(--color-brand-accent)' }}>
-                    translated from {thread.language}
-                  </span>
-                )}
+            {/* Render full message thread when available (live data path). Falls
+                back to a single preview bubble for fixture/empty states. */}
+            {thread.messages && thread.messages.length > 0 ? (
+              thread.messages.map((m, idx) => (
+                <div key={idx} className={`msg-bubble ${m.from}`}>
+                  <div className="msg-meta">
+                    {m.from === 'them'
+                      ? (m.name && m.name !== 'Guest' ? m.name : thread.guest)
+                      : (m.name || 'Friday')}
+                    {' · '}
+                    {m.time}
+                    {translateOn && thread.language && thread.language !== 'EN' && m.from === 'them' && (
+                      <span style={{ marginLeft: 8, color: 'var(--color-brand-accent)' }}>
+                        translated from {thread.language}
+                      </span>
+                    )}
+                  </div>
+                  <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
+                </div>
+              ))
+            ) : (
+              <div className="msg-bubble them">
+                <div className="msg-meta">
+                  {thread.guest} · {thread.time}
+                </div>
+                <div className="msg-body">{thread.preview}</div>
               </div>
-              <div className="msg-body">{thread.messages?.[0]?.body || thread.preview}</div>
-            </div>
+            )}
 
             {/* Internal notes — visible to team only, not to the guest */}
             {INBOX_INTERNAL_NOTES.filter((n) => n.threadId === thread.id).map((n) => (
