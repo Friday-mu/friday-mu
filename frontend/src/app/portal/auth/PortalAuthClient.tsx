@@ -6,6 +6,11 @@ import {
   signMockToken,
   type MockJwtClaims,
 } from '../../fad/_data/design';
+import {
+  clearPortalToken,
+  loadPortalProject,
+  setPortalToken,
+} from '../../../lib/portalClient';
 
 /**
  * v0.1 demo entry — slug for the project we promote on the sample portal CTA.
@@ -18,18 +23,24 @@ const DEMO_PROJECT_SLUG = 'ohana-house';
 type AuthState =
   | { phase: 'verifying' }
   | { phase: 'redirecting'; slug: string }
-  | { phase: 'expired'; reason: string; slug: string | null }
+  | { phase: 'expired'; reason: string | null; slug: string | null }
   | { phase: 'no_token'; reason: string | null; slug: string | null };
 
 /**
- * Handles `/portal/auth?token=<jwt>` magic-link redemption. On a valid token:
- * persists a session in localStorage and bounces to `/portal/projects/<slug>`.
- * On an invalid/expired/missing token: shows a clear "ask Friday for a fresh
- * link" screen with WhatsApp + email CTAs.
+ * Handles `/portal/auth?token=<jwt>` magic-link redemption.
  *
- * @demo:auth — token validation is an in-memory mock, not a real HMAC. The
- * shape of the validator is the same one the wiring sprint plugs into.
- * Tag: PROD-DESIGN-PORTAL-AUTH.
+ * Live wiring (design-be-6d):
+ *   1. Read `?token=` from URL.
+ *   2. Persist it in `localStorage.portal_token` via portalClient.
+ *   3. Fetch `/api/design/portal/me` — this both validates the token
+ *      (the backend checks signature, expiry, revoked_at, tenant) and
+ *      returns the project so we know which slug to redirect to.
+ *   4. On success: replace location with `/portal/projects/<slug>`.
+ *   5. On failure: clear the bad token and show the "ask Friday for a
+ *      fresh link" screen.
+ *
+ * The mock-token sample-portal CTA below is kept behind the @demo:ui tag
+ * for the in-FAD preview flow; remove it when staff-side minting ships.
  */
 export function PortalAuthClient() {
   const [state, setState] = useState<AuthState>({ phase: 'verifying' });
@@ -46,17 +57,35 @@ export function PortalAuthClient() {
       setState({ phase: 'no_token', reason: errorParam, slug: slugHint });
       return;
     }
-    const result = designClient.magicLinks.validate(token);
-    if (!result.valid) {
-      setState({ phase: 'expired', reason: result.error, slug: slugHint });
-      return;
-    }
-    persistSession(result.claims);
-    setState({ phase: 'redirecting', slug: result.claims.slug });
-    // Bounce after a beat so the "Verifying" copy isn't a flash.
-    window.setTimeout(() => {
-      window.location.replace(`/portal/projects/${result.claims.slug}`);
-    }, 250);
+
+    // Persist immediately so portalFetch picks it up.
+    setPortalToken(token);
+    let cancelled = false;
+    loadPortalProject()
+      .then(({ project }) => {
+        if (cancelled) return;
+        setState({ phase: 'redirecting', slug: project.slug });
+        // Bounce after a beat so the "Verifying" copy isn't a flash.
+        window.setTimeout(() => {
+          window.location.replace(`/portal/projects/${project.slug}`);
+        }, 250);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // Live validation failed (signature bad / revoked / expired /
+        // tenant mismatch). portalFetch already cleared the token on 401;
+        // make sure storage is clean regardless so a partially-set token
+        // can't poison a follow-up attempt.
+        clearPortalToken();
+        setState({
+          phase: 'expired',
+          reason: err instanceof Error ? err.message : String(err),
+          slug: slugHint,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (state.phase === 'verifying') {
@@ -83,7 +112,7 @@ export function PortalAuthClient() {
   // headline copy.
   const headline =
     state.phase === 'expired'
-      ? 'This link has expired.'
+      ? 'This link has expired or been revoked.'
       : state.phase === 'no_token' && state.reason === 'session_required'
       ? 'You need a fresh link to continue.'
       : state.phase === 'no_token' && state.reason === 'scope_mismatch'
@@ -136,9 +165,10 @@ export function PortalAuthClient() {
 }
 
 /**
- * @demo:ui — Skips the magic-link round-trip by minting + persisting a
- * session directly. Same code path the real handler uses, just without
- * the URL hop.
+ * @demo:ui — Skips the magic-link round-trip by minting + persisting a mock
+ * session directly. Bypasses the live /api/design/portal/me validation —
+ * only used for the in-FAD preview surface where staff are demo'ing the
+ * owner experience without a live token in hand.
  */
 function enterDemoPortal(slug: string) {
   const project = designClient.projects.getBySlug(slug);
@@ -151,11 +181,11 @@ function enterDemoPortal(slug: string) {
     ownerId: project.counterpartyId,
     slug,
   });
-  persistSession(claims);
+  persistMockSession(claims);
   window.location.replace(`/portal/projects/${slug}`);
 }
 
-function persistSession(claims: MockJwtClaims) {
+function persistMockSession(claims: MockJwtClaims) {
   const key = `portal:session:${claims.slug}`;
   const value = JSON.stringify({
     projectSlug: claims.slug,

@@ -29,12 +29,19 @@ interface Props {
    * Defaults to a `preview-session` sentinel for the in-FAD modal preview.
    */
   portalSession?: string;
+  /**
+   * When set, renders a "Back to login" affordance in the project header.
+   * The standalone /portal/projects/[slug] route wires this to clear the
+   * portal token and bounce to /portal/auth; the in-FAD preview omits it.
+   */
+  onBackToLogin?: () => void;
 }
 
 export function PortalContent({
   project,
   initialTab = 'overview',
   portalSession = 'preview-session',
+  onBackToLogin,
 }: Props) {
   const [tab, setTab] = useState<PortalTab>(initialTab);
 
@@ -163,31 +170,57 @@ export function PortalContent({
           padding: '20px 24px',
           background: 'var(--color-background-primary)',
           borderBottom: '0.5px solid var(--color-border-tertiary)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16,
         }}
       >
-        {firstName && (
-          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6 }}>
-            Hi {firstName} —
-          </div>
-        )}
-        <h2
-          style={{
-            margin: 0,
-            fontFamily: 'var(--font-friday-fad)',
-            fontSize: 22,
-            fontWeight: 500,
-          }}
-        >
-          {project.name}
-        </h2>
-        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 6 }}>
-          {property?.name}
-          {designLeadLabel && (
-            <>
-              {' · '}Your Friday lead: <strong>{designLeadLabel}</strong>
-            </>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {firstName && (
+            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6 }}>
+              Hi {firstName} —
+            </div>
           )}
+          <h2
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-friday-fad)',
+              fontSize: 22,
+              fontWeight: 500,
+            }}
+          >
+            {project.name}
+          </h2>
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 6 }}>
+            {property?.name}
+            {designLeadLabel && (
+              <>
+                {' · '}Your Friday lead: <strong>{designLeadLabel}</strong>
+              </>
+            )}
+          </div>
         </div>
+        {onBackToLogin && (
+          <button
+            type="button"
+            data-portal-back-to-login
+            onClick={onBackToLogin}
+            style={{
+              padding: '6px 12px',
+              fontSize: 12,
+              borderRadius: 'var(--radius-sm)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              background: 'transparent',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            Back to login
+          </button>
+        )}
       </div>
 
       <div
