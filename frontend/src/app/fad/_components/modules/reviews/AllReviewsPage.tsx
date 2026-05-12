@@ -13,6 +13,7 @@ import {
   type Cohort,
   type ReviewTag,
 } from '../../../_data/reviews';
+import { useLiveReviews } from '../../../_data/reviewsClient';
 import { TASK_PROPERTY_BY_CODE, TASK_USER_BY_ID } from '../../../_data/tasks';
 import { RESERVATION_BY_ID } from '../../../_data/reservations';
 import { CreateTaskDrawer } from '../operations/CreateTaskDrawer';
@@ -37,8 +38,13 @@ export function AllReviewsPage({ onMutated }: Props) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [taskFromReview, setTaskFromReview] = useState<Review | null>(null);
 
+  // Live data from Guesty via /api/reviews/list. Fallback to fixture REVIEWS
+  // during initial load OR on backend failure — keeps the page rendered.
+  const { reviews: liveReviews, loading: liveLoading, error: liveError } = useLiveReviews();
+  const reviewSource = liveReviews ?? REVIEWS;
+
   const filtered = useMemo(() => {
-    let list = [...REVIEWS];
+    let list = [...reviewSource];
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -64,7 +70,7 @@ export function AllReviewsPage({ onMutated }: Props) {
       return b.rating - a.rating;
     });
     return list;
-  }, [search, channelFilter, cohortFilter, ratingFilter, hasReplyFilter, sort]);
+  }, [search, channelFilter, cohortFilter, ratingFilter, hasReplyFilter, sort, reviewSource]);
 
   const selected = filtered.find((rv) => rv.id === selectedId) ?? filtered[0];
 
@@ -116,7 +122,13 @@ export function AllReviewsPage({ onMutated }: Props) {
               </select>
             </div>
             <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              {filtered.length} of {REVIEWS.length} reviews
+              {filtered.length} of {reviewSource.length} reviews
+              {liveLoading && <span style={{ marginLeft: 6, opacity: 0.7 }}>· loading…</span>}
+              {liveError && (
+                <span style={{ marginLeft: 6, color: 'var(--color-text-warning)' }} title={liveError}>
+                  · using fixtures (backend unreachable)
+                </span>
+              )}
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
