@@ -832,7 +832,9 @@ const { translateText } = require('./src/ai/translate');
 // HR routes — FAD-owned tables, direct pg access. JWT-gated per
 // Director permission matrix (see src/hr/auth.js).
 const hrStaffRoutes = require('./src/hr/staff');
+const hrTimeOffRoutes = require('./src/hr/time-off');
 app.use('/api/hr/staff', hrStaffRoutes);
+app.use('/api/hr/time-off', hrTimeOffRoutes);
 
 // Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
 // rarely; the index lets us resolve raw channel listing IDs to friendly
