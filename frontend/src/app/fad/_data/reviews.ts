@@ -328,17 +328,15 @@ export function unrepliedReviews(source: Review[] = REVIEWS): Review[] {
   );
 }
 
-/** AI-derived cohort narratives — Phase 1 hand-crafted, Phase 2 will pull
- *  from a real LLM call. Shape stays the same so swap is local. */
+/** AI-derived cohort narratives — populated by a real LLM pass over the
+ *  current cohort's reviews. Phase-1 demo strings were stripped 2026-05-12.
+ *  Empty strings render the panel hidden; a real summarization service can
+ *  populate this map per cohort on a schedule (or on-demand). */
 export const COHORT_NARRATIVES: Record<Cohort, string> = {
-  flic_en_flac:
-    "In the last 90 days Flic en Flac is the highest-volume cohort by a wide margin (12 reviews) and the most consistent — average rating 4.6, no review under 3 stars. Welcome-touches and Communication dominate the positive tag mix; the only repeat negative pattern is FF&E (Tomás's coffee machine, Sofia's curtains) which suggests a portfolio-wide hardware refresh would lift scores another notch.",
-  grand_baie:
-    "Grand Baie is small but elite: 6 reviews, 4.8 average, no negative tags in the last 60 days. Beach access and Spotless are the standout positive signals. Worth flagging that GBH-C8 has produced two five-star reviews in three weeks — Catherine has cleaned both. Keep her on that property.",
-  pereybere:
-    "Pereybere swung in the last 30 days. BCN-A's drain-smell incident dragged the cohort average down to 3.5 (Lukas's 2-star). PT-3 is steady at 4.0 across three reviews but Hot water and Welcome-basket-completeness keep recurring as small misses. Plumbing-then-checklist pass would close this gap.",
-  bel_ombre:
-    "Bel Ombre is split: SD-10 produces consistent 5-star stays (Nina, Ines), LB-2 shows mixed results with two recent 3-star reviews around AC, Wifi and Linen. Both properties use the same maintenance vendor — worth checking whether LB-2 is on a different cleaner rotation.",
+  flic_en_flac: '',
+  grand_baie: '',
+  pereybere: '',
+  bel_ombre: '',
 };
 
 /** AI Suggested Actions — review → suggested Operations task. Phase 1
