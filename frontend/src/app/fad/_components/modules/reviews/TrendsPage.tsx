@@ -73,7 +73,7 @@ function CohortSummaries({ reviews }: { reviews: Review[] }) {
   const byCohort = reviewsByCohort(reviews);
   const last90 = reviewsInWindow(90, reviews);
   const last90ByCohort: Record<Cohort, Review[]> = {
-    flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
+    flic_en_flac: [], grand_baie: [], west: [], pereybere: [], bel_ombre: [], other: [],
   };
   for (const rv of last90) last90ByCohort[rv.cohort].push(rv);
   const prior90 = reviews.filter((rv) => {
@@ -81,7 +81,7 @@ function CohortSummaries({ reviews }: { reviews: Review[] }) {
     return days > 90 && days <= 180;
   });
   const prior90ByCohort: Record<Cohort, Review[]> = {
-    flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
+    flic_en_flac: [], grand_baie: [], west: [], pereybere: [], bel_ombre: [], other: [],
   };
   for (const rv of prior90) prior90ByCohort[rv.cohort].push(rv);
 

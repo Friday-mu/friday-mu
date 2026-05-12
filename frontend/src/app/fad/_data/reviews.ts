@@ -21,15 +21,22 @@
 export type ReviewChannel = 'airbnb' | 'booking' | 'vrbo' | 'google' | 'direct';
 export type ReviewSentiment = 'positive' | 'mixed' | 'negative';
 export type ReplyStatus = 'unreplied' | 'draft' | 'sent' | 'failed';
-export type Cohort = 'flic_en_flac' | 'grand_baie' | 'pereybere' | 'bel_ombre';
+// Reality, per Guesty `/listings` 2026-05-12: only Flic en Flac (30), Grand
+// Baie + Mont Choisy (25 combined), and a handful of West-coast properties
+// (Tamarin / Black River / Arsenal / Grande Rivière Noire). Pereybere and
+// Bel Ombre are reserved for future expansion — kept in the type so the UI
+// shells stay forward-compatible, but currently empty.
+export type Cohort = 'flic_en_flac' | 'grand_baie' | 'west' | 'pereybere' | 'bel_ombre' | 'other';
 export type StaffRole = 'cleaner' | 'inspector';
 export type TagSentiment = 'positive' | 'negative' | 'neutral';
 
 export const COHORT_LABEL: Record<Cohort, string> = {
   flic_en_flac: 'Flic en Flac',
-  grand_baie: 'Grand Baie',
+  grand_baie: 'Grand Baie / Mont Choisy',
+  west: 'West Coast',
   pereybere: 'Pereybere',
   bel_ombre: 'Bel Ombre',
+  other: 'Other',
 };
 
 export const CHANNEL_LABEL: Record<ReviewChannel, string> = {
@@ -232,9 +239,14 @@ export function ratingDistribution(reviews: Review[]): Record<1 | 2 | 3 | 4 | 5,
 
 export function reviewsByCohort(source: Review[] = REVIEWS): Record<Cohort, Review[]> {
   const out: Record<Cohort, Review[]> = {
-    flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
+    flic_en_flac: [], grand_baie: [], west: [], pereybere: [], bel_ombre: [], other: [],
   };
-  for (const rv of source) out[rv.cohort].push(rv);
+  for (const rv of source) {
+    // Defensive — defaults bad/missing cohorts into 'other' so a stale server
+    // value can't blow up the page.
+    const k: Cohort = (out[rv.cohort] ? rv.cohort : 'other');
+    out[k].push(rv);
+  }
   return out;
 }
 
@@ -335,8 +347,10 @@ export function unrepliedReviews(source: Review[] = REVIEWS): Review[] {
 export const COHORT_NARRATIVES: Record<Cohort, string> = {
   flic_en_flac: '',
   grand_baie: '',
+  west: '',
   pereybere: '',
   bel_ombre: '',
+  other: '',
 };
 
 /** AI Suggested Actions — review → suggested Operations task. Phase 1

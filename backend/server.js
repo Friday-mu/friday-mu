@@ -824,11 +824,63 @@ guestyAPI.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Guesty listings cache — 5min TTL. Listings change rarely; the index lets us
-// resolve raw channel listing IDs to friendly nicknames (MV-7, GBH-C8) in the
-// reviews response without a per-review API call. Also serves /api/properties/list.
-let guestyListingsCache = { listings: [], byId: new Map(), fetchedAt: 0 };
+// Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
+// rarely; the index lets us resolve raw channel listing IDs to friendly
+// nicknames (MV-7, GBH-C8) in the reviews response without a per-review API
+// call. Also serves /api/properties/list.
+//
+// Disk persistence is dev-quality-of-life — nodemon restarts wipe the in-mem
+// map and Guesty's rate limit is aggressive, so a single rapid edit cycle
+// can lock us out for minutes. The disk cache survives restarts and is fresh
+// enough for development; production processes don't restart frequently.
+const fs = require('fs');
+const path = require('path');
+const LISTINGS_CACHE_FILE = path.join(__dirname, '.guesty-listings-cache.json');
 const LISTINGS_TTL_MS = 5 * 60 * 1000;
+const LISTINGS_DISK_TTL_MS = 60 * 60 * 1000; // tolerate older data from disk
+
+function readListingsFromDisk() {
+  try {
+    if (!fs.existsSync(LISTINGS_CACHE_FILE)) return null;
+    const raw = JSON.parse(fs.readFileSync(LISTINGS_CACHE_FILE, 'utf-8'));
+    if (!Array.isArray(raw?.listings) || typeof raw?.fetchedAt !== 'number') return null;
+    if (Date.now() - raw.fetchedAt > LISTINGS_DISK_TTL_MS) return null;
+    const byId = new Map();
+    for (const listing of raw.listings) if (listing?._id) byId.set(String(listing._id), listing);
+    return { listings: raw.listings, byId, fetchedAt: raw.fetchedAt };
+  } catch { return null; }
+}
+
+function writeListingsToDisk(cache) {
+  try {
+    fs.writeFileSync(
+      LISTINGS_CACHE_FILE,
+      JSON.stringify({ listings: cache.listings, fetchedAt: cache.fetchedAt }),
+      'utf-8',
+    );
+  } catch (e) {
+    console.warn('[Guesty] Listings disk-cache write failed:', e.message);
+  }
+}
+
+let guestyListingsCache = readListingsFromDisk() || { listings: [], byId: new Map(), fetchedAt: 0 };
+if (guestyListingsCache.listings.length > 0) {
+  console.log(`[Guesty] Listings cache hydrated from disk (${guestyListingsCache.listings.length} listings, age ${Math.round((Date.now() - guestyListingsCache.fetchedAt) / 1000)}s)`);
+}
+
+// City → cohort mapping derived from Guesty's actual `address.city` values.
+// Pereybere / bel_ombre kept reserved in the Cohort type (future expansion);
+// no FR property currently sits there.
+function cohortFromCity(city) {
+  const c = String(city || '').trim().toLowerCase();
+  if (!c) return 'other';
+  if (c === 'flic en flac' || c === 'flic-en-flac' || c.includes('flic en flac')) return 'flic_en_flac';
+  if (c === 'grand baie' || c === 'mont choisy' || c.includes('grand baie') || c.includes('mont choisy')) return 'grand_baie';
+  if (c === 'pereybere') return 'pereybere';
+  if (c === 'bel ombre' || c.includes('bel ombre')) return 'bel_ombre';
+  if (c === 'tamarin' || c === 'black river' || c.includes('riviere noire') || c.includes('rivière noire') || c === 'arsenal') return 'west';
+  return 'other';
+}
 
 async function getGuestyListings() {
   if (guestyListingsCache.listings.length > 0 &&
@@ -843,6 +895,7 @@ async function getGuestyListings() {
     if (listing?._id) byId.set(String(listing._id), listing);
   }
   guestyListingsCache = { listings, byId, fetchedAt: Date.now() };
+  writeListingsToDisk(guestyListingsCache);
   console.log(`[Guesty] Listings cache refreshed (${listings.length} listings)`);
   return guestyListingsCache;
 }
@@ -1007,6 +1060,8 @@ app.get('/api/reviews/list', requireAuth, asyncHandler(async (req, res) => {
         propertyNickname: listing.nickname || undefined,
         propertyTitle: listing.title || undefined,
         propertyAddress: listing.address?.full || listing.address?.formatted || undefined,
+        propertyCity: listing.address?.city || undefined,
+        propertyCohort: cohortFromCity(listing.address?.city),
       };
     });
     if (listKey) {
