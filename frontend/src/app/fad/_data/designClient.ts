@@ -17,7 +17,7 @@
 // portalClient.ts because they use magic-link auth, not the staff JWT.
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { apiFetch } from '../../../components/types';
+import { apiFetch, API_BASE, getToken, clearToken } from '../../../components/types';
 import {
   PROJECTS as FIXTURE_PROJECTS,
   LEADS as FIXTURE_LEADS,
@@ -495,6 +495,44 @@ export const updateVendor = (id: string, patch: Partial<ApiVendor>) =>
 
 export const upsertStage = (projectId: string, stageKey: string, patch: Partial<ApiStage>) =>
   apiFetch(`/api/design/stages/${projectId}/${stageKey}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiStage>;
+
+// design-be-10: stage rewind. Backend returns 409 with { locked_by: [...] }
+// when a downstream document blocks the reopen — we surface that to the UI
+// via a typed error so the toast can list the blocking artifacts.
+export interface StageLockedItem { type: string; id: string; status: string }
+export class StageReopenLockedError extends Error {
+  readonly lockedBy: StageLockedItem[];
+  constructor(message: string, lockedBy: StageLockedItem[]) {
+    super(message);
+    this.name = 'StageReopenLockedError';
+    this.lockedBy = lockedBy;
+  }
+}
+export async function reopenStage(
+  projectId: string,
+  stageKey: string,
+): Promise<{ stage: ApiStage; project: ApiProject }> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/api/design/stages/${projectId}/${stageKey}/reopen`, {
+    method: 'POST',
+    headers,
+  });
+  if (res.status === 401) { clearToken(); throw new Error('Unauthorized'); }
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({})) as { error?: string; locked_by?: StageLockedItem[] };
+    throw new StageReopenLockedError(
+      body.error || 'Cannot reopen stage: downstream documents are locked',
+      Array.isArray(body.locked_by) ? body.locked_by : [],
+    );
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 export const upsertAgreement = (projectId: string, patch: Partial<ApiAgreement>) =>
   apiFetch(`/api/design/agreements/${projectId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiAgreement>;
