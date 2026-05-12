@@ -1099,6 +1099,93 @@ app.get('/api/properties/list', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 // ====================================================================
+// System status — replaces hardcoded "configured" placeholders in the
+// Settings UI with reality. Reports which integrations have credentials
+// in backend/.env, the live Guesty token + listings-cache state, and a
+// channel breakdown derived from the cached listings.
+//
+// Never exposes the secrets themselves — only "configured: true/false"
+// + non-sensitive metadata (last refresh, cache size).
+// ====================================================================
+
+function envConfigured(...keys) {
+  return keys.every((k) => !!process.env[k] && process.env[k] !== `your_${k.toLowerCase()}_here`);
+}
+
+app.get('/api/system/status', requireAuth, asyncHandler(async (req, res) => {
+  const cache = guestyListingsCache;
+  // Channel breakdown from cached listings' integrations[] array.
+  const channelCounts = {};
+  for (const l of cache.listings) {
+    const integrations = Array.isArray(l.integrations) ? l.integrations : [];
+    for (const i of integrations) {
+      const t = String(i?.platform || i?.type || '').toLowerCase();
+      if (!t) continue;
+      channelCounts[t] = (channelCounts[t] || 0) + 1;
+    }
+    // Listings without integrations[] still indicate at least a direct presence.
+    if (integrations.length === 0) {
+      channelCounts.unlisted = (channelCounts.unlisted || 0) + 1;
+    }
+  }
+
+  res.json({
+    guesty: {
+      configured: envConfigured('GUESTY_CLIENT_ID', 'GUESTY_CLIENT_SECRET'),
+      baseUrl: GUESTY_BASE_URL,
+      tokenCached: !!guestyTokenCache.token,
+      tokenExpiresAt: guestyTokenCache.expiresAt
+        ? new Date(guestyTokenCache.expiresAt).toISOString() : null,
+      listingsCached: cache.listings.length,
+      listingsLastRefreshAt: cache.fetchedAt
+        ? new Date(cache.fetchedAt).toISOString() : null,
+    },
+    gms: {
+      configured: envConfigured('GMS_BASE_URL'),
+      baseUrl: GMS_BASE_URL,
+    },
+    breezeway: {
+      configured: envConfigured('BREEZEWAY_CLIENT_ID', 'BREEZEWAY_CLIENT_SECRET'),
+      baseUrl: process.env.BREEZEWAY_BASE_URL || 'https://api.breezeway.io',
+    },
+    kimi: {
+      configured: envConfigured('KIMI_API_KEY'),
+    },
+    anthropic: {
+      configured: envConfigured('ANTHROPIC_API_KEY'),
+    },
+    openai: {
+      configured: envConfigured('OPENAI_API_KEY'),
+    },
+    channels: channelCounts,
+  });
+}));
+
+// Ping endpoint hits each configured upstream once for the Settings "Test"
+// button. Returns per-integration status. Cheap on Guesty (lists 1 listing).
+app.post('/api/system/test/:integration', requireAuth, asyncHandler(async (req, res) => {
+  const target = String(req.params.integration || '').toLowerCase();
+  const start = Date.now();
+  try {
+    if (target === 'guesty') {
+      const r = await guestyAPI.get('/listings', { params: { limit: 1 } });
+      res.json({ ok: true, latencyMs: Date.now() - start, samples: r.data?.results?.length ?? 0 });
+    } else if (target === 'gms') {
+      const r = await axios.get(GMS_BASE_URL + '/api/health', { timeout: 5000 });
+      res.json({ ok: true, latencyMs: Date.now() - start, gmsVersion: r.data?.version ?? null });
+    } else {
+      res.status(400).json({ ok: false, error: `Unknown integration: ${target}` });
+    }
+  } catch (e) {
+    logUpstreamFailure(`system/test/${target}`, e);
+    res.status(e.response?.status || 502).json({
+      ok: false, latencyMs: Date.now() - start,
+      error: e.response?.data?.error || e.message || 'Upstream unreachable',
+    });
+  }
+}));
+
+// ====================================================================
 // Error Handling Middleware
 // ====================================================================
 
