@@ -1,0 +1,795 @@
+'use client';
+
+// Design module client — live data from /api/design/* backed by the
+// FAD-owned design_* tables in gmsdb. Mirrors the hrClient.ts pattern:
+// snake_case API types, typed fetchers, React hooks with refetch, and
+// adapters that convert API shape → fixture shape for callers that
+// still render against the fixture types.
+//
+// Owner portal endpoints are NOT covered here — they live in
+// portalClient.ts because they use magic-link auth, not the staff JWT.
+
+import { useEffect, useState, useCallback } from 'react';
+import { apiFetch } from '../../../components/types';
+import type {
+  DesignProject as FixtureProject,
+  DesignLead as FixtureLead,
+  Counterparty as FixtureCounterparty,
+  DesignProperty as FixtureProperty,
+  Vendor as FixtureVendor,
+  MoodboardVersion as FixtureMoodboard,
+  DesignPackVersion as FixturePack,
+  Agreement as FixtureAgreement,
+  PaymentGate as FixturePayment,
+  ActivityLogEntry as FixtureActivity,
+  DesignApproval as FixtureApproval,
+  StageId,
+  StageStatus,
+  LifecycleStatus,
+  DesignTier,
+  ProjectClassification,
+  LeadSource,
+} from './design';
+
+// ════════════════════════════════════════════════════════════════════
+// API TYPES (snake_case — match the backend exactly)
+// ════════════════════════════════════════════════════════════════════
+
+export interface ApiCounterparty {
+  id: string;
+  entity_id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiProperty {
+  id: string;
+  entity_id: string;
+  counterparty_id: string | null;
+  guesty_listing_id?: string | null;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipcode?: string | null;
+  sqft?: number | null;
+  construction_type?: string | null;
+  year_built?: number | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiVendor {
+  id: string;
+  entity_id: string;
+  name: string;
+  category?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiLead {
+  id: string;
+  entity_id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  source?: string | null;
+  status: 'lead' | 'qualified' | 'converted' | 'lost';
+  owner_user_id?: string | null;
+  converted_project_id?: string | null;
+  staleness_days?: number | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiProject {
+  id: string;
+  entity_id: string;
+  name: string;
+  slug: string;
+  counterparty_id: string | null;
+  property_id: string | null;
+  classification?: string | null;
+  tier?: number | null;
+  lead_source?: string | null;
+  epc_minor?: number | null;
+  design_fee_minor?: number | null;
+  procurement_fee_minor?: number | null;
+  budget_expectation_minor?: number | null;
+  goals: string[];
+  outcomes: string[];
+  urgency?: string | null;
+  pm_link?: string | null;
+  design_lead_user_id?: string | null;
+  current_stage: string;
+  stage_status: string;
+  blocker?: string | null;
+  next_action?: string | null;
+  lifecycle_status: 'active' | 'paused' | 'cancelled';
+  paused_at?: string | null;
+  paused_reason?: string | null;
+  paused_by_user_id?: string | null;
+  cancelled_at?: string | null;
+  cancelled_reason?: string | null;
+  cancelled_by_user_id?: string | null;
+  cancel_transfer_to_inventory?: boolean | null;
+  start_date?: string | null;
+  estimated_completion?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiStage {
+  id: string;
+  project_id: string;
+  stage_key: string;
+  status: 'pending' | 'in-progress' | 'waiting-on-owner' | 'blocked' | 'done' | 'skipped';
+  entered_at?: string | null;
+  completed_at?: string | null;
+  owner_user_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiActivity {
+  id: string;
+  project_id: string;
+  actor_user_id?: string | null;
+  actor_name?: string | null;
+  action: string;
+  payload: Record<string, unknown>;
+  visibility: 'internal' | 'portal';
+  created_at: string;
+}
+
+export interface ApiMoodboard {
+  id: string;
+  project_id: string;
+  version_number: number;
+  status: 'draft' | 'sent' | 'approved' | 'changes_requested';
+  name?: string | null;
+  links: Array<{ url: string; caption?: string; image_id?: string }>;
+  notes?: string | null;
+  sent_at?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiPack {
+  id: string;
+  project_id: string;
+  version_number: number;
+  status: 'draft' | 'sent' | 'approved' | 'changes_requested';
+  room_label?: string | null;
+  pdf_url?: string | null;
+  image_ids: string[];
+  sent_at?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiAgreement {
+  project_id: string;
+  status: 'draft' | 'sent' | 'signed' | 'voided';
+  sent_at?: string | null;
+  signed_at?: string | null;
+  signed_by?: string | null;
+  design_fee_percent?: number | null;
+  procurement_fee_percent?: number | null;
+  contingency_percent?: number | null;
+  annex_b: Record<string, unknown>;
+  updated_at?: string | null;
+}
+
+export interface ApiPaymentGate {
+  id: string;
+  project_id: string;
+  gate_id: string;
+  status: 'pending' | 'received' | 'waived';
+  amount_minor?: number | null;
+  due_date?: string | null;
+  received_at?: string | null;
+  received_amount_minor?: number | null;
+  received_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiSelection {
+  id: string;
+  project_id: string;
+  pack_id?: string | null;
+  title: string;
+  status: 'draft' | 'sent' | 'picked' | 'changes_requested';
+  options: Array<Record<string, unknown>>;
+  picked_option_id?: string | null;
+  change_request_comment?: string | null;
+  sent_at?: string | null;
+  picked_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiChangeOrder {
+  id: string;
+  project_id: string;
+  status: 'draft' | 'sent' | 'approved' | 'rejected';
+  line_items: Array<Record<string, unknown>>;
+  reason?: string | null;
+  sent_at?: string | null;
+  decided_at?: string | null;
+  decided_by?: string | null;
+  decision_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBudgetItem {
+  id: string;
+  project_id: string;
+  stage_key?: string | null;
+  category_code?: string | null;
+  description?: string | null;
+  unit_cost_minor?: number | null;
+  quantity?: number | null;
+  retail_cost_minor?: number | null;
+  negotiated_cost_minor?: number | null;
+  internal_work?: boolean;
+  vendor_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiCloseoutBinder {
+  project_id: string;
+  status: 'draft' | 'sent' | 'signed';
+  warranties: Array<Record<string, unknown>>;
+  maintenance: Array<Record<string, unknown>>;
+  snags: Array<Record<string, unknown>>;
+  sent_at?: string | null;
+  sign_off_at?: string | null;
+  signed_by?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ApiTask {
+  id: string;
+  project_id: string;
+  stage_key?: string | null;
+  title: string;
+  assignee_user_id?: string | null;
+  due_date?: string | null;
+  status: 'todo' | 'in_progress' | 'blocked' | 'done';
+  notes?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiApproval {
+  id: string;
+  project_id: string;
+  type: 'selection' | 'change_order' | 'agreement' | 'moodboard' | 'design_pack' | 'closeout';
+  target_id: string;
+  sent_at: string;
+  respondent_user_id?: string | null;
+  respondent_name?: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  events?: Array<{
+    id: string;
+    approval_id: string;
+    respondent_user_id?: string | null;
+    respondent_name?: string | null;
+    decision: 'approved' | 'rejected';
+    comment?: string | null;
+    responded_at: string;
+  }>;
+}
+
+export interface ApiMagicLink {
+  id: string;
+  project_id: string;
+  issued_at: string;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  last_used_at?: string | null;
+  issued_by_user_id?: string | null;
+  delivery_channel?: string | null;
+}
+
+export interface ApiAnnexA {
+  tenant_id: string;
+  annex_a: Record<string, unknown>;
+  updated_at?: string | null;
+  updated_by_user_id?: string | null;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// FETCHERS
+// ════════════════════════════════════════════════════════════════════
+
+const unwrap = <T,>(r: { results: T[] }): T[] => r.results || [];
+
+export const loadProjects = async (filters: { lifecycle_status?: string; current_stage?: string; counterparty_id?: string } = {}) => {
+  const qs = new URLSearchParams();
+  if (filters.lifecycle_status) qs.set('lifecycle_status', filters.lifecycle_status);
+  if (filters.current_stage) qs.set('current_stage', filters.current_stage);
+  if (filters.counterparty_id) qs.set('counterparty_id', filters.counterparty_id);
+  const path = qs.toString() ? `/api/design/projects?${qs}` : '/api/design/projects';
+  return unwrap(await apiFetch(path) as { results: ApiProject[] });
+};
+
+export const loadProject = (id: string) => apiFetch(`/api/design/projects/${id}`) as Promise<ApiProject>;
+export const loadProjectBySlug = (slug: string) => apiFetch(`/api/design/projects/by-slug/${encodeURIComponent(slug)}`) as Promise<ApiProject>;
+
+export const loadLeads = async (status?: string) => {
+  const path = status ? `/api/design/leads?status=${status}` : '/api/design/leads';
+  return unwrap(await apiFetch(path) as { results: ApiLead[] });
+};
+export const loadLead = (id: string) => apiFetch(`/api/design/leads/${id}`) as Promise<ApiLead>;
+
+export const loadCounterparties = async () =>
+  unwrap(await apiFetch('/api/design/counterparties') as { results: ApiCounterparty[] });
+export const loadCounterparty = (id: string) => apiFetch(`/api/design/counterparties/${id}`) as Promise<ApiCounterparty>;
+
+export const loadProperties = async (counterpartyId?: string) => {
+  const path = counterpartyId ? `/api/design/properties?counterparty_id=${counterpartyId}` : '/api/design/properties';
+  return unwrap(await apiFetch(path) as { results: ApiProperty[] });
+};
+export const loadProperty = (id: string) => apiFetch(`/api/design/properties/${id}`) as Promise<ApiProperty>;
+
+export const loadVendors = async (category?: string) => {
+  const path = category ? `/api/design/vendors?category=${encodeURIComponent(category)}` : '/api/design/vendors';
+  return unwrap(await apiFetch(path) as { results: ApiVendor[] });
+};
+export const loadVendor = (id: string) => apiFetch(`/api/design/vendors/${id}`) as Promise<ApiVendor>;
+
+export const loadStages = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/stages?project_id=${projectId}`) as { results: ApiStage[] });
+
+export const loadActivities = async (projectId: string, visibility?: 'portal' | 'internal') => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (visibility) qs.set('visibility', visibility);
+  return unwrap(await apiFetch(`/api/design/activities?${qs}`) as { results: ApiActivity[] });
+};
+
+export const loadMoodboards = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/moodboards?project_id=${projectId}`) as { results: ApiMoodboard[] });
+
+export const loadPacks = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/packs?project_id=${projectId}`) as { results: ApiPack[] });
+
+export const loadAgreement = (projectId: string) =>
+  apiFetch(`/api/design/agreements/${projectId}`) as Promise<ApiAgreement>;
+
+export const loadPayments = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/payment_gates?project_id=${projectId}`) as { results: ApiPaymentGate[] });
+
+export const loadSelections = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/selections?project_id=${projectId}`) as { results: ApiSelection[] });
+
+export const loadChangeOrders = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/change_orders?project_id=${projectId}`) as { results: ApiChangeOrder[] });
+
+export const loadBudgetItems = async (projectId: string, filters: { category_code?: string; vendor_id?: string } = {}) => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (filters.category_code) qs.set('category_code', filters.category_code);
+  if (filters.vendor_id) qs.set('vendor_id', filters.vendor_id);
+  return unwrap(await apiFetch(`/api/design/budget_items?${qs}`) as { results: ApiBudgetItem[] });
+};
+
+export const loadCloseoutBinder = (projectId: string) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}`) as Promise<ApiCloseoutBinder>;
+
+export const loadTasks = async (projectId: string, filters: { status?: string; assignee_user_id?: string } = {}) => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (filters.status) qs.set('status', filters.status);
+  if (filters.assignee_user_id) qs.set('assignee_user_id', filters.assignee_user_id);
+  return unwrap(await apiFetch(`/api/design/tasks?${qs}`) as { results: ApiTask[] });
+};
+
+export const loadApprovals = async (projectId: string, filters: { status?: string; type?: string } = {}) => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (filters.status) qs.set('status', filters.status);
+  if (filters.type) qs.set('type', filters.type);
+  return unwrap(await apiFetch(`/api/design/approvals?${qs}`) as { results: ApiApproval[] });
+};
+export const loadApproval = (id: string) => apiFetch(`/api/design/approvals/${id}`) as Promise<ApiApproval>;
+
+export const loadMagicLinks = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/magic_links?project_id=${projectId}`) as { results: ApiMagicLink[] });
+
+export const loadAnnexA = () => apiFetch('/api/design/annex_a') as Promise<ApiAnnexA>;
+
+export const loadTimeInStage = (days = 90) =>
+  apiFetch(`/api/design/analytics/time-in-stage?days=${days}`) as Promise<{ window_days: number; results: Array<{ stage_key: string; completed_count: number; mean_days: number }> }>;
+
+export const loadFunnel = () =>
+  apiFetch('/api/design/analytics/funnel') as Promise<{ leads_by_status: Record<string, number>; projects_by_lifecycle: Record<string, number>; projects_by_stage: Record<string, number> }>;
+
+export const loadSpendCurve = (days = 90) =>
+  apiFetch(`/api/design/analytics/spend-curve?days=${days}`) as Promise<{ window_days: number; results: Array<{ day: string; spend_minor: number }> }>;
+
+export const loadRevenueCurve = (days = 180) =>
+  apiFetch(`/api/design/analytics/revenue-curve?days=${days}`) as Promise<{ window_days: number; results: Array<{ day: string; revenue_minor: number }> }>;
+
+export const loadVendorPerformance = () =>
+  apiFetch('/api/design/analytics/vendor-performance') as Promise<{ results: Array<{ vendor_id: string; vendor_name: string; category: string; item_count: number; total_spend_minor: number; internal_work_count: number }> }>;
+
+// ════════════════════════════════════════════════════════════════════
+// MUTATIONS
+// ════════════════════════════════════════════════════════════════════
+
+export const createProject = (payload: Partial<ApiProject> & { name: string; slug: string }) =>
+  apiFetch('/api/design/projects', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiProject>;
+export const updateProject = (id: string, patch: Partial<ApiProject>) =>
+  apiFetch(`/api/design/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiProject>;
+export const pauseProject = (id: string, reason?: string) =>
+  apiFetch(`/api/design/projects/${id}/pause`, { method: 'POST', body: JSON.stringify({ reason }) }) as Promise<ApiProject>;
+export const resumeProject = (id: string) =>
+  apiFetch(`/api/design/projects/${id}/resume`, { method: 'POST' }) as Promise<ApiProject>;
+export const cancelProject = (id: string, payload: { reason?: string; transfer_to_inventory?: boolean }) =>
+  apiFetch(`/api/design/projects/${id}/cancel`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiProject>;
+
+export const createLead = (payload: Partial<ApiLead> & { name: string }) =>
+  apiFetch('/api/design/leads', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiLead>;
+export const updateLead = (id: string, patch: Partial<ApiLead>) =>
+  apiFetch(`/api/design/leads/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiLead>;
+export const convertLeadToProject = (id: string, projectPayload: { name?: string; slug?: string } = {}) =>
+  apiFetch(`/api/design/leads/${id}/convert`, { method: 'POST', body: JSON.stringify(projectPayload) }) as Promise<{ lead: ApiLead; project: ApiProject }>;
+
+export const createCounterparty = (payload: Partial<ApiCounterparty> & { name: string }) =>
+  apiFetch('/api/design/counterparties', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiCounterparty>;
+export const updateCounterparty = (id: string, patch: Partial<ApiCounterparty>) =>
+  apiFetch(`/api/design/counterparties/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiCounterparty>;
+
+export const createProperty = (payload: Partial<ApiProperty> & { name: string }) =>
+  apiFetch('/api/design/properties', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiProperty>;
+export const updateProperty = (id: string, patch: Partial<ApiProperty>) =>
+  apiFetch(`/api/design/properties/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiProperty>;
+
+export const createVendor = (payload: Partial<ApiVendor> & { name: string }) =>
+  apiFetch('/api/design/vendors', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiVendor>;
+export const updateVendor = (id: string, patch: Partial<ApiVendor>) =>
+  apiFetch(`/api/design/vendors/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiVendor>;
+
+export const upsertStage = (projectId: string, stageKey: string, patch: Partial<ApiStage>) =>
+  apiFetch(`/api/design/stages/${projectId}/${stageKey}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiStage>;
+
+export const upsertAgreement = (projectId: string, patch: Partial<ApiAgreement>) =>
+  apiFetch(`/api/design/agreements/${projectId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiAgreement>;
+export const sendAgreement = (projectId: string) =>
+  apiFetch(`/api/design/agreements/${projectId}/send`, { method: 'POST' }) as Promise<ApiAgreement>;
+export const signAgreement = (projectId: string, signedBy?: string) =>
+  apiFetch(`/api/design/agreements/${projectId}/sign`, { method: 'POST', body: JSON.stringify({ signed_by: signedBy }) }) as Promise<ApiAgreement>;
+
+export const upsertPaymentGate = (projectId: string, gateId: string, patch: Partial<ApiPaymentGate>) =>
+  apiFetch(`/api/design/payment_gates/${projectId}/${gateId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiPaymentGate>;
+export const receivePayment = (projectId: string, gateId: string, payload: { amount_minor?: number; received_at?: string; note?: string }) =>
+  apiFetch(`/api/design/payment_gates/${projectId}/${gateId}/receive`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiPaymentGate>;
+export const waivePayment = (projectId: string, gateId: string, note?: string) =>
+  apiFetch(`/api/design/payment_gates/${projectId}/${gateId}/waive`, { method: 'POST', body: JSON.stringify({ note }) }) as Promise<ApiPaymentGate>;
+
+export const createMoodboard = (payload: Partial<ApiMoodboard> & { project_id: string }) =>
+  apiFetch('/api/design/moodboards', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiMoodboard>;
+export const updateMoodboard = (id: string, patch: Partial<ApiMoodboard>) =>
+  apiFetch(`/api/design/moodboards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiMoodboard>;
+export const sendMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}/send`, { method: 'POST' }) as Promise<ApiMoodboard>;
+export const approveMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}/approve`, { method: 'POST' }) as Promise<ApiMoodboard>;
+
+export const createPack = (payload: Partial<ApiPack> & { project_id: string }) =>
+  apiFetch('/api/design/packs', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiPack>;
+export const updatePack = (id: string, patch: Partial<ApiPack>) =>
+  apiFetch(`/api/design/packs/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiPack>;
+export const sendPack = (id: string) =>
+  apiFetch(`/api/design/packs/${id}/send`, { method: 'POST' }) as Promise<ApiPack>;
+export const approvePack = (id: string) =>
+  apiFetch(`/api/design/packs/${id}/approve`, { method: 'POST' }) as Promise<ApiPack>;
+
+export const createSelection = (payload: Partial<ApiSelection> & { project_id: string; title: string }) =>
+  apiFetch('/api/design/selections', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiSelection>;
+export const updateSelection = (id: string, patch: Partial<ApiSelection>) =>
+  apiFetch(`/api/design/selections/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiSelection>;
+export const sendSelection = (id: string) =>
+  apiFetch(`/api/design/selections/${id}/send`, { method: 'POST' }) as Promise<ApiSelection>;
+export const pickSelection = (id: string, pickedOptionId: string) =>
+  apiFetch(`/api/design/selections/${id}/pick`, { method: 'POST', body: JSON.stringify({ picked_option_id: pickedOptionId }) }) as Promise<ApiSelection>;
+export const requestSelectionChanges = (id: string, comment?: string) =>
+  apiFetch(`/api/design/selections/${id}/request-changes`, { method: 'POST', body: JSON.stringify({ comment }) }) as Promise<ApiSelection>;
+
+export const createChangeOrder = (payload: Partial<ApiChangeOrder> & { project_id: string }) =>
+  apiFetch('/api/design/change_orders', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiChangeOrder>;
+export const updateChangeOrder = (id: string, patch: Partial<ApiChangeOrder>) =>
+  apiFetch(`/api/design/change_orders/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiChangeOrder>;
+export const sendChangeOrder = (id: string) =>
+  apiFetch(`/api/design/change_orders/${id}/send`, { method: 'POST' }) as Promise<ApiChangeOrder>;
+export const approveChangeOrder = (id: string, note?: string) =>
+  apiFetch(`/api/design/change_orders/${id}/approve`, { method: 'POST', body: JSON.stringify({ decision_note: note }) }) as Promise<ApiChangeOrder>;
+export const rejectChangeOrder = (id: string, note?: string) =>
+  apiFetch(`/api/design/change_orders/${id}/reject`, { method: 'POST', body: JSON.stringify({ decision_note: note }) }) as Promise<ApiChangeOrder>;
+
+export const upsertCloseoutBinder = (projectId: string, patch: Partial<ApiCloseoutBinder>) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiCloseoutBinder>;
+export const sendCloseoutBinder = (projectId: string) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}/send`, { method: 'POST' }) as Promise<ApiCloseoutBinder>;
+export const signOffCloseoutBinder = (projectId: string, signedBy?: string) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}/sign-off`, { method: 'POST', body: JSON.stringify({ signed_by: signedBy }) }) as Promise<ApiCloseoutBinder>;
+
+export const respondToApproval = (id: string, decision: 'approved' | 'rejected', comment?: string) =>
+  apiFetch(`/api/design/approvals/${id}/respond`, { method: 'POST', body: JSON.stringify({ decision, comment }) }) as Promise<ApiApproval>;
+
+export const updateAnnexA = (annexA: Record<string, unknown>) =>
+  apiFetch('/api/design/annex_a', { method: 'PUT', body: JSON.stringify({ annex_a: annexA }) }) as Promise<ApiAnnexA>;
+
+export const mintMagicLink = (projectId: string, opts: { delivery_channel?: string; expires_in_seconds?: number } = {}) =>
+  apiFetch('/api/design/magic_links', { method: 'POST', body: JSON.stringify({ project_id: projectId, ...opts }) }) as Promise<ApiMagicLink & { token: string; portal_url: string }>;
+export const revokeMagicLink = (id: string) =>
+  apiFetch(`/api/design/magic_links/${id}/revoke`, { method: 'POST' }) as Promise<ApiMagicLink>;
+
+// ════════════════════════════════════════════════════════════════════
+// HOOKS — simple list/detail wrappers around the fetchers above
+// ════════════════════════════════════════════════════════════════════
+
+function useResource<T>(loader: () => Promise<T>, deps: unknown[]): { data: T | null; loading: boolean; error: string | null; refetch: () => void } {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    loader()
+      .then(setData)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  useEffect(() => { refetch(); }, [refetch]);
+  return { data, loading, error, refetch };
+}
+
+export const useLiveDesignProjects = (filters: Parameters<typeof loadProjects>[0] = {}) =>
+  useResource(() => loadProjects(filters), [JSON.stringify(filters)]);
+
+export const useLiveDesignProject = (id: string | null) =>
+  useResource(() => id ? loadProject(id) : Promise.resolve(null), [id]);
+
+export const useLiveDesignProjectBySlug = (slug: string | null) =>
+  useResource(() => slug ? loadProjectBySlug(slug) : Promise.resolve(null), [slug]);
+
+export const useLiveDesignLeads = (status?: string) =>
+  useResource(() => loadLeads(status), [status]);
+
+export const useLiveDesignCounterparties = () =>
+  useResource(() => loadCounterparties(), []);
+
+export const useLiveDesignProperties = (counterpartyId?: string) =>
+  useResource(() => loadProperties(counterpartyId), [counterpartyId]);
+
+export const useLiveDesignVendors = (category?: string) =>
+  useResource(() => loadVendors(category), [category]);
+
+export const useLiveDesignStages = (projectId: string | null) =>
+  useResource(() => projectId ? loadStages(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignActivities = (projectId: string | null, visibility?: 'portal' | 'internal') =>
+  useResource(() => projectId ? loadActivities(projectId, visibility) : Promise.resolve([]), [projectId, visibility]);
+
+export const useLiveDesignMoodboards = (projectId: string | null) =>
+  useResource(() => projectId ? loadMoodboards(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignPacks = (projectId: string | null) =>
+  useResource(() => projectId ? loadPacks(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignAgreement = (projectId: string | null) =>
+  useResource(() => projectId ? loadAgreement(projectId) : Promise.resolve(null), [projectId]);
+
+export const useLiveDesignPayments = (projectId: string | null) =>
+  useResource(() => projectId ? loadPayments(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignSelections = (projectId: string | null) =>
+  useResource(() => projectId ? loadSelections(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignChangeOrders = (projectId: string | null) =>
+  useResource(() => projectId ? loadChangeOrders(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignBudgetItems = (projectId: string | null, filters: { category_code?: string; vendor_id?: string } = {}) =>
+  useResource(() => projectId ? loadBudgetItems(projectId, filters) : Promise.resolve([]), [projectId, filters.category_code, filters.vendor_id]);
+
+export const useLiveDesignCloseoutBinder = (projectId: string | null) =>
+  useResource(() => projectId ? loadCloseoutBinder(projectId) : Promise.resolve(null), [projectId]);
+
+export const useLiveDesignTasks = (projectId: string | null) =>
+  useResource(() => projectId ? loadTasks(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignApprovals = (projectId: string | null, status?: string) =>
+  useResource(() => projectId ? loadApprovals(projectId, { status }) : Promise.resolve([]), [projectId, status]);
+
+export const useLiveDesignMagicLinks = (projectId: string | null) =>
+  useResource(() => projectId ? loadMagicLinks(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignAnnexA = () => useResource(() => loadAnnexA(), []);
+
+// ════════════════════════════════════════════════════════════════════
+// ADAPTERS — API shape (snake_case) → fixture shape (camelCase)
+// Used by components that still render against the fixture types so the
+// live data drops in transparently. As consumers migrate to the API
+// types directly these adapters can shrink.
+// ════════════════════════════════════════════════════════════════════
+
+export function apiProjectToFixture(api: ApiProject): FixtureProject {
+  return {
+    id: api.id,
+    entityId: 'FD',
+    name: api.name,
+    slug: api.slug,
+    counterpartyId: api.counterparty_id ?? '',
+    propertyId: api.property_id ?? '',
+    classification: (api.classification as ProjectClassification) ?? 'mixed',
+    tier: (api.tier as DesignTier) ?? 1,
+    epcMinor: api.epc_minor ?? 0,
+    designFeeMinor: api.design_fee_minor ?? 0,
+    procurementFeeMinor: api.procurement_fee_minor ?? 0,
+    goals: api.goals || [],
+    outcomes: api.outcomes || [],
+    budgetExpectationMinor: api.budget_expectation_minor ?? null,
+    urgency: api.urgency ?? null,
+    pmLink: api.pm_link ?? null,
+    designLeadUserId: api.design_lead_user_id ?? null,
+    currentStage: (api.current_stage as StageId) ?? 'lead',
+    stageStatus: (api.stage_status as StageStatus) ?? 'pending',
+    blocker: api.blocker ?? null,
+    nextAction: api.next_action ?? null,
+    leadSource: (api.lead_source as LeadSource) ?? 'other',
+    createdAt: api.created_at,
+    updatedAt: api.updated_at,
+    startDate: api.start_date ?? null,
+    estimatedCompletion: api.estimated_completion ?? null,
+    lifecycleStatus: api.lifecycle_status as LifecycleStatus,
+    pausedAt: api.paused_at ?? undefined,
+    pausedReason: api.paused_reason ?? undefined,
+    pausedByUserId: api.paused_by_user_id ?? undefined,
+    cancelledAt: api.cancelled_at ?? undefined,
+    cancelledReason: api.cancelled_reason ?? undefined,
+    cancelledByUserId: api.cancelled_by_user_id ?? undefined,
+    cancelTransferToInventory: api.cancel_transfer_to_inventory ?? undefined,
+  } as FixtureProject;
+}
+
+export function apiLeadToFixture(api: ApiLead): FixtureLead {
+  return {
+    id: api.id,
+    name: api.name,
+    email: api.email ?? '',
+    phone: api.phone ?? '',
+    source: (api.source as LeadSource) ?? 'other',
+    status: api.status === 'converted' ? 'converted' : (api.status === 'qualified' ? 'qualified' : 'lead'),
+    staleness: typeof api.staleness_days === 'number' ? api.staleness_days : 0,
+    owner: api.owner_user_id ?? null,
+  } as unknown as FixtureLead;
+}
+
+export function apiCounterpartyToFixture(api: ApiCounterparty): FixtureCounterparty {
+  return {
+    id: api.id,
+    name: api.name,
+    email: api.email ?? '',
+    phone: api.phone ?? '',
+    entity_id: api.entity_id,
+  } as unknown as FixtureCounterparty;
+}
+
+export function apiPropertyToFixture(api: ApiProperty): FixtureProperty {
+  return {
+    id: api.id,
+    name: api.name,
+    address: api.address ?? '',
+    city: api.city ?? '',
+    state: api.state ?? '',
+    zipcode: api.zipcode ?? '',
+    sqft: api.sqft ?? 0,
+    constructionType: api.construction_type ?? null,
+    yearBuilt: api.year_built ?? null,
+  } as unknown as FixtureProperty;
+}
+
+export function apiVendorToFixture(api: ApiVendor): FixtureVendor {
+  return {
+    id: api.id,
+    name: api.name,
+    category: api.category ?? '',
+    email: api.email ?? '',
+    phone: api.phone ?? '',
+    entity_id: api.entity_id,
+  } as unknown as FixtureVendor;
+}
+
+export function apiMoodboardToFixture(api: ApiMoodboard): FixtureMoodboard {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    versionNumber: api.version_number,
+    status: api.status,
+    createdAt: api.created_at,
+    links: (api.links || []).map((l) => l.url),
+  } as unknown as FixtureMoodboard;
+}
+
+export function apiPackToFixture(api: ApiPack): FixturePack {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    versionNumber: api.version_number,
+    status: api.status,
+    createdAt: api.created_at,
+  } as unknown as FixturePack;
+}
+
+export function apiAgreementToFixture(api: ApiAgreement): FixtureAgreement {
+  return {
+    id: api.project_id,
+    projectId: api.project_id,
+    status: api.status,
+    sentAt: api.sent_at ?? null,
+    signedAt: api.signed_at ?? null,
+    signedBy: api.signed_by ?? null,
+    designFeePercent: api.design_fee_percent ?? 0,
+    procurementFeePercent: api.procurement_fee_percent ?? 0,
+    contingency: api.contingency_percent ?? 0,
+    annexB: api.annex_b,
+  } as unknown as FixtureAgreement;
+}
+
+export function apiPaymentToFixture(api: ApiPaymentGate): FixturePayment {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    gateId: api.gate_id,
+    status: api.status,
+    amount: api.amount_minor ?? 0,
+    dueDate: api.due_date ?? null,
+    receivedAt: api.received_at ?? null,
+  } as unknown as FixturePayment;
+}
+
+export function apiActivityToFixture(api: ApiActivity): FixtureActivity {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    actor: api.actor_name ?? 'System',
+    action: api.action,
+    detail: typeof api.payload === 'object' && api.payload !== null ? JSON.stringify(api.payload) : String(api.payload ?? ''),
+    timestamp: api.created_at,
+    visibility: api.visibility,
+  } as unknown as FixtureActivity;
+}
+
+export function apiApprovalToFixture(api: ApiApproval): FixtureApproval {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    type: api.type,
+    targetId: api.target_id,
+    sentAt: api.sent_at,
+    status: api.status,
+    respondentUserId: api.respondent_user_id ?? null,
+    respondentName: api.respondent_name ?? null,
+  } as unknown as FixtureApproval;
+}
