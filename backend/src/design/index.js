@@ -29,5 +29,12 @@ router.get('/health', requireDesignPerm('design:read'), (req, res) => {
 router.use('/projects', require('./projects'));
 router.use('/leads', require('./leads'));
 router.use('/counterparties', require('./counterparties'));
+router.use('/properties', require('./properties'));
+router.use('/vendors', require('./vendors'));
+router.use('/stages', require('./stages'));
+router.use('/documents', require('./documents'));
+router.use('/decisions', require('./decisions'));
+router.use('/activities', require('./activities'));
+router.use('/tasks', require('./tasks'));
 
 module.exports = router;
