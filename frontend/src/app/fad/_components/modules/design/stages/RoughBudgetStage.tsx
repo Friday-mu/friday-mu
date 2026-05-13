@@ -16,7 +16,8 @@ import {
   type RoughBudgetEstimateLine,
 } from '../../../../_data/design';
 import { FRIDAY_CATALOG_HISTORY, FRIDAY_STYLE_GUIDE } from '../../../../_data/fridayCatalogHistory';
-import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString, aiRoughBudgetEstimate, type AiRoughBudgetResponse } from '../../../../_data/designClient';
+import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString, aiRoughBudgetEstimate, loadProject, apiProjectToFixture, type AiRoughBudgetResponse } from '../../../../_data/designClient';
+import { PROJECTS as FIXTURE_PROJECTS } from '../../../../_data/design';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
@@ -248,6 +249,23 @@ export function RoughBudgetStage({ project }: Props) {
       const apiVersion = await createRoughBudgetVersion(payload);
       const fixtureVersion = apiRoughBudgetVersionToFixture(apiVersion);
       FIXTURE_ROUGH_BUDGETS.push(fixtureVersion);
+
+      // Backend propagates the latest version's mid + fees onto the
+      // project row (epc_minor, design_fee_minor, procurement_fee_minor).
+      // Refetch + swap the project in FIXTURE_PROJECTS so Summary,
+      // Annex B auto-fill, and Overview cards re-render with the new
+      // numbers on the next fixtureRev bump.
+      try {
+        const refreshedApi = await loadProject(project.id);
+        const refreshed = apiProjectToFixture(refreshedApi);
+        const idx = FIXTURE_PROJECTS.findIndex((p) => p.id === project.id);
+        if (idx >= 0) FIXTURE_PROJECTS.splice(idx, 1, refreshed);
+        else FIXTURE_PROJECTS.push(refreshed);
+      } catch {
+        // Stale project view is acceptable; the next per-project
+        // hydration will catch up.
+      }
+
       bumpFixtureRev();
       fireToast(`v${fixtureVersion.version} saved (${apiVersion.line_items_inserted}/${validLines.length} items).`);
     } catch (err) {

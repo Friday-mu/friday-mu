@@ -31,6 +31,52 @@ const WRITABLE_FIELDS = [
   'status',
 ];
 
+// Reflect the latest rough-budget version's headline numbers onto the
+// project row so Summary panels, Annex B auto-fill, the Overview fee
+// cards — every surface that reads from design_projects — stay in
+// sync with what the team last saved as the rough budget. Without
+// this, the project row's epc_minor / fees were frozen at lead-intake
+// time and rough-budget edits were invisible everywhere outside the
+// RoughBudget stage itself.
+//
+// "Latest" = MAX(version_number) per project. Only fields that are
+// non-null in the latest version are written; partial budgets don't
+// clobber existing project values. The manual override columns
+// (design_fee_minor_override, procurement_fee_minor_override) are
+// untouched — they remain explicit user actions.
+async function syncProjectFromLatestRoughBudget(projectId) {
+  const { rows } = await query(
+    `SELECT mid_minor, design_fee_minor, procurement_fee_minor
+     FROM design_rough_budget_versions
+     WHERE project_id = $1
+     ORDER BY version_number DESC LIMIT 1`,
+    [projectId],
+  );
+  if (rows.length === 0) return;
+  const v = rows[0];
+  const sets = [];
+  const params = [projectId];
+  let idx = 2;
+  if (v.mid_minor != null) {
+    sets.push(`epc_minor = $${idx++}`);
+    params.push(v.mid_minor);
+  }
+  if (v.design_fee_minor != null) {
+    sets.push(`design_fee_minor = $${idx++}`);
+    params.push(v.design_fee_minor);
+  }
+  if (v.procurement_fee_minor != null) {
+    sets.push(`procurement_fee_minor = $${idx++}`);
+    params.push(v.procurement_fee_minor);
+  }
+  if (sets.length === 0) return;
+  sets.push('updated_at = NOW()');
+  await query(
+    `UPDATE design_projects SET ${sets.join(', ')} WHERE id = $1`,
+    params,
+  );
+}
+
 function shapeRoughBudgetVersion(row) {
   if (!row) return null;
   const toNum = (v) => (v == null ? null : Number(v));
@@ -148,6 +194,15 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
       }
     }
 
+    // Propagate the new version's mid/fees onto the project row so
+    // Summary, Annex B auto-fill, and Overview cards stay in sync.
+    // Best-effort: a sync failure shouldn't fail the save.
+    try {
+      await syncProjectFromLatestRoughBudget(body.project_id);
+    } catch (syncErr) {
+      console.error('[design/rough_budget_versions] project sync after POST failed:', syncErr.message);
+    }
+
     res.status(201).json({ ...version, line_items_inserted: insertedItems.length });
   } catch (e) {
     console.error('[design/rough_budget_versions] create error:', e.message);
@@ -175,6 +230,16 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
                  RETURNING v.*`;
     const { rows } = await query(sql, params);
     if (rows.length === 0) return res.status(404).json({ error: 'Rough budget version not found' });
+
+    // Propagate to the project row. If the patched row was the latest
+    // version, the project picks up the edits; if it was an older
+    // version, the latest's values are re-asserted (idempotent).
+    try {
+      await syncProjectFromLatestRoughBudget(rows[0].project_id);
+    } catch (syncErr) {
+      console.error('[design/rough_budget_versions] project sync after PATCH failed:', syncErr.message);
+    }
+
     res.json(shapeRoughBudgetVersion(rows[0]));
   } catch (e) {
     console.error('[design/rough_budget_versions] patch error:', e.message);
