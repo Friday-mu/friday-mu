@@ -345,6 +345,7 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
             epcStr={epcStr}
             budgetStr={budgetStr}
             tierStr={tierStr}
+            engagementScope={engagementScope}
             designOn={designFeeOverrideOn}
             setDesignOn={setDesignFeeOverrideOn}
             designStr={designFeeOverrideStr}
@@ -515,6 +516,7 @@ function FeeOverridesSection({
   epcStr,
   budgetStr,
   tierStr,
+  engagementScope,
   designOn,
   setDesignOn,
   designStr,
@@ -530,6 +532,9 @@ function FeeOverridesSection({
   epcStr: string;
   budgetStr: string;
   tierStr: '' | '1' | '2' | '3';
+  /** design-be-23: design_only zeroes the execution fee in the live preview
+   *  so the drawer matches what apiProjectToFixture will mask on the read path. */
+  engagementScope: EngagementScope;
   designOn: boolean;
   setDesignOn: (v: boolean) => void;
   designStr: string;
@@ -566,7 +571,13 @@ function FeeOverridesSection({
   const procurementOverrideParsed = parseMajorToMinor(procurementStr);
   const safeMinor = (v: number | null): number => (v == null || Number.isNaN(v) ? 0 : v);
   const effectiveDesign = designOn ? safeMinor(designOverrideParsed) : derivedDesign;
-  const effectiveProcurement = procurementOn ? safeMinor(procurementOverrideParsed) : derivedProcurement;
+  // design-be-23: design_only engagement masks the execution fee on the
+  // read path (apiProjectToFixture zeroes procurementFeeMinor). Mirror
+  // the mask here so the live preview doesn't lie about what owners
+  // will see on the project / agreement.
+  const isDesignOnly = engagementScope === 'design_only';
+  const procurementBase = procurementOn ? safeMinor(procurementOverrideParsed) : derivedProcurement;
+  const effectiveProcurement = isDesignOnly ? 0 : procurementBase;
   const effectiveTotal = effectiveDesign + effectiveProcurement;
   const vatPct = (ANNEX_A_DEFAULT.vatRate * 100).toFixed(ANNEX_A_DEFAULT.vatRate * 100 % 1 === 0 ? 0 : 2);
 
@@ -618,7 +629,15 @@ function FeeOverridesSection({
             Effective fees (live preview)
           </div>
           <FeeVatRow label="Design fee" minor={effectiveDesign} />
-          <FeeVatRow label="Execution fee" minor={effectiveProcurement} />
+          {isDesignOnly ? (
+            <div style={{ display: 'contents' }}>
+              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Execution fee</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>—</div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>(design only — not invoiced)</div>
+            </div>
+          ) : (
+            <FeeVatRow label="Execution fee" minor={effectiveProcurement} />
+          )}
           <FeeVatRow label="Total fee" minor={effectiveTotal} strong />
           <div style={{ gridColumn: '1 / -1', marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
             Annex A rates are VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.

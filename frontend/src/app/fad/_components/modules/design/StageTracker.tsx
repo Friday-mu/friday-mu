@@ -134,7 +134,7 @@ export function StageTracker({ currentStage, status, onStageSelect, compact, opt
                   {s.shortLabel}
                   {isOptional && (
                     <span className="fad-design-stage-pill-optional" style={{ marginLeft: 4, fontSize: 9, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-                      opt.
+                      {' '}(opt.)
                     </span>
                   )}
                 </span>

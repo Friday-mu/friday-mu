@@ -25,12 +25,12 @@ import {
 import {
   useHydrateDesignTopLevel,
   useHydrateDesignProject,
-  createLead as apiCreateLead,
   convertLeadToProject as apiConvertLeadToProject,
   reopenStage as apiReopenStage,
   StageReopenLockedError,
   type ApiLead,
 } from '../../_data/designClient';
+import { LeadIntakeDrawer } from './design/LeadIntakeDrawer';
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
 import { ProjectIntake } from './design/ProjectIntake';
@@ -822,35 +822,15 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
     ? allLeads
     : allLeads.filter((l) => sourceFilter.has((l.source as LeadSource) ?? 'other'));
 
-  const handleNewLead = async () => {
-    if (typeof window === 'undefined') return;
-    const name = window.prompt('New lead — name?')?.trim();
-    if (!name) return;
-    const email = window.prompt('Email (optional)')?.trim() || undefined;
-    const phone = window.prompt('Phone (optional)')?.trim() || undefined;
-    const sourceInput = window.prompt(
-      `Source? Options: ${LEAD_SOURCES.join(', ')}`,
-      'website',
-    )?.trim();
-    const source = LEAD_SOURCES.includes(sourceInput as LeadSource) ? sourceInput : undefined;
-    setBusy('create');
-    try {
-      const created = await apiCreateLead({
-        name,
-        email: email ?? null,
-        phone: phone ?? null,
-        source: source ?? null,
-      });
-      // Splice the new row into the local LEADS array so it shows up without
-      // a full refetch. Hydrated leads are stored as API-shape.
-      (designClient.leads.list() as unknown as ApiLead[]).push(created);
-      fireToast(`Lead "${created.name}" created.`);
-      bump();
-    } catch (e) {
-      fireToast(`Failed to create lead: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setBusy(null);
-    }
+  // Lead creation now uses a proper form drawer (LeadIntakeDrawer) rather
+  // than chained window.prompt()s — matches the rest of the FAD design
+  // language (ProjectEditDrawer, ShareWithOwnerDrawer, etc.).
+  const [showLeadDrawer, setShowLeadDrawer] = useState(false);
+  const handleLeadCreated = (created: ApiLead) => {
+    // Splice the new row into the local LEADS array so it shows up without
+    // a full refetch. Hydrated leads are stored as API-shape.
+    (designClient.leads.list() as unknown as ApiLead[]).push(created);
+    bump();
   };
 
   const handleConvert = async (lead: ApiLead) => {
@@ -884,11 +864,10 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
         <button
           type="button"
           data-leads-new
-          onClick={handleNewLead}
-          disabled={busy === 'create'}
+          onClick={() => setShowLeadDrawer(true)}
           style={leadActionBtn('primary')}
         >
-          {busy === 'create' ? 'Creating…' : '+ New lead'}
+          + New lead
         </button>
       </div>
 
@@ -992,6 +971,12 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
           </section>
         );
       })}
+      {showLeadDrawer && (
+        <LeadIntakeDrawer
+          onCreated={handleLeadCreated}
+          onClose={() => setShowLeadDrawer(false)}
+        />
+      )}
     </div>
   );
 }
@@ -2303,7 +2288,11 @@ function TierChangeSimulator() {
       </div>
 
       <div style={{ overflowX: 'auto', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)' }}>
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 640 }}>
+        {/* minWidth=860 keeps all 7 columns readable (Scenario + 6 numeric × excl/incl
+            for Design / Execution / Total). Below that, the parent overflowX:auto
+            gives a horizontal scrollbar. Without the larger minWidth, the table
+            tries to fit and clips Total + Total+VAT off-screen on standard widths. */}
+        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
             <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, background: 'var(--color-background-tertiary)' }}>
               <th style={cellStyle('left')}>Scenario</th>
