@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   ANNEX_A_DEFAULT,
+  buildItemCatalog,
   designFeeForTier,
   estimateRoughBudget,
   isVarianceFlagged,
+  listCatalogItems,
+  lookupCatalogItem,
   procurementFeeForTier,
   signMockToken,
   stripForOwner,
@@ -12,6 +15,7 @@ import {
   vatOf,
   withVAT,
   TASKS,
+  FRIDAY_STYLE_GUIDE,
   type AnnexAConfig,
   type BudgetItem,
   type DesignTask,
@@ -350,5 +354,68 @@ describe('DesignTask.category — fixture defaults', () => {
     const b: DesignTask['category'] = 'blocker';
     const c: DesignTask['category'] = 'next_action';
     expect([a, b, c]).toEqual(['general', 'blocker', 'next_action']);
+  });
+});
+
+describe('buildItemCatalog — merges fixture BUDGET_ITEMS with Friday history', () => {
+  it("lookupCatalogItem('Mattress') returns a real Friday entry with sampleCount >= 1", () => {
+    // 'Mattress' appears in Nooranee RCN-4 historical data (Rs 27,499) and
+    // in two Lagon Bleu LB-2 lines via the longer keys 'mattress / bedroom 1/3'
+    // and 'mattress / bedroom 2'. Bare 'mattress' should resolve via the
+    // Nooranee entry (no fixture BUDGET_ITEM matches that bare key).
+    const result = lookupCatalogItem('Mattress');
+    expect(result).not.toBeNull();
+    expect(result!.sampleCount).toBeGreaterThanOrEqual(1);
+    // 'hist-nooranee-rcn-4' is the synthetic project id.
+    const hasHistoricalProject = result!.sourceProjectIds.some((id) =>
+      id.startsWith('hist-'),
+    );
+    expect(hasHistoricalProject).toBe(true);
+  });
+
+  it("lookupCatalogItem('Wardrobe') aggregates multiple historical samples", () => {
+    // 'Wardrobe' appears twice in Lagon Bleu LB-2 (qty 1 and qty 2 at
+    // different unit prices). The catalog should have at least 2 samples
+    // and a min/max that reflects the real spread.
+    const result = lookupCatalogItem('Wardrobe');
+    expect(result).not.toBeNull();
+    expect(result!.sampleCount).toBeGreaterThanOrEqual(2);
+    expect(result!.minMinor).toBeLessThan(result!.maxMinor);
+  });
+
+  it('listCatalogItems is non-empty and contains entries from at least 2 source projects (history merge proof)', () => {
+    const items = listCatalogItems();
+    expect(items.length).toBeGreaterThan(20);
+    const allProjectIds = new Set<string>();
+    for (const i of items) {
+      for (const pid of i.sourceProjectIds) allProjectIds.add(pid);
+    }
+    // Distinct synthetic historical projects ⇒ merge ran.
+    const historicalIds = Array.from(allProjectIds).filter((id) =>
+      id.startsWith('hist-'),
+    );
+    expect(historicalIds.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('skips historical internalWork entries (e.g. partition walls, maintenance)', () => {
+    // 'partition wall' is in FRIDAY_CATALOG_HISTORY with internalWork=true.
+    // It must not surface in the catalog.
+    const result = lookupCatalogItem('Partition Wall');
+    expect(result).toBeNull();
+  });
+
+  it('FRIDAY_STYLE_GUIDE re-exported from design.ts (consumer convenience)', () => {
+    expect(FRIDAY_STYLE_GUIDE.preferredVendors[0].name).toBe('Courts');
+  });
+
+  it('buildItemCatalog is deterministic — second call returns equal stats', () => {
+    const a = buildItemCatalog();
+    const b = buildItemCatalog();
+    expect(a.length).toBe(b.length);
+    // Spot-check first row stats.
+    if (a.length > 0) {
+      expect(a[0].sampleCount).toBe(b[0].sampleCount);
+      expect(a[0].medianMinor).toBe(b[0].medianMinor);
+    }
   });
 });
