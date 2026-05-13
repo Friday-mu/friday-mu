@@ -1722,10 +1722,19 @@ export function apiPackToFixture(api: ApiPack): FixturePack {
 }
 
 export function apiAgreementToFixture(api: ApiAgreement): FixtureAgreement {
+  // Backend writes status='signed' (portal.js POST /portal/agreement/sign +
+  // agreements.js POST .../sign). The frontend AgreementStatus enum uses
+  // 'signed_by_client' (the descriptive label STATUS_LABEL keys off and the
+  // AgreementStage evidence-PDF + AgreementTab portal receipt gate on).
+  // Without this normalisation, every signed agreement falls through to the
+  // 'draft' fallback — owners see "still being finalised" and the evidence
+  // PDF button never renders. Until the backend column-rename lands, map
+  // here.
+  const status = api.status === 'signed' ? 'signed_by_client' : api.status;
   return {
     id: api.project_id,
     projectId: api.project_id,
-    status: api.status,
+    status,
     sentAt: api.sent_at ?? null,
     signedAt: api.signed_at ?? null,
     signedBy: api.signed_by ?? null,
