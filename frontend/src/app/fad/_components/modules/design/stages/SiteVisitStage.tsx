@@ -1,11 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { designClient, type DesignProject, type Photo, type Room } from '../../../../_data/design';
 import { AIPlaceholder } from '../AIPlaceholder';
-import { SitePlanGenerator } from '../SitePlanGenerator';
-import { loadProjectFloorPlan, useHydrateDesignProject } from '../../../../_data/designClient';
-import type { ApiAsset, FloorPlanGenerationResult } from '../../../../_data/designClient';
 
 interface Props {
   project: DesignProject;
@@ -22,36 +19,12 @@ export function SiteVisitStage({ project }: Props) {
 
   const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set());
   const [photoLightbox, setPhotoLightbox] = useState<Photo | null>(null);
-  const [showSitePlanModal, setShowSitePlanModal] = useState(false);
 
-  // Hydration refetch — after the modal pins a new site_plan_image_id
-  // on the project, re-hydrate so the project row reloads and child
-  // renders pick up the new ID. The fixture-array splicing pattern is
-  // shared with MoodboardStage, so this stays consistent with sibling
-  // stages.
-  const { refetch: refetchProject } = useHydrateDesignProject(project.id);
-
-  // Resolve the currently-pinned site plan asset (if any). Refetches
-  // whenever sitePlanImageId changes, so the preview updates immediately
-  // after the modal saves.
-  const [sitePlan, setSitePlan] = useState<ApiAsset | null>(null);
-  const sitePlanId = project.floorPlanImageId ?? null;
-  useEffect(() => {
-    let alive = true;
-    if (!sitePlanId) { setSitePlan(null); return; }
-    loadProjectFloorPlan(project.id)
-      .then((row) => { if (alive) setSitePlan(row); })
-      .catch(() => { if (alive) setSitePlan(null); });
-    return () => { alive = false; };
-  }, [project.id, sitePlanId]);
-
-  function handleSitePlanSaved(_result: FloorPlanGenerationResult) {
-    setShowSitePlanModal(false);
-    // Refetch project + per-project artifacts so the new
-    // floor_plan_image_id propagates down into project.floorPlanImageId
-    // and triggers the loadProjectFloorPlan() useEffect below.
-    refetchProject();
-  }
+  // design-be-13: the floor-plan generator button + modal lived here in
+  // earlier iterations; they were moved out into the dedicated
+  // FloorPlanStage (workflow step #10) so the workflow UI matches the
+  // 18-stage list 1:1. SiteVisitStage now only owns the visit metadata
+  // + room capture surfaces.
 
   const toggleRoom = (id: string) =>
     setExpandedRooms((prev) => {
@@ -67,24 +40,6 @@ export function SiteVisitStage({ project }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Site visit</h3>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => setShowSitePlanModal(true)}
-              data-ai-feature="site-plan-generator"
-              style={{
-                padding: '6px 12px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--color-background-tertiary)',
-                color: 'var(--color-text-primary)',
-                fontSize: 12,
-                fontWeight: 500,
-                border: '0.5px solid var(--color-border-secondary)',
-                cursor: 'pointer',
-              }}
-              title="Upload client's messy floor plan; Nanobanana redraws it cleanly"
-            >
-              Generate site plan
-            </button>
             <AIPlaceholder feature="site-visit-audit" label="Run AI audit" size="sm" />
           </div>
         </div>
@@ -193,63 +148,12 @@ export function SiteVisitStage({ project }: Props) {
         )}
       </Card>
 
-      {/* Cleaned site plan — only rendered when one has been pinned */}
-      {sitePlanId && (
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Site plan <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· generated</span></h3>
-            <button
-              type="button"
-              onClick={() => setShowSitePlanModal(true)}
-              style={{
-                padding: '4px 10px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'transparent',
-                color: 'var(--color-text-secondary)',
-                fontSize: 11,
-                border: '0.5px solid var(--color-border-secondary)',
-                cursor: 'pointer',
-              }}
-            >
-              Regenerate
-            </button>
-          </div>
-          {sitePlan?.storage_url ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={sitePlan.storage_url}
-                alt="Generated site plan"
-                style={{ width: '100%', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)' }}
-              />
-              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 6, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <span>{sitePlan.mime_type ?? 'image/png'}</span>
-                {typeof sitePlan.byte_size === 'number' && <span>{Math.round(sitePlan.byte_size / 1024)} KB</span>}
-                <span style={{ fontFamily: 'monospace' }}>{sitePlan.sha256.slice(0, 12)}…</span>
-              </div>
-            </>
-          ) : (
-            <div style={{ padding: 16, color: 'var(--color-text-tertiary)', fontSize: 12 }}>
-              Loading site plan…
-            </div>
-          )}
-        </Card>
-      )}
-
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button type="button" style={secondaryBtn()}>Save and continue later</button>
         <button type="button" style={primaryBtn()}>Close site visit</button>
       </div>
 
       {photoLightbox && <Lightbox photo={photoLightbox} onClose={() => setPhotoLightbox(null)} />}
-
-      {showSitePlanModal && (
-        <SitePlanGenerator
-          projectId={project.id}
-          onSaved={handleSitePlanSaved}
-          onClose={() => setShowSitePlanModal(false)}
-        />
-      )}
     </div>
   );
 }
