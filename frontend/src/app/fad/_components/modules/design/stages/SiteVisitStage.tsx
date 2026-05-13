@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { designClient, type DesignProject, type Photo, type Room } from '../../../../_data/design';
+import { createRoom as apiCreateRoom } from '../../../../_data/designClient';
+import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
 interface Props {
@@ -12,13 +14,102 @@ const ROOM_NAME_OPTIONS = [
   'Living Room', 'Kitchen', 'Master bedroom', 'Bedroom', 'Bathroom', 'Hallway', 'Balcony', 'Outdoor', 'Other',
 ];
 
+const USAGE_KIND_OPTIONS = [
+  { id: 'living',   label: 'Living' },
+  { id: 'bedroom',  label: 'Bedroom' },
+  { id: 'kitchen',  label: 'Kitchen' },
+  { id: 'bathroom', label: 'Bathroom' },
+  { id: 'utility',  label: 'Utility / hallway' },
+  { id: 'outdoor',  label: 'Outdoor / balcony' },
+  { id: 'other',    label: 'Other' },
+];
+
 export function SiteVisitStage({ project }: Props) {
   const visit = designClient.siteVisit.get(project.id);
-  const rooms = designClient.rooms.list(project.id);
+  // rev forces re-read of the fixture array after we push a new room
+  // returned by the API into it. Without rev, React doesn't re-render.
+  const [rev, setRev] = useState(0);
+  const rooms = (() => { void rev; return designClient.rooms.list(project.id); })();
   const photos = designClient.photos.list(project.id);
 
   const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set());
   const [photoLightbox, setPhotoLightbox] = useState<Photo | null>(null);
+
+  // ── Add-room inline form state ───────────────────────────────
+  // Opens beneath the "+ Add room" button when the button is clicked.
+  // Submits to POST /api/design/rooms with the project's propertyId, then
+  // pushes the returned row into the fixture ROOMS array (mapped to the
+  // fixture shape) so the list refreshes without a full refetch.
+  const [showAddRoom, setShowAddRoom] = useState(false);
+  const [newRoomName, setNewRoomName] = useState<string>('Living Room');
+  const [newRoomCustom, setNewRoomCustom] = useState('');
+  const [newRoomSqftStr, setNewRoomSqftStr] = useState('');
+  const [newRoomUsage, setNewRoomUsage] = useState<string>('living');
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
+
+  const resetAddRoomForm = () => {
+    setNewRoomName('Living Room');
+    setNewRoomCustom('');
+    setNewRoomSqftStr('');
+    setNewRoomUsage('living');
+    setRoomError(null);
+  };
+
+  const handleAddRoom = async () => {
+    const propertyId = project.propertyId;
+    if (!propertyId) {
+      setRoomError('This project has no property linked. Add a property in Edit project first.');
+      return;
+    }
+    const effectiveName = newRoomName === 'Other' ? newRoomCustom.trim() : newRoomName.trim();
+    if (!effectiveName) {
+      setRoomError('Room name is required.');
+      return;
+    }
+    const sqftParsed = newRoomSqftStr.trim() === '' ? null : Number(newRoomSqftStr);
+    if (sqftParsed !== null && (!Number.isFinite(sqftParsed) || sqftParsed < 0)) {
+      setRoomError('Sqft must be a non-negative number.');
+      return;
+    }
+    setCreatingRoom(true);
+    setRoomError(null);
+    try {
+      const created = await apiCreateRoom({
+        property_id: propertyId,
+        name: effectiveName,
+        sqft: sqftParsed,
+        usage_kind: newRoomUsage,
+      });
+      // Map API → fixture shape, splice into fixture, bump rev to re-render.
+      // The fixture Room type has more fields (lengthM, widthM, heightM,
+      // windows) than the backend currently exposes; default the extras to
+      // null so the rendering code's null-checks handle them. projectId
+      // mirrors project.id since the fixture indexes by project, not
+      // property.
+      const fixtureRoom: Room = {
+        id: created.id,
+        projectId: project.id,
+        name: created.name,
+        lengthM: null,
+        widthM: null,
+        heightM: null,
+        windows: null,
+        // Cast through unknown so the optional extra fields the fixture
+        // type defines (which the API may not return) don't trip TS.
+      } as unknown as Room;
+      (designClient.rooms.list(project.id) as Room[]).push(fixtureRoom);
+      fireToast(`Room "${created.name}" added.`);
+      resetAddRoomForm();
+      setShowAddRoom(false);
+      setRev((r) => r + 1);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setRoomError(`Failed to add room: ${msg}`);
+    } finally {
+      setCreatingRoom(false);
+    }
+  };
 
   // design-be-13: the floor-plan generator button + modal lived here in
   // earlier iterations; they were moved out into the dedicated
@@ -87,18 +178,128 @@ export function SiteVisitStage({ project }: Props) {
           <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Rooms <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· {rooms.length}</span></h3>
           <button
             type="button"
+            data-add-room-trigger
+            onClick={() => {
+              if (showAddRoom) {
+                setShowAddRoom(false);
+                resetAddRoomForm();
+              } else {
+                setShowAddRoom(true);
+              }
+            }}
             style={{
               padding: '6px 12px',
               borderRadius: 'var(--radius-sm)',
-              background: 'var(--color-brand-accent)',
-              color: '#fff',
+              background: showAddRoom ? 'var(--color-background-tertiary)' : 'var(--color-brand-accent)',
+              color: showAddRoom ? 'var(--color-text-primary)' : '#fff',
+              border: showAddRoom ? '0.5px solid var(--color-border-secondary)' : 'none',
               fontSize: 12,
               fontWeight: 500,
+              cursor: 'pointer',
             }}
           >
-            + Add room
+            {showAddRoom ? 'Cancel' : '+ Add room'}
           </button>
         </div>
+        {showAddRoom && (
+          <div
+            data-add-room-form
+            style={{
+              border: '0.5px solid var(--color-brand-accent)',
+              borderRadius: 'var(--radius-sm)',
+              padding: 12,
+              marginBottom: 12,
+              background: 'var(--color-brand-accent-softer)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: 10,
+            }}
+          >
+            <Field label="Room name">
+              <select
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                style={inputStyle()}
+                data-add-room-name
+              >
+                {ROOM_NAME_OPTIONS.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              {newRoomName === 'Other' && (
+                <input
+                  value={newRoomCustom}
+                  onChange={(e) => setNewRoomCustom(e.target.value)}
+                  placeholder="Custom room name"
+                  style={{ ...inputStyle(), marginTop: 6 }}
+                  data-add-room-custom
+                />
+              )}
+            </Field>
+            <Field label="Usage">
+              <select
+                value={newRoomUsage}
+                onChange={(e) => setNewRoomUsage(e.target.value)}
+                style={inputStyle()}
+                data-add-room-usage
+              >
+                {USAGE_KIND_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Sqft (optional)">
+              <input
+                type="number"
+                min={0}
+                value={newRoomSqftStr}
+                onChange={(e) => setNewRoomSqftStr(e.target.value)}
+                placeholder="e.g. 180"
+                style={inputStyle()}
+                data-add-room-sqft
+              />
+            </Field>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'flex-end' }}>
+              {roomError && (
+                <span style={{ fontSize: 11, color: 'var(--color-text-warning)', marginRight: 'auto' }}>{roomError}</span>
+              )}
+              <button
+                type="button"
+                onClick={() => { setShowAddRoom(false); resetAddRoomForm(); }}
+                disabled={creatingRoom}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-background-primary)',
+                  border: '0.5px solid var(--color-border-secondary)',
+                  color: 'var(--color-text-primary)',
+                  cursor: creatingRoom ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddRoom}
+                disabled={creatingRoom || (newRoomName === 'Other' && !newRoomCustom.trim())}
+                data-add-room-submit
+                style={{
+                  padding: '6px 14px',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  borderRadius: 'var(--radius-sm)',
+                  background: creatingRoom ? 'var(--color-border-secondary)' : 'var(--color-brand-accent)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: creatingRoom ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {creatingRoom ? 'Adding…' : 'Add room'}
+              </button>
+            </div>
+          </div>
+        )}
         {rooms.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
             No rooms captured yet. Tap <strong>+ Add room</strong> to start.

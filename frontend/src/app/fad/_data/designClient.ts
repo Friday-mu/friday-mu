@@ -710,6 +710,25 @@ export const updateLead = (id: string, patch: Partial<ApiLead>) =>
 export const convertLeadToProject = (id: string, projectPayload: { name?: string; slug?: string } = {}) =>
   apiFetch(`/api/design/leads/${id}/convert`, { method: 'POST', body: JSON.stringify(projectPayload) }) as Promise<{ lead: ApiLead; project: ApiProject }>;
 
+// ─────────────────────────── Rooms ───────────────────────────
+// Rooms attach to properties (not directly to projects). The Site Visit
+// stage uses these to anchor photos + measurements + design-pack layouts.
+// Backend schema: design_rooms { id, property_id, name, sqft, usage_kind }.
+export interface ApiRoom {
+  id: string;
+  property_id: string;
+  name: string;
+  sqft?: number | null;
+  usage_kind?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export const listRooms = (propertyId: string) =>
+  apiFetch(`/api/design/rooms?property_id=${encodeURIComponent(propertyId)}`)
+    .then((r) => (r as { results: ApiRoom[] }).results);
+export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
+  apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
+
 export const createCounterparty = (payload: Partial<ApiCounterparty> & { name: string }) =>
   apiFetch('/api/design/counterparties', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiCounterparty>;
 export const updateCounterparty = (id: string, patch: Partial<ApiCounterparty>) =>
