@@ -4,10 +4,12 @@ import { useMemo, useState } from 'react';
 import {
   designClient,
   formatMUR,
+  PAYMENT_GATES as FIXTURE_PAYMENT_GATES,
   type DesignProject,
   type GateStatus,
   type PaymentGate,
 } from '../../../../_data/design';
+import { receivePayment, apiPaymentToFixture } from '../../../../_data/designClient';
 import { useCurrentRole } from '../../../usePermissions';
 import { fireToast } from '../../../Toaster';
 
@@ -17,10 +19,43 @@ interface Props {
 
 export function PaymentsStage({ project }: Props) {
   const role = useCurrentRole();
-  const gates = designClient.payments.list(project.id);
+  const [rev, setRev] = useState(0);
+  const gates = (() => { void rev; return designClient.payments.list(project.id); })();
   const [modalGate, setModalGate] = useState<PaymentGate | null>(null);
+  const [confirming, setConfirming] = useState(false);
   // B3.11: director-only. Drop the Finance branch (single approver in v0.1).
   const canMarkReceived = role === 'director';
+
+  const handleConfirmReceived = async (gate: PaymentGate, amt: number, bankRef: string, notes: string) => {
+    setConfirming(true);
+    try {
+      // The backend gate_id is the GateId enum string ('design_fee_60' etc.),
+      // which matches the fixture gateId. Bank ref + notes are concatenated
+      // into the `note` payload (backend stores a single TEXT column).
+      const noteCombined = bankRef ? `Ref: ${bankRef}${notes ? ` — ${notes}` : ''}` : (notes || null);
+      const updated = await receivePayment(project.id, gate.id, {
+        amount_minor: amt,
+        received_at: new Date().toISOString(),
+        note: noteCombined ?? undefined,
+      });
+      // Mutate fixture in place so the table re-renders with received state.
+      const mapped = apiPaymentToFixture(updated);
+      const idx = FIXTURE_PAYMENT_GATES.findIndex((g) => g.projectId === project.id && g.id === gate.id);
+      if (idx >= 0) {
+        Object.assign(FIXTURE_PAYMENT_GATES[idx], mapped);
+      } else {
+        FIXTURE_PAYMENT_GATES.push(mapped);
+      }
+      setRev((r) => r + 1);
+      fireToast(`Marked received: ${gate.label} — ${formatMUR(amt)}`);
+      setModalGate(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Failed to mark received: ${msg}`);
+    } finally {
+      setConfirming(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -121,11 +156,9 @@ export function PaymentsStage({ project }: Props) {
       {modalGate && (
         <MarkReceivedModal
           gate={modalGate}
+          confirming={confirming}
           onClose={() => setModalGate(null)}
-          onConfirm={(amt, bankRef, notes) => {
-            fireToast(`Marked received: ${modalGate.label} — ${formatMUR(amt)} (${bankRef})`);
-            setModalGate(null);
-          }}
+          onConfirm={(amt, bankRef, notes) => handleConfirmReceived(modalGate, amt, bankRef, notes)}
         />
       )}
     </div>
@@ -265,22 +298,29 @@ function StatusChip({ status }: { status: GateStatus }) {
   );
 }
 
-function MarkReceivedModal({ gate, onClose, onConfirm }: { gate: PaymentGate; onClose: () => void; onConfirm: (amt: number, bankRef: string, notes: string) => void }) {
+function MarkReceivedModal({ gate, confirming, onClose, onConfirm }: { gate: PaymentGate; confirming: boolean; onClose: () => void; onConfirm: (amt: number, bankRef: string, notes: string) => void }) {
   const [amount, setAmount] = useState('');
   const [bankRef, setBankRef] = useState('');
   const [notes, setNotes] = useState('');
   const amtMinor = amount ? Math.round(Number(amount.replace(/[^\d]/g, '')) * 100) : 0;
+  const canConfirm = !!amount && !!bankRef && !confirming;
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div onClick={confirming ? undefined : onClose} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--color-background-primary)', borderRadius: 'var(--radius-md)', padding: 20, width: '100%', maxWidth: 480 }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Mark received: {gate.label}</h3>
-        <Field label="Amount (MUR)"><input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 51000" style={inputStyle()} /></Field>
-        <Field label="Bank reference"><input value={bankRef} onChange={(e) => setBankRef(e.target.value)} placeholder="MCB-A4F19" style={inputStyle()} /></Field>
-        <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} /></Field>
+        <Field label="Amount (MUR)"><input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 51000" style={inputStyle()} disabled={confirming} /></Field>
+        <Field label="Bank reference"><input value={bankRef} onChange={(e) => setBankRef(e.target.value)} placeholder="MCB-A4F19" style={inputStyle()} disabled={confirming} /></Field>
+        <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} disabled={confirming} /></Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <button type="button" onClick={onClose} style={secondaryBtn()}>Cancel</button>
-          <button type="button" disabled={!amount || !bankRef} onClick={() => onConfirm(amtMinor, bankRef, notes)} style={amount && bankRef ? primaryBtn() : { ...secondaryBtn(), opacity: 0.5, cursor: 'not-allowed' }}>
-            Confirm receipt
+          <button type="button" onClick={onClose} disabled={confirming} style={secondaryBtn()}>Cancel</button>
+          <button
+            type="button"
+            disabled={!canConfirm}
+            onClick={() => onConfirm(amtMinor, bankRef, notes)}
+            data-payment-confirm-receipt
+            style={canConfirm ? primaryBtn() : { ...secondaryBtn(), opacity: 0.5, cursor: 'not-allowed' }}
+          >
+            {confirming ? 'Confirming…' : 'Confirm receipt'}
           </button>
         </div>
       </div>
