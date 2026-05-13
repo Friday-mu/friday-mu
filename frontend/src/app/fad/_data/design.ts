@@ -147,6 +147,15 @@ export type TargetOutcome =
 export type ProposalStatus = 'not_needed' | 'draft' | 'sent' | 'accepted' | 'declined';
 export type PMLink = 'managed_by_friday' | 'will_be_managed' | 'not_managed';
 
+/**
+ * design-be-23: project-level engagement scope. Some Friday clients pay
+ * for design only (moodboard + pack) — owner handles procurement +
+ * execution themselves. Stages 14-17 (final-budget → reconciliation)
+ * become out-of-scope when this is 'design_only', and the procurement
+ * fee is masked to 0 in apiProjectToFixture.
+ */
+export type EngagementScope = 'design_only' | 'design_and_execution';
+
 export interface DesignProject {
   id: string;
   entityId: DesignEntityId;
@@ -168,6 +177,22 @@ export interface DesignProject {
   designFeeMinorOverride?: number | null;
   /** Director override; when non-null the adapter uses this instead of tier-derived. */
   procurementFeeMinorOverride?: number | null;
+  /**
+   * design-be-23: engagement fork. 'design_and_execution' (default) =
+   * full project; 'design_only' = moodboard + design pack only, owner
+   * handles procurement + execution. apiProjectToFixture masks
+   * procurementFeeMinor to 0 when this is 'design_only'.
+   */
+  engagementScope: EngagementScope;
+  /**
+   * design-be-23: derived total fee for the owner-facing summary.
+   *   design_and_execution => designFeeMinor + procurementFeeMinor
+   *   design_only          => designFeeMinor (procurement is out of scope)
+   * Populated by apiProjectToFixture; for static fixtures defaults to
+   * (designFeeMinor ?? 0) + (procurementFeeMinor ?? 0) so existing
+   * mocks continue to render the same total.
+   */
+  effectiveTotalFeeMinor?: number | null;
   goals: ProjectGoal[];
   outcomes: TargetOutcome[];
   budgetExpectationMinor: number | null;
@@ -1068,6 +1093,7 @@ export const PROJECTS: DesignProject[] = [
     cancelledReason: null,
     cancelledByUserId: null,
     cancelTransferToInventory: null,
+    engagementScope: 'design_and_execution',
   },
   {
     id: 'p-ohana',
@@ -1103,6 +1129,7 @@ export const PROJECTS: DesignProject[] = [
     cancelledReason: null,
     cancelledByUserId: null,
     cancelTransferToInventory: null,
+    engagementScope: 'design_and_execution',
   },
   {
     id: 'p-duval',
@@ -1138,6 +1165,7 @@ export const PROJECTS: DesignProject[] = [
     cancelledReason: null,
     cancelledByUserId: null,
     cancelTransferToInventory: null,
+    engagementScope: 'design_and_execution',
   },
   {
     id: 'p-rc15',
@@ -1173,6 +1201,7 @@ export const PROJECTS: DesignProject[] = [
     cancelledReason: null,
     cancelledByUserId: null,
     cancelTransferToInventory: null,
+    engagementScope: 'design_and_execution',
   },
   {
     id: 'p-lb2',
@@ -1208,6 +1237,7 @@ export const PROJECTS: DesignProject[] = [
     cancelledReason: null,
     cancelledByUserId: null,
     cancelTransferToInventory: null,
+    engagementScope: 'design_and_execution',
   },
   {
     id: 'p-lb3',
@@ -1243,6 +1273,7 @@ export const PROJECTS: DesignProject[] = [
     cancelledReason: null,
     cancelledByUserId: null,
     cancelTransferToInventory: null,
+    engagementScope: 'design_and_execution',
   },
 ];
 
@@ -1688,6 +1719,9 @@ export function convertLeadToProject(leadId: string, input: ConvertLeadInput): C
     cancelledReason: null,
     cancelledByUserId: null,
     cancelTransferToInventory: null,
+    // design-be-23: leads convert to full-scope by default. Director can
+    // toggle to 'design_only' via the edit drawer once the project is created.
+    engagementScope: 'design_and_execution',
   };
   PROJECTS.push(project);
 

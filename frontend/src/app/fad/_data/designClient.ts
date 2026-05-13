@@ -55,6 +55,7 @@ import type {
   DesignTier,
   ProjectClassification,
   LeadSource,
+  EngagementScope,
 } from './design';
 
 // ════════════════════════════════════════════════════════════════════
@@ -153,6 +154,16 @@ export interface ApiProject {
   stage_status: string;
   blocker?: string | null;
   next_action?: string | null;
+  /**
+   * design-be-23: project-level engagement fork.
+   *   'design_and_execution' — full project (default)
+   *   'design_only' — moodboard + design pack only; owner buys + installs
+   *
+   * When 'design_only', apiProjectToFixture forces procurementFeeMinor to
+   * 0 (regardless of any override) and stages 14-17 render out-of-scope.
+   * Backed by design_projects.engagement_scope (migration 018).
+   */
+  engagement_scope?: 'design_only' | 'design_and_execution';
   lifecycle_status: 'active' | 'paused' | 'cancelled';
   paused_at?: string | null;
   paused_reason?: string | null;
@@ -892,9 +903,19 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
   const designFee = designFeeOverride != null
     ? designFeeOverride
     : (effectiveEpc > 0 ? designFeeForTier(tier, effectiveEpc) : 0);
-  const procurementFee = procurementFeeOverride != null
-    ? procurementFeeOverride
-    : (effectiveEpc > 0 ? procurementFeeForTier(tier, classification, effectiveEpc) : 0);
+  // design-be-23: design-only engagements have no procurement scope, so
+  // the procurement fee is masked to 0 here regardless of any Director
+  // override. The helper (procurementFeeForTier) is preserved upstream
+  // so the simulator + "what would the full-scope quote look like"
+  // preview can still compute the hypothetical figure. Mask happens at
+  // the read path so the database stays clean if scope is toggled back
+  // to full.
+  const engagementScope: EngagementScope = api.engagement_scope ?? 'design_and_execution';
+  const procurementFee = engagementScope === 'design_only'
+    ? 0
+    : (procurementFeeOverride != null
+        ? procurementFeeOverride
+        : (effectiveEpc > 0 ? procurementFeeForTier(tier, classification, effectiveEpc) : 0));
 
   return {
     id: api.id,
@@ -935,6 +956,12 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     floorPlanFurnishedImageId: api.floor_plan_furnished_image_id ?? null,
     designFeeMinorOverride: api.design_fee_minor_override ?? null,
     procurementFeeMinorOverride: api.procurement_fee_minor_override ?? null,
+    engagementScope,
+    // design-be-23: pre-computed total fee. For design_only this is
+    // just the design fee (procurement is out of scope and already
+    // masked to 0 above). Components can read this directly without
+    // having to re-derive the math.
+    effectiveTotalFeeMinor: designFee + procurementFee,
   } as FixtureProject;
 }
 
