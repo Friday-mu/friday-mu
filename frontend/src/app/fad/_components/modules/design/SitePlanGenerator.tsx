@@ -17,12 +17,12 @@
 // before/after companion to the generated clean plan.
 
 import { useRef, useState } from 'react';
-import { generateSitePlan } from '../../../_data/designClient';
-import type { SitePlanGenerationResult } from '../../../_data/designClient';
+import { generateFloorPlan } from '../../../_data/designClient';
+import type { FloorPlanGenerationResult } from '../../../_data/designClient';
 
 interface Props {
   projectId: string;
-  onSaved: (result: SitePlanGenerationResult) => void;
+  onSaved: (result: FloorPlanGenerationResult) => void;
   onClose: () => void;
 }
 
@@ -47,7 +47,7 @@ export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
   const [source, setSource] = useState<SourceFile | null>(null);
   const [promptHint, setPromptHint] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SitePlanGenerationResult | null>(null);
+  const [result, setResult] = useState<FloorPlanGenerationResult | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -98,7 +98,7 @@ export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
     setPhase('generating');
     setError(null);
     try {
-      const res = await generateSitePlan({
+      const res = await generateFloorPlan({
         project_id: projectId,
         source_image: { mimeType: source.mimeType, base64: source.base64 },
         prompt_hint: promptHint.trim() || undefined,

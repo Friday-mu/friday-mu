@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { designClient, type DesignProject, type Photo, type Room } from '../../../../_data/design';
 import { AIPlaceholder } from '../AIPlaceholder';
 import { SitePlanGenerator } from '../SitePlanGenerator';
-import { loadProjectSitePlan, useHydrateDesignProject } from '../../../../_data/designClient';
-import type { ApiAsset, SitePlanGenerationResult } from '../../../../_data/designClient';
+import { loadProjectFloorPlan, useHydrateDesignProject } from '../../../../_data/designClient';
+import type { ApiAsset, FloorPlanGenerationResult } from '../../../../_data/designClient';
 
 interface Props {
   project: DesignProject;
@@ -35,21 +35,21 @@ export function SiteVisitStage({ project }: Props) {
   // whenever sitePlanImageId changes, so the preview updates immediately
   // after the modal saves.
   const [sitePlan, setSitePlan] = useState<ApiAsset | null>(null);
-  const sitePlanId = project.sitePlanImageId ?? null;
+  const sitePlanId = project.floorPlanImageId ?? null;
   useEffect(() => {
     let alive = true;
     if (!sitePlanId) { setSitePlan(null); return; }
-    loadProjectSitePlan(project.id)
+    loadProjectFloorPlan(project.id)
       .then((row) => { if (alive) setSitePlan(row); })
       .catch(() => { if (alive) setSitePlan(null); });
     return () => { alive = false; };
   }, [project.id, sitePlanId]);
 
-  function handleSitePlanSaved(_result: SitePlanGenerationResult) {
+  function handleSitePlanSaved(_result: FloorPlanGenerationResult) {
     setShowSitePlanModal(false);
     // Refetch project + per-project artifacts so the new
-    // site_plan_image_id propagates down into project.sitePlanImageId
-    // and triggers the loadProjectSitePlan() useEffect below.
+    // floor_plan_image_id propagates down into project.floorPlanImageId
+    // and triggers the loadProjectFloorPlan() useEffect below.
     refetchProject();
   }
 

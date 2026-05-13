@@ -4,9 +4,9 @@ import { StageTracker } from './StageTracker';
 import { STAGES } from '../../../_data/design';
 
 describe('StageTracker', () => {
-  it('renders all 17 design stages, in order', () => {
+  it('renders all 18 design stages, in order', () => {
     render(<StageTracker currentStage="site-visit" status="in-progress" />);
-    expect(STAGES).toHaveLength(17);
+    expect(STAGES).toHaveLength(18);
     // Each stage has a `data-stage-id="<id>"` attribute via the role=listitem
     // node — assert one element per stage id is present.
     const items = document.querySelectorAll('[data-stage-id]');
