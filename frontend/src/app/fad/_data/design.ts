@@ -3794,7 +3794,7 @@ export function getTimeInStageDistribution(rangeDays: AnalyticsRange = 'all'): T
       maxDays: sorted[sorted.length - 1],
     });
   }
-  // Sort by 17-stage workflow ordinal so the chart reads left-to-right
+  // Sort by 18-stage workflow ordinal so the chart reads left-to-right
   // through the funnel.
   const stageOrder: Record<StageId, number> = Object.fromEntries(STAGES.map((s, i) => [s.id, i])) as Record<StageId, number>;
   out.sort((a, b) => stageOrder[a.stageId] - stageOrder[b.stageId]);

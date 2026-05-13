@@ -117,7 +117,7 @@ type ProjectScreen =
 
 // ─────────────────────────── Phase model ───────────────────────────
 //
-// Cont-10 audit fix. The 17-stage state machine drove a 17-pill clickable
+// Cont-10 audit fix. The 18-stage state machine drove an 18-pill clickable
 // tracker AND a 14-tab strip below it. Two parallel navs, several stages
 // without a screen → confusing, didn't feel like a workflow. Industry
 // research (Programa / Mydoma / JobTread) shows 5–7 phases at the top with
@@ -2013,7 +2013,7 @@ function DesignSettings() {
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>Per-tier stage matrix</h3>
         <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-          B3.9 lock — stages flagged optional may be skipped without blocking workflow progress. Tier 1 (EPC &gt; Rs 1.5M) runs all 17 stages mandatory.
+          B3.9 lock — stages flagged optional may be skipped without blocking workflow progress. Tier 1 (EPC &gt; Rs 1.5M) runs all 18 stages mandatory.
         </p>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 360 }}>
@@ -2031,7 +2031,7 @@ function DesignSettings() {
                     <td style={cellStyle('left')}><strong>Tier {tier}</strong></td>
                     <td style={cellStyle('left')}>
                       {opt.length === 0
-                        ? <span style={{ color: 'var(--color-text-tertiary)' }}>All 17 stages mandatory.</span>
+                        ? <span style={{ color: 'var(--color-text-tertiary)' }}>All 18 stages mandatory.</span>
                         : opt.map((s) => stageDef(s).label).join(', ')}
                     </td>
                   </tr>
@@ -2462,7 +2462,7 @@ function ProjectShell({
     [],
   );
 
-  // design-be-10: stage rewind. Director-only. Surfaces a 17-pill admin
+  // design-be-10: stage rewind. Director-only. Surfaces an 18-pill admin
   // strip with reopen buttons on done stages. Lock checks are server-side;
   // a 409 here means a downstream document blocks the rewind.
   const handleReopenStage = async (stageId: StageId) => {
@@ -2515,7 +2515,7 @@ function ProjectShell({
         onSelectPhase={setPhase}
       />
 
-      {/* design-be-10: Director-only stage admin strip — the 17-pill
+      {/* design-be-10: Director-only stage admin strip — the 18-pill
           StageTracker exposes ↶ reopen buttons on completed stages. */}
       {isDirector && (
         <div style={{ padding: '6px 16px 4px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
