@@ -72,7 +72,7 @@ export function DesignPackStage({ project }: Props) {
                       <ApprovalChip state={v.state} />
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                      {v.createdAt.slice(0, 10)} · {v.rooms.length} rooms
+                      {v.createdAt?.slice(0, 10) ?? '—'} · {v.rooms?.length ?? 0} rooms
                     </div>
                   </button>
                 </li>
@@ -650,7 +650,7 @@ function PackDetail({ version }: { version: DesignPackVersion }) {
 
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>Rooms</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
-        {version.rooms.map((r) => {
+        {(version.rooms ?? []).map((r) => {
           const room = designClient.rooms.list(version.projectId).find((rm) => rm.id === r.roomId);
           return (
             <div key={r.roomId} style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>

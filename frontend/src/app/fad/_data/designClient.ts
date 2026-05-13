@@ -1190,12 +1190,27 @@ export function apiMoodboardToFixture(api: ApiMoodboard): FixtureMoodboard {
 }
 
 export function apiPackToFixture(api: ApiPack): FixturePack {
+  // Defensive defaults for fields the prod API doesn't yet populate.
+  // Without these, consumers like DesignPackStage hit
+  // "Cannot read properties of undefined (reading 'length')" on
+  // v.rooms.length and the React error boundary kills the page.
+  // Same root cause as the agreement events bug (see apiAgreementToFixture).
+  // TODO: when the design_packs schema gains rooms/pdf_url/cover/etc.,
+  // wire the real values + drop these fallbacks.
   return {
     id: api.id,
     projectId: api.project_id,
     versionNumber: api.version_number,
+    version: api.version_number,
     status: api.status,
+    state: api.status,
     createdAt: api.created_at,
+    pdfUrl: null,
+    coverImageUrl: '',
+    narrative: '',
+    rooms: [],
+    sentAt: null,
+    approvedAt: null,
   } as unknown as FixturePack;
 }
 
