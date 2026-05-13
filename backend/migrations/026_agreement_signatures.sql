@@ -18,9 +18,13 @@
 -- (server-side rendering, not stored — re-deriving is cheap and keeps
 -- the row size small).
 
+-- Note: design_agreements has no separate `id` column — its PK is
+-- project_id (one agreement per project). So the signature row links
+-- by project_id only; agreement_project_id is the FK and the table
+-- has at most one ACTIVE row per project (see unique index below).
 CREATE TABLE IF NOT EXISTS design_agreement_signatures (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  agreement_id UUID NOT NULL REFERENCES design_agreements(id) ON DELETE CASCADE,
+  agreement_project_id UUID NOT NULL REFERENCES design_agreements(project_id) ON DELETE CASCADE,
   project_id UUID NOT NULL REFERENCES design_projects(id) ON DELETE CASCADE,
   -- Signature image as a data:URL (image/png base64) — the canvas
   -- bitmap is small (typically < 50 KB) so storing inline is fine.
@@ -54,7 +58,7 @@ CREATE TABLE IF NOT EXISTS design_agreement_signatures (
 -- unique index — voided rows are excluded so the constraint doesn't
 -- block a legitimate re-sign cycle.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_design_agreement_signatures_active
-  ON design_agreement_signatures(agreement_id)
+  ON design_agreement_signatures(agreement_project_id)
   WHERE notes IS NULL OR notes NOT LIKE 'VOIDED:%';
 
 CREATE INDEX IF NOT EXISTS idx_design_agreement_signatures_project

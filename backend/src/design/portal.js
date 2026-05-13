@@ -404,17 +404,16 @@ router.post('/agreement/sign', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Look up the agreement + owner context (counterparty linked
-    // to the project that owns the magic link).
+    // Look up the agreement + owner context. design_agreements is keyed
+    // by project_id (one agreement per project, no separate `id`), so
+    // we use project_id as both the lookup key and the FK target.
     const agreeRes = await client.query(
-      `SELECT a.id AS agreement_id, a.status,
+      `SELECT a.project_id AS agreement_project_id, a.status,
               cp.name AS owner_name, cp.email AS owner_email
        FROM design_agreements a
        JOIN design_projects p ON p.id = a.project_id
-       LEFT JOIN design_properties prop ON prop.id = p.property_id
        LEFT JOIN design_counterparties cp ON cp.id = p.counterparty_id
        WHERE a.project_id = $1
-       ORDER BY a.created_at DESC
        LIMIT 1`,
       [req.portalProject.id],
     );
@@ -436,12 +435,12 @@ router.post('/agreement/sign', async (req, res) => {
 
     const sigRes = await client.query(
       `INSERT INTO design_agreement_signatures (
-         agreement_id, project_id, signature_data_url, typed_name,
+         agreement_project_id, project_id, signature_data_url, typed_name,
          owner_email, owner_name, ip_address, user_agent, magic_link_id
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, signed_at`,
       [
-        ag.agreement_id,
+        ag.agreement_project_id,
         req.portalProject.id,
         signature_data_url,
         typed_name.trim(),
@@ -453,11 +452,13 @@ router.post('/agreement/sign', async (req, res) => {
       ],
     );
 
+    // signed_by is UUID-typed; pass the magic_link id (UUID) rather
+    // than a "portal:..." prefix string which would fail the type cast.
     await client.query(
       `UPDATE design_agreements
        SET status = 'signed', signed_at = NOW(), signed_by = $2, updated_at = NOW()
-       WHERE id = $1`,
-      [ag.agreement_id, `portal:${req.magicLink.id}`],
+       WHERE project_id = $1`,
+      [ag.agreement_project_id, req.magicLink.id],
     );
 
     await client.query('COMMIT');
@@ -470,7 +471,7 @@ router.post('/agreement/sign', async (req, res) => {
       [
         req.portalProject.id,
         'agreement.signed',
-        { agreement_id: ag.agreement_id, typed_name: typed_name.trim(), via: 'portal' },
+        JSON.stringify({ agreement_project_id: ag.agreement_project_id, typed_name: typed_name.trim(), via: 'portal' }),
         'portal',
         null,
         ag.owner_name || typed_name.trim(),
@@ -481,7 +482,7 @@ router.post('/agreement/sign', async (req, res) => {
       projectId: req.portalProject.id,
       magicLinkId: req.magicLink.id,
       eventType: 'agreement.signed',
-      payload: { agreement_id: ag.agreement_id, signature_id: sigRes.rows[0].id },
+      payload: { agreement_project_id: ag.agreement_project_id, signature_id: sigRes.rows[0].id },
       userAgent,
       ipAddress,
     });
@@ -490,7 +491,7 @@ router.post('/agreement/sign', async (req, res) => {
       ok: true,
       signature_id: sigRes.rows[0].id,
       signed_at: sigRes.rows[0].signed_at,
-      agreement_id: ag.agreement_id,
+      agreement_project_id: ag.agreement_project_id,
     });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
@@ -510,9 +511,7 @@ router.get('/agreement/signature', async (req, res) => {
       `SELECT s.id, s.signed_at, s.typed_name, s.owner_name, s.owner_email,
               s.signature_data_url
        FROM design_agreement_signatures s
-       JOIN design_agreements a ON a.id = s.agreement_id
        WHERE s.project_id = $1
-         AND a.project_id = $1
          AND (s.notes IS NULL OR s.notes NOT LIKE 'VOIDED:%')
        ORDER BY s.signed_at DESC
        LIMIT 1`,
