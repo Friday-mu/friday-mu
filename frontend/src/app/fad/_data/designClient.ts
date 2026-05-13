@@ -151,11 +151,11 @@ export interface ApiProject {
   cancel_transfer_to_inventory?: boolean | null;
   start_date?: string | null;
   estimated_completion?: string | null;
-  // sha256 of the canonical clean site plan for this project. Set by
-  // POST /api/design/ai_images/generate-site-plan with
+  // sha256 of the canonical clean floor plan for this project. Set by
+  // POST /api/design/ai_images/generate-floor-plan with
   // set_as_project_plan: true. Resolve to the asset row via
-  // loadProjectSitePlan(projectId).
-  site_plan_image_id?: string | null;
+  // loadProjectFloorPlan(projectId).
+  floor_plan_image_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -350,10 +350,10 @@ export interface ApiAnnexA {
 }
 
 // Shared asset shape returned by /api/design/ai_images/* and the
-// /api/design/projects/:id/site-plan join. Mirrors the backend
+// /api/design/projects/:id/floor-plan join. Mirrors the backend
 // `shapeAsset` adapter (sha256-keyed, source = 'upload' | 'nanobanana' |
-// 'external'). Site-plan responses additionally carry `kind: 'site_plan'`
-// and the generate-site-plan endpoint stamps `project_updated` +
+// 'external'). Floor-plan responses additionally carry `kind: 'floor_plan'`
+// and the generate-floor-plan endpoint stamps `project_updated` +
 // `original_input_sha256`.
 export interface ApiAsset {
   sha256: string;
@@ -367,7 +367,7 @@ export interface ApiAsset {
   kind?: string | null;
 }
 
-export interface SitePlanGenerationResult extends ApiAsset {
+export interface FloorPlanGenerationResult extends ApiAsset {
   stub?: boolean;
   duration_ms?: number | null;
   cached?: boolean;
@@ -375,7 +375,7 @@ export interface SitePlanGenerationResult extends ApiAsset {
   original_input_sha256?: string;
 }
 
-export interface GenerateSitePlanPayload {
+export interface GenerateFloorPlanPayload {
   project_id: string;
   source_image: { mimeType: string; base64: string };
   prompt_hint?: string;
@@ -644,32 +644,32 @@ export const mintMagicLink = (projectId: string, opts: { delivery_channel?: stri
 export const revokeMagicLink = (id: string) =>
   apiFetch(`/api/design/magic_links/${id}/revoke`, { method: 'POST' }) as Promise<ApiMagicLink>;
 
-// ── Site plan ──
-// loadProjectSitePlan resolves the currently-pinned clean site plan for
+// ── Floor plan ──
+// loadProjectFloorPlan resolves the currently-pinned clean floor plan for
 // a project via the FK join. Returns null on 404 (no plan set) — callers
 // shouldn't need to special-case the missing-plan path with try/catch.
-export const loadProjectSitePlan = async (projectId: string): Promise<ApiAsset | null> => {
+export const loadProjectFloorPlan = async (projectId: string): Promise<ApiAsset | null> => {
   try {
-    return await apiFetch(`/api/design/projects/${projectId}/site-plan`) as ApiAsset;
+    return await apiFetch(`/api/design/projects/${projectId}/floor-plan`) as ApiAsset;
   } catch (e) {
-    // The backend returns 404 with `{ error: 'No site plan set for this project' }`
-    // when site_plan_image_id is null. apiFetch translates this into an
+    // The backend returns 404 with `{ error: 'No floor plan set for this project' }`
+    // when floor_plan_image_id is null. apiFetch translates this into an
     // Error whose message starts with the backend's error text.
-    if (e instanceof Error && /No site plan|Project not found|HTTP 404/i.test(e.message)) return null;
+    if (e instanceof Error && /No floor plan|Project not found|HTTP 404/i.test(e.message)) return null;
     throw e;
   }
 };
 
-// generateSitePlan POSTs the messy floor plan + optional hint to the
-// site-plan-cleanup endpoint. Returns the asset row plus the metadata
+// generateFloorPlan POSTs the messy floor plan + optional hint to the
+// floor-plan-cleanup endpoint. Returns the asset row plus the metadata
 // the endpoint appends (project_updated, original_input_sha256, stub,
 // duration_ms, cached). Callers typically set set_as_project_plan: true
-// so the project's site_plan_image_id is updated in the same call.
-export const generateSitePlan = (payload: GenerateSitePlanPayload) =>
-  apiFetch('/api/design/ai_images/generate-site-plan', {
+// so the project's floor_plan_image_id is updated in the same call.
+export const generateFloorPlan = (payload: GenerateFloorPlanPayload) =>
+  apiFetch('/api/design/ai_images/generate-floor-plan', {
     method: 'POST',
     body: JSON.stringify(payload),
-  }) as Promise<SitePlanGenerationResult>;
+  }) as Promise<FloorPlanGenerationResult>;
 
 // ════════════════════════════════════════════════════════════════════
 // HOOKS — simple list/detail wrappers around the fetchers above
@@ -827,7 +827,7 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     cancelledReason: api.cancelled_reason ?? undefined,
     cancelledByUserId: api.cancelled_by_user_id ?? undefined,
     cancelTransferToInventory: api.cancel_transfer_to_inventory ?? undefined,
-    sitePlanImageId: api.site_plan_image_id ?? null,
+    floorPlanImageId: api.floor_plan_image_id ?? null,
   } as FixtureProject;
 }
 

@@ -1,11 +1,11 @@
 'use client';
 
-// Site plan generator — modal that takes the client's messy floor plan
+// Floor plan generator — modal that takes the client's messy floor plan
 // (PDF / sketch photo / WhatsApp screenshot) and asks Nanobanana to
 // redraw it as a clean top-view CAD-style layout. The cleaned image is
-// pinned as the project's canonical site plan
-// (design_projects.site_plan_image_id) via the
-// /api/design/ai_images/generate-site-plan endpoint.
+// pinned as the project's canonical floor plan
+// (design_projects.floor_plan_image_id) via the
+// /api/design/ai_images/generate-floor-plan endpoint.
 //
 // State machine: idle → reading-file → generating → preview → saving →
 // done|error. Branches early on file-size violations so the user sees a
@@ -17,12 +17,12 @@
 // before/after companion to the generated clean plan.
 
 import { useRef, useState } from 'react';
-import { generateSitePlan } from '../../../_data/designClient';
-import type { SitePlanGenerationResult } from '../../../_data/designClient';
+import { generateFloorPlan } from '../../../_data/designClient';
+import type { FloorPlanGenerationResult } from '../../../_data/designClient';
 
 interface Props {
   projectId: string;
-  onSaved: (result: SitePlanGenerationResult) => void;
+  onSaved: (result: FloorPlanGenerationResult) => void;
   onClose: () => void;
 }
 
@@ -42,12 +42,12 @@ const ACCEPT = 'image/png,image/jpeg,image/webp,application/pdf';
 const ACCEPT_LIST = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
 const MAX_RAW_BYTES = 5 * 1024 * 1024;
 
-export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
+export function FloorPlanGenerator({ projectId, onSaved, onClose }: Props) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [source, setSource] = useState<SourceFile | null>(null);
   const [promptHint, setPromptHint] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SitePlanGenerationResult | null>(null);
+  const [result, setResult] = useState<FloorPlanGenerationResult | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -98,7 +98,7 @@ export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
     setPhase('generating');
     setError(null);
     try {
-      const res = await generateSitePlan({
+      const res = await generateFloorPlan({
         project_id: projectId,
         source_image: { mimeType: source.mimeType, base64: source.base64 },
         prompt_hint: promptHint.trim() || undefined,
@@ -123,7 +123,7 @@ export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
 
   return (
     <div
-      data-ai-feature="site-plan-generator"
+      data-ai-feature="floor-plan-generator"
       style={{
         position: 'fixed',
         inset: 0,
@@ -153,7 +153,7 @@ export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Generate clean site plan</h3>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Generate clean floor plan</h3>
             <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
               Upload the client&apos;s floor plan (PDF, sketch, photo). Nanobanana redraws it as a clean top-view
               layout we can use as the base for design packs.
@@ -241,7 +241,7 @@ export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={result.storage_url}
-                  alt="Generated clean site plan"
+                  alt="Generated clean floor plan"
                   style={{ width: '100%', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)' }}
                 />
                 <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -303,7 +303,7 @@ export function SitePlanGenerator({ projectId, onSaved, onClose }: Props) {
               onClick={save}
               style={primaryBtn(false)}
             >
-              Save as project site plan
+              Save as project floor plan
             </button>
           )}
         </div>
