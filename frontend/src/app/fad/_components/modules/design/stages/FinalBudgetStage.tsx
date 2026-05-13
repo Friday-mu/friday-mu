@@ -12,6 +12,7 @@ import {
   type DesignProject,
 } from '../../../../_data/design';
 import { createChangeOrder as apiCreateChangeOrder, apiChangeOrderToFixture } from '../../../../_data/designClient';
+import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -43,6 +44,11 @@ interface Props {
 }
 
 export function FinalBudgetStage({ project }: Props) {
+  // Subscribe to global fixture-rev so adds in other stages
+  // (rooms in SiteVisitStage, items in ChangeOrdersSection, payments)
+  // re-render the final-budget totals + chips without remount.
+  const fixtureRev = useFixtureRev();
+  void fixtureRev;
   const allItems = designClient.budgetItems.list(project.id);
   const rooms = designClient.rooms.list(project.id);
   const [ownerView, setOwnerView] = useState(false);
@@ -464,6 +470,7 @@ function NewChangeOrderForm({
               });
               const fixtureCo = apiChangeOrderToFixture(apiCo);
               FIXTURE_CHANGE_ORDERS.push(fixtureCo);
+              bumpFixtureRev();
               fireToast(`Draft ${fixtureCo.number} created — add line items before sending.`);
               onCreated(fixtureCo);
             } catch (e) {

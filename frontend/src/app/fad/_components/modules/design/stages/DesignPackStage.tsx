@@ -13,6 +13,7 @@ import {
   type SelectionOption,
 } from '../../../../_data/design';
 import { createSelection as apiCreateSelection, apiSelectionToFixture } from '../../../../_data/designClient';
+import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -24,6 +25,11 @@ const REVISIONS_INCLUDED = 2;
 const PER_REVISION_FEE_MUR = 5000;
 
 export function DesignPackStage({ project }: Props) {
+  // Subscribe to global fixture-rev so a room added in SiteVisitStage
+  // appears in the room dropdown immediately, selections drafted here
+  // propagate to portal mirrors, etc.
+  const rev = useFixtureRev();
+  void rev;
   const versions = designClient.designPacks.list(project.id);
   const [activeId, setActiveId] = useState<string | null>(versions[0]?.id ?? null);
   const active = versions.find((v) => v.id === activeId) ?? null;
@@ -239,6 +245,7 @@ function NewSelectionForm({
               });
               const fixtureSel = apiSelectionToFixture(apiSel);
               FIXTURE_SELECTIONS.push(fixtureSel);
+              bumpFixtureRev();
               fireToast('Draft selection created — add 2-3 options before sending.');
               onCreated(fixtureSel);
             } catch (e) {

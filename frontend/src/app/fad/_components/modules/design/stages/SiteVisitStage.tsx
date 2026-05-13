@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { designClient, ROOMS, SITE_VISITS, PHOTOS, type DesignProject, type Photo, type PhotoKind, type Room, type SiteVisit } from '../../../../_data/design';
 import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, apiPhotoToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
+import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -25,9 +26,11 @@ const USAGE_KIND_OPTIONS = [
 ];
 
 export function SiteVisitStage({ project }: Props) {
-  // rev forces re-read of the fixture array after we push a new room
-  // returned by the API into it. Without rev, React doesn't re-render.
-  const [rev, setRev] = useState(0);
+  // Subscribe to the global fixture rev so cross-component mutations
+  // (e.g. a sibling stage adding a room or photo) also propagate here.
+  // useFixtureRev() returns the current rev — including it in scope
+  // makes React re-render this subtree on every bumpFixtureRev() call.
+  const rev = useFixtureRev();
   const rooms = (() => { void rev; return designClient.rooms.list(project.id); })();
   const photos = designClient.photos.list(project.id);
 
@@ -112,6 +115,7 @@ export function SiteVisitStage({ project }: Props) {
         const fx = apiSiteVisitToFixture(saved);
         const idx = SITE_VISITS.findIndex((v) => v.projectId === project.id);
         if (idx >= 0) Object.assign(SITE_VISITS[idx], fx); else SITE_VISITS.push(fx);
+        bumpFixtureRev();
       }
       fireToast('Site visit saved.');
     } catch (err) {
@@ -136,7 +140,7 @@ export function SiteVisitStage({ project }: Props) {
         kind,
       });
       PHOTOS.push(apiPhotoToFixture(created));
-      setRev((r) => r + 1);
+      bumpFixtureRev();
       fireToast('Photo added.');
       return true;
     } catch (err) {
@@ -156,6 +160,7 @@ export function SiteVisitStage({ project }: Props) {
         const fx = apiSiteVisitToFixture(saved);
         const idx = SITE_VISITS.findIndex((v) => v.projectId === project.id);
         if (idx >= 0) Object.assign(SITE_VISITS[idx], fx); else SITE_VISITS.push(fx);
+        bumpFixtureRev();
       }
       fireToast('Site visit closed.');
     } catch (err) {
@@ -225,7 +230,7 @@ export function SiteVisitStage({ project }: Props) {
       fireToast(`Room "${created.name}" added.`);
       resetAddRoomForm();
       setShowAddRoom(false);
-      setRev((r) => r + 1);
+      bumpFixtureRev();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setRoomError(`Failed to add room: ${msg}`);

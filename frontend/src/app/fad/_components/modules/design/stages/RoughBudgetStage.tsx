@@ -16,6 +16,7 @@ import {
   type RoughBudgetEstimateLine,
 } from '../../../../_data/design';
 import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString } from '../../../../_data/designClient';
+import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -42,9 +43,13 @@ const newRid = () => `rb-line-${_ridSeq++}`;
 
 export function RoughBudgetStage({ project }: Props) {
   const cfg = designClient.settings.annexA();
+  // Global fixture-rev — versions list re-derives when a new version
+  // is saved here OR when hydration repopulates FIXTURE_ROUGH_BUDGETS
+  // (e.g. on project switch).
+  const fixtureRev = useFixtureRev();
   const versions = useMemo<RoughBudget[]>(
     () => [...designClient.roughBudgets.list(project.id)].sort((a, b) => b.version - a.version),
-    [project.id],
+    [project.id, fixtureRev],
   );
   const latest = versions[0];
 
@@ -131,6 +136,7 @@ export function RoughBudgetStage({ project }: Props) {
       const apiVersion = await createRoughBudgetVersion(payload);
       const fixtureVersion = apiRoughBudgetVersionToFixture(apiVersion);
       FIXTURE_ROUGH_BUDGETS.push(fixtureVersion);
+      bumpFixtureRev();
       fireToast(`v${fixtureVersion.version} saved (${apiVersion.line_items_inserted}/${validLines.length} items).`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

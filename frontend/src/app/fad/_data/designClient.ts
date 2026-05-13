@@ -18,6 +18,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { apiFetch, API_BASE, getToken, clearToken } from '../../../components/types';
+import { bumpFixtureRev } from './fixtureRev';
 import {
   PROJECTS as FIXTURE_PROJECTS,
   LEADS as FIXTURE_LEADS,
@@ -1689,6 +1690,8 @@ export async function hydrateDesignTopLevel(): Promise<void> {
   removeMatching(FIXTURE_BUDGET_ITEMS, (b) => !liveIds.has((b as { projectId: string }).projectId));
   removeMatching(FIXTURE_APPROVALS, (a) => !liveIds.has((a as { projectId: string }).projectId));
   removeMatching(FIXTURE_ACTIVITY, (a) => !liveIds.has((a as { projectId: string }).projectId));
+
+  bumpFixtureRev();
 }
 
 /** Hydrate per-project artifact arrays for a single project. Splices
@@ -1768,6 +1771,12 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   // RoomDetail consumer filters client-side by roomId.
   removeMatching(FIXTURE_PHOTOS, (p) => p.projectId === projectId);
   FIXTURE_PHOTOS.push(...photos.map(apiPhotoToFixture));
+
+  // Notify every useFixtureRev() subscriber that the project caches
+  // have been refilled. Without this, components mounted before
+  // hydration completes would render with empty arrays and never
+  // re-render when the API rows landed.
+  bumpFixtureRev();
 }
 
 /** Hook: hydrate top-level fixtures on mount. Returns { hydrated,

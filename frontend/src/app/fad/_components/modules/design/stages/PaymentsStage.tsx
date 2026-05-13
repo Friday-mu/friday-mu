@@ -10,6 +10,7 @@ import {
   type PaymentGate,
 } from '../../../../_data/design';
 import { receivePayment, apiPaymentToFixture } from '../../../../_data/designClient';
+import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { useCurrentRole } from '../../../usePermissions';
 import { fireToast } from '../../../Toaster';
 
@@ -19,7 +20,10 @@ interface Props {
 
 export function PaymentsStage({ project }: Props) {
   const role = useCurrentRole();
-  const [rev, setRev] = useState(0);
+  // Global fixture-rev subscription — picks up cross-stage updates
+  // (e.g. a payment marked received from one tab, budget items added
+  // elsewhere) without needing this component to remount.
+  const rev = useFixtureRev();
   const gates = (() => { void rev; return designClient.payments.list(project.id); })();
   const [modalGate, setModalGate] = useState<PaymentGate | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -46,7 +50,7 @@ export function PaymentsStage({ project }: Props) {
       } else {
         FIXTURE_PAYMENT_GATES.push(mapped);
       }
-      setRev((r) => r + 1);
+      bumpFixtureRev();
       fireToast(`Marked received: ${gate.label} — ${formatMUR(amt)}`);
       setModalGate(null);
     } catch (err) {

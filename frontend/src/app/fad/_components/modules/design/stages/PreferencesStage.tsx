@@ -8,6 +8,7 @@ import {
   type PreferenceProfile,
 } from '../../../../_data/design';
 import { loadPreferences, savePreferences } from '../../../../_data/designClient';
+import { bumpFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -89,6 +90,7 @@ export function PreferencesStage({ project }: Props) {
       if (stored) {
         setPrefs((cur) => ({ ...EMPTY_PREFS(project.id), ...cur, ...stored, projectId: project.id }));
       }
+      bumpFixtureRev();
       fireToast('Preferences saved.');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
