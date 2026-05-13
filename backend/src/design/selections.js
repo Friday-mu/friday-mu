@@ -16,6 +16,12 @@ const router = express.Router();
 
 const WRITABLE_FIELDS = ['title', 'pack_id', 'options'];
 
+// JSONB fields need explicit casting through ::jsonb because the dynamic
+// SET clause prevents node-postgres from inferring the column type — a
+// plain JS array binds as a Postgres array literal and trips
+// "invalid input syntax for type json".
+const JSONB_FIELDS = new Set(['options']);
+
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const projectId = req.query.project_id;
@@ -68,8 +74,13 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
-        sets.push(`${field} = $${idx++}`);
-        params.push(body[field] === '' ? null : body[field]);
+        if (JSONB_FIELDS.has(field)) {
+          sets.push(`${field} = $${idx++}::jsonb`);
+          params.push(JSON.stringify(body[field] ?? []));
+        } else {
+          sets.push(`${field} = $${idx++}`);
+          params.push(body[field] === '' ? null : body[field]);
+        }
       }
     }
     if (sets.length === 0) return res.status(400).json({ error: 'No allowed fields to update' });
