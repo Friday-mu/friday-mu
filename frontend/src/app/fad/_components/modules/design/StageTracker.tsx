@@ -228,11 +228,17 @@ export function StageTracker({ currentStage, status, onStageSelect, compact, opt
             key={cluster.id}
             data-stage-cluster={cluster.id}
             style={{
+              // Size each cluster to its pill content (sum of pill minWidths
+              // + gaps) instead of dividing the row into 3 equal columns.
+              // The equal-column layout caused pre-engagement (8 pills × 56)
+              // to overflow its allotted ~1/3 width on desktop and severely
+              // on mobile — pills literally rendered on top of the next
+              // cluster's pills. With content-sized clusters the parent's
+              // overflowX:auto handles horizontal scroll cleanly.
               display: 'flex',
               flexDirection: 'column',
               gap: 4,
-              flex: '1 1 0',
-              minWidth: 0,
+              flex: '0 0 auto',
             }}
           >
             <div
