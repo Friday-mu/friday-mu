@@ -33,6 +33,7 @@ import {
   BUDGET_ITEMS as FIXTURE_BUDGET_ITEMS,
   ACTIVITY as FIXTURE_ACTIVITY,
   APPROVALS as FIXTURE_APPROVALS,
+  ROOMS as FIXTURE_ROOMS,
   tierForEpc,
   designFeeForTier,
   procurementFeeForTier,
@@ -49,6 +50,7 @@ import type {
   PaymentGate as FixturePayment,
   ActivityLogEntry as FixtureActivity,
   DesignApproval as FixtureApproval,
+  Room as FixtureRoom,
   StageId,
   StageStatus,
   LifecycleStatus,
@@ -1208,6 +1210,36 @@ export function apiMoodboardToFixture(api: ApiMoodboard): FixtureMoodboard {
   } as unknown as FixtureMoodboard;
 }
 
+// Rooms attach to properties on the backend (one room row per property),
+// but the fixture indexes by projectId since the synchronous consumers
+// (SiteVisitStage, DesignPackStage, RoomDetail) all key off the active
+// project. The mapping needs projectId from outside the API row.
+//
+// Fields the API doesn't yet expose (lengthM/widthM/heightM/windows/
+// doors/conditionNotes/etc.) default to null; the rendering code has
+// null guards so the panel renders even on a freshly-created row with
+// just a name + usage_kind.
+export function apiRoomToFixture(api: ApiRoom, projectId: string): FixtureRoom {
+  return {
+    id: api.id,
+    projectId,
+    name: api.name,
+    lengthM: null,
+    widthM: null,
+    heightM: null,
+    windows: null,
+    doors: null,
+    conditionNotes: null,
+    issues: null,
+    keepFurniture: null,
+    removeFurniture: null,
+    designOpportunity: null,
+    accessNotes: null,
+    utilitiesNotes: null,
+    photoCount: 0,
+  } as unknown as FixtureRoom;
+}
+
 export function apiPackToFixture(api: ApiPack): FixturePack {
   // Defensive defaults for fields the prod API doesn't yet populate.
   // Without these, consumers like DesignPackStage hit
@@ -1392,7 +1424,15 @@ export async function hydrateDesignTopLevel(): Promise<void> {
  *  any existing rows for this project, then appends fresh live rows.
  *  Called lazily when the user opens a project drill-down. */
 export async function hydrateDesignProject(projectId: string): Promise<void> {
-  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals] = await Promise.all([
+  // Rooms live on the property (one room row per property_id), so we
+  // resolve the project's propertyId from the already-hydrated
+  // FIXTURE_PROJECTS list. If the project isn't found (race during
+  // initial hydration) or has no property, we skip room loading and
+  // the panel falls through to the hardcoded fixture / empty state.
+  const project = FIXTURE_PROJECTS.find((p) => p.id === projectId);
+  const propertyId = project?.propertyId ?? null;
+
+  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms] = await Promise.all([
     loadMoodboards(projectId).catch(() => []),
     loadPacks(projectId).catch(() => []),
     loadAgreement(projectId).catch(() => null as ApiAgreement | null),
@@ -1402,6 +1442,7 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
     loadBudgetItems(projectId).catch(() => []),
     loadActivities(projectId).catch(() => []),
     loadApprovals(projectId).catch(() => []),
+    propertyId ? listRooms(propertyId).catch(() => [] as ApiRoom[]) : Promise.resolve([] as ApiRoom[]),
   ]);
 
   removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
@@ -1431,6 +1472,9 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
 
   removeMatching(FIXTURE_APPROVALS, (a) => (a as { projectId: string }).projectId === projectId);
   FIXTURE_APPROVALS.push(...approvals.map(apiApprovalToFixture));
+
+  removeMatching(FIXTURE_ROOMS, (r) => r.projectId === projectId);
+  FIXTURE_ROOMS.push(...rooms.map((r) => apiRoomToFixture(r, projectId)));
 }
 
 /** Hook: hydrate top-level fixtures on mount. Returns { hydrated,

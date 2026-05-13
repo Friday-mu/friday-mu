@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { designClient, type DesignProject, type Photo, type Room } from '../../../../_data/design';
-import { createRoom as apiCreateRoom } from '../../../../_data/designClient';
+import { designClient, ROOMS, type DesignProject, type Photo, type Room } from '../../../../_data/design';
+import { createRoom as apiCreateRoom, apiRoomToFixture } from '../../../../_data/designClient';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -81,24 +81,13 @@ export function SiteVisitStage({ project }: Props) {
         sqft: sqftParsed,
         usage_kind: newRoomUsage,
       });
-      // Map API → fixture shape, splice into fixture, bump rev to re-render.
-      // The fixture Room type has more fields (lengthM, widthM, heightM,
-      // windows) than the backend currently exposes; default the extras to
-      // null so the rendering code's null-checks handle them. projectId
-      // mirrors project.id since the fixture indexes by project, not
-      // property.
-      const fixtureRoom: Room = {
-        id: created.id,
-        projectId: project.id,
-        name: created.name,
-        lengthM: null,
-        widthM: null,
-        heightM: null,
-        windows: null,
-        // Cast through unknown so the optional extra fields the fixture
-        // type defines (which the API may not return) don't trip TS.
-      } as unknown as Room;
-      (designClient.rooms.list(project.id) as Room[]).push(fixtureRoom);
+      // Push to ROOMS module-level array (the source of truth that
+      // designClient.rooms.list filters from). Previously this pushed
+      // to the .filter() return value, which is a NEW array each call —
+      // the row vanished on the very next render and refresh never
+      // showed it. Pair this with hydrateDesignProject's rooms reload
+      // so refresh stays consistent with mid-session adds.
+      ROOMS.push(apiRoomToFixture(created, project.id));
       fireToast(`Room "${created.name}" added.`);
       resetAddRoomForm();
       setShowAddRoom(false);
