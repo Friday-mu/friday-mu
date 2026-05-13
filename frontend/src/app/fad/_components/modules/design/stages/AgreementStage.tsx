@@ -15,6 +15,7 @@ import {
   type DesignTier,
   type ProjectClassification,
 } from '../../../../_data/design';
+import { aiAnnexBEdit, type AiAnnexBEditResponse } from '../../../../_data/designClient';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -210,6 +211,34 @@ export function AgreementStage({ project }: Props) {
           </div>
         </Card>
       </div>
+
+      {/* AI revise — first W-class AI in the module. Bounded to a safe
+          subset of Annex B (customInclusions, two boolean flags, two
+          dates). Fees / EPC / tier / classification stay manual-only.
+          Nothing persists server-side from this call — the proposal
+          is applied to local form state and the user saves via the
+          existing flow. */}
+      <AnnexBAiRevise
+        projectId={project.id}
+        annexB={annexB}
+        onApply={(proposed) => {
+          if (proposed.customInclusions !== undefined) {
+            setCustomInclusions(proposed.customInclusions ?? '');
+          }
+          if (proposed.saleOfFurniture !== undefined) {
+            setSaleOfFurniture(!!proposed.saleOfFurniture);
+          }
+          if (proposed.strWorkingCapital !== undefined) {
+            setStrWorkingCapital(!!proposed.strWorkingCapital);
+          }
+          if (proposed.startDate !== undefined) {
+            setStartDate(proposed.startDate ?? '');
+          }
+          if (proposed.estimatedCompletion !== undefined) {
+            setEstimatedCompletion(proposed.estimatedCompletion ?? '');
+          }
+        }}
+      />
 
       {/* Action bar */}
       <Card>
@@ -512,3 +541,172 @@ function textareaStyle(): React.CSSProperties { return { ...inputStyle(), resize
 function primaryBtn(): React.CSSProperties { return { padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-brand-accent)', color: '#fff', fontSize: 13, fontWeight: 500 }; }
 function secondaryBtn(): React.CSSProperties { return { padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)', fontSize: 13 }; }
 function disabledBtn(): React.CSSProperties { return { ...secondaryBtn(), color: 'var(--color-text-tertiary)', cursor: 'not-allowed' }; }
+
+// ─────────────────────────── Annex B AI revise ───────────────────────────
+
+type AnnexBProposed = AiAnnexBEditResponse['proposed'];
+
+const PROPOSAL_LABELS: Record<keyof AnnexBProposed, string> = {
+  customInclusions: 'Specific inclusions',
+  saleOfFurniture: 'Sale of furniture',
+  strWorkingCapital: 'STR working capital',
+  startDate: 'Start date',
+  estimatedCompletion: 'Estimated completion',
+};
+
+function formatAnnexBValue(field: keyof AnnexBProposed, value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (field === 'saleOfFurniture' || field === 'strWorkingCapital') {
+    return value ? 'Yes' : 'No';
+  }
+  return String(value);
+}
+
+function AnnexBAiRevise({
+  projectId,
+  annexB,
+  onApply,
+}: {
+  projectId: string;
+  annexB: AnnexBData;
+  onApply: (proposed: AnnexBProposed) => void;
+}) {
+  const [instruction, setInstruction] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [proposal, setProposal] = useState<AiAnnexBEditResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const inst = instruction.trim();
+    if (!inst || busy) return;
+    setBusy(true);
+    setError(null);
+    setProposal(null);
+    try {
+      const res = await aiAnnexBEdit({
+        project_id: projectId,
+        current_annex_b: annexB as unknown as Record<string, unknown>,
+        instruction: inst,
+      });
+      setProposal(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const apply = () => {
+    if (!proposal) return;
+    onApply(proposal.proposed);
+    setProposal(null);
+    setInstruction('');
+    fireToast('Friday’s proposal applied to Annex B — review then Save / Send.');
+  };
+
+  const discard = () => {
+    setProposal(null);
+  };
+
+  const proposedKeys = proposal ? (Object.keys(proposal.proposed) as Array<keyof AnnexBProposed>) : [];
+
+  return (
+    <Card>
+      <Row>
+        <h4 style={subhead()}>
+          <span style={{ fontSize: 13 }}>✨ Ask Friday to revise</span>
+        </h4>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          W-class · Annex B fields only · fees / EPC / tier stay manual
+        </div>
+      </Row>
+      <p style={{ margin: '4px 0 8px', fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
+        Tell Friday what to change in plain English — e.g. <em>“Add a carve-out for the kitchen plumbing”</em>, <em>“Move the start date to mid-July”</em>, <em>“Mark sale of furniture on”</em>. Friday proposes a mutation you review and apply.
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <textarea
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          rows={2}
+          disabled={busy}
+          placeholder="What should change?"
+          style={{ ...textareaStyle(), flex: 1 }}
+          data-testid="annex-b-ai-instruction"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy || !instruction.trim()}
+          style={busy || !instruction.trim() ? disabledBtn() : primaryBtn()}
+          data-testid="annex-b-ai-submit"
+        >
+          {busy ? 'Thinking…' : 'Propose'}
+        </button>
+      </div>
+      {error && (
+        <div role="alert" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-danger)', color: 'var(--color-text-danger)', fontSize: 12 }}>
+          {error}
+        </div>
+      )}
+      {proposal && (
+        <div
+          data-testid="annex-b-ai-proposal"
+          style={{
+            marginTop: 12,
+            padding: 12,
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--color-background-tertiary)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <strong style={{ fontSize: 12 }}>Friday proposes</strong>
+            <span className={'chip ' + (proposal.confidence === 'high' ? 'info' : proposal.confidence === 'low' ? 'warn' : '')} style={{ fontSize: 10 }}>
+              {proposal.confidence} confidence
+            </span>
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+              {proposal.source}{proposal.durationMs ? ` · ${(proposal.durationMs / 1000).toFixed(1)}s` : ''}
+            </span>
+          </div>
+          {proposal.reasoning && (
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--color-text-secondary)', fontStyle: 'italic', lineHeight: 1.5 }}>
+              {proposal.reasoning}
+            </p>
+          )}
+          {proposedKeys.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+              No changes proposed.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+              {proposedKeys.map((key) => {
+                const before = (annexB as unknown as Record<string, unknown>)[key];
+                const after = proposal.proposed[key];
+                return (
+                  <div key={key} style={{ fontSize: 12, display: 'grid', gridTemplateColumns: '140px 1fr', gap: 8 }}>
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>{PROPOSAL_LABELS[key]}</span>
+                    <span>
+                      <span style={{ color: 'var(--color-text-tertiary)', textDecoration: 'line-through' }}>{formatAnnexBValue(key, before)}</span>
+                      <span style={{ margin: '0 6px', color: 'var(--color-text-tertiary)' }}>→</span>
+                      <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{formatAnnexBValue(key, after)}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={discard} style={secondaryBtn()} data-testid="annex-b-ai-discard">
+              Discard
+            </button>
+            {proposedKeys.length > 0 && (
+              <button type="button" onClick={apply} style={primaryBtn()} data-testid="annex-b-ai-apply">
+                Apply to Annex B
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}

@@ -80,6 +80,7 @@ router.use('/analytics', require('./analytics'));
 router.use('/ai_images', require('./ai_images'));
 router.use('/ai', require('./ai_rough_budget'));
 router.use('/ai', require('./ai_ask'));
+router.use('/ai', require('./ai_annex_b_edit'));
 
 // Portal — magic-link gated (NOT JWT). Mount after the staff routes so
 // the auth middleware short-circuits before any staff-perm check.

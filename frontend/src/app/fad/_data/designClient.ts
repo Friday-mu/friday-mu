@@ -896,6 +896,34 @@ export interface AiAskResponse {
 export const aiAsk = (req: { project_id?: string | null; query: string }) =>
   apiFetch('/api/design/ai/ask', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiAskResponse>;
 
+// First W-class AI in the design module — proposes edits to the
+// project-specific Annex B fields based on a natural-language
+// instruction. The backend bounds the proposed mutation to a safe
+// subset (customInclusions + 2 boolean flags + 2 dates) and silently
+// drops anything else. Fees, EPC, tier, and classification are NEVER
+// AI-mutable. The frontend renders the proposal as a diff card with
+// Apply / Discard; nothing persists server-side from this call.
+export interface AiAnnexBEditRequest {
+  project_id: string;
+  current_annex_b: Record<string, unknown>;
+  instruction: string;
+}
+export interface AiAnnexBEditResponse {
+  proposed: Partial<{
+    customInclusions: string | null;
+    saleOfFurniture: boolean;
+    strWorkingCapital: boolean;
+    startDate: string | null;
+    estimatedCompletion: string | null;
+  }>;
+  reasoning: string;
+  confidence: 'high' | 'medium' | 'low';
+  source: 'kimi' | 'template-fallback' | 'kimi-error';
+  durationMs: number;
+}
+export const aiAnnexBEdit = (req: AiAnnexBEditRequest) =>
+  apiFetch('/api/design/ai/annex-b-edit', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiAnnexBEditResponse>;
+
 // ─────────────────────────── Photos ───────────────────────────
 // Backend stores photo URL refs (blob lives external). v0.1 surface is
 // URL-based — staff paste a Drive / Imgur / direct-image URL with an
