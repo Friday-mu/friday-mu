@@ -853,6 +853,25 @@ export interface AiRoughBudgetRequest {
 export const aiRoughBudgetEstimate = (req: AiRoughBudgetRequest) =>
   apiFetch('/api/design/ai/rough-budget-estimate', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiRoughBudgetResponse>;
 
+// AI Bet #3 — Ask Friday R-class. project_id is optional; when null,
+// Kimi answers cross-project questions ("compare Ohana and Albion
+// procurement spend"). Returns markdown answer with [kind:refId]
+// citations the UI can render as clickable pills.
+export interface AiAskCitation {
+  kind: 'budget' | 'task' | 'moodboard' | 'payment' | 'activity' | 'approval' | 'signature' | 'site_visit' | string;
+  refId: string;
+  label: string;
+}
+export interface AiAskResponse {
+  answer: string;
+  citations: AiAskCitation[];
+  source: 'kimi' | 'template-fallback';
+  model?: string;
+  durationMs: number;
+}
+export const aiAsk = (req: { project_id?: string | null; query: string }) =>
+  apiFetch('/api/design/ai/ask', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiAskResponse>;
+
 // ─────────────────────────── Photos ───────────────────────────
 // Backend stores photo URL refs (blob lives external). v0.1 surface is
 // URL-based — staff paste a Drive / Imgur / direct-image URL with an

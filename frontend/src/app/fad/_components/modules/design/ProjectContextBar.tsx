@@ -35,6 +35,8 @@ interface Props {
   onEditProject?: () => void;
   /** design-be-17: opens the share-with-owner drawer (mint/list/revoke owner-portal magic links). Staff-only — parent gates the prop. */
   onOpenShareDrawer?: () => void;
+  /** AI Bet #3: opens the project-scoped Ask Friday drawer. Always available. */
+  onAskFriday?: () => void;
 }
 
 const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warning' | 'danger' | 'neutral' | 'accent' }) => {
@@ -58,7 +60,7 @@ const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warn
   );
 };
 
-export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange, onEditProject, onOpenShareDrawer }: Props) {
+export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange, onEditProject, onOpenShareDrawer, onAskFriday }: Props) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
 
@@ -165,6 +167,25 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {onAskFriday && (
+          <button
+            type="button"
+            onClick={onAskFriday}
+            data-project-ask-friday-trigger
+            title="Ask Friday about this project — read-only assistant"
+            style={{
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-brand-accent)',
+              background: 'var(--color-brand-accent-softer)',
+              color: 'var(--color-brand-accent)',
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            ✨ Ask Friday
+          </button>
+        )}
         {onEditProject && (
           <button
             type="button"

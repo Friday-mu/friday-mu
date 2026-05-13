@@ -40,6 +40,7 @@ import { ProjectEditDrawer } from './design/ProjectEditDrawer';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import { ShareWithOwnerDrawer } from './design/ShareWithOwnerDrawer';
+import { ProjectAskFridayDrawer } from './design/ProjectAskFridayDrawer';
 import { BlockersPanel } from './design/BlockersPanel';
 import { NextActionsPanel } from './design/NextActionsPanel';
 import {
@@ -2484,6 +2485,7 @@ function ProjectShell({
   const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
   const [lifecycleTick, setLifecycleTick] = useState(0);
   const [showEdit, setShowEdit] = useState(false);
+  const [askFridayOpen, setAskFridayOpen] = useState(false);
   const role = useCurrentRole();
   const isDirector = role === 'director';
   const project = designClient.projects.get(incomingProject.id) ?? incomingProject;
@@ -2545,10 +2547,14 @@ function ProjectShell({
         onOpenShareDrawer={() => setShareDrawerOpen(true)}
         onLifecycleChange={() => { setLifecycleTick((t) => t + 1); onRefetch(); }}
         onEditProject={isDirector ? () => setShowEdit(true) : undefined}
+        onAskFriday={() => setAskFridayOpen(true)}
       />
       {portalOpen && <OwnerPortalPreview project={project} onClose={() => setPortalOpen(false)} />}
       {shareDrawerOpen && (
         <ShareWithOwnerDrawer project={project} onClose={() => setShareDrawerOpen(false)} />
+      )}
+      {askFridayOpen && (
+        <ProjectAskFridayDrawer project={project} onClose={() => setAskFridayOpen(false)} />
       )}
       {showEdit && (
         <ProjectEditDrawer
