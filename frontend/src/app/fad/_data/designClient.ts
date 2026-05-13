@@ -875,6 +875,37 @@ export const createPhoto = (payload: { project_id: string; url: string; kind: st
 export const deletePhoto = (id: string) =>
   apiFetch(`/api/design/photos/${id}`, { method: 'DELETE' }) as Promise<void>;
 
+// Direct file upload via multipart/form-data. Backend writes the file
+// to the VPS upload dir (served by nginx at /uploads/photos/...) and
+// inserts the design_photos row in one call.
+export async function uploadPhoto(payload: {
+  file: File;
+  project_id: string;
+  kind: string;
+  caption?: string | null;
+  room_id?: string | null;
+}): Promise<ApiPhoto> {
+  const fd = new FormData();
+  fd.append('file', payload.file);
+  fd.append('project_id', payload.project_id);
+  fd.append('kind', payload.kind);
+  if (payload.caption) fd.append('caption', payload.caption);
+  if (payload.room_id) fd.append('room_id', payload.room_id);
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/api/design/photos/upload`, {
+    method: 'POST',
+    body: fd,
+    headers,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error || `Upload failed: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─────────────────────────── Rough budget versions ───────────────────────────
 // Migration 023 split the rough-budget into per-version envelopes
 // (low/mid/high totals, tier, fee overrides, narrative fields) and

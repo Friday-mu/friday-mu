@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { designClient, ROOMS, SITE_VISITS, PHOTOS, type DesignProject, type Photo, type PhotoKind, type Room, type SiteVisit } from '../../../../_data/design';
-import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, apiPhotoToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
+import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, uploadPhoto as apiUploadPhoto, apiPhotoToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
@@ -123,6 +123,26 @@ export function SiteVisitStage({ project }: Props) {
       fireToast(`Save failed: ${msg}`);
     } finally {
       setSavingVisit(false);
+    }
+  };
+
+  const handleUploadPhoto = async (roomId: string, file: File, caption: string, kind: PhotoKind): Promise<boolean> => {
+    try {
+      const created = await apiUploadPhoto({
+        project_id: project.id,
+        room_id: roomId,
+        kind,
+        caption: caption.trim() || null,
+        file,
+      });
+      PHOTOS.push(apiPhotoToFixture(created));
+      bumpFixtureRev();
+      fireToast(`Photo uploaded.`);
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Upload failed: ${msg}`);
+      return false;
     }
   };
 
@@ -489,6 +509,7 @@ export function SiteVisitStage({ project }: Props) {
                       photos={roomPhotos}
                       onPhotoClick={setPhotoLightbox}
                       onAddPhoto={(url, caption, kind) => handleAddPhoto(r.id, url, caption, kind)}
+                      onUploadPhoto={(file, caption, kind) => handleUploadPhoto(r.id, file, caption, kind)}
                     />
                   )}
                 </li>
@@ -537,24 +558,30 @@ export function SiteVisitStage({ project }: Props) {
   );
 }
 
-function RoomDetail({ room, photos, onPhotoClick, onAddPhoto }: {
+function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
   room: Room;
   photos: Photo[];
   onPhotoClick: (p: Photo) => void;
   onAddPhoto: (url: string, caption: string, kind: PhotoKind) => Promise<boolean>;
+  onUploadPhoto: (file: File, caption: string, kind: PhotoKind) => Promise<boolean>;
 }) {
   const [showAddPhoto, setShowAddPhoto] = useState(false);
+  const [addMode, setAddMode] = useState<'upload' | 'url'>('upload');
   const [photoUrl, setPhotoUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoCaption, setPhotoCaption] = useState('');
   const [photoKind, setPhotoKind] = useState<PhotoKind>('before');
   const [addingPhoto, setAddingPhoto] = useState(false);
   const submitPhoto = async () => {
     setAddingPhoto(true);
-    const ok = await onAddPhoto(photoUrl, photoCaption, photoKind);
+    const ok = addMode === 'upload' && photoFile
+      ? await onUploadPhoto(photoFile, photoCaption, photoKind)
+      : await onAddPhoto(photoUrl, photoCaption, photoKind);
     setAddingPhoto(false);
     if (ok) {
       setShowAddPhoto(false);
       setPhotoUrl('');
+      setPhotoFile(null);
       setPhotoCaption('');
       setPhotoKind('before');
     }
@@ -604,29 +631,48 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto }: {
           Photos <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>· {photos.length}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-          {photos.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => onPhotoClick(p)}
-              style={{
-                aspectRatio: '4 / 3',
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--color-background-tertiary)',
-                border: '0.5px solid var(--color-border-tertiary)',
-                position: 'relative',
-                padding: 0,
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)', fontSize: 11 }}>
-                {p.caption ?? p.kind}
-              </div>
-              <span style={{ position: 'absolute', top: 4, left: 4, padding: '1px 6px', background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 'var(--radius-sm)', fontSize: 9 }}>
-                {p.kind}
-              </span>
-            </button>
-          ))}
+          {photos.map((p) => {
+            // Render the real image when the URL looks like one we can
+            // resolve from the browser (http/https/data/relative path).
+            // Drive viewer URLs ('https://drive.google.com/file/d/.../view')
+            // won't render directly — fall back to the caption placeholder.
+            const isRenderable =
+              p.url &&
+              !p.url.includes('drive.google.com/file/d/') &&
+              (p.url.startsWith('http') || p.url.startsWith('/') || p.url.startsWith('data:'));
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onPhotoClick(p)}
+                style={{
+                  aspectRatio: '4 / 3',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-background-tertiary)',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  position: 'relative',
+                  padding: 0,
+                  overflow: 'hidden',
+                }}
+              >
+                {isRenderable ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={p.url}
+                    alt={p.caption ?? p.kind}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)', fontSize: 11, padding: 6, textAlign: 'center' }}>
+                    {p.caption ?? p.kind}
+                  </div>
+                )}
+                <span style={{ position: 'absolute', top: 4, left: 4, padding: '1px 6px', background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 'var(--radius-sm)', fontSize: 9 }}>
+                  {p.kind}
+                </span>
+              </button>
+            );
+          })}
           <button
             type="button"
             onClick={() => setShowAddPhoto((s) => !s)}
@@ -653,43 +699,85 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto }: {
               border: '0.5px solid var(--color-brand-accent)',
               borderRadius: 'var(--radius-sm)',
               background: 'var(--color-brand-accent-softer)',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-              gap: 8,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
             }}
           >
-            <Field label="Image URL (Drive / Imgur / direct .jpg)">
-              <input
-                value={photoUrl}
-                onChange={(e) => setPhotoUrl(e.target.value)}
-                placeholder="https://drive.google.com/…"
-                style={inputStyle()}
-                data-room-photo-url
-              />
-            </Field>
-            <Field label="Caption (optional)">
-              <input
-                value={photoCaption}
-                onChange={(e) => setPhotoCaption(e.target.value)}
-                placeholder="e.g. North wall, before paint"
-                style={inputStyle()}
-                data-room-photo-caption
-              />
-            </Field>
-            <Field label="Kind">
-              <select value={photoKind} onChange={(e) => setPhotoKind(e.target.value as PhotoKind)} style={inputStyle()} data-room-photo-kind>
-                <option value="before">before</option>
-                <option value="context">context</option>
-                <option value="reference">reference</option>
-                <option value="progress">progress</option>
-                <option value="after">after</option>
-              </select>
-            </Field>
-            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['upload', 'url'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setAddMode(m)}
+                  data-room-photo-mode={m}
+                  style={{
+                    flex: 1,
+                    padding: '6px 10px',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    borderRadius: 'var(--radius-sm)',
+                    background: addMode === m ? 'var(--color-brand-accent)' : 'var(--color-background-primary)',
+                    color: addMode === m ? '#fff' : 'var(--color-text-secondary)',
+                    border: '0.5px solid var(--color-border-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {m === 'upload' ? '📁 Upload from device' : '🔗 Paste URL'}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
+              {addMode === 'upload' ? (
+                <Field label="Choose file (jpg/png/webp, max 10MB)" full>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/heic"
+                    onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                    data-room-photo-file
+                    style={{ ...inputStyle(), padding: 4 }}
+                  />
+                  {photoFile && (
+                    <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                      {photoFile.name} · {Math.round(photoFile.size / 1024)} KB
+                    </div>
+                  )}
+                </Field>
+              ) : (
+                <Field label="Image URL (Drive / Imgur / direct .jpg)" full>
+                  <input
+                    value={photoUrl}
+                    onChange={(e) => setPhotoUrl(e.target.value)}
+                    placeholder="https://drive.google.com/…"
+                    style={inputStyle()}
+                    data-room-photo-url
+                  />
+                </Field>
+              )}
+              <Field label="Caption (optional)">
+                <input
+                  value={photoCaption}
+                  onChange={(e) => setPhotoCaption(e.target.value)}
+                  placeholder="e.g. North wall, before paint"
+                  style={inputStyle()}
+                  data-room-photo-caption
+                />
+              </Field>
+              <Field label="Kind">
+                <select value={photoKind} onChange={(e) => setPhotoKind(e.target.value as PhotoKind)} style={inputStyle()} data-room-photo-kind>
+                  <option value="before">before</option>
+                  <option value="context">context</option>
+                  <option value="reference">reference</option>
+                  <option value="progress">progress</option>
+                  <option value="after">after</option>
+                </select>
+              </Field>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button
                 type="button"
                 onClick={submitPhoto}
-                disabled={!photoUrl.trim() || addingPhoto}
+                disabled={addingPhoto || (addMode === 'upload' ? !photoFile : !photoUrl.trim())}
                 data-room-photo-submit
                 style={{
                   padding: '6px 14px',
@@ -699,16 +787,13 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto }: {
                   background: 'var(--color-brand-accent)',
                   color: '#fff',
                   border: 'none',
-                  cursor: addingPhoto || !photoUrl.trim() ? 'not-allowed' : 'pointer',
-                  opacity: addingPhoto || !photoUrl.trim() ? 0.5 : 1,
+                  cursor: addingPhoto || (addMode === 'upload' ? !photoFile : !photoUrl.trim()) ? 'not-allowed' : 'pointer',
+                  opacity: addingPhoto || (addMode === 'upload' ? !photoFile : !photoUrl.trim()) ? 0.5 : 1,
                 }}
               >
-                {addingPhoto ? 'Adding…' : 'Add photo'}
+                {addingPhoto ? (addMode === 'upload' ? 'Uploading…' : 'Adding…') : (addMode === 'upload' ? 'Upload photo' : 'Add photo')}
               </button>
             </div>
-            <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-              v0.1: paste a URL. Direct upload from device (Cloudinary / S3 presigned) ships next sprint.
-            </p>
           </div>
         )}
       </div>
@@ -731,9 +816,24 @@ function Lightbox({ photo, onClose }: { photo: Photo; onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
         style={{ background: 'var(--color-background-primary)', borderRadius: 'var(--radius-md)', padding: 24, maxWidth: 720, width: '100%' }}
       >
-        <div style={{ aspectRatio: '4 / 3', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)' }}>
-          [{photo.caption ?? photo.kind} placeholder]
-        </div>
+        {photo.url && !photo.url.includes('drive.google.com/file/d/') && (photo.url.startsWith('http') || photo.url.startsWith('/') || photo.url.startsWith('data:')) ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photo.url}
+            alt={photo.caption ?? photo.kind}
+            style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 'var(--radius-sm)', marginBottom: 12, background: 'var(--color-background-tertiary)' }}
+          />
+        ) : (
+          <div style={{ aspectRatio: '4 / 3', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)' }}>
+            {photo.url ? (
+              <a href={photo.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-brand-accent)' }}>
+                Open in Drive ↗
+              </a>
+            ) : (
+              `[${photo.caption ?? photo.kind} placeholder]`
+            )}
+          </div>
+        )}
         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
           <strong>Kind:</strong> {photo.kind} · <strong>Owner-visible:</strong> {photo.ownerVisible ? 'Yes' : 'No'} · <strong>Uploaded:</strong> {photo.uploadedAt.slice(0, 10)}
         </div>
