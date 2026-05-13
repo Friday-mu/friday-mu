@@ -1,5 +1,7 @@
-// @demo:data — Inbox threads, KPIs, calendar — split into multiple endpoints
-// Tag: PROD-DATA-1 — see frontend/DEMO_CRUFT.md
+// Inbox + KPIs + calendar wire types. Inbox fixture arrays purged 2026-05-13
+// (design-be-19); inbox should render real GMS data only — see Tier E
+// roadmap items bw-7/bw-8/bw-9. Other arrays in this file (TASKS, KPIs etc)
+// are out of scope for design-be-19 and still ship as fixtures.
 
 export interface InboxMessage {
   from: 'them' | 'us';
@@ -98,8 +100,15 @@ export interface InboxReservation {
   specialRequests?: string;
 }
 
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9. Live data
+// flows through useLiveConversations()/useThreadDetail() in inboxClient.ts.
 export const INBOX_THREADS: InboxThread[] = [];
 
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9. Internal notes
+// will be wired through POST /api/inbox/threads/:id/notes (see comment in
+// InboxModule.tsx::InternalNoteCompose).
 export const INBOX_INTERNAL_NOTES: InternalNote[] = [];
 
 export const INBOX_CHANNEL_TREE = {

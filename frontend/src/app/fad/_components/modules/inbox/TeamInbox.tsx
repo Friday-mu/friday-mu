@@ -114,6 +114,36 @@ export function TeamInbox({
     if (isMobile) onMobileThreadOpenChange?.(true);
   };
 
+  // No channels and no DMs visible → render a single empty state instead of
+  // showing the chrome around an "#unknown" placeholder channel. Demo
+  // fixtures were purged 2026-05-13 (design-be-19); the live team-channels
+  // surface lands with Tier E (bw-7/8/9).
+  if (visibleChannels.length === 0 && visibleDms.length === 0) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 40,
+          textAlign: 'center',
+          color: 'var(--color-text-tertiary)',
+          fontSize: 13,
+          lineHeight: 1.5,
+        }}
+      >
+        <div>
+          No team channels or DMs yet.
+          <br />
+          <span style={{ fontSize: 12 }}>
+            Internal team chat lands with the next inbox sprint.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div

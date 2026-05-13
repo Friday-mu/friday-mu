@@ -783,9 +783,24 @@ async function pollGMSForUpdates() {
   }
 }
 
-// Start polling when server starts
+// Start polling when server starts.
+//
+// design-be-19a (2026-05-13): GMS removed the /pending endpoint this
+// poller relied on, so every tick logs `[GMS API Error] Request failed
+// with status code 404` and `[API Error] Failed to fetch conversations`
+// in prod. The inbox sprint (Tier E roadmap items bw-7/bw-8/bw-9) will
+// rewire the inbox to GMS's current /api/inbox/conversations + a
+// websocket push channel; until then, polling is gated behind
+// ENABLE_GMS_INBOX_POLLING and OFF by default. Set the env var to "1"
+// (or "true") to re-enable, e.g. when local-testing against a custom
+// GMS branch that still exposes /pending.
 const POLL_INTERVAL = 30000; // 30 seconds
-setInterval(pollGMSForUpdates, POLL_INTERVAL);
+const GMS_POLLING_ENABLED = /^(1|true|yes)$/i.test(
+  String(process.env.ENABLE_GMS_INBOX_POLLING || '')
+);
+if (GMS_POLLING_ENABLED) {
+  setInterval(pollGMSForUpdates, POLL_INTERVAL);
+}
 
 // ====================================================================
 // Guesty Open-API client (OAuth2 client-credentials)
@@ -1283,5 +1298,12 @@ server.listen(port, () => {
   console.log(`🚀 Friday Admin Dashboard Backend running on port ${port}`);
   console.log(`📡 WebSocket server ready for connections`);
   console.log(`🔗 GMS Integration: ${GMS_BASE_URL}`);
-  console.log(`⏱️  Polling GMS every ${POLL_INTERVAL/1000} seconds`);
+  if (GMS_POLLING_ENABLED) {
+    console.log(`⏱️  Polling GMS every ${POLL_INTERVAL/1000} seconds`);
+  } else {
+    console.log(
+      `⏸️  GMS inbox polling disabled (ENABLE_GMS_INBOX_POLLING unset). ` +
+        `Endpoint /pending currently 404s; inbox will be rewired in Tier E (bw-7/8/9).`
+    );
+  }
 });
