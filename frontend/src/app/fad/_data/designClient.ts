@@ -35,6 +35,7 @@ import {
   APPROVALS as FIXTURE_APPROVALS,
   ROOMS as FIXTURE_ROOMS,
   SITE_VISITS as FIXTURE_SITE_VISITS,
+  ROUGH_BUDGETS as FIXTURE_ROUGH_BUDGETS,
   tierForEpc,
   designFeeForTier,
   procurementFeeForTier,
@@ -55,6 +56,7 @@ import type {
   DesignSelection as FixtureSelection,
   ChangeOrder as FixtureChangeOrder,
   SiteVisit as FixtureSiteVisit,
+  RoughBudget as FixtureRoughBudget,
   BudgetCategory,
   StageId,
   StageStatus,
@@ -746,6 +748,48 @@ export const listRooms = (propertyId: string) =>
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
 
+// ─────────────────────────── Rough budget versions ───────────────────────────
+// Migration 023 split the rough-budget into per-version envelopes
+// (low/mid/high totals, tier, fee overrides, narrative fields) and
+// per-line-item rows that join to a version. POST accepts the full
+// envelope + optional line_items array as a one-shot "save new
+// version" — backend creates the version row, assigns next
+// version_number, and inserts the line items in a single call.
+export interface ApiRoughBudgetVersion {
+  id: string;
+  project_id: string;
+  version_number: number;
+  low_minor: number | null;
+  mid_minor: number | null;
+  high_minor: number | null;
+  tier: 'T1' | 'T2' | 'T3' | null;
+  classification_override: string | null;
+  design_fee_minor: number | null;
+  procurement_fee_minor: number | null;
+  assumptions: string | null;
+  exclusions: string | null;
+  risk_items: string | null;
+  next_steps: string | null;
+  status: 'draft' | 'sent' | 'accepted';
+  created_at: string;
+  updated_at: string;
+}
+export interface ApiRoughBudgetLineItemInput {
+  category_code?: string | null;
+  description?: string | null;
+  unit_cost_minor?: number | null;
+  quantity?: number | null;
+  notes?: string | null;
+  catalog_source_id?: string | null;
+}
+export const loadRoughBudgetVersions = (projectId: string) =>
+  apiFetch(`/api/design/rough_budget_versions?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiRoughBudgetVersion[] }).results);
+export const createRoughBudgetVersion = (payload: Partial<ApiRoughBudgetVersion> & { project_id: string; line_items?: ApiRoughBudgetLineItemInput[] }) =>
+  apiFetch('/api/design/rough_budget_versions', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoughBudgetVersion & { line_items_inserted: number }>;
+export const updateRoughBudgetVersion = (id: string, patch: Partial<ApiRoughBudgetVersion>) =>
+  apiFetch(`/api/design/rough_budget_versions/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiRoughBudgetVersion>;
+
 // ─────────────────────────── Site visits ───────────────────────────
 // Migration 022 added the metadata fields the SiteVisitStage form has
 // always rendered but never saved. The frontend treats site_visit as
@@ -1303,6 +1347,45 @@ export function apiRoomToFixture(api: ApiRoom, projectId: string): FixtureRoom {
   } as unknown as FixtureRoom;
 }
 
+// Migration 023 — rough-budget version envelope adapter. Backend
+// snake_case → frontend camelCase. Tier is stored as 'T1'/'T2'/'T3'
+// in the backend but the frontend DesignTier is the numeric 1/2/3 —
+// translate at the boundary so callers don't need to know.
+//
+// Per-line-item rows are loaded separately via /rough_budgets and
+// joined client-side.
+function tierStringToNum(s: string | null): DesignTier | null {
+  if (s === 'T1') return 1;
+  if (s === 'T2') return 2;
+  if (s === 'T3') return 3;
+  return null;
+}
+export function tierNumToString(n: DesignTier | null): 'T1' | 'T2' | 'T3' | null {
+  if (n === 1) return 'T1';
+  if (n === 2) return 'T2';
+  if (n === 3) return 'T3';
+  return null;
+}
+export function apiRoughBudgetVersionToFixture(api: ApiRoughBudgetVersion): FixtureRoughBudget {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    version: api.version_number,
+    lowMinor: api.low_minor,
+    midMinor: api.mid_minor,
+    highMinor: api.high_minor,
+    tier: tierStringToNum(api.tier),
+    designFeeMinor: api.design_fee_minor,
+    procurementFeeMinor: api.procurement_fee_minor,
+    assumptions: api.assumptions,
+    exclusions: api.exclusions,
+    riskItems: api.risk_items,
+    nextSteps: api.next_steps,
+    status: api.status,
+    createdAt: api.created_at,
+  };
+}
+
 // Migration 022 — site visit metadata. The frontend SiteVisit fixture
 // type has 7 fields (projectId, visitedAt, visitedByUserId,
 // walkthroughVideoUrl, notes, marketingPhotoConsent, status); each
@@ -1576,7 +1659,7 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   const project = FIXTURE_PROJECTS.find((p) => p.id === projectId);
   const propertyId = project?.propertyId ?? null;
 
-  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits] = await Promise.all([
+  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits, roughBudgetVersions] = await Promise.all([
     loadMoodboards(projectId).catch(() => []),
     loadPacks(projectId).catch(() => []),
     loadAgreement(projectId).catch(() => null as ApiAgreement | null),
@@ -1588,6 +1671,7 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
     loadApprovals(projectId).catch(() => []),
     propertyId ? listRooms(propertyId).catch(() => [] as ApiRoom[]) : Promise.resolve([] as ApiRoom[]),
     loadSiteVisits(projectId).catch(() => [] as ApiSiteVisit[]),
+    loadRoughBudgetVersions(projectId).catch(() => [] as ApiRoughBudgetVersion[]),
   ]);
 
   removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
@@ -1627,6 +1711,12 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   if (siteVisits.length > 0) {
     FIXTURE_SITE_VISITS.push(apiSiteVisitToFixture(siteVisits[0]));
   }
+
+  // Rough budget versions — full list, ordered by version_number DESC
+  // on the backend so the frontend's "latest is first" assumption
+  // holds when sorted by version DESC client-side.
+  removeMatching(FIXTURE_ROUGH_BUDGETS, (b) => b.projectId === projectId);
+  FIXTURE_ROUGH_BUDGETS.push(...roughBudgetVersions.map(apiRoughBudgetVersionToFixture));
 }
 
 /** Hook: hydrate top-level fixtures on mount. Returns { hydrated,

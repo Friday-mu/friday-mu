@@ -8,12 +8,15 @@ import {
   procurementFeeForTier,
   tierForEpc,
   withVAT,
+  ROUGH_BUDGETS as FIXTURE_ROUGH_BUDGETS,
   type CatalogItem,
   type DesignProject,
   type DesignTier,
   type RoughBudget,
   type RoughBudgetEstimateLine,
 } from '../../../../_data/design';
+import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString } from '../../../../_data/designClient';
+import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
 interface Props {
@@ -97,6 +100,45 @@ export function RoughBudgetStage({ project }: Props) {
     setRows((prev) => prev.map((r) => (r.rid === rid ? { ...r, ...patch } : r)));
   const removeRow = (rid: string) => setRows((prev) => prev.filter((r) => r.rid !== rid));
   const addRow = () => setRows((prev) => [...prev, { rid: newRid(), itemName: '', qty: 1, unitCostMinorOverride: null }]);
+
+  const [savingVersion, setSavingVersion] = useState(false);
+  const handleSaveNewVersion = async () => {
+    setSavingVersion(true);
+    try {
+      const payload = {
+        project_id: project.id,
+        low_minor: effectiveLow || null,
+        mid_minor: effectiveMid || null,
+        high_minor: effectiveHigh || null,
+        tier: tierNumToString(tier),
+        design_fee_minor: designFee ?? null,
+        procurement_fee_minor: procurementFee ?? null,
+        assumptions: assumptions || null,
+        exclusions: exclusions || null,
+        risk_items: riskItems || null,
+        next_steps: nextSteps || null,
+        status: 'draft' as const,
+        line_items: validLines.map((line) => ({
+          // Map ItemRow → backend line item shape. The fixture itemName
+          // becomes the backend description; quantity carries from qty;
+          // unit_cost_minor is the override or null (catalog median is
+          // looked up at read-time, not pinned at save-time).
+          description: line.itemName,
+          quantity: line.qty,
+          unit_cost_minor: line.unitCostMinorOverride ?? null,
+        })),
+      };
+      const apiVersion = await createRoughBudgetVersion(payload);
+      const fixtureVersion = apiRoughBudgetVersionToFixture(apiVersion);
+      FIXTURE_ROUGH_BUDGETS.push(fixtureVersion);
+      fireToast(`v${fixtureVersion.version} saved (${apiVersion.line_items_inserted}/${validLines.length} items).`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Save failed: ${msg}`);
+    } finally {
+      setSavingVersion(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -303,7 +345,15 @@ export function RoughBudgetStage({ project }: Props) {
         >
           Preview PDF ↗
         </a>
-        <button type="button" style={primaryBtn()}>Save new version</button>
+        <button
+          type="button"
+          onClick={handleSaveNewVersion}
+          disabled={savingVersion}
+          data-rough-budget-save
+          style={{ ...primaryBtn(), opacity: savingVersion ? 0.5 : 1, cursor: savingVersion ? 'not-allowed' : 'pointer' }}
+        >
+          {savingVersion ? 'Saving…' : 'Save new version'}
+        </button>
       </div>
     </div>
   );

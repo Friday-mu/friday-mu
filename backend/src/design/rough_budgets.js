@@ -11,7 +11,10 @@ const { DEFAULT_TENANT_ID, shapeRoughBudget } = require('./adapters');
 
 const router = express.Router();
 
-const WRITABLE_FIELDS = ['category_code', 'description', 'unit_cost_minor', 'quantity', 'notes', 'catalog_source_id'];
+// Migration 023 added version_id so individual line items belong to a
+// rough-budget version. POST may include it directly; PATCH allows
+// re-parenting an orphaned row.
+const WRITABLE_FIELDS = ['category_code', 'description', 'unit_cost_minor', 'quantity', 'notes', 'catalog_source_id', 'version_id'];
 
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
