@@ -10,6 +10,7 @@ import {
   procurementFeeForTier,
   stageDef,
   tierForEpc,
+  withVAT,
   type AnnexAConfig,
   type CreateVendorInput,
   type DesignProject,
@@ -1972,6 +1973,25 @@ function DesignSettings() {
               renderEdit={() => <MUInputCell value={draft.tierThresholds.tier2MaxMinor} onChange={(v) => setDraft((d) => ({ ...d, tierThresholds: { ...d.tierThresholds, tier2MaxMinor: v } }))} />}
             />
             <AnnexARow
+              label={(
+                <>
+                  VAT rate
+                  <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 400 }}>
+                    Applied on top of all fees. Mauritius default = 15%.
+                  </div>
+                </>
+              )}
+              editing={editing}
+              renderView={() => `${(cfg.vatRate * 100).toFixed(cfg.vatRate * 100 % 1 === 0 ? 0 : 2)}%`}
+              renderEdit={() => (
+                <PctInputCell
+                  value={cfg.vatRate}
+                  valueDraft={draft.vatRate}
+                  onChange={(v) => setDraft((d) => ({ ...d, vatRate: v }))}
+                />
+              )}
+            />
+            <AnnexARow
               label="Agreement template version"
               editing={editing}
               renderView={() => cfg.agreementTemplateVersion}
@@ -1985,6 +2005,9 @@ function DesignSettings() {
             />
           </tbody>
         </table>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+          All rates above are VAT-exclusive. {(cfg.vatRate * 100).toFixed(cfg.vatRate * 100 % 1 === 0 ? 0 : 2)}% VAT is added on top per Mauritius regulations.
         </div>
       </div>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
@@ -2170,14 +2193,22 @@ function threePctInput(): React.CSSProperties {
   return { width: 56, padding: '4px 6px', textAlign: 'right', fontFamily: 'var(--font-mono-fad)', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)' };
 }
 
-// ─────────────────────────── Tier-change simulator (cont-25) ───────────────────────────
+// ─────────────────────────── Tier-change simulator (cont-25 + design-be-20b) ───────────────────────────
 //
 // Internal demo / scoping aid: type an EPC, see exactly which tier it falls
-// into and what design + P&E fees Friday would charge for both classifications.
-// Pure derivation from the published Annex A pricing schedule above — no new
-// state, no decisions. Useful for the team when scoping a project that's
-// borderline between tiers, and for showing an owner "your fee would be X
-// at this EPC."
+// into and what Design + Execution fees Friday would charge — both exclusive
+// AND inclusive of VAT, because Annex A rates are VAT-exclusive (Mauritius
+// 15% added on top). Pure derivation from the published Annex A pricing
+// schedule above — no new state, no decisions. Useful for the team when
+// scoping a project that's borderline between tiers, and for showing an
+// owner "your fee would be X at this EPC."
+//
+// design-be-20b: six columns instead of three. Each fee surfaces as
+// (excl. VAT, incl. VAT) so an owner can read either figure. The combined
+// "+ P&E Renovation / + P&E Furnishing" totals are replaced by three
+// distinct numbers (Design / Execution / Total) for one selected
+// classification — the simulator is a scoping aid, so pick which scope
+// is being quoted rather than splaying both side-by-side.
 
 function TierChangeSimulator() {
   const cfg = designClient.settings.annexA();
@@ -2186,31 +2217,17 @@ function TierChangeSimulator() {
   // Default to the Tier 2 threshold so the simulator opens with a meaningful
   // preview ("at exactly the T2 boundary").
   const [epcMinor, setEpcMinor] = useState<number>(T3_MAX);
+  // Renovation is the higher-fee (and more common) classification; default
+  // here so the simulator opens with the worst-case quote.
+  const [classification, setClassification] = useState<ProjectClassification>('renovation');
 
   const tier: DesignTier | null = epcMinor > 0 ? tierForEpc(epcMinor, cfg) : null;
-  const designFee = tier ? designFeeForTier(tier, epcMinor, cfg) : 0;
-  const peRenovation = tier ? procurementFeeForTier(tier, 'renovation', epcMinor, cfg) : 0;
-  const peFurnishing = tier ? procurementFeeForTier(tier, 'furnishing', epcMinor, cfg) : 0;
-  const totalRenovation = designFee + peRenovation;
-  const totalFurnishing = designFee + peFurnishing;
 
-  // Compute the deltas vs. the immediate-neighbour tier so the user can see
-  // "if this project moves from T2 → T1 (or vice-versa), fees change by Δ."
-  const neighbours = neighbourTiers(tier);
-  const neighbourRows = neighbours.map((nb) => {
-    const nbDesign = designFeeForTier(nb, epcMinor, cfg);
-    const nbRen = procurementFeeForTier(nb, 'renovation', epcMinor, cfg);
-    const nbFurn = procurementFeeForTier(nb, 'furnishing', epcMinor, cfg);
-    return {
-      tier: nb,
-      design: nbDesign,
-      renovation: nbDesign + nbRen,
-      furnishing: nbDesign + nbFurn,
-      designDelta: nbDesign - designFee,
-      renovationDelta: (nbDesign + nbRen) - totalRenovation,
-      furnishingDelta: (nbDesign + nbFurn) - totalFurnishing,
-    };
-  });
+  // Fees for the current resolved tier. 'mixed' is priced at the renovation
+  // rate per Annex A; procurementFeeForTier handles that internally.
+  const currentRow = scenarioRow(tier, epcMinor, classification, cfg);
+  const neighbourRows = neighbourTiers(tier).map((nb) => scenarioRow(nb, epcMinor, classification, cfg));
+  const vatPct = (cfg.vatRate * 100).toFixed(cfg.vatRate * 100 % 1 === 0 ? 0 : 2);
 
   return (
     <div
@@ -2248,6 +2265,29 @@ function TierChangeSimulator() {
             Try: {Math.round(T3_MAX / 100).toLocaleString()} (T3 ceiling) · {Math.round(T2_MAX / 100).toLocaleString()} (T2 ceiling)
           </span>
         </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Classification
+          <select
+            value={classification}
+            onChange={(e) => setClassification(e.target.value as ProjectClassification)}
+            data-tier-sim-classification
+            style={{
+              padding: '6px 8px',
+              fontSize: 13,
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-background-tertiary)',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            <option value="renovation">Renovation</option>
+            <option value="furnishing">Furnishing</option>
+            <option value="mixed">Mixed (priced at renovation rate)</option>
+          </select>
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+            Drives the execution-fee %. Mixed = renovation rate.
+          </span>
+        </label>
         <div>
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Resolved tier</div>
           <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-brand-accent)', fontFamily: 'var(--font-mono-fad)' }}>
@@ -2262,13 +2302,16 @@ function TierChangeSimulator() {
       </div>
 
       <div style={{ overflowX: 'auto', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)' }}>
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 480 }}>
+        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 640 }}>
           <thead>
             <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4, background: 'var(--color-background-tertiary)' }}>
               <th style={cellStyle('left')}>Scenario</th>
               <th style={cellStyle('right')}>Design fee</th>
-              <th style={cellStyle('right')}>+ P&amp;E renovation</th>
-              <th style={cellStyle('right')}>+ P&amp;E furnishing</th>
+              <th style={cellStyle('right')}>Design +VAT</th>
+              <th style={cellStyle('right')}>Execution fee</th>
+              <th style={cellStyle('right')}>Execution +VAT</th>
+              <th style={cellStyle('right')}>Total fee</th>
+              <th style={cellStyle('right')}>Total +VAT</th>
             </tr>
           </thead>
           <tbody>
@@ -2276,31 +2319,78 @@ function TierChangeSimulator() {
               <td style={cellStyle('left')}>
                 <strong>Current — Tier {tier ?? '—'}</strong>
               </td>
-              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(designFee)}</td>
-              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{formatMUR(totalRenovation)}</td>
-              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{formatMUR(totalFurnishing)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(currentRow.design)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-secondary)' }}>{formatMUR(currentRow.designIncl)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>{formatMUR(currentRow.execution)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-secondary)' }}>{formatMUR(currentRow.executionIncl)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600 }}>{formatMUR(currentRow.total)}</td>
+              <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{formatMUR(currentRow.totalIncl)}</td>
             </tr>
             {neighbourRows.map((nb) => (
-              <tr key={nb.tier} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+              <tr key={nb.tier ?? 'unk'} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
                 <td style={cellStyle('left')}>
                   If reclassified to <strong>Tier {nb.tier}</strong>
                 </td>
                 <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
-                  {formatMUR(nb.design)} <DeltaSpan v={nb.designDelta} />
+                  {formatMUR(nb.design)} <DeltaSpan v={nb.design - currentRow.design} />
+                </td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-secondary)' }}>
+                  {formatMUR(nb.designIncl)}
                 </td>
                 <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
-                  {formatMUR(nb.renovation)} <DeltaSpan v={nb.renovationDelta} />
+                  {formatMUR(nb.execution)} <DeltaSpan v={nb.execution - currentRow.execution} />
+                </td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-secondary)' }}>
+                  {formatMUR(nb.executionIncl)}
                 </td>
                 <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)' }}>
-                  {formatMUR(nb.furnishing)} <DeltaSpan v={nb.furnishingDelta} />
+                  {formatMUR(nb.total)} <DeltaSpan v={nb.total - currentRow.total} />
+                </td>
+                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-secondary)' }}>
+                  {formatMUR(nb.totalIncl)}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+        All Annex A rates are VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.
+      </div>
     </div>
   );
+}
+
+/** Pure: derive the six-number row for a single scenario (tier + classification + EPC). */
+function scenarioRow(
+  tier: DesignTier | null,
+  epcMinor: number,
+  classification: ProjectClassification,
+  cfg: AnnexAConfig,
+): {
+  tier: DesignTier | null;
+  design: number;
+  designIncl: number;
+  execution: number;
+  executionIncl: number;
+  total: number;
+  totalIncl: number;
+} {
+  if (tier === null) {
+    return { tier, design: 0, designIncl: 0, execution: 0, executionIncl: 0, total: 0, totalIncl: 0 };
+  }
+  const design = designFeeForTier(tier, epcMinor, cfg);
+  const execution = procurementFeeForTier(tier, classification, epcMinor, cfg);
+  const total = design + execution;
+  return {
+    tier,
+    design,
+    designIncl: withVAT(design, cfg),
+    execution,
+    executionIncl: withVAT(execution, cfg),
+    total,
+    totalIncl: withVAT(total, cfg),
+  };
 }
 
 function neighbourTiers(current: DesignTier | null): DesignTier[] {
