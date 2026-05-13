@@ -315,6 +315,8 @@ export interface ApiCloseoutBinder {
   updated_at?: string | null;
 }
 
+export type ApiTaskCategory = 'general' | 'blocker' | 'next_action';
+
 export interface ApiTask {
   id: string;
   project_id: string;
@@ -325,6 +327,11 @@ export interface ApiTask {
   status: 'todo' | 'in_progress' | 'blocked' | 'done';
   notes?: string | null;
   completed_at?: string | null;
+  /**
+   * design-be-18: discriminator. 'general' is the default; 'blocker' /
+   * 'next_action' are surfaced as the two top-of-overview panels.
+   */
+  category: ApiTaskCategory;
   created_at: string;
   updated_at: string;
 }
@@ -502,12 +509,23 @@ export const loadBudgetItems = async (projectId: string, filters: { category_cod
 export const loadCloseoutBinder = (projectId: string) =>
   apiFetch(`/api/design/closeout_binders/${projectId}`) as Promise<ApiCloseoutBinder>;
 
-export const loadTasks = async (projectId: string, filters: { status?: string; assignee_user_id?: string } = {}) => {
+export const loadTasks = async (
+  projectId: string,
+  filters: { status?: string; assignee_user_id?: string; category?: ApiTaskCategory } = {},
+) => {
   const qs = new URLSearchParams({ project_id: projectId });
   if (filters.status) qs.set('status', filters.status);
   if (filters.assignee_user_id) qs.set('assignee_user_id', filters.assignee_user_id);
+  if (filters.category) qs.set('category', filters.category);
   return unwrap(await apiFetch(`/api/design/tasks?${qs}`) as { results: ApiTask[] });
 };
+
+/**
+ * design-be-18: convenience wrapper for the BlockersPanel /
+ * NextActionsPanel — one panel per category, single call site.
+ */
+export const listTasksByCategory = (projectId: string, category: ApiTaskCategory) =>
+  loadTasks(projectId, { category });
 
 export const loadApprovals = async (projectId: string, filters: { status?: string; type?: string } = {}) => {
   const qs = new URLSearchParams({ project_id: projectId });
@@ -573,6 +591,19 @@ export const createVendor = (payload: Partial<ApiVendor> & { name: string }) =>
   apiFetch('/api/design/vendors', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiVendor>;
 export const updateVendor = (id: string, patch: Partial<ApiVendor>) =>
   apiFetch(`/api/design/vendors/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiVendor>;
+
+// design-be-18: task CRUD. category is part of the create payload so
+// the BlockersPanel / NextActionsPanel can post tasks pre-categorised.
+export type ApiTaskCreatePayload = Partial<ApiTask> & {
+  project_id: string;
+  title: string;
+};
+export const createTask = (payload: ApiTaskCreatePayload) =>
+  apiFetch('/api/design/tasks', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiTask>;
+export const updateTask = (id: string, patch: Partial<ApiTask>) =>
+  apiFetch(`/api/design/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiTask>;
+export const deleteTask = (id: string) =>
+  apiFetch(`/api/design/tasks/${id}`, { method: 'DELETE' }) as Promise<void>;
 
 export const upsertStage = (projectId: string, stageKey: string, patch: Partial<ApiStage>) =>
   apiFetch(`/api/design/stages/${projectId}/${stageKey}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiStage>;
