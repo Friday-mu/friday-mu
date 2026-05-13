@@ -131,6 +131,13 @@ export const signPortalAgreement = (signature_data_url: string, typed_name: stri
     body: JSON.stringify({ signature_data_url, typed_name }),
   }) as Promise<{ ok: true; signature_id: string; signed_at: string; agreement_id: string }>;
 
+// W9 — owner picks a moodboard variant from a group. Sibling variants
+// auto-flip to 'changes_requested' with a system-generated comment.
+export const pickPortalMoodboardVariant = (moodboardId: string): Promise<ApiMoodboard> =>
+  portalFetch(`/api/design/portal/moodboards/${moodboardId}/pick-variant`, {
+    method: 'POST',
+  }) as Promise<ApiMoodboard>;
+
 export const loadPortalPayments = async (): Promise<ApiPaymentGate[]> =>
   unwrap((await portalFetch('/api/design/portal/payments')) as { results: ApiPaymentGate[] });
 

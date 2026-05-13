@@ -16,6 +16,7 @@ import { ActivityTab } from './ActivityTab';
 import { BudgetTab } from './BudgetTab';
 import { ProgressTab } from './ProgressTab';
 import { HandoverTab } from './HandoverTab';
+import { MoodboardVariantsCard } from './MoodboardVariantsCard';
 import { RequestChangesModal } from './RequestChangesModal';
 import { getLastSeen, isNewSince, markSeen } from './lastSeen';
 import { PORTAL_TABS, type PortalTab } from './types';
@@ -60,6 +61,10 @@ export function PortalContent({
   );
   const [pendingChanges, setPendingChanges] = useState<DesignApproval | null>(null);
   const [pendingCoReject, setPendingCoReject] = useState<ChangeOrder | null>(null);
+  // W9 — moodboards aren't otherwise loaded in this scope; we need
+  // them to render the variant picker when there's a pending group.
+  const [moodboardsRev, setMoodboardsRev] = useState(0);
+  const moodboards = (() => { void moodboardsRev; return designClient.moodboards.list(project.id); })();
 
   const refreshApprovals = () => {
     setApprovals(designClient.approvals.list(project.id));
@@ -314,16 +319,27 @@ export function PortalContent({
         )}
         {tab === 'documents' && <DocsTab docs={docs} />}
         {tab === 'approvals' && (
-          <ApprovalsTab
-            approvals={approvals}
-            selections={selections}
-            changeOrders={changeOrders}
-            onApprove={handleApprove}
-            onRequestChanges={setPendingChanges}
-            onPickSelectionOption={handlePickSelectionOption}
-            onApproveChangeOrder={handleApproveChangeOrder}
-            onRejectChangeOrder={setPendingCoReject}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* W9 — variant picker, shown above other approvals when
+                a moodboard variant group is pending. After picking,
+                the staff side gets a 'moodboard.variant.picked.by_owner'
+                activity event; we bump the local rev so this card
+                refreshes (and disappears once all groups are decided). */}
+            <MoodboardVariantsCard
+              moodboards={moodboards}
+              onPicked={() => setMoodboardsRev((r) => r + 1)}
+            />
+            <ApprovalsTab
+              approvals={approvals}
+              selections={selections}
+              changeOrders={changeOrders}
+              onApprove={handleApprove}
+              onRequestChanges={setPendingChanges}
+              onPickSelectionOption={handlePickSelectionOption}
+              onApproveChangeOrder={handleApproveChangeOrder}
+              onRejectChangeOrder={setPendingCoReject}
+            />
+          </div>
         )}
         {tab === 'budget' && <BudgetTab items={items} />}
         {tab === 'progress' && <ProgressTab project={project} photos={photos} />}

@@ -38,6 +38,18 @@ const stageTone = (status: StageStatus): SemanticTone => {
   }
 };
 
+// W10 — cluster the 17 stages into 3 visual phases. NCIDQ teaches
+// 6 phases; we collapse to 3 (Pre-engagement / Design / Procurement &
+// Execution) because that's what STR-hospitality projects actually
+// segment into: signing → designing → buying. The cluster labels
+// render above the pill ranges in non-compact mode; compact mode
+// (sidebars / dashboards) keeps the flat row.
+const STAGE_CLUSTERS: Array<{ id: string; label: string; range: [number, number] }> = [
+  { id: 'pre-engagement', label: 'Pre-engagement', range: [1, 8] },
+  { id: 'design',         label: 'Design',         range: [9, 12] },
+  { id: 'execution',      label: 'Procurement & Execution', range: [13, 17] },
+];
+
 export function StageTracker({ currentStage, status, onStageSelect, compact, optionalStageIds = [], onReopenStage }: Props) {
   const currentIndex = stageDef(currentStage).index;
   const tone = stageTone(status);
@@ -45,21 +57,10 @@ export function StageTracker({ currentStage, status, onStageSelect, compact, opt
   const optional = new Set(optionalStageIds);
   const [confirmFor, setConfirmFor] = useState<StageId | null>(null);
 
-  return (
-    <div
-      className="fad-design-stage-tracker"
-      style={{
-        display: 'flex',
-        alignItems: 'stretch',
-        gap: 4,
-        overflowX: 'auto',
-        paddingBottom: compact ? 0 : 6,
-        WebkitOverflowScrolling: 'touch',
-      }}
-      role="list"
-      aria-label="Project stage tracker"
-    >
-      {STAGES.map((s) => {
+  // W10 — render the pills, grouped into 3 cluster sections in
+  // non-compact mode. Compact mode keeps the flat row so dashboards
+  // / sidebars don't grow vertically.
+  const renderPill = (s: typeof STAGES[number]) => {
         const isActive = s.id === currentStage;
         const isDone = s.index < currentIndex;
         const isFuture = s.index > currentIndex;
@@ -176,6 +177,79 @@ export function StageTracker({ currentStage, status, onStageSelect, compact, opt
                 onConfirm={() => { setConfirmFor(null); onReopenStage?.(s.id); }}
               />
             )}
+          </div>
+    );
+  };
+
+  // Compact mode — flat horizontal scroll, no cluster headers.
+  if (compact) {
+    return (
+      <div
+        className="fad-design-stage-tracker"
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 4,
+          overflowX: 'auto',
+          paddingBottom: 0,
+          WebkitOverflowScrolling: 'touch',
+        }}
+        role="list"
+        aria-label="Project stage tracker"
+      >
+        {STAGES.map((s) => renderPill(s))}
+      </div>
+    );
+  }
+
+  // Full mode — three cluster sections. Each cluster renders a small
+  // uppercase header above its pill range. The current cluster
+  // (containing the active stage) gets a stronger accent color.
+  const currentClusterId = STAGE_CLUSTERS.find((c) => currentIndex >= c.range[0] && currentIndex <= c.range[1])?.id;
+  return (
+    <div
+      className="fad-design-stage-tracker fad-design-stage-tracker-clustered"
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        gap: 12,
+        overflowX: 'auto',
+        paddingBottom: 6,
+        WebkitOverflowScrolling: 'touch',
+      }}
+      role="list"
+      aria-label="Project stage tracker"
+    >
+      {STAGE_CLUSTERS.map((cluster) => {
+        const clusterStages = STAGES.filter((s) => s.index >= cluster.range[0] && s.index <= cluster.range[1]);
+        const isCurrentCluster = cluster.id === currentClusterId;
+        return (
+          <div
+            key={cluster.id}
+            data-stage-cluster={cluster.id}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              flex: '1 1 0',
+              minWidth: 0,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: isCurrentCluster ? 'var(--color-brand-accent)' : 'var(--color-text-tertiary)',
+                paddingLeft: 2,
+              }}
+            >
+              {cluster.label}
+            </div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'stretch' }}>
+              {clusterStages.map((s) => renderPill(s))}
+            </div>
           </div>
         );
       })}

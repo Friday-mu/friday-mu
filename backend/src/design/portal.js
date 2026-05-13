@@ -273,6 +273,97 @@ router.post('/selections/:id/pick', async (req, res) => {
   }
 });
 
+// W9 — owner picks a moodboard variant from a group. Marks the chosen
+// variant 'approved'; the sibling variants get marked
+// 'changes_requested' with a system-generated comment ("Not picked —
+// owner chose variant N") so the audit trail explains why the
+// non-picked ones aren't moving forward. Refused if the variant
+// isn't in 'sent' state (no re-picking).
+router.post('/moodboards/:id/pick-variant', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch the picked moodboard + its group siblings.
+    const { rows: pickedRows } = await client.query(
+      `SELECT id, project_id, status, variant_group_id, variant_index, version_number
+       FROM design_moodboards
+       WHERE project_id = $1 AND id = $2`,
+      [req.portalProject.id, req.params.id],
+    );
+    if (pickedRows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Moodboard not found for this project' });
+    }
+    const picked = pickedRows[0];
+    if (!picked.variant_group_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'This moodboard is not part of a variant group — use the standard approve flow.' });
+    }
+    if (picked.status !== 'sent') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Variant is in '${picked.status}' state; expected 'sent'.` });
+    }
+
+    // Mark picked = approved with timestamp.
+    const { rows: approvedRows } = await client.query(
+      `UPDATE design_moodboards
+       SET status = 'approved', approved_at = NOW(), updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [picked.id],
+    );
+
+    // Mark siblings as changes_requested with system explanation.
+    const siblingComment = `Not picked — owner chose variant ${picked.variant_index}.`;
+    await client.query(
+      `UPDATE design_moodboards
+       SET status = 'changes_requested', updated_at = NOW()
+       WHERE project_id = $1
+         AND variant_group_id = $2
+         AND id <> $3
+         AND status = 'sent'`,
+      [req.portalProject.id, picked.variant_group_id, picked.id],
+    );
+
+    // Activity log — portal-visible so the staff dashboard surfaces
+    // the decision immediately.
+    await client.query(
+      `INSERT INTO design_activities (project_id, action, payload, visibility, actor_name)
+       VALUES ($1, $2, $3, 'portal', 'Owner')`,
+      [
+        req.portalProject.id,
+        'moodboard.variant.picked.by_owner',
+        JSON.stringify({
+          group_id: picked.variant_group_id,
+          picked_moodboard_id: picked.id,
+          picked_variant_index: picked.variant_index,
+          sibling_comment: siblingComment,
+        }),
+      ],
+    );
+
+    await client.query('COMMIT');
+
+    logPortalEvent({
+      projectId: req.portalProject.id,
+      magicLinkId: req.magicLink.id,
+      eventType: 'approval',
+      payload: { kind: 'moodboard.variant.picked', moodboard_id: picked.id, variant_index: picked.variant_index },
+      userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
+    });
+
+    res.json(shapeMoodboard(approvedRows[0]));
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[design/portal] moodboard pick-variant error:', e.message);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/selections/:id/request-changes', async (req, res) => {
   try {
     const { comment } = req.body || {};
