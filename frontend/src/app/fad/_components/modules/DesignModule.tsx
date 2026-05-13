@@ -763,8 +763,11 @@ const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   existing_owner: 'Existing Friday owner',
   repeat_customer: 'Repeat customer',
   industry_referral: 'Industry referral',
+  press_media: 'Press / media',
+  trade_show_event: 'Trade show / event',
   website: 'Website',
   whatsapp: 'WhatsApp',
+  email_campaign: 'Email campaign',
   social_media: 'Social media',
   social_media_influencer: 'Social — influencer',
   social_media_ad: 'Social — ad campaign',
@@ -773,7 +776,8 @@ const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
 };
 const LEAD_SOURCES: LeadSource[] = [
   'friday_outreach', 'owner_referral', 'existing_owner', 'repeat_customer',
-  'industry_referral', 'website', 'whatsapp',
+  'industry_referral', 'press_media', 'trade_show_event',
+  'website', 'whatsapp', 'email_campaign',
   'social_media', 'social_media_influencer', 'social_media_ad',
   'walk_in', 'other',
 ];

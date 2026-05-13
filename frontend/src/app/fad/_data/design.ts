@@ -97,8 +97,11 @@ export type LeadSource =
   | 'existing_owner'         // Existing Friday PM owner upselling into design
   | 'repeat_customer'        // Previous design project, commissioning another
   | 'industry_referral'      // Agent / notary / contractor / architect referral
+  | 'press_media'            // MBC feature, magazine article, news coverage
+  | 'trade_show_event'       // Property expo, design fair, conference
   | 'website'
   | 'whatsapp'
+  | 'email_campaign'         // Outbound email campaign attribution
   | 'social_media'
   | 'social_media_influencer'
   | 'social_media_ad'
@@ -701,11 +704,15 @@ export const ANNEX_A_DEFAULT: AnnexAConfig = {
   tierStageRules: {
     1: { optionalStages: [] },
     2: { optionalStages: ['doc-request'] },
-    // T3 keeps moodboard / design-pack / design-review optional, but
-    // floor-plan is intentionally NOT optional — the cleaned floor plan
-    // is a hard deliverable for every tier so downstream stages have a
-    // consistent base layer. See design-be-13 brief for the decision.
-    3: { optionalStages: ['doc-request', 'moodboard', 'design-pack', 'design-review'] },
+    // T3 contractually stops at the moodboard — design pack + owner
+    // review are not part of the T3 agreement, so they're optional.
+    // Floor plan is also OPTIONAL for T3: the client agreement doesn't
+    // require it, but Friday still generates one internally as the base
+    // for design work. The system records it as done if generated,
+    // skipped otherwise — both are acceptable. Moodboard, by contrast,
+    // IS the T3 deliverable, so it's mandatory.
+    // (Locked 2026-05-13 per Ishant — supersedes the design-be-13 brief.)
+    3: { optionalStages: ['doc-request', 'floor-plan', 'design-pack', 'design-review'] },
   },
   agreementTemplateVersion: '2025-09-nursoo',
 };
