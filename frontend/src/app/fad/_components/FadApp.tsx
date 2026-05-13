@@ -363,7 +363,7 @@ function renderModuleInner(
     case 'notifications':
       return <NotificationsModule />;
     case 'design':
-      return <DesignModule subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} />;
+      return <DesignModule subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} openFriday={ctx.openFriday} />;
     case 'syndic':
     case 'agency':
       return <TeaseModule mod={mod} />;

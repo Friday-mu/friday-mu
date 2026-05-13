@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FridayCard, FridayStep } from '../_data/friday';
 import { FRIDAY_PROMPTS_HOME, pickScript } from '../_data/friday';
+import { aiAsk, type AiAskCitation } from '../_data/designClient';
 import { FCard } from './FridayCards';
 import { IconCheck, IconClose, IconExpand, IconSend, IconSparkle } from './icons';
 import { canSeeFridayCard, useCurrentRole, useCurrentUserId } from './usePermissions';
@@ -17,17 +18,99 @@ interface AIMessage {
   text: string;
   cards: FridayCard[];
   followups: string[];
+  // When the chat detects it's on a design project URL the submit
+  // handler calls /api/design/ai/ask (real Kimi) instead of the
+  // scripted mocks. Real responses carry citations + a source +
+  // latency the renderer surfaces below the answer text.
+  realAi?: boolean;
+  citations?: AiAskCitation[];
+  source?: 'kimi' | 'template-fallback';
+  durationMs?: number;
 }
 type UserMessage = { role: 'user'; body: string };
 type Message = UserMessage | AIMessage;
+
+// Detect the active design project from the URL at submit-time. The
+// header drawer is mounted at the FAD shell level, so its hook
+// doesn't get re-rendered on project navigation — but the URL is
+// always current and read once per submit. Returns the project id
+// only when the user is on a design project shell (m=design + pid).
+function activeDesignProjectId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const p = new URLSearchParams(window.location.search);
+  if (p.get('m') !== 'design') return null;
+  const pid = p.get('pid');
+  return pid && pid !== '__new' ? pid : null;
+}
 
 export function useFridayChat(scope: string) {
   const [msgs, setMsgs] = useState<Message[]>([]);
 
   const submit = (q: string) => {
     if (!q.trim()) return;
-    const script = pickScript(q);
     const user: UserMessage = { role: 'user', body: q };
+
+    // If the user is currently viewing a design project shell, route
+    // the question to the real Kimi-backed /api/design/ai/ask endpoint
+    // instead of the scripted mocks. This consolidates the previously
+    // separate ProjectAskFridayDrawer into the global header drawer.
+    const projectId = activeDesignProjectId();
+    if (projectId) {
+      const realStep: FridayStep = { type: 'tool', name: 'Reading project data', args: 'kimi · /api/design/ai/ask', ms: 0 };
+      const ai: AIMessage = {
+        role: 'ai',
+        scope,
+        steps: [realStep],
+        stepsDone: 0,
+        ready: false,
+        text: '',
+        cards: [],
+        followups: [],
+        realAi: true,
+      };
+      setMsgs((m) => [...m, user, ai]);
+      aiAsk({ project_id: projectId, query: q })
+        .then((res) => {
+          setMsgs((m) => {
+            const copy = [...m];
+            const last = copy[copy.length - 1];
+            if (last?.role === 'ai') {
+              copy[copy.length - 1] = {
+                ...last,
+                stepsDone: 1,
+                ready: true,
+                text: res.answer,
+                citations: res.citations,
+                source: res.source,
+                durationMs: res.durationMs,
+              };
+            }
+            return copy;
+          });
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          setMsgs((m) => {
+            const copy = [...m];
+            const last = copy[copy.length - 1];
+            if (last?.role === 'ai') {
+              copy[copy.length - 1] = {
+                ...last,
+                stepsDone: 1,
+                ready: true,
+                text: `_Failed: ${msg}_`,
+              };
+            }
+            return copy;
+          });
+        });
+      return;
+    }
+
+    // Fallback to the scripted mock flow used by every non-design
+    // surface (Inbox, Finance, Calendar, etc.) until those modules
+    // get their own R-class endpoints.
+    const script = pickScript(q);
     const ai: AIMessage = {
       role: 'ai',
       scope,
@@ -63,6 +146,66 @@ export function useFridayChat(scope: string) {
   };
 
   return { msgs, submit };
+}
+
+// ─────────── Citation pill rendering (real-AI mode) ────────────
+// Mirrors the inline citation rendering that previously lived in
+// ProjectAskFridayDrawer. Parses [kind:refId] tags in the Kimi answer
+// and substitutes a small monospace pill linked to the underlying
+// record.
+
+type Segment =
+  | { kind: 'text'; text: string }
+  | { kind: 'citation'; citation: AiAskCitation };
+
+function splitWithCitations(text: string, citations: AiAskCitation[]): Segment[] {
+  const byTag = new Map<string, AiAskCitation>();
+  for (const c of citations) byTag.set(`${c.kind}:${c.refId}`, c);
+  const segments: Segment[] = [];
+  const regex = /\[([a-z_]+):([^\]]+)\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ kind: 'text', text: text.slice(lastIndex, match.index) });
+    }
+    const tag = `${match[1]}:${match[2]}`;
+    const cite = byTag.get(tag);
+    segments.push(
+      cite
+        ? { kind: 'citation', citation: cite }
+        : { kind: 'citation', citation: { kind: match[1], refId: match[2], label: tag } },
+    );
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    segments.push({ kind: 'text', text: text.slice(lastIndex) });
+  }
+  return segments;
+}
+
+function CitationPill({ citation }: { citation: AiAskCitation }) {
+  return (
+    <span
+      data-ask-friday-citation={`${citation.kind}:${citation.refId}`}
+      title={`${citation.kind} · ${citation.refId}`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '0 6px',
+        margin: '0 2px',
+        fontSize: 10,
+        fontWeight: 500,
+        borderRadius: 'var(--radius-full)',
+        background: 'var(--color-brand-accent-softer)',
+        color: 'var(--color-brand-accent)',
+        fontFamily: 'var(--font-mono-fad)',
+        verticalAlign: 'baseline',
+      }}
+    >
+      {citation.label}
+    </span>
+  );
 }
 
 function ToolStep({ step, done }: { step: FridayStep; done: boolean }) {
@@ -114,7 +257,27 @@ export function FridayMessage({
       )}
       {m.ready && (
         <>
-          {m.text && <div className="friday-msg-text">{m.text}</div>}
+          {m.text && (
+            m.realAi ? (
+              <div className="friday-msg-text" style={{ whiteSpace: 'pre-wrap' }}>
+                {splitWithCitations(m.text, m.citations ?? []).map((seg, i) =>
+                  seg.kind === 'text' ? (
+                    <span key={i}>{seg.text}</span>
+                  ) : (
+                    <CitationPill key={i} citation={seg.citation} />
+                  ),
+                )}
+                {(m.source || m.durationMs) && (
+                  <div style={{ marginTop: 6, fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                    {m.source ?? ''}
+                    {m.durationMs ? ` · ${(m.durationMs / 1000).toFixed(1)}s` : ''}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="friday-msg-text">{m.text}</div>
+            )
+          )}
           {visibleCards.map((c, i) => (
             <div key={i} style={{ marginTop: 8 }}>
               <FCard card={c} onNavigate={onNavigate} />

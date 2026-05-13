@@ -40,7 +40,6 @@ import { ProjectEditDrawer } from './design/ProjectEditDrawer';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import { ShareWithOwnerDrawer } from './design/ShareWithOwnerDrawer';
-import { ProjectAskFridayDrawer } from './design/ProjectAskFridayDrawer';
 import { BlockersPanel } from './design/BlockersPanel';
 import { CiaCompliancePanel, requiresCiaRegistration } from './design/CiaCompliancePanel';
 import { NextActionsPanel } from './design/NextActionsPanel';
@@ -73,6 +72,14 @@ const DocumentsStage      = lazy(() => import('./design/stages/DocumentsStage').
 interface Props {
   subPage: string;
   onChangeSubPage: (id: string) => void;
+  /** Opens the global header Ask Friday drawer with a per-project scope
+   *  label. The drawer itself detects from the URL that we're on a
+   *  design project and switches to the real Kimi-backed
+   *  /api/design/ai/ask endpoint (rather than the scripted mock used
+   *  in other modules). Threaded down to ProjectShell so the
+   *  ProjectContextBar's "✨ Ask Friday" button hits the global
+   *  drawer instead of the deprecated standalone project drawer. */
+  openFriday?: (scope?: string) => void;
 }
 
 /** Format a date string (ISO or YYYY-MM-DD) for the Summary panel. Drops
@@ -233,7 +240,7 @@ function phaseForCurrentStage(stageId: StageId): PhaseId {
 
 // ─────────────────────────── Module shell ───────────────────────────
 
-export function DesignModule({ subPage, onChangeSubPage }: Props) {
+export function DesignModule({ subPage, onChangeSubPage, openFriday }: Props) {
   const canSeeSettings = useCanSee('settings');
 
   const tabs = [
@@ -304,6 +311,7 @@ export function DesignModule({ subPage, onChangeSubPage }: Props) {
         onClose={() => setPidAndUrl(null)}
         onRefetch={refetchProject}
         projectRev={projectRev}
+        openFriday={openFriday}
       />
     );
   }
@@ -2474,6 +2482,7 @@ function ProjectShell({
   onClose,
   onRefetch,
   projectRev,
+  openFriday,
 }: {
   project: DesignProject;
   screen: ProjectScreen;
@@ -2481,12 +2490,12 @@ function ProjectShell({
   onClose: () => void;
   onRefetch: () => void;
   projectRev: number;
+  openFriday?: (scope?: string) => void;
 }) {
   const [portalOpen, setPortalOpen] = useState(false);
   const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
   const [lifecycleTick, setLifecycleTick] = useState(0);
   const [showEdit, setShowEdit] = useState(false);
-  const [askFridayOpen, setAskFridayOpen] = useState(false);
   const role = useCurrentRole();
   const isDirector = role === 'director';
   const project = designClient.projects.get(incomingProject.id) ?? incomingProject;
@@ -2548,14 +2557,16 @@ function ProjectShell({
         onOpenShareDrawer={() => setShareDrawerOpen(true)}
         onLifecycleChange={() => { setLifecycleTick((t) => t + 1); onRefetch(); }}
         onEditProject={isDirector ? () => setShowEdit(true) : undefined}
-        onAskFriday={() => setAskFridayOpen(true)}
+        // Ask Friday is now the global header drawer — it sees from
+        // the URL (m=design + pid) that we're on a project shell and
+        // automatically routes to the Kimi-backed
+        // /api/design/ai/ask endpoint with citations. The previous
+        // standalone ProjectAskFridayDrawer has been removed.
+        onAskFriday={openFriday ? () => openFriday(`Project: ${project.name}`) : undefined}
       />
       {portalOpen && <OwnerPortalPreview project={project} onClose={() => setPortalOpen(false)} />}
       {shareDrawerOpen && (
         <ShareWithOwnerDrawer project={project} onClose={() => setShareDrawerOpen(false)} />
-      )}
-      {askFridayOpen && (
-        <ProjectAskFridayDrawer project={project} onClose={() => setAskFridayOpen(false)} />
       )}
       {showEdit && (
         <ProjectEditDrawer
