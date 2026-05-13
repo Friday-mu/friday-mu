@@ -752,6 +752,58 @@ export const listRooms = (propertyId: string) =>
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
 
+// ─────────────────────────── AI: rough budget estimator ───────────────────────────
+// AI Bet #1 — staff one-liner → line-item budget grounded in the 155-
+// entry FRIDAY_CATALOG_HISTORY + FRIDAY_STYLE_GUIDE + tier rules.
+// The frontend ships the sampled catalog so the backend doesn't need
+// to duplicate it; backend handles the Kimi call + JSON parsing +
+// template fallback. Every line carries sourceKeys for provenance —
+// the UI surfaces these as chips so any line can be challenged.
+export interface AiRoughBudgetLine {
+  room: string;
+  category: string;
+  item: string;
+  qty: number;
+  unitCostMinor: number;
+  sourceKeys: string[];
+  rationale: string;
+}
+export interface AiRoughBudgetResponse {
+  lines: AiRoughBudgetLine[];
+  lowMinor: number;
+  midMinor: number;
+  highMinor: number;
+  contingencyPct: number;
+  narrative: string;
+  source: 'kimi' | 'template-fallback';
+  model?: string;
+  error?: string | null;
+  durationMs: number;
+}
+export interface AiRoughBudgetRequest {
+  project_id: string;
+  brief: string;
+  target_tier?: 1 | 2 | 3 | null;
+  classification?: 'renovation' | 'furnishing' | 'mixed' | null;
+  project_context?: Record<string, unknown>;
+  catalog_sample?: Array<{
+    normalizedKey: string;
+    displayName: string;
+    category: string;
+    vendor: string | null;
+    unitCostMinor: number;
+    sourceProjectLabel: string;
+  }>;
+  style_guide?: {
+    notes: string;
+    priceRangesByCategory: Record<string, { p25: number; p50: number; p75: number; samples: number }>;
+    preferredVendors: Array<{ name: string; categories: string[]; sampleCount: number }>;
+  };
+  tier_rules?: Record<string, unknown>;
+}
+export const aiRoughBudgetEstimate = (req: AiRoughBudgetRequest) =>
+  apiFetch('/api/design/ai/rough-budget-estimate', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiRoughBudgetResponse>;
+
 // ─────────────────────────── Photos ───────────────────────────
 // Backend stores photo URL refs (blob lives external). v0.1 surface is
 // URL-based — staff paste a Drive / Imgur / direct-image URL with an

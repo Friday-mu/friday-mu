@@ -15,7 +15,8 @@ import {
   type RoughBudget,
   type RoughBudgetEstimateLine,
 } from '../../../../_data/design';
-import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString } from '../../../../_data/designClient';
+import { FRIDAY_CATALOG_HISTORY, FRIDAY_STYLE_GUIDE } from '../../../../_data/fridayCatalogHistory';
+import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString, aiRoughBudgetEstimate, type AiRoughBudgetResponse } from '../../../../_data/designClient';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
@@ -106,6 +107,117 @@ export function RoughBudgetStage({ project }: Props) {
   const removeRow = (rid: string) => setRows((prev) => prev.filter((r) => r.rid !== rid));
   const addRow = () => setRows((prev) => [...prev, { rid: newRid(), itemName: '', qty: 1, unitCostMinorOverride: null }]);
 
+  // ── AI Estimator state ───────────────────────────────────────────
+  // Modal lifecycle + last response (so we can render provenance chips
+  // next to the inserted rows). Each AI-suggested row carries its
+  // sourceKeys via an internal map keyed by rid.
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiBrief, setAiBrief] = useState('');
+  const [aiTier, setAiTier] = useState<DesignTier | ''>('');
+  const [aiClassification, setAiClassification] = useState<'renovation' | 'furnishing' | 'mixed' | ''>('');
+  const [aiPending, setAiPending] = useState(false);
+  const [aiLastResponse, setAiLastResponse] = useState<AiRoughBudgetResponse | null>(null);
+  const [aiSourceByRid, setAiSourceByRid] = useState<Record<string, string[]>>({});
+
+  const sampleCatalogForAi = useMemo(() => {
+    // Pick the top 4 entries per category by sample frequency so Kimi
+    // gets a representative pool without blowing the 8k context window.
+    // Sort within each category by samples-with-this-key.
+    const keyCounts = new Map<string, number>();
+    for (const e of FRIDAY_CATALOG_HISTORY) {
+      keyCounts.set(e.normalizedKey, (keyCounts.get(e.normalizedKey) ?? 0) + 1);
+    }
+    const byCat = new Map<string, typeof FRIDAY_CATALOG_HISTORY>();
+    for (const e of FRIDAY_CATALOG_HISTORY) {
+      if (e.internalWork) continue;
+      const arr = byCat.get(e.category) ?? [];
+      arr.push(e);
+      byCat.set(e.category, arr);
+    }
+    const out: Array<{ normalizedKey: string; displayName: string; category: string; vendor: string | null; unitCostMinor: number; sourceProjectLabel: string }> = [];
+    for (const [, items] of byCat) {
+      const sorted = [...items].sort((a, b) => (keyCounts.get(b.normalizedKey) ?? 0) - (keyCounts.get(a.normalizedKey) ?? 0));
+      for (const e of sorted.slice(0, 4)) {
+        out.push({
+          normalizedKey: e.normalizedKey,
+          displayName: e.displayName,
+          category: e.category,
+          vendor: e.vendor,
+          unitCostMinor: e.unitCostMinor,
+          sourceProjectLabel: e.sourceProjectLabel,
+        });
+      }
+    }
+    return out;
+  }, []);
+
+  const handleAiEstimate = async () => {
+    if (!aiBrief.trim()) {
+      fireToast('Brief is required.');
+      return;
+    }
+    setAiPending(true);
+    try {
+      const response = await aiRoughBudgetEstimate({
+        project_id: project.id,
+        brief: aiBrief.trim(),
+        target_tier: aiTier === '' ? null : aiTier,
+        classification: aiClassification === '' ? null : aiClassification,
+        project_context: {
+          name: project.name,
+          tier: project.tier,
+          classification: project.classification,
+          epcMinor: project.epcMinor,
+          engagementScope: project.engagementScope,
+        },
+        catalog_sample: sampleCatalogForAi,
+        style_guide: {
+          notes: FRIDAY_STYLE_GUIDE.notes,
+          priceRangesByCategory: FRIDAY_STYLE_GUIDE.priceRangesByCategory,
+          preferredVendors: FRIDAY_STYLE_GUIDE.preferredVendors.slice(0, 8),
+        },
+        tier_rules: cfg as unknown as Record<string, unknown>,
+      });
+      setAiLastResponse(response);
+
+      // Replace current rows with the AI-suggested lines. Each line
+      // becomes an ItemRow with unitCostMinorOverride set to the
+      // suggested unit cost so the row pins (no further catalog
+      // lookup overrides the price).
+      const newRows: ItemRow[] = [];
+      const newSourceMap: Record<string, string[]> = {};
+      for (const line of response.lines) {
+        const rid = newRid();
+        // Encode room into itemName as "[Room] item" so the room
+        // grouping survives even without a structured roomId column.
+        const roomPrefix = line.room && line.room !== 'Whole property' ? `[${line.room}] ` : '';
+        newRows.push({
+          rid,
+          itemName: `${roomPrefix}${line.item}`,
+          qty: line.qty || 1,
+          unitCostMinorOverride: line.unitCostMinor || null,
+        });
+        newSourceMap[rid] = line.sourceKeys || [];
+      }
+      if (newRows.length > 0) {
+        setRows(newRows);
+        setAiSourceByRid(newSourceMap);
+        // Also seed the narrative / next-steps if the user hasn't
+        // typed anything yet. Don't clobber existing input.
+        if (!nextSteps.trim() && response.narrative) {
+          setNextSteps(response.narrative);
+        }
+      }
+      setShowAiModal(false);
+      fireToast(`AI estimate ready · ${response.lines.length} lines · ${response.source}.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`AI estimate failed: ${msg}`);
+    } finally {
+      setAiPending(false);
+    }
+  };
+
   const [savingVersion, setSavingVersion] = useState(false);
   const handleSaveNewVersion = async () => {
     setSavingVersion(true);
@@ -151,8 +263,50 @@ export function RoughBudgetStage({ project }: Props) {
       <Card>
         <Row>
           <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Rough budget · estimate from past projects</h3>
-          <AIPlaceholder feature="rough-budget-estimate" label="Suggest items from property" size="sm" />
+          <button
+            type="button"
+            onClick={() => setShowAiModal(true)}
+            data-rough-budget-ai-trigger
+            data-ai-feature="rough-budget-estimate"
+            style={{
+              padding: '4px 10px',
+              fontSize: 11,
+              fontWeight: 500,
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-brand-accent)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            ✨ Estimate from brief
+          </button>
         </Row>
+        {aiLastResponse && (
+          <div
+            data-ai-budget-receipt
+            style={{
+              marginTop: 10,
+              padding: 8,
+              fontSize: 11,
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-brand-accent-softer)',
+              border: '0.5px solid var(--color-brand-accent)',
+              color: 'var(--color-text-secondary)',
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>AI estimate</strong> · {aiLastResponse.lines.length} lines · source: <code style={{ fontFamily: 'var(--font-mono-fad)' }}>{aiLastResponse.source}</code>
+            {aiLastResponse.model ? ` · ${aiLastResponse.model}` : ''} · {(aiLastResponse.durationMs / 1000).toFixed(1)}s
+            {aiLastResponse.contingencyPct ? ` · suggested contingency ${aiLastResponse.contingencyPct}%` : ''}
+            {aiLastResponse.narrative && (
+              <div style={{ marginTop: 4 }}>{aiLastResponse.narrative}</div>
+            )}
+          </div>
+        )}
         <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
           Add the items this project needs. We&apos;ll price each one against
           what Friday actually paid on past projects to produce a
@@ -177,6 +331,7 @@ export function RoughBudgetStage({ project }: Props) {
               onChange={(patch) => updateRow(row.rid, patch)}
               onRemove={() => removeRow(row.rid)}
               canRemove={rows.length > 1}
+              aiSourceKeys={aiSourceByRid[row.rid]}
             />
           ))}
         </div>
@@ -361,6 +516,89 @@ export function RoughBudgetStage({ project }: Props) {
           {savingVersion ? 'Saving…' : 'Save new version'}
         </button>
       </div>
+
+      {showAiModal && (
+        <div
+          onClick={() => !aiPending && setShowAiModal(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            data-ai-budget-modal
+            style={{ background: 'var(--color-background-primary)', borderRadius: 'var(--radius-md)', padding: 20, width: '100%', maxWidth: 520 }}
+          >
+            <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>✨ Estimate from brief</h3>
+            <p style={{ margin: '0 0 14px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              Describe the project in one or two sentences. Kimi grounds the result against Friday&apos;s 155-entry catalog + style guide.
+              Every line will cite its source.
+            </p>
+            <Field label="Brief">
+              <textarea
+                value={aiBrief}
+                onChange={(e) => setAiBrief(e.target.value)}
+                rows={3}
+                placeholder='e.g. "2-bed villa in Pereybere, Tier 2, mid-range Scandi with rattan accents, including kitchen + bathroom upgrades"'
+                style={textareaStyle()}
+                data-ai-budget-brief
+                disabled={aiPending}
+              />
+            </Field>
+            <Grid>
+              <Field label="Tier override" hint="(optional — overrides project tier)">
+                <select
+                  value={aiTier === '' ? '' : String(aiTier)}
+                  onChange={(e) => setAiTier(e.target.value === '' ? '' : (Number(e.target.value) as DesignTier))}
+                  style={inputStyle()}
+                  data-ai-budget-tier
+                  disabled={aiPending}
+                >
+                  <option value="">— use project tier —</option>
+                  <option value="1">T1 — renovation</option>
+                  <option value="2">T2 — furnishing</option>
+                  <option value="3">T3 — design-only</option>
+                </select>
+              </Field>
+              <Field label="Classification override" hint="(optional)">
+                <select
+                  value={aiClassification}
+                  onChange={(e) => setAiClassification((e.target.value as 'renovation' | 'furnishing' | 'mixed' | '') || '')}
+                  style={inputStyle()}
+                  data-ai-budget-classification
+                  disabled={aiPending}
+                >
+                  <option value="">— use project classification —</option>
+                  <option value="furnishing">Furnishing</option>
+                  <option value="renovation">Renovation</option>
+                  <option value="mixed">Mixed</option>
+                </select>
+              </Field>
+            </Grid>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => setShowAiModal(false)}
+                disabled={aiPending}
+                style={secondaryBtn()}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAiEstimate}
+                disabled={aiPending || !aiBrief.trim()}
+                data-ai-budget-submit
+                style={{
+                  ...primaryBtn(),
+                  opacity: aiPending || !aiBrief.trim() ? 0.5 : 1,
+                  cursor: aiPending || !aiBrief.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {aiPending ? 'Thinking…' : '✨ Estimate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -372,11 +610,13 @@ function ItemRowEditor({
   onChange,
   onRemove,
   canRemove,
+  aiSourceKeys,
 }: {
   row: ItemRow;
   onChange: (patch: Partial<ItemRow>) => void;
   onRemove: () => void;
   canRemove: boolean;
+  aiSourceKeys?: string[];
 }) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showWhereUsed, setShowWhereUsed] = useState(false);
@@ -539,6 +779,35 @@ function ItemRowEditor({
             No historical match — won&apos;t be priced. Pick from suggestions or rename.
           </div>
         ) : null}
+        {aiSourceKeys && aiSourceKeys.length > 0 && (
+          <div
+            data-row-ai-source
+            style={{
+              marginTop: 4,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 4,
+              fontSize: 10,
+              color: 'var(--color-text-tertiary)',
+            }}
+          >
+            <span style={{ fontWeight: 500 }}>AI source:</span>
+            {aiSourceKeys.map((k) => (
+              <span
+                key={k}
+                style={{
+                  padding: '0 6px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--color-brand-accent-softer)',
+                  color: 'var(--color-text-secondary)',
+                  fontFamily: 'var(--font-mono-fad)',
+                }}
+              >
+                {k}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <input
