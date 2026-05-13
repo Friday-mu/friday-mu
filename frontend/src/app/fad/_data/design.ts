@@ -894,6 +894,62 @@ export function procurementFeeForTier(
   return Math.round(epcMinor * pct);
 }
 
+// ─────────────────────────── design-be-23: engagement scope stage rules ───────────────────────────
+//
+// Per-scope optional-stage matrix. Design-only engagements stop at the
+// design pack — the execution-phase stages (14-17) are out of scope and
+// rendered dimmed with an "Out of scope (design only)" indicator. The
+// matrix is a sibling to tierStageRules; ProjectShell unions the two
+// when handing optionalStageIds to StageTracker so a Tier 3 + design_only
+// project gets both Tier 3 optional stages AND the execution-phase
+// stages flagged.
+
+export interface EngagementScopeStageRules {
+  /** Stages that may be skipped without blocking workflow progress. */
+  optionalStages: StageId[];
+}
+
+export const engagementScopeStageRules: Record<EngagementScope, EngagementScopeStageRules> = {
+  design_and_execution: { optionalStages: [] },
+  design_only: {
+    // Stages 14-17: final-budget → reconciliation. Owner handles
+    // procurement + execution themselves; Friday's responsibility ends
+    // at design pack delivery (stage 13). Listed in workflow order.
+    optionalStages: [
+      'final-budget',
+      'funding-gate',
+      'execution',
+      'expense-capture',
+      'reconciliation',
+    ],
+  },
+};
+
+/**
+ * Union the per-tier optional stages with the per-engagement-scope
+ * optional stages. Use this anywhere StageTracker / phase tabs need to
+ * render dimmed pills. Returns a fresh array so callers can safely
+ * mutate. Order is preserved (tier rules first, then any engagement-
+ * scope-specific additions not already present).
+ */
+export function combinedOptionalStages(
+  tier: DesignTier | null,
+  engagementScope: EngagementScope,
+  cfg: AnnexAConfig = ANNEX_A_DEFAULT,
+): StageId[] {
+  const fromTier = tier != null ? cfg.tierStageRules[tier].optionalStages : [];
+  const fromScope = engagementScopeStageRules[engagementScope].optionalStages;
+  const seen = new Set<StageId>();
+  const out: StageId[] = [];
+  for (const id of [...fromTier, ...fromScope]) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
 // ─────────────────────────── VAT helpers (design-be-20) ───────────────────────────
 //
 // Annex A rates are VAT-EXCLUSIVE. Mauritius applies 15% VAT on top of all

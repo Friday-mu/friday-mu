@@ -4,6 +4,7 @@ import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useCanSee, useCurrentUserId } from '../usePermissions';
 import {
+  combinedOptionalStages,
   designClient,
   designFeeForTier,
   formatMUR,
@@ -2521,11 +2522,23 @@ function ProjectShell({
         <div style={{ padding: '6px 16px 4px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
           <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Stage admin
+            {project.engagementScope === 'design_only' && (
+              <span
+                data-engagement-scope-indicator="design_only"
+                style={{ marginLeft: 6, color: 'var(--color-text-secondary)', fontStyle: 'italic', textTransform: 'none', letterSpacing: 0 }}
+              >
+                · design only — stages 14-17 out of scope
+              </span>
+            )}
           </div>
+          {/* design-be-23: union per-tier + per-engagement-scope optional
+             stages so the StageTracker dims execution-phase pills when
+             the project is design-only. */}
           <StageTracker
             currentStage={project.currentStage}
             status={project.stageStatus}
             onReopenStage={handleReopenStage}
+            optionalStageIds={combinedOptionalStages(project.tier, project.engagementScope)}
           />
         </div>
       )}

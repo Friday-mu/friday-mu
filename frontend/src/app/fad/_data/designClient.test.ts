@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { apiProjectToFixture, type ApiProject } from './designClient';
+import { combinedOptionalStages, engagementScopeStageRules } from './design';
 
 // design-be-23: regression tests for the design-only engagement fork.
 // apiProjectToFixture is the read-path adapter every UI component goes
@@ -94,5 +95,47 @@ describe('apiProjectToFixture — engagement scope', () => {
     }));
     const expectedTotal = (fullScope.designFeeMinor ?? 0) + (fullScope.procurementFeeMinor ?? 0);
     expect(fullScope.effectiveTotalFeeMinor).toBe(expectedTotal);
+  });
+});
+
+describe('engagementScopeStageRules + combinedOptionalStages', () => {
+  it('lists the execution-phase stages as optional for design_only', () => {
+    const optional = engagementScopeStageRules.design_only.optionalStages;
+    expect(optional).toContain('final-budget');
+    expect(optional).toContain('funding-gate');
+    expect(optional).toContain('execution');
+    expect(optional).toContain('expense-capture');
+    expect(optional).toContain('reconciliation');
+  });
+
+  it('is empty for design_and_execution (no scope-driven skips)', () => {
+    expect(engagementScopeStageRules.design_and_execution.optionalStages).toEqual([]);
+  });
+
+  it('unions tier + scope optional stages without duplicates', () => {
+    // Tier 3 + design_only: T3 already has design-pack + design-review
+    // optional from tierStageRules; design_only adds execution-phase 14-17.
+    // None of the T3 stages overlap with the execution-phase set, so the
+    // union should be a superset of both.
+    const t3Only = combinedOptionalStages(3, 'design_only');
+    expect(t3Only).toContain('design-pack');     // from tier
+    expect(t3Only).toContain('design-review');   // from tier
+    expect(t3Only).toContain('execution');       // from scope
+    expect(t3Only).toContain('reconciliation');  // from scope
+
+    // Tier 1 + design_only: T1 has no tier-optional stages, so only the
+    // scope stages should appear.
+    const t1Only = combinedOptionalStages(1, 'design_only');
+    expect(t1Only).toEqual([
+      'final-budget', 'funding-gate', 'execution', 'expense-capture', 'reconciliation',
+    ]);
+
+    // Full-scope = exactly the tier rules.
+    const t1Full = combinedOptionalStages(1, 'design_and_execution');
+    expect(t1Full).toEqual([]);
+
+    // No duplicate IDs after the union.
+    const ids = new Set(t3Only);
+    expect(ids.size).toBe(t3Only.length);
   });
 });
