@@ -156,6 +156,12 @@ export interface ApiProject {
   // set_as_project_plan: true. Resolve to the asset row via
   // loadProjectFloorPlan(projectId).
   floor_plan_image_id?: string | null;
+  // sha256 of the second-stage furnished floor plan (clean plan +
+  // furniture overlay in the approved moodboard's aesthetic). Set by
+  // POST /api/design/ai_images/generate-furnished-floor-plan with
+  // set_as_project_plan: true. Resolve via
+  // loadProjectFurnishedFloorPlan(projectId).
+  floor_plan_furnished_image_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -378,6 +384,31 @@ export interface FloorPlanGenerationResult extends ApiAsset {
 export interface GenerateFloorPlanPayload {
   project_id: string;
   source_image: { mimeType: string; base64: string };
+  prompt_hint?: string;
+  set_as_project_plan?: boolean;
+}
+
+// Second-stage floor-plan pass — furniture/fixtures overlaid on the clean
+// plan in the approved moodboard's aesthetic. The endpoint resolves both
+// source images server-side from sha256 / moodboard_id, so the caller
+// only supplies references, not bytes.
+export interface FurnishedFloorPlanGenerationResult extends ApiAsset {
+  stub?: boolean;
+  duration_ms?: number | null;
+  cached?: boolean;
+  project_updated?: boolean;
+  source_floor_plan_sha256?: string;
+  source_moodboard_id?: string;
+  used_prompt?: string;
+  prompt_source?: 'kimi' | 'template-fallback' | 'override' | string;
+  prompt_style_notes?: string[];
+  suggested_aspect_ratio?: string | null;
+}
+
+export interface GenerateFurnishedFloorPlanPayload {
+  project_id: string;
+  source_floor_plan_sha256?: string;
+  moodboard_id?: string;
   prompt_hint?: string;
   set_as_project_plan?: boolean;
 }
@@ -671,6 +702,30 @@ export const generateFloorPlan = (payload: GenerateFloorPlanPayload) =>
     body: JSON.stringify(payload),
   }) as Promise<FloorPlanGenerationResult>;
 
+// loadProjectFurnishedFloorPlan resolves the second-stage furnished floor
+// plan via FK join. Returns null on 404 (no furnished plan pinned yet) so
+// callers can render the empty-state without try/catch.
+export const loadProjectFurnishedFloorPlan = async (projectId: string): Promise<ApiAsset | null> => {
+  try {
+    return await apiFetch(`/api/design/projects/${projectId}/floor-plan-furnished`) as ApiAsset;
+  } catch (e) {
+    if (e instanceof Error && /No furnished floor plan|Project not found|HTTP 404/i.test(e.message)) return null;
+    throw e;
+  }
+};
+
+// generateFurnishedFloorPlan kicks off the second-stage pass: backend
+// resolves the project's clean floor plan + the latest approved moodboard
+// (or the explicitly-passed override), runs Kimi to synthesise an
+// architectural furnishing prompt, then calls Nanobanana with both
+// images inline. Callers typically default set_as_project_plan: true so
+// the result is immediately surfaced in the project shell.
+export const generateFurnishedFloorPlan = (body: GenerateFurnishedFloorPlanPayload) =>
+  apiFetch('/api/design/ai_images/generate-furnished-floor-plan', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as Promise<FurnishedFloorPlanGenerationResult>;
+
 // ════════════════════════════════════════════════════════════════════
 // HOOKS — simple list/detail wrappers around the fetchers above
 // ════════════════════════════════════════════════════════════════════
@@ -828,6 +883,7 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     cancelledByUserId: api.cancelled_by_user_id ?? undefined,
     cancelTransferToInventory: api.cancel_transfer_to_inventory ?? undefined,
     floorPlanImageId: api.floor_plan_image_id ?? null,
+    floorPlanFurnishedImageId: api.floor_plan_furnished_image_id ?? null,
   } as FixtureProject;
 }
 

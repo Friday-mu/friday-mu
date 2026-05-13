@@ -127,6 +127,12 @@ function shapeProject(row) {
     // design_assets.sha256 via migration 009 (column renamed to
     // floor_plan_image_id by migration 010).
     floor_plan_image_id: row.floor_plan_image_id ?? null,
+    // Pinned by POST /api/design/ai_images/generate-furnished-floor-plan
+    // when called with set_as_project_plan: true. The "furnished" pass
+    // overlays furniture/fixtures onto the clean floor plan using an
+    // approved moodboard as a style reference. Null until that pass has
+    // run. FK to design_assets.sha256 via migration 011.
+    floor_plan_furnished_image_id: row.floor_plan_furnished_image_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

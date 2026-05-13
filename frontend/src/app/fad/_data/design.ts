@@ -176,6 +176,14 @@ export interface DesignProject {
    * loadProjectFloorPlan().
    */
   floorPlanImageId?: string | null;
+  /**
+   * Pinned sha256 of the second-stage furnished floor plan — clean plan
+   * + furniture/fixtures overlaid in the approved moodboard's aesthetic,
+   * produced by the FurnishedFloorPlanGenerator (design-be-14). Requires
+   * both floorPlanImageId AND at least one approved moodboard before the
+   * generator will run. Resolve via loadProjectFurnishedFloorPlan().
+   */
+  floorPlanFurnishedImageId?: string | null;
 }
 
 export interface DesignLead {

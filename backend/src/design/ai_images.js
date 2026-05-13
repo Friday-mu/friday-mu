@@ -23,13 +23,17 @@ const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { DEFAULT_TENANT_ID, shapeAsset } = require('./adapters');
 const { generateImage } = require('../ai/imagegen');
-const { buildMoodboardPrompt } = require('../ai/promptbuilder');
+const { buildMoodboardPrompt, buildFurnishingPrompt } = require('../ai/promptbuilder');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
 
 const ALLOWED_KINDS = new Set(['moodboard', 'pack']);
-const KIND_PREFIX_RE = /^\[kind:([a-z]+)\]\s+/;
+// Generic kind matcher — accepts snake_case markers (floor_plan,
+// floor_plan_furnished) as well as single-word kinds. The ALLOWED_KINDS
+// gate above only constrains the body of POST /generate; the regex is
+// used purely to strip / surface the marker on read.
+const KIND_PREFIX_RE = /^\[kind:([a-z_]+)\]\s+/;
 
 // design-be-7: per-photo size cap when fetching reference images for
 // inline-conditioning. Larger files blow the Gemini request body and
@@ -59,6 +63,19 @@ const ALLOWED_FLOOR_PLAN_MIME = new Set(['image/png', 'image/jpeg', 'image/webp'
 // pre-decode ceiling is ~6.67MB of b64 text — we recompute the raw size
 // via floor(b64.length * 0.75) to reject before buffer allocation.
 const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
+
+// design-be-14: cap the total generator_prompt length so a verbose Kimi
+// response + a long user hint don't blow Nanobanana's request body or
+// our log size. 4000 chars is comfortably under any model's prompt
+// budget and still long enough for a richly-detailed furnishing
+// instruction.
+const MAX_PROMPT_CHARS = 4000;
+
+function trimPromptToCap(prompt) {
+  if (typeof prompt !== 'string') return '';
+  if (prompt.length <= MAX_PROMPT_CHARS) return prompt;
+  return prompt.slice(0, MAX_PROMPT_CHARS - 1).trimEnd() + '…';
+}
 
 // Fixed system directive prepended to the user's optional hint. Phrasing
 // is locked to what reliably gets Nanobanana to produce a CAD-style
@@ -625,6 +642,381 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
     return res.status(201).json(shaped);
   } catch (e) {
     console.error('[design/ai_images] generate-floor-plan error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ────────────────── POST /generate-furnished-floor-plan ──────────────────
+//
+// design-be-14: second-stage floor-plan pass. Takes the project's clean
+// architectural floor plan (from migration 010 / 011) + the latest
+// approved moodboard image and asks Nanobanana to overlay furniture &
+// fixtures onto the plan in the moodboard's aesthetic. Unlike
+// /generate-floor-plan, the source images are resolved server-side from
+// asset rows — the caller doesn't upload anything; the URL plumbing is
+// internal.
+//
+// Body:
+//   project_id                 — required.
+//   source_floor_plan_sha256?  — override; defaults to project's
+//                                 floor_plan_image_id pin.
+//   moodboard_id?              — override; defaults to the LATEST
+//                                 APPROVED moodboard for the project.
+//   prompt_hint?               — free-text guidance appended to the
+//                                 synthesised prompt.
+//   set_as_project_plan?       — if true, UPDATE
+//                                 design_projects.floor_plan_furnished_image_id.
+//
+// Response: 201 with the asset row shape + { project_updated,
+//   source_floor_plan_sha256, source_moodboard_id, used_prompt,
+//   prompt_source, prompt_style_notes, suggested_aspect_ratio,
+//   stub, cached, duration_ms }.
+
+// Per-MIME whitelist used when fetching the two inline images by URL.
+// Keep narrower than ALLOWED_FLOOR_PLAN_MIME (no PDFs here — the cleaned
+// plan stored by /generate-floor-plan is always raster output from
+// Nanobanana, and moodboard inspiration images are always raster).
+const ALLOWED_FURNISHING_FETCH_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+// Fetch a remote image and return { mimeType, base64 } suitable for
+// imagegen's inlineImages list. Returns null on any failure path; the
+// caller decides whether that's fatal (floor plan + moodboard MUST
+// both load) or merely degraded (e.g. a third optional reference photo).
+async function fetchInlineImage(url, label) {
+  try {
+    const r = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 10_000,
+      maxContentLength: MAX_INLINE_IMAGE_BYTES,
+    });
+    const contentType = String(r.headers['content-type'] || '').toLowerCase().split(';')[0];
+    if (!ALLOWED_FURNISHING_FETCH_MIME.has(contentType)) {
+      console.warn(`[design/ai_images] ${label} unsupported content-type: ${contentType}`);
+      return { error: `${label} returned unsupported content-type ${contentType}` };
+    }
+    const buf = Buffer.from(r.data);
+    if (buf.length > MAX_INLINE_IMAGE_BYTES) {
+      return { error: `${label} exceeds inline size cap (${buf.length} > ${MAX_INLINE_IMAGE_BYTES})` };
+    }
+    return { mimeType: contentType, base64: buf.toString('base64') };
+  } catch (e) {
+    return { error: `${label} fetch failed: ${e.message}` };
+  }
+}
+
+router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const {
+      project_id: projectId,
+      source_floor_plan_sha256: bodyFloorPlanSha,
+      moodboard_id: bodyMoodboardId,
+      prompt_hint: promptHint,
+      set_as_project_plan: setAsProjectPlan,
+    } = body;
+    if (!projectId) return res.status(400).json({ error: 'project_id is required' });
+
+    // ── load project (ownership + furnished pin source) ──
+    const projectRes = await query(
+      `SELECT * FROM design_projects WHERE tenant_id = $1 AND id = $2`,
+      [DEFAULT_TENANT_ID, projectId],
+    );
+    if (projectRes.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
+    const project = projectRes.rows[0];
+
+    // ── resolve floor plan sha256 ──
+    const floorPlanSha = (typeof bodyFloorPlanSha === 'string' && bodyFloorPlanSha.trim())
+      ? bodyFloorPlanSha.trim()
+      : project.floor_plan_image_id;
+    if (!floorPlanSha) {
+      return res.status(400).json({
+        error: 'No floor plan available — provide source_floor_plan_sha256 or pin one via /generate-floor-plan?set_as_project_plan=true first',
+      });
+    }
+    const floorPlanAssetRes = await query(
+      `SELECT * FROM design_assets WHERE tenant_id = $1 AND sha256 = $2`,
+      [DEFAULT_TENANT_ID, floorPlanSha],
+    );
+    if (floorPlanAssetRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Source floor plan asset not found (orphan FK?)' });
+    }
+    const floorPlanAsset = floorPlanAssetRes.rows[0];
+    if (!floorPlanAsset.storage_url) {
+      return res.status(502).json({ error: 'Source floor plan asset has no storage_url' });
+    }
+
+    // ── resolve moodboard ──
+    let moodboardRow;
+    if (typeof bodyMoodboardId === 'string' && bodyMoodboardId.trim()) {
+      const mbRes = await query(
+        `SELECT m.* FROM design_moodboards m
+           JOIN design_projects p ON p.id = m.project_id
+          WHERE p.tenant_id = $1 AND m.id = $2 AND m.project_id = $3`,
+        [DEFAULT_TENANT_ID, bodyMoodboardId.trim(), projectId],
+      );
+      if (mbRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Specified moodboard not found for this project' });
+      }
+      moodboardRow = mbRes.rows[0];
+      if (moodboardRow.status !== 'approved') {
+        return res.status(400).json({ error: `Moodboard ${moodboardRow.id} is not approved (status=${moodboardRow.status})` });
+      }
+    } else {
+      const mbRes = await query(
+        `SELECT * FROM design_moodboards
+          WHERE project_id = $1 AND status = 'approved'
+          ORDER BY approved_at DESC, version_number DESC
+          LIMIT 1`,
+        [projectId],
+      );
+      if (mbRes.rows.length === 0) {
+        return res.status(400).json({ error: 'No approved moodboard for this project — approve one before generating a furnished floor plan' });
+      }
+      moodboardRow = mbRes.rows[0];
+    }
+
+    // ── pick the moodboard's reference image URL: first non-empty
+    // link.url. Captions are pulled out for prompt context. ──
+    const moodboardLinks = Array.isArray(moodboardRow.links) ? moodboardRow.links : [];
+    const moodboardFirstLink = moodboardLinks.find((l) => l && typeof l.url === 'string' && l.url.trim().length > 0);
+    if (!moodboardFirstLink) {
+      return res.status(400).json({ error: 'Approved moodboard has no image links' });
+    }
+    const moodboardCaptions = moodboardLinks
+      .map((l) => (l && typeof l.caption === 'string' ? l.caption.trim() : ''))
+      .filter((c) => c.length > 0)
+      .slice(0, 12);
+
+    // ── fetch both inline images ──
+    const [floorPlanFetch, moodboardFetch] = await Promise.all([
+      fetchInlineImage(floorPlanAsset.storage_url, 'floor plan'),
+      fetchInlineImage(moodboardFirstLink.url, 'moodboard reference'),
+    ]);
+    if (floorPlanFetch.error) {
+      return res.status(502).json({ error: floorPlanFetch.error });
+    }
+    if (moodboardFetch.error) {
+      return res.status(502).json({ error: moodboardFetch.error });
+    }
+
+    // ── load preferences for project context (Kimi reads these) ──
+    let preferences = {};
+    try {
+      const prefRes = await query(
+        `SELECT preferences FROM design_preferences WHERE project_id = $1`,
+        [projectId],
+      );
+      preferences = prefRes.rows[0]?.preferences || {};
+    } catch (e) {
+      console.warn('[design/ai_images] preferences fetch skipped:', e.message);
+    }
+
+    let property = null;
+    if (project.property_id) {
+      const propRes = await query(
+        `SELECT * FROM design_properties WHERE tenant_id = $1 AND id = $2`,
+        [DEFAULT_TENANT_ID, project.property_id],
+      );
+      property = propRes.rows[0] || null;
+    }
+
+    const projectContext = {
+      project: {
+        id: project.id,
+        name: project.name,
+        classification: project.classification,
+        tier: project.tier,
+        goals: project.goals || [],
+        outcomes: project.outcomes || [],
+      },
+      property: property
+        ? {
+            name: property.name,
+            city: property.city,
+            state: property.state,
+            sqft: property.sqft,
+            construction_type: property.construction_type,
+            year_built: property.year_built,
+            notes: property.notes,
+          }
+        : null,
+      preferences,
+      goals: project.goals || [],
+      outcomes: project.outcomes || [],
+      classification: project.classification,
+      tier: project.tier,
+    };
+
+    const moodboardContext = {
+      id: moodboardRow.id,
+      name: moodboardRow.name,
+      version_number: moodboardRow.version_number,
+      approvedAt: moodboardRow.approved_at,
+      captions: moodboardCaptions,
+      linkCount: moodboardLinks.length,
+    };
+
+    // ── synthesize prompt ──
+    let synth;
+    try {
+      synth = await buildFurnishingPrompt({ projectContext, moodboardContext });
+    } catch (e) {
+      console.error('[design/ai_images] furnishing prompt synthesis failed:', e.message);
+      return res.status(502).json({ error: `Prompt synthesis failed: ${e.message}` });
+    }
+    const hintTrimmed = typeof promptHint === 'string' ? promptHint.trim() : '';
+    let usedPrompt = hintTrimmed ? `${synth.prompt} ${hintTrimmed}` : synth.prompt;
+    usedPrompt = trimPromptToCap(usedPrompt);
+    const promptSource = synth.source;
+    const styleNotes = synth.styleNotes || [];
+    const suggestedAspectRatio = synth.suggestedAspectRatio || null;
+    const sizeHint = ASPECT_TO_SIZE[suggestedAspectRatio] || undefined;
+
+    // ── generate ──
+    let result;
+    try {
+      result = await generateImage({
+        prompt: usedPrompt,
+        size: sizeHint,
+        inlineImages: [
+          { mimeType: floorPlanFetch.mimeType, base64: floorPlanFetch.base64 },
+          { mimeType: moodboardFetch.mimeType, base64: moodboardFetch.base64 },
+        ],
+      });
+    } catch (e) {
+      console.error('[design/ai_images] furnished-floor-plan generation error:', e.message);
+      return res.status(502).json({ error: `Image generation failed: ${e.message}` });
+    }
+
+    const storedPrompt = trimPromptToCap(`[kind:floor_plan_furnished] ${result.generatorPrompt}`);
+
+    // ── persist (forward-compat retry on missing prompt_context column) ──
+    const contextBlob = {
+      ...projectContext,
+      moodboard: moodboardContext,
+      sourceFloorPlanSha256: floorPlanSha,
+      sourceMoodboardId: moodboardRow.id,
+      promptSource,
+      styleNotes,
+      suggestedAspectRatio,
+      promptHintApplied: hintTrimmed.length > 0,
+    };
+    let row;
+    try {
+      const insert = await query(
+        `INSERT INTO design_assets
+           (sha256, tenant_id, mime_type, byte_size, storage_url, source,
+            generator_prompt, prompt_context, created_by_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (sha256) DO NOTHING
+         RETURNING *`,
+        [
+          result.sha256,
+          DEFAULT_TENANT_ID,
+          result.mimeType || 'image/png',
+          result.byteSize || null,
+          result.imageUrl,
+          'nanobanana',
+          storedPrompt,
+          contextBlob,
+          req.identity.userId,
+        ],
+      );
+      row = insert.rows[0];
+      if (!row) {
+        const existing = await query(
+          `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
+          [result.sha256, DEFAULT_TENANT_ID],
+        );
+        row = existing.rows[0];
+      }
+    } catch (e) {
+      // Migration 008 (prompt_context) may not have run yet.
+      if (e.code === '42703') {
+        console.warn('[design/ai_images] prompt_context column missing — retrying without it (run migration 008)');
+        const insert = await query(
+          `INSERT INTO design_assets
+             (sha256, tenant_id, mime_type, byte_size, storage_url, source,
+              generator_prompt, created_by_user_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (sha256) DO NOTHING
+           RETURNING *`,
+          [
+            result.sha256,
+            DEFAULT_TENANT_ID,
+            result.mimeType || 'image/png',
+            result.byteSize || null,
+            result.imageUrl,
+            'nanobanana',
+            storedPrompt,
+            req.identity.userId,
+          ],
+        );
+        row = insert.rows[0];
+        if (!row) {
+          const existing = await query(
+            `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
+            [result.sha256, DEFAULT_TENANT_ID],
+          );
+          row = existing.rows[0];
+        }
+      } else {
+        throw e;
+      }
+    }
+    if (!row) {
+      return res.status(500).json({ error: 'Asset row missing after insert' });
+    }
+
+    // ── optionally pin on the project ──
+    let projectUpdated = false;
+    if (setAsProjectPlan === true) {
+      const upd = await query(
+        `UPDATE design_projects
+           SET floor_plan_furnished_image_id = $3, updated_at = NOW()
+         WHERE tenant_id = $1 AND id = $2
+         RETURNING id`,
+        [DEFAULT_TENANT_ID, projectId, result.sha256],
+      );
+      projectUpdated = upd.rows.length > 0;
+    }
+
+    try {
+      await appendActivity({
+        projectId,
+        actorUserId: req.identity.userId,
+        actorName: req.identity.displayName || req.identity.username,
+        action: 'project.floor_plan_furnished.generated',
+        payload: {
+          asset_sha256: result.sha256,
+          source_floor_plan_sha256: floorPlanSha,
+          source_moodboard_id: moodboardRow.id,
+          source_moodboard_version: moodboardRow.version_number,
+          prompt_source: promptSource,
+          set_as_project_plan: projectUpdated,
+          stub: result.stub === true,
+          cached: result.cached === true,
+        },
+        visibility: 'internal',
+      });
+    } catch (e) {
+      console.warn('[design/ai_images] activity log failed:', e.message);
+    }
+
+    const shaped = shapeAiAsset(row);
+    shaped.stub = result.stub === true;
+    shaped.duration_ms = result.durationMs ?? null;
+    shaped.cached = result.cached === true;
+    shaped.project_updated = projectUpdated;
+    shaped.source_floor_plan_sha256 = floorPlanSha;
+    shaped.source_moodboard_id = moodboardRow.id;
+    shaped.used_prompt = usedPrompt;
+    shaped.prompt_source = promptSource;
+    shaped.prompt_style_notes = styleNotes;
+    shaped.suggested_aspect_ratio = suggestedAspectRatio;
+    return res.status(201).json(shaped);
+  } catch (e) {
+    console.error('[design/ai_images] generate-furnished-floor-plan error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
