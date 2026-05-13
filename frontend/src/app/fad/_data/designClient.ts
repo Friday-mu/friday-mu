@@ -731,6 +731,24 @@ export const listRooms = (propertyId: string) =>
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
 
+// ─────────────────────────── Preferences ───────────────────────────
+// Single row per project, stored as opaque JSONB on the backend. The
+// frontend PreferenceProfile shape is preserved inside `preferences`.
+// GET / PUT only (no POST/DELETE) — server upserts on PUT.
+export interface ApiPreferences {
+  project_id: string;
+  preferences: Record<string, unknown>;
+  notes: string | null;
+  updated_at: string | null;
+}
+export const loadPreferences = (projectId: string) =>
+  apiFetch(`/api/design/preferences/${encodeURIComponent(projectId)}`) as Promise<ApiPreferences>;
+export const savePreferences = (projectId: string, preferences: Record<string, unknown>, notes: string | null = null) =>
+  apiFetch(`/api/design/preferences/${encodeURIComponent(projectId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ preferences, notes }),
+  }) as Promise<ApiPreferences>;
+
 export const createCounterparty = (payload: Partial<ApiCounterparty> & { name: string }) =>
   apiFetch('/api/design/counterparties', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiCounterparty>;
 export const updateCounterparty = (id: string, patch: Partial<ApiCounterparty>) =>

@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   designClient,
   type BudgetAttitude,
   type DesignProject,
   type PreferenceProfile,
 } from '../../../../_data/design';
+import { loadPreferences, savePreferences } from '../../../../_data/designClient';
+import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
 interface Props {
@@ -49,12 +51,52 @@ const EMPTY_PREFS = (projectId: string): PreferenceProfile => ({
 export function PreferencesStage({ project }: Props) {
   const initial = designClient.preferences.get(project.id);
   const [prefs, setPrefs] = useState<PreferenceProfile>(initial ?? EMPTY_PREFS(project.id));
+  const [saving, setSaving] = useState(false);
+
+  // Fetch fresh preferences from the API on mount + when project changes.
+  // The fixture lookup above seeds the form so it renders immediately;
+  // this effect overwrites with whatever the backend has (returns {} if
+  // never saved, in which case we keep the EMPTY_PREFS scaffold).
+  useEffect(() => {
+    let cancelled = false;
+    loadPreferences(project.id)
+      .then((res) => {
+        if (cancelled) return;
+        const stored = res.preferences as Partial<PreferenceProfile> | null;
+        if (stored && Object.keys(stored).length > 0) {
+          setPrefs((cur) => ({ ...EMPTY_PREFS(project.id), ...cur, ...stored, projectId: project.id }));
+        }
+      })
+      .catch(() => {
+        // Silent on initial-load failure — user can still edit + Save.
+      });
+    return () => { cancelled = true; };
+  }, [project.id]);
+
   const update = <K extends keyof PreferenceProfile>(k: K, v: PreferenceProfile[K]) => setPrefs((p) => ({ ...p, [k]: v }));
   const toggleArr = (k: keyof PreferenceProfile, v: string) =>
     setPrefs((p) => {
       const arr = (p[k] as string[]) ?? [];
       return { ...p, [k]: arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v] };
     });
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const next: PreferenceProfile = { ...prefs, updatedAt: new Date().toISOString() };
+      const res = await savePreferences(project.id, next as unknown as Record<string, unknown>);
+      const stored = res.preferences as Partial<PreferenceProfile> | null;
+      if (stored) {
+        setPrefs((cur) => ({ ...EMPTY_PREFS(project.id), ...cur, ...stored, projectId: project.id }));
+      }
+      fireToast('Preferences saved.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Save failed: ${msg}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -216,8 +258,22 @@ export function PreferencesStage({ project }: Props) {
         >
           {prefs.status === 'complete' ? 'Mark draft' : 'Mark complete'}
         </button>
-        <button type="button" style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-brand-accent)', color: '#fff', fontSize: 13, fontWeight: 500 }}>
-          Save
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          data-preferences-save
+          style={{
+            padding: '8px 16px',
+            borderRadius: 'var(--radius-sm)',
+            background: saving ? 'var(--color-border-secondary)' : 'var(--color-brand-accent)',
+            color: '#fff',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>
