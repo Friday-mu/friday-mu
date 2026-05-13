@@ -6,7 +6,7 @@
 // BugReport for backwards-compat with the existing FadApp import; the
 // public surface is broader now.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
 
@@ -16,22 +16,67 @@ interface Props {
   currentModuleLabel?: string;
 }
 
+// Capture the underlying page BEFORE the modal mounts. Doing it inside
+// the modal's useEffect meant html2canvas saw the modal overlay over
+// the content — every screenshot was a giant dimmed rectangle with
+// the bug form on top. By moving capture into the FAB onClick, the
+// modal opens with a screenshot of the *previous* viewport state.
+//
+// `.bug-fab` is excluded via ignoreElements so the FAB itself doesn't
+// show in the bottom-right corner of the capture.
+async function captureViewport(): Promise<string | null> {
+  try {
+    const html2canvas = (await import('html2canvas')).default;
+    const el = document.querySelector('.fad-app') as HTMLElement | null;
+    if (!el) return null;
+    const canvas = await html2canvas(el, {
+      backgroundColor: null,
+      scale: 0.5,
+      logging: false,
+      useCORS: true,
+      ignoreElements: (node) => node.classList?.contains('bug-fab') ?? false,
+    });
+    return canvas.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return null;
+  }
+}
+
 export function BugReportFab({ currentModuleLabel }: Props) {
   const [open, setOpen] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+
+  const handleClick = async () => {
+    if (capturing || open) return;
+    setCapturing(true);
+    const shot = await captureViewport();
+    setScreenshot(shot);
+    setCapturing(false);
+    setOpen(true);
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+    setScreenshot(null);
+  };
+
   return (
     <>
       <button
-        className="bug-fab"
-        title="Send feedback — bug · feature · suggestion"
-        onClick={() => setOpen(true)}
+        className={'bug-fab' + (capturing ? ' is-capturing' : '')}
+        title={capturing ? 'Capturing…' : 'Send feedback — bug · feature · suggestion'}
+        onClick={handleClick}
         aria-label="Send feedback"
+        disabled={capturing}
       >
         <IconTool size={18} />
       </button>
       {open && (
         <BugReportModal
           currentModuleLabel={currentModuleLabel}
-          onClose={() => setOpen(false)}
+          initialScreenshot={screenshot}
+          onClose={handleClose}
         />
       )}
     </>
@@ -91,14 +136,18 @@ const TYPE_META: Record<FeedbackType, {
 
 function BugReportModal({
   currentModuleLabel,
+  initialScreenshot,
   onClose,
 }: {
   currentModuleLabel?: string;
+  initialScreenshot: string | null;
   onClose: () => void;
 }) {
   const [type, setType] = useState<FeedbackType>('bug');
-  const [screenshot, setScreenshot] = useState<string | null>(null);
-  const [capturing, setCapturing] = useState(true);
+  // Screenshot is captured upstream in BugReportFab before this modal
+  // mounts (so the modal itself isn't in the capture). The modal just
+  // displays it.
+  const screenshot = initialScreenshot;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [rephrasing, setRephrasing] = useState(false);
@@ -106,35 +155,6 @@ function BugReportModal({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const html2canvas = (await import('html2canvas')).default;
-        const el = document.querySelector('.fad-app') as HTMLElement | null;
-        if (!el) {
-          setCapturing(false);
-          return;
-        }
-        const canvas = await html2canvas(el, {
-          backgroundColor: null,
-          scale: 0.5,
-          logging: false,
-          useCORS: true,
-        });
-        if (!cancelled) {
-          setScreenshot(canvas.toDataURL('image/jpeg', 0.7));
-          setCapturing(false);
-        }
-      } catch {
-        if (!cancelled) setCapturing(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const rephrase = () => {
     if (!description.trim()) return;
@@ -248,20 +268,7 @@ function BugReportModal({
           </div>
 
           <div className="bug-screenshot-frame">
-            {capturing && (
-              <div
-                style={{
-                  height: 200,
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontSize: 12,
-                  color: 'var(--color-text-tertiary)',
-                }}
-              >
-                Capturing screenshot…
-              </div>
-            )}
-            {!capturing && !screenshot && (
+            {!screenshot && (
               <div
                 style={{
                   height: 200,
