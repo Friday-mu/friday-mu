@@ -33,6 +33,8 @@ interface Props {
   onLifecycleChange?: () => void;
   /** design-be-10: opens the edit drawer. Director-only — parent gates the prop. */
   onEditProject?: () => void;
+  /** design-be-17: opens the share-with-owner drawer (mint/list/revoke owner-portal magic links). Staff-only — parent gates the prop. */
+  onOpenShareDrawer?: () => void;
 }
 
 const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warning' | 'danger' | 'neutral' | 'accent' }) => {
@@ -56,7 +58,7 @@ const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warn
   );
 };
 
-export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange, onEditProject }: Props) {
+export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange, onEditProject, onOpenShareDrawer }: Props) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
 
@@ -189,6 +191,25 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
             }}
           >
             Open owner portal preview
+          </button>
+        )}
+        {onOpenShareDrawer && (
+          <button
+            type="button"
+            onClick={onOpenShareDrawer}
+            data-share-owner-button
+            title="Mint, deliver, or revoke owner-portal magic links"
+            style={{
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-brand-accent)',
+              background: 'var(--color-brand-accent-soft)',
+              color: 'var(--color-brand-accent)',
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            🔗 Share with owner
           </button>
         )}
         <PrintPreviewMenu project={project} />
