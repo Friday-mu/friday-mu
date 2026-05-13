@@ -15,12 +15,15 @@ const io = socketIo(server, {
   }
 });
 
-// Rate limiting. Production caps at 100 req / 15min per IP. Dev disables
-// the limiter entirely — HMR + StrictMode + Guesty polling burns through
-// the budget in seconds and there's no value to throttling local traffic.
+// Rate limiting. Production caps at 2000 req / 15min per IP by default
+// (override via RATE_LIMIT_MAX). The previous 100/15min was too tight —
+// real dashboard usage easily hits 30+ API calls per project edit (load,
+// hydrate, refetch on save), so 100 capped after 3-4 normal interactions.
+// Dev disables the limiter entirely — HMR + StrictMode + Guesty polling
+// burns through any sensible budget in seconds.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: Number(process.env.RATE_LIMIT_MAX) || 2000,
   skip: () => process.env.NODE_ENV !== 'production',
 });
 
