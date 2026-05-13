@@ -21,6 +21,7 @@ const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { DEFAULT_TENANT_ID } = require('./adapters');
+const { suggestMatches } = require('./match_scoring');
 
 const PARSE_STATUSES = new Set(['pending', 'parsed', 'failed']);
 const BANK_CODES = new Set(['mcb', 'maubank']);
@@ -81,117 +82,6 @@ function shapeMatch(row) {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
-}
-
-// ─────────────────────────── suggestMatches ───────────────────────────
-
-/**
- * Score every debit transaction against every still-unmatched budget item
- * that has actual_paid_minor set, and emit at most one suggested match
- * per transaction (highest-scoring item). Pure function — no DB I/O.
- *
- * Scoring weights (locked decisions): amount 50% / date 30% / descriptor 20%.
- * Threshold: 0.6.
- *
- * Inputs:
- *   transactions: [{ id, posted_date, amount_minor, descriptor, ... }]
- *   budgetItems:  [{ id, actual_paid_minor, description, vendor_name?, due_date? }]
- *   alreadyMatchedItemIds: Set<string>   — items with an existing active match
- *   alreadyMatchedTxnIds:  Set<string>   — txns with an existing active match
- *
- * Output:
- *   [{ transaction_id, budget_item_id, confidence, match_reason }]
- */
-function suggestMatches(transactions, budgetItems, alreadyMatchedItemIds = new Set(), alreadyMatchedTxnIds = new Set()) {
-  const suggestions = [];
-  const eligibleItems = budgetItems.filter(
-    (b) => typeof b.actual_paid_minor === 'number'
-      && b.actual_paid_minor !== 0
-      && !alreadyMatchedItemIds.has(b.id),
-  );
-
-  // Mutable copy so we don't suggest the same item twice across txns.
-  const usedItems = new Set();
-
-  for (const txn of transactions) {
-    if (alreadyMatchedTxnIds.has(txn.id)) continue;
-    // Only debits — money out — are eligible to match a project expense.
-    // Credits stay unmatched (refunds, owner deposits, transfers).
-    if (typeof txn.amount_minor !== 'number' || txn.amount_minor >= 0) continue;
-
-    let best = null;
-    for (const item of eligibleItems) {
-      if (usedItems.has(item.id)) continue;
-
-      const txnAmount = Math.abs(txn.amount_minor);
-      const itemAmount = Math.abs(item.actual_paid_minor);
-      const amountDelta = itemAmount === 0 ? 1 : Math.abs(txnAmount - itemAmount) / itemAmount;
-      const amountMatch = amountDelta < 0.02 ? 1.0 : 0.0;
-
-      const dateProximity = computeDateProximity(txn.posted_date, item.due_date);
-      const descriptorFuzzy = computeDescriptorFuzzy(txn.descriptor, item);
-
-      const score = amountMatch * 0.5 + dateProximity * 0.3 + descriptorFuzzy * 0.2;
-
-      if (score >= 0.6 && (!best || score > best.score)) {
-        best = {
-          item,
-          score,
-          reason: buildMatchReason(amountMatch, dateProximity, descriptorFuzzy),
-        };
-      }
-    }
-
-    if (best) {
-      usedItems.add(best.item.id);
-      suggestions.push({
-        transaction_id: txn.id,
-        budget_item_id: best.item.id,
-        confidence: Number(best.score.toFixed(2)),
-        match_reason: best.reason,
-      });
-    }
-  }
-
-  return suggestions;
-}
-
-function computeDateProximity(txnDate, itemDate) {
-  if (!txnDate || !itemDate) return 0;
-  const a = new Date(txnDate).getTime();
-  const b = new Date(itemDate).getTime();
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
-  const diffDays = Math.abs(a - b) / (1000 * 60 * 60 * 24);
-  if (diffDays <= 3) return 1.0;
-  if (diffDays <= 7) return 0.5;
-  return 0;
-}
-
-function computeDescriptorFuzzy(descriptor, item) {
-  if (!descriptor) return 0;
-  const haystack = String(descriptor).toLowerCase();
-  // Try vendor_name first (joined), then fall back to the item description.
-  const candidates = [];
-  if (item.vendor_name) candidates.push(String(item.vendor_name).toLowerCase());
-  if (item.description) candidates.push(String(item.description).toLowerCase());
-  for (const needle of candidates) {
-    if (!needle || needle.length < 3) continue;
-    if (haystack.includes(needle)) return 1.0;
-    // Try first significant word (split on whitespace, take first 5+ chars).
-    const firstWord = needle.split(/\s+/).find((w) => w.length >= 4);
-    if (firstWord && haystack.includes(firstWord)) return 0.5;
-  }
-  return 0;
-}
-
-function buildMatchReason(amountMatch, dateProximity, descriptorFuzzy) {
-  const parts = [];
-  if (amountMatch >= 1) parts.push('amount');
-  if (dateProximity >= 1) parts.push('date (≤3d)');
-  else if (dateProximity >= 0.5) parts.push('date (≤7d)');
-  if (descriptorFuzzy >= 1) parts.push('descriptor');
-  else if (descriptorFuzzy >= 0.5) parts.push('descriptor (partial)');
-  return parts.length > 0 ? `${parts.join(' + ')} match` : 'low-confidence match';
 }
 
 // ─────────────────────────── Project-scoped router ───────────────────────────
