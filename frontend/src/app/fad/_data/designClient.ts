@@ -1951,6 +1951,18 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   // project fresh so we always have the live propertyId.
   const projectApi = await loadProject(projectId).catch(() => null);
   const propertyId = projectApi?.property_id ?? null;
+  // Splice the refetched project row into FIXTURE_PROJECTS so every
+  // surface that reads from designClient.projects (Summary, Annex B
+  // auto-fill, Overview list, Stage tracker, etc.) sees the latest
+  // server state when refetch() fires. Previously this loader pulled
+  // the row only for propertyId and threw the rest away, so the
+  // project list could stay stale even after an explicit refetch.
+  if (projectApi) {
+    const fxProject = apiProjectToFixture(projectApi);
+    const idx = FIXTURE_PROJECTS.findIndex((p) => p.id === projectId);
+    if (idx >= 0) FIXTURE_PROJECTS.splice(idx, 1, fxProject);
+    else FIXTURE_PROJECTS.push(fxProject);
+  }
 
   const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits, roughBudgetVersions, photos] = await Promise.all([
     loadMoodboards(projectId).catch(() => []),

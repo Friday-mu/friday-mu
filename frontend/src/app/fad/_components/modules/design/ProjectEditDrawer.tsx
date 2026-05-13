@@ -28,7 +28,9 @@ import {
   type ProjectGoal,
   type TargetOutcome,
 } from '../../../_data/design';
-import { updateProject, type ApiProject } from '../../../_data/designClient';
+import { PROJECTS as FIXTURE_PROJECTS } from '../../../_data/design';
+import { updateProject, loadProject, apiProjectToFixture, type ApiProject } from '../../../_data/designClient';
+import { bumpFixtureRev } from '../../../_data/fixtureRev';
 import { fireToast } from '../../Toaster';
 
 interface Props {
@@ -214,6 +216,22 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
     setSaving(true);
     try {
       await updateProject(project.id, patch);
+      // Refetch + splice the project row into FIXTURE_PROJECTS so the
+      // Design Overview list, Summary panel, Annex B auto-fill, and
+      // every other surface reading from designClient.projects sees
+      // the new values on the next fixtureRev bump. Without this,
+      // edits to engagement_scope / fees / dates were only visible
+      // after a full page reload.
+      try {
+        const refreshedApi = await loadProject(project.id);
+        const refreshed = apiProjectToFixture(refreshedApi);
+        const idx = FIXTURE_PROJECTS.findIndex((p) => p.id === project.id);
+        if (idx >= 0) FIXTURE_PROJECTS.splice(idx, 1, refreshed);
+        else FIXTURE_PROJECTS.push(refreshed);
+        bumpFixtureRev();
+      } catch {
+        /* refetch failure is tolerable — onSaved → refetch hook may also catch up */
+      }
       fireToast(`Project "${patch.name}" updated.`);
       onSaved();
       onClose();

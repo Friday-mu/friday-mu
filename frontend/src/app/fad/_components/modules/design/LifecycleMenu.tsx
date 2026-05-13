@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { designClient, type DesignProject } from '../../../_data/design';
+import { bumpFixtureRev } from '../../../_data/fixtureRev';
 import { fireToast } from '../../Toaster';
 import { useCurrentRole } from '../../usePermissions';
 
@@ -124,6 +125,11 @@ export function LifecycleMenu({ project, onChange }: Props) {
                 onClick={() => {
                   if (!isDirector) return;
                   designClient.projects.resume(project.id, { byUserId: 'u-ishant' });
+                  // Fan out: Design Overview list, sidebar counts, and
+                  // any other surface reading from FIXTURE_PROJECTS
+                  // re-renders on the next bump. Without this, only
+                  // the local project shell sees the new state.
+                  bumpFixtureRev();
                   fireToast('Project resumed');
                   setOpen(false);
                   onChange();
@@ -156,6 +162,7 @@ export function LifecycleMenu({ project, onChange }: Props) {
           onCancel={() => setModal(null)}
           onConfirm={(reason) => {
             designClient.projects.pause(project.id, { reason: reason || null, byUserId: 'u-ishant' });
+            bumpFixtureRev();
             fireToast('Project paused');
             setModal(null);
             onChange();
@@ -172,6 +179,7 @@ export function LifecycleMenu({ project, onChange }: Props) {
               transferToInventory,
               retainFee,
             });
+            bumpFixtureRev();
             fireToast('Project cancelled');
             setModal(null);
             onChange();

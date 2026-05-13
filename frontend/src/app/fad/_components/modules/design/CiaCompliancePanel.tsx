@@ -17,8 +17,8 @@
 //     transition for the audit trail.
 
 import { useEffect, useState } from 'react';
-import { designClient, type DesignProject } from '../../../_data/design';
-import { updateProject, type ApiProject } from '../../../_data/designClient';
+import { designClient, PROJECTS as FIXTURE_PROJECTS, type DesignProject } from '../../../_data/design';
+import { updateProject, loadProject, apiProjectToFixture, type ApiProject } from '../../../_data/designClient';
 import { bumpFixtureRev } from '../../../_data/fixtureRev';
 import { fireToast } from '../../Toaster';
 
@@ -118,13 +118,20 @@ export function CiaCompliancePanel({ project }: Props) {
         cia_registration_ref: refNum.trim() || null,
         cia_notes: stampedNotes,
       });
-      // Mutate fixture so other consumers see the new state without
-      // waiting for hydration.
-      const fxProject = designClient.projects.get(project.id);
-      if (fxProject) {
-        (fxProject as DesignProject & { ciaRegistrationStatus?: CiaStatus }).ciaRegistrationStatus = status;
-        (fxProject as DesignProject & { ciaRegistrationRef?: string | null }).ciaRegistrationRef = refNum.trim() || null;
-        (fxProject as DesignProject & { ciaNotes?: string | null }).ciaNotes = stampedNotes;
+      // Refetch + splice the project row into FIXTURE_PROJECTS so the
+      // Design Overview "Needs attention" dashboard, project list
+      // filters, and any other surface reading from designClient.projects
+      // refreshes on the next fixtureRev bump. Replaces the previous
+      // in-place fixture mutation which only worked for callers holding
+      // the same object reference.
+      try {
+        const refreshedApi = await loadProject(project.id);
+        const refreshed = apiProjectToFixture(refreshedApi);
+        const idx = FIXTURE_PROJECTS.findIndex((p) => p.id === project.id);
+        if (idx >= 0) FIXTURE_PROJECTS.splice(idx, 1, refreshed);
+        else FIXTURE_PROJECTS.push(refreshed);
+      } catch {
+        /* tolerate refetch failure — next hydration catches up */
       }
       setNotes(stampedNotes);
       bumpFixtureRev();
