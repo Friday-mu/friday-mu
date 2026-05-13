@@ -9,10 +9,11 @@
 //   - Billing info "Friday Internal · unmetered" (lines ~233-238) → GET /api/billing
 // Each block gets its own backend endpoint when wired.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useCurrentRole } from '../usePermissions';
 import { SavedRepliesImport } from './properties/SavedRepliesImport';
+import { apiFetch } from '../../../../components/types';
 
 interface Props {
   theme: 'light' | 'dark';
@@ -24,7 +25,7 @@ const SECTIONS = [
   { id: 'account', label: 'Account' },
   { id: 'team', label: 'Team' },
   { id: 'integrations', label: 'Integrations' },
-  { id: 'bugs', label: 'Bug reports' },
+  { id: 'feedback', label: 'Feedback inbox' },
   { id: 'billing', label: 'Billing' },
 ];
 
@@ -56,7 +57,7 @@ export function SettingsModule({ theme, onToggleTheme }: Props) {
             {section === 'account' && <Account />}
             {section === 'team' && <Team />}
             {section === 'integrations' && <Integrations />}
-            {section === 'bugs' && <BugReports />}
+            {section === 'feedback' && <FeedbackInbox />}
             {section === 'billing' && <Billing />}
           </div>
         </div>
@@ -206,28 +207,267 @@ function Integrations() {
   );
 }
 
-function BugReports() {
+// Feedback inbox — backed by the `feedback` table (migration 029).
+// Submissions land here from the global "Send feedback" FAB. Admins
+// triage by changing status + recording a resolution note.
+
+type FeedbackType = 'bug' | 'feature' | 'suggestion';
+type FeedbackStatus = 'new' | 'triaged' | 'in_progress' | 'resolved' | 'wontfix' | 'duplicate';
+
+interface FeedbackEntry {
+  id: string;
+  type: FeedbackType;
+  title: string | null;
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical' | null;
+  route_url: string | null;
+  module_label: string | null;
+  user_username: string | null;
+  user_display_name: string | null;
+  status: FeedbackStatus;
+  resolution_note: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const TYPE_LABEL: Record<FeedbackType, string> = { bug: 'Bug', feature: 'Feature', suggestion: 'Suggestion' };
+const STATUS_LABEL: Record<FeedbackStatus, string> = {
+  new: 'New',
+  triaged: 'Triaged',
+  in_progress: 'In progress',
+  resolved: 'Resolved',
+  wontfix: 'Won’t fix',
+  duplicate: 'Duplicate',
+};
+const STATUS_TONE: Record<FeedbackStatus, 'warn' | 'info' | ''> = {
+  new: 'warn',
+  triaged: 'warn',
+  in_progress: 'info',
+  resolved: 'info',
+  wontfix: '',
+  duplicate: '',
+};
+
+function FeedbackInbox() {
+  const [entries, setEntries] = useState<FeedbackEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<FeedbackType | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<FeedbackStatus | 'all'>('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const refetch = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const qs = new URLSearchParams();
+      if (typeFilter !== 'all') qs.set('type', typeFilter);
+      if (statusFilter !== 'all') qs.set('status', statusFilter);
+      const path = qs.toString() ? `/api/feedback?${qs}` : '/api/feedback';
+      const res = (await apiFetch(path)) as { results: FeedbackEntry[] };
+      setEntries(res.results);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, statusFilter]);
+
+  const selected = entries.find((e) => e.id === selectedId) || null;
+
+  const updateEntry = async (id: string, patch: { status?: FeedbackStatus; resolution_note?: string | null }) => {
+    try {
+      await apiFetch(`/api/feedback/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      await refetch();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
     <div className="card settings-section">
-      <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>Bug reports</h3>
+      <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>Feedback inbox</h3>
       <p style={{ margin: '0 0 16px', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
-        Admin-only view. Team-submitted bugs via the header ? menu land here.
+        Admin-only triage view. Bug reports, feature requests, and suggestions submitted via the global
+        ✦ Send feedback FAB land here. Filter, open one, then update status / add a resolution note.
       </p>
-      {[
-        { title: 'Calendar event popover clips off-screen on narrow viewports', reporter: 'Mathias', date: 'Apr 17', status: 'open' },
-        { title: 'Task drawer backdrop blocks sidebar clicks', reporter: 'Franny', date: 'Apr 14', status: 'open' },
-        { title: 'Dark mode toggle persists across reload — verified', reporter: 'Ishant', date: 'Apr 12', status: 'fixed' },
-      ].map((b, i) => (
-        <div key={i} className="settings-row">
-          <div>
-            <h5>{b.title}</h5>
-            <p>
-              {b.reporter} · {b.date}
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        {(['all', 'bug', 'feature', 'suggestion'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            className={'chip' + (typeFilter === t ? ' info' : '')}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setTypeFilter(t)}
+          >
+            {t === 'all' ? 'All types' : TYPE_LABEL[t]}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {(['all', 'new', 'triaged', 'in_progress', 'resolved', 'wontfix', 'duplicate'] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            className={'chip' + (statusFilter === s ? ' info' : '')}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setStatusFilter(s)}
+          >
+            {s === 'all' ? 'All statuses' : STATUS_LABEL[s]}
+          </button>
+        ))}
+      </div>
+
+      {loading && <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Loading…</div>}
+      {error && (
+        <div role="alert" style={{ padding: '8px 10px', borderRadius: 6, background: 'var(--color-bg-danger)', color: 'var(--color-text-danger)', fontSize: 12, marginBottom: 8 }}>
+          {error}
+        </div>
+      )}
+      {!loading && entries.length === 0 && !error && (
+        <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', padding: '24px 0', textAlign: 'center' }}>
+          No feedback yet matching this filter.
+        </div>
+      )}
+
+      {entries.map((e) => (
+        <div
+          key={e.id}
+          className="settings-row"
+          style={{ alignItems: 'flex-start', cursor: 'pointer' }}
+          onClick={() => setSelectedId(selectedId === e.id ? null : e.id)}
+        >
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
+              <span className="chip">{TYPE_LABEL[e.type]}</span>
+              {e.severity && <span className="chip warn">{e.severity}</span>}
+              <h5 style={{ margin: 0 }}>{e.title || e.description.slice(0, 80)}</h5>
+            </div>
+            <p style={{ margin: 0 }}>
+              {e.user_display_name || e.user_username || 'unknown'} · {new Date(e.created_at).toLocaleString()}
+              {e.module_label && <> · on <em>{e.module_label}</em></>}
+              {e.route_url && <> · <code style={{ fontSize: 10 }}>{e.route_url}</code></>}
             </p>
           </div>
-          <span className={'chip ' + (b.status === 'fixed' ? 'info' : 'warn')}>{b.status}</span>
+          <span className={'chip ' + STATUS_TONE[e.status]}>{STATUS_LABEL[e.status]}</span>
         </div>
       ))}
+
+      {selected && (
+        <FeedbackDetail
+          entry={selected}
+          onUpdate={(patch) => updateEntry(selected.id, patch)}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FeedbackDetail({
+  entry,
+  onUpdate,
+  onClose,
+}: {
+  entry: FeedbackEntry;
+  onUpdate: (patch: { status?: FeedbackStatus; resolution_note?: string | null }) => void;
+  onClose: () => void;
+}) {
+  const [status, setStatus] = useState<FeedbackStatus>(entry.status);
+  const [note, setNote] = useState(entry.resolution_note ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setStatus(entry.status);
+    setNote(entry.resolution_note ?? '');
+  }, [entry.id, entry.status, entry.resolution_note]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onUpdate({ status, resolution_note: note.trim() || null });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: 14,
+        border: '0.5px solid var(--color-border-secondary)',
+        borderRadius: 8,
+        background: 'var(--color-background-tertiary)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <strong style={{ fontSize: 14 }}>{entry.title || TYPE_LABEL[entry.type] + ' detail'}</strong>
+        <button type="button" className="fad-util-btn" onClick={onClose} aria-label="Collapse" style={{ fontSize: 11 }}>
+          Collapse
+        </button>
+      </div>
+      <p style={{ margin: '0 0 12px', whiteSpace: 'pre-wrap', fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.5 }}>
+        {entry.description}
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, fontSize: 12, marginBottom: 12 }}>
+        <Meta label="Reporter" value={entry.user_display_name || entry.user_username || '—'} />
+        <Meta label="Submitted" value={new Date(entry.created_at).toLocaleString()} />
+        <Meta label="Last update" value={new Date(entry.updated_at).toLocaleString()} />
+        <Meta label="Route" value={entry.route_url || '—'} mono />
+        <Meta label="Module" value={entry.module_label || '—'} />
+        {entry.severity && <Meta label="Severity" value={entry.severity} />}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 12 }}>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Status</label>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as FeedbackStatus)}
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)' }}
+          >
+            {(Object.keys(STATUS_LABEL) as FeedbackStatus[]).map((s) => (
+              <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Resolution note</label>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Optional note explaining the triage decision — what was fixed, why it was a dupe, what we'll consider for next sprint."
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)', resize: 'vertical' }}
+          />
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={save}
+          disabled={saving || (status === entry.status && note === (entry.resolution_note ?? ''))}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontFamily: mono ? 'var(--font-mono-fad)' : undefined, wordBreak: 'break-word' }}>{value}</div>
     </div>
   );
 }
