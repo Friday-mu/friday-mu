@@ -73,7 +73,17 @@ export function SiteVisitStage({ project }: Props) {
     // backend derives visit_date from it on POST when only the
     // timestamp is supplied. Normalise the visitor display string back
     // to the u-<slug> shape we store in the column.
-    const isoVisited = visitedAt ? new Date(visitedAt).toISOString() : null;
+    //
+    // First-save fallback: visit_date is NOT NULL on the backend
+    // (migration 002), so on a brand-new visit we default to NOW() if
+    // the staff hasn't filled the timestamp yet. This matches the UX
+    // intuition that "Save" should work on a partial form — the user
+    // can come back and refine the date later.
+    let isoVisited = visitedAt ? new Date(visitedAt).toISOString() : null;
+    if (!isoVisited && !apiVisitId) {
+      isoVisited = new Date().toISOString();
+      setVisitedAt(isoVisited.slice(0, 16));
+    }
     const visitorId = visitedBy.trim() ? `u-${visitedBy.trim().toLowerCase()}` : null;
     const payload: Partial<ApiSiteVisit> & { project_id: string } = {
       project_id: project.id,
