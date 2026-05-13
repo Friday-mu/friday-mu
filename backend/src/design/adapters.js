@@ -87,6 +87,19 @@ function shapeLead(row) {
   };
 }
 
+// node-postgres serialises BIGINT columns as JS strings (to preserve
+// precision for values > Number.MAX_SAFE_INTEGER = 2^53-1). For the
+// Mauritius MUR amounts we store, no individual value will overflow
+// JS Number — Friday's biggest legit EPC is well under 2^53 cents. So
+// we coerce BIGINT-returned strings to numbers here so the frontend
+// can safely do arithmetic (sum, compare) without string-concatenation
+// bugs. Returns null if the input is null/undefined.
+function toNumberOrNull(v) {
+  if (v == null) return null;
+  const n = typeof v === 'string' ? Number(v) : v;
+  return Number.isFinite(n) ? n : null;
+}
+
 function shapeProject(row) {
   if (!row) return null;
   return {
@@ -99,12 +112,13 @@ function shapeProject(row) {
     classification: row.classification,
     tier: row.tier,
     lead_source: row.lead_source,
-    epc_minor: row.epc_minor,
-    design_fee_minor: row.design_fee_minor,
-    procurement_fee_minor: row.procurement_fee_minor,
-    design_fee_minor_override: row.design_fee_minor_override ?? null,
-    procurement_fee_minor_override: row.procurement_fee_minor_override ?? null,
-    budget_expectation_minor: row.budget_expectation_minor,
+    // BIGINT → number coercion (see toNumberOrNull comment above).
+    epc_minor: toNumberOrNull(row.epc_minor),
+    design_fee_minor: toNumberOrNull(row.design_fee_minor),
+    procurement_fee_minor: toNumberOrNull(row.procurement_fee_minor),
+    design_fee_minor_override: toNumberOrNull(row.design_fee_minor_override),
+    procurement_fee_minor_override: toNumberOrNull(row.procurement_fee_minor_override),
+    budget_expectation_minor: toNumberOrNull(row.budget_expectation_minor),
     goals: row.goals || [],
     outcomes: row.outcomes || [],
     urgency: row.urgency,
@@ -256,7 +270,7 @@ function shapeRoughBudget(row) {
     project_id: row.project_id,
     category_code: row.category_code,
     description: row.description,
-    unit_cost_minor: row.unit_cost_minor,
+    unit_cost_minor: toNumberOrNull(row.unit_cost_minor),
     quantity: row.quantity != null ? Number(row.quantity) : null,
     notes: row.notes,
     catalog_source_id: row.catalog_source_id,
@@ -293,10 +307,10 @@ function shapePaymentGate(row) {
     ledger_type: row.ledger_type || 'fee_invoice',
     direction: row.direction || 'credit',
     status: row.status,
-    amount_minor: row.amount_minor,
+    amount_minor: toNumberOrNull(row.amount_minor),
     due_date: row.due_date,
     received_at: row.received_at,
-    received_amount_minor: row.received_amount_minor,
+    received_amount_minor: toNumberOrNull(row.received_amount_minor),
     received_note: row.received_note,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -380,7 +394,7 @@ function shapeBudgetItem(row, canSeeSensitive) {
     stage_key: row.stage_key,
     category_code: row.category_code,
     description: row.description,
-    unit_cost_minor: row.unit_cost_minor,
+    unit_cost_minor: toNumberOrNull(row.unit_cost_minor),
     quantity: row.quantity != null ? Number(row.quantity) : null,
     vendor_id: row.vendor_id,
     notes: row.notes,
@@ -388,8 +402,8 @@ function shapeBudgetItem(row, canSeeSensitive) {
     updated_at: row.updated_at,
   };
   if (canSeeSensitive) {
-    base.retail_cost_minor = row.retail_cost_minor;
-    base.negotiated_cost_minor = row.negotiated_cost_minor;
+    base.retail_cost_minor = toNumberOrNull(row.retail_cost_minor);
+    base.negotiated_cost_minor = toNumberOrNull(row.negotiated_cost_minor);
     base.internal_work = row.internal_work;
   }
   return base;
