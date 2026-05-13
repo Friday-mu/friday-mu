@@ -1699,12 +1699,15 @@ export async function hydrateDesignTopLevel(): Promise<void> {
  *  Called lazily when the user opens a project drill-down. */
 export async function hydrateDesignProject(projectId: string): Promise<void> {
   // Rooms live on the property (one room row per property_id), so we
-  // resolve the project's propertyId from the already-hydrated
-  // FIXTURE_PROJECTS list. If the project isn't found (race during
-  // initial hydration) or has no property, we skip room loading and
-  // the panel falls through to the hardcoded fixture / empty state.
-  const project = FIXTURE_PROJECTS.find((p) => p.id === projectId);
-  const propertyId = project?.propertyId ?? null;
+  // need the project's propertyId. Earlier versions read from
+  // FIXTURE_PROJECTS, but useHydrateDesignTopLevel and
+  // useHydrateDesignProject fire in the same render pass — the
+  // top-level hydration may not have populated FIXTURE_PROJECTS yet,
+  // in which case the stale hardcoded fixture's propertyId is used
+  // and the listRooms() call queries the wrong property. Fetch the
+  // project fresh so we always have the live propertyId.
+  const projectApi = await loadProject(projectId).catch(() => null);
+  const propertyId = projectApi?.property_id ?? null;
 
   const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits, roughBudgetVersions, photos] = await Promise.all([
     loadMoodboards(projectId).catch(() => []),
