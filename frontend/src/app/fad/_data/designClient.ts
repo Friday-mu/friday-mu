@@ -1497,7 +1497,16 @@ export function apiVendorToFixture(api: ApiVendor): FixtureVendor {
 }
 
 export function apiMoodboardToFixture(api: ApiMoodboard): FixtureMoodboard {
-  const links = api.links || [];
+  // Backend returns `links` as `{}` (an empty object) when no links are
+  // attached, not `[]`. The previous `api.links || []` coalesce treated
+  // `{}` as truthy, so the subsequent `.map(...)` threw "t.map is not a
+  // function" — which silently killed hydrateDesignProject's bumpFixtureRev
+  // and left every other live fixture (agreement, payments, etc.) stuck
+  // at pre-hydration state. Found via console instrumentation during
+  // 2026-05-14 prod QA. Belt: Array.isArray gate. Braces: per-step
+  // try/catch in hydrateDesignProject keeps a bad row in one fixture
+  // from poisoning the others.
+  const links = Array.isArray(api.links) ? api.links : [];
   // Surface the first image link as the fixture's coverImageUrl so the
   // existing MoodboardStage cover renderer can display it without
   // shape changes. The full `links` array is attached as an extra
@@ -1931,55 +1940,96 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
     loadPhotos(projectId).catch(() => [] as ApiPhoto[]),
   ]);
 
-  removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
-  FIXTURE_MOODBOARDS.push(...moodboards.map(apiMoodboardToFixture));
+  // Isolate each fixture push so one bad row doesn't poison the others
+  // and (critically) doesn't skip the bumpFixtureRev() call at the
+  // bottom. 2026-05-14 prod QA: an adapter on an unrelated fixture
+  // threw, hydrateDesignProject rejected silently, FIXTURE_AGREEMENTS
+  // stayed empty, and signed agreements rendered as "Draft" with no
+  // evidence-PDF button. The per-step try/catch also surfaces the
+  // offending adapter in the console so the next such mismatch is
+  // diagnosable without spelunking.
+  const _step = (name: string, fn: () => void) => {
+    try { fn(); } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[hydrateDesignProject] step "${name}" threw — continuing`, err);
+    }
+  };
 
-  removeMatching(FIXTURE_PACKS, (p) => p.projectId === projectId);
-  FIXTURE_PACKS.push(...packs.map(apiPackToFixture));
+  _step('moodboards', () => {
+    removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
+    FIXTURE_MOODBOARDS.push(...moodboards.map(apiMoodboardToFixture));
+  });
 
-  removeMatching(FIXTURE_AGREEMENTS, (a) => (a as { projectId: string }).projectId === projectId);
-  if (agreement) FIXTURE_AGREEMENTS.push(apiAgreementToFixture(agreement));
+  _step('packs', () => {
+    removeMatching(FIXTURE_PACKS, (p) => p.projectId === projectId);
+    FIXTURE_PACKS.push(...packs.map(apiPackToFixture));
+  });
 
-  removeMatching(FIXTURE_PAYMENT_GATES, (g) => (g as { projectId: string }).projectId === projectId);
-  FIXTURE_PAYMENT_GATES.push(...payments.map(apiPaymentToFixture));
+  _step('agreement', () => {
+    removeMatching(FIXTURE_AGREEMENTS, (a) => (a as { projectId: string }).projectId === projectId);
+    if (agreement) FIXTURE_AGREEMENTS.push(apiAgreementToFixture(agreement));
+  });
 
-  removeMatching(FIXTURE_SELECTIONS, (s) => (s as { projectId: string }).projectId === projectId);
-  FIXTURE_SELECTIONS.push(...selections.map(apiSelectionToFixture));
+  _step('payment_gates', () => {
+    removeMatching(FIXTURE_PAYMENT_GATES, (g) => (g as { projectId: string }).projectId === projectId);
+    FIXTURE_PAYMENT_GATES.push(...payments.map(apiPaymentToFixture));
+  });
 
-  removeMatching(FIXTURE_CHANGE_ORDERS, (c) => (c as { projectId: string }).projectId === projectId);
-  FIXTURE_CHANGE_ORDERS.push(...changeOrders.map(apiChangeOrderToFixture));
+  _step('selections', () => {
+    removeMatching(FIXTURE_SELECTIONS, (s) => (s as { projectId: string }).projectId === projectId);
+    FIXTURE_SELECTIONS.push(...selections.map(apiSelectionToFixture));
+  });
 
-  removeMatching(FIXTURE_BUDGET_ITEMS, (b) => (b as { projectId: string }).projectId === projectId);
-  FIXTURE_BUDGET_ITEMS.push(...(budgetItems as unknown as Array<typeof FIXTURE_BUDGET_ITEMS[number]>));
+  _step('change_orders', () => {
+    removeMatching(FIXTURE_CHANGE_ORDERS, (c) => (c as { projectId: string }).projectId === projectId);
+    FIXTURE_CHANGE_ORDERS.push(...changeOrders.map(apiChangeOrderToFixture));
+  });
 
-  removeMatching(FIXTURE_ACTIVITY, (a) => (a as { projectId: string }).projectId === projectId);
-  FIXTURE_ACTIVITY.push(...activities.map(apiActivityToFixture));
+  _step('budget_items', () => {
+    removeMatching(FIXTURE_BUDGET_ITEMS, (b) => (b as { projectId: string }).projectId === projectId);
+    FIXTURE_BUDGET_ITEMS.push(...(budgetItems as unknown as Array<typeof FIXTURE_BUDGET_ITEMS[number]>));
+  });
 
-  removeMatching(FIXTURE_APPROVALS, (a) => (a as { projectId: string }).projectId === projectId);
-  FIXTURE_APPROVALS.push(...approvals.map(apiApprovalToFixture));
+  _step('activity', () => {
+    removeMatching(FIXTURE_ACTIVITY, (a) => (a as { projectId: string }).projectId === projectId);
+    FIXTURE_ACTIVITY.push(...activities.map(apiActivityToFixture));
+  });
 
-  removeMatching(FIXTURE_ROOMS, (r) => r.projectId === projectId);
-  FIXTURE_ROOMS.push(...rooms.map((r) => apiRoomToFixture(r, projectId)));
+  _step('approvals', () => {
+    removeMatching(FIXTURE_APPROVALS, (a) => (a as { projectId: string }).projectId === projectId);
+    FIXTURE_APPROVALS.push(...approvals.map(apiApprovalToFixture));
+  });
+
+  _step('rooms', () => {
+    removeMatching(FIXTURE_ROOMS, (r) => r.projectId === projectId);
+    FIXTURE_ROOMS.push(...rooms.map((r) => apiRoomToFixture(r, projectId)));
+  });
 
   // SITE_VISITS is "latest visit per project" on the frontend; the
   // backend returns the list ordered by visit_date DESC, so we take
   // the first row as the canonical visit for the project.
-  removeMatching(FIXTURE_SITE_VISITS, (v) => v.projectId === projectId);
-  if (siteVisits.length > 0) {
-    FIXTURE_SITE_VISITS.push(apiSiteVisitToFixture(siteVisits[0]));
-  }
+  _step('site_visits', () => {
+    removeMatching(FIXTURE_SITE_VISITS, (v) => v.projectId === projectId);
+    if (siteVisits.length > 0) {
+      FIXTURE_SITE_VISITS.push(apiSiteVisitToFixture(siteVisits[0]));
+    }
+  });
 
   // Rough budget versions — full list, ordered by version_number DESC
   // on the backend so the frontend's "latest is first" assumption
   // holds when sorted by version DESC client-side.
-  removeMatching(FIXTURE_ROUGH_BUDGETS, (b) => b.projectId === projectId);
-  FIXTURE_ROUGH_BUDGETS.push(...roughBudgetVersions.map(apiRoughBudgetVersionToFixture));
+  _step('rough_budgets', () => {
+    removeMatching(FIXTURE_ROUGH_BUDGETS, (b) => b.projectId === projectId);
+    FIXTURE_ROUGH_BUDGETS.push(...roughBudgetVersions.map(apiRoughBudgetVersionToFixture));
+  });
 
   // Photos — full list per project, swap out any pre-existing rows
   // and refill from the API. Backend returns uploaded_at DESC; the
   // RoomDetail consumer filters client-side by roomId.
-  removeMatching(FIXTURE_PHOTOS, (p) => p.projectId === projectId);
-  FIXTURE_PHOTOS.push(...photos.map(apiPhotoToFixture));
+  _step('photos', () => {
+    removeMatching(FIXTURE_PHOTOS, (p) => p.projectId === projectId);
+    FIXTURE_PHOTOS.push(...photos.map(apiPhotoToFixture));
+  });
 
   // Notify every useFixtureRev() subscriber that the project caches
   // have been refilled. Without this, components mounted before
