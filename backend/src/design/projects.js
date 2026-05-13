@@ -39,6 +39,13 @@ const WRITABLE_FIELDS = [
   'budget_expectation_minor', 'goals', 'outcomes', 'urgency', 'pm_link',
   'design_lead_user_id', 'current_stage', 'stage_status', 'blocker',
   'next_action', 'start_date', 'estimated_completion',
+  // design-be-23: project-level fork for design-only engagements.
+  // Stages 14-17 (final-budget → reconciliation) are out-of-scope when
+  // this is 'design_only'; the frontend renders them dimmed with a
+  // "Design only" badge and the apiProjectToFixture adapter zeroes
+  // procurement_fee_minor. CHECK constraint enforces the enum at the
+  // DB level (migration 018).
+  'engagement_scope',
 ];
 
 // Mirrors the 17-stage workflow + 6 stage statuses from the frontend
@@ -56,6 +63,10 @@ const VALID_STAGE_IDS = new Set([
 const VALID_STAGE_STATUSES = new Set([
   'pending', 'in-progress', 'waiting-on-owner', 'blocked', 'done', 'skipped',
 ]);
+// design-be-23: project-level engagement scope. Locked 2026-05-13 per
+// Ishant — full-scope is the default, design-only forks stages 14-17
+// out of the workflow.
+const VALID_ENGAGEMENT_SCOPES = new Set(['design_only', 'design_and_execution']);
 
 // GET /api/design/projects — list with optional lifecycle / stage filters.
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
@@ -220,6 +231,13 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
       !VALID_STAGE_STATUSES.has(body.stage_status)
     ) {
       return res.status(400).json({ error: `Invalid stage_status: ${body.stage_status}` });
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(body, 'engagement_scope') &&
+      body.engagement_scope != null &&
+      !VALID_ENGAGEMENT_SCOPES.has(body.engagement_scope)
+    ) {
+      return res.status(400).json({ error: `Invalid engagement_scope: ${body.engagement_scope}` });
     }
 
     const sets = [];

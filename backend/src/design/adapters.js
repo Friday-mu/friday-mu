@@ -128,6 +128,11 @@ function shapeProject(row) {
     stage_status: row.stage_status,
     blocker: row.blocker,
     next_action: row.next_action,
+    // design-be-23: 'design_only' | 'design_and_execution'. NOT NULL
+    // at the DB level with default 'design_and_execution' (migration
+    // 018), so the ?? is belt-and-braces for rows materialised before
+    // the column existed.
+    engagement_scope: row.engagement_scope ?? 'design_and_execution',
     lifecycle_status: row.lifecycle_status,
     paused_at: row.paused_at,
     paused_reason: row.paused_reason,
