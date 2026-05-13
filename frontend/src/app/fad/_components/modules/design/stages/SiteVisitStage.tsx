@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { designClient, ROOMS, SITE_VISITS, type DesignProject, type Photo, type Room, type SiteVisit } from '../../../../_data/design';
-import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
+import { designClient, ROOMS, SITE_VISITS, PHOTOS, type DesignProject, type Photo, type PhotoKind, type Room, type SiteVisit } from '../../../../_data/design';
+import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, apiPhotoToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -119,6 +119,30 @@ export function SiteVisitStage({ project }: Props) {
       fireToast(`Save failed: ${msg}`);
     } finally {
       setSavingVisit(false);
+    }
+  };
+
+  const handleAddPhoto = async (roomId: string, url: string, caption: string, kind: PhotoKind): Promise<boolean> => {
+    if (!url.trim()) {
+      fireToast('URL is required.');
+      return false;
+    }
+    try {
+      const created = await apiCreatePhoto({
+        project_id: project.id,
+        room_id: roomId,
+        url: url.trim(),
+        caption: caption.trim() || null,
+        kind,
+      });
+      PHOTOS.push(apiPhotoToFixture(created));
+      setRev((r) => r + 1);
+      fireToast('Photo added.');
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Add photo failed: ${msg}`);
+      return false;
     }
   };
 
@@ -454,7 +478,14 @@ export function SiteVisitStage({ project }: Props) {
                     </div>
                     <span style={{ color: 'var(--color-text-tertiary)' }}>{expanded ? '▾' : '▸'}</span>
                   </button>
-                  {expanded && <RoomDetail room={r} photos={roomPhotos} onPhotoClick={setPhotoLightbox} />}
+                  {expanded && (
+                    <RoomDetail
+                      room={r}
+                      photos={roomPhotos}
+                      onPhotoClick={setPhotoLightbox}
+                      onAddPhoto={(url, caption, kind) => handleAddPhoto(r.id, url, caption, kind)}
+                    />
+                  )}
                 </li>
               );
             })}
@@ -501,7 +532,28 @@ export function SiteVisitStage({ project }: Props) {
   );
 }
 
-function RoomDetail({ room, photos, onPhotoClick }: { room: Room; photos: Photo[]; onPhotoClick: (p: Photo) => void }) {
+function RoomDetail({ room, photos, onPhotoClick, onAddPhoto }: {
+  room: Room;
+  photos: Photo[];
+  onPhotoClick: (p: Photo) => void;
+  onAddPhoto: (url: string, caption: string, kind: PhotoKind) => Promise<boolean>;
+}) {
+  const [showAddPhoto, setShowAddPhoto] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoCaption, setPhotoCaption] = useState('');
+  const [photoKind, setPhotoKind] = useState<PhotoKind>('before');
+  const [addingPhoto, setAddingPhoto] = useState(false);
+  const submitPhoto = async () => {
+    setAddingPhoto(true);
+    const ok = await onAddPhoto(photoUrl, photoCaption, photoKind);
+    setAddingPhoto(false);
+    if (ok) {
+      setShowAddPhoto(false);
+      setPhotoUrl('');
+      setPhotoCaption('');
+      setPhotoKind('before');
+    }
+  };
   return (
     <div style={{ borderTop: '0.5px solid var(--color-border-tertiary)', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Grid>
@@ -572,6 +624,8 @@ function RoomDetail({ room, photos, onPhotoClick }: { room: Room; photos: Photo[
           ))}
           <button
             type="button"
+            onClick={() => setShowAddPhoto((s) => !s)}
+            data-room-photo-add-trigger={room.id}
             style={{
               aspectRatio: '4 / 3',
               border: '1px dashed var(--color-border-secondary)',
@@ -579,11 +633,79 @@ function RoomDetail({ room, photos, onPhotoClick }: { room: Room; photos: Photo[
               background: 'transparent',
               color: 'var(--color-text-tertiary)',
               fontSize: 12,
+              cursor: 'pointer',
             }}
           >
-            + Upload
+            {showAddPhoto ? 'Cancel' : '+ Add photo'}
           </button>
         </div>
+        {showAddPhoto && (
+          <div
+            data-room-photo-add-form={room.id}
+            style={{
+              marginTop: 10,
+              padding: 10,
+              border: '0.5px solid var(--color-brand-accent)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-brand-accent-softer)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: 8,
+            }}
+          >
+            <Field label="Image URL (Drive / Imgur / direct .jpg)">
+              <input
+                value={photoUrl}
+                onChange={(e) => setPhotoUrl(e.target.value)}
+                placeholder="https://drive.google.com/…"
+                style={inputStyle()}
+                data-room-photo-url
+              />
+            </Field>
+            <Field label="Caption (optional)">
+              <input
+                value={photoCaption}
+                onChange={(e) => setPhotoCaption(e.target.value)}
+                placeholder="e.g. North wall, before paint"
+                style={inputStyle()}
+                data-room-photo-caption
+              />
+            </Field>
+            <Field label="Kind">
+              <select value={photoKind} onChange={(e) => setPhotoKind(e.target.value as PhotoKind)} style={inputStyle()} data-room-photo-kind>
+                <option value="before">before</option>
+                <option value="context">context</option>
+                <option value="reference">reference</option>
+                <option value="progress">progress</option>
+                <option value="after">after</option>
+              </select>
+            </Field>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={submitPhoto}
+                disabled={!photoUrl.trim() || addingPhoto}
+                data-room-photo-submit
+                style={{
+                  padding: '6px 14px',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-brand-accent)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: addingPhoto || !photoUrl.trim() ? 'not-allowed' : 'pointer',
+                  opacity: addingPhoto || !photoUrl.trim() ? 0.5 : 1,
+                }}
+              >
+                {addingPhoto ? 'Adding…' : 'Add photo'}
+              </button>
+            </div>
+            <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+              v0.1: paste a URL. Direct upload from device (Cloudinary / S3 presigned) ships next sprint.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

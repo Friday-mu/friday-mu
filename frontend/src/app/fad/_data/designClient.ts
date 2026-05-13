@@ -36,6 +36,7 @@ import {
   ROOMS as FIXTURE_ROOMS,
   SITE_VISITS as FIXTURE_SITE_VISITS,
   ROUGH_BUDGETS as FIXTURE_ROUGH_BUDGETS,
+  PHOTOS as FIXTURE_PHOTOS,
   tierForEpc,
   designFeeForTier,
   procurementFeeForTier,
@@ -57,6 +58,8 @@ import type {
   ChangeOrder as FixtureChangeOrder,
   SiteVisit as FixtureSiteVisit,
   RoughBudget as FixtureRoughBudget,
+  Photo as FixturePhoto,
+  PhotoKind,
   BudgetCategory,
   StageId,
   StageStatus,
@@ -748,6 +751,28 @@ export const listRooms = (propertyId: string) =>
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
 
+// ─────────────────────────── Photos ───────────────────────────
+// Backend stores photo URL refs (blob lives external). v0.1 surface is
+// URL-based — staff paste a Drive / Imgur / direct-image URL with an
+// optional caption + room link. The proper file-upload pipeline
+// (Cloudinary / S3 presigned URL) is queued for a follow-up sprint.
+export interface ApiPhoto {
+  id: string;
+  project_id: string;
+  room_id: string | null;
+  kind: string;
+  caption: string | null;
+  url: string;
+  uploaded_at: string;
+}
+export const loadPhotos = (projectId: string) =>
+  apiFetch(`/api/design/photos?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiPhoto[] }).results);
+export const createPhoto = (payload: { project_id: string; url: string; kind: string; caption?: string | null; room_id?: string | null }) =>
+  apiFetch('/api/design/photos', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiPhoto>;
+export const deletePhoto = (id: string) =>
+  apiFetch(`/api/design/photos/${id}`, { method: 'DELETE' }) as Promise<void>;
+
 // ─────────────────────────── Rough budget versions ───────────────────────────
 // Migration 023 split the rough-budget into per-version envelopes
 // (low/mid/high totals, tier, fee overrides, narrative fields) and
@@ -1347,6 +1372,25 @@ export function apiRoomToFixture(api: ApiRoom, projectId: string): FixtureRoom {
   } as unknown as FixtureRoom;
 }
 
+// Photos — straight 1:1 shape mapping. ownerVisible defaults to true
+// (the backend has no column for it yet; the frontend uses it to gate
+// portal display, but for now every photo is owner-visible).
+const PHOTO_KIND_FALLBACK: PhotoKind = 'before';
+const VALID_PHOTO_KINDS: PhotoKind[] = ['before', 'context', 'reference', 'progress', 'after'];
+export function apiPhotoToFixture(api: ApiPhoto): FixturePhoto {
+  const kind: PhotoKind = (VALID_PHOTO_KINDS as readonly string[]).includes(api.kind) ? (api.kind as PhotoKind) : PHOTO_KIND_FALLBACK;
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    roomId: api.room_id,
+    kind,
+    url: api.url,
+    caption: api.caption,
+    ownerVisible: true,
+    uploadedAt: api.uploaded_at,
+  };
+}
+
 // Migration 023 — rough-budget version envelope adapter. Backend
 // snake_case → frontend camelCase. Tier is stored as 'T1'/'T2'/'T3'
 // in the backend but the frontend DesignTier is the numeric 1/2/3 —
@@ -1659,7 +1703,7 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   const project = FIXTURE_PROJECTS.find((p) => p.id === projectId);
   const propertyId = project?.propertyId ?? null;
 
-  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits, roughBudgetVersions] = await Promise.all([
+  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits, roughBudgetVersions, photos] = await Promise.all([
     loadMoodboards(projectId).catch(() => []),
     loadPacks(projectId).catch(() => []),
     loadAgreement(projectId).catch(() => null as ApiAgreement | null),
@@ -1672,6 +1716,7 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
     propertyId ? listRooms(propertyId).catch(() => [] as ApiRoom[]) : Promise.resolve([] as ApiRoom[]),
     loadSiteVisits(projectId).catch(() => [] as ApiSiteVisit[]),
     loadRoughBudgetVersions(projectId).catch(() => [] as ApiRoughBudgetVersion[]),
+    loadPhotos(projectId).catch(() => [] as ApiPhoto[]),
   ]);
 
   removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
@@ -1717,6 +1762,12 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   // holds when sorted by version DESC client-side.
   removeMatching(FIXTURE_ROUGH_BUDGETS, (b) => b.projectId === projectId);
   FIXTURE_ROUGH_BUDGETS.push(...roughBudgetVersions.map(apiRoughBudgetVersionToFixture));
+
+  // Photos — full list per project, swap out any pre-existing rows
+  // and refill from the API. Backend returns uploaded_at DESC; the
+  // RoomDetail consumer filters client-side by roomId.
+  removeMatching(FIXTURE_PHOTOS, (p) => p.projectId === projectId);
+  FIXTURE_PHOTOS.push(...photos.map(apiPhotoToFixture));
 }
 
 /** Hook: hydrate top-level fixtures on mount. Returns { hydrated,
