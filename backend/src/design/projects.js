@@ -136,6 +136,31 @@ router.get('/:id/floor-plan', requireDesignPerm('design:read'), async (req, res)
   }
 });
 
+// GET /api/design/projects/:id/floor-plan-furnished — second-stage floor
+// plan: clean architectural layout + furniture/fixtures overlaid in the
+// approved moodboard's aesthetic. Pinned by
+// POST /api/design/ai_images/generate-furnished-floor-plan when called
+// with set_as_project_plan: true. Mirror of /floor-plan above with the
+// FK column swapped; the `kind: 'floor_plan_furnished'` marker is
+// preserved by shapeFloorPlanAsset's generic kind extraction.
+router.get('/:id/floor-plan-furnished', requireDesignPerm('design:read'), async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT a.*
+         FROM design_projects p
+         JOIN design_assets a
+           ON a.sha256 = p.floor_plan_furnished_image_id
+        WHERE p.tenant_id = $1 AND p.id = $2`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'No furnished floor plan set for this project' });
+    res.json(shapeFloorPlanAsset(rows[0]));
+  } catch (e) {
+    console.error('[design/projects] floor-plan-furnished error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/design/projects — create.
 router.post('/', requireDesignPerm('design:write'), async (req, res) => {
   try {
