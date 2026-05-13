@@ -35,6 +35,7 @@ const router = express.Router();
 const WRITABLE_FIELDS = [
   'name', 'slug', 'counterparty_id', 'property_id', 'classification', 'tier',
   'lead_source', 'epc_minor', 'design_fee_minor', 'procurement_fee_minor',
+  'design_fee_minor_override', 'procurement_fee_minor_override',
   'budget_expectation_minor', 'goals', 'outcomes', 'urgency', 'pm_link',
   'design_lead_user_id', 'current_stage', 'stage_status', 'blocker',
   'next_action', 'start_date', 'estimated_completion',

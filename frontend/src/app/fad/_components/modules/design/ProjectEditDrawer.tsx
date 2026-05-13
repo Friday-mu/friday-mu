@@ -5,18 +5,25 @@
 // pause/resume/cancel, not here — see backend projects.js PATCH guard).
 //
 // Form mirrors WRITABLE_FIELDS in backend/src/design/projects.js, minus
-// design_fee_minor / procurement_fee_minor (those derive from tier and
-// shouldn't be hand-edited) and slug (immutable for URL stability).
+// slug (immutable for URL stability). The base design_fee_minor /
+// procurement_fee_minor columns still derive from tier and are not
+// hand-edited; design-be-15 adds explicit *_override columns surfaced
+// here via toggles so a Director can pin a fee per project without
+// disturbing the derivation fallback.
 
 import { useEffect, useState } from 'react';
-import type {
-  DesignProject,
-  DesignTier,
-  LeadSource,
-  PMLink,
-  ProjectClassification,
-  ProjectGoal,
-  TargetOutcome,
+import {
+  designFeeForTier,
+  formatMUR,
+  procurementFeeForTier,
+  tierForEpc,
+  type DesignProject,
+  type DesignTier,
+  type LeadSource,
+  type PMLink,
+  type ProjectClassification,
+  type ProjectGoal,
+  type TargetOutcome,
 } from '../../../_data/design';
 import { updateProject, type ApiProject } from '../../../_data/designClient';
 import { fireToast } from '../../Toaster';
@@ -105,6 +112,13 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
   const [nextAction, setNextAction] = useState(project.nextAction ?? '');
   const [startDate, setStartDate] = useState(project.startDate ?? '');
   const [estimatedCompletion, setEstimatedCompletion] = useState(project.estimatedCompletion ?? '');
+  // design-be-15: per-fee overrides. Toggle ON => send the input value
+  // as the override minor; toggle OFF => clear any persisted override
+  // (PATCH null) so the read path falls back to tier derivation.
+  const [designFeeOverrideOn, setDesignFeeOverrideOn] = useState(project.designFeeMinorOverride != null);
+  const [designFeeOverrideStr, setDesignFeeOverrideStr] = useState(minorToMajorString(project.designFeeMinorOverride ?? null));
+  const [procurementFeeOverrideOn, setProcurementFeeOverrideOn] = useState(project.procurementFeeMinorOverride != null);
+  const [procurementFeeOverrideStr, setProcurementFeeOverrideStr] = useState(minorToMajorString(project.procurementFeeMinorOverride ?? null));
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -134,6 +148,28 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
     const budgetMinor = parseMajorToMinor(budgetStr);
     if (Number.isNaN(budgetMinor as number)) nextErrors.budget = 'Must be a non-negative number';
 
+    // Fee overrides: when toggled ON the input must parse to a
+    // non-negative number; toggle OFF sends an explicit null to clear
+    // any persisted override on the backend.
+    let designFeeOverrideMinor: number | null = null;
+    if (designFeeOverrideOn) {
+      const parsed = parseMajorToMinor(designFeeOverrideStr);
+      if (parsed == null || Number.isNaN(parsed as number)) {
+        nextErrors.designFeeOverride = 'Enter a non-negative number';
+      } else {
+        designFeeOverrideMinor = parsed;
+      }
+    }
+    let procurementFeeOverrideMinor: number | null = null;
+    if (procurementFeeOverrideOn) {
+      const parsed = parseMajorToMinor(procurementFeeOverrideStr);
+      if (parsed == null || Number.isNaN(parsed as number)) {
+        nextErrors.procurementFeeOverride = 'Enter a non-negative number';
+      } else {
+        procurementFeeOverrideMinor = parsed;
+      }
+    }
+
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
@@ -156,6 +192,8 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
       next_action: nextAction.trim() || null,
       start_date: startDate || null,
       estimated_completion: estimatedCompletion || null,
+      design_fee_minor_override: designFeeOverrideOn ? designFeeOverrideMinor : null,
+      procurement_fee_minor_override: procurementFeeOverrideOn ? procurementFeeOverrideMinor : null,
     };
 
     setSaving(true);
@@ -251,6 +289,23 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
               />
             </Field>
           </div>
+
+          <FeeOverridesSection
+            classification={classification}
+            epcStr={epcStr}
+            budgetStr={budgetStr}
+            tierStr={tierStr}
+            designOn={designFeeOverrideOn}
+            setDesignOn={setDesignFeeOverrideOn}
+            designStr={designFeeOverrideStr}
+            setDesignStr={setDesignFeeOverrideStr}
+            designError={errors.designFeeOverride}
+            procurementOn={procurementFeeOverrideOn}
+            setProcurementOn={setProcurementFeeOverrideOn}
+            procurementStr={procurementFeeOverrideStr}
+            setProcurementStr={setProcurementFeeOverrideStr}
+            procurementError={errors.procurementFeeOverride}
+          />
 
           <Field label="Goals">
             <ChipGroup
@@ -381,6 +436,135 @@ function ChipGroup<T extends string>({ options, selected, onToggle }: { options:
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// design-be-15: paired toggle + numeric-override rows for design /
+// procurement fees. Helper text shows the live tier-derived value so
+// the Director sees what they're overriding before flipping the
+// toggle. EPC drives tier; classification gates the procurement table.
+function FeeOverridesSection({
+  classification,
+  epcStr,
+  budgetStr,
+  tierStr,
+  designOn,
+  setDesignOn,
+  designStr,
+  setDesignStr,
+  designError,
+  procurementOn,
+  setProcurementOn,
+  procurementStr,
+  setProcurementStr,
+  procurementError,
+}: {
+  classification: ProjectClassification;
+  epcStr: string;
+  budgetStr: string;
+  tierStr: '' | '1' | '2' | '3';
+  designOn: boolean;
+  setDesignOn: (v: boolean) => void;
+  designStr: string;
+  setDesignStr: (v: string) => void;
+  designError?: string;
+  procurementOn: boolean;
+  setProcurementOn: (v: boolean) => void;
+  procurementStr: string;
+  setProcurementStr: (v: string) => void;
+  procurementError?: string;
+}) {
+  // Mirror apiProjectToFixture's tier-derivation so the helper text
+  // matches what the read path will compute when the override is OFF.
+  const epcMinorParsed = parseMajorToMinor(epcStr);
+  const budgetMinorParsed = parseMajorToMinor(budgetStr);
+  const epcEffective = (typeof epcMinorParsed === 'number' && !Number.isNaN(epcMinorParsed) && epcMinorParsed > 0)
+    ? epcMinorParsed
+    : (typeof budgetMinorParsed === 'number' && !Number.isNaN(budgetMinorParsed) && budgetMinorParsed > 0)
+      ? budgetMinorParsed
+      : 0;
+  const derivedTier: DesignTier = epcEffective > 0
+    ? tierForEpc(epcEffective)
+    : (tierStr === '' ? 1 : (Number(tierStr) as DesignTier));
+  const derivedDesign = epcEffective > 0 ? designFeeForTier(derivedTier, epcEffective) : 0;
+  const derivedProcurement = epcEffective > 0 ? procurementFeeForTier(derivedTier, classification, epcEffective) : 0;
+
+  return (
+    <fieldset style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <legend style={{ padding: '0 6px', fontSize: 11, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+        Fee overrides
+        <span style={{ marginLeft: 6, color: 'var(--color-text-tertiary)', fontWeight: 400, fontStyle: 'italic' }}>
+          pin a manual fee; leave off to use the tier-derived value
+        </span>
+      </legend>
+      <FeeOverrideRow
+        label="Override design fee"
+        derivedHint={`Derived: ${formatMUR(derivedDesign)}`}
+        on={designOn}
+        setOn={setDesignOn}
+        valueStr={designStr}
+        setValueStr={setDesignStr}
+        error={designError}
+        testId="design-fee-override"
+      />
+      <FeeOverrideRow
+        label="Override procurement fee"
+        derivedHint={`Derived: ${formatMUR(derivedProcurement)}`}
+        on={procurementOn}
+        setOn={setProcurementOn}
+        valueStr={procurementStr}
+        setValueStr={setProcurementStr}
+        error={procurementError}
+        testId="procurement-fee-override"
+      />
+    </fieldset>
+  );
+}
+
+function FeeOverrideRow({
+  label,
+  derivedHint,
+  on,
+  setOn,
+  valueStr,
+  setValueStr,
+  error,
+  testId,
+}: {
+  label: string;
+  derivedHint: string;
+  on: boolean;
+  setOn: (v: boolean) => void;
+  valueStr: string;
+  setValueStr: (v: string) => void;
+  error?: string;
+  testId: string;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-primary)' }}>
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) => setOn(e.target.checked)}
+          data-testid={`${testId}-toggle`}
+        />
+        <span style={{ fontWeight: 500 }}>{label}</span>
+        <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, fontStyle: 'italic', fontSize: 11 }}>{derivedHint}</span>
+      </label>
+      {on && (
+        <input
+          inputMode="numeric"
+          value={valueStr}
+          onChange={(e) => setValueStr(e.target.value)}
+          placeholder="MUR"
+          aria-label={label}
+          data-testid={`${testId}-input`}
+          style={inputStyle}
+        />
+      )}
+      {error && <span style={{ fontSize: 11, color: 'var(--color-text-danger)' }}>{error}</span>}
     </div>
   );
 }

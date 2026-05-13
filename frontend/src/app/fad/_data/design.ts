@@ -141,6 +141,10 @@ export interface DesignProject {
   epcMinor: number | null;
   designFeeMinor: number | null;
   procurementFeeMinor: number | null;
+  /** Director override; when non-null the adapter uses this instead of tier-derived. */
+  designFeeMinorOverride?: number | null;
+  /** Director override; when non-null the adapter uses this instead of tier-derived. */
+  procurementFeeMinorOverride?: number | null;
   goals: ProjectGoal[];
   outcomes: TargetOutcome[];
   budgetExpectationMinor: number | null;

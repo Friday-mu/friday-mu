@@ -102,6 +102,8 @@ function shapeProject(row) {
     epc_minor: row.epc_minor,
     design_fee_minor: row.design_fee_minor,
     procurement_fee_minor: row.procurement_fee_minor,
+    design_fee_minor_override: row.design_fee_minor_override ?? null,
+    procurement_fee_minor_override: row.procurement_fee_minor_override ?? null,
     budget_expectation_minor: row.budget_expectation_minor,
     goals: row.goals || [],
     outcomes: row.outcomes || [],
