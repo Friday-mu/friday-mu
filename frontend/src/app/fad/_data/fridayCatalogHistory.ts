@@ -223,3 +223,134 @@ export const FRIDAY_CATALOG_HISTORY: HistoricalCatalogEntry[] = [
   { normalizedKey: 'service all air conditioners', displayName: 'Service all air conditioners', category: 'cleaning', vendor: null, unitCostMinor: 0, qty: 1, sourceProjectLabel: 'Nooranee RCN-4', itemDetails: null, productLink: null, receiptLink: null, internalWork: true },
   { normalizedKey: 'remove limescale in all bathrooms (taps, showers, sinks, etc.).', displayName: 'Remove limescale in all bathrooms  (taps, showers, sinks, etc.).', category: 'cleaning', vendor: null, unitCostMinor: 0, qty: 1, sourceProjectLabel: 'Nooranee RCN-4', itemDetails: null, productLink: null, receiptLink: null, internalWork: true },
 ];
+
+// ─────────────────────────── FRIDAY STYLE GUIDE ───────────────────────────
+//
+// Aggregations derived from FRIDAY_CATALOG_HISTORY at module load. Surfaces:
+//  - Kimi/moodboard prompt synthesis can reference Friday's actual vendor
+//    palette and price discipline rather than generic Mauritius retail data
+//  - Tier-B AI furniture sourcing agent gets a real anchor for "Friday-style"
+//
+// Excludes internalWork=true entries (renovation/maintenance lines aren't
+// "style", they're project-specific work scope).
+
+export interface FridayStyleGuideVendor {
+  /** Canonical vendor name. */
+  name: string;
+  /** Distinct BudgetCategories this vendor has supplied to Friday. */
+  categories: string[];
+  /** Number of line items in the historical catalog from this vendor. */
+  sampleCount: number;
+}
+
+export interface FridayStyleGuidePriceRange {
+  /** 25th-percentile unit cost in MUR cents. */
+  p25: number;
+  /** Median unit cost in MUR cents. */
+  p50: number;
+  /** 75th-percentile unit cost in MUR cents. */
+  p75: number;
+  /** Number of historical entries in this category. */
+  samples: number;
+}
+
+export interface FridayStyleGuide {
+  /** Vendors ranked by line-item frequency, top-down. */
+  preferredVendors: FridayStyleGuideVendor[];
+  /** Per-category price percentiles, all MUR cents. Empty categories return zeros. */
+  priceRangesByCategory: Record<string, FridayStyleGuidePriceRange>;
+  /** Short prose summary suitable for prompt synthesis. */
+  notes: string;
+}
+
+const ALL_CATEGORIES = [
+  'furniture',
+  'appliance',
+  'decor',
+  'lighting',
+  'linen',
+  'contractor',
+  'labour',
+  'transport',
+  'cleaning',
+] as const;
+
+function percentile(sortedValues: number[], q: number): number {
+  if (sortedValues.length === 0) return 0;
+  const pos = q * (sortedValues.length - 1);
+  const lo = Math.floor(pos);
+  const hi = lo + 1;
+  if (hi >= sortedValues.length) return sortedValues[sortedValues.length - 1];
+  const frac = pos - lo;
+  return Math.round(sortedValues[lo] * (1 - frac) + sortedValues[hi] * frac);
+}
+
+function buildFridayStyleGuide(): FridayStyleGuide {
+  const catalog = FRIDAY_CATALOG_HISTORY.filter((e) => !e.internalWork);
+
+  // Vendor rollup.
+  const vendorCounts = new Map<string, number>();
+  const vendorCategories = new Map<string, Set<string>>();
+  for (const e of catalog) {
+    if (!e.vendor) continue;
+    vendorCounts.set(e.vendor, (vendorCounts.get(e.vendor) ?? 0) + 1);
+    const set = vendorCategories.get(e.vendor) ?? new Set();
+    set.add(e.category);
+    vendorCategories.set(e.vendor, set);
+  }
+  const preferredVendors: FridayStyleGuideVendor[] = Array.from(vendorCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name, sampleCount]) => ({
+      name,
+      categories: Array.from(vendorCategories.get(name) ?? []).sort(),
+      sampleCount,
+    }));
+
+  // Price percentiles by category.
+  const costsByCategory = new Map<string, number[]>();
+  for (const e of catalog) {
+    const arr = costsByCategory.get(e.category) ?? [];
+    arr.push(e.unitCostMinor);
+    costsByCategory.set(e.category, arr);
+  }
+  const priceRangesByCategory: Record<string, FridayStyleGuidePriceRange> = {};
+  for (const cat of ALL_CATEGORIES) {
+    const sorted = (costsByCategory.get(cat) ?? []).slice().sort((a, b) => a - b);
+    priceRangesByCategory[cat] = {
+      p25: percentile(sorted, 0.25),
+      p50: percentile(sorted, 0.5),
+      p75: percentile(sorted, 0.75),
+      samples: sorted.length,
+    };
+  }
+
+  // Free-form notes — observations derived from the data, not hand-written.
+  // Patterns observed from the 3 imports (Appadoo/LB/Nooranee, 2024–2026):
+  //   1. Courts dominates as Friday's primary one-stop vendor — beds, TVs,
+  //      wardrobes, appliances, lighting, even rugs.
+  //   2. La Foir Fouille fills the small-decor/kitchen-accessories niche
+  //      (vases, mirrors, candles, dish racks, tissue holders).
+  //   3. Kalachand + Quality Decor cover bathroom fixtures & rugs at a
+  //      mid-tier price point.
+  //   4. Renovation work (LB-2) uses named individual contractors (Avinash,
+  //      Faiz, Val, Adarsh, Ramnarain) at Rs 18–71k per work package —
+  //      typically partition walls, electrical, plumbing, paint, tiling.
+  //   5. T1 full-furnish projects run ~Rs 1M; light refresh ~Rs 250k.
+  const notes =
+    "Friday's procurement pattern (across Appadoo RC 15, Lagon Bleu LB-2, " +
+    'Nooranee RCN-4): Courts is the dominant vendor across furniture, ' +
+    'appliances, lighting, and even rugs. La Foir Fouille supplies small ' +
+    'decor and kitchen accessories (vases, dish racks, candles). Quality ' +
+    'Decor and Kalachand cover bathroom fixtures and rugs at mid-tier ' +
+    'prices. Renovation work uses named individual contractors (Avinash, ' +
+    'Faiz, Val, Adarsh) at Rs 18,000–71,000 per work package. Full T1 ' +
+    'furnish projects ~Rs 1M; light refurnishings ~Rs 250k.';
+
+  return { preferredVendors, priceRangesByCategory, notes };
+}
+
+/**
+ * Style/vendor/price patterns derived from Friday's historical procurement.
+ * Computed once at module load — see `buildFridayStyleGuide`.
+ */
+export const FRIDAY_STYLE_GUIDE: FridayStyleGuide = buildFridayStyleGuide();
