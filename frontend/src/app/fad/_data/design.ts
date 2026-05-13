@@ -709,14 +709,21 @@ export const ANNEX_A_DEFAULT: AnnexAConfig = {
     'Standard cleaning rate applies only during the ID-phase execution. Once the property goes live on Guesty (PM phase), cleaning costs flow through the guest cleaning fee, not the ID project.',
   tierStageRules: {
     1: { optionalStages: [] },
-    2: { optionalStages: ['doc-request'] },
+    // T2 (mid-EPC) needs at least some document package — without an
+    // existing floor plan / site plan, Friday would have to measure
+    // everything from scratch which costs extra. doc-request is
+    // mandatory here for the workflow to make sense. (Locked 2026-05-13
+    // per Ishant — supersedes the earlier optional-doc-request rule.)
+    2: { optionalStages: [] },
     // T3 contractually stops at the moodboard — design pack + owner
     // review are not part of the T3 agreement, so they're optional.
-    // Floor plan is also OPTIONAL for T3: the client agreement doesn't
+    // doc-request is also optional for T3: a moodboard-only deliverable
+    // doesn't require a full doc package, though if the owner provides
+    // one Friday delivers extra quality without charging more.
+    // Floor plan is OPTIONAL for T3: the client agreement doesn't
     // require it, but Friday still generates one internally as the base
-    // for design work. The system records it as done if generated,
-    // skipped otherwise — both are acceptable. Moodboard, by contrast,
-    // IS the T3 deliverable, so it's mandatory.
+    // for design work. Moodboard, by contrast, IS the T3 deliverable,
+    // so it's mandatory.
     // (Locked 2026-05-13 per Ishant — supersedes the design-be-13 brief.)
     3: { optionalStages: ['doc-request', 'floor-plan', 'design-pack', 'design-review'] },
   },
