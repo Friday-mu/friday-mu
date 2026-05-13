@@ -16,6 +16,7 @@ import {
 import { useCurrentRole } from '../../../usePermissions';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
+import { BankReconciliationPanel } from '../BankReconciliationPanel';
 
 interface Props {
   project: DesignProject;
@@ -26,6 +27,9 @@ export function ReconciliationStage({ project }: Props) {
   const role = useCurrentRole();
   const canSeeProfitability = role === 'director';
   const [openCat, setOpenCat] = useState<BudgetCategory | null>(null);
+  // design-be-24: bank reconciliation gates "finalize reconciliation".
+  // Panel reports readiness; we mirror it locally for the finalize button.
+  const [bankReconReady, setBankReconReady] = useState(false);
 
   const totals = useMemo(() => {
     const approved = items.filter((i) => i.status === 'approved').reduce((s, i) => s + (i.finalApprovedCostMinor ?? 0), 0);
@@ -57,6 +61,13 @@ export function ReconciliationStage({ project }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Bank reconciliation (design-be-24). Sits at the top because the
+          finalize button below gates on its readiness. */}
+      <BankReconciliationPanel
+        projectId={project.id}
+        onReconciliationReady={setBankReconReady}
+      />
+
       <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Reconciliation</h3>
@@ -161,17 +172,33 @@ export function ReconciliationStage({ project }: Props) {
         </Card>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-        <a
-          href={`/design-docs/${project.slug}/reconciliation`}
-          target="_blank"
-          rel="noopener"
-          data-doc-link="reconciliation"
-          style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-        >
-          Open reconciliation print preview ↗
-        </a>
-        {canSeeProfitability && <button type="button" onClick={() => fireToast('Internal profitability report generated — admin only PDF')} style={primaryBtn()}>Generate profitability report</button>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ fontSize: 11, color: bankReconReady ? 'var(--color-text-success)' : 'var(--color-text-tertiary)' }}>
+          {bankReconReady
+            ? '✓ Bank reconciliation complete — finalize is unblocked.'
+            : 'Finalize is blocked until every debit is confirmed/rejected and every actual-paid item has a confirmed match (see panel above).'}
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <a
+            href={`/design-docs/${project.slug}/reconciliation`}
+            target="_blank"
+            rel="noopener"
+            data-doc-link="reconciliation"
+            style={{ ...secondaryBtn(), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+          >
+            Open reconciliation print preview ↗
+          </a>
+          {canSeeProfitability && <button type="button" onClick={() => fireToast('Internal profitability report generated — admin only PDF')} style={primaryBtn()}>Generate profitability report</button>}
+          <button
+            type="button"
+            disabled={!bankReconReady}
+            onClick={() => fireToast('Reconciliation finalized — project moves to closeout.')}
+            data-design-finalize-reconciliation
+            style={bankReconReady ? primaryBtn() : { ...primaryBtn(), opacity: 0.5, cursor: 'not-allowed' }}
+          >
+            Finalize reconciliation
+          </button>
+        </div>
       </div>
     </div>
   );
