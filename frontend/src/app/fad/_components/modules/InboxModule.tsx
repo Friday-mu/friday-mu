@@ -544,19 +544,16 @@ export function InboxModule({ onAskFriday }: Props) {
             {INBOX_INTERNAL_NOTES.filter((n) => n.threadId === thread.id).map((n) => (
               <InternalNoteBubble key={n.id} note={n} />
             ))}
-
-            <div className="msg-bubble us">
-              <div className="msg-meta">You · draft</div>
-              <div className="msg-body" style={{ fontStyle: 'italic', opacity: 0.85 }}>
-                Drafting a reply… use <span className="mono">⌘K</span> to ask Friday to draft.
-              </div>
-            </div>
+            {/* The fake "Drafting a reply… use ⌘K" placeholder bubble was
+                purged 2026-05-13 (design-be-19). It was a fixture-era hint
+                that rendered for every thread regardless of whether the
+                user was actually drafting; the compose textarea below
+                already exposes the draft surface. */}
           </div>
           {consultOpen && (
             <FridayConsult
               key={selected}
               threadScope={thread.guest}
-              autoPrompt="Summarize what this guest is asking and suggest a reply angle"
               onClose={() => setConsultOpen(false)}
             />
           )}
@@ -1222,8 +1219,10 @@ function InternalNoteCompose({
       mentions,
       createdAt: new Date().toISOString(),
     };
-    // @demo:logic — Tag: PROD-LOGIC-10 — see frontend/DEMO_CRUFT.md
-    // Mock mutation. Replace with: POST /api/inbox/threads/:id/notes.
+    // Local-only optimistic write until POST /api/inbox/threads/:id/notes
+    // ships in Tier E. Fixture array purged 2026-05-13 (design-be-19),
+    // so the push starts from an empty list each session — fine for now;
+    // notes don't persist anywhere yet.
     INBOX_INTERNAL_NOTES.push(note);
     fireToast(
       mentions.length > 0
