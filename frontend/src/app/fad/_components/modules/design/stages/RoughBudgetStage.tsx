@@ -516,7 +516,7 @@ export function RoughBudgetStage({ project }: Props) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <a
-          href={`/design-docs/${project.slug}/rough-budget`}
+          href={`/design-docs/rough-budget?pid=${project.id}`}
           target="_blank"
           rel="noopener"
           data-doc-link="rough-budget"

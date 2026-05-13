@@ -180,7 +180,7 @@ export function ReconciliationStage({ project }: Props) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <a
-            href={`/design-docs/${project.slug}/reconciliation`}
+            href={`/design-docs/reconciliation?pid=${project.id}`}
             target="_blank"
             rel="noopener"
             data-doc-link="reconciliation"

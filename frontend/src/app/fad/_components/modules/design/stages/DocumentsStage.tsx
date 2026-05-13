@@ -30,7 +30,7 @@ const DOC_LABEL: Record<DocumentType, string> = {
   before_after_case_study: 'Before/after case study',
 };
 
-// Mapping of DocumentType → /design-docs/[slug]/[doc] route segment for the
+// Mapping of DocumentType → /design-docs/[doc]?pid=<id> route segment for the
 // 11 in-app print previews shipped in cont-37..43. Types without a preview
 // component fall back to the existing pdfUrl Download link.
 const PREVIEW_ROUTE: Partial<Record<DocumentType, string>> = {
@@ -129,7 +129,7 @@ export function DocumentsStage({ project }: Props) {
               )}
               {PREVIEW_ROUTE[active.type] && active.status !== 'not_yet' && (
                 <a
-                  href={`/design-docs/${project.slug}/${PREVIEW_ROUTE[active.type]}`}
+                  href={`/design-docs/${PREVIEW_ROUTE[active.type]}?pid=${project.id}`}
                   target="_blank"
                   rel="noopener"
                   data-doc-link={PREVIEW_ROUTE[active.type]}

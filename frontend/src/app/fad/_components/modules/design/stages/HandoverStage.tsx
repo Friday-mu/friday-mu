@@ -131,7 +131,7 @@ export function HandoverStage({ project }: Props) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
         <a
-          href={`/design-docs/${project.slug}/closeout-binder`}
+          href={`/design-docs/closeout-binder?pid=${project.id}`}
           target="_blank"
           rel="noopener"
           data-doc-link="closeout-binder"

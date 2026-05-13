@@ -624,7 +624,7 @@ function DraftCoEditor({ co, onChanged }: { co: ChangeOrder; onChanged: () => vo
           </span>
           {project && (
             <a
-              href={`/design-docs/${project.slug}/change-order?co=${co.id}`}
+              href={`/design-docs/change-order?pid=${project.id}&co=${co.id}`}
               target="_blank"
               rel="noopener"
               data-doc-link="change-order"
@@ -832,7 +832,7 @@ function SentCoReadOnly({ co }: { co: ChangeOrder }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {project && (
             <a
-              href={`/design-docs/${project.slug}/change-order?co=${co.id}`}
+              href={`/design-docs/change-order?pid=${project.id}&co=${co.id}`}
               target="_blank"
               rel="noopener"
               data-doc-link="change-order"

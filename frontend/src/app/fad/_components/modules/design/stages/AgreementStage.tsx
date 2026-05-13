@@ -281,7 +281,7 @@ export function AgreementStage({ project }: Props) {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a
-              href={`/design-docs/${project.slug}/agreement`}
+              href={`/design-docs/agreement?pid=${project.id}`}
               target="_blank"
               rel="noopener"
               data-doc-link="agreement"

@@ -184,7 +184,7 @@ function VersionDetail({ version }: { version: MoodboardVersion }) {
           </button>
           {project && (
             <a
-              href={`/design-docs/${project.slug}/moodboard`}
+              href={`/design-docs/moodboard?pid=${project.id}`}
               target="_blank"
               rel="noopener"
               data-doc-link="moodboard"

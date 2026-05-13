@@ -735,7 +735,7 @@ function PackDetail({ version }: { version: DesignPackVersion }) {
         <div style={{ display: 'flex', gap: 8 }}>
           {project && (
             <a
-              href={`/design-docs/${project.slug}/design-pack`}
+              href={`/design-docs/design-pack?pid=${project.id}`}
               target="_blank"
               rel="noopener"
               data-doc-link="design-pack"

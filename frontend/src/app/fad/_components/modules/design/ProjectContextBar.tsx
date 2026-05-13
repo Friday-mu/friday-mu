@@ -330,7 +330,7 @@ function PrintPreviewMenu({ project }: { project: DesignProject }) {
               {docs.map((d) => (
                 <a
                   key={d.slug}
-                  href={`/design-docs/${project.slug}/${d.slug}`}
+                  href={`/design-docs/${d.slug}?pid=${project.id}`}
                   target="_blank"
                   rel="noopener"
                   data-doc-link={d.slug}
