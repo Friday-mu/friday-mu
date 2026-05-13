@@ -6,6 +6,17 @@
 // @demo:logic — Tier auto-calc, fee auto-calc, owner-stripping for portal view
 // belong server-side once auth is real. Tag: PROD-DESIGN-2.
 
+import { FRIDAY_CATALOG_HISTORY, FRIDAY_STYLE_GUIDE } from './fridayCatalogHistory';
+
+// Re-export so consumers don't need to reach into the helper file.
+export { FRIDAY_CATALOG_HISTORY, FRIDAY_STYLE_GUIDE };
+export type {
+  HistoricalCatalogEntry,
+  FridayStyleGuide,
+  FridayStyleGuideVendor,
+  FridayStyleGuidePriceRange,
+} from './fridayCatalogHistory';
+
 // ─────────────────────────── ENTITY / MODULE CONSTANTS ───────────────────────────
 
 /** Every Design OS record carries entity_id = 'FD' (Friday Design). */
@@ -3446,12 +3457,63 @@ function normaliseItemKey(name: string): string {
 }
 
 /**
+ * Synthetic projectId derived from a historical project label so the
+ * `sourceProjectIds` traceability field still works after merging real
+ * imports into the BUDGET_ITEMS-derived catalog. Lowercased and slugified.
+ */
+function syntheticHistoricalProjectId(label: string): string {
+  return 'hist-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/**
+ * Internal accumulator — one bucket of per-unit costs and display metadata
+ * per normalised key, populated from both BUDGET_ITEMS fixtures and the
+ * imported FRIDAY_CATALOG_HISTORY.
+ */
+interface CatalogBucket {
+  perUnit: number[];
+  projectIds: Set<string>;
+  /** Last-write-wins; fixtures sort after history in the merge, so a real
+   * BUDGET_ITEM displayName/category trumps historical when both exist. */
+  displayName: string;
+  category: BudgetCategory;
+}
+
+/**
  * Build the catalog from approved historical BudgetItems with a real
- * negotiated price. Internal-work lines and items without a per-unit price
- * are skipped (they don't help estimate furniture/material costs).
+ * negotiated price, merged with FRIDAY_CATALOG_HISTORY (real procurement
+ * from Appadoo RC 15, Lagon Bleu LB-2, Nooranee RCN-4). Internal-work
+ * lines and items without a per-unit price are skipped in both sources
+ * — they don't help estimate furniture/material costs.
  */
 export function buildItemCatalog(): CatalogItem[] {
-  const groups = new Map<string, { items: BudgetItem[]; latest: BudgetItem }>();
+  const buckets = new Map<string, CatalogBucket>();
+
+  // Pass 1: Friday's real procurement history. These land first so the
+  // BUDGET_ITEMS pass below can overwrite the displayName/category fields
+  // with the (hopefully more polished) fixture metadata if the same key
+  // appears in both.
+  for (const entry of FRIDAY_CATALOG_HISTORY) {
+    if (entry.internalWork) continue;
+    if (entry.qty <= 0) continue;
+    if (entry.unitCostMinor <= 0) continue;
+    const key = entry.normalizedKey;
+    const projectId = syntheticHistoricalProjectId(entry.sourceProjectLabel);
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.perUnit.push(entry.unitCostMinor);
+      existing.projectIds.add(projectId);
+    } else {
+      buckets.set(key, {
+        perUnit: [entry.unitCostMinor],
+        projectIds: new Set([projectId]),
+        displayName: entry.displayName,
+        category: entry.category,
+      });
+    }
+  }
+
+  // Pass 2: fixture BUDGET_ITEMS (demo data — replaced server-side in v0.2).
   for (const item of BUDGET_ITEMS) {
     if (item.internalWork) continue;
     if (item.status !== 'approved') continue;
@@ -3459,19 +3521,27 @@ export function buildItemCatalog(): CatalogItem[] {
     const negotiated = item.negotiatedCostMinor;
     if (negotiated === null || negotiated <= 0) continue;
     const key = normaliseItemKey(item.itemName);
-    const existing = groups.get(key);
+    const perUnitCost = Math.round(negotiated / Math.max(1, item.qty));
+    const existing = buckets.get(key);
     if (existing) {
-      existing.items.push(item);
-      existing.latest = item;
+      existing.perUnit.push(perUnitCost);
+      existing.projectIds.add(item.projectId);
+      // Fixture (modern, in-app naming) takes precedence over historical.
+      existing.displayName = item.itemName;
+      existing.category = item.category;
     } else {
-      groups.set(key, { items: [item], latest: item });
+      buckets.set(key, {
+        perUnit: [perUnitCost],
+        projectIds: new Set([item.projectId]),
+        displayName: item.itemName,
+        category: item.category,
+      });
     }
   }
+
   const out: CatalogItem[] = [];
-  for (const [key, { items, latest }] of groups) {
-    const perUnit = items
-      .map((i) => Math.round((i.negotiatedCostMinor ?? 0) / Math.max(1, i.qty)))
-      .sort((a, b) => a - b);
+  for (const [key, bucket] of buckets) {
+    const perUnit = bucket.perUnit.slice().sort((a, b) => a - b);
     const min = perUnit[0];
     const max = perUnit[perUnit.length - 1];
     const sum = perUnit.reduce((s, x) => s + x, 0);
@@ -3484,14 +3554,14 @@ export function buildItemCatalog(): CatalogItem[] {
         : perUnit[mid];
     out.push({
       key,
-      displayName: latest.itemName,
-      category: latest.category,
-      sampleCount: items.length,
+      displayName: bucket.displayName,
+      category: bucket.category,
+      sampleCount: perUnit.length,
       minMinor: min,
       medianMinor: median,
       meanMinor: mean,
       maxMinor: max,
-      sourceProjectIds: Array.from(new Set(items.map((i) => i.projectId))).slice(0, 5),
+      sourceProjectIds: Array.from(bucket.projectIds).slice(0, 5),
     });
   }
   // Sort by sampleCount desc, then displayName for stable browsing.
