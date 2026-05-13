@@ -342,6 +342,10 @@ function shapeMoodboard(row) {
     name: row.name,
     links: row.links || [],
     notes: row.notes,
+    // Migration 028 — variant grouping. NULL for legacy single-
+    // moodboard generations; populated for /variants batches.
+    variant_group_id: row.variant_group_id || null,
+    variant_index: row.variant_index != null ? Number(row.variant_index) : null,
     sent_at: row.sent_at,
     approved_at: row.approved_at,
     created_at: row.created_at,

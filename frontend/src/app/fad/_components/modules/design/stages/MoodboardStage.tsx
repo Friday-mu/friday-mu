@@ -7,7 +7,9 @@ import {
   type DesignProject,
   type MoodboardVersion,
 } from '../../../../_data/design';
-import { useHydrateDesignProject } from '../../../../_data/designClient';
+import { useHydrateDesignProject, createMoodboardVariants, apiMoodboardToFixture } from '../../../../_data/designClient';
+import { MOODBOARDS as FIXTURE_MOODBOARDS } from '../../../../_data/design';
+import { bumpFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 import { MoodboardImageGenerator } from '../MoodboardImageGenerator';
@@ -30,6 +32,15 @@ interface Props {
 const REVISIONS_INCLUDED = 2;
 const PER_REVISION_FEE_MUR = 5000;
 
+// Default 3-variant seed names. Staff can rename via the per-variant
+// generator after creation; these just kick off the group with
+// distinguishable defaults.
+const DEFAULT_VARIANT_PROMPTS = [
+  { name: 'Variant 1 · Scandinavian', notes: 'Light wood, soft neutrals, minimal accents.' },
+  { name: 'Variant 2 · Tropical', notes: 'Rattan, deep greens, indoor/outdoor flow.' },
+  { name: 'Variant 3 · Modern coastal', notes: 'Linen, sandy tones, deep ocean accent.' },
+];
+
 export function MoodboardStage({ project }: Props) {
   const versions = designClient.moodboards.list(project.id);
   const [activeId, setActiveId] = useState<string | null>(versions[0]?.id ?? null);
@@ -37,6 +48,32 @@ export function MoodboardStage({ project }: Props) {
 
   const usedRevisions = Math.max(0, versions.length - 1);
   const overflow = Math.max(0, usedRevisions - REVISIONS_INCLUDED);
+
+  // W7 — generate a 3-variant batch. Each variant becomes its own
+  // version_number; they share variant_group_id so the UI can render
+  // them as a comparison set. Staff attach images to each via the
+  // existing per-variant generator below.
+  const [creatingVariants, setCreatingVariants] = useState(false);
+  const handleCreateVariantSet = async () => {
+    setCreatingVariants(true);
+    try {
+      const response = await createMoodboardVariants({
+        project_id: project.id,
+        variants: DEFAULT_VARIANT_PROMPTS.map((v) => ({ name: v.name, notes: v.notes, links: [] })),
+      });
+      for (const v of response.variants) {
+        FIXTURE_MOODBOARDS.push(apiMoodboardToFixture(v));
+      }
+      bumpFixtureRev();
+      setActiveId(response.variants[0]?.id ?? null);
+      fireToast(`Created ${response.variants.length} variants — attach images via ✨ Generate image on each.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Variant create failed: ${msg}`);
+    } finally {
+      setCreatingVariants(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -53,9 +90,24 @@ export function MoodboardStage({ project }: Props) {
               )}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <AIPlaceholder feature="moodboard-narrative" label="Generate narrative" size="sm" />
-            <button type="button" style={primaryBtn()} onClick={() => fireToast('Mock: new moodboard version created (v0.2 wires to Drive upload + Eversign)')}>+ New version</button>
+            <button
+              type="button"
+              onClick={handleCreateVariantSet}
+              disabled={creatingVariants}
+              data-moodboard-create-variants
+              title="Generate 3 alternative moodboards (Scandinavian / Tropical / Modern coastal) so the owner can compare and pick one in the portal"
+              style={{
+                ...primaryBtn(),
+                background: 'var(--color-brand-accent)',
+                opacity: creatingVariants ? 0.5 : 1,
+                cursor: creatingVariants ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {creatingVariants ? 'Creating…' : '✨ Create 3 variants'}
+            </button>
+            <button type="button" style={secondaryBtn()} onClick={() => fireToast('Single-version create — generate the image via ✨ Generate image inside the version detail.')}>+ Single version</button>
           </div>
         </div>
       </Card>
@@ -67,28 +119,39 @@ export function MoodboardStage({ project }: Props) {
             <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>No versions yet.</div>
           ) : (
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {versions.map((v) => (
-                <li key={v.id}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveId(v.id)}
-                    style={{
-                      width: '100%', textAlign: 'left', padding: 8,
-                      borderRadius: 'var(--radius-sm)',
-                      background: activeId === v.id ? 'var(--color-brand-accent-soft)' : 'transparent',
-                      border: '0.5px solid var(--color-border-tertiary)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                      <strong>v{v.version}</strong>
-                      <ApprovalChip state={v.state} />
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                      {v.createdAt.slice(0, 10)}
-                    </div>
-                  </button>
-                </li>
-              ))}
+              {versions.map((v) => {
+                const variant = v as MoodboardVersion & { variantGroupId?: string | null; variantIndex?: number | null };
+                const groupSize = variant.variantGroupId
+                  ? versions.filter((x) => (x as { variantGroupId?: string }).variantGroupId === variant.variantGroupId).length
+                  : 0;
+                return (
+                  <li key={v.id}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveId(v.id)}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: 8,
+                        borderRadius: 'var(--radius-sm)',
+                        background: activeId === v.id ? 'var(--color-brand-accent-soft)' : 'transparent',
+                        border: '0.5px solid var(--color-border-tertiary)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <strong>v{v.version}</strong>
+                        <ApprovalChip state={v.state} />
+                      </div>
+                      {variant.variantGroupId && variant.variantIndex && (
+                        <div style={{ fontSize: 10, color: 'var(--color-brand-accent)', marginTop: 2, fontWeight: 500 }}>
+                          ✨ Variant {variant.variantIndex} of {groupSize}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                        {v.createdAt.slice(0, 10)}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>

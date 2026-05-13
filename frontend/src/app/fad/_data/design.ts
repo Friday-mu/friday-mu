@@ -477,6 +477,13 @@ export interface MoodboardVersion {
   approvedAt: string | null;
   ownerComments: string | null;
   createdAt: string;
+  /**
+   * Migration 028 — variant grouping. Moodboards generated as a
+   * variant batch share variant_group_id; variantIndex is 1-based.
+   * NULL on legacy single-moodboard generations.
+   */
+  variantGroupId?: string | null;
+  variantIndex?: number | null;
 }
 
 export interface DesignPackVersion {

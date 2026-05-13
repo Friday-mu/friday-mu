@@ -234,6 +234,17 @@ export interface ApiActivity {
   created_at: string;
 }
 
+// Migration 028 — moodboard variants.
+export interface ApiMoodboardVariantsResponse {
+  group_id: string;
+  variants: ApiMoodboard[];
+}
+export const createMoodboardVariants = (payload: {
+  project_id: string;
+  variants: Array<{ name?: string; links?: Array<Record<string, unknown>>; notes?: string | null }>;
+}) =>
+  apiFetch('/api/design/moodboards/variants', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiMoodboardVariantsResponse>;
+
 export interface ApiMoodboard {
   id: string;
   project_id: string;
@@ -242,6 +253,11 @@ export interface ApiMoodboard {
   name?: string | null;
   links: Array<{ url: string; caption?: string; image_id?: string }>;
   notes?: string | null;
+  // Migration 028 — variant grouping. When variant_group_id is non-
+  // null, this moodboard was produced as part of an N-variant batch
+  // (Tier A #5). variant_index is 1-based.
+  variant_group_id?: string | null;
+  variant_index?: number | null;
   sent_at?: string | null;
   approved_at?: string | null;
   created_at: string;
@@ -1504,6 +1520,10 @@ export function apiMoodboardToFixture(api: ApiMoodboard): FixtureMoodboard {
     ownerComments: null,
     createdAt: api.created_at,
     links,
+    // W7 — variant grouping. UI uses these to render variants
+    // side-by-side and let the owner pick one in the portal.
+    variantGroupId: api.variant_group_id ?? null,
+    variantIndex: api.variant_index ?? null,
   } as unknown as FixtureMoodboard;
 }
 
