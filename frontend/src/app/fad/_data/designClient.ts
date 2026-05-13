@@ -131,6 +131,18 @@ export interface ApiProject {
   epc_minor?: number | null;
   design_fee_minor?: number | null;
   procurement_fee_minor?: number | null;
+  /**
+   * Director-set override. When non-null, apiProjectToFixture uses this
+   * instead of the tier-derived fee. NULL = no override → derive via
+   * designFeeForTier(tier, epcMinor).
+   */
+  design_fee_minor_override?: number | null;
+  /**
+   * Director-set override for procurement fee. Same semantics as
+   * design_fee_minor_override — when non-null bypasses the derivation
+   * via procurementFeeForTier(tier, classification, epcMinor).
+   */
+  procurement_fee_minor_override?: number | null;
   budget_expectation_minor?: number | null;
   goals: string[];
   outcomes: string[];
@@ -840,11 +852,17 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
   const budgetExpectation = api.budget_expectation_minor ?? 0;
   const effectiveEpc = persistedEpc > 0 ? persistedEpc : budgetExpectation;
   const tier: DesignTier = effectiveEpc > 0 ? tierForEpc(effectiveEpc) : ((api.tier as DesignTier) ?? 1);
-  const designFee = (api.design_fee_minor && api.design_fee_minor > 0)
-    ? api.design_fee_minor
+  // design-be-15: explicit Director override columns take precedence
+  // over tier derivation. Legacy design_fee_minor / procurement_fee_minor
+  // flow through the API for backward-compat but are no longer the
+  // override carrier — only the *_override columns drive the fixture.
+  const designFeeOverride = api.design_fee_minor_override;
+  const procurementFeeOverride = api.procurement_fee_minor_override;
+  const designFee = designFeeOverride != null
+    ? designFeeOverride
     : (effectiveEpc > 0 ? designFeeForTier(tier, effectiveEpc) : 0);
-  const procurementFee = (api.procurement_fee_minor && api.procurement_fee_minor > 0)
-    ? api.procurement_fee_minor
+  const procurementFee = procurementFeeOverride != null
+    ? procurementFeeOverride
     : (effectiveEpc > 0 ? procurementFeeForTier(tier, classification, effectiveEpc) : 0);
 
   return {
@@ -884,6 +902,8 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     cancelTransferToInventory: api.cancel_transfer_to_inventory ?? undefined,
     floorPlanImageId: api.floor_plan_image_id ?? null,
     floorPlanFurnishedImageId: api.floor_plan_furnished_image_id ?? null,
+    designFeeMinorOverride: api.design_fee_minor_override ?? null,
+    procurementFeeMinorOverride: api.procurement_fee_minor_override ?? null,
   } as FixtureProject;
 }
 
