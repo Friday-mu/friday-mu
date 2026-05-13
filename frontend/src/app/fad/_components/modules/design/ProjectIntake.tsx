@@ -18,13 +18,18 @@ interface Props {
 }
 
 const SOURCE_OPTIONS: { id: LeadSource; label: string }[] = [
-  { id: 'friday_outreach', label: 'Friday outreach' },
-  { id: 'owner_referral',  label: 'Owner referral' },
-  { id: 'website',         label: 'Website' },
-  { id: 'whatsapp',        label: 'WhatsApp' },
-  { id: 'existing_owner',  label: 'Existing owner' },
-  { id: 'walk_in',         label: 'Walk-in' },
-  { id: 'other',           label: 'Other' },
+  { id: 'friday_outreach',         label: 'Friday outreach' },
+  { id: 'owner_referral',          label: 'Owner referral' },
+  { id: 'existing_owner',          label: 'Existing Friday owner' },
+  { id: 'repeat_customer',         label: 'Repeat customer' },
+  { id: 'industry_referral',       label: 'Industry referral (agent / notary / contractor)' },
+  { id: 'website',                 label: 'Website' },
+  { id: 'whatsapp',                label: 'WhatsApp' },
+  { id: 'social_media',            label: 'Social media' },
+  { id: 'social_media_influencer', label: 'Social media — influencer campaign' },
+  { id: 'social_media_ad',         label: 'Social media — ad campaign' },
+  { id: 'walk_in',                 label: 'Walk-in' },
+  { id: 'other',                   label: 'Other' },
 ];
 
 const ENTRY_PATH_OPTIONS: { id: EntryPath; label: string; description: string }[] = [

@@ -760,13 +760,23 @@ function SignalChip({ label, tone, title }: { label: string; tone: 'info' | 'war
 const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   friday_outreach: 'Friday outreach',
   owner_referral: 'Owner referral',
+  existing_owner: 'Existing Friday owner',
+  repeat_customer: 'Repeat customer',
+  industry_referral: 'Industry referral',
   website: 'Website',
   whatsapp: 'WhatsApp',
-  existing_owner: 'Existing owner',
+  social_media: 'Social media',
+  social_media_influencer: 'Social — influencer',
+  social_media_ad: 'Social — ad campaign',
   walk_in: 'Walk-in',
   other: 'Other',
 };
-const LEAD_SOURCES: LeadSource[] = ['friday_outreach', 'owner_referral', 'website', 'whatsapp', 'existing_owner', 'walk_in', 'other'];
+const LEAD_SOURCES: LeadSource[] = [
+  'friday_outreach', 'owner_referral', 'existing_owner', 'repeat_customer',
+  'industry_referral', 'website', 'whatsapp',
+  'social_media', 'social_media_influencer', 'social_media_ad',
+  'walk_in', 'other',
+];
 
 // Hydrated DesignLead — what's actually in `designClient.leads.list()` after
 // hydration via apiLeadToFixture (designClient.ts). Mirrors the ApiLead shape
@@ -811,7 +821,7 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
     const email = window.prompt('Email (optional)')?.trim() || undefined;
     const phone = window.prompt('Phone (optional)')?.trim() || undefined;
     const sourceInput = window.prompt(
-      'Source? Options: friday_outreach, owner_referral, website, whatsapp, existing_owner, walk_in, other',
+      `Source? Options: ${LEAD_SOURCES.join(', ')}`,
       'website',
     )?.trim();
     const source = LEAD_SOURCES.includes(sourceInput as LeadSource) ? sourceInput : undefined;

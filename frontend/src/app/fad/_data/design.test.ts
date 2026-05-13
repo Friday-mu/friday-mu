@@ -45,11 +45,11 @@ describe('designFeeForTier', () => {
   });
 });
 
-describe('procurementFeeForTier — 6-cell matrix', () => {
+describe('procurementFeeForTier — 9-cell matrix (mixed → renovation rate)', () => {
   const epc = 100_000_00; // Rs 100,000 in minor units
   const cells: Array<{
     tier: 1 | 2 | 3;
-    classification: 'renovation' | 'furnishing';
+    classification: 'renovation' | 'furnishing' | 'mixed';
     expectedPct: number;
   }> = [
     { tier: 3, classification: 'furnishing', expectedPct: 0.125 },
@@ -58,6 +58,12 @@ describe('procurementFeeForTier — 6-cell matrix', () => {
     { tier: 3, classification: 'renovation', expectedPct: 0.175 },
     { tier: 2, classification: 'renovation', expectedPct: 0.15 },
     { tier: 1, classification: 'renovation', expectedPct: 0.125 },
+    // 'mixed' projects involve construction work — they're priced at the
+    // renovation (higher) rate, not furnishing. Only pure-furnishing
+    // qualifies for the lower rate. (Locked 2026-05-13.)
+    { tier: 3, classification: 'mixed',      expectedPct: 0.175 },
+    { tier: 2, classification: 'mixed',      expectedPct: 0.15 },
+    { tier: 1, classification: 'mixed',      expectedPct: 0.125 },
   ];
   for (const cell of cells) {
     it(`Tier ${cell.tier} ${cell.classification} → ${cell.expectedPct * 100}% of EPC`, () => {

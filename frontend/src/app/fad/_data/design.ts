@@ -94,9 +94,14 @@ export type ProjectClassification = 'renovation' | 'furnishing' | 'mixed';
 export type LeadSource =
   | 'friday_outreach'
   | 'owner_referral'
+  | 'existing_owner'         // Existing Friday PM owner upselling into design
+  | 'repeat_customer'        // Previous design project, commissioning another
+  | 'industry_referral'      // Agent / notary / contractor / architect referral
   | 'website'
   | 'whatsapp'
-  | 'existing_owner'
+  | 'social_media'
+  | 'social_media_influencer'
+  | 'social_media_ad'
   | 'walk_in'
   | 'other';
 
@@ -812,7 +817,10 @@ export function procurementFeeForTier(
   epcMinor: number,
   cfg: AnnexAConfig = ANNEX_A_DEFAULT,
 ): number {
-  const table = classification === 'renovation' ? cfg.procurementRenovation : cfg.procurementFurnishing;
+  // 'mixed' projects involve construction work and should be priced at the
+  // renovation rate (the higher, full-scope rate) — not furnishing. Only
+  // pure-furnishing projects (no construction) qualify for the lower rate.
+  const table = classification === 'furnishing' ? cfg.procurementFurnishing : cfg.procurementRenovation;
   const pct = tier === 3 ? table.tier3Pct : tier === 2 ? table.tier2Pct : table.tier1Pct;
   return Math.round(epcMinor * pct);
 }
