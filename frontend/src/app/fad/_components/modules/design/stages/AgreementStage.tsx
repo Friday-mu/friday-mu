@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useFixtureRev } from '../../../../_data/fixtureRev';
 import {
   designClient,
   designFeeForTier,
@@ -30,6 +31,12 @@ const STATUS_LABEL: Record<AgreementStatus, string> = {
 };
 
 export function AgreementStage({ project }: Props) {
+  // Subscribe so the badge + evidence-PDF gate update once hydration
+  // populates FIXTURE_AGREEMENTS with the live API row. Without this the
+  // initial render reads pre-hydration state (existing=null → 'draft'
+  // fallback) and never refreshes, so signed agreements show as Draft
+  // and the evidence PDF button never appears.
+  useFixtureRev();
   const cfg = designClient.settings.annexA();
   const existing = designClient.agreement.get(project.id);
   const counterparty = designClient.counterparties.get(project.counterpartyId);
