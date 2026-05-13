@@ -133,6 +133,11 @@ function shapeProject(row) {
     // 018), so the ?? is belt-and-braces for rows materialised before
     // the column existed.
     engagement_scope: row.engagement_scope ?? 'design_and_execution',
+    // Migration 027 — CIA Mauritius compliance state. Default 'unknown'
+    // for rows materialised before the column existed.
+    cia_registration_status: row.cia_registration_status ?? 'unknown',
+    cia_registration_ref: row.cia_registration_ref ?? null,
+    cia_notes: row.cia_notes ?? null,
     lifecycle_status: row.lifecycle_status,
     paused_at: row.paused_at,
     paused_reason: row.paused_reason,

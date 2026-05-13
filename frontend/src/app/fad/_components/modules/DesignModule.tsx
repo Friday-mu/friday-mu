@@ -42,6 +42,7 @@ import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import { ShareWithOwnerDrawer } from './design/ShareWithOwnerDrawer';
 import { ProjectAskFridayDrawer } from './design/ProjectAskFridayDrawer';
 import { BlockersPanel } from './design/BlockersPanel';
+import { CiaCompliancePanel, requiresCiaRegistration } from './design/CiaCompliancePanel';
 import { NextActionsPanel } from './design/NextActionsPanel';
 import {
   NeedsAttentionQueue,
@@ -2976,6 +2977,16 @@ function ProjectOverview({ project }: { project: DesignProject }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* W6 — CIA Mauritius compliance check. Renders at the top of
+         the overview when registration is required AND not yet
+         confirmed; collapses to a muted "not required" tile otherwise.
+         The team can update status / paste registration ref inline. */}
+      {(requiresCiaRegistration(project).required ||
+        ((project as DesignProject & { ciaRegistrationStatus?: string }).ciaRegistrationStatus &&
+         (project as DesignProject & { ciaRegistrationStatus?: string }).ciaRegistrationStatus !== 'unknown')) && (
+        <CiaCompliancePanel project={project} />
+      )}
+
       {/* design-be-18: top-of-overview Blockers + Next actions panels.
          Replaces the single-line Blocker / Next action rows previously
          buried in the Summary card with proper multi-item task lists. */}

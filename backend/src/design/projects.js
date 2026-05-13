@@ -46,6 +46,10 @@ const WRITABLE_FIELDS = [
   // procurement_fee_minor. CHECK constraint enforces the enum at the
   // DB level (migration 018).
   'engagement_scope',
+  // Migration 027: CIA Mauritius compliance fields. Status transitions
+  // are recorded in cia_notes for audit (frontend appends new lines on
+  // each save).
+  'cia_registration_status', 'cia_registration_ref', 'cia_notes',
 ];
 
 // Mirrors the 17-stage workflow + 6 stage statuses from the frontend

@@ -177,6 +177,14 @@ export interface ApiProject {
    * Backed by design_projects.engagement_scope (migration 018).
    */
   engagement_scope?: 'design_only' | 'design_and_execution';
+  /**
+   * Migration 027 — CIA Mauritius compliance state. Projects above
+   * Rs 1M EPC (and/or any T1 renovation) require Construction Industry
+   * Authority registration before execution starts.
+   */
+  cia_registration_status?: 'unknown' | 'not_required' | 'pending' | 'registered' | 'exempt';
+  cia_registration_ref?: string | null;
+  cia_notes?: string | null;
   lifecycle_status: 'active' | 'paused' | 'cancelled';
   paused_at?: string | null;
   paused_reason?: string | null;
@@ -1385,6 +1393,10 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     designFeeMinorOverride: api.design_fee_minor_override ?? null,
     procurementFeeMinorOverride: api.procurement_fee_minor_override ?? null,
     engagementScope,
+    // Migration 027 — CIA Mauritius compliance state from the API.
+    ciaRegistrationStatus: api.cia_registration_status ?? 'unknown',
+    ciaRegistrationRef: api.cia_registration_ref ?? null,
+    ciaNotes: api.cia_notes ?? null,
     // design-be-23: pre-computed total fee. For design_only this is
     // just the design fee (procurement is out of scope and already
     // masked to 0 above). Components can read this directly without

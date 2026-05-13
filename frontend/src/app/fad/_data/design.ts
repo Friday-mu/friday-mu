@@ -185,6 +185,15 @@ export interface DesignProject {
    */
   engagementScope: EngagementScope;
   /**
+   * Migration 027 — CIA Mauritius compliance state. Required when the
+   * project triggers Construction Industry Authority registration
+   * under the 2023 Act (any T1, T2-renovation, or EPC ≥ Rs 1M).
+   * Static fixtures default to 'unknown'.
+   */
+  ciaRegistrationStatus?: 'unknown' | 'not_required' | 'pending' | 'registered' | 'exempt';
+  ciaRegistrationRef?: string | null;
+  ciaNotes?: string | null;
+  /**
    * design-be-23: derived total fee for the owner-facing summary.
    *   design_and_execution => designFeeMinor + procurementFeeMinor
    *   design_only          => designFeeMinor (procurement is out of scope)
