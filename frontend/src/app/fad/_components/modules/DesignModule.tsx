@@ -2924,12 +2924,26 @@ function ProjectOverview({ project }: { project: DesignProject }) {
           <SummaryRow label="Tier"          value={project.tier ? `Tier ${project.tier}` : '—'} />
           <SummaryRow label="EPC"           value={formatMUR(project.epcMinor)} />
           <FeeSummaryRow label="Design fee"    minor={project.designFeeMinor} />
-          <FeeSummaryRow label="Execution fee" minor={project.procurementFeeMinor} />
+          {/* design-be-23: under design_only the execution fee is not
+             charged (procurement out of scope). Render an em-dash row
+             with a "(design only)" subtext instead of zero. */}
+          {project.engagementScope === 'design_only' ? (
+            <FeeSummaryRow
+              label="Execution fee"
+              minor={null}
+              subtext="(design only)"
+              testId="fee-execution-design-only"
+            />
+          ) : (
+            <FeeSummaryRow label="Execution fee" minor={project.procurementFeeMinor} />
+          )}
           <FeeSummaryRow
             label="Total fee"
             minor={(project.designFeeMinor == null && project.procurementFeeMinor == null)
               ? null
-              : (project.designFeeMinor ?? 0) + (project.procurementFeeMinor ?? 0)}
+              : project.engagementScope === 'design_only'
+                ? (project.designFeeMinor ?? 0)
+                : (project.designFeeMinor ?? 0) + (project.procurementFeeMinor ?? 0)}
             strong
           />
           <div style={{ marginTop: 2, marginBottom: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
@@ -2991,11 +3005,35 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
 
 // design-be-20d: fee row that shows excl-VAT + incl-VAT amounts side-by-side.
 // `null` minor renders as '—' on both columns.
-function FeeSummaryRow({ label, minor, strong }: { label: string; minor: number | null; strong?: boolean }) {
+// design-be-23: optional `subtext` shows below the label (e.g. "(design only)"
+// when execution is out of scope and the minor is null).
+function FeeSummaryRow({
+  label,
+  minor,
+  strong,
+  subtext,
+  testId,
+}: {
+  label: string;
+  minor: number | null;
+  strong?: boolean;
+  subtext?: string;
+  testId?: string;
+}) {
   const inclLabel = minor == null ? '—' : `${formatMUR(withVAT(minor))} incl. VAT`;
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', fontSize: 12, borderBottom: '0.5px dashed var(--color-border-tertiary)', gap: 8 }}>
-      <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
+    <div
+      data-testid={testId}
+      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', fontSize: 12, borderBottom: '0.5px dashed var(--color-border-tertiary)', gap: 8 }}
+    >
+      <span style={{ color: 'var(--color-text-tertiary)' }}>
+        {label}
+        {subtext && (
+          <span style={{ marginLeft: 6, color: 'var(--color-text-tertiary)', fontStyle: 'italic', fontSize: 11 }}>
+            {subtext}
+          </span>
+        )}
+      </span>
       <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
         <span style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono-fad)', fontWeight: strong ? 600 : 400 }}>
           {formatMUR(minor)}
