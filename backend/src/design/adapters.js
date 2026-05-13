@@ -422,6 +422,7 @@ function shapeTask(row) {
     status: row.status,
     notes: row.notes,
     completed_at: row.completed_at,
+    category: row.category ?? 'general',
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

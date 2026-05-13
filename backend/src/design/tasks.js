@@ -12,7 +12,8 @@ const { DEFAULT_TENANT_ID, shapeTask } = require('./adapters');
 
 const router = express.Router();
 
-const WRITABLE_FIELDS = ['stage_key', 'title', 'assignee_user_id', 'due_date', 'status', 'notes', 'completed_at'];
+const WRITABLE_FIELDS = ['stage_key', 'title', 'assignee_user_id', 'due_date', 'status', 'notes', 'completed_at', 'category'];
+const VALID_CATEGORIES = ['general', 'blocker', 'next_action'];
 
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
@@ -38,6 +39,13 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
       filters.push(`assignee_user_id = $${idx++}`);
       params.push(req.query.assignee_user_id);
     }
+    if (typeof req.query.category === 'string') {
+      if (!VALID_CATEGORIES.includes(req.query.category)) {
+        return res.status(400).json({ error: `category must be one of ${VALID_CATEGORIES.join(', ')}` });
+      }
+      filters.push(`category = $${idx++}`);
+      params.push(req.query.category);
+    }
     const sql = `SELECT * FROM design_tasks WHERE ${filters.join(' AND ')} ORDER BY due_date NULLS LAST, created_at`;
     const { rows } = await query(sql, params);
     res.json({ results: rows.map(shapeTask) });
@@ -52,6 +60,9 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     const body = req.body || {};
     if (!body.project_id) return res.status(400).json({ error: 'project_id is required' });
     if (!body.title) return res.status(400).json({ error: 'title is required' });
+    if (Object.prototype.hasOwnProperty.call(body, 'category') && !VALID_CATEGORIES.includes(body.category)) {
+      return res.status(400).json({ error: `category must be one of ${VALID_CATEGORIES.join(', ')}` });
+    }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
       [DEFAULT_TENANT_ID, body.project_id],
@@ -83,6 +94,9 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
 router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
+    if (Object.prototype.hasOwnProperty.call(body, 'category') && !VALID_CATEGORIES.includes(body.category)) {
+      return res.status(400).json({ error: `category must be one of ${VALID_CATEGORIES.join(', ')}` });
+    }
     const sets = [];
     const params = [DEFAULT_TENANT_ID, req.params.id];
     let idx = 3;

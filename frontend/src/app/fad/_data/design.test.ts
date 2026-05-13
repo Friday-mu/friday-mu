@@ -9,7 +9,9 @@ import {
   stripForOwner,
   tierForEpc,
   validateMockToken,
+  TASKS,
   type BudgetItem,
+  type DesignTask,
 } from './design';
 
 // Threshold reference (kept here so the test fails loudly if the constants
@@ -282,5 +284,23 @@ describe('mock JWT signing + validation', () => {
     if (!result.valid) {
       expect(result.error).toBe('wrong_scope');
     }
+  });
+});
+
+// ─────────────────────────── design-be-18: task category ───────────────────────────
+
+describe('DesignTask.category — fixture defaults', () => {
+  it("execution-stage TASKS fixture all default to category='general'", () => {
+    expect(TASKS.length).toBeGreaterThan(0);
+    for (const t of TASKS) {
+      expect(t.category).toBe('general');
+    }
+  });
+
+  it('accepts the three discriminator values at the type level', () => {
+    const a: DesignTask['category'] = 'general';
+    const b: DesignTask['category'] = 'blocker';
+    const c: DesignTask['category'] = 'next_action';
+    expect([a, b, c]).toEqual(['general', 'blocker', 'next_action']);
   });
 });

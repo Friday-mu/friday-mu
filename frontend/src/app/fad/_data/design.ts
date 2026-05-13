@@ -545,6 +545,12 @@ export interface DesignTask {
   status: 'todo' | 'in_progress' | 'completed' | 'blocked';
   evidenceRequired: string | null;
   evidenceUrl: string | null;
+  /**
+   * design-be-18: discriminator so blockers / next-actions can live as
+   * proper task items. Fixture tasks default to 'general'. Tasks created
+   * via the BlockersPanel / NextActionsPanel set this explicitly.
+   */
+  category: 'general' | 'blocker' | 'next_action';
 }
 
 /**
@@ -2102,7 +2108,7 @@ export function stripForOwner(item: BudgetItem): OwnerBudgetItem {
 export const TASKS: DesignTask[] = BUDGET_ITEMS
   .filter((i) => i.projectId === 'p-ohana' && i.status === 'approved')
   .flatMap((i): DesignTask[] => {
-    const base = { projectId: i.projectId, budgetItemId: i.id };
+    const base = { projectId: i.projectId, budgetItemId: i.id, category: 'general' as const };
     return [
       { id: `t-${i.id}-source`,   ...base, title: `Source: ${i.itemName}`,    kind: 'source',   assignedUserId: i.assignedUserId,    dueDate: i.dueDate, status: i.procurement === 'to_source' ? 'todo' : 'completed', evidenceRequired: 'Quote or product link', evidenceUrl: null },
       { id: `t-${i.id}-buy`,      ...base, title: `Buy: ${i.itemName}`,        kind: 'buy',      assignedUserId: i.assignedUserId,    dueDate: i.dueDate, status: ['ordered','delivered','installed','qa_passed'].includes(i.procurement) ? 'completed' : (i.procurement === 'approved_to_buy' ? 'in_progress' : 'todo'), evidenceRequired: 'Receipt', evidenceUrl: i.receiptUrl },
