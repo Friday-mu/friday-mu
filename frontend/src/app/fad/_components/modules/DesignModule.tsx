@@ -36,6 +36,8 @@ import { ProjectEditDrawer } from './design/ProjectEditDrawer';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import { ShareWithOwnerDrawer } from './design/ShareWithOwnerDrawer';
+import { BlockersPanel } from './design/BlockersPanel';
+import { NextActionsPanel } from './design/NextActionsPanel';
 import {
   NeedsAttentionQueue,
   OverviewSummaryLine,
@@ -2800,7 +2802,16 @@ function ProjectOverview({ project }: { project: DesignProject }) {
   const docs = designClient.documents.list(project.id).filter((d) => d.status !== 'not_yet');
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* design-be-18: top-of-overview Blockers + Next actions panels.
+         Replaces the single-line Blocker / Next action rows previously
+         buried in the Summary card with proper multi-item task lists. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 12 }}>
+        <BlockersPanel project={project} />
+        <NextActionsPanel project={project} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Summary</h3>
@@ -2814,8 +2825,6 @@ function ProjectOverview({ project }: { project: DesignProject }) {
           <SummaryRow label="Start"         value={formatProjectDate(project.startDate)} />
           <SummaryRow label="Est. completion" value={formatProjectDate(project.estimatedCompletion)} />
           <SummaryRow label="Design lead"   value={project.designLeadUserId?.replace('u-', '') ?? '—'} />
-          <SummaryRow label="Blocker"       value={project.blocker ?? '—'} tone={project.blocker ? 'danger' : undefined} />
-          <SummaryRow label="Next action"   value={project.nextAction ?? '—'} />
         </div>
         <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600 }}>Documents</h3>
@@ -2850,6 +2859,7 @@ function ProjectOverview({ project }: { project: DesignProject }) {
             </li>
           ))}
         </ul>
+      </div>
       </div>
     </div>
   );

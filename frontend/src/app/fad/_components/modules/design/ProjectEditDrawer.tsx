@@ -116,8 +116,10 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
   const [urgency, setUrgency] = useState(project.urgency ?? '');
   const [pmLink, setPmLink] = useState<PMLink>(project.pmLink);
   const [designLeadUserId, setDesignLeadUserId] = useState(project.designLeadUserId ?? '');
-  const [blocker, setBlocker] = useState(project.blocker ?? '');
-  const [nextAction, setNextAction] = useState(project.nextAction ?? '');
+  // design-be-18: blocker / next_action no longer live on this drawer —
+  // they're managed as inline multi-item task lists on the project
+  // overview (BlockersPanel + NextActionsPanel). Removed from state and
+  // the PATCH payload. Legacy text columns remain on the DB row for now.
   const [startDate, setStartDate] = useState(project.startDate ?? '');
   const [estimatedCompletion, setEstimatedCompletion] = useState(project.estimatedCompletion ?? '');
   // design-be-15: per-fee overrides. Toggle ON => send the input value
@@ -196,8 +198,6 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
       urgency: urgency.trim() || null,
       pm_link: pmLink,
       design_lead_user_id: designLeadUserId.trim() || null,
-      blocker: blocker.trim() || null,
-      next_action: nextAction.trim() || null,
       start_date: startDate || null,
       estimated_completion: estimatedCompletion || null,
       design_fee_minor_override: designFeeOverrideOn ? designFeeOverrideMinor : null,
@@ -352,13 +352,21 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
             <input value={designLeadUserId} onChange={(e) => setDesignLeadUserId(e.target.value)} placeholder="u-ishant" style={inputStyle} />
           </Field>
 
-          <Field label="Blocker">
-            <textarea value={blocker} onChange={(e) => setBlocker(e.target.value)} rows={2} style={{ ...inputStyle, fontFamily: 'inherit' }} />
-          </Field>
-
-          <Field label="Next action">
-            <textarea value={nextAction} onChange={(e) => setNextAction(e.target.value)} rows={2} style={{ ...inputStyle, fontFamily: 'inherit' }} />
-          </Field>
+          {/* design-be-18: Blocker / Next action moved out of this
+              drawer and into top-of-overview multi-item panels. Inline
+              note keeps the affordance discoverable. */}
+          <div
+            style={{
+              padding: '8px 10px',
+              fontSize: 11,
+              color: 'var(--color-text-tertiary)',
+              background: 'var(--color-background-secondary)',
+              border: '0.5px dashed var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+            }}
+          >
+            Manage blockers and next actions inline on the project overview.
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Field label="Start date">
