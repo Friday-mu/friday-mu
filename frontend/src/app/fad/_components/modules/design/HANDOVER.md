@@ -11,7 +11,7 @@ mandatory step is **backend wiring**. Every accessor on `designClient`
 (`_data/design.ts`) has the shape that the v0.2 fetch client must
 return — preserve those shapes when you swap.
 
-- 17-stage state machine intact in `design.ts` (UI collapses to 5
+- 18-stage state machine intact in `design.ts` (UI collapses to 5
   phases via `PHASES`).
 - Owner portal lives at `/portal/projects/[slug]` (real Next.js route)
   AND inline in `OwnerPortalPreview` modal; both share

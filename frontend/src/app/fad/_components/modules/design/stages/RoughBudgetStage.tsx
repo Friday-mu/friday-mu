@@ -7,6 +7,7 @@ import {
   formatMUR,
   procurementFeeForTier,
   tierForEpc,
+  withVAT,
   type CatalogItem,
   type DesignProject,
   type DesignTier,
@@ -199,25 +200,61 @@ export function RoughBudgetStage({ project }: Props) {
         </Grid>
         <div style={{ marginTop: 12 }}>
           <Grid>
-            <Field label="Design fee (computed)">
+            <Field label="Design fee (computed, excl. VAT)">
               <input value={formatMUR(computedDesignFee)} disabled style={inputStyle()} />
             </Field>
-            <Field label="Design fee (override)">
+            <Field label="Design fee (override, excl. VAT)">
               <MUInput value={designFeeOverride ?? ''} onChange={(v) => setDesignFeeOverride(v === '' ? null : (v as number))} />
             </Field>
-            <Field label="Procurement fee (computed)">
+            <Field label="Execution fee (computed, excl. VAT)">
               <input value={formatMUR(computedProcurementFee)} disabled style={inputStyle()} />
             </Field>
-            <Field label="Procurement fee (override)">
+            <Field label="Execution fee (override, excl. VAT)">
               <MUInput value={procurementFeeOverride ?? ''} onChange={(v) => setProcurementFeeOverride(v === '' ? null : (v as number))} />
             </Field>
           </Grid>
         </div>
-        {(designFee || procurementFee) && (
-          <div style={{ marginTop: 10, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            Total Friday revenue if scope holds: {formatMUR((designFee ?? 0) + (procurementFee ?? 0))} on top of the EPC.
-          </div>
-        )}
+        {(designFee || procurementFee) && (() => {
+          const designExcl = designFee ?? 0;
+          const procurementExcl = procurementFee ?? 0;
+          const totalExcl = designExcl + procurementExcl;
+          const vatPct = (cfg.vatRate * 100).toFixed(cfg.vatRate * 100 % 1 === 0 ? 0 : 2);
+          return (
+            <div
+              data-testid="rough-budget-fee-vat-preview"
+              style={{
+                marginTop: 10,
+                padding: '8px 10px',
+                background: 'var(--color-background-tertiary)',
+                border: '0.5px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--radius-sm)',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(110px, max-content) 1fr 1fr',
+                gap: '4px 12px',
+                fontSize: 11,
+                alignItems: 'baseline',
+              }}
+            >
+              <div style={{ gridColumn: 1, fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                Friday revenue
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'right' }}>excl. VAT</div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'right' }}>incl. {vatPct}% VAT</div>
+              <span style={{ color: 'var(--color-text-tertiary)' }}>Design fee</span>
+              <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)' }}>{formatMUR(designExcl)}</span>
+              <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{formatMUR(withVAT(designExcl, cfg))}</span>
+              <span style={{ color: 'var(--color-text-tertiary)' }}>Execution fee</span>
+              <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)' }}>{formatMUR(procurementExcl)}</span>
+              <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{formatMUR(withVAT(procurementExcl, cfg))}</span>
+              <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 600 }}>Total fee</span>
+              <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatMUR(totalExcl)}</span>
+              <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{formatMUR(withVAT(totalExcl, cfg))}</span>
+              <div style={{ gridColumn: '1 / -1', marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                On top of the EPC. Annex A is VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.
+              </div>
+            </div>
+          );
+        })()}
       </Card>
 
       <Card>

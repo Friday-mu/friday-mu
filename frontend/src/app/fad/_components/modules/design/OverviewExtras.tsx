@@ -26,7 +26,7 @@ interface Props {
 /**
  * Composes the Overview side panels: a one-line portfolio summary + the
  * role-aware Needs Attention queue. The earlier "Pipeline by stage" chart
- * was dropped (cont-9 audit) — with 6 projects across 17 stages the chart
+ * was dropped (cont-9 audit) — with 6 projects across 18 stages the chart
  * was almost entirely empty bars. The All Projects table covers the same
  * information density without the dead pixels.
  */

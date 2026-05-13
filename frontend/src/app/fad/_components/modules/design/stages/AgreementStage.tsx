@@ -6,7 +6,9 @@ import {
   designFeeForTier,
   formatMUR,
   procurementFeeForTier,
+  withVAT,
   type AgreementStatus,
+  type AnnexAConfig,
   type AnnexBData,
   type DesignProject,
   type DesignTier,
@@ -112,10 +114,17 @@ export function AgreementStage({ project }: Props) {
               </select>
             </Field>
             <Field label="EPC (MUR)"><MUInput value={epcMinor} onChange={setEpcMinor} /></Field>
-            <Field label="Design fee (MUR)"><MUInput value={designFeeMinor} onChange={setDesignFeeMinor} /></Field>
-            <Field label="Procurement fee (MUR)"><MUInput value={procurementFeeMinor} onChange={setProcurementFeeMinor} /></Field>
-            <Field label="Total estimate (auto)">
+            <Field label="Design fee (MUR, excl. VAT)"><MUInput value={designFeeMinor} onChange={setDesignFeeMinor} /></Field>
+            <Field label="Execution fee (MUR, excl. VAT)"><MUInput value={procurementFeeMinor} onChange={setProcurementFeeMinor} /></Field>
+            <Field label="Total estimate (auto, excl. VAT)">
               <input value={formatMUR(totalEstimateMinor)} disabled style={inputStyle()} />
+            </Field>
+            <Field label="Fee breakdown w/ VAT" full>
+              <FeeVatBreakdown
+                designMinor={designFeeMinor}
+                executionMinor={procurementFeeMinor}
+                cfg={cfg}
+              />
             </Field>
             <Field label="Start date"><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle()} /></Field>
             <Field label="Estimated completion"><input type="date" value={estimatedCompletion} onChange={(e) => setEstimatedCompletion(e.target.value)} style={inputStyle()} /></Field>
@@ -148,7 +157,7 @@ export function AgreementStage({ project }: Props) {
               lineHeight: 1.5,
             }}
           >
-            {renderAgreement(annexB, cfg.agreementTemplateVersion)}
+            {renderAgreement(annexB, cfg)}
           </div>
         </Card>
       </div>
@@ -231,7 +240,16 @@ function StatusBadge({ status }: { status: AgreementStatus }) {
 //
 // Verbatim from build doc §5.6 (Sep 2025 Nursoo template). Merge fields filled
 // from Annex B form data above. v0.2 generates the actual PDF via §7.QQ.
-function renderAgreement(b: AnnexBData, templateVersion: string): string {
+//
+// design-be-20d: VAT lines wired into both §3 (Fees & Payment Terms) and the
+// Annex B Project Summary block. Annex A is VAT-exclusive (locked 2026-05-13);
+// the contract now states the inclusive amounts in line with the schedule.
+function renderAgreement(b: AnnexBData, cfg: AnnexAConfig): string {
+  const templateVersion = cfg.agreementTemplateVersion;
+  const vatPct = (cfg.vatRate * 100).toFixed(cfg.vatRate * 100 % 1 === 0 ? 0 : 2);
+  const designInclMinor = withVAT(b.designFeeMinor, cfg);
+  const procurementInclMinor = withVAT(b.procurementFeeMinor, cfg);
+  const totalInclMinor = withVAT(b.totalEstimateMinor, cfg);
   return `INTERIOR DESIGN AGREEMENT — TEMPLATE ${templateVersion}
 
 This Interior Design Agreement (the "Agreement") is entered into on ${b.effectiveDate || '____________'}, by and between:
@@ -255,9 +273,9 @@ Procurement & Execution services may only commence after completion of the Desig
 The Project is classified as ${b.classification.toUpperCase()} (per Annex B).
 
 3. Fees & Payment Terms
-3.1 Design Fee: ${formatMUR(b.designFeeMinor)} (Tier ${b.tier} — see Annex A). 60% upon signing this Agreement, 40% upon submission of final design package.
-3.2 Procurement & Execution Fee: ${formatMUR(b.procurementFeeMinor)} as a percentage of EPC. EPC: ${formatMUR(b.epcMinor)}. Tier ${b.tier} ${b.classification}. 60/40 default split unless overridden.
-3.3 VAT: All fees quoted are exclusive of VAT (added at prevailing Mauritius rate).
+3.1 Design Fee: ${formatMUR(b.designFeeMinor)} excl. VAT (${formatMUR(designInclMinor)} incl. VAT @ ${vatPct}%) (Tier ${b.tier} — see Annex A). 60% upon signing this Agreement, 40% upon submission of final design package.
+3.2 Procurement & Execution Fee: ${formatMUR(b.procurementFeeMinor)} excl. VAT (${formatMUR(procurementInclMinor)} incl. VAT @ ${vatPct}%) as a percentage of EPC. EPC: ${formatMUR(b.epcMinor)}. Tier ${b.tier} ${b.classification}. 60/40 default split unless overridden.
+3.3 VAT: All fees quoted in Annex A are exclusive of VAT. Mauritius VAT (currently ${vatPct}%) is added on top of all fees per the prevailing rate.
 3.4 Fee Adjustments: If scope or EPC materially changes by ±5% or more, fees may unilaterally be adjusted proportionally by the Service Provider with prior written notice.
 3.5 Invoice Terms: Due within 7 calendar days. Late: 2% per month compounded.
 
@@ -305,9 +323,9 @@ Project address:      ${b.projectAddress || '—'}
 Classification:       ${b.classification}
 Design tier:          Tier ${b.tier}
 EPC:                  ${formatMUR(b.epcMinor)}
-Design fee:           ${formatMUR(b.designFeeMinor)}
-Procurement fee:      ${formatMUR(b.procurementFeeMinor)}
-Total estimate:       ${formatMUR(b.totalEstimateMinor)}
+Design fee:           ${formatMUR(b.designFeeMinor)}  (${formatMUR(designInclMinor)} incl. ${vatPct}% VAT)
+Execution fee:        ${formatMUR(b.procurementFeeMinor)}  (${formatMUR(procurementInclMinor)} incl. ${vatPct}% VAT)
+Total estimate:       ${formatMUR(b.totalEstimateMinor)}  (${formatMUR(totalInclMinor)} incl. ${vatPct}% VAT)
 Start date:           ${b.startDate ?? '—'}
 Estimated completion: ${b.estimatedCompletion ?? '—'}
 Sale of furniture:    ${b.saleOfFurniture ? 'Yes (10% commission)' : 'No'}
@@ -320,6 +338,53 @@ ${b.customInclusions || '(none)'}
 }
 
 // ─────────────────────────── shells ───────────────────────────
+
+// design-be-20d: 3-row VAT breakdown shown next to the fee inputs so the
+// Director can read the inclusive number before sending the agreement.
+function FeeVatBreakdown({
+  designMinor,
+  executionMinor,
+  cfg,
+}: {
+  designMinor: number;
+  executionMinor: number;
+  cfg: AnnexAConfig;
+}) {
+  const total = designMinor + executionMinor;
+  const vatPct = (cfg.vatRate * 100).toFixed(cfg.vatRate * 100 % 1 === 0 ? 0 : 2);
+  return (
+    <div
+      data-testid="agreement-fee-vat-breakdown"
+      style={{
+        padding: '8px 10px',
+        background: 'var(--color-background-tertiary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(110px, max-content) 1fr 1fr',
+        gap: '4px 12px',
+        fontSize: 11,
+        alignItems: 'baseline',
+      }}
+    >
+      <div style={{ gridColumn: 1, fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}></div>
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'right' }}>excl. VAT</div>
+      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'right' }}>incl. {vatPct}% VAT</div>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>Design fee</span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)' }}>{formatMUR(designMinor)}</span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{formatMUR(withVAT(designMinor, cfg))}</span>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>Execution fee</span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)' }}>{formatMUR(executionMinor)}</span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{formatMUR(withVAT(executionMinor, cfg))}</span>
+      <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 600 }}>Total fee</span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatMUR(total)}</span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{formatMUR(withVAT(total, cfg))}</span>
+      <div style={{ gridColumn: '1 / -1', marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+        Annex A is VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.
+      </div>
+    </div>
+  );
+}
 
 function MUInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (

@@ -13,10 +13,12 @@
 
 import { useEffect, useState } from 'react';
 import {
+  ANNEX_A_DEFAULT,
   designFeeForTier,
   formatMUR,
   procurementFeeForTier,
   tierForEpc,
+  withVAT,
   type DesignProject,
   type DesignTier,
   type LeadSource,
@@ -506,6 +508,20 @@ function FeeOverridesSection({
   const derivedDesign = epcEffective > 0 ? designFeeForTier(derivedTier, epcEffective) : 0;
   const derivedProcurement = epcEffective > 0 ? procurementFeeForTier(derivedTier, classification, epcEffective) : 0;
 
+  // design-be-20c: surface what Friday will ACTUALLY invoice given the current
+  // toggle state — overrides if pinned, derived otherwise — plus VAT-inclusive
+  // companions. Annex A is VAT-exclusive (Mauritius 15% on top); both figures
+  // must be visible so a Director sees the full owner-facing number.
+  // parseMajorToMinor returns null for empty and NaN for invalid; coalesce
+  // both to 0 so the preview gracefully reads "—" while the user is typing.
+  const designOverrideParsed = parseMajorToMinor(designStr);
+  const procurementOverrideParsed = parseMajorToMinor(procurementStr);
+  const safeMinor = (v: number | null): number => (v == null || Number.isNaN(v) ? 0 : v);
+  const effectiveDesign = designOn ? safeMinor(designOverrideParsed) : derivedDesign;
+  const effectiveProcurement = procurementOn ? safeMinor(procurementOverrideParsed) : derivedProcurement;
+  const effectiveTotal = effectiveDesign + effectiveProcurement;
+  const vatPct = (ANNEX_A_DEFAULT.vatRate * 100).toFixed(ANNEX_A_DEFAULT.vatRate * 100 % 1 === 0 ? 0 : 2);
+
   return (
     <fieldset style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <legend style={{ padding: '0 6px', fontSize: 11, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
@@ -534,7 +550,49 @@ function FeeOverridesSection({
         error={procurementError}
         testId="procurement-fee-override"
       />
+      {effectiveTotal > 0 && (
+        <div
+          data-testid="fee-vat-preview"
+          style={{
+            marginTop: 4,
+            padding: '8px 10px',
+            background: 'var(--color-background-tertiary)',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--radius-sm)',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(120px, max-content) 1fr 1fr',
+            gap: '4px 12px',
+            fontSize: 11,
+            alignItems: 'baseline',
+          }}
+        >
+          <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>
+            Effective fees (live preview)
+          </div>
+          <FeeVatRow label="Design fee" minor={effectiveDesign} />
+          <FeeVatRow label="Execution fee" minor={effectiveProcurement} />
+          <FeeVatRow label="Total fee" minor={effectiveTotal} strong />
+          <div style={{ gridColumn: '1 / -1', marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+            Annex A rates are VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.
+          </div>
+        </div>
+      )}
     </fieldset>
+  );
+}
+
+/** Single row of the live preview: label · excl-VAT amount · incl-VAT amount. */
+function FeeVatRow({ label, minor, strong }: { label: string; minor: number; strong?: boolean }) {
+  return (
+    <>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', fontWeight: strong ? 600 : 400, color: 'var(--color-text-primary)' }}>
+        {formatMUR(minor)}
+      </span>
+      <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)', fontWeight: strong ? 600 : 400 }}>
+        {formatMUR(withVAT(minor))} <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>incl. VAT</span>
+      </span>
+    </>
   );
 }
 
