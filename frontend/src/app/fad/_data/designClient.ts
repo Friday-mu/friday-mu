@@ -305,6 +305,11 @@ export interface ApiBudgetItem {
   description?: string | null;
   unit_cost_minor?: number | null;
   quantity?: number | null;
+  /**
+   * design-be-24: realised cash-out for the item. Populated by the
+   * expense-capture stage; consumed by the bank reconciliation matcher.
+   */
+  actual_paid_minor?: number | null;
   retail_cost_minor?: number | null;
   negotiated_cost_minor?: number | null;
   internal_work?: boolean;
@@ -312,6 +317,83 @@ export interface ApiBudgetItem {
   notes?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ─────────────────────────── design-be-24: bank reconciliation ───────────────────────────
+
+export type BankCode = 'mcb' | 'maubank';
+export type BankParseStatus = 'pending' | 'parsed' | 'failed';
+export type BankMatchStatus = 'suggested' | 'confirmed' | 'rejected';
+
+export interface ApiBankStatement {
+  id: string;
+  project_id: string;
+  account_label: string;
+  bank_code: BankCode;
+  statement_period_start: string;
+  statement_period_end: string;
+  uploaded_at: string;
+  uploaded_by_user_id: string | null;
+  raw_source_url: string | null;
+  parse_status: BankParseStatus;
+  parse_error: string | null;
+  txn_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBankTransaction {
+  id: string;
+  statement_id: string;
+  project_id: string;
+  posted_date: string;
+  value_date: string | null;
+  amount_minor: number;
+  descriptor: string;
+  reference: string | null;
+  balance_minor: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBankMatch {
+  id: string;
+  project_id: string;
+  budget_item_id: string;
+  transaction_id: string;
+  status: BankMatchStatus;
+  confidence: number | null;
+  match_reason: string | null;
+  confirmed_at: string | null;
+  confirmed_by_user_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Raw parsed-CSV transaction shape the backend accepts on POST. */
+export interface BankTransactionInput {
+  posted_date: string;
+  value_date?: string | null;
+  amount_minor: number;
+  descriptor: string;
+  reference?: string | null;
+  balance_minor?: number | null;
+}
+
+export interface CreateBankStatementPayload {
+  account_label: string;
+  bank_code?: BankCode;
+  statement_period_start: string;
+  statement_period_end: string;
+  raw_source_url?: string | null;
+  transactions: BankTransactionInput[];
+}
+
+export interface CreateBankStatementResult {
+  statement: ApiBankStatement;
+  transactions: ApiBankTransaction[];
+  matches: ApiBankMatch[];
 }
 
 export interface ApiCloseoutBinder {
@@ -550,6 +632,46 @@ export const loadMagicLinks = async (projectId: string) =>
   unwrap(await apiFetch(`/api/design/magic_links?project_id=${projectId}`) as { results: ApiMagicLink[] });
 
 export const loadAnnexA = () => apiFetch('/api/design/annex_a') as Promise<ApiAnnexA>;
+
+// ── Bank reconciliation (design-be-24) ──
+//
+// All routes are project-scoped except confirm / reject / delete which take
+// the match id directly. List endpoints return { results: [...] }; the
+// helpers unwrap to the array shape consumers actually use.
+
+export const listBankStatements = async (projectId: string): Promise<ApiBankStatement[]> =>
+  unwrap(await apiFetch(`/api/design/projects/${projectId}/bank-statements`) as { results: ApiBankStatement[] });
+
+export const createBankStatement = (projectId: string, payload: CreateBankStatementPayload) =>
+  apiFetch(`/api/design/projects/${projectId}/bank-statements`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<CreateBankStatementResult>;
+
+export const listBankTransactions = async (projectId: string, opts: { statement_id?: string } = {}): Promise<ApiBankTransaction[]> => {
+  const qs = opts.statement_id ? `?statement_id=${encodeURIComponent(opts.statement_id)}` : '';
+  return unwrap(await apiFetch(`/api/design/projects/${projectId}/bank-transactions${qs}`) as { results: ApiBankTransaction[] });
+};
+
+export const listBankMatches = async (projectId: string, opts: { status?: BankMatchStatus } = {}): Promise<ApiBankMatch[]> => {
+  const qs = opts.status ? `?status=${encodeURIComponent(opts.status)}` : '';
+  return unwrap(await apiFetch(`/api/design/projects/${projectId}/bank-matches${qs}`) as { results: ApiBankMatch[] });
+};
+
+export const confirmBankMatch = (id: string) =>
+  apiFetch(`/api/design/bank-matches/${id}/confirm`, { method: 'POST' }) as Promise<ApiBankMatch>;
+
+export const rejectBankMatch = (id: string) =>
+  apiFetch(`/api/design/bank-matches/${id}/reject`, { method: 'POST' }) as Promise<ApiBankMatch>;
+
+export const createManualBankMatch = (projectId: string, payload: { budget_item_id: string; transaction_id: string; notes?: string | null }) =>
+  apiFetch(`/api/design/projects/${projectId}/bank-matches`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<ApiBankMatch>;
+
+export const deleteBankMatch = (id: string) =>
+  apiFetch(`/api/design/bank-matches/${id}`, { method: 'DELETE' }) as Promise<{ ok: true; id: string }>;
 
 export const loadTimeInStage = (days = 90) =>
   apiFetch(`/api/design/analytics/time-in-stage?days=${days}`) as Promise<{ window_days: number; results: Array<{ stage_key: string; completed_count: number; mean_days: number }> }>;
