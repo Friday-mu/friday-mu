@@ -1717,6 +1717,39 @@ html.fad-dark .fad-palette-overlay { background: rgba(0,0,0,0.6); }
 html.fad-dark .bug-fab { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
 html.fad-dark .bug-fab:hover { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6); }
 
+/* Feedback modal — type tabs (bug · feature · suggestion) */
+.fad-feedback-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 3px;
+  background: var(--color-background-tertiary);
+  border-radius: var(--radius-sm);
+}
+.fad-feedback-tab {
+  flex: 1 1 0;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.fad-feedback-tab:hover {
+  color: var(--color-text-primary);
+}
+.fad-feedback-tab.is-active {
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  box-shadow: 0 1px 2px rgba(15, 24, 54, 0.08);
+}
+html.fad-dark .fad-feedback-tab.is-active {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
 /* Bug modal extras */
 .bug-screenshot-frame {
   background: var(--color-background-secondary);

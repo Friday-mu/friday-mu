@@ -868,6 +868,12 @@ app.use('/api/hr/time-off', hrTimeOffRoutes);
 const designRoutes = require('./src/design');
 app.use('/api/design', designRoutes);
 
+// Feedback inbox — bug reports + feature requests + suggestions.
+// FAD-wide (not design-scoped). POST: any authenticated user.
+// GET / PATCH: admin/director only.
+const feedbackRoutes = require('./src/feedback');
+app.use('/api/feedback', feedbackRoutes);
+
 // Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
 // rarely; the index lets us resolve raw channel listing IDs to friendly
 // nicknames (MV-7, GBH-C8) in the reviews response without a per-review API
