@@ -24,6 +24,13 @@ interface ItemRow {
   rid: string;
   itemName: string;
   qty: number;
+  /**
+   * Per-row price override in minor units. null = use catalog median
+   * (auto-pricing). When set, this becomes the single price for the row
+   * (no Low/Mid/High spread — overrides are certain). Auto-filled from
+   * catalog median when the user picks a suggestion; user can edit.
+   */
+  unitCostMinorOverride: number | null;
 }
 
 let _ridSeq = 1;
@@ -40,7 +47,7 @@ export function RoughBudgetStage({ project }: Props) {
   // Item-list state — start with a single empty row so the user sees the
   // affordance immediately.
   const [rows, setRows] = useState<ItemRow[]>(() => [
-    { rid: newRid(), itemName: '', qty: 1 },
+    { rid: newRid(), itemName: '', qty: 1, unitCostMinorOverride: null },
   ]);
 
   // Manual override of low/mid/high — used when the catalog estimate is
@@ -57,7 +64,14 @@ export function RoughBudgetStage({ project }: Props) {
   const [nextSteps, setNextSteps] = useState(latest?.nextSteps ?? '');
 
   const validLines = useMemo<RoughBudgetEstimateLine[]>(
-    () => rows.filter((r) => r.itemName.trim() && r.qty > 0).map((r) => ({ itemName: r.itemName, qty: r.qty })),
+    () =>
+      rows
+        .filter((r) => r.itemName.trim() && r.qty > 0)
+        .map((r) => ({
+          itemName: r.itemName,
+          qty: r.qty,
+          unitCostMinorOverride: r.unitCostMinorOverride,
+        })),
     [rows],
   );
   const estimate = useMemo(() => designClient.catalog.estimate(validLines), [validLines]);
@@ -81,7 +95,7 @@ export function RoughBudgetStage({ project }: Props) {
   const updateRow = (rid: string, patch: Partial<ItemRow>) =>
     setRows((prev) => prev.map((r) => (r.rid === rid ? { ...r, ...patch } : r)));
   const removeRow = (rid: string) => setRows((prev) => prev.filter((r) => r.rid !== rid));
-  const addRow = () => setRows((prev) => [...prev, { rid: newRid(), itemName: '', qty: 1 }]);
+  const addRow = () => setRows((prev) => [...prev, { rid: newRid(), itemName: '', qty: 1, unitCostMinorOverride: null }]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -290,7 +304,7 @@ function ItemRowEditor({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) 80px auto',
+        gridTemplateColumns: 'minmax(0, 1fr) 80px 130px auto',
         gap: 8,
         alignItems: 'start',
         padding: 8,
@@ -333,7 +347,14 @@ function ItemRowEditor({
                   data-catalog-suggest={s.key}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
-                    onChange({ itemName: s.displayName });
+                    // Autofill the price override with the catalog median
+                    // when the user picks a suggestion AND hasn't already
+                    // typed a custom price. They can still edit after.
+                    const patch: Partial<ItemRow> = { itemName: s.displayName };
+                    if (row.unitCostMinorOverride == null) {
+                      patch.unitCostMinorOverride = s.medianMinor;
+                    }
+                    onChange(patch);
                     setShowSuggestions(false);
                   }}
                   style={{
@@ -435,6 +456,56 @@ function ItemRowEditor({
         style={{ ...inputStyle(), textAlign: 'right' }}
         aria-label="Quantity"
       />
+
+      {/* Per-row price override (MUR major units). Empty = use catalog
+          median for the auto-estimate. When user types a value, the row
+          locks to that price (no Low/Mid/High spread). Auto-filled when
+          a catalog suggestion is picked above. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <input
+          inputMode="numeric"
+          value={
+            row.unitCostMinorOverride == null
+              ? ''
+              : Math.round(row.unitCostMinorOverride / 100).toString()
+          }
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^\d]/g, '');
+            if (cleaned === '') {
+              onChange({ unitCostMinorOverride: null });
+            } else {
+              onChange({ unitCostMinorOverride: Number(cleaned) * 100 });
+            }
+          }}
+          placeholder={
+            exactMatch
+              ? `Rs ${Math.round(exactMatch.medianMinor / 100)} (median)`
+              : 'Rs unit price'
+          }
+          style={{ ...inputStyle(), textAlign: 'right' }}
+          aria-label="Unit price (MUR)"
+          data-rough-budget-unit-cost-input
+        />
+        {row.unitCostMinorOverride != null && exactMatch && (
+          <button
+            type="button"
+            onClick={() => onChange({ unitCostMinorOverride: null })}
+            style={{
+              padding: '0 4px',
+              fontSize: 10,
+              background: 'transparent',
+              color: 'var(--color-text-tertiary)',
+              border: 'none',
+              cursor: 'pointer',
+              textAlign: 'right',
+              textDecoration: 'underline',
+            }}
+            aria-label="Reset to catalog median"
+          >
+            reset to median
+          </button>
+        )}
+      </div>
 
       <button
         type="button"

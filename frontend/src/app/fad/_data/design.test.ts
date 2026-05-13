@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ANNEX_A_DEFAULT,
   designFeeForTier,
+  estimateRoughBudget,
   isVarianceFlagged,
   procurementFeeForTier,
   signMockToken,
@@ -72,6 +73,67 @@ describe('procurementFeeForTier — 9-cell matrix (mixed → renovation rate)', 
       );
     });
   }
+});
+
+describe('estimateRoughBudget — per-line override semantics', () => {
+  it('lines with no override + no catalog match are unmatched (0 contribution)', () => {
+    const result = estimateRoughBudget([
+      { itemName: 'thing-with-no-history', qty: 2 },
+    ]);
+    expect(result.lowMinor).toBe(0);
+    expect(result.midMinor).toBe(0);
+    expect(result.highMinor).toBe(0);
+    expect(result.unmatched).toHaveLength(1);
+    expect(result.matched).toHaveLength(0);
+  });
+
+  it('override locks all three totals to (override × qty)', () => {
+    const override = 50_000_00; // Rs 50,000 per unit
+    const qty = 3;
+    const result = estimateRoughBudget([
+      { itemName: 'item-without-catalog', qty, unitCostMinorOverride: override },
+    ]);
+    const expected = override * qty;
+    expect(result.lowMinor).toBe(expected);
+    expect(result.midMinor).toBe(expected);
+    expect(result.highMinor).toBe(expected);
+    // Override-only (no catalog hit) ⇒ neither matched nor unmatched
+    expect(result.unmatched).toHaveLength(0);
+    expect(result.matched).toHaveLength(0);
+  });
+
+  it('null override is equivalent to omitting the field (no behaviour change)', () => {
+    // Use the same itemName both ways — whether catalog matches or not is
+    // immaterial; what matters is that null override doesn't accidentally
+    // lock totals to 0 or change the matched/unmatched routing.
+    const withNullOverride = estimateRoughBudget([{ itemName: 'x', qty: 2, unitCostMinorOverride: null }]);
+    const withoutField = estimateRoughBudget([{ itemName: 'x', qty: 2 }]);
+    expect(withNullOverride.lowMinor).toBe(withoutField.lowMinor);
+    expect(withNullOverride.midMinor).toBe(withoutField.midMinor);
+    expect(withNullOverride.highMinor).toBe(withoutField.highMinor);
+    expect(withNullOverride.matched.length).toBe(withoutField.matched.length);
+    expect(withNullOverride.unmatched.length).toBe(withoutField.unmatched.length);
+  });
+
+  it('override beats catalog when both present', () => {
+    const override = 99_000_00;
+    const result = estimateRoughBudget([
+      { itemName: 'thing', qty: 1, unitCostMinorOverride: override },
+    ]);
+    expect(result.lowMinor).toBe(override);
+    expect(result.midMinor).toBe(override);
+    expect(result.highMinor).toBe(override);
+  });
+
+  it('zero or negative override ignored, falls back to catalog/unmatched path', () => {
+    const result = estimateRoughBudget([
+      { itemName: 'unknown', qty: 1, unitCostMinorOverride: 0 },
+      { itemName: 'unknown2', qty: 1, unitCostMinorOverride: -100 },
+    ]);
+    // Both fall through to catalog lookup. No catalog match → unmatched.
+    expect(result.unmatched).toHaveLength(2);
+    expect(result.midMinor).toBe(0);
+  });
 });
 
 describe('stripForOwner', () => {

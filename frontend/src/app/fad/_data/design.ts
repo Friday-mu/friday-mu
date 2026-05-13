@@ -3620,6 +3620,14 @@ export function getCatalogUsage(itemNameOrKey: string): CatalogUsage {
 export interface RoughBudgetEstimateLine {
   itemName: string;
   qty: number;
+  /**
+   * Per-line price override in minor units. When set (non-null and > 0),
+   * the line uses this price for all three Low/Mid/High columns (no
+   * uncertainty band) instead of the catalog stats. Useful for items the
+   * catalog doesn't know about, or when a vendor quote supersedes
+   * historical pricing for this specific project.
+   */
+  unitCostMinorOverride?: number | null;
 }
 
 export interface RoughBudgetEstimateResult {
@@ -3631,9 +3639,19 @@ export interface RoughBudgetEstimateResult {
 }
 
 /**
- * Sum a list of {itemName, qty} lines into Low / Mid / High totals using the
- * catalog's per-unit price stats. Lines whose itemName isn't in the catalog
- * are returned in `unmatched` so the UI can prompt for manual entry.
+ * Sum a list of {itemName, qty, unitCostMinorOverride?} lines into Low / Mid
+ * / High totals.
+ *
+ * Pricing precedence per line:
+ *   1. unitCostMinorOverride (when set + positive) — locks all three totals
+ *      to override × qty (no spread).
+ *   2. catalog match (lookupCatalogItem) — uses min / median / max × qty.
+ *   3. neither — line is returned in `unmatched` so the UI can prompt for
+ *      manual entry, and contributes nothing to the totals.
+ *
+ * `matched` includes any line that resolved to a price — via catalog or
+ * override-with-catalog-match. Lines with override-only (no catalog hit) are
+ * NOT pushed to either array; their price is reflected only in the totals.
  */
 export function estimateRoughBudget(lines: RoughBudgetEstimateLine[]): RoughBudgetEstimateResult {
   let lowSum = 0;
@@ -3642,12 +3660,24 @@ export function estimateRoughBudget(lines: RoughBudgetEstimateLine[]): RoughBudg
   const matched: RoughBudgetEstimateResult['matched'] = [];
   const unmatched: RoughBudgetEstimateLine[] = [];
   for (const line of lines) {
+    const qty = Math.max(0, line.qty);
+    const hasOverride =
+      typeof line.unitCostMinorOverride === 'number' && line.unitCostMinorOverride > 0;
+    if (hasOverride) {
+      const v = (line.unitCostMinorOverride as number) * qty;
+      lowSum += v;
+      midSum += v;
+      highSum += v;
+      const cat = lookupCatalogItem(line.itemName);
+      if (cat) matched.push({ line, catalog: cat });
+      // override-only lines are silently absorbed — no unmatched warning.
+      continue;
+    }
     const cat = lookupCatalogItem(line.itemName);
     if (!cat) {
       unmatched.push(line);
       continue;
     }
-    const qty = Math.max(0, line.qty);
     lowSum += cat.minMinor * qty;
     midSum += cat.medianMinor * qty;
     highSum += cat.maxMinor * qty;
