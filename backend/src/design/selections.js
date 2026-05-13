@@ -58,13 +58,18 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
+      // options is JSONB — JSON.stringify + ::jsonb cast, otherwise the
+      // pg driver serializes a JS array as a Postgres array literal
+      // which Postgres rejects ("invalid input syntax for type json").
+      // The PATCH path already does this (JSONB_FIELDS set); applying
+      // the same shape on INSERT closes the gap.
       `INSERT INTO design_selections (project_id, pack_id, title, options, room_id, category_code)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6) RETURNING *`,
       [
         body.project_id,
         body.pack_id || null,
         body.title,
-        body.options || [],
+        JSON.stringify(body.options ?? []),
         body.room_id || null,
         body.category_code || null,
       ],
