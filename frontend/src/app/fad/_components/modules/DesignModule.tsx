@@ -2910,8 +2910,18 @@ function ProjectOverview({ project }: { project: DesignProject }) {
           <SummaryRow label="Classification" value={project.classification} />
           <SummaryRow label="Tier"          value={project.tier ? `Tier ${project.tier}` : '—'} />
           <SummaryRow label="EPC"           value={formatMUR(project.epcMinor)} />
-          <SummaryRow label="Design fee"    value={formatMUR(project.designFeeMinor)} />
-          <SummaryRow label="Procurement fee" value={formatMUR(project.procurementFeeMinor)} />
+          <FeeSummaryRow label="Design fee"    minor={project.designFeeMinor} />
+          <FeeSummaryRow label="Execution fee" minor={project.procurementFeeMinor} />
+          <FeeSummaryRow
+            label="Total fee"
+            minor={(project.designFeeMinor == null && project.procurementFeeMinor == null)
+              ? null
+              : (project.designFeeMinor ?? 0) + (project.procurementFeeMinor ?? 0)}
+            strong
+          />
+          <div style={{ marginTop: 2, marginBottom: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+            Annex A is VAT-exclusive; {(designClient.settings.annexA().vatRate * 100).toFixed(designClient.settings.annexA().vatRate * 100 % 1 === 0 ? 0 : 2)}% VAT added on top.
+          </div>
           <SummaryRow label="Start"         value={formatProjectDate(project.startDate)} />
           <SummaryRow label="Est. completion" value={formatProjectDate(project.estimatedCompletion)} />
           <SummaryRow label="Design lead"   value={project.designLeadUserId?.replace('u-', '') ?? '—'} />
@@ -2961,6 +2971,25 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
       <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
       <span style={{ color: tone === 'danger' ? 'var(--color-text-danger)' : 'var(--color-text-primary)', textAlign: 'right', maxWidth: '60%' }}>
         {value}
+      </span>
+    </div>
+  );
+}
+
+// design-be-20d: fee row that shows excl-VAT + incl-VAT amounts side-by-side.
+// `null` minor renders as '—' on both columns.
+function FeeSummaryRow({ label, minor, strong }: { label: string; minor: number | null; strong?: boolean }) {
+  const inclLabel = minor == null ? '—' : `${formatMUR(withVAT(minor))} incl. VAT`;
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', fontSize: 12, borderBottom: '0.5px dashed var(--color-border-tertiary)', gap: 8 }}>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
+      <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+        <span style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono-fad)', fontWeight: strong ? 600 : 400 }}>
+          {formatMUR(minor)}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono-fad)' }}>
+          {inclLabel}
+        </span>
       </span>
     </div>
   );
