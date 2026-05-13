@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFixtureRev } from '../../../../_data/fixtureRev';
 import {
   designClient,
@@ -73,6 +73,36 @@ export function AgreementStage({ project }: Props) {
   const [strWorkingCapital, setStrWorkingCapital] = useState(existing?.annexB.strWorkingCapital ?? false);
   const [customInclusions, setCustomInclusions] = useState(existing?.annexB.customInclusions ?? '');
   const [effectiveDate, setEffectiveDate] = useState(existing?.annexB.effectiveDate ?? new Date().toISOString().slice(0, 10));
+
+  // Re-sync the auto-derived fields (EPC + tier + classification + fees)
+  // from the project row whenever it changes — but ONLY while the
+  // agreement is still in draft. Once an agreement has been sent /
+  // signed, Annex B's snapshot is the contractual record and must not
+  // shift if the project's EPC later moves. Driven by the rough-budget
+  // → project propagation: saving a rough budget updates
+  // project.epcMinor, which now flows through here to refresh the
+  // displayed numbers on the next render.
+  const projectStatus = existing?.status ?? 'draft';
+  useEffect(() => {
+    if (projectStatus !== 'draft') return;
+    const newEpc = project.epcMinor ?? 0;
+    if (newEpc !== epcMinor) setEpcMinor(newEpc);
+    const inferredTier: DesignTier = project.tier ?? tier;
+    if (inferredTier !== tier) setTier(inferredTier);
+    const inferredClass: ProjectClassification =
+      project.classification === 'mixed' ? 'renovation' : project.classification;
+    if (inferredClass !== classification) setClassification(inferredClass);
+    const newDesignFee = designFeeForTier(inferredTier, newEpc, cfg);
+    if (newDesignFee !== designFeeMinor) setDesignFeeMinor(newDesignFee);
+    if (!isDesignOnly) {
+      const newProcurementFee = procurementFeeForTier(inferredTier, inferredClass, newEpc, cfg);
+      if (newProcurementFee !== procurementFeeMinor) setProcurementFeeMinor(newProcurementFee);
+    }
+    // intentional: depend only on the project's identity + the canonical
+    // input fields. Local state setters are stable; we read the local
+    // values in the body but don't need them in deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, project.epcMinor, project.tier, project.classification, project.engagementScope, projectStatus]);
 
   const totalEstimateMinor = designFeeMinor + procurementFeeMinor + epcMinor;
   const annexB: AnnexBData = useMemo(() => ({

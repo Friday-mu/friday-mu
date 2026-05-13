@@ -2497,6 +2497,25 @@ function ProjectShell({
   const [lifecycleTick, setLifecycleTick] = useState(0);
   const [showEdit, setShowEdit] = useState(false);
   const role = useCurrentRole();
+
+  // Refresh every per-project fixture (moodboards, payments, agreement,
+  // activity, …) when the staff tab regains focus or visibility. This
+  // catches asynchronous changes from the owner portal — e.g. a
+  // moodboard variant was picked while the staff was in another tab,
+  // a magic-link signature was captured — without paying for an
+  // always-on poll. Cheap: one fetch per Promise.all per tab-switch.
+  useEffect(() => {
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') onRefetch();
+    };
+    const handleFocus = () => onRefetch();
+    document.addEventListener('visibilitychange', handleVisible);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisible);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [onRefetch]);
   const isDirector = role === 'director';
   const project = designClient.projects.get(incomingProject.id) ?? incomingProject;
   void lifecycleTick;

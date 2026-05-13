@@ -5,11 +5,12 @@ import {
   designClient,
   formatMUR,
   PAYMENT_GATES as FIXTURE_PAYMENT_GATES,
+  PROJECTS as FIXTURE_PROJECTS,
   type DesignProject,
   type GateStatus,
   type PaymentGate,
 } from '../../../../_data/design';
-import { receivePayment, apiPaymentToFixture } from '../../../../_data/designClient';
+import { receivePayment, apiPaymentToFixture, loadProject, apiProjectToFixture } from '../../../../_data/designClient';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { useCurrentRole } from '../../../usePermissions';
 import { fireToast } from '../../../Toaster';
@@ -50,6 +51,18 @@ export function PaymentsStage({ project }: Props) {
       } else {
         FIXTURE_PAYMENT_GATES.push(mapped);
       }
+      // Also refetch the project row — if the backend advanced
+      // current_stage (e.g. payment-gate → floor-plan) or updated
+      // any aggregate the project carries, the Summary panel +
+      // StageTracker + Overview need the new state. Tolerate
+      // failure: a stale row is acceptable; the next per-project
+      // hydration will catch up.
+      try {
+        const refreshedApi = await loadProject(project.id);
+        const refreshed = apiProjectToFixture(refreshedApi);
+        const pIdx = FIXTURE_PROJECTS.findIndex((p) => p.id === project.id);
+        if (pIdx >= 0) FIXTURE_PROJECTS.splice(pIdx, 1, refreshed);
+      } catch { /* tolerable */ }
       bumpFixtureRev();
       fireToast(`Marked received: ${gate.label} — ${formatMUR(amt)}`);
       setModalGate(null);
