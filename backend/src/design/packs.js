@@ -184,11 +184,17 @@ router.post('/:id/approve', requireDesignPerm('design:approve'), async (req, res
             ? `${sel.title} — ${opt.description}`
             : sel.title;
         const ins = await query(
+          // The unique index on source_selection_id is partial
+          // (WHERE source_selection_id IS NOT NULL) — ON CONFLICT
+          // must include the same predicate to be picked up by
+          // Postgres' index inference. Without it: ERROR "there is
+          // no unique or exclusion constraint matching the ON CONFLICT
+          // specification".
           `INSERT INTO design_budget_items (
              project_id, stage_key, category_code, description, unit_cost_minor, quantity,
              retail_cost_minor, negotiated_cost_minor, vendor_id, source_selection_id, source_pack_id
            ) VALUES ($1, 'design-pack', $2, $3, $4, 1, $5, $6, $7, $8, $9)
-           ON CONFLICT (source_selection_id) DO NOTHING
+           ON CONFLICT (source_selection_id) WHERE source_selection_id IS NOT NULL DO NOTHING
            RETURNING id`,
           [
             pack.project_id,
