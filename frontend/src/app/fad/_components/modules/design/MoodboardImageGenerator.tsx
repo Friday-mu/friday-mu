@@ -237,7 +237,13 @@ export function MoodboardImageGenerator({ projectId, moodboardId, existingLinks,
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Mauritian coastal villa living room, rattan armchairs, linen sofa in oat colour, terrazzo floor, large bifold doors opening onto a lagoon, late afternoon golden light, photorealistic interior design moodboard"
+            // Prefix the placeholder with "e.g." + a leading hint so users
+            // don't mistake the example for a real prefilled value and
+            // click Generate expecting it to use the example as input
+            // (which fails because the button stays disabled while
+            // prompt is empty). The "Auto-prompt from project" button
+            // above is the path that actually fills the textarea.
+            placeholder="Type a scene description, or click ✨ Auto-prompt from project above to auto-build one. e.g. Mauritian coastal villa living room, rattan armchairs, linen sofa in oat colour, late afternoon golden light, photorealistic interior moodboard"
             rows={4}
             disabled={busy}
             style={textareaStyle()}

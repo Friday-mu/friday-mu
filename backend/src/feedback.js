@@ -23,6 +23,53 @@ const STATUSES = new Set(['new', 'triaged', 'in_progress', 'resolved', 'wontfix'
 // at ~200-600KB for full-page captures, so 5MB is generous.
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
 
+// Slack webhook fan-out — fire-and-forget on every submission so the
+// team sees real-time feedback in a Slack channel. Set
+// SLACK_FEEDBACK_WEBHOOK_URL on the VPS env to enable. Falsy / unset
+// → no-op. We deliberately don't await this call; a slow Slack call
+// must not block the feedback POST response to the user.
+async function notifySlack({ type, title, description, severity, routeUrl, moduleLabel, userDisplayName, userUsername, id }) {
+  const url = process.env.SLACK_FEEDBACK_WEBHOOK_URL;
+  if (!url) return;
+  const icon = type === 'bug' ? '🐛' : type === 'feature' ? '💡' : '✨';
+  const reporter = userDisplayName || userUsername || 'unknown';
+  const sevLabel = severity ? `*Severity:* ${severity}\n` : '';
+  const contextLine = [
+    moduleLabel ? `module: \`${moduleLabel}\`` : null,
+    routeUrl ? `route: \`${routeUrl}\`` : null,
+  ].filter(Boolean).join(' · ');
+  const blocks = [
+    { type: 'header', text: { type: 'plain_text', text: `${icon} New ${type} from ${reporter}` } },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*${title || '(no title)'}*\n${sevLabel}${contextLine}`.trim(),
+      },
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '>>> ' + description.slice(0, 2500) },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `Feedback id: \`${id}\` · open inbox: <https://gms.friday.mu/fad?m=settings|Settings → Feedback inbox>` }],
+    },
+  ];
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocks, text: `${icon} New ${type} from ${reporter}: ${title || description.slice(0, 80)}` }),
+    });
+    if (!res.ok) {
+      console.warn('[feedback] slack webhook returned', res.status);
+    }
+  } catch (err) {
+    console.warn('[feedback] slack webhook failed:', err.message);
+  }
+}
+
 router.post('/', attachIdentity, async (req, res) => {
   try {
     const {
@@ -76,6 +123,20 @@ router.post('/', attachIdentity, async (req, res) => {
         req.identity.displayName,
       ],
     );
+
+    // Fan out to Slack if configured. Fire-and-forget — must not block
+    // the POST response on a slow/failing webhook.
+    notifySlack({
+      type: rows[0].type,
+      title: rows[0].title,
+      description: rows[0].description,
+      severity: rows[0].severity,
+      routeUrl: rows[0].route_url,
+      moduleLabel: rows[0].module_label,
+      userDisplayName: req.identity.displayName,
+      userUsername: req.identity.username,
+      id: rows[0].id,
+    }).catch(() => { /* logged inside notifySlack */ });
 
     res.json(rows[0]);
   } catch (err) {
