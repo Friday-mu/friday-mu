@@ -11,6 +11,7 @@ import { loadPreferences, savePreferences } from '../../../../_data/designClient
 import { bumpFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
+import { UrlOrUploadInput } from '../UrlOrUploadInput';
 
 interface Props {
   project: DesignProject;
@@ -229,6 +230,24 @@ export function PreferencesStage({ project }: Props) {
                 }
               }
             }}
+          />
+          {/* Direct upload — owners or staff often have a screenshot
+              of an inspiration image they want to attach rather than a
+              public URL. The uploaded URL is appended to the same
+              inspirationLinks array. */}
+          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+            …or upload an image directly:
+          </div>
+          <UrlOrUploadInput
+            value={null}
+            onChange={(url) => {
+              if (url) update('inspirationLinks', [...prefs.inspirationLinks, url]);
+            }}
+            projectId={project.id}
+            uploadKind="image"
+            urlPlaceholder="https://pinterest.com/pin/…"
+            showPreview={false}
+            testIdSuffix="prefs-inspiration"
           />
         </div>
       </Section>

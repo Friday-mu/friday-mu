@@ -16,6 +16,7 @@ import {
 } from '../../../../_data/designClient';
 import { bumpFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
+import { UrlOrUploadInput } from '../UrlOrUploadInput';
 
 interface Props {
   project: DesignProject;
@@ -200,7 +201,7 @@ export function DocRequestStage({ project }: Props) {
                 ))}
               </ul>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <input
                 value={draftName[item.docType] ?? ''}
                 onChange={(e) => setDraftName((s) => ({ ...s, [item.docType]: e.target.value }))}
@@ -208,31 +209,35 @@ export function DocRequestStage({ project }: Props) {
                 style={inputStyle()}
                 data-doc-request-name={item.docType}
               />
-              <input
+              <UrlOrUploadInput
                 value={draftUrl[item.docType] ?? ''}
-                onChange={(e) => setDraftUrl((s) => ({ ...s, [item.docType]: e.target.value }))}
-                placeholder="https://drive.google.com/…"
-                style={inputStyle()}
-                data-doc-request-url={item.docType}
+                onChange={(url) => setDraftUrl((s) => ({ ...s, [item.docType]: url ?? '' }))}
+                projectId={project.id}
+                uploadKind="document"
+                urlPlaceholder="https://drive.google.com/…"
+                showPreview={false}
+                testIdSuffix={`doc-${item.docType}`}
               />
-              <button
-                type="button"
-                onClick={() => handleAdd(item.docType)}
-                disabled={adding[item.docType] || !(draftUrl[item.docType] ?? '').trim()}
-                data-doc-request-add={item.docType}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: 12,
-                  fontWeight: 500,
-                  borderRadius: 'var(--radius-sm)',
-                  background: adding[item.docType] || !(draftUrl[item.docType] ?? '').trim() ? 'var(--color-background-tertiary)' : 'var(--color-brand-accent)',
-                  color: adding[item.docType] || !(draftUrl[item.docType] ?? '').trim() ? 'var(--color-text-tertiary)' : '#fff',
-                  border: 'none',
-                  cursor: adding[item.docType] || !(draftUrl[item.docType] ?? '').trim() ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {adding[item.docType] ? 'Adding…' : '+ Add'}
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => handleAdd(item.docType)}
+                  disabled={adding[item.docType] || !(draftUrl[item.docType] ?? '').trim()}
+                  data-doc-request-add={item.docType}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    borderRadius: 'var(--radius-sm)',
+                    background: adding[item.docType] || !(draftUrl[item.docType] ?? '').trim() ? 'var(--color-background-tertiary)' : 'var(--color-brand-accent)',
+                    color: adding[item.docType] || !(draftUrl[item.docType] ?? '').trim() ? 'var(--color-text-tertiary)' : '#fff',
+                    border: 'none',
+                    cursor: adding[item.docType] || !(draftUrl[item.docType] ?? '').trim() ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {adding[item.docType] ? 'Adding…' : '+ Add'}
+                </button>
+              </div>
             </div>
           </Card>
         );

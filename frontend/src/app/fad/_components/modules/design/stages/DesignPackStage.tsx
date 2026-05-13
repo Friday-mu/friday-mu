@@ -12,10 +12,12 @@ import {
   type DesignSelection,
   type SelectionOption,
 } from '../../../../_data/design';
-import { createSelection as apiCreateSelection, apiSelectionToFixture } from '../../../../_data/designClient';
+import { createSelection as apiCreateSelection, apiSelectionToFixture, createPack, apiPackToFixture } from '../../../../_data/designClient';
+import { DESIGN_PACKS as FIXTURE_PACKS } from '../../../../_data/design';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
+import { UrlOrUploadInput } from '../UrlOrUploadInput';
 
 interface Props {
   project: DesignProject;
@@ -34,6 +36,28 @@ export function DesignPackStage({ project }: Props) {
   const [activeId, setActiveId] = useState<string | null>(versions[0]?.id ?? null);
   const active = versions.find((v) => v.id === activeId) ?? null;
 
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const createPackFromUrl = async (pdfUrl: string) => {
+    setCreating(true);
+    try {
+      const api = await createPack({ project_id: project.id, pdf_url: pdfUrl });
+      FIXTURE_PACKS.push(apiPackToFixture(api));
+      bumpFixtureRev();
+      setActiveId(api.id);
+      setUploadOpen(false);
+      setUploadedUrl(null);
+      fireToast(`Design pack v${api.version_number} uploaded.`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      fireToast(`Upload failed: ${msg}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const usedRevisions = Math.max(0, versions.length - 1);
   const overflow = Math.max(0, usedRevisions - REVISIONS_INCLUDED);
 
@@ -51,9 +75,55 @@ export function DesignPackStage({ project }: Props) {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <AIPlaceholder feature="design-pack-copy" label="Generate copy" size="sm" />
-            <button type="button" style={primaryBtn()} onClick={() => fireToast('Mock: upload new design pack PDF (v0.2 wires to Drive)')}>+ Upload version</button>
+            <button type="button" style={primaryBtn()} onClick={() => setUploadOpen((v) => !v)}>
+              {uploadOpen ? '× Close' : '+ Upload version'}
+            </button>
           </div>
         </div>
+        {uploadOpen && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-background-tertiary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <strong style={{ fontSize: 12 }}>New design pack version</strong>
+            <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              Upload a PDF from your laptop, or paste a Drive URL if it's already shared.
+            </p>
+            <UrlOrUploadInput
+              value={uploadedUrl}
+              onChange={setUploadedUrl}
+              projectId={project.id}
+              uploadKind="document"
+              urlPlaceholder="https://drive.google.com/file/d/…"
+              testIdSuffix="design-pack-pdf"
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => { setUploadOpen(false); setUploadedUrl(null); }}
+                style={{ ...primaryBtn(), background: 'var(--color-background-primary)', color: 'var(--color-text-secondary)', border: '0.5px solid var(--color-border-secondary)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!uploadedUrl || creating}
+                onClick={() => uploadedUrl && createPackFromUrl(uploadedUrl)}
+                style={{ ...primaryBtn(), opacity: !uploadedUrl || creating ? 0.5 : 1, cursor: !uploadedUrl || creating ? 'not-allowed' : 'pointer' }}
+              >
+                {creating ? 'Creating…' : 'Create version'}
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
@@ -312,7 +382,7 @@ function SelectionRow({
       {isOpen && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
           {isDraft ? (
-            <DraftEditor selection={selection} onChanged={onChanged} />
+            <DraftEditor project={project} selection={selection} onChanged={onChanged} />
           ) : (
             <SentReadOnly selection={selection} />
           )}
@@ -322,7 +392,7 @@ function SelectionRow({
   );
 }
 
-function DraftEditor({ selection, onChanged }: { selection: DesignSelection; onChanged: () => void }) {
+function DraftEditor({ project, selection, onChanged }: { project: DesignProject; selection: DesignSelection; onChanged: () => void }) {
   const [showAddOption, setShowAddOption] = useState(false);
   const canSend = selection.options.length >= 2;
 
@@ -352,6 +422,7 @@ function DraftEditor({ selection, onChanged }: { selection: DesignSelection; onC
 
       {showAddOption ? (
         <AddOptionForm
+          projectId={project.id}
           onCancel={() => setShowAddOption(false)}
           onSubmit={(input) => {
             if (designClient.selections.addOption(selection.id, input)) {
@@ -455,15 +526,18 @@ interface AddOptionFormValues {
 }
 
 function AddOptionForm({
+  projectId,
   onCancel,
   onSubmit,
 }: {
+  projectId: string;
   onCancel: () => void;
   onSubmit: (input: AddOptionFormValues) => void;
 }) {
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
-  const [productLink, setProductLink] = useState('');
+  const [productLink, setProductLink] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [priceMinor, setPriceMinor] = useState<number | ''>('');
   const [retailMinor, setRetailMinor] = useState<number | ''>('');
 
@@ -512,11 +586,25 @@ function AddOptionForm({
       </div>
       <label style={fieldLabel()}>
         Product link (optional)
-        <input
+        <UrlOrUploadInput
           value={productLink}
-          onChange={(e) => setProductLink(e.target.value)}
-          placeholder="https://…"
-          style={inputStyle()}
+          onChange={setProductLink}
+          projectId={projectId}
+          uploadKind="document"
+          urlPlaceholder="https://supplier.com/product/…"
+          showPreview={false}
+          testIdSuffix="selection-product-link"
+        />
+      </label>
+      <label style={fieldLabel()}>
+        Product image (optional)
+        <UrlOrUploadInput
+          value={imageUrl}
+          onChange={setImageUrl}
+          projectId={projectId}
+          uploadKind="image"
+          urlPlaceholder="https://…/photo.jpg"
+          testIdSuffix="selection-image"
         />
       </label>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -527,8 +615,8 @@ function AddOptionForm({
             label: label.trim(),
             description: description.trim() === '' ? null : description.trim(),
             vendorId: null,
-            productLink: productLink.trim() === '' ? null : productLink.trim(),
-            imageUrl: null,
+            productLink: productLink && productLink.trim() !== '' ? productLink.trim() : null,
+            imageUrl: imageUrl && imageUrl.trim() !== '' ? imageUrl.trim() : null,
             priceMinor: priceMinor as number,
             retailMinor: retailMinor === '' ? null : (retailMinor as number),
           })}

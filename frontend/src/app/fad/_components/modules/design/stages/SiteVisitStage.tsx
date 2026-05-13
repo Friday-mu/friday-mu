@@ -6,6 +6,7 @@ import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSi
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
+import { UrlOrUploadInput } from '../UrlOrUploadInput';
 
 interface Props {
   project: DesignProject;
@@ -301,13 +302,15 @@ export function SiteVisitStage({ project }: Props) {
               data-site-visit-visitor
             />
           </Field>
-          <Field label="Walkthrough video URL">
-            <input
+          <Field label="Walkthrough video">
+            <UrlOrUploadInput
               value={walkthroughUrl}
-              onChange={(e) => setWalkthroughUrl(e.target.value)}
-              placeholder="drive://walkthrough.mp4"
-              style={inputStyle()}
-              data-site-visit-walkthrough
+              onChange={(v) => setWalkthroughUrl(v ?? '')}
+              projectId={project.id}
+              uploadKind="video"
+              urlPlaceholder="https://drive.google.com/file/d/…"
+              showPreview={false}
+              testIdSuffix="site-visit-walkthrough"
             />
           </Field>
           <Field label="Marketing photo consent (per agreement §12)">
