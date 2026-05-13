@@ -122,10 +122,11 @@ function shapeProject(row) {
     cancel_transfer_to_inventory: row.cancel_transfer_to_inventory,
     start_date: row.start_date,
     estimated_completion: row.estimated_completion,
-    // Pinned by POST /api/design/ai_images/generate-site-plan when called
+    // Pinned by POST /api/design/ai_images/generate-floor-plan when called
     // with set_as_project_plan: true. Null on fresh projects. FK to
-    // design_assets.sha256 via migration 009.
-    site_plan_image_id: row.site_plan_image_id ?? null,
+    // design_assets.sha256 via migration 009 (column renamed to
+    // floor_plan_image_id by migration 010).
+    floor_plan_image_id: row.floor_plan_image_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

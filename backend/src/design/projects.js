@@ -4,7 +4,7 @@
 //
 // All routes require design:read or design:write per the matrix in
 // auth.js. Lifecycle status (active/paused/cancelled) is orthogonal to
-// the 17-stage workflow — both are tracked on design_projects.
+// the 18-stage workflow — both are tracked on design_projects.
 
 const express = require('express');
 const { query } = require('../database/client');
@@ -14,8 +14,10 @@ const { DEFAULT_TENANT_ID, shapeProject, shapeAsset } = require('./adapters');
 // Mirror of the same constant in ai_images.js — strip the kind marker
 // from the generator_prompt before handing the asset row back. Kept
 // locally so projects.js doesn't need to import from a sibling router.
+// Works for any kind marker (e.g. floor_plan, moodboard, pack); the
+// regex is intentionally generic.
 const KIND_PREFIX_RE = /^\[kind:([a-z_]+)\]\s+/;
-function shapeSitePlanAsset(row) {
+function shapeFloorPlanAsset(row) {
   const base = shapeAsset(row);
   if (!base) return null;
   const m = base.generator_prompt?.match(KIND_PREFIX_RE);
@@ -38,15 +40,15 @@ const WRITABLE_FIELDS = [
   'next_action', 'start_date', 'estimated_completion',
 ];
 
-// Mirrors the 17-stage workflow + 6 stage statuses from the frontend
+// Mirrors the 18-stage workflow + 6 stage statuses from the frontend
 // fixture (frontend/src/app/fad/_data/design.ts). Kept inline to avoid
 // pulling the frontend module into the backend; if the fixture grows,
 // update both sides.
 const VALID_STAGE_IDS = new Set([
   'lead', 'proposal', 'doc-request', 'site-visit', 'preferences',
-  'rough-budget', 'agreement', 'signature', 'payment-gate', 'moodboard',
-  'design-pack', 'design-review', 'final-budget', 'funding-gate', 'execution',
-  'expense-capture', 'reconciliation',
+  'rough-budget', 'agreement', 'signature', 'payment-gate', 'floor-plan',
+  'moodboard', 'design-pack', 'design-review', 'final-budget', 'funding-gate',
+  'execution', 'expense-capture', 'reconciliation',
 ]);
 const VALID_STAGE_STATUSES = new Set([
   'pending', 'in-progress', 'waiting-on-owner', 'blocked', 'done', 'skipped',
@@ -109,27 +111,27 @@ router.get('/:id', requireDesignPerm('design:read'), async (req, res) => {
   }
 });
 
-// GET /api/design/projects/:id/site-plan — resolve the current site plan
-// asset row via the design_projects.site_plan_image_id FK (set by the
-// site-plan generator on POST /api/design/ai_images/generate-site-plan
+// GET /api/design/projects/:id/floor-plan — resolve the current floor plan
+// asset row via the design_projects.floor_plan_image_id FK (set by the
+// floor-plan generator on POST /api/design/ai_images/generate-floor-plan
 // when called with set_as_project_plan: true). Returns 404 if either the
-// project doesn't exist or no site plan is pinned. The asset row shape
+// project doesn't exist or no floor plan is pinned. The asset row shape
 // matches what /api/design/ai_images/:sha256 returns, with an extra
-// `kind: 'site_plan'` tag for clarity.
-router.get('/:id/site-plan', requireDesignPerm('design:read'), async (req, res) => {
+// `kind: 'floor_plan'` tag for clarity.
+router.get('/:id/floor-plan', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT a.*
          FROM design_projects p
          JOIN design_assets a
-           ON a.sha256 = p.site_plan_image_id
+           ON a.sha256 = p.floor_plan_image_id
         WHERE p.tenant_id = $1 AND p.id = $2`,
       [DEFAULT_TENANT_ID, req.params.id],
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'No site plan set for this project' });
-    res.json(shapeSitePlanAsset(rows[0]));
+    if (rows.length === 0) return res.status(404).json({ error: 'No floor plan set for this project' });
+    res.json(shapeFloorPlanAsset(rows[0]));
   } catch (e) {
-    console.error('[design/projects] site-plan error:', e.message);
+    console.error('[design/projects] floor-plan error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
