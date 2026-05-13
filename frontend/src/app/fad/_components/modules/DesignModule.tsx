@@ -35,6 +35,7 @@ import { ProjectIntake } from './design/ProjectIntake';
 import { ProjectEditDrawer } from './design/ProjectEditDrawer';
 import { AIPlaceholder } from './design/AIPlaceholder';
 import { OwnerPortalPreview } from './design/OwnerPortalPreview';
+import { ShareWithOwnerDrawer } from './design/ShareWithOwnerDrawer';
 import {
   NeedsAttentionQueue,
   OverviewSummaryLine,
@@ -2321,6 +2322,7 @@ function ProjectShell({
   projectRev: number;
 }) {
   const [portalOpen, setPortalOpen] = useState(false);
+  const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
   const [lifecycleTick, setLifecycleTick] = useState(0);
   const [showEdit, setShowEdit] = useState(false);
   const role = useCurrentRole();
@@ -2381,10 +2383,14 @@ function ProjectShell({
         project={project}
         onBack={onClose}
         onOpenOwnerPortal={() => setPortalOpen(true)}
+        onOpenShareDrawer={() => setShareDrawerOpen(true)}
         onLifecycleChange={() => { setLifecycleTick((t) => t + 1); onRefetch(); }}
         onEditProject={isDirector ? () => setShowEdit(true) : undefined}
       />
       {portalOpen && <OwnerPortalPreview project={project} onClose={() => setPortalOpen(false)} />}
+      {shareDrawerOpen && (
+        <ShareWithOwnerDrawer project={project} onClose={() => setShareDrawerOpen(false)} />
+      )}
       {showEdit && (
         <ProjectEditDrawer
           project={project}
