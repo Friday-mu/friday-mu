@@ -11,7 +11,11 @@ const { appendActivity } = require('./activities');
 
 const router = express.Router();
 
-const WRITABLE_FIELDS = ['line_items', 'reason'];
+// Migration 021 added title + co_number. co_number is server-assigned
+// at INSERT (next MAX+1 per project) and not directly writable via
+// PATCH — gaps are expected when COs are rejected/deleted and the
+// sequence shouldn't shift retroactively.
+const WRITABLE_FIELDS = ['line_items', 'reason', 'title'];
 
 // JSONB fields need explicit casting through ::jsonb because the dynamic
 // SET clause prevents node-postgres from inferring the column type — a
@@ -50,10 +54,17 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
       [DEFAULT_TENANT_ID, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
+    // co_number = next per-project sequence. COALESCE handles the
+    // first-CO-on-project case where MAX returns NULL.
+    const { rows: numRows } = await query(
+      `SELECT COALESCE(MAX(co_number), 0) + 1 AS next FROM design_change_orders WHERE project_id = $1`,
+      [body.project_id],
+    );
+    const coNumber = numRows[0].next;
     const { rows } = await query(
-      `INSERT INTO design_change_orders (project_id, line_items, reason)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [body.project_id, body.line_items || [], body.reason || null],
+      `INSERT INTO design_change_orders (project_id, line_items, reason, title, co_number)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [body.project_id, body.line_items || [], body.reason || null, body.title || null, coNumber],
     );
     res.status(201).json(shapeChangeOrder(rows[0]));
   } catch (e) {

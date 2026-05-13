@@ -7,7 +7,22 @@ const { DEFAULT_TENANT_ID, shapeSiteVisit } = require('./adapters');
 
 const router = express.Router();
 
-const WRITABLE_FIELDS = ['visit_date', 'duration_min', 'attendees', 'notes', 'photos_collected'];
+// Migration 022 added the frontend-aligned metadata fields. visit_date
+// stays writable as the canonical DATE; visited_at is the TIMESTAMPTZ
+// counterpart. attendees TEXT[] stays for multi-person notes; the
+// single-visitor case uses visited_by_user_id.
+const WRITABLE_FIELDS = [
+  'visit_date',
+  'visited_at',
+  'visited_by_user_id',
+  'walkthrough_video_url',
+  'marketing_photo_consent',
+  'status',
+  'duration_min',
+  'attendees',
+  'notes',
+  'photos_collected',
+];
 
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
@@ -35,18 +50,32 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     if (!body.project_id) return res.status(400).json({ error: 'project_id is required' });
-    if (!body.visit_date) return res.status(400).json({ error: 'visit_date is required' });
+    // visit_date can be derived from visited_at when only the timestamp
+    // is supplied. SiteVisitStage submits visited_at (datetime-local)
+    // and lets the backend derive the canonical DATE.
+    let visitDate = body.visit_date;
+    if (!visitDate && body.visited_at) {
+      visitDate = String(body.visited_at).slice(0, 10);
+    }
+    if (!visitDate) return res.status(400).json({ error: 'visit_date or visited_at is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
       [DEFAULT_TENANT_ID, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
-      `INSERT INTO design_site_visits (project_id, visit_date, duration_min, attendees, notes, photos_collected)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      `INSERT INTO design_site_visits (
+         project_id, visit_date, visited_at, visited_by_user_id,
+         walkthrough_video_url, marketing_photo_consent,
+         duration_min, attendees, notes, photos_collected
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
         body.project_id,
-        body.visit_date,
+        visitDate,
+        body.visited_at || null,
+        body.visited_by_user_id || null,
+        body.walkthrough_video_url || null,
+        body.marketing_photo_consent != null ? !!body.marketing_photo_consent : null,
         body.duration_min || null,
         Array.isArray(body.attendees) ? body.attendees : [],
         body.notes || null,

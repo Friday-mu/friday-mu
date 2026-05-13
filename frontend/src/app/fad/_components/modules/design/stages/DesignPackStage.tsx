@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   designClient,
   formatMUR,
+  SELECTIONS as FIXTURE_SELECTIONS,
   type ApprovalState,
   type BudgetCategory,
   type DesignPackVersion,
@@ -11,6 +12,7 @@ import {
   type DesignSelection,
   type SelectionOption,
 } from '../../../../_data/design';
+import { createSelection as apiCreateSelection, apiSelectionToFixture } from '../../../../_data/designClient';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -175,6 +177,7 @@ function NewSelectionForm({
   const [prompt, setPrompt] = useState('');
   const [category, setCategory] = useState<BudgetCategory>('furniture');
   const [roomId, setRoomId] = useState<string | null>(rooms[0]?.id ?? null);
+  const [creating, setCreating] = useState(false);
 
   const canCreate = prompt.trim().length > 0;
 
@@ -223,23 +226,33 @@ function NewSelectionForm({
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           type="button"
-          disabled={!canCreate}
-          onClick={() => {
-            const sel = designClient.selections.create({
-              projectId: project.id,
-              roomId,
-              packageId: null,
-              category,
-              prompt: prompt.trim(),
-            });
-            fireToast('Draft selection created — add 2-3 options before sending.');
-            onCreated(sel);
+          disabled={!canCreate || creating}
+          onClick={async () => {
+            setCreating(true);
+            try {
+              const apiSel = await apiCreateSelection({
+                project_id: project.id,
+                title: prompt.trim(),
+                room_id: roomId ?? null,
+                category_code: category,
+                options: [],
+              });
+              const fixtureSel = apiSelectionToFixture(apiSel);
+              FIXTURE_SELECTIONS.push(fixtureSel);
+              fireToast('Draft selection created — add 2-3 options before sending.');
+              onCreated(fixtureSel);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              fireToast(`Failed to create selection: ${msg}`);
+            } finally {
+              setCreating(false);
+            }
           }}
-          style={canCreate ? primaryBtn() : { ...primaryBtn(), opacity: 0.5, cursor: 'not-allowed' }}
+          style={canCreate && !creating ? primaryBtn() : { ...primaryBtn(), opacity: 0.5, cursor: 'not-allowed' }}
         >
-          Create draft
+          {creating ? 'Creating…' : 'Create draft'}
         </button>
-        <button type="button" onClick={onCancel} style={secondaryBtn()}>Cancel</button>
+        <button type="button" onClick={onCancel} disabled={creating} style={secondaryBtn()}>Cancel</button>
       </div>
     </div>
   );

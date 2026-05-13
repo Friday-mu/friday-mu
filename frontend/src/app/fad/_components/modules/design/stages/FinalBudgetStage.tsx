@@ -4,12 +4,14 @@ import { useMemo, useState } from 'react';
 import {
   designClient,
   formatMUR,
+  CHANGE_ORDERS as FIXTURE_CHANGE_ORDERS,
   type BudgetCategory,
   type BudgetItem,
   type ChangeOrder,
   type ChangeOrderLineItem,
   type DesignProject,
 } from '../../../../_data/design';
+import { createChangeOrder as apiCreateChangeOrder, apiChangeOrderToFixture } from '../../../../_data/designClient';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -412,7 +414,8 @@ function NewChangeOrderForm({
 }) {
   const [title, setTitle] = useState('');
   const [reason, setReason] = useState('');
-  const canCreate = title.trim().length > 0;
+  const [creating, setCreating] = useState(false);
+  const canCreate = title.trim().length > 0 && !creating;
   return (
     <div
       data-design-co-new-form
@@ -450,20 +453,31 @@ function NewChangeOrderForm({
         <button
           type="button"
           disabled={!canCreate}
-          onClick={() => {
-            const co = designClient.changeOrders.create({
-              projectId: project.id,
-              title: title.trim(),
-              reason: reason.trim(),
-            });
-            fireToast(`Draft ${co.number} created — add line items before sending.`);
-            onCreated(co);
+          onClick={async () => {
+            setCreating(true);
+            try {
+              const apiCo = await apiCreateChangeOrder({
+                project_id: project.id,
+                title: title.trim(),
+                reason: reason.trim(),
+                line_items: [],
+              });
+              const fixtureCo = apiChangeOrderToFixture(apiCo);
+              FIXTURE_CHANGE_ORDERS.push(fixtureCo);
+              fireToast(`Draft ${fixtureCo.number} created — add line items before sending.`);
+              onCreated(fixtureCo);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              fireToast(`Failed to create change order: ${msg}`);
+            } finally {
+              setCreating(false);
+            }
           }}
           style={canCreate ? primaryBtnLarge() : { ...primaryBtnLarge(), opacity: 0.5, cursor: 'not-allowed' }}
         >
-          Create draft
+          {creating ? 'Creating…' : 'Create draft'}
         </button>
-        <button type="button" onClick={onCancel} style={secondaryBtnLarge()}>Cancel</button>
+        <button type="button" onClick={onCancel} disabled={creating} style={secondaryBtnLarge()}>Cancel</button>
       </div>
     </div>
   );

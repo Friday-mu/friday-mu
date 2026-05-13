@@ -14,7 +14,10 @@ const { appendActivity } = require('./activities');
 
 const router = express.Router();
 
-const WRITABLE_FIELDS = ['title', 'pack_id', 'options'];
+// Migration 020 added room_id + category_code so selections can be
+// keyed by room and budget category — the frontend has always tracked
+// these but until the migration they had no backend column.
+const WRITABLE_FIELDS = ['title', 'pack_id', 'options', 'room_id', 'category_code'];
 
 // JSONB fields need explicit casting through ::jsonb because the dynamic
 // SET clause prevents node-postgres from inferring the column type — a
@@ -55,9 +58,16 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
-      `INSERT INTO design_selections (project_id, pack_id, title, options)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [body.project_id, body.pack_id || null, body.title, body.options || []],
+      `INSERT INTO design_selections (project_id, pack_id, title, options, room_id, category_code)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [
+        body.project_id,
+        body.pack_id || null,
+        body.title,
+        body.options || [],
+        body.room_id || null,
+        body.category_code || null,
+      ],
     );
     res.status(201).json(shapeSelection(rows[0]));
   } catch (e) {

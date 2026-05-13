@@ -34,6 +34,7 @@ import {
   ACTIVITY as FIXTURE_ACTIVITY,
   APPROVALS as FIXTURE_APPROVALS,
   ROOMS as FIXTURE_ROOMS,
+  SITE_VISITS as FIXTURE_SITE_VISITS,
   tierForEpc,
   designFeeForTier,
   procurementFeeForTier,
@@ -51,6 +52,10 @@ import type {
   ActivityLogEntry as FixtureActivity,
   DesignApproval as FixtureApproval,
   Room as FixtureRoom,
+  DesignSelection as FixtureSelection,
+  ChangeOrder as FixtureChangeOrder,
+  SiteVisit as FixtureSiteVisit,
+  BudgetCategory,
   StageId,
   StageStatus,
   LifecycleStatus,
@@ -274,6 +279,11 @@ export interface ApiSelection {
   id: string;
   project_id: string;
   pack_id?: string | null;
+  // Migration 020: room_id + category_code align with the frontend fixture
+  // shape so a Selection always knows which room it belongs to and which
+  // budget category bucket it rolls up under.
+  room_id?: string | null;
+  category_code?: string | null;
   title: string;
   status: 'draft' | 'sent' | 'picked' | 'changes_requested';
   options: Array<Record<string, unknown>>;
@@ -288,6 +298,11 @@ export interface ApiSelection {
 export interface ApiChangeOrder {
   id: string;
   project_id: string;
+  // Migration 021: title + co_number bring the API in line with the
+  // frontend ChangeOrder fixture. co_number is server-assigned per
+  // project (1, 2, 3 …); the frontend renders it as "CO-001".
+  title: string | null;
+  co_number: number | null;
   status: 'draft' | 'sent' | 'approved' | 'rejected';
   line_items: Array<Record<string, unknown>>;
   reason?: string | null;
@@ -730,6 +745,36 @@ export const listRooms = (propertyId: string) =>
     .then((r) => (r as { results: ApiRoom[] }).results);
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
+
+// ─────────────────────────── Site visits ───────────────────────────
+// Migration 022 added the metadata fields the SiteVisitStage form has
+// always rendered but never saved. The frontend treats site_visit as
+// "one active visit per project" (the most recent); the backend
+// stores a list to keep historical visits, and the API returns them
+// in visit_date DESC order.
+export interface ApiSiteVisit {
+  id: string;
+  project_id: string;
+  visit_date: string;
+  visited_at: string | null;
+  visited_by_user_id: string | null;
+  walkthrough_video_url: string | null;
+  marketing_photo_consent: boolean | null;
+  status: 'not_started' | 'in_progress' | 'closed';
+  duration_min: number | null;
+  attendees: string[];
+  notes: string | null;
+  photos_collected: number;
+  created_at: string;
+  updated_at: string;
+}
+export const loadSiteVisits = (projectId: string) =>
+  apiFetch(`/api/design/site_visits?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiSiteVisit[] }).results);
+export const createSiteVisit = (payload: Partial<ApiSiteVisit> & { project_id: string }) =>
+  apiFetch('/api/design/site_visits', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiSiteVisit>;
+export const updateSiteVisit = (id: string, patch: Partial<ApiSiteVisit>) =>
+  apiFetch(`/api/design/site_visits/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiSiteVisit>;
 
 // ─────────────────────────── Preferences ───────────────────────────
 // Single row per project, stored as opaque JSONB on the backend. The
@@ -1258,6 +1303,87 @@ export function apiRoomToFixture(api: ApiRoom, projectId: string): FixtureRoom {
   } as unknown as FixtureRoom;
 }
 
+// Migration 022 — site visit metadata. The frontend SiteVisit fixture
+// type has 7 fields (projectId, visitedAt, visitedByUserId,
+// walkthroughVideoUrl, notes, marketingPhotoConsent, status); each
+// maps 1:1 to a backend column after migration 022.
+export function apiSiteVisitToFixture(api: ApiSiteVisit): FixtureSiteVisit {
+  return {
+    projectId: api.project_id,
+    visitedAt: api.visited_at ?? null,
+    visitedByUserId: api.visited_by_user_id ?? null,
+    walkthroughVideoUrl: api.walkthrough_video_url ?? null,
+    notes: api.notes ?? null,
+    marketingPhotoConsent: api.marketing_photo_consent ?? true,
+    status: api.status,
+  };
+}
+
+// Migration 020 added room_id + category_code so the API → fixture
+// adapter now produces a properly-typed fixture row (was previously
+// pushed through `as unknown as` in hydrateDesignProject — silently
+// stripping the room and category context).
+//
+// Field mapping (API ↔ fixture):
+//   project_id     ↔ projectId
+//   pack_id        ↔ packageId
+//   room_id        ↔ roomId
+//   category_code  ↔ category   (BudgetCategory)
+//   title          ↔ prompt     (owner-facing question text)
+//   status         ↔ state      (same enum values)
+//   change_request_comment ↔ comment
+// Migration 021 added title + co_number on the backend. The frontend
+// ChangeOrder fixture renders co_number as "CO-001" (zero-padded
+// 3-digit) — formatting lives in the adapter so consumers don't have
+// to duplicate it.
+//
+// Field mapping (API ↔ fixture):
+//   project_id    ↔ projectId
+//   title         ↔ title
+//   co_number     ↔ number       (formatted as "CO-NNN")
+//   status        ↔ state
+//   line_items    ↔ lineItems    (cast through unknown — option ids
+//                                  + budgetItemId etc. are fixture-
+//                                  rich and pass through opaquely)
+//   reason        ↔ reason
+//   sent_at       ↔ sentAt
+//   decided_at    ↔ decidedAt
+//   decision_note ↔ ownerComment (owner-facing approval comment)
+export function apiChangeOrderToFixture(api: ApiChangeOrder): FixtureChangeOrder {
+  const numLabel = api.co_number != null ? `CO-${String(api.co_number).padStart(3, '0')}` : 'CO-???';
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    number: numLabel,
+    title: api.title ?? '',
+    reason: api.reason ?? '',
+    lineItems: (api.line_items ?? []) as unknown as FixtureChangeOrder['lineItems'],
+    state: api.status,
+    ownerComment: api.decision_note ?? null,
+    createdAt: api.created_at,
+    sentAt: api.sent_at ?? null,
+    decidedAt: api.decided_at ?? null,
+  };
+}
+
+export function apiSelectionToFixture(api: ApiSelection): FixtureSelection {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    roomId: api.room_id ?? null,
+    packageId: api.pack_id ?? null,
+    category: (api.category_code as BudgetCategory) ?? 'furniture',
+    prompt: api.title,
+    options: (api.options ?? []) as unknown as FixtureSelection['options'],
+    pickedOptionId: api.picked_option_id ?? null,
+    pickedAt: api.picked_at ?? null,
+    comment: api.change_request_comment ?? null,
+    state: api.status,
+    sentAt: api.sent_at ?? null,
+    createdAt: api.created_at,
+  };
+}
+
 export function apiPackToFixture(api: ApiPack): FixturePack {
   // Defensive defaults for fields the prod API doesn't yet populate.
   // Without these, consumers like DesignPackStage hit
@@ -1450,7 +1576,7 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   const project = FIXTURE_PROJECTS.find((p) => p.id === projectId);
   const propertyId = project?.propertyId ?? null;
 
-  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms] = await Promise.all([
+  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits] = await Promise.all([
     loadMoodboards(projectId).catch(() => []),
     loadPacks(projectId).catch(() => []),
     loadAgreement(projectId).catch(() => null as ApiAgreement | null),
@@ -1461,6 +1587,7 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
     loadActivities(projectId).catch(() => []),
     loadApprovals(projectId).catch(() => []),
     propertyId ? listRooms(propertyId).catch(() => [] as ApiRoom[]) : Promise.resolve([] as ApiRoom[]),
+    loadSiteVisits(projectId).catch(() => [] as ApiSiteVisit[]),
   ]);
 
   removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
@@ -1476,11 +1603,10 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
   FIXTURE_PAYMENT_GATES.push(...payments.map(apiPaymentToFixture));
 
   removeMatching(FIXTURE_SELECTIONS, (s) => (s as { projectId: string }).projectId === projectId);
-  // Selections fixture shape is rich (option ids, version, etc.); pass through unknown.
-  FIXTURE_SELECTIONS.push(...(selections as unknown as Array<typeof FIXTURE_SELECTIONS[number]>));
+  FIXTURE_SELECTIONS.push(...selections.map(apiSelectionToFixture));
 
   removeMatching(FIXTURE_CHANGE_ORDERS, (c) => (c as { projectId: string }).projectId === projectId);
-  FIXTURE_CHANGE_ORDERS.push(...(changeOrders as unknown as Array<typeof FIXTURE_CHANGE_ORDERS[number]>));
+  FIXTURE_CHANGE_ORDERS.push(...changeOrders.map(apiChangeOrderToFixture));
 
   removeMatching(FIXTURE_BUDGET_ITEMS, (b) => (b as { projectId: string }).projectId === projectId);
   FIXTURE_BUDGET_ITEMS.push(...(budgetItems as unknown as Array<typeof FIXTURE_BUDGET_ITEMS[number]>));
@@ -1493,6 +1619,14 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
 
   removeMatching(FIXTURE_ROOMS, (r) => r.projectId === projectId);
   FIXTURE_ROOMS.push(...rooms.map((r) => apiRoomToFixture(r, projectId)));
+
+  // SITE_VISITS is "latest visit per project" on the frontend; the
+  // backend returns the list ordered by visit_date DESC, so we take
+  // the first row as the canonical visit for the project.
+  removeMatching(FIXTURE_SITE_VISITS, (v) => v.projectId === projectId);
+  if (siteVisits.length > 0) {
+    FIXTURE_SITE_VISITS.push(apiSiteVisitToFixture(siteVisits[0]));
+  }
 }
 
 /** Hook: hydrate top-level fixtures on mount. Returns { hydrated,

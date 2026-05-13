@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { designClient, ROOMS, type DesignProject, type Photo, type Room } from '../../../../_data/design';
-import { createRoom as apiCreateRoom, apiRoomToFixture } from '../../../../_data/designClient';
+import { useEffect, useState } from 'react';
+import { designClient, ROOMS, SITE_VISITS, type DesignProject, type Photo, type Room, type SiteVisit } from '../../../../_data/design';
+import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 
@@ -25,12 +25,112 @@ const USAGE_KIND_OPTIONS = [
 ];
 
 export function SiteVisitStage({ project }: Props) {
-  const visit = designClient.siteVisit.get(project.id);
   // rev forces re-read of the fixture array after we push a new room
   // returned by the API into it. Without rev, React doesn't re-render.
   const [rev, setRev] = useState(0);
   const rooms = (() => { void rev; return designClient.rooms.list(project.id); })();
   const photos = designClient.photos.list(project.id);
+
+  // ── Visit metadata: controlled state + persistence ───────────────
+  // The fixture lookup seeds initial state for instant render; on mount
+  // we fetch the latest visit from the API (post-migration-022) so the
+  // form survives refresh. apiVisitId tracks the backend row id so the
+  // Save action can switch between POST (create) and PATCH (update).
+  const fixtureVisit = designClient.siteVisit.get(project.id);
+  const [visitedAt, setVisitedAt] = useState<string>(fixtureVisit?.visitedAt ? fixtureVisit.visitedAt.slice(0, 16) : '');
+  const [visitedBy, setVisitedBy] = useState<string>(fixtureVisit?.visitedByUserId?.replace('u-', '') ?? '');
+  const [walkthroughUrl, setWalkthroughUrl] = useState<string>(fixtureVisit?.walkthroughVideoUrl ?? '');
+  const [marketingConsent, setMarketingConsent] = useState<boolean>(fixtureVisit?.marketingPhotoConsent ?? true);
+  const [visitNotes, setVisitNotes] = useState<string>(fixtureVisit?.notes ?? '');
+  const [visitStatus, setVisitStatus] = useState<SiteVisit['status']>(fixtureVisit?.status ?? 'in_progress');
+  const [apiVisitId, setApiVisitId] = useState<string | null>(null);
+  const [savingVisit, setSavingVisit] = useState(false);
+  const [closingVisit, setClosingVisit] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadSiteVisits(project.id)
+      .then((rows) => {
+        if (cancelled || rows.length === 0) return;
+        const latest = rows[0];
+        setApiVisitId(latest.id);
+        setVisitedAt(latest.visited_at ? latest.visited_at.slice(0, 16) : (latest.visit_date ?? '').slice(0, 10));
+        setVisitedBy(latest.visited_by_user_id?.replace('u-', '') ?? '');
+        setWalkthroughUrl(latest.walkthrough_video_url ?? '');
+        setMarketingConsent(latest.marketing_photo_consent ?? true);
+        setVisitNotes(latest.notes ?? '');
+        setVisitStatus(latest.status);
+      })
+      .catch(() => {
+        // Silent on initial-load failure — fixture state already
+        // populated, user can still edit + Save.
+      });
+    return () => { cancelled = true; };
+  }, [project.id]);
+
+  const persistVisit = async (overrides: Partial<ApiSiteVisit> = {}): Promise<ApiSiteVisit | null> => {
+    // Build payload. visited_at is the canonical full timestamp; the
+    // backend derives visit_date from it on POST when only the
+    // timestamp is supplied. Normalise the visitor display string back
+    // to the u-<slug> shape we store in the column.
+    const isoVisited = visitedAt ? new Date(visitedAt).toISOString() : null;
+    const visitorId = visitedBy.trim() ? `u-${visitedBy.trim().toLowerCase()}` : null;
+    const payload: Partial<ApiSiteVisit> & { project_id: string } = {
+      project_id: project.id,
+      visited_at: isoVisited,
+      visited_by_user_id: visitorId,
+      walkthrough_video_url: walkthroughUrl.trim() || null,
+      marketing_photo_consent: marketingConsent,
+      notes: visitNotes.trim() || null,
+      status: visitStatus,
+      ...overrides,
+    };
+    if (apiVisitId) {
+      return await updateSiteVisit(apiVisitId, payload);
+    }
+    return await createSiteVisit(payload);
+  };
+
+  const handleSaveVisit = async () => {
+    setSavingVisit(true);
+    try {
+      const saved = await persistVisit();
+      if (saved) {
+        setApiVisitId(saved.id);
+        // Sync fixture so siblings reading designClient.siteVisit.get
+        // see the new state without remounting.
+        const fx = apiSiteVisitToFixture(saved);
+        const idx = SITE_VISITS.findIndex((v) => v.projectId === project.id);
+        if (idx >= 0) Object.assign(SITE_VISITS[idx], fx); else SITE_VISITS.push(fx);
+      }
+      fireToast('Site visit saved.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Save failed: ${msg}`);
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleCloseVisit = async () => {
+    setClosingVisit(true);
+    try {
+      const saved = await persistVisit({ status: 'closed' });
+      if (saved) {
+        setApiVisitId(saved.id);
+        setVisitStatus('closed');
+        const fx = apiSiteVisitToFixture(saved);
+        const idx = SITE_VISITS.findIndex((v) => v.projectId === project.id);
+        if (idx >= 0) Object.assign(SITE_VISITS[idx], fx); else SITE_VISITS.push(fx);
+      }
+      fireToast('Site visit closed.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Close failed: ${msg}`);
+    } finally {
+      setClosingVisit(false);
+    }
+  };
 
   const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set());
   const [photoLightbox, setPhotoLightbox] = useState<Photo | null>(null);
@@ -127,35 +227,49 @@ export function SiteVisitStage({ project }: Props) {
           <Field label="Visited at">
             <input
               type="datetime-local"
-              defaultValue={visit?.visitedAt ? visit.visitedAt.slice(0, 16) : ''}
+              value={visitedAt}
+              onChange={(e) => setVisitedAt(e.target.value)}
               style={inputStyle()}
+              data-site-visit-visited-at
             />
           </Field>
           <Field label="Visitor">
             <input
-              defaultValue={visit?.visitedByUserId?.replace('u-', '') ?? ''}
+              value={visitedBy}
+              onChange={(e) => setVisitedBy(e.target.value)}
               placeholder="Mathias / Ishant / …"
               style={inputStyle()}
+              data-site-visit-visitor
             />
           </Field>
           <Field label="Walkthrough video URL">
             <input
-              defaultValue={visit?.walkthroughVideoUrl ?? ''}
+              value={walkthroughUrl}
+              onChange={(e) => setWalkthroughUrl(e.target.value)}
               placeholder="drive://walkthrough.mp4"
               style={inputStyle()}
+              data-site-visit-walkthrough
             />
           </Field>
           <Field label="Marketing photo consent (per agreement §12)">
             <label style={checkboxLabelStyle()}>
-              <input type="checkbox" defaultChecked={visit?.marketingPhotoConsent} disabled /> Default yes (locked at agreement level)
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={(e) => setMarketingConsent(e.target.checked)}
+                data-site-visit-marketing-consent
+              />{' '}
+              Owner consented to marketing-photo use
             </label>
           </Field>
           <Field label="Visit notes" full>
             <textarea
-              defaultValue={visit?.notes ?? ''}
+              value={visitNotes}
+              onChange={(e) => setVisitNotes(e.target.value)}
               rows={3}
               placeholder="High-level observations, owner present, access details…"
               style={{ ...inputStyle(), resize: 'vertical' }}
+              data-site-visit-notes
             />
           </Field>
         </Grid>
@@ -338,9 +452,38 @@ export function SiteVisitStage({ project }: Props) {
         )}
       </Card>
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button type="button" style={secondaryBtn()}>Save and continue later</button>
-        <button type="button" style={primaryBtn()}>Close site visit</button>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+        {visitStatus === 'closed' && (
+          <span style={{ fontSize: 11, color: 'var(--color-text-success)', marginRight: 'auto' }}>
+            ✓ Site visit closed
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleSaveVisit}
+          disabled={savingVisit || closingVisit}
+          data-site-visit-save
+          style={{
+            ...secondaryBtn(),
+            opacity: savingVisit || closingVisit ? 0.5 : 1,
+            cursor: savingVisit || closingVisit ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {savingVisit ? 'Saving…' : 'Save and continue later'}
+        </button>
+        <button
+          type="button"
+          onClick={handleCloseVisit}
+          disabled={savingVisit || closingVisit || visitStatus === 'closed'}
+          data-site-visit-close
+          style={{
+            ...primaryBtn(),
+            opacity: savingVisit || closingVisit || visitStatus === 'closed' ? 0.5 : 1,
+            cursor: savingVisit || closingVisit || visitStatus === 'closed' ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {closingVisit ? 'Closing…' : visitStatus === 'closed' ? 'Closed' : 'Close site visit'}
+        </button>
       </div>
 
       {photoLightbox && <Lightbox photo={photoLightbox} onClose={() => setPhotoLightbox(null)} />}
