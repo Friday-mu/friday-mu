@@ -7,6 +7,8 @@ import {
   stageDef,
   type DesignProject,
 } from '../../../_data/design';
+import { getLiveTasks } from '../../../_data/designClient';
+import { useFixtureRev } from '../../../_data/fixtureRev';
 
 interface NeedsAttentionItem {
   id: string;
@@ -89,13 +91,34 @@ export function NeedsAttentionQueue({
   role: string;
   onOpenProject: (id: string, screen?: string) => void;
 }) {
+  // Subscribe to global fixture-rev so this queue re-derives when
+  // BlockersPanel / NextActionsPanel mutate their live task lists.
+  const fixtureRev = useFixtureRev();
+
   const items = useMemo(() => {
+    void fixtureRev;
     const active = projects.filter((p) => p.lifecycleStatus === 'active');
     const out: NeedsAttentionItem[] = [];
 
-    // 1. Blockers — visible to all roles; the director and design-leads usually act on these.
+    // 1. Blockers — re-derived from the live tasks store (design-be-18
+    //    moved blockers from project.blocker text → design_tasks rows
+    //    with category='blocker'). Fall back to the legacy field if no
+    //    live tasks were captured (TaskItemsPanel hasn't mounted yet on
+    //    a freshly-opened tab).
     for (const p of active) {
-      if (p.blocker) {
+      const liveBlockers = getLiveTasks(p.id, 'blocker').filter((t) => t.status !== 'done');
+      if (liveBlockers.length > 0) {
+        for (const blk of liveBlockers) {
+          out.push({
+            id: `block-${blk.id}`,
+            projectId: p.id,
+            projectName: p.name,
+            label: 'Blocker — needs unblock',
+            hint: blk.title,
+            tone: 'danger',
+          });
+        }
+      } else if (p.blocker) {
         out.push({
           id: `block-${p.id}`,
           projectId: p.id,
@@ -180,7 +203,7 @@ export function NeedsAttentionQueue({
     }
 
     return out.slice(0, 8);
-  }, [projects, role]);
+  }, [projects, role, fixtureRev]);
 
   return (
     <div style={cardStyle()}>

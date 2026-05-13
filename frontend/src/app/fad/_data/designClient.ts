@@ -643,6 +643,21 @@ export const loadTasks = async (
 export const listTasksByCategory = (projectId: string, category: ApiTaskCategory) =>
   loadTasks(projectId, { category });
 
+// Live-tasks store — module-level Map keyed by `${projectId}:${category}`.
+// TaskItemsPanel writes through on every state change; other surfaces
+// (NeedsAttentionQueue, "stale stage" nudges) read synchronously and
+// subscribe to useFixtureRev for re-renders. The previous design left
+// blockers / next-actions stranded in panel-local useState — siblings
+// couldn't see them and the "Needs attention" dashboard still pulled
+// from the legacy project.blocker text field.
+const _liveTasksByKey = new Map<string, ApiTask[]>();
+export function setLiveTasks(projectId: string, category: ApiTaskCategory, tasks: ApiTask[]): void {
+  _liveTasksByKey.set(`${projectId}:${category}`, tasks);
+}
+export function getLiveTasks(projectId: string, category: ApiTaskCategory): ApiTask[] {
+  return _liveTasksByKey.get(`${projectId}:${category}`) || [];
+}
+
 export const loadApprovals = async (projectId: string, filters: { status?: string; type?: string } = {}) => {
   const qs = new URLSearchParams({ project_id: projectId });
   if (filters.status) qs.set('status', filters.status);
@@ -751,6 +766,38 @@ export const listRooms = (propertyId: string) =>
     .then((r) => (r as { results: ApiRoom[] }).results);
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
+
+// ─────────────────────────── Budget items ───────────────────────────
+export const updateBudgetItem = (id: string, patch: Partial<ApiBudgetItem>) =>
+  apiFetch(`/api/design/budget_items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiBudgetItem>;
+
+// ─────────────────────────── Documents (doc-request) ───────────────────────────
+// Owner-supplied artifact tracker. Discovery / doc-request stage uses
+// this to record property title scans, EPC certificates, floor plans
+// supplied by the owner, etc. doc_type is a free-text string so the
+// frontend can introduce new categories without a backend migration.
+export interface ApiDocument {
+  id: string;
+  project_id: string;
+  doc_type: string;
+  name: string | null;
+  url: string | null;
+  version: number;
+  signed_by: string | null;
+  signed_at: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export const loadDocuments = (projectId: string, docType?: string) => {
+  const q = new URLSearchParams({ project_id: projectId });
+  if (docType) q.set('doc_type', docType);
+  return apiFetch(`/api/design/documents?${q.toString()}`).then((r) => (r as { results: ApiDocument[] }).results);
+};
+export const createDocument = (payload: { project_id: string; doc_type: string; name?: string | null; url?: string | null }) =>
+  apiFetch('/api/design/documents', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiDocument>;
+export const deleteDocument = (id: string) =>
+  apiFetch(`/api/design/documents/${id}`, { method: 'DELETE' }) as Promise<void>;
 
 // ─────────────────────────── AI: rough budget estimator ───────────────────────────
 // AI Bet #1 — staff one-liner → line-item budget grounded in the 155-

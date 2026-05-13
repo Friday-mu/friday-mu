@@ -12,6 +12,7 @@ import {
   stageDef,
   tierForEpc,
   withVAT,
+  STAGES,
   type AnnexAConfig,
   type CreateVendorInput,
   type DesignProject,
@@ -49,6 +50,7 @@ import { useCurrentRole } from '../usePermissions';
 
 // Lazy-load each stage screen so the initial Design bundle only ships the
 // shell + dashboard. Each stage chunk loads on first navigation.
+const DocRequestStage     = lazy(() => import('./design/stages/DocRequestStage').then((m) => ({ default: m.DocRequestStage })));
 const SiteVisitStage      = lazy(() => import('./design/stages/SiteVisitStage').then((m) => ({ default: m.SiteVisitStage })));
 const PreferencesStage    = lazy(() => import('./design/stages/PreferencesStage').then((m) => ({ default: m.PreferencesStage })));
 const RoughBudgetStage    = lazy(() => import('./design/stages/RoughBudgetStage').then((m) => ({ default: m.RoughBudgetStage })));
@@ -60,6 +62,7 @@ const DesignPackStage     = lazy(() => import('./design/stages/DesignPackStage')
 const FinalBudgetStage    = lazy(() => import('./design/stages/FinalBudgetStage').then((m) => ({ default: m.FinalBudgetStage })));
 const ProcurementStage    = lazy(() => import('./design/stages/ProcurementStage').then((m) => ({ default: m.ProcurementStage })));
 const ExecutionStage      = lazy(() => import('./design/stages/ExecutionStage').then((m) => ({ default: m.ExecutionStage })));
+const ExpenseCaptureStage = lazy(() => import('./design/stages/ExpenseCaptureStage').then((m) => ({ default: m.ExpenseCaptureStage })));
 const ReconciliationStage = lazy(() => import('./design/stages/ReconciliationStage').then((m) => ({ default: m.ReconciliationStage })));
 const HandoverStage       = lazy(() => import('./design/stages/HandoverStage').then((m) => ({ default: m.HandoverStage })));
 const DocumentsStage      = lazy(() => import('./design/stages/DocumentsStage').then((m) => ({ default: m.DocumentsStage })));
@@ -101,6 +104,7 @@ function syncDrillDownToUrl(pid: string | null, screen: string) {
 
 type ProjectScreen =
   | 'overview'
+  | 'doc-request'
   | 'site-visit'
   | 'preferences'
   | 'rough-budget'
@@ -112,6 +116,7 @@ type ProjectScreen =
   | 'final-budget'
   | 'procurement'
   | 'execution'
+  | 'expense-capture'
   | 'reconciliation'
   | 'handover'
   | 'documents';
@@ -156,7 +161,7 @@ const PHASES: PhaseDef[] = [
   {
     id: 'discovery',
     label: 'Discovery',
-    sections: ['site-visit', 'preferences', 'rough-budget', 'agreement', 'payments'],
+    sections: ['doc-request', 'site-visit', 'preferences', 'rough-budget', 'agreement', 'payments'],
     stages: ['lead', 'doc-request', 'site-visit', 'preferences', 'rough-budget', 'agreement', 'signature', 'payment-gate'],
   },
   {
@@ -176,7 +181,7 @@ const PHASES: PhaseDef[] = [
   {
     id: 'execution',
     label: 'Execution',
-    sections: ['execution'],
+    sections: ['execution', 'expense-capture'],
     stages: ['execution', 'expense-capture'],
   },
   {
@@ -195,6 +200,7 @@ const PHASES: PhaseDef[] = [
 
 const SECTION_LABELS: Record<ProjectScreen, string> = {
   'overview':       'Brief',
+  'doc-request':    'Document request',
   'site-visit':     'Site visit',
   'preferences':    'Preferences',
   'rough-budget':   'Rough budget',
@@ -206,6 +212,7 @@ const SECTION_LABELS: Record<ProjectScreen, string> = {
   'final-budget':   'Final budget',
   'procurement':    'Procurement',
   'execution':      'Execution',
+  'expense-capture':'Expense capture',
   'reconciliation': 'Reconciliation',
   'handover':       'Handover',
   'documents':      'All documents',
@@ -391,9 +398,17 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
     return all.filter((t) => t.assignedUserId === currentUserId && t.status !== 'completed').slice(0, 6);
   }, [allProjects, currentUserId]);
 
+  // QA-bug fix: render ALL 17 stages, not just the ones with ≥1
+  // project. Empty stages were silently dropped, so users couldn't
+  // filter to "what's blocked at Site Visit" if no project was there
+  // yet. Counts surface inline so empty stages stay visible but
+  // visually de-emphasised.
   const stageOptions = useMemo(() => {
-    const set = new Set(allProjects.map((p) => p.currentStage));
-    return Array.from(set);
+    const counts = new Map<StageId, number>();
+    for (const p of allProjects) {
+      counts.set(p.currentStage, (counts.get(p.currentStage) ?? 0) + 1);
+    }
+    return STAGES.map((s) => ({ id: s.id, label: s.shortLabel, count: counts.get(s.id) ?? 0 }));
   }, [allProjects]);
 
   return (
@@ -433,7 +448,13 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             <FilterChip label="All stages" active={stageFilter === 'all'} onClick={() => setStageFilter('all')} />
             {stageOptions.map((s) => (
-              <FilterChip key={s} label={s} active={stageFilter === s} onClick={() => setStageFilter(s)} />
+              <FilterChip
+                key={s.id}
+                label={s.count > 0 ? `${s.label} · ${s.count}` : s.label}
+                active={stageFilter === s.id}
+                onClick={() => setStageFilter(s.id)}
+                dim={s.count === 0}
+              />
             ))}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -485,7 +506,7 @@ function DesignDashboard({ onOpenProject }: { onOpenProject: (id: string) => voi
   );
 }
 
-function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function FilterChip({ label, active, onClick, dim }: { label: string; active: boolean; onClick: () => void; dim?: boolean }) {
   return (
     <button
       type="button"
@@ -499,6 +520,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
         color: active ? '#fff' : 'var(--color-text-secondary)',
         fontWeight: active ? 600 : 500,
         whiteSpace: 'nowrap',
+        opacity: dim && !active ? 0.55 : 1,
       }}
     >
       {label}
@@ -2854,6 +2876,8 @@ function ProjectScreenContent({ project, screen }: { project: DesignProject; scr
   switch (screen) {
     case 'overview':
       return <ProjectOverview project={project} />;
+    case 'doc-request':
+      return <DocRequestStage project={project} />;
     case 'site-visit':
       return <SiteVisitStage project={project} />;
     case 'preferences':
@@ -2876,6 +2900,8 @@ function ProjectScreenContent({ project, screen }: { project: DesignProject; scr
       return <ProcurementStage project={project} />;
     case 'execution':
       return <ExecutionStage project={project} />;
+    case 'expense-capture':
+      return <ExpenseCaptureStage project={project} />;
     case 'reconciliation':
       return <ReconciliationStage project={project} />;
     case 'handover':

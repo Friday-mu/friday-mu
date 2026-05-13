@@ -20,10 +20,12 @@ import {
   createTask,
   deleteTask,
   listTasksByCategory,
+  setLiveTasks,
   updateTask,
   type ApiTask,
   type ApiTaskCategory,
 } from '../../../_data/designClient';
+import { bumpFixtureRev } from '../../../_data/fixtureRev';
 import { fireToast } from '../../Toaster';
 import { TaskDetailDrawer } from './TaskDetailDrawer';
 
@@ -71,6 +73,15 @@ export function TaskItemsPanel({ projectId, category, heading, emptyMessage, add
       cancelled = true;
     };
   }, [projectId, category, refetchKey]);
+
+  // Mirror local task state into the module-level live-tasks store so
+  // sibling surfaces (NeedsAttentionQueue, stale-stage nudges) can read
+  // open blockers / next-actions without re-fetching. Bump the global
+  // fixture rev on each write so subscribers re-render.
+  useEffect(() => {
+    setLiveTasks(projectId, category, tasks);
+    bumpFixtureRev();
+  }, [projectId, category, tasks]);
 
   const { openTasks, resolvedTasks } = useMemo(() => {
     const open: ApiTask[] = [];

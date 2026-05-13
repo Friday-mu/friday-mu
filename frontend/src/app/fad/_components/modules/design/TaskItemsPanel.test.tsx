@@ -25,6 +25,14 @@ vi.mock('../../../_data/designClient', () => ({
   createTask: mocks.createTask,
   updateTask: mocks.updateTask,
   deleteTask: mocks.deleteTask,
+  // design-be-?: live-tasks store + fixtureRev bump are no-ops in tests.
+  setLiveTasks: vi.fn(),
+}));
+
+vi.mock('../../../_data/fixtureRev', () => ({
+  bumpFixtureRev: vi.fn(),
+  useFixtureRev: () => 0,
+  peekFixtureRev: () => 0,
 }));
 
 vi.mock('../Toaster', () => ({
