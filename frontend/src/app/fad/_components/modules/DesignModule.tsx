@@ -49,6 +49,7 @@ const PreferencesStage    = lazy(() => import('./design/stages/PreferencesStage'
 const RoughBudgetStage    = lazy(() => import('./design/stages/RoughBudgetStage').then((m) => ({ default: m.RoughBudgetStage })));
 const AgreementStage      = lazy(() => import('./design/stages/AgreementStage').then((m) => ({ default: m.AgreementStage })));
 const PaymentsStage       = lazy(() => import('./design/stages/PaymentsStage').then((m) => ({ default: m.PaymentsStage })));
+const FloorPlanStage      = lazy(() => import('./design/stages/FloorPlanStage').then((m) => ({ default: m.FloorPlanStage })));
 const MoodboardStage      = lazy(() => import('./design/stages/MoodboardStage').then((m) => ({ default: m.MoodboardStage })));
 const DesignPackStage     = lazy(() => import('./design/stages/DesignPackStage').then((m) => ({ default: m.DesignPackStage })));
 const FinalBudgetStage    = lazy(() => import('./design/stages/FinalBudgetStage').then((m) => ({ default: m.FinalBudgetStage })));
@@ -100,6 +101,7 @@ type ProjectScreen =
   | 'rough-budget'
   | 'agreement'
   | 'payments'
+  | 'floor-plan'
   | 'moodboard'
   | 'design-pack'
   | 'final-budget'
@@ -155,8 +157,10 @@ const PHASES: PhaseDef[] = [
   {
     id: 'design',
     label: 'Design',
-    sections: ['moodboard', 'design-pack', 'final-budget'],
-    stages: ['moodboard', 'design-pack', 'design-review', 'final-budget'],
+    // floor-plan slots before moodboard: it happens after payment-gate
+    // clears but before the moodboard work begins. See design-be-13.
+    sections: ['floor-plan', 'moodboard', 'design-pack', 'final-budget'],
+    stages: ['floor-plan', 'moodboard', 'design-pack', 'design-review', 'final-budget'],
   },
   {
     id: 'procurement',
@@ -191,6 +195,7 @@ const SECTION_LABELS: Record<ProjectScreen, string> = {
   'rough-budget':   'Rough budget',
   'agreement':      'Agreement',
   'payments':       'Payments',
+  'floor-plan':     'Floor plan',
   'moodboard':      'Moodboard',
   'design-pack':    'Design pack',
   'final-budget':   'Final budget',
@@ -655,7 +660,7 @@ function SortHeader({
 }
 
 const STAGE_ORDER: Record<string, number> = Object.fromEntries(
-  ['lead','proposal','doc-request','site-visit','preferences','rough-budget','agreement','signature','payment-gate','moodboard','design-pack','design-review','final-budget','funding-gate','execution','expense-capture','reconciliation'].map((s, i) => [s, i]),
+  ['lead','proposal','doc-request','site-visit','preferences','rough-budget','agreement','signature','payment-gate','floor-plan','moodboard','design-pack','design-review','final-budget','funding-gate','execution','expense-capture','reconciliation'].map((s, i) => [s, i]),
 );
 
 function compareProjects(a: DesignProject, b: DesignProject, key: ProjectSortKey): number {
@@ -2745,6 +2750,8 @@ function ProjectScreenContent({ project, screen }: { project: DesignProject; scr
       return <AgreementStage project={project} />;
     case 'payments':
       return <PaymentsStage project={project} />;
+    case 'floor-plan':
+      return <FloorPlanStage project={project} />;
     case 'moodboard':
       return <MoodboardStage project={project} />;
     case 'design-pack':
