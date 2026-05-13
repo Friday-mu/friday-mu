@@ -35,6 +35,10 @@ export function AgreementStage({ project }: Props) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
 
+  // design-be-23: project-level engagement fork. design-only locks the
+  // procurement fee to 0 and swaps §3.2 phrasing to "NOT INCLUDED".
+  const isDesignOnly = project.engagementScope === 'design_only';
+
   // ── Annex B form state ─────────────────────────────────────────
   const [clientName, setClientName] = useState(existing?.annexB.clientName ?? counterparty?.fullName ?? '');
   const [clientAddress, setClientAddress] = useState(existing?.annexB.clientAddress ?? property?.address ?? '');
@@ -44,7 +48,17 @@ export function AgreementStage({ project }: Props) {
   const [tier, setTier] = useState<DesignTier>(existing?.annexB.tier ?? project.tier ?? 1);
   const [epcMinor, setEpcMinor] = useState<number>(existing?.annexB.epcMinor ?? project.epcMinor ?? 0);
   const [designFeeMinor, setDesignFeeMinor] = useState<number>(existing?.annexB.designFeeMinor ?? designFeeForTier(tier, epcMinor, cfg));
-  const [procurementFeeMinor, setProcurementFeeMinor] = useState<number>(existing?.annexB.procurementFeeMinor ?? procurementFeeForTier(tier, classification, epcMinor, cfg));
+  // design-be-23: design-only engagements have NO procurement fee. The
+  // input below renders read-only at 0 with helper text; the hypothetical
+  // full-scope figure stays available via procurementFeeForTier() for the
+  // "would be Rs X if full-scope" preview below.
+  const [procurementFeeMinor, setProcurementFeeMinor] = useState<number>(
+    isDesignOnly
+      ? 0
+      : existing?.annexB.procurementFeeMinor ?? procurementFeeForTier(tier, classification, epcMinor, cfg),
+  );
+  // Always-derivable hypothetical for the design-only preview line.
+  const hypotheticalProcurementMinor = procurementFeeForTier(tier, classification, epcMinor, cfg);
   const [startDate, setStartDate] = useState(existing?.annexB.startDate ?? project.startDate ?? '');
   const [estimatedCompletion, setEstimatedCompletion] = useState(existing?.annexB.estimatedCompletion ?? project.estimatedCompletion ?? '');
   const [saleOfFurniture, setSaleOfFurniture] = useState(existing?.annexB.saleOfFurniture ?? false);
@@ -62,13 +76,15 @@ export function AgreementStage({ project }: Props) {
 
   const status = existing?.status ?? 'draft';
   // B3.11: single approver. Send is gated only on Annex B form completeness.
+  // design-be-23: procurementFeeMinor is intentionally 0 under design_only,
+  // so it's excluded from the >0 gate when scope is design-only.
   const formComplete =
     clientName.trim().length > 0 &&
     clientAddress.trim().length > 0 &&
     projectAddress.trim().length > 0 &&
     epcMinor > 0 &&
     designFeeMinor > 0 &&
-    procurementFeeMinor > 0 &&
+    (isDesignOnly || procurementFeeMinor > 0) &&
     effectiveDate.trim().length > 0;
   const canSend = status === 'draft' && formComplete;
 
@@ -115,7 +131,33 @@ export function AgreementStage({ project }: Props) {
             </Field>
             <Field label="EPC (MUR)"><MUInput value={epcMinor} onChange={setEpcMinor} /></Field>
             <Field label="Design fee (MUR, excl. VAT)"><MUInput value={designFeeMinor} onChange={setDesignFeeMinor} /></Field>
-            <Field label="Execution fee (MUR, excl. VAT)"><MUInput value={procurementFeeMinor} onChange={setProcurementFeeMinor} /></Field>
+            {/* design-be-23: design-only locks the procurement fee at 0
+               with a read-only display + helper text. Full-scope keeps
+               the editable input. Hypothetical "would be Rs X if full-
+               scope" surfaces below for owner reference. */}
+            {isDesignOnly ? (
+              <Field label="Execution fee (MUR, excl. VAT)">
+                <input
+                  value={formatMUR(0)}
+                  disabled
+                  data-testid="execution-fee-design-only"
+                  aria-label="Execution fee (read-only, design only)"
+                  style={inputStyle()}
+                />
+                <div
+                  style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.4 }}
+                >
+                  Design-only engagement — no procurement fee.{' '}
+                  {hypotheticalProcurementMinor > 0 && (
+                    <span data-testid="hypothetical-procurement-fee">
+                      (Would be {formatMUR(hypotheticalProcurementMinor)} if full-scope.)
+                    </span>
+                  )}
+                </div>
+              </Field>
+            ) : (
+              <Field label="Execution fee (MUR, excl. VAT)"><MUInput value={procurementFeeMinor} onChange={setProcurementFeeMinor} /></Field>
+            )}
             <Field label="Total estimate (auto, excl. VAT)">
               <input value={formatMUR(totalEstimateMinor)} disabled style={inputStyle()} />
             </Field>
@@ -157,7 +199,7 @@ export function AgreementStage({ project }: Props) {
               lineHeight: 1.5,
             }}
           >
-            {renderAgreement(annexB, cfg)}
+            {renderAgreement(annexB, cfg, { isDesignOnly })}
           </div>
         </Card>
       </div>
@@ -244,12 +286,32 @@ function StatusBadge({ status }: { status: AgreementStatus }) {
 // design-be-20d: VAT lines wired into both §3 (Fees & Payment Terms) and the
 // Annex B Project Summary block. Annex A is VAT-exclusive (locked 2026-05-13);
 // the contract now states the inclusive amounts in line with the schedule.
-function renderAgreement(b: AnnexBData, cfg: AnnexAConfig): string {
+// design-be-23: §1.2 + §3.2 switch to "NOT INCLUDED" phrasing under
+// design_only — the owner retains all sourcing, vendor management, and
+// installation responsibilities. The Annex B summary echoes the same.
+function renderAgreement(
+  b: AnnexBData,
+  cfg: AnnexAConfig,
+  opts: { isDesignOnly?: boolean } = {},
+): string {
   const templateVersion = cfg.agreementTemplateVersion;
   const vatPct = (cfg.vatRate * 100).toFixed(cfg.vatRate * 100 % 1 === 0 ? 0 : 2);
   const designInclMinor = withVAT(b.designFeeMinor, cfg);
   const procurementInclMinor = withVAT(b.procurementFeeMinor, cfg);
   const totalInclMinor = withVAT(b.totalEstimateMinor, cfg);
+  const designOnly = !!opts.isDesignOnly;
+  const scopeOneTwo = designOnly
+    ? '1.2 Procurement & Execution Phase: NOT INCLUDED. Client retains all sourcing, vendor management, and installation responsibilities.'
+    : '1.2 Procurement & Execution Phase (Optional Add-On): Sourcing, procurement, logistics coordination, Furniture sourcing & styling, Labour and contractor supervision, On-site styling and installation';
+  const scopeOneTwoFollowUp = designOnly
+    ? ''
+    : '\nProcurement & Execution services may only commence after completion of the Design & Planning phase.';
+  const threeTwo = designOnly
+    ? '3.2 Procurement & Execution: NOT INCLUDED. Client retains all sourcing, vendor management, and installation responsibilities. No procurement fee is charged under this design-only engagement.'
+    : `3.2 Procurement & Execution Fee: ${formatMUR(b.procurementFeeMinor)} excl. VAT (${formatMUR(procurementInclMinor)} incl. VAT @ ${vatPct}%) as a percentage of EPC. EPC: ${formatMUR(b.epcMinor)}. Tier ${b.tier} ${b.classification}. 60/40 default split unless overridden.`;
+  const executionLine = designOnly
+    ? 'Execution fee:        NOT INCLUDED (design-only engagement)'
+    : `Execution fee:        ${formatMUR(b.procurementFeeMinor)}  (${formatMUR(procurementInclMinor)} incl. ${vatPct}% VAT)`;
   return `INTERIOR DESIGN AGREEMENT — TEMPLATE ${templateVersion}
 
 This Interior Design Agreement (the "Agreement") is entered into on ${b.effectiveDate || '____________'}, by and between:
@@ -266,15 +328,14 @@ This Agreement is issued following the Service Provider's site visit, project cl
 
 1. Scope of Services
 1.1 Design & Planning Phase: Moodboard (style & colors), Budget estimate, 3D designs for all rooms (if applicable)
-1.2 Procurement & Execution Phase (Optional Add-On): Sourcing, procurement, logistics coordination, Furniture sourcing & styling, Labour and contractor supervision, On-site styling and installation
-Procurement & Execution services may only commence after completion of the Design & Planning phase.
+${scopeOneTwo}${scopeOneTwoFollowUp}
 
 2. Project Classification
 The Project is classified as ${b.classification.toUpperCase()} (per Annex B).
 
 3. Fees & Payment Terms
 3.1 Design Fee: ${formatMUR(b.designFeeMinor)} excl. VAT (${formatMUR(designInclMinor)} incl. VAT @ ${vatPct}%) (Tier ${b.tier} — see Annex A). 60% upon signing this Agreement, 40% upon submission of final design package.
-3.2 Procurement & Execution Fee: ${formatMUR(b.procurementFeeMinor)} excl. VAT (${formatMUR(procurementInclMinor)} incl. VAT @ ${vatPct}%) as a percentage of EPC. EPC: ${formatMUR(b.epcMinor)}. Tier ${b.tier} ${b.classification}. 60/40 default split unless overridden.
+${threeTwo}
 3.3 VAT: All fees quoted in Annex A are exclusive of VAT. Mauritius VAT (currently ${vatPct}%) is added on top of all fees per the prevailing rate.
 3.4 Fee Adjustments: If scope or EPC materially changes by ±5% or more, fees may unilaterally be adjusted proportionally by the Service Provider with prior written notice.
 3.5 Invoice Terms: Due within 7 calendar days. Late: 2% per month compounded.
@@ -324,7 +385,7 @@ Classification:       ${b.classification}
 Design tier:          Tier ${b.tier}
 EPC:                  ${formatMUR(b.epcMinor)}
 Design fee:           ${formatMUR(b.designFeeMinor)}  (${formatMUR(designInclMinor)} incl. ${vatPct}% VAT)
-Execution fee:        ${formatMUR(b.procurementFeeMinor)}  (${formatMUR(procurementInclMinor)} incl. ${vatPct}% VAT)
+${executionLine}
 Total estimate:       ${formatMUR(b.totalEstimateMinor)}  (${formatMUR(totalInclMinor)} incl. ${vatPct}% VAT)
 Start date:           ${b.startDate ?? '—'}
 Estimated completion: ${b.estimatedCompletion ?? '—'}

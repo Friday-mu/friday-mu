@@ -121,6 +121,14 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
           <Chip label={formatClassification(project.classification)} tone="neutral" />
           <Chip label={formatTier(project.tier)} tone={tierTone} />
           <Chip label={stageStatusLabel(project.stageStatus)} tone={stageTone} />
+          {/* design-be-23: glance-able "Design only" badge so staff see the
+             engagement fork without opening the edit drawer. Full-scope
+             is the default; no badge needed in that case (most projects). */}
+          {project.engagementScope === 'design_only' && (
+            <span data-engagement-scope-badge="design_only">
+              <Chip label="Design only" tone="info" />
+            </span>
+          )}
           {lifecyclePill && <Chip label={lifecyclePill.label} tone={lifecyclePill.tone} />}
         </div>
         <div

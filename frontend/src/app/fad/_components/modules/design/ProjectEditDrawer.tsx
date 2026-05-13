@@ -21,6 +21,7 @@ import {
   withVAT,
   type DesignProject,
   type DesignTier,
+  type EngagementScope,
   type LeadSource,
   type PMLink,
   type ProjectClassification,
@@ -131,6 +132,9 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
   const [designFeeOverrideStr, setDesignFeeOverrideStr] = useState(minorToMajorString(project.designFeeMinorOverride ?? null));
   const [procurementFeeOverrideOn, setProcurementFeeOverrideOn] = useState(project.procurementFeeMinorOverride != null);
   const [procurementFeeOverrideStr, setProcurementFeeOverrideStr] = useState(minorToMajorString(project.procurementFeeMinorOverride ?? null));
+  // design-be-23: project-level engagement fork. design_only = moodboard
+  // + design pack only; owner handles procurement + execution.
+  const [engagementScope, setEngagementScope] = useState<EngagementScope>(project.engagementScope);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -204,6 +208,7 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
       estimated_completion: estimatedCompletion || null,
       design_fee_minor_override: designFeeOverrideOn ? designFeeOverrideMinor : null,
       procurement_fee_minor_override: procurementFeeOverrideOn ? procurementFeeOverrideMinor : null,
+      engagement_scope: engagementScope,
     };
 
     setSaving(true);
@@ -271,6 +276,41 @@ export function ProjectEditDrawer({ project, onSaved, onClose }: Props) {
             <select value={classification} onChange={(e) => setClassification(e.target.value as ProjectClassification)} style={inputStyle}>
               {CLASSIFICATION_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
+          </Field>
+
+          {/* design-be-23: engagement scope radio. Determines whether the
+             execution phase (stages 14-17) is in scope and whether
+             apiProjectToFixture masks the procurement fee. */}
+          <Field
+            label="Engagement scope"
+            hint="design-only = moodboard + pack only; owner handles procurement + execution"
+          >
+            <div role="radiogroup" aria-label="Engagement scope" data-engagement-scope-radiogroup style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={radioRowStyle}>
+                <input
+                  type="radio"
+                  name="engagement_scope"
+                  value="design_and_execution"
+                  checked={engagementScope === 'design_and_execution'}
+                  onChange={() => setEngagementScope('design_and_execution')}
+                  data-engagement-scope="design_and_execution"
+                />
+                <span style={{ fontWeight: 500 }}>Design + Execution</span>
+                <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>full project (default)</span>
+              </label>
+              <label style={radioRowStyle}>
+                <input
+                  type="radio"
+                  name="engagement_scope"
+                  value="design_only"
+                  checked={engagementScope === 'design_only'}
+                  onChange={() => setEngagementScope('design_only')}
+                  data-engagement-scope="design_only"
+                />
+                <span style={{ fontWeight: 500 }}>Design only</span>
+                <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>owner handles execution</span>
+              </label>
+            </div>
           </Field>
 
           <Field label="Tier (override)" hint="auto-derives from EPC if blank">
@@ -415,6 +455,14 @@ const inputStyle: React.CSSProperties = {
   background: 'var(--color-background-primary)',
   color: 'var(--color-text-primary)',
   fontSize: 13,
+};
+
+const radioRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  fontSize: 12,
+  color: 'var(--color-text-primary)',
 };
 
 function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) {
