@@ -137,7 +137,8 @@ async function loadProjectContext(projectId) {
     ),
     query(
       `SELECT id, description, category_code, unit_cost_minor, quantity,
-              final_approved_cost_minor, actual_paid_minor, status
+              retail_cost_minor, negotiated_cost_minor, actual_paid_minor,
+              internal_work
        FROM design_budget_items WHERE project_id = $1
        ORDER BY created_at DESC LIMIT 40`,
       [projectId],
@@ -155,7 +156,7 @@ async function loadProjectContext(projectId) {
       [projectId],
     ),
     query(
-      `SELECT id, type, target_id, status, sent_at, decided_at
+      `SELECT id, type, target_id, status, sent_at, respondent_name
        FROM design_approvals WHERE project_id = $1
        ORDER BY sent_at DESC LIMIT 10`,
       [projectId],
