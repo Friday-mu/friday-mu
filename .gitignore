@@ -13,3 +13,7 @@ backend/.translations-cache.json
 
 # Nanobanana image-gen cache (dev convenience)
 backend/.nanobanana-cache.json
+
+# Dev caches
+backend/.promptbuilder-cache.json
+backend/.nanobanana-cache.json
