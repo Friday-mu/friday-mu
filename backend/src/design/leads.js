@@ -153,4 +153,29 @@ router.post('/:id/convert', requireDesignPerm('design:write'), async (req, res) 
   }
 });
 
+// DELETE /api/design/leads/:id — hard delete. Converted leads
+// (status='converted', converted_project_id set) are refused — the
+// project would be orphaned. Use PATCH status='archived' for soft-
+// drop of leads that won't convert.
+router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT id, status, converted_project_id FROM design_leads WHERE tenant_id = $1 AND id = $2`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    if (existing.length === 0) return res.status(404).json({ error: 'Lead not found' });
+    if (existing[0].status === 'converted' && existing[0].converted_project_id) {
+      return res.status(409).json({ error: 'Cannot delete a converted lead — it owns a project. Archive instead.' });
+    }
+    await query(
+      `DELETE FROM design_leads WHERE tenant_id = $1 AND id = $2`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    res.status(204).end();
+  } catch (e) {
+    console.error('[design/leads] delete error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

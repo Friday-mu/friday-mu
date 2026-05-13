@@ -9,6 +9,7 @@ const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { DEFAULT_TENANT_ID, shapeTask } = require('./adapters');
+const { appendActivity } = require('./activities');
 
 const router = express.Router();
 
@@ -84,7 +85,24 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     }
     const sql = `INSERT INTO design_tasks (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
     const { rows } = await query(sql, params);
-    res.status(201).json(shapeTask(rows[0]));
+    // QA-§5.8: log to activity timeline so blocker/next-action adds
+    // surface in the project's activity feed (not just the task panel).
+    // category=general tasks also log because they're useful for
+    // procurement teams reviewing what got added when.
+    const taskRow = rows[0];
+    const action =
+      taskRow.category === 'blocker' ? 'task.blocker.added' :
+      taskRow.category === 'next_action' ? 'task.next_action.added' :
+      'task.added';
+    await appendActivity({
+      projectId: body.project_id,
+      actorUserId: req.identity?.userId,
+      actorName: req.identity?.displayName || req.identity?.username,
+      action,
+      payload: { task_id: taskRow.id, title: taskRow.title, category: taskRow.category },
+      visibility: 'internal',
+    }).catch((err) => console.warn('[design/tasks] activity append failed:', err.message));
+    res.status(201).json(shapeTask(taskRow));
   } catch (e) {
     console.error('[design/tasks] create error:', e.message);
     res.status(500).json({ error: e.message });
@@ -114,6 +132,23 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
                  RETURNING t.*`;
     const { rows } = await query(sql, params);
     if (rows.length === 0) return res.status(404).json({ error: 'Task not found' });
+    // Log resolution / status-change events. Only fires when status
+    // moved to 'done' on this PATCH — keeps the activity log uncluttered.
+    if (body.status === 'done') {
+      const taskRow = rows[0];
+      const action =
+        taskRow.category === 'blocker' ? 'task.blocker.resolved' :
+        taskRow.category === 'next_action' ? 'task.next_action.resolved' :
+        'task.completed';
+      await appendActivity({
+        projectId: taskRow.project_id,
+        actorUserId: req.identity?.userId,
+        actorName: req.identity?.displayName || req.identity?.username,
+        action,
+        payload: { task_id: taskRow.id, title: taskRow.title, category: taskRow.category },
+        visibility: 'internal',
+      }).catch((err) => console.warn('[design/tasks] activity append failed:', err.message));
+    }
     res.json(shapeTask(rows[0]));
   } catch (e) {
     console.error('[design/tasks] patch error:', e.message);

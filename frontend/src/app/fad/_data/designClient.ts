@@ -747,6 +747,8 @@ export const updateLead = (id: string, patch: Partial<ApiLead>) =>
   apiFetch(`/api/design/leads/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiLead>;
 export const convertLeadToProject = (id: string, projectPayload: { name?: string; slug?: string } = {}) =>
   apiFetch(`/api/design/leads/${id}/convert`, { method: 'POST', body: JSON.stringify(projectPayload) }) as Promise<{ lead: ApiLead; project: ApiProject }>;
+export const deleteLead = (id: string) =>
+  apiFetch(`/api/design/leads/${id}`, { method: 'DELETE' }) as Promise<void>;
 
 // ─────────────────────────── Rooms ───────────────────────────
 // Rooms attach to properties (not directly to projects). The Site Visit
@@ -1699,6 +1701,13 @@ const API_ACTION_TO_KIND: Record<string, FixtureActivity['kind']> = {
   'approval.rejected.by_owner': 'reject',
   'closeout_binder.sent': 'send',
   'closeout_binder.signed': 'approve',
+  // W1c.3: task lifecycle events appended by backend/src/design/tasks.js.
+  'task.added': 'create',
+  'task.blocker.added': 'create',
+  'task.next_action.added': 'create',
+  'task.completed': 'approve',
+  'task.blocker.resolved': 'approve',
+  'task.next_action.resolved': 'approve',
 };
 
 function describeAction(action: string, payload: Record<string, unknown>): string {
@@ -1713,6 +1722,12 @@ function describeAction(action: string, payload: Record<string, unknown>): strin
   if (action === 'agreement.sent') return 'Agreement sent for signature';
   if (action === 'agreement.signed') return 'Agreement signed';
   if (action === 'project.created') return 'Project created';
+  if (action === 'task.blocker.added' && typeof payload?.title === 'string') return `🚧 Blocker added: ${payload.title}`;
+  if (action === 'task.next_action.added' && typeof payload?.title === 'string') return `➡ Next action: ${payload.title}`;
+  if (action === 'task.added' && typeof payload?.title === 'string') return `Task added: ${payload.title}`;
+  if (action === 'task.blocker.resolved' && typeof payload?.title === 'string') return `✓ Blocker resolved: ${payload.title}`;
+  if (action === 'task.next_action.resolved' && typeof payload?.title === 'string') return `✓ Done: ${payload.title}`;
+  if (action === 'task.completed' && typeof payload?.title === 'string') return `Task completed: ${payload.title}`;
   return action.replace(/[._]/g, ' ');
 }
 

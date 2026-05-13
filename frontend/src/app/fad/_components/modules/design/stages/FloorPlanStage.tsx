@@ -153,7 +153,15 @@ export function FloorPlanStage({ project }: Props) {
           )
         ) : (
           <div style={emptyState()}>
-            No floor plan pinned yet. Generate one from the client&apos;s rough sketch.
+            {project.tier === 3 ? (
+              <>
+                Floor plan is <strong>optional</strong> for Tier 3 (design-only) projects — the moodboard
+                is the primary deliverable. Generate one from the client&apos;s sketch if you want, or
+                skip this step.
+              </>
+            ) : (
+              <>No floor plan pinned yet. Generate one from the client&apos;s rough sketch.</>
+            )}
           </div>
         )}
       </Card>

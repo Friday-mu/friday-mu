@@ -773,7 +773,7 @@ export const ANNEX_A_DEFAULT: AnnexAConfig = {
     // (Locked 2026-05-13 per Ishant — supersedes the design-be-13 brief.)
     3: { optionalStages: ['doc-request', 'floor-plan', 'design-pack', 'design-review'] },
   },
-  agreementTemplateVersion: '2025-09-nursoo',
+  agreementTemplateVersion: 'v1.0-2025-09',
   // Mauritius standard VAT rate. Applied to design + execution fees.
   // (Locked 2026-05-13 per Ishant — Annex A rates are VAT-exclusive.)
   vatRate: 0.15,
@@ -1880,7 +1880,10 @@ export const PREFERENCES: PreferenceProfile[] = [
     mustKeep: 'Solid wood wardrobe in master bedroom.',
     mustRemove: 'Old single bed (Bedroom 4), kitchen extractor.',
     styleDislikes: 'Anything overtly industrial / chrome.',
-    inspirationLinks: ['https://example.com/inspo-1', 'https://example.com/inspo-2'],
+    inspirationLinks: [
+      'https://drive.google.com/file/d/_demo_inspo_coastal_villa/view',
+      'https://drive.google.com/file/d/_demo_inspo_mauritius_retreat/view',
+    ],
     accessibilityNotes: 'Owner mother visits — handrail in master bath helpful.',
     scentPrefs: 'Subtle citrus / coconut. Avoid heavy florals.',
     acousticPrefs: 'Soft furnishings to dampen tile echo.',
@@ -2034,8 +2037,8 @@ export const MOODBOARDS: MoodboardVersion[] = [
     coverImageUrl: '/placeholder-photo.svg?label=moodboard-cover',
     narrative: 'Modern coastal direction: light woods, sandy neutrals, deep ocean accent.',
     inspiration: [
-      { url: 'https://example.com/inspo-1', sourceLabel: 'Pinterest — coastal villa' },
-      { url: 'https://example.com/inspo-2', sourceLabel: 'AD Mag — Mauritius retreat' },
+      { url: 'https://drive.google.com/file/d/_demo_inspo_coastal_villa/view', sourceLabel: 'Pinterest — coastal villa' },
+      { url: 'https://drive.google.com/file/d/_demo_inspo_mauritius_retreat/view', sourceLabel: 'AD Mag — Mauritius retreat' },
     ],
     palette: ['#e8e0d2', '#bcd3c8', '#1f3a4a', '#c2a77f'],
     materials: ['wood', 'rattan', 'fabric', 'stone'],
@@ -2053,7 +2056,7 @@ export const MOODBOARDS: MoodboardVersion[] = [
     coverImageUrl: '/placeholder-photo.svg?label=moodboard-cover-v2',
     narrative: 'Modern coastal — V2, accent shifted to teal per feedback.',
     inspiration: [
-      { url: 'https://example.com/inspo-3', sourceLabel: 'House & Garden — teal living' },
+      { url: 'https://drive.google.com/file/d/_demo_inspo_teal_living/view', sourceLabel: 'House & Garden — teal living' },
     ],
     palette: ['#e8e0d2', '#bcd3c8', '#3b6e7a', '#c2a77f'],
     materials: ['wood', 'rattan', 'fabric', 'stone'],
@@ -2424,6 +2427,15 @@ export function requestSelectionChanges(selectionId: string, comment: string): D
 let selectionSerial = 100;
 let selectionOptionSerial = 100;
 
+/**
+ * Test/fixture-only helper. UI no longer calls this — DesignPackStage
+ * uses apiCreateSelection from designClient.ts which POSTs to the
+ * backend. Kept exported so design.mutators.test.ts can set up
+ * fixture state to exercise the other mutators (addOption, send,
+ * pick, etc.). DO NOT call from production UI — refresh wipes the
+ * row because hydration replaces SELECTIONS from the API. Removed
+ * from designClient.selections.create in W1a.
+ */
 export interface CreateSelectionInput {
   projectId: string;
   roomId: string | null;
@@ -2635,33 +2647,12 @@ export const CHANGE_ORDERS: ChangeOrder[] = [
 let changeOrderSerial = 100;
 let changeOrderLineSerial = 100;
 
-export function listChangeOrders(projectId: string): ChangeOrder[] {
-  return CHANGE_ORDERS.filter((c) => c.projectId === projectId);
-}
-
-export function listPendingChangeOrders(projectId: string): ChangeOrder[] {
-  return CHANGE_ORDERS.filter((c) => c.projectId === projectId && c.state === 'sent');
-}
-
-/** Sum of approved + sent change orders' deltas. Live reflection of "what
- *  the owner is committing to beyond the original budget" — drives the
- *  delta-vs-budget chip in the Final Budget UI. */
-export function sumChangeOrderDelta(projectId: string): { approvedMinor: number; pendingMinor: number } {
-  let approvedMinor = 0;
-  let pendingMinor = 0;
-  for (const co of CHANGE_ORDERS) {
-    if (co.projectId !== projectId) continue;
-    const delta = co.lineItems.reduce((s, li) => s + li.qty * li.costMinor, 0);
-    if (co.state === 'approved') approvedMinor += delta;
-    else if (co.state === 'sent') pendingMinor += delta;
-  }
-  return { approvedMinor, pendingMinor };
-}
-
-export function changeOrderTotal(co: ChangeOrder): number {
-  return co.lineItems.reduce((s, li) => s + li.qty * li.costMinor, 0);
-}
-
+/**
+ * Test/fixture-only helper. UI no longer calls this — FinalBudgetStage
+ * uses apiCreateChangeOrder from designClient.ts. Kept exported for
+ * design.mutators.test.ts. Removed from designClient.changeOrders.create
+ * in W1a.
+ */
 function nextChangeOrderNumber(projectId: string): string {
   const existing = CHANGE_ORDERS.filter((c) => c.projectId === projectId).length;
   return `CO-${String(existing + 1).padStart(3, '0')}`;
@@ -2691,6 +2682,34 @@ export function createChangeOrder(input: CreateChangeOrderInput): ChangeOrder {
   CHANGE_ORDERS.push(co);
   return co;
 }
+
+export function listChangeOrders(projectId: string): ChangeOrder[] {
+  return CHANGE_ORDERS.filter((c) => c.projectId === projectId);
+}
+
+export function listPendingChangeOrders(projectId: string): ChangeOrder[] {
+  return CHANGE_ORDERS.filter((c) => c.projectId === projectId && c.state === 'sent');
+}
+
+/** Sum of approved + sent change orders' deltas. Live reflection of "what
+ *  the owner is committing to beyond the original budget" — drives the
+ *  delta-vs-budget chip in the Final Budget UI. */
+export function sumChangeOrderDelta(projectId: string): { approvedMinor: number; pendingMinor: number } {
+  let approvedMinor = 0;
+  let pendingMinor = 0;
+  for (const co of CHANGE_ORDERS) {
+    if (co.projectId !== projectId) continue;
+    const delta = co.lineItems.reduce((s, li) => s + li.qty * li.costMinor, 0);
+    if (co.state === 'approved') approvedMinor += delta;
+    else if (co.state === 'sent') pendingMinor += delta;
+  }
+  return { approvedMinor, pendingMinor };
+}
+
+export function changeOrderTotal(co: ChangeOrder): number {
+  return co.lineItems.reduce((s, li) => s + li.qty * li.costMinor, 0);
+}
+
 
 export interface UpdateChangeOrderInput {
   title?: string;
@@ -4197,7 +4216,9 @@ export const designClient = {
     listPending: listPendingSelections,
     pick: pickSelection,
     requestChanges: requestSelectionChanges,
-    create: createSelection,
+    // create: was a pure-fixture mutator with no API call (data loss
+    // on refresh). DesignPackStage now uses apiCreateSelection from
+    // designClient.ts directly. Removed in W1a cleanup.
     update: updateSelection,
     addOption: addSelectionOption,
     updateOption: updateSelectionOption,
@@ -4210,7 +4231,8 @@ export const designClient = {
     listPending: listPendingChangeOrders,
     sumDelta: sumChangeOrderDelta,
     total: changeOrderTotal,
-    create: createChangeOrder,
+    // create: same as selections — fixture-only legacy path replaced by
+    // apiCreateChangeOrder in FinalBudgetStage. Removed in W1a cleanup.
     update: updateChangeOrder,
     addLine: addChangeOrderLine,
     removeLine: removeChangeOrderLine,

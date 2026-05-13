@@ -27,6 +27,7 @@ import {
   useHydrateDesignTopLevel,
   useHydrateDesignProject,
   convertLeadToProject as apiConvertLeadToProject,
+  deleteLead as apiDeleteLead,
   reopenStage as apiReopenStage,
   StageReopenLockedError,
   type ApiLead,
@@ -872,6 +873,25 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
     }
   };
 
+  const handleDeleteLead = async (lead: ApiLead) => {
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(`Delete lead "${lead.name}"? This is irreversible. (Converted leads can't be deleted — archive instead.)`);
+    if (!ok) return;
+    setBusy(lead.id);
+    try {
+      await apiDeleteLead(lead.id);
+      const localLeads = designClient.leads.list() as unknown as ApiLead[];
+      const idx = localLeads.findIndex((l) => l.id === lead.id);
+      if (idx !== -1) localLeads.splice(idx, 1);
+      bump();
+      fireToast(`Lead "${lead.name}" deleted.`);
+    } catch (e) {
+      fireToast(`Failed to delete lead: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-design-leads data-rev={rev}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
@@ -986,6 +1006,7 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
                     lead={l}
                     busy={busy === l.id}
                     onConvert={() => handleConvert(l)}
+                    onDelete={() => handleDeleteLead(l)}
                   />
                 ))}
               </div>
@@ -1003,7 +1024,7 @@ function LeadsList({ onOpenProject }: { onOpenProject: (projectId: string) => vo
   );
 }
 
-function LeadCard({ lead, busy, onConvert }: { lead: ApiLead; busy: boolean; onConvert: () => void }) {
+function LeadCard({ lead, busy, onConvert, onDelete }: { lead: ApiLead; busy: boolean; onConvert: () => void; onDelete: () => void }) {
   const sourceLabel = LEAD_SOURCE_LABEL[(lead.source as LeadSource) ?? 'other'] ?? lead.source ?? 'Other';
   const contact = lead.email || lead.phone || null;
   const staleness = formatLeadStaleness(lead);
@@ -1056,8 +1077,8 @@ function LeadCard({ lead, busy, onConvert }: { lead: ApiLead; busy: boolean; onC
           {lead.notes}
         </div>
       )}
-      {canConvert && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+        {canConvert && (
           <button
             type="button"
             data-lead-action="convert"
@@ -1067,8 +1088,28 @@ function LeadCard({ lead, busy, onConvert }: { lead: ApiLead; busy: boolean; onC
           >
             {busy ? 'Converting…' : 'Convert to project'}
           </button>
-        </div>
-      )}
+        )}
+        {lead.status !== 'converted' && (
+          <button
+            type="button"
+            data-lead-action="delete"
+            onClick={onDelete}
+            disabled={busy}
+            title="Delete this lead (irreversible)"
+            style={{
+              padding: '4px 10px',
+              fontSize: 11,
+              borderRadius: 'var(--radius-sm)',
+              background: 'transparent',
+              border: '0.5px solid var(--color-border-tertiary)',
+              color: 'var(--color-text-tertiary)',
+              cursor: busy ? 'wait' : 'pointer',
+            }}
+          >
+            Delete
+          </button>
+        )}
+      </div>
     </div>
   );
 }
