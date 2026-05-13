@@ -143,15 +143,72 @@ router.post('/:id/approve', requireDesignPerm('design:approve'), async (req, res
       [DEFAULT_TENANT_ID, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sent pack not found' });
+    const pack = rows[0];
+
     await appendActivity({
-      projectId: rows[0].project_id,
+      projectId: pack.project_id,
       actorUserId: req.identity.userId,
       actorName: req.identity.displayName || req.identity.username,
       action: 'design_pack.approved',
-      payload: { pack_id: rows[0].id, version_number: rows[0].version_number },
+      payload: { pack_id: pack.id, version_number: pack.version_number },
       visibility: 'portal',
     });
-    res.json(shapePack(rows[0]));
+
+    // Materialise picked selections into budget items so the Final
+    // Budget stage doesn't have to re-enter everything by hand.
+    // Idempotent: the partial unique index on source_selection_id
+    // (migration 030) lets us re-run safely. Best-effort: a failure
+    // here logs but doesn't undo the pack approval — the team can
+    // backfill manually from the Selections view.
+    let materialised = 0;
+    try {
+      const sels = await query(
+        `SELECT id, title, options, picked_option_id, category_code
+         FROM design_selections
+         WHERE project_id = $1 AND pack_id = $2 AND status = 'picked' AND picked_option_id IS NOT NULL`,
+        [pack.project_id, pack.id],
+      );
+      for (const sel of sels.rows) {
+        const options = Array.isArray(sel.options) ? sel.options : [];
+        const opt = options.find((o) => o && o.id === sel.picked_option_id);
+        if (!opt) continue;
+        // The frontend AddOptionForm posts priceMinor + retailMinor;
+        // accept both the snake_case + camelCase shapes that have
+        // leaked into the JSONB over time.
+        const negotiated = opt.negotiated_cost_minor ?? opt.negotiatedCostMinor ?? opt.priceMinor ?? opt.price_minor ?? null;
+        const retail = opt.retail_cost_minor ?? opt.retailCostMinor ?? opt.retailMinor ?? null;
+        const vendorId = opt.vendor_id ?? opt.vendorId ?? null;
+        const description = opt.label
+          ? `${sel.title} — ${opt.label}`
+          : opt.description
+            ? `${sel.title} — ${opt.description}`
+            : sel.title;
+        const ins = await query(
+          `INSERT INTO design_budget_items (
+             project_id, stage_key, category_code, description, unit_cost_minor, quantity,
+             retail_cost_minor, negotiated_cost_minor, vendor_id, source_selection_id, source_pack_id
+           ) VALUES ($1, 'design-pack', $2, $3, $4, 1, $5, $6, $7, $8, $9)
+           ON CONFLICT (source_selection_id) DO NOTHING
+           RETURNING id`,
+          [
+            pack.project_id,
+            sel.category_code ?? opt.category ?? null,
+            description,
+            negotiated ?? retail ?? null,
+            retail,
+            negotiated,
+            vendorId,
+            sel.id,
+            pack.id,
+          ],
+        );
+        if (ins.rows.length > 0) materialised += 1;
+      }
+    } catch (matErr) {
+      console.error('[design/packs] selection→budget_items materialisation failed:', matErr.message);
+    }
+
+    res.json({ ...shapePack(pack), materialised_budget_items: materialised });
   } catch (e) {
     console.error('[design/packs] approve error:', e.message);
     res.status(500).json({ error: e.message });
