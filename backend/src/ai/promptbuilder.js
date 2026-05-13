@@ -48,6 +48,29 @@ Output ONLY valid JSON, no commentary, no markdown fences:
   "styleNotes": ["<1-4 short notes about styling choices made>"]
 }`;
 
+// design-be-14: second-stage floor-plan pass. The model sees a clean
+// architectural plan + a moodboard reference image and must emit a prompt
+// that tells Nanobanana to overlay furniture/fixtures onto the plan, in
+// the moodboard's aesthetic, WITHOUT altering walls / doors / windows.
+// The system prompt is deliberately narrower than the moodboard one —
+// architectural plans demand top-down symbol vocabulary (chair / bed /
+// sofa shapes), not photorealism.
+const FURNISHING_SYSTEM_PROMPT = `You write image-generation prompts for furnished floor plans. You are an interior designer placing furniture on a clean architectural floor plan. Given the floor plan layout (described in the user message) and a moodboard reference image showing the desired style, synthesize a single 60-120 word prompt that instructs Nanobanana to overlay furniture, lighting, soft furnishings, and fixtures onto the floor plan in the moodboard's aesthetic.
+
+Constraints:
+- Keep walls, doors, and windows untouched — the original architectural lines must remain intact.
+- Use top-down architectural symbols (chair, bed, sofa, table, rug shapes). Not photorealistic 3D, not isometric, not perspective.
+- Anchor furniture choices to the room labels in the plan (bedroom → bed + nightstands, living → sofa + coffee table, etc.).
+- Echo the moodboard's palette, materials, and style — 2-3 concrete style descriptors.
+- End with a directive like "top-down architectural floor plan with furniture symbols, clean line work, soft fill colours from the moodboard palette".
+
+Output ONLY valid JSON, no commentary, no markdown fences:
+{
+  "prompt": "<60-120 word prompt>",
+  "suggestedAspectRatio": "16:9" | "4:3" | "1:1" | "3:4",
+  "styleNotes": ["<1-4 short notes about furniture / styling choices made>"]
+}`;
+
 // ────────────────── disk cache ──────────────────
 //
 // Keyed by sha256 of the canonical-JSON context blob. Survives nodemon
@@ -83,8 +106,12 @@ function canonicalize(obj) {
   return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalize(obj[k])).join(',') + '}';
 }
 
-function cacheKey(context) {
-  const canonical = canonicalize(context);
+function cacheKey(context, kind = 'moodboard') {
+  // Kind-tag the input so the same projectContext under different builders
+  // (moodboard vs furnishing) gets distinct cache entries — otherwise the
+  // furnishing builder would happily return a moodboard prompt for any
+  // project that had previously been hashed.
+  const canonical = `${kind}|${canonicalize(context)}`;
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
 
@@ -244,7 +271,7 @@ function parseModelJson(raw) {
 
 // ────────────────── model call ──────────────────
 
-async function callKimi(contextSummary) {
+async function callKimi(contextSummary, systemPrompt = SYSTEM_PROMPT) {
   const start = Date.now();
   try {
     const { data } = await axios.post(
@@ -252,7 +279,7 @@ async function callKimi(contextSummary) {
       {
         model: KIMI_MODEL,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: contextSummary },
         ],
         // Slightly higher temperature than translate.js — we want the
@@ -412,15 +439,175 @@ async function buildMoodboardPrompt({ projectContext } = {}) {
   };
 }
 
+// ══════════════════ design-be-14: furnishing prompt ══════════════════
+//
+// Second-stage floor-plan pass. Given a clean architectural plan + an
+// approved moodboard reference image, Kimi synthesises a prompt that
+// tells Nanobanana to overlay furniture/fixtures onto the plan in the
+// moodboard's aesthetic. Mirrors buildMoodboardPrompt's shape:
+// Kimi-with-template-fallback, kind-tagged disk cache, same retry &
+// JSON-parsing helpers.
+//
+// Caller contract (projectContext, moodboardContext):
+//   projectContext  — same flat blob as buildMoodboardPrompt (used for
+//                     classification, goals, preferences).
+//   moodboardContext — { id?, name?, version_number?, captions[],
+//                        sentAt?, approvedAt?, linkCount? }. Captions
+//                     are the strongest signal — the model echoes their
+//                     tone into the furniture choices.
+
+function summarizeFurnishingContext(projectContext, moodboardContext) {
+  // Reuse the moodboard summariser for the project half — same fields,
+  // same emphasis. Then bolt on a moodboard section describing the
+  // approved reference.
+  const projectBlock = summarizeContext(projectContext || {});
+  const lines = [projectBlock];
+  const mb = moodboardContext || {};
+  const captions = Array.isArray(mb.captions) ? mb.captions.filter((c) => typeof c === 'string' && c.trim()) : [];
+  if (mb.name || mb.version_number || captions.length > 0) {
+    lines.push('');
+    lines.push('# Approved moodboard (style reference)');
+    if (mb.name) lines.push(`- Name: ${mb.name}`);
+    if (mb.version_number) lines.push(`- Version: ${mb.version_number}`);
+    if (mb.approvedAt) lines.push(`- Approved: ${mb.approvedAt}`);
+    if (captions.length > 0) {
+      lines.push('- Inspiration captions:');
+      for (const c of captions.slice(0, 12)) lines.push(`  - ${c}`);
+    }
+  }
+  lines.push('');
+  lines.push('# Task');
+  lines.push('Place furniture, lighting, soft furnishings, and fixtures on the clean architectural floor plan that will be supplied as an inline image. The moodboard reference image will also be supplied inline — match its palette, materials, and styling. Walls, doors, and windows must stay untouched. Use top-down architectural symbols.');
+  return lines.join('\n');
+}
+
+function fallbackFurnishingPrompt(projectContext, moodboardContext) {
+  const ctx = projectContext || {};
+  const mb = moodboardContext || {};
+  const project = ctx.project || {};
+  const property = ctx.property || {};
+  const preferences = ctx.preferences || {};
+  const classification = ctx.classification || project.classification || null;
+  const tier = ctx.tier || project.tier || null;
+
+  const findPref = (...names) => {
+    for (const n of names) {
+      const v = preferences[n];
+      const rendered = renderPreferenceValue(v);
+      if (rendered) return rendered;
+    }
+    return null;
+  };
+  const palette = findPref('palette', 'colour_palette', 'colours');
+  const materials = findPref('materials', 'finishes');
+  const furnishing = findPref('furnishing', 'furniture');
+  const mood = findPref('mood', 'style', 'aesthetic');
+
+  const captionHint = Array.isArray(mb.captions) && mb.captions.length > 0
+    ? mb.captions.slice(0, 3).join('; ')
+    : null;
+
+  const parts = [];
+  parts.push('Top-down architectural floor plan with furniture symbols overlaid');
+  if (classification) parts.push(`for a ${String(classification).toLowerCase()} project`);
+  if (tier) parts.push(`(tier ${tier})`);
+  if (property.sqft) parts.push(`approximately ${property.sqft} sqft`);
+  parts.push('place beds in bedrooms, sofas and coffee tables in living areas, dining tables in dining rooms, and appropriate fixtures in kitchens and bathrooms');
+  if (furnishing) parts.push(`furniture style: ${furnishing}`);
+  if (palette) parts.push(`palette of ${palette}`);
+  if (materials) parts.push(`material accents including ${materials}`);
+  if (mood) parts.push(`overall mood ${mood}`);
+  if (captionHint) parts.push(`echoing the approved moodboard (${captionHint})`);
+  parts.push('keep walls doors and windows exactly as drawn, clean line work, soft fill colours, no shadows or photorealistic rendering');
+
+  return {
+    prompt: parts.join(', ') + '.',
+    suggestedAspectRatio: '4:3',
+    styleNotes: [
+      classification ? `Classification ${classification}` : null,
+      palette ? 'Palette derived from owner preferences' : null,
+      captionHint ? 'Furniture inflected by approved moodboard captions' : null,
+    ].filter(Boolean),
+  };
+}
+
+async function buildFurnishingPrompt({ projectContext, moodboardContext } = {}) {
+  if (!projectContext || typeof projectContext !== 'object') {
+    throw new Error('buildFurnishingPrompt: projectContext is required');
+  }
+
+  const start = Date.now();
+
+  // Kind-tag the cache so we never serve a moodboard prompt where the
+  // caller wanted a furnishing prompt.
+  const key = cacheKey({ projectContext, moodboardContext: moodboardContext || null }, 'furnishing');
+  const hit = cache[key];
+  if (hit) {
+    return { ...hit, cached: true, durationMs: Date.now() - start };
+  }
+
+  if (!process.env.KIMI_API_KEY) {
+    warnStubOnce();
+    const fb = fallbackFurnishingPrompt(projectContext, moodboardContext);
+    return {
+      prompt: fb.prompt,
+      suggestedAspectRatio: fb.suggestedAspectRatio,
+      styleNotes: fb.styleNotes,
+      durationMs: Date.now() - start,
+      source: 'template-fallback',
+      cached: false,
+    };
+  }
+
+  const contextSummary = summarizeFurnishingContext(projectContext, moodboardContext);
+  let lastErr = null;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const result = await callKimi(contextSummary, FURNISHING_SYSTEM_PROMPT);
+    if (result.ok) {
+      const out = {
+        prompt: result.parsed.prompt,
+        suggestedAspectRatio: result.parsed.suggestedAspectRatio,
+        styleNotes: result.parsed.styleNotes,
+        durationMs: result.durationMs,
+        source: 'kimi',
+        cached: false,
+      };
+      cache[key] = out;
+      writeCache();
+      return out;
+    }
+    lastErr = result;
+    if (!isRetryable(result.err) || attempt === MAX_RETRIES - 1) break;
+    const delay = 500 * Math.pow(2, attempt);
+    console.warn(`[promptbuilder] furnishing attempt ${attempt + 1}/${MAX_RETRIES} failed (${result.error}); retrying in ${delay}ms`);
+    await sleep(delay);
+  }
+
+  console.warn('[promptbuilder] Kimi unavailable for furnishing prompt, using template fallback:', lastErr?.error);
+  const fb = fallbackFurnishingPrompt(projectContext, moodboardContext);
+  return {
+    prompt: fb.prompt,
+    suggestedAspectRatio: fb.suggestedAspectRatio,
+    styleNotes: fb.styleNotes,
+    durationMs: Date.now() - start,
+    source: 'template-fallback',
+    error: lastErr?.error || null,
+    cached: false,
+  };
+}
+
 function getCacheStats() {
   return { size: Object.keys(cache).length, file: CACHE_FILE };
 }
 
 module.exports = {
   buildMoodboardPrompt,
+  buildFurnishingPrompt,
   getCacheStats,
   // exposed for tests / debugging — not part of the public contract
   _cacheKey: cacheKey,
   _summarizeContext: summarizeContext,
+  _summarizeFurnishingContext: summarizeFurnishingContext,
   _fallbackPrompt: fallbackPrompt,
+  _fallbackFurnishingPrompt: fallbackFurnishingPrompt,
 };
