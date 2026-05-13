@@ -39,9 +39,13 @@ try { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); } catch (e) {
   console.warn('[design/photos] could not pre-create upload dir:', e.message);
 }
 
+// Note on multer ordering: req.body is NOT populated by the time
+// destination() runs (multer processes the file stream first, then
+// the remaining fields). So we read project_id from req.params, which
+// IS available — hence the route shape POST /upload/:project_id.
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const projectId = req.params.project_id || req.body?.project_id || 'unscoped';
+    const projectId = req.params.project_id || 'unscoped';
     const dest = path.join(UPLOAD_DIR, projectId);
     fs.mkdirSync(dest, { recursive: true });
     cb(null, dest);
@@ -161,29 +165,28 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
   }
 });
 
-// POST /api/design/photos/upload — direct file upload via multipart.
+// POST /api/design/photos/upload/:project_id — direct file upload via
+// multipart. project_id MUST be in the URL (not body) so multer's
+// destination function can resolve the target subdir before parsing
+// the rest of the form.
 // Form fields:
 //   file        — required, image/jpeg|png|webp|heic, ≤ 10MB
-//   project_id  — required
-//   room_id     — optional
 //   kind        — required (matches the design_photos kind enum)
+//   room_id     — optional
 //   caption     — optional
 // Returns the inserted photo row.
-router.post('/upload', requireDesignPerm('design:write'), uploader.single('file'), async (req, res) => {
+router.post('/upload/:project_id', requireDesignPerm('design:write'), uploader.single('file'), async (req, res) => {
   try {
     const body = req.body || {};
+    const projectId = req.params.project_id;
     if (!req.file) return res.status(400).json({ error: 'file is required (multipart field "file")' });
-    if (!body.project_id) {
-      try { fs.unlinkSync(req.file.path); } catch { /* swallow */ }
-      return res.status(400).json({ error: 'project_id is required' });
-    }
     if (!body.kind) {
       try { fs.unlinkSync(req.file.path); } catch { /* swallow */ }
       return res.status(400).json({ error: 'kind is required' });
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [DEFAULT_TENANT_ID, projectId],
     );
     if (ownerCheck.rows.length === 0) {
       try { fs.unlinkSync(req.file.path); } catch { /* swallow */ }
@@ -192,11 +195,11 @@ router.post('/upload', requireDesignPerm('design:write'), uploader.single('file'
 
     // Build the public URL. The filename is already a UUID so we can
     // safely concat without sanitising.
-    const url = `${UPLOAD_PUBLIC_PREFIX}/${body.project_id}/${req.file.filename}`;
+    const url = `${UPLOAD_PUBLIC_PREFIX}/${projectId}/${req.file.filename}`;
     const { rows } = await query(
       `INSERT INTO design_photos (project_id, room_id, kind, caption, url)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [body.project_id, body.room_id || null, body.kind, body.caption || null, url],
+      [projectId, body.room_id || null, body.kind, body.caption || null, url],
     );
     res.status(201).json(shapePhoto(rows[0]));
   } catch (e) {

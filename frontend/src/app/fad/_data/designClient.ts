@@ -887,14 +887,15 @@ export async function uploadPhoto(payload: {
 }): Promise<ApiPhoto> {
   const fd = new FormData();
   fd.append('file', payload.file);
-  fd.append('project_id', payload.project_id);
   fd.append('kind', payload.kind);
   if (payload.caption) fd.append('caption', payload.caption);
   if (payload.room_id) fd.append('room_id', payload.room_id);
   const token = getToken();
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}/api/design/photos/upload`, {
+  // project_id is in URL not body — multer destination function needs
+  // it before req.body is parsed.
+  const res = await fetch(`${API_BASE}/api/design/photos/upload/${encodeURIComponent(payload.project_id)}`, {
     method: 'POST',
     body: fd,
     headers,
