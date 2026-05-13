@@ -12,11 +12,16 @@
 export const DESIGN_ENTITY_ID = 'FD' as const;
 export type DesignEntityId = typeof DESIGN_ENTITY_ID;
 
-// ─────────────────────────── 18-STAGE WORKFLOW ───────────────────────────
+// ─────────────────────────── 17-STAGE WORKFLOW ───────────────────────────
+// Stage 2 'proposal' was removed 2026-05-13 (design-be-22) — it was a
+// vestigial internal-decision step with no dedicated screen + no real
+// deliverable. The "decide to pitch this lead" moment now happens
+// naturally inside the Lead stage; doc-request follows immediately.
+// Migration 010 added floor-plan as a stage; removing proposal brings
+// the count back to 17.
 
 export type StageId =
   | 'lead'
-  | 'proposal'
   | 'doc-request'
   | 'site-visit'
   | 'preferences'
@@ -63,23 +68,22 @@ export interface StageDef {
 
 export const STAGES: StageDef[] = [
   { id: 'lead',             index: 1,  label: 'Lead / Owner Intake',      shortLabel: 'Lead',         route: 'overview' },
-  { id: 'proposal',         index: 2,  label: 'Proposal path decision',   shortLabel: 'Proposal',     route: 'overview' },
-  { id: 'doc-request',      index: 3,  label: 'Document Request',         shortLabel: 'Docs',         route: 'overview' },
-  { id: 'site-visit',       index: 4,  label: 'Site Visit',               shortLabel: 'Site visit',   route: 'site-visit' },
-  { id: 'preferences',      index: 5,  label: 'Preference Scoping',       shortLabel: 'Preferences',  route: 'preferences' },
-  { id: 'rough-budget',     index: 6,  label: 'Rough Budget',             shortLabel: 'Rough budget', route: 'rough-budget' },
-  { id: 'agreement',        index: 7,  label: 'Agreement & Annex B',      shortLabel: 'Agreement',    route: 'agreement' },
-  { id: 'signature',        index: 8,  label: 'Signature',                shortLabel: 'Signature',    route: 'agreement' },
-  { id: 'payment-gate',     index: 9,  label: 'Payment Gate (deposit)',   shortLabel: 'Payment',      route: 'payments' },
-  { id: 'floor-plan',       index: 10, label: 'Floor Plan',               shortLabel: 'Floor plan',   route: 'floor-plan' },
-  { id: 'moodboard',        index: 11, label: 'Moodboard',                shortLabel: 'Moodboard',    route: 'moodboard' },
-  { id: 'design-pack',      index: 12, label: 'Design Pack & 3D',         shortLabel: 'Design pack',  route: 'design-pack' },
-  { id: 'design-review',    index: 13, label: 'Owner design review',      shortLabel: 'Review',       route: 'design-pack' },
-  { id: 'final-budget',     index: 14, label: 'Final Procurement Budget', shortLabel: 'Final budget', route: 'final-budget' },
-  { id: 'funding-gate',     index: 15, label: 'Funding Gate',             shortLabel: 'Funding',      route: 'payments' },
-  { id: 'execution',        index: 16, label: 'Procurement & Execution',  shortLabel: 'Procurement',  route: 'procurement' },
-  { id: 'expense-capture',  index: 17, label: 'Expense capture',          shortLabel: 'Expenses',     route: 'execution' },
-  { id: 'reconciliation',   index: 18, label: 'Reconciliation & Handover', shortLabel: 'Handover',    route: 'reconciliation' },
+  { id: 'doc-request',      index: 2,  label: 'Document Request',         shortLabel: 'Docs',         route: 'overview' },
+  { id: 'site-visit',       index: 3,  label: 'Site Visit',               shortLabel: 'Site visit',   route: 'site-visit' },
+  { id: 'preferences',      index: 4,  label: 'Preference Scoping',       shortLabel: 'Preferences',  route: 'preferences' },
+  { id: 'rough-budget',     index: 5,  label: 'Rough Budget',             shortLabel: 'Rough budget', route: 'rough-budget' },
+  { id: 'agreement',        index: 6,  label: 'Agreement & Annex B',      shortLabel: 'Agreement',    route: 'agreement' },
+  { id: 'signature',        index: 7,  label: 'Signature',                shortLabel: 'Signature',    route: 'agreement' },
+  { id: 'payment-gate',     index: 8,  label: 'Payment Gate (deposit)',   shortLabel: 'Payment',      route: 'payments' },
+  { id: 'floor-plan',       index: 9,  label: 'Floor Plan',               shortLabel: 'Floor plan',   route: 'floor-plan' },
+  { id: 'moodboard',        index: 10, label: 'Moodboard',                shortLabel: 'Moodboard',    route: 'moodboard' },
+  { id: 'design-pack',      index: 11, label: 'Design Pack & 3D',         shortLabel: 'Design pack',  route: 'design-pack' },
+  { id: 'design-review',    index: 12, label: 'Owner design review',      shortLabel: 'Review',       route: 'design-pack' },
+  { id: 'final-budget',     index: 13, label: 'Final Procurement Budget', shortLabel: 'Final budget', route: 'final-budget' },
+  { id: 'funding-gate',     index: 14, label: 'Funding Gate',             shortLabel: 'Funding',      route: 'payments' },
+  { id: 'execution',        index: 15, label: 'Procurement & Execution',  shortLabel: 'Procurement',  route: 'procurement' },
+  { id: 'expense-capture',  index: 16, label: 'Expense capture',          shortLabel: 'Expenses',     route: 'execution' },
+  { id: 'reconciliation',   index: 17, label: 'Reconciliation & Handover', shortLabel: 'Handover',    route: 'reconciliation' },
 ];
 
 export function stageDef(id: StageId): StageDef {
@@ -159,7 +163,7 @@ export interface DesignProject {
   urgency: string | null;
   pmLink: PMLink;
   designLeadUserId: string | null;
-  /** Currently-active stage in the 18-stage flow. */
+  /** Currently-active stage in the 17-stage flow. */
   currentStage: StageId;
   stageStatus: StageStatus;
   blocker: string | null;
@@ -3794,7 +3798,7 @@ export function getTimeInStageDistribution(rangeDays: AnalyticsRange = 'all'): T
       maxDays: sorted[sorted.length - 1],
     });
   }
-  // Sort by 18-stage workflow ordinal so the chart reads left-to-right
+  // Sort by 17-stage workflow ordinal so the chart reads left-to-right
   // through the funnel.
   const stageOrder: Record<StageId, number> = Object.fromEntries(STAGES.map((s, i) => [s.id, i])) as Record<StageId, number>;
   out.sort((a, b) => stageOrder[a.stageId] - stageOrder[b.stageId]);

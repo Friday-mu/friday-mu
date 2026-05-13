@@ -52,16 +52,19 @@ const GATE_THRESHOLD_STAGE = {
 
 // Mirror of STAGES[].index for the 17 design stages. Kept inline so this
 // module has no frontend dependency. Update in lock-step with design.ts.
+// 'proposal' removed 2026-05-13 (design-be-22). 'floor-plan' added
+// 2026-05-13 (design-be-13, migration 010) between payment-gate and
+// moodboard. Both changes preserve the 17-stage count.
 const STAGE_INDEX = {
   lead: 1,
-  proposal: 2,
-  'doc-request': 3,
-  'site-visit': 4,
-  preferences: 5,
-  'rough-budget': 6,
-  agreement: 7,
-  signature: 8,
-  'payment-gate': 9,
+  'doc-request': 2,
+  'site-visit': 3,
+  preferences: 4,
+  'rough-budget': 5,
+  agreement: 6,
+  signature: 7,
+  'payment-gate': 8,
+  'floor-plan': 9,
   moodboard: 10,
   'design-pack': 11,
   'design-review': 12,
@@ -241,12 +244,15 @@ async function runPaymentBlockedTrigger(financeUserId) {
   const { rows } = await query(
     `WITH gate_thresholds(gate_id, threshold_index) AS (VALUES ${thresholdRows}),
           stage_index(stage_key, idx) AS (VALUES
-            ('lead', 1), ('proposal', 2), ('doc-request', 3), ('site-visit', 4),
-            ('preferences', 5), ('rough-budget', 6), ('agreement', 7),
-            ('signature', 8), ('payment-gate', 9), ('moodboard', 10),
-            ('design-pack', 11), ('design-review', 12), ('final-budget', 13),
-            ('funding-gate', 14), ('execution', 15), ('expense-capture', 16),
-            ('reconciliation', 17)
+            -- 17-stage workflow. 'proposal' removed 2026-05-13
+            -- (design-be-22). 'floor-plan' added 2026-05-13 (design-be-13,
+            -- migration 010) and slots between payment-gate and moodboard.
+            ('lead', 1), ('doc-request', 2), ('site-visit', 3),
+            ('preferences', 4), ('rough-budget', 5), ('agreement', 6),
+            ('signature', 7), ('payment-gate', 8), ('floor-plan', 9),
+            ('moodboard', 10), ('design-pack', 11), ('design-review', 12),
+            ('final-budget', 13), ('funding-gate', 14), ('execution', 15),
+            ('expense-capture', 16), ('reconciliation', 17)
           )
      SELECT g.id, g.project_id, g.gate_id
      FROM design_payment_gates g

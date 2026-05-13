@@ -23,7 +23,7 @@ export function SiteVisitStage({ project }: Props) {
   // design-be-13: the floor-plan generator button + modal lived here in
   // earlier iterations; they were moved out into the dedicated
   // FloorPlanStage (workflow step #10) so the workflow UI matches the
-  // 18-stage list 1:1. SiteVisitStage now only owns the visit metadata
+  // 17-stage list 1:1. SiteVisitStage now only owns the visit metadata
   // + room capture surfaces.
 
   const toggleRoom = (id: string) =>

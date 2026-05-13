@@ -14,7 +14,7 @@ interface Props {
   /**
    * B3.9 per-tier rules: stages flagged optional render with muted styling and
    * a dashed border. Workflow does not block on these. Pass [] (default) for
-   * Tier 1 (all 18 mandatory) or unknown.
+   * Tier 1 (all 17 mandatory) or unknown.
    */
   optionalStageIds?: StageId[];
   /**

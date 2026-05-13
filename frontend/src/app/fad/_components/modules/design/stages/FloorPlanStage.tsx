@@ -1,6 +1,6 @@
 'use client';
 
-// Floor plan stage (design-be-13 + design-be-14) — dedicated 18-stage
+// Floor plan stage (design-be-13 + design-be-14) — dedicated 17-stage
 // workflow step between payment-gate and moodboard. Two sections:
 //
 //  1. Clean architectural plan — Nanobanana redraw of the client's

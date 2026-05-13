@@ -117,7 +117,7 @@ type ProjectScreen =
 
 // ─────────────────────────── Phase model ───────────────────────────
 //
-// Cont-10 audit fix. The 18-stage state machine drove an 18-pill clickable
+// Cont-10 audit fix. The 17-stage state machine drove an 18-pill clickable
 // tracker AND a 14-tab strip below it. Two parallel navs, several stages
 // without a screen → confusing, didn't feel like a workflow. Industry
 // research (Programa / Mydoma / JobTread) shows 5–7 phases at the top with
@@ -156,7 +156,7 @@ const PHASES: PhaseDef[] = [
     id: 'discovery',
     label: 'Discovery',
     sections: ['site-visit', 'preferences', 'rough-budget', 'agreement', 'payments'],
-    stages: ['lead', 'proposal', 'doc-request', 'site-visit', 'preferences', 'rough-budget', 'agreement', 'signature', 'payment-gate'],
+    stages: ['lead', 'doc-request', 'site-visit', 'preferences', 'rough-budget', 'agreement', 'signature', 'payment-gate'],
   },
   {
     id: 'design',
@@ -664,7 +664,7 @@ function SortHeader({
 }
 
 const STAGE_ORDER: Record<string, number> = Object.fromEntries(
-  ['lead','proposal','doc-request','site-visit','preferences','rough-budget','agreement','signature','payment-gate','floor-plan','moodboard','design-pack','design-review','final-budget','funding-gate','execution','expense-capture','reconciliation'].map((s, i) => [s, i]),
+  ['lead','doc-request','site-visit','preferences','rough-budget','agreement','signature','payment-gate','floor-plan','moodboard','design-pack','design-review','final-budget','funding-gate','execution','expense-capture','reconciliation'].map((s, i) => [s, i]),
 );
 
 function compareProjects(a: DesignProject, b: DesignProject, key: ProjectSortKey): number {
@@ -2013,7 +2013,7 @@ function DesignSettings() {
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 16 }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>Per-tier stage matrix</h3>
         <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-          B3.9 lock — stages flagged optional may be skipped without blocking workflow progress. Tier 1 (EPC &gt; Rs 1.5M) runs all 18 stages mandatory.
+          B3.9 lock — stages flagged optional may be skipped without blocking workflow progress. Tier 1 (EPC &gt; Rs 1.5M) runs all 17 stages mandatory.
         </p>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 360 }}>
@@ -2031,7 +2031,7 @@ function DesignSettings() {
                     <td style={cellStyle('left')}><strong>Tier {tier}</strong></td>
                     <td style={cellStyle('left')}>
                       {opt.length === 0
-                        ? <span style={{ color: 'var(--color-text-tertiary)' }}>All 18 stages mandatory.</span>
+                        ? <span style={{ color: 'var(--color-text-tertiary)' }}>All 17 stages mandatory.</span>
                         : opt.map((s) => stageDef(s).label).join(', ')}
                     </td>
                   </tr>

@@ -8,7 +8,7 @@
 > - Project drill-down restructured (cont-10) from a 17-pill StageTracker +
 >   14-tab strip into 6 phase tabs (Brief / Discovery / Design / Procurement /
 >   Execution / Closeout / Documents) with accordion sub-sections per phase.
->   The 18-stage state machine in `design.ts` is intact (migration 010 added
+>   The 17-stage state machine in `design.ts` is intact (migration 010 added
 >   floor-plan as stage 10) — only the UI collapsed via the `PHASES` constant.
 > - Overview cleaned up (cont-9): pipeline-by-stage chart + AI summary +
 >   bottom Blockers panel removed; current shape is metrics → summary line →
@@ -119,7 +119,7 @@
 >   Reused for LB-1 / LB-4 in 2027.
 > - **Single approver = director (Ishant)** — no conditional permission logic
 >   on agreement send / mark received in v0.1 (B3.11).
-> - **18-stage state machine** in `design.ts` is load-bearing for the
+> - **17-stage state machine** in `design.ts` is load-bearing for the
 >   workflow — DON'T flatten it. The IA collapse (5 phases) only restructured
 >   the UI via the `PHASES` constant.
 >
@@ -144,7 +144,7 @@ modules/
 │                                 the cross-project Vendors performance view
 ├── design/
 │   ├── ProjectContextBar.tsx     name + chips + counterparty/property/lead
-│   ├── StageTracker.tsx          18-stage horizontal stepper (still backs the
+│   ├── StageTracker.tsx          17-stage horizontal stepper (still backs the
 │   │                             URL `?stage=` param for backward compat)
 │   ├── LifecycleMenu.tsx         pause / cancel / resume project (cont-2)
 │   ├── ProjectIntake.tsx         + New project form

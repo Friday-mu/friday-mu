@@ -4,7 +4,7 @@
 //
 // All routes require design:read or design:write per the matrix in
 // auth.js. Lifecycle status (active/paused/cancelled) is orthogonal to
-// the 18-stage workflow — both are tracked on design_projects.
+// the 17-stage workflow — both are tracked on design_projects.
 
 const express = require('express');
 const { query } = require('../database/client');
@@ -41,12 +41,14 @@ const WRITABLE_FIELDS = [
   'next_action', 'start_date', 'estimated_completion',
 ];
 
-// Mirrors the 18-stage workflow + 6 stage statuses from the frontend
+// Mirrors the 17-stage workflow + 6 stage statuses from the frontend
 // fixture (frontend/src/app/fad/_data/design.ts). Kept inline to avoid
 // pulling the frontend module into the backend; if the fixture grows,
 // update both sides.
+// 'proposal' removed 2026-05-13 (design-be-22) — vestigial qualification
+// step with no deliverable. doc-request follows lead directly now.
 const VALID_STAGE_IDS = new Set([
-  'lead', 'proposal', 'doc-request', 'site-visit', 'preferences',
+  'lead', 'doc-request', 'site-visit', 'preferences',
   'rough-budget', 'agreement', 'signature', 'payment-gate', 'floor-plan',
   'moodboard', 'design-pack', 'design-review', 'final-budget', 'funding-gate',
   'execution', 'expense-capture', 'reconciliation',
