@@ -186,12 +186,17 @@ export function AgreementStage({ project }: Props) {
         </Row>
       </Card>
 
-      {/* Audit trail */}
-      {existing && existing.events.length > 0 && (
+      {/* Audit trail. Defensive .length — API-hydrated agreements may
+          omit events entirely (the prod design_agreements table has no
+          events column yet; that's part of the in-portal digital signing
+          feature, Tier A #3). Without the guard, existing.events.length
+          throws "Cannot read properties of undefined" and the React
+          error boundary takes the whole page down. */}
+      {existing && (existing.events?.length ?? 0) > 0 && (
         <Card>
           <h4 style={subhead()}>Audit trail</h4>
           <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {existing.events.map((e, i) => (
+            {(existing.events ?? []).map((e, i) => (
               <li key={i} style={{ fontSize: 12, padding: 6, borderLeft: '2px solid var(--color-brand-accent)', paddingLeft: 8 }}>
                 <strong>{STATUS_LABEL[e.status]}</strong> · {e.at.slice(0, 16).replace('T', ' ')} · {e.userId ?? '—'}
                 {e.note && <div style={{ color: 'var(--color-text-tertiary)', marginTop: 2 }}>{e.note}</div>}

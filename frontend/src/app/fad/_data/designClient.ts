@@ -1062,6 +1062,10 @@ export function apiAgreementToFixture(api: ApiAgreement): FixtureAgreement {
     procurementFeePercent: api.procurement_fee_percent ?? 0,
     contingency: api.contingency_percent ?? 0,
     annexB: api.annex_b,
+    // events array isn't in the prod schema yet (added by the in-portal
+    // signing feature, Tier A #3). Default to [] so consumers don't
+    // crash on .length / .map. Remove the fallback once the column lands.
+    events: [],
   } as unknown as FixtureAgreement;
 }
 
