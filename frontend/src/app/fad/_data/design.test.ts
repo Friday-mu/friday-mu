@@ -9,7 +9,10 @@ import {
   stripForOwner,
   tierForEpc,
   validateMockToken,
+  vatOf,
+  withVAT,
   TASKS,
+  type AnnexAConfig,
   type BudgetItem,
   type DesignTask,
 } from './design';
@@ -288,6 +291,51 @@ describe('mock JWT signing + validation', () => {
 });
 
 // ─────────────────────────── design-be-18: task category ───────────────────────────
+
+// ─────────────────────────── design-be-20: VAT helpers ───────────────────────────
+
+describe('withVAT / vatOf — Mauritius 15% VAT applied on top of Annex A rates', () => {
+  it('default config carries the Mauritius standard rate (0.15)', () => {
+    expect(ANNEX_A_DEFAULT.vatRate).toBe(0.15);
+  });
+
+  it('withVAT — Tier 3 design fee (Rs 25,000) inflates to Rs 28,750 incl. VAT', () => {
+    // Rs 25,000 × 1.15 = Rs 28,750 → 28_750_00 minor
+    expect(withVAT(ANNEX_A_DEFAULT.designFee.tier3FlatMinor)).toBe(28_750_00);
+  });
+
+  it('withVAT — handles a non-integer round-trip without drift', () => {
+    // Use a fee that does NOT divide evenly by 100. 12_345_67 × 1.15 = 14_197_5205
+    // → Math.round = 14_197_52. Pure-math sanity check.
+    expect(withVAT(12_345_67)).toBe(14_197_52);
+  });
+
+  it('vatOf — Tier 3 design fee (Rs 25,000) carries Rs 3,750 of VAT', () => {
+    expect(vatOf(ANNEX_A_DEFAULT.designFee.tier3FlatMinor)).toBe(3_750_00);
+  });
+
+  it('vatRate = 0 → withVAT is identity, vatOf is zero', () => {
+    const zeroVatCfg: AnnexAConfig = { ...ANNEX_A_DEFAULT, vatRate: 0 };
+    expect(withVAT(25_000_00, zeroVatCfg)).toBe(25_000_00);
+    expect(vatOf(25_000_00, zeroVatCfg)).toBe(0);
+  });
+
+  it('fee = 0 → both helpers return 0 regardless of rate', () => {
+    expect(withVAT(0)).toBe(0);
+    expect(vatOf(0)).toBe(0);
+    const zeroVatCfg: AnnexAConfig = { ...ANNEX_A_DEFAULT, vatRate: 0 };
+    expect(withVAT(0, zeroVatCfg)).toBe(0);
+    expect(vatOf(0, zeroVatCfg)).toBe(0);
+  });
+
+  it('helpers compose: withVAT(x) === x + vatOf(x) (modulo rounding)', () => {
+    // Both helpers Math.round independently, so equality is only guaranteed
+    // when the unrounded products land cleanly. Use a fee that satisfies this:
+    // 100_000_00 × 0.15 = 15_000_00 (exact). 100_000_00 × 1.15 = 115_000_00.
+    const fee = 100_000_00;
+    expect(withVAT(fee)).toBe(fee + vatOf(fee));
+  });
+});
 
 describe('DesignTask.category — fixture defaults', () => {
   it("execution-stage TASKS fixture all default to category='general'", () => {

@@ -677,6 +677,12 @@ export interface AnnexAConfig {
   /** B3.9 — per-tier mandatory/optional stage matrix. */
   tierStageRules: Record<DesignTier, TierStageRules>;
   agreementTemplateVersion: string;
+  /** VAT rate applied to all Annex A fees (Annex A rates are VAT-exclusive).
+   *  Mauritius standard rate = 0.15 (15%). May be 0 for international clients
+   *  or special arrangements. Locked 2026-05-13 per Ishant: every fee Friday
+   *  charges under the Annex A schedule is VAT-exclusive; VAT is added on top
+   *  per Mauritius regulations. */
+  vatRate: number;
 }
 
 // @demo:config — Replace with `GET /api/design/settings/annex-a`. Tag: PROD-DESIGN-3.
@@ -728,6 +734,9 @@ export const ANNEX_A_DEFAULT: AnnexAConfig = {
     3: { optionalStages: ['doc-request', 'floor-plan', 'design-pack', 'design-review'] },
   },
   agreementTemplateVersion: '2025-09-nursoo',
+  // Mauritius standard VAT rate. Applied to design + execution fees.
+  // (Locked 2026-05-13 per Ishant — Annex A rates are VAT-exclusive.)
+  vatRate: 0.15,
 };
 
 // ─────────────────────────── Annex A — editable overlay (cont-28) ───────────────────────────
@@ -843,6 +852,27 @@ export function procurementFeeForTier(
   const table = classification === 'furnishing' ? cfg.procurementFurnishing : cfg.procurementRenovation;
   const pct = tier === 3 ? table.tier3Pct : tier === 2 ? table.tier2Pct : table.tier1Pct;
   return Math.round(epcMinor * pct);
+}
+
+// ─────────────────────────── VAT helpers (design-be-20) ───────────────────────────
+//
+// Annex A rates are VAT-EXCLUSIVE. Mauritius applies 15% VAT on top of all
+// listed fees (design fee, procurement & execution fee, internal service
+// rates). Pricing surfaces must show both exclusive AND inclusive amounts
+// side-by-side so an owner can read either figure at a glance.
+//
+// These helpers are pure, take a minor-units amount, and return rounded
+// minor-units. `cfg.vatRate` may be 0 (international clients, special
+// arrangements), in which case `withVAT(x) === x` and `vatOf(x) === 0`.
+
+/** Add VAT to an exclusive amount. Returns inclusive total in minor units. */
+export function withVAT(exclMinor: number, cfg: AnnexAConfig = ANNEX_A_DEFAULT): number {
+  return Math.round(exclMinor * (1 + cfg.vatRate));
+}
+
+/** Just the VAT delta on an exclusive amount. Returns minor units. */
+export function vatOf(exclMinor: number, cfg: AnnexAConfig = ANNEX_A_DEFAULT): number {
+  return Math.round(exclMinor * cfg.vatRate);
 }
 
 /** Reconciliation variance threshold — Stage 16 review flags |variance%| > 5. */
