@@ -27,7 +27,7 @@ interface Props {
 // property → existing layout → utility bills (for renovation projects).
 // doc_type values are kebab-case so they're URL-safe + stable for
 // querying.
-const DOC_REQUEST_CHECKLIST: Array<{ docType: string; label: string; hint: string; required: boolean }> = [
+export const DOC_REQUEST_CHECKLIST: Array<{ docType: string; label: string; hint: string; required: boolean }> = [
   { docType: 'owner-id',             label: 'Owner ID / passport scan',     hint: 'NIC or passport — for agreement signing.',                          required: true  },
   { docType: 'property-title',       label: 'Property title deed',          hint: 'Confirms ownership; we attach to the agreement Annex A.',           required: true  },
   { docType: 'epc-certificate',      label: 'EPC certificate',              hint: 'Energy Performance Certificate — drives tier classification.',      required: true  },

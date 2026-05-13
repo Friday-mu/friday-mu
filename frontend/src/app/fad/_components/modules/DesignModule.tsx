@@ -2663,7 +2663,6 @@ function PhaseNav({
   // tabs but not workflow stages; exclude both from the progress math.
   const workflowPhases: PhaseId[] = ['discovery', 'design', 'procurement', 'execution', 'closeout'];
   const currentWorkflowIdx = workflowPhases.indexOf(currentPhase);
-  const phaseDef = PHASES.find((p) => p.id === currentPhase);
   const progressPct =
     currentWorkflowIdx < 0 ? 0 : Math.min(100, ((currentWorkflowIdx + 1) / workflowPhases.length) * 100);
 
@@ -2673,9 +2672,15 @@ function PhaseNav({
       <div style={{ padding: '10px 16px 6px' }}>
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
           <span>
-            {currentPhase === 'brief'
-              ? `Stage ${stageDef(project.currentStage).index} of 17 · ${stageDef(project.currentStage).label}`
-              : `Currently in ${phaseDef?.label} · ${stageDef(project.currentStage).label} (${stageStatusLabel(project.stageStatus)})`}
+            {/* Unified "Stage N of 17 · <label>" framing — the
+                previous "Currently in <phase> · <stage>" wording read
+                as the cluster name and got out of sync with the
+                Procurement & Execution stage cluster (final-budget
+                etc. live under the 'design' PHASE tab for navigational
+                reasons but in the 'Procurement & Execution' cluster
+                visually). Stage index + label is unambiguous. */}
+            Stage {stageDef(project.currentStage).index} of 17 · {stageDef(project.currentStage).label}
+            {currentPhase !== 'brief' && ` (${stageStatusLabel(project.stageStatus)})`}
           </span>
           {project.lifecycleStatus !== 'active' && (
             <span style={{ color: project.lifecycleStatus === 'paused' ? 'var(--color-text-warning)' : 'var(--color-text-danger)', fontWeight: 500 }}>
@@ -2875,6 +2880,20 @@ interface SectionStatusBadge {
 }
 
 /**
+ * Doc-types from DOC_REQUEST_CHECKLIST that are marked required. Kept
+ * in sync with the source list in DocRequestStage.tsx. Used by
+ * sectionStatus() to surface "X gaps" on the Done pill when the
+ * project is positionally past doc-request but required docs were
+ * never collected.
+ */
+const DOC_REQUEST_REQUIRED_TYPES = ['owner-id', 'property-title', 'epc-certificate', 'floor-plan-as-built'];
+
+function docRequestGapCount(project: DesignProject): number {
+  const docs = designClient.documents.list(project.id);
+  return DOC_REQUEST_REQUIRED_TYPES.filter((t) => !docs.some((d) => d.type === t)).length;
+}
+
+/**
  * Compute a status pill for a section header from project state. Drives the
  * accordion's "checklist" feel — at a glance the user sees what's done, what's
  * in progress, what's blocked.
@@ -2888,8 +2907,21 @@ function sectionStatus(project: DesignProject, section: ProjectScreen): SectionS
   const phaseIdx = phaseOrder.indexOf(phase);
   const currentIdx = phaseOrder.indexOf(currentPhase);
 
-  if (phaseIdx < currentIdx) {
+  // Helper: positionally past doc-request but required docs missing →
+  // "Done · N gaps" in warning tone so the outer pill stops contradicting
+  // the inner "X required missing" warning.
+  const doneOrGap = (): SectionStatusBadge => {
+    if (section === 'doc-request') {
+      const gaps = docRequestGapCount(project);
+      if (gaps > 0) {
+        return { label: `Done · ${gaps} gap${gaps === 1 ? '' : 's'}`, bg: 'var(--color-bg-warning)', color: 'var(--color-text-warning)' };
+      }
+    }
     return { label: 'Done', bg: 'var(--color-bg-success)', color: 'var(--color-text-success)' };
+  };
+
+  if (phaseIdx < currentIdx) {
+    return doneOrGap();
   }
   if (phaseIdx > currentIdx) {
     return { label: 'Upcoming', bg: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)' };
@@ -2905,7 +2937,7 @@ function sectionStatus(project: DesignProject, section: ProjectScreen): SectionS
   const sectionIdx = phaseDef.sections.indexOf(section);
   if (currentSectionIdx === -1) return null;
   if (sectionIdx < currentSectionIdx) {
-    return { label: 'Done', bg: 'var(--color-bg-success)', color: 'var(--color-text-success)' };
+    return doneOrGap();
   }
   if (sectionIdx > currentSectionIdx) {
     return { label: 'Upcoming', bg: 'var(--color-background-tertiary)', color: 'var(--color-text-tertiary)' };

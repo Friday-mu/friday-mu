@@ -6264,12 +6264,37 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .fad-design-phase-tabs {
   position: relative;
   scroll-snap-type: x proximity;
-  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%);
+  /* Wider fade — 24px was too subtle on mobile and the team kept missing
+     Closeout / Documents at the right edge of the strip. 48px gives an
+     obvious "more content past the edge" hint without crowding the
+     visible tabs. */
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 48px), transparent 100%);
 }
 .fad-design-phase-tabs > button {
   scroll-snap-align: start;
   flex: 0 0 auto;
+}
+/* Mobile-specific overflow chevron — pure CSS scroll affordance using a
+   right-edge pseudo-element. Only applies under 768px where the tabs
+   actually overflow most viewports. Sits on top of the fade so users
+   see both a visual gradient and a literal "›" pointing at hidden tabs. */
+@media (max-width: 768px) {
+  .fad-design-phase-tabs::after {
+    content: '›';
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    font-size: 18px;
+    line-height: 1;
+    color: var(--color-text-tertiary);
+    pointer-events: none;
+    /* Counter-mask: appear in the area the mask is fading out, so the
+       chevron stays visible even as the mask hides everything else. */
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 }
 
 @media (max-width: 768px) {
