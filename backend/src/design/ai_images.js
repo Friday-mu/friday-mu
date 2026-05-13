@@ -50,10 +50,10 @@ const ASPECT_TO_SIZE = {
   '4:3': null,
 };
 
-// design-be-11 (site plan): Nanobanana accepts PDFs inline alongside the
+// design-be-11 (floor plan): Nanobanana accepts PDFs inline alongside the
 // usual raster formats. svg / heic deliberately omitted — they break the
 // inlineData encoder on Google AI Studio.
-const ALLOWED_SITE_PLAN_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']);
+const ALLOWED_FLOOR_PLAN_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']);
 
 // ~5MB raw cap on the source image. base64 expands bytes by 4/3 so the
 // pre-decode ceiling is ~6.67MB of b64 text — we recompute the raw size
@@ -63,8 +63,8 @@ const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
 // Fixed system directive prepended to the user's optional hint. Phrasing
 // is locked to what reliably gets Nanobanana to produce a CAD-style
 // cleanup rather than a stylised re-render. Keep in sync with the
-// frontend placeholder copy in SitePlanGenerator.tsx.
-const SITE_PLAN_SYSTEM_PROMPT =
+// frontend placeholder copy in FloorPlanGenerator.tsx.
+const FLOOR_PLAN_SYSTEM_PROMPT =
   'Clean architectural floor plan, top-down view, single-line walls in dark grey on white background, '
   + 'labelled rooms in a sans-serif font, minimal furniture symbols, north arrow in top-right corner, '
   + 'dimensions in metric, no shadows or color fills, suitable as a base layer for interior design plans. '
@@ -482,7 +482,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
   }
 });
 
-// ────────────────── POST /generate-site-plan ──────────────────
+// ────────────────── POST /generate-floor-plan ──────────────────
 //
 // design-be-11: takes a messy client floor plan (PDF / sketch / photo)
 // and asks Nanobanana to redraw it as a clean top-view layout we can
@@ -496,13 +496,14 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
 //   prompt_hint           — optional, free-text guidance appended to the
 //                            system directive
 //   set_as_project_plan   — optional bool. When true, also UPDATEs
-//                            design_projects.site_plan_image_id with the
+//                            design_projects.floor_plan_image_id with the
 //                            new asset sha256 so the project pins this
-//                            canonical site plan.
+//                            canonical floor plan. (Field name kept for
+//                            API-contract stability across the rename.)
 //
 // Response: 201 with the standard asset row shape plus
 //   { project_updated: boolean, original_input_sha256: string }
-router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req, res) => {
+router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const { project_id: projectId, source_image: sourceImage, prompt_hint: promptHint, set_as_project_plan: setAsProjectPlan } = body;
@@ -514,9 +515,9 @@ router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req
     if (!base64 || typeof base64 !== 'string' || base64.length === 0) {
       return res.status(400).json({ error: 'source_image.base64 is required (non-empty)' });
     }
-    if (!ALLOWED_SITE_PLAN_MIME.has(mimeType)) {
+    if (!ALLOWED_FLOOR_PLAN_MIME.has(mimeType)) {
       return res.status(400).json({
-        error: `source_image.mimeType must be one of ${[...ALLOWED_SITE_PLAN_MIME].join(', ')}`,
+        error: `source_image.mimeType must be one of ${[...ALLOWED_FLOOR_PLAN_MIME].join(', ')}`,
       });
     }
     const rawBytes = Math.floor(base64.length * 0.75);
@@ -534,8 +535,8 @@ router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req
 
     const hintTrimmed = typeof promptHint === 'string' ? promptHint.trim() : '';
     const prompt = hintTrimmed
-      ? `${SITE_PLAN_SYSTEM_PROMPT} ${hintTrimmed}`
-      : SITE_PLAN_SYSTEM_PROMPT;
+      ? `${FLOOR_PLAN_SYSTEM_PROMPT} ${hintTrimmed}`
+      : FLOOR_PLAN_SYSTEM_PROMPT;
 
     const inputBuf = Buffer.from(base64, 'base64');
     const originalInputSha256 = crypto.createHash('sha256').update(inputBuf).digest('hex');
@@ -547,11 +548,11 @@ router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req
         inlineImages: [{ mimeType, base64 }],
       });
     } catch (e) {
-      console.error('[design/ai_images] site-plan generation error:', e.message);
+      console.error('[design/ai_images] floor-plan generation error:', e.message);
       return res.status(502).json({ error: `Image generation failed: ${e.message}` });
     }
 
-    const storedPrompt = `[kind:site_plan] ${result.generatorPrompt}`;
+    const storedPrompt = `[kind:floor_plan] ${result.generatorPrompt}`;
 
     const insert = await query(
       `INSERT INTO design_assets
@@ -587,7 +588,7 @@ router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req
     if (setAsProjectPlan === true) {
       const upd = await query(
         `UPDATE design_projects
-           SET site_plan_image_id = $3, updated_at = NOW()
+           SET floor_plan_image_id = $3, updated_at = NOW()
          WHERE tenant_id = $1 AND id = $2
          RETURNING id`,
         [DEFAULT_TENANT_ID, projectId, result.sha256],
@@ -600,7 +601,7 @@ router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req
         projectId,
         actorUserId: req.identity.userId,
         actorName: req.identity.displayName || req.identity.username,
-        action: 'project.site_plan.generated',
+        action: 'project.floor_plan.generated',
         payload: {
           asset_sha256: result.sha256,
           original_input_sha256: originalInputSha256,
@@ -623,7 +624,7 @@ router.post('/generate-site-plan', requireDesignPerm('design:write'), async (req
     shaped.original_input_sha256 = originalInputSha256;
     return res.status(201).json(shaped);
   } catch (e) {
-    console.error('[design/ai_images] generate-site-plan error:', e.message);
+    console.error('[design/ai_images] generate-floor-plan error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
