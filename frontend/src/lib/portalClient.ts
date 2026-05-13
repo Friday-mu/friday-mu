@@ -113,6 +113,24 @@ export const loadPortalActivities = async (): Promise<ApiActivity[]> =>
 export const loadPortalAgreement = (): Promise<ApiAgreement | null> =>
   portalFetch('/api/design/portal/agreement') as Promise<ApiAgreement | null>;
 
+// In-portal digital signing — Tier A #3.
+export interface PortalSignatureRecord {
+  id: string;
+  signed_at: string;
+  typed_name: string;
+  owner_name: string | null;
+  owner_email: string | null;
+  signature_data_url: string;
+}
+export const loadPortalAgreementSignature = (): Promise<PortalSignatureRecord | null> =>
+  portalFetch('/api/design/portal/agreement/signature') as Promise<PortalSignatureRecord | null>;
+
+export const signPortalAgreement = (signature_data_url: string, typed_name: string): Promise<{ ok: true; signature_id: string; signed_at: string; agreement_id: string }> =>
+  portalFetch('/api/design/portal/agreement/sign', {
+    method: 'POST',
+    body: JSON.stringify({ signature_data_url, typed_name }),
+  }) as Promise<{ ok: true; signature_id: string; signed_at: string; agreement_id: string }>;
+
 export const loadPortalPayments = async (): Promise<ApiPaymentGate[]> =>
   unwrap((await portalFetch('/api/design/portal/payments')) as { results: ApiPaymentGate[] });
 

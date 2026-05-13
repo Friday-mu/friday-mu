@@ -372,6 +372,159 @@ router.get('/log', async (req, res) => {
   }
 });
 
+// POST /api/design/portal/agreement/sign — owner submits a drawn
+// signature + typed full name from the portal. Atomic:
+//   1. Inserts a design_agreement_signatures row capturing the
+//      signature image (data URL), typed name, IP, UA, magic-link
+//      ID, owner email/name from the linked counterparty.
+//   2. Flips the agreement status from 'sent' → 'signed' with
+//      signed_at = NOW() and signed_by = portal magic-link id.
+//   3. Appends an activity row visible to the owner portal.
+//   4. Logs a portal event for audit.
+//
+// Refused if the agreement isn't in 'sent' state (no double-sign,
+// no draft-sign) — frontend should hide the canvas in those cases.
+router.post('/agreement/sign', async (req, res) => {
+  const { signature_data_url, typed_name } = req.body || {};
+  if (!signature_data_url || typeof signature_data_url !== 'string') {
+    return res.status(400).json({ error: 'signature_data_url is required (data: PNG)' });
+  }
+  if (!signature_data_url.startsWith('data:image/')) {
+    return res.status(400).json({ error: 'signature_data_url must be a data:image URL' });
+  }
+  if (!typed_name || typeof typed_name !== 'string' || typed_name.trim().length < 2) {
+    return res.status(400).json({ error: 'typed_name is required (legal full name)' });
+  }
+  // Soft cap to prevent 5MB blobs accidentally landing.
+  if (signature_data_url.length > 500_000) {
+    return res.status(413).json({ error: 'signature image too large (>500KB)' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Look up the agreement + owner context (counterparty linked
+    // to the project that owns the magic link).
+    const agreeRes = await client.query(
+      `SELECT a.id AS agreement_id, a.status,
+              cp.name AS owner_name, cp.email AS owner_email
+       FROM design_agreements a
+       JOIN design_projects p ON p.id = a.project_id
+       LEFT JOIN design_properties prop ON prop.id = p.property_id
+       LEFT JOIN design_counterparties cp ON cp.id = p.counterparty_id
+       WHERE a.project_id = $1
+       ORDER BY a.created_at DESC
+       LIMIT 1`,
+      [req.portalProject.id],
+    );
+    if (agreeRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No agreement found for this project' });
+    }
+    const ag = agreeRes.rows[0];
+    if (ag.status !== 'sent') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Agreement is in '${ag.status}' state; expected 'sent'.` });
+    }
+
+    // Audit headers — capture before insert.
+    const ipAddress =
+      (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null) &&
+      String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress).split(',')[0].trim();
+    const userAgent = String(req.headers['user-agent'] || '').slice(0, 500);
+
+    const sigRes = await client.query(
+      `INSERT INTO design_agreement_signatures (
+         agreement_id, project_id, signature_data_url, typed_name,
+         owner_email, owner_name, ip_address, user_agent, magic_link_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, signed_at`,
+      [
+        ag.agreement_id,
+        req.portalProject.id,
+        signature_data_url,
+        typed_name.trim(),
+        ag.owner_email,
+        ag.owner_name,
+        ipAddress,
+        userAgent,
+        req.magicLink.id,
+      ],
+    );
+
+    await client.query(
+      `UPDATE design_agreements
+       SET status = 'signed', signed_at = NOW(), signed_by = $2, updated_at = NOW()
+       WHERE id = $1`,
+      [ag.agreement_id, `portal:${req.magicLink.id}`],
+    );
+
+    await client.query('COMMIT');
+
+    // Best-effort activity log + portal event (outside the tx so a
+    // logging failure doesn't roll back the signature).
+    query(
+      `INSERT INTO design_activities (project_id, action, payload, visibility, actor_user_id, actor_name)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        req.portalProject.id,
+        'agreement.signed',
+        { agreement_id: ag.agreement_id, typed_name: typed_name.trim(), via: 'portal' },
+        'portal',
+        null,
+        ag.owner_name || typed_name.trim(),
+      ],
+    ).catch((e) => console.warn('[portal/agreement/sign] activity log failed:', e.message));
+
+    logPortalEvent({
+      projectId: req.portalProject.id,
+      magicLinkId: req.magicLink.id,
+      eventType: 'agreement.signed',
+      payload: { agreement_id: ag.agreement_id, signature_id: sigRes.rows[0].id },
+      userAgent,
+      ipAddress,
+    });
+
+    res.status(201).json({
+      ok: true,
+      signature_id: sigRes.rows[0].id,
+      signed_at: sigRes.rows[0].signed_at,
+      agreement_id: ag.agreement_id,
+    });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[portal/agreement/sign] error:', e.message);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/design/portal/agreement/signature — read the active
+// signature for this project's agreement (so the portal can show
+// "signed" state on subsequent loads).
+router.get('/agreement/signature', async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT s.id, s.signed_at, s.typed_name, s.owner_name, s.owner_email,
+              s.signature_data_url
+       FROM design_agreement_signatures s
+       JOIN design_agreements a ON a.id = s.agreement_id
+       WHERE s.project_id = $1
+         AND a.project_id = $1
+         AND (s.notes IS NULL OR s.notes NOT LIKE 'VOIDED:%')
+       ORDER BY s.signed_at DESC
+       LIMIT 1`,
+      [req.portalProject.id],
+    );
+    res.json(rows[0] || null);
+  } catch (e) {
+    console.error('[portal/agreement/signature] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
 module.exports.portalAuth = portalAuth;
 module.exports.logPortalEvent = logPortalEvent;

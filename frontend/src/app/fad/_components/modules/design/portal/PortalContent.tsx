@@ -9,6 +9,7 @@ import {
   type DesignSelection,
 } from '../../../../_data/design';
 import { OverviewTab } from './OverviewTab';
+import { AgreementTab } from './AgreementTab';
 import { DocsTab } from './DocsTab';
 import { ApprovalsTab } from './ApprovalsTab';
 import { ActivityTab } from './ActivityTab';
@@ -122,8 +123,14 @@ export function PortalContent({
   const pendingChangeOrderCount = changeOrders.filter((c) => c.state === 'sent').length;
   const totalPendingActions = pendingApprovalCount + pendingSelectionCount + pendingChangeOrderCount;
 
+  // Pull the agreement so the Agreement tab can highlight "ready to sign"
+  // in its label without the tab having to fetch its own.
+  const agreement = designClient.agreement.get(project.id);
+  const agreementNeedsAction = agreement && (agreement.status === 'sent' || agreement.status === 'viewed_by_client');
+
   const tabLabels: Record<PortalTab, string> = {
     overview: 'Overview',
+    agreement: agreementNeedsAction ? 'Agreement · sign' : agreement?.status === 'signed_by_client' || agreement?.status === 'completed' ? 'Agreement ✓' : 'Agreement',
     documents: docs.length > 0 ? `Documents (${docs.length})` : 'Documents',
     approvals:
       totalPendingActions > 0 ? `Approvals (${totalPendingActions})` : 'Approvals',
@@ -144,6 +151,7 @@ export function PortalContent({
     const binder = designClient.binder.get(project.id);
     return {
       overview: 0,
+      agreement: agreementNeedsAction ? 1 : 0,
       documents: docs.filter((d) => isNewSince(d.generatedAt, since('documents'))).length,
       approvals:
         approvals.filter((a) => isNewSince(a.sentAt, since('approvals'))).length +
@@ -289,6 +297,19 @@ export function PortalContent({
             docs={docs}
             onApprove={handleApprove}
             onRequestChanges={setPendingChanges}
+          />
+        )}
+        {tab === 'agreement' && (
+          <AgreementTab
+            project={project}
+            agreement={agreement}
+            onSigned={() => {
+              // Force the fixture re-read so the label flips to "Agreement ✓"
+              // on the next render. The signed agreement row is pushed by
+              // hydration on the next project load; for in-session UX we
+              // just bump the seen-state cache so the badge clears.
+              markSeen(project.slug, 'agreement');
+            }}
           />
         )}
         {tab === 'documents' && <DocsTab docs={docs} />}
