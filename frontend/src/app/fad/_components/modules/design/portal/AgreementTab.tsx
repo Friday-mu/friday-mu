@@ -133,7 +133,8 @@ function SignedReceipt({ project, agreement, signature }: {
           </>)}
         </p>
         <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          A signed PDF copy is available on request from Friday.
+          Friday can generate a server-rendered evidence PDF on request — it includes your signature, the signing
+          timestamp, and the audit metadata. Ask Mathias or Ishant for a copy.
         </p>
       </div>
     </div>

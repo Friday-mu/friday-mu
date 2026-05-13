@@ -223,6 +223,23 @@ export function AgreementStage({ project }: Props) {
             >
               Open print preview ↗
             </a>
+            {(status === 'signed_by_client' || status === 'completed') && (
+              <a
+                href={`/api/design/agreements/${project.id}/evidence-pdf`}
+                target="_blank"
+                rel="noopener"
+                data-doc-link="signed-evidence-pdf"
+                style={{
+                  ...primaryBtn(),
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  background: 'var(--color-text-success)',
+                }}
+              >
+                📄 Download signed evidence PDF
+              </a>
+            )}
             <button type="button" style={secondaryBtn()} onClick={() => fireToast('Draft saved (mock)')}>Save draft</button>
             <button
               type="button"

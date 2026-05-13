@@ -58,6 +58,7 @@ router.use('/preferences', require('./preferences'));
 router.use('/rough_budgets', require('./rough_budgets'));
 router.use('/rough_budget_versions', require('./rough_budget_versions'));
 router.use('/agreements', require('./agreements'));
+router.use('/agreements', require('./agreement_evidence'));
 router.use('/payment_gates', require('./payment_gates'));
 router.use('/moodboards', require('./moodboards'));
 router.use('/packs', require('./packs'));
