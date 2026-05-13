@@ -401,6 +401,7 @@ function shapeBudgetItem(row, canSeeSensitive) {
     description: row.description,
     unit_cost_minor: toNumberOrNull(row.unit_cost_minor),
     quantity: row.quantity != null ? Number(row.quantity) : null,
+    actual_paid_minor: toNumberOrNull(row.actual_paid_minor),
     vendor_id: row.vendor_id,
     notes: row.notes,
     created_at: row.created_at,

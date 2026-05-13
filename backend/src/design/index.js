@@ -63,6 +63,13 @@ router.use('/packs', require('./packs'));
 router.use('/selections', require('./selections'));
 router.use('/change_orders', require('./change_orders'));
 router.use('/budget_items', require('./budget_items'));
+
+// Bank reconciliation (design-be-24). Two mounts because the URL shapes
+// are nested: project-scoped statements/transactions/matches under
+// /projects/:project_id/bank-*, and flat /bank-matches/:id/{confirm,reject}.
+const bankRecon = require('./bank_reconciliation');
+router.use('/projects', bankRecon.projectBankRouter);
+router.use('/bank-matches', bankRecon.bankMatchRouter);
 router.use('/closeout_binders', require('./closeout_binders'));
 router.use('/approvals', require('./approvals'));
 router.use('/magic_links', require('./magic_links'));

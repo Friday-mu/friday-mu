@@ -15,6 +15,9 @@ const router = express.Router();
 const WRITABLE_FIELDS = [
   'stage_key', 'category_code', 'description', 'unit_cost_minor', 'quantity',
   'retail_cost_minor', 'negotiated_cost_minor', 'internal_work', 'vendor_id', 'notes',
+  // design-be-24: realised cash-out amount. Populated by the expense-capture
+  // stage; consumed by the reconciliation matcher.
+  'actual_paid_minor',
 ];
 
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
