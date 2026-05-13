@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   designClient,
+  MOODBOARDS as FIXTURE_MOODBOARDS,
   type ChangeOrder,
   type DesignApproval,
   type DesignProject,
   type DesignSelection,
 } from '../../../../_data/design';
+import { apiMoodboardToFixture } from '../../../../_data/designClient';
+import { loadPortalMoodboards } from '../../../../../../lib/portalClient';
 import { OverviewTab } from './OverviewTab';
 import { AgreementTab } from './AgreementTab';
 import { DocsTab } from './DocsTab';
@@ -327,7 +330,24 @@ export function PortalContent({
                 refreshes (and disappears once all groups are decided). */}
             <MoodboardVariantsCard
               moodboards={moodboards}
-              onPicked={() => setMoodboardsRev((r) => r + 1)}
+              onPicked={async () => {
+                // After the owner picks a variant the backend flips
+                // the picked moodboard to 'approved' and siblings to
+                // 'changes_requested'. The local fixture is stale —
+                // refetch from the portal endpoint and rewrite the
+                // moodboards for this project so the card auto-hides
+                // without needing a page reload (matches the W9 spec).
+                try {
+                  const fresh = await loadPortalMoodboards();
+                  for (let i = FIXTURE_MOODBOARDS.length - 1; i >= 0; i--) {
+                    if (FIXTURE_MOODBOARDS[i].projectId === project.id) FIXTURE_MOODBOARDS.splice(i, 1);
+                  }
+                  FIXTURE_MOODBOARDS.push(...fresh.map(apiMoodboardToFixture));
+                } catch {
+                  /* stale UI tolerable — next render still has the right state after reload */
+                }
+                setMoodboardsRev((r) => r + 1);
+              }}
             />
             <ApprovalsTab
               approvals={approvals}
