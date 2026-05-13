@@ -52,9 +52,13 @@ router.put('/:project_id', requireDesignPerm('design:write'), async (req, res) =
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const body = req.body || {};
+    // JSONB fields need explicit ::jsonb casting on the bound parameters —
+    // node-postgres binds a plain JS array as a Postgres array literal,
+    // tripping "invalid input syntax for type json". Stringify + cast on
+    // the VALUES line; EXCLUDED.* references are already typed from there.
     const { rows } = await query(
       `INSERT INTO design_closeout_binders (project_id, warranties, maintenance, snags)
-       VALUES ($1, $2, $3, $4)
+       VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb)
        ON CONFLICT (project_id) DO UPDATE
        SET warranties = EXCLUDED.warranties,
            maintenance = EXCLUDED.maintenance,
@@ -64,9 +68,9 @@ router.put('/:project_id', requireDesignPerm('design:write'), async (req, res) =
        RETURNING *`,
       [
         req.params.project_id,
-        body.warranties || [],
-        body.maintenance || [],
-        body.snags || [],
+        JSON.stringify(body.warranties || []),
+        JSON.stringify(body.maintenance || []),
+        JSON.stringify(body.snags || []),
       ],
     );
     if (rows.length === 0) return res.status(409).json({ error: 'Binder is signed; cannot modify' });
