@@ -6208,13 +6208,55 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
     display: none;
   }
 }
+/* W4: task row inputs wrap at narrow widths so the date picker
+   doesn't overflow past the viewport. The flex container is already
+   `flex-wrap: wrap` from the React style; this just sizes the date
+   input + assignee field so they fit comfortably side-by-side at
+   375px without forcing the layout to break. */
 @media (max-width: 768px) {
-  /* Mobile — numbers only. Labels remain in aria-label / title. */
+  .fad-design-task-row input[type="date"] {
+    flex: 1 0 auto;
+    min-width: 130px;
+    max-width: 160px;
+  }
+  .fad-design-task-row input[title="Assignee user id"] {
+    width: 70px !important;
+    min-width: 50px;
+  }
+}
+
+/* W4: right-edge fade on horizontally-scrolling navs (phase tabs,
+   filter chip rows) to hint that more content exists past the
+   visible edge. Pure CSS — no JS needed to detect overflow. */
+.fad-design-phase-tabs {
+  position: relative;
+  scroll-snap-type: x proximity;
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%);
+}
+.fad-design-phase-tabs > button {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 768px) {
+  /* Mobile — keep labels visible (W4 sweep: previous numbers-only
+     mode was unusable on phones; users couldn't tell which stage
+     was which without hover). The strip stays horizontally
+     scrollable so all 17 pills fit a viewport-by-viewport scroll. */
   .fad-design-stage-pill {
-    min-width: 32px !important;
-    padding: 4px 2px !important;
+    min-width: 56px !important;
+    padding: 6px 4px 4px !important;
   }
   .fad-design-stage-pill-label {
+    display: inline-block;
+    max-width: 64px;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fad-design-stage-pill-optional {
     display: none;
   }
   /* Payments — collapse the wide table to card list at narrow widths. */

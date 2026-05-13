@@ -2658,8 +2658,16 @@ function PhaseNav({
         </div>
       </div>
 
-      {/* Phase tabs */}
-      <div role="tablist" aria-label="Project phase" style={{ display: 'flex', gap: 4, padding: '4px 8px 6px', overflowX: 'auto' }}>
+      {/* Phase tabs — overflowX auto so all 6 fit on narrow mobile via
+          horizontal scroll. Right-edge fade (fad-scroll-fade-right) signals
+          there's more content. WebkitOverflowScrolling makes the scroll
+          momentum-based on iOS. */}
+      <div
+        role="tablist"
+        aria-label="Project phase"
+        className="fad-design-phase-tabs"
+        style={{ display: 'flex', gap: 4, padding: '4px 8px 6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}
+      >
         {tabs.map((t) => {
           const isActive = t.id === activePhase;
           const isCurrent = t.id === currentPhase;

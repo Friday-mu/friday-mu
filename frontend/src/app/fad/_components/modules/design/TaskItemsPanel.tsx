@@ -318,12 +318,14 @@ function TaskRow({ task, onToggleDone, onTitleChange, onTitleCommit, onAssigneeC
 
   return (
     <div
+      className="fad-design-task-row"
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 6,
         opacity: done ? 0.55 : 1,
         fontSize: 12,
+        flexWrap: 'wrap',
       }}
     >
       <input
