@@ -258,33 +258,53 @@ function BugReportModal({
   // mounts (so the modal itself isn't in the capture). The modal just
   // displays it.
   const screenshot = initialScreenshot;
-  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [rephrasing, setRephrasing] = useState(false);
   const [spec, setSpec] = useState<FridaySpec | null>(null);
+  // The exact description text that produced the current `spec`. If the
+  // user edits the textarea after rephrasing, this no longer matches
+  // and we mark the spec stale (submit re-disabled until they rephrase
+  // again). This is the "mandatory verification loop" — rephrase →
+  // verify → edit if needed → re-rephrase → file.
+  const [specSourceText, setSpecSourceText] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
+  const trimmedDescription = description.trim();
+  const isSpecStale = spec !== null && specSourceText !== trimmedDescription;
+  const canRephrase = trimmedDescription.length > 0 && !rephrasing;
+  // File-with-spec is the only path now. The user MUST rephrase first,
+  // verify the spec, and confirm it matches what they wrote. No more
+  // "raw description goes to inbox uncategorized" — that was throwing
+  // away the structured content the AI produced.
+  const canSubmit = spec !== null && !isSpecStale && !submitting;
+
   const rephrase = () => {
-    if (!description.trim()) return;
+    if (!canRephrase) return;
     setRephrasing(true);
     setSpec(null);
     setTimeout(() => {
-      setSpec(fakeRephrase(type, description, title, currentModuleLabel));
+      const next = fakeRephrase(type, description, '', currentModuleLabel);
+      setSpec(next);
+      setSpecSourceText(trimmedDescription);
       setRephrasing(false);
     }, 900);
   };
 
   const submit = async () => {
-    if (submitting || !description.trim()) return;
+    if (!canSubmit || spec === null) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // Persist the STRUCTURED spec as the description so the inbox sees
+      // the rephrased content (steps / user-story / before-after) — not
+      // just the raw text the user typed. The original raw report is
+      // appended at the bottom for audit / context.
       const payload: Record<string, unknown> = {
         type,
-        title: title.trim() || (spec?.title ?? null),
-        description: description.trim(),
+        title: spec.title,
+        description: serializeSpec(spec, trimmedDescription),
         route_url:
           typeof window !== 'undefined'
             ? window.location.pathname + window.location.search
@@ -292,9 +312,9 @@ function BugReportModal({
         module_label: currentModuleLabel ?? null,
       };
       if (screenshot) payload.screenshot_data_url = screenshot;
-      // Severity only applies to bugs. Feature/suggestion specs use
-      // priority / no-severity respectively — backend stores severity=null.
-      if (spec && spec.kind === 'bug') payload.severity = spec.severity.toLowerCase();
+      // Severity only applies to bugs. Feature/suggestion specs carry
+      // priority instead — that's part of the description body now.
+      if (spec.kind === 'bug') payload.severity = spec.severity.toLowerCase();
 
       await apiFetch('/api/feedback', {
         method: 'POST',
@@ -370,6 +390,7 @@ function BugReportModal({
                   if (t === type) return;
                   setType(t);
                   setSpec(null);
+                  setSpecSourceText('');
                 }}
                 className={'fad-feedback-tab' + (type === t ? ' is-active' : '')}
                 type="button"
@@ -402,20 +423,6 @@ function BugReportModal({
             )}
           </div>
           <div className="fad-field">
-            <label>Short title (optional)</label>
-            <input
-              placeholder={
-                type === 'bug'
-                  ? 'e.g. Calendar popover clips on mobile'
-                  : type === 'feature'
-                  ? 'e.g. Bulk-import doc URLs in one paste'
-                  : 'e.g. Move CIA banner above stage strip'
-              }
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-          <div className="fad-field">
             <label>{meta.descriptionLabel}</label>
             <textarea
               rows={4}
@@ -424,24 +431,52 @@ function BugReportModal({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          {/* Rephrase is available for all three types — the structured
-              shape adapts (bug → steps/expected/actual/severity, feature
-              → user story/AC/priority, suggestion → before/after/why). */}
+          {/* Rephrase is mandatory: structured spec is what gets saved
+              to the inbox, so the user has to generate one (and verify
+              it) before filing. If they edit the description after
+              rephrasing, the spec is marked stale and submit re-locks. */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn ghost sm"
               onClick={(e) => { e.preventDefault(); rephrase(); }}
-              disabled={!description.trim() || rephrasing}
-              style={{ opacity: !description.trim() || rephrasing ? 0.5 : 1 }}
+              disabled={!canRephrase}
+              style={{ opacity: !canRephrase ? 0.5 : 1 }}
             >
-              <IconAI size={12} /> {rephrasing ? 'Rephrasing…' : 'Rephrase with Friday'}
+              <IconAI size={12} />{' '}
+              {rephrasing
+                ? 'Rephrasing…'
+                : spec === null
+                  ? 'Rephrase with Friday'
+                  : isSpecStale
+                    ? 'Re-rephrase with Friday'
+                    : 'Rephrase again'}
             </button>
             <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
               {REPHRASE_HELP[type]}
             </span>
           </div>
-          {spec && <FridaySpecCard spec={spec} />}
+          {isSpecStale && (
+            <div
+              role="status"
+              style={{
+                marginTop: 8,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-bg-warning)',
+                color: 'var(--color-text-warning)',
+                fontSize: 12,
+              }}
+            >
+              You edited the description since the last rephrase — re-rephrase to verify before filing.
+            </div>
+          )}
+          {spec && !isSpecStale && <FridaySpecCard spec={spec} />}
+          {spec && isSpecStale && (
+            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              Previous spec hidden — text has changed.
+            </div>
+          )}
           {submitError && (
             <div
               role="alert"
@@ -459,6 +494,17 @@ function BugReportModal({
           )}
         </div>
         <div className="fad-modal-foot">
+          {/* Inline hint about why submit is disabled — beats a silent
+              greyed-out button. */}
+          {!canSubmit && !submitting && (
+            <span style={{ marginRight: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>
+              {spec === null
+                ? 'Rephrase first to verify the spec'
+                : isSpecStale
+                  ? 'Re-rephrase to verify your edits'
+                  : ''}
+            </span>
+          )}
           <button type="button" className="btn" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
@@ -466,10 +512,17 @@ function BugReportModal({
             type="button"
             className="btn primary"
             onClick={submit}
-            disabled={!description.trim() || submitting}
-            style={{ opacity: !description.trim() || submitting ? 0.5 : 1 }}
+            disabled={!canSubmit}
+            style={{ opacity: !canSubmit ? 0.5 : 1 }}
+            title={
+              spec === null
+                ? 'Rephrase with Friday first'
+                : isSpecStale
+                  ? 'Re-rephrase to incorporate your edits'
+                  : undefined
+            }
           >
-            {submitting ? 'Submitting…' : spec ? `${meta.submitButton} with spec` : meta.submitButton}
+            {submitting ? 'Submitting…' : `${meta.submitButton} with spec`}
           </button>
         </div>
       </div>
@@ -541,24 +594,34 @@ function FridaySpecCard({ spec }: { spec: FridaySpec }) {
 // Local heuristic — matches the original bug rephraser's style. When
 // the real Friday API is wired up the prompt will produce richer
 // output; this keeps the UX feeling responsive without a network call.
+//
+// `_unusedTitle` is kept in the signature for API compatibility — the
+// manual title field is gone, so the title is always derived from the
+// description's first sentence or a type-specific fallback.
 function fakeRephrase(
   type: FeedbackType,
   description: string,
-  title: string,
+  _unusedTitle: string,
   scope?: string,
 ): FridaySpec {
   const sentences = description
     .split(/[.\n]/)
     .map((s) => s.trim())
     .filter(Boolean);
+  // Derive a concise title from the description: first sentence, capped
+  // at 80 chars. Fallback to a type-specific generic if the description
+  // is just a fragment.
   const derivedTitle = (() => {
-    const t = title?.trim();
-    if (t) return scope ? `[${scope}] ${t}` : t;
+    const firstSentence = sentences[0] || '';
+    const candidate = firstSentence.length > 80
+      ? firstSentence.slice(0, 77) + '…'
+      : firstSentence;
     const fallback =
       type === 'bug' ? 'Unexpected behavior'
         : type === 'feature' ? 'New capability requested'
           : 'Improvement to existing flow';
-    return scope ? `[${scope}] ${fallback}` : fallback;
+    const base = candidate.length >= 4 ? candidate : fallback;
+    return scope ? `[${scope}] ${base}` : base;
   })();
 
   if (type === 'bug') {
@@ -611,4 +674,36 @@ function fakeRephrase(
   const whyItMatters = sentences.find((s) => /(because|so that|helps|saves|easier|faster|clearer)/i.test(s))
     ?? 'Reduces friction in a common flow.';
   return { kind: 'suggestion', title: derivedTitle, currentBehavior, suggestedChange, whyItMatters };
+}
+
+// Flatten the structured spec into a markdown blob that gets saved as
+// the feedback row's description. The inbox renders this directly. The
+// raw user text is kept at the bottom under "Original report" so we
+// never lose what was actually typed (audit + context for triage).
+function serializeSpec(spec: FridaySpec, rawDescription: string): string {
+  const lines: string[] = [];
+  if (spec.kind === 'bug') {
+    lines.push('**Steps to reproduce**');
+    spec.steps.forEach((s, i) => lines.push(`${i + 1}. ${s}`));
+    lines.push('');
+    lines.push(`**Expected:** ${spec.expected}`);
+    lines.push(`**Actual:** ${spec.actual}`);
+    lines.push(`**Severity:** ${spec.severity}`);
+  } else if (spec.kind === 'feature') {
+    lines.push(`**User story:** ${spec.userStory}`);
+    lines.push('');
+    lines.push('**Acceptance criteria**');
+    spec.acceptanceCriteria.forEach((s) => lines.push(`- ${s}`));
+    lines.push('');
+    lines.push(`**Priority:** ${spec.priority}`);
+  } else {
+    lines.push(`**Current behavior:** ${spec.currentBehavior}`);
+    lines.push(`**Suggested change:** ${spec.suggestedChange}`);
+    lines.push(`**Why it matters:** ${spec.whyItMatters}`);
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push('*Original report:*');
+  lines.push(rawDescription);
+  return lines.join('\n');
 }
