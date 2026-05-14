@@ -35,7 +35,7 @@ Friday Admin Dashboard (FAD) is the operations cockpit for Friday Retreats — a
 ## Tech stack
 
 - **Frontend:** Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS
-- **Export:** `output: 'export'` — static HTML, no SSR. Deployed to `/var/www/friday-dashboard/`
+- **Export:** `output: 'export'` — static HTML, no SSR. **Deployed to `/var/www/fad/`** (served as `gms.friday.mu`). DO NOT deploy to `/var/www/friday-dashboard/` — that path serves the legacy GMS at `admin.friday.mu`; rsyncing the FAD build there takes down the team's inbox. Incident on 2026-05-14 confirmed it (~4 hours of broken GMS).
 - **Backend:** Node.js + Express (lightweight, API proxy + static file server)
 - **DB:** PostgreSQL 15 (shared with GMS backend)
 - **External:** Guesty API, Slack webhooks, Breezeway API
@@ -59,7 +59,7 @@ Friday Admin Dashboard (FAD) is the operations cockpit for Friday Retreats — a
 
 **API calls:** Frontend calls backend API or GMS backend directly via `NEXT_PUBLIC_API_URL`. Backend proxy pattern in `backend/server.js`.
 
-**Static export:** `npm run build` in frontend generates `out/` folder. This is copied to `/var/www/friday-dashboard/` on deploy. No server-side rendering — everything must work as static HTML.
+**Static export:** `npm run build` in frontend generates `out/` folder. This is rsync'd to **`/var/www/fad/`** on the VPS (served at `gms.friday.mu`). `npm run deploy` from `frontend/` handles build + rsync correctly. No server-side rendering — everything must work as static HTML. **DO NOT rsync to `/var/www/friday-dashboard/`** — that's the legacy GMS at `admin.friday.mu`; overwriting it breaks the team's inbox.
 
 ## Key facts (always relevant)
 
@@ -158,9 +158,14 @@ Canonical deploy lives in `~/.openclaw/workspace/AGENTS.md` Deploy Rules section
 cd frontend && npm run build
 # OR push to fad-rebuild → Vercel preview deploy fires automatically
 
-# VPS deploy (manual, for production)
-# Copy frontend/out/ to VPS /var/www/friday-dashboard/
-# Verify chunk hashes changed (stale JS from browser cache is a real failure mode)
+# VPS deploy (manual, for production) — use the npm script:
+cd frontend && npm run deploy
+# That runs `build:prod` (overrides .env.local to clear dev API URLs)
+# then rsyncs to /var/www/fad/ — the CORRECT path. NEVER manually rsync
+# to /var/www/friday-dashboard/; that path serves the legacy GMS at
+# admin.friday.mu and overwriting it breaks the team's inbox.
+# (See memory/fad_deploy_paths.md for the full /var/www path map.)
+# Verify chunk hashes changed after deploy (stale JS from browser cache is real).
 
 # Backend (if changed)
 cd backend && npm run build
