@@ -514,8 +514,12 @@ function ChangeOrderRow({
       }}
     >
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isOpen}
         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', cursor: 'pointer' }}
         onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
         data-design-co-toggle={co.id}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -534,6 +538,7 @@ function ChangeOrderRow({
             {total >= 0 ? '+' : ''}{formatMUR(total)}
           </span>
           <ChangeOrderStateChip state={co.state} />
+          <span aria-hidden style={{ color: 'var(--color-text-tertiary)', fontSize: 12, lineHeight: 1, transition: 'transform 0.15s ease', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▾</span>
         </div>
       </div>
 
