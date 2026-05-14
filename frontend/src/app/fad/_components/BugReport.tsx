@@ -419,7 +419,7 @@ function BugReportModal({
 
   if (submitted) {
     return (
-      <div className="fad-modal-overlay" onClick={onClose}>
+      <div className="fad-modal-overlay" style={{ zIndex: 10000 }} onClick={onClose}>
         <div className="fad-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
           <div className="fad-modal-body" style={{ textAlign: 'center', padding: 40 }}>
             <div
@@ -449,7 +449,7 @@ function BugReportModal({
   }
 
   return (
-    <div className="fad-modal-overlay" onClick={onClose}>
+    <div className="fad-modal-overlay" style={{ zIndex: 10000 }} onClick={onClose}>
       <div className="fad-modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
         <div className="fad-modal-head">
           <IconTool size={16} />

@@ -54,7 +54,9 @@ export function Toaster() {
         position: 'fixed',
         bottom: 24,
         right: 24,
-        zIndex: 9999,
+        // Above the bug-report FAB (10000 in fad.css) so toasts stay
+        // visible. Both anchor to bottom-right; toasts stack upward.
+        zIndex: 11000,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
