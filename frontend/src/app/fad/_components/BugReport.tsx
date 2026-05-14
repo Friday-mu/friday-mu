@@ -83,13 +83,38 @@ export function BugReportFab({ currentModuleLabel }: Props) {
   );
 }
 
-interface FridaySpec {
-  title: string;
-  steps: string[];
-  expected: string;
-  actual: string;
-  severity: 'Low' | 'Medium' | 'High' | 'Critical';
-}
+// Each feedback type gets its own structured shape — bugs care
+// about reproduction + severity, features want a user-story shape,
+// suggestions are about the delta from current behavior.
+type FridaySpec =
+  | {
+      kind: 'bug';
+      title: string;
+      steps: string[];
+      expected: string;
+      actual: string;
+      severity: 'Low' | 'Medium' | 'High' | 'Critical';
+    }
+  | {
+      kind: 'feature';
+      title: string;
+      userStory: string;
+      acceptanceCriteria: string[];
+      priority: 'Nice to have' | 'Important' | 'Critical';
+    }
+  | {
+      kind: 'suggestion';
+      title: string;
+      currentBehavior: string;
+      suggestedChange: string;
+      whyItMatters: string;
+    };
+
+const REPHRASE_HELP: Record<FeedbackType, string> = {
+  bug: 'Friday structures your report into Steps · Expected · Actual · Severity before filing.',
+  feature: 'Friday structures your request into User story · Acceptance criteria · Priority.',
+  suggestion: 'Friday structures your suggestion into Current behavior · Suggested change · Why it matters.',
+};
 
 // Type-aware copy. Keeps the modal feeling tailored without three
 // near-duplicate components.
@@ -161,7 +186,7 @@ function BugReportModal({
     setRephrasing(true);
     setSpec(null);
     setTimeout(() => {
-      setSpec(fakeRephrase(description, title, currentModuleLabel));
+      setSpec(fakeRephrase(type, description, title, currentModuleLabel));
       setRephrasing(false);
     }, 900);
   };
@@ -182,8 +207,9 @@ function BugReportModal({
         module_label: currentModuleLabel ?? null,
       };
       if (screenshot) payload.screenshot_data_url = screenshot;
-      // Only attach severity when the user generated a spec (bug flow).
-      if (type === 'bug' && spec) payload.severity = spec.severity.toLowerCase();
+      // Severity only applies to bugs. Feature/suggestion specs use
+      // priority / no-severity respectively — backend stores severity=null.
+      if (spec && spec.kind === 'bug') payload.severity = spec.severity.toLowerCase();
 
       await apiFetch('/api/feedback', {
         method: 'POST',
@@ -246,8 +272,9 @@ function BugReportModal({
           </button>
         </div>
         <div className="fad-modal-body">
-          {/* Type tabs — keep typing flow short by clearing the AI spec
-              when switching, since the rephrase flow is bug-specific. */}
+          {/* Type tabs — clear the AI spec on switch since each type
+              produces a structurally different output (steps vs. user
+              story vs. before/after). */}
           <div role="tablist" aria-label="Feedback type" className="fad-feedback-tabs">
             {(['bug', 'feature', 'suggestion'] as FeedbackType[]).map((t) => (
               <button
@@ -257,7 +284,7 @@ function BugReportModal({
                 onClick={() => {
                   if (t === type) return;
                   setType(t);
-                  if (t !== 'bug') setSpec(null);
+                  setSpec(null);
                 }}
                 className={'fad-feedback-tab' + (type === t ? ' is-active' : '')}
                 type="button"
@@ -312,25 +339,23 @@ function BugReportModal({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          {/* Rephrase is bug-specific: the FridaySpec shape (steps/expected/
-              actual/severity) only makes sense for bugs. Feature requests
-              and suggestions go in as free-text descriptions. */}
-          {type === 'bug' && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button
-                className="btn ghost sm"
-                onClick={rephrase}
-                disabled={!description.trim() || rephrasing}
-                style={{ opacity: !description.trim() || rephrasing ? 0.5 : 1 }}
-              >
-                <IconAI size={12} /> {rephrasing ? 'Rephrasing…' : 'Rephrase with Friday'}
-              </button>
-              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                Friday structures your report into Steps · Expected · Actual · Severity before filing.
-              </span>
-            </div>
-          )}
-          {type === 'bug' && spec && <FridaySpecCard spec={spec} />}
+          {/* Rephrase is available for all three types — the structured
+              shape adapts (bug → steps/expected/actual/severity, feature
+              → user story/AC/priority, suggestion → before/after/why). */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn ghost sm"
+              onClick={rephrase}
+              disabled={!description.trim() || rephrasing}
+              style={{ opacity: !description.trim() || rephrasing ? 0.5 : 1 }}
+            >
+              <IconAI size={12} /> {rephrasing ? 'Rephrasing…' : 'Rephrase with Friday'}
+            </button>
+            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              {REPHRASE_HELP[type]}
+            </span>
+          </div>
+          {spec && <FridaySpecCard spec={spec} />}
           {submitError && (
             <div
               role="alert"
@@ -357,7 +382,7 @@ function BugReportModal({
             disabled={!description.trim() || submitting}
             style={{ opacity: !description.trim() || submitting ? 0.5 : 1 }}
           >
-            {submitting ? 'Submitting…' : type === 'bug' && spec ? 'File bug with spec' : meta.submitButton}
+            {submitting ? 'Submitting…' : spec ? `${meta.submitButton} with spec` : meta.submitButton}
           </button>
         </div>
       </div>
@@ -374,67 +399,129 @@ function FridaySpecCard({ spec }: { spec: FridaySpec }) {
       <div className="bug-spec-field">
         <b>Title:</b> {spec.title}
       </div>
-      <div className="bug-spec-field">
-        <b>Steps to reproduce:</b>
-        <ol style={{ margin: '4px 0 0 18px', padding: 0 }}>
-          {spec.steps.map((s, i) => (
-            <li key={i} style={{ marginBottom: 2 }}>
-              {s}
-            </li>
-          ))}
-        </ol>
-      </div>
-      <div className="bug-spec-field">
-        <b>Expected:</b> {spec.expected}
-      </div>
-      <div className="bug-spec-field">
-        <b>Actual:</b> {spec.actual}
-      </div>
-      <div className="bug-spec-field">
-        <b>Severity:</b>{' '}
-        <span
-          className={
-            'chip ' +
-            (spec.severity === 'Critical' || spec.severity === 'High' ? 'warn' : 'info')
-          }
-        >
-          {spec.severity}
-        </span>
-      </div>
+      {spec.kind === 'bug' && (
+        <>
+          <div className="bug-spec-field">
+            <b>Steps to reproduce:</b>
+            <ol style={{ margin: '4px 0 0 18px', padding: 0 }}>
+              {spec.steps.map((s, i) => (
+                <li key={i} style={{ marginBottom: 2 }}>{s}</li>
+              ))}
+            </ol>
+          </div>
+          <div className="bug-spec-field"><b>Expected:</b> {spec.expected}</div>
+          <div className="bug-spec-field"><b>Actual:</b> {spec.actual}</div>
+          <div className="bug-spec-field">
+            <b>Severity:</b>{' '}
+            <span
+              className={'chip ' + (spec.severity === 'Critical' || spec.severity === 'High' ? 'warn' : 'info')}
+            >
+              {spec.severity}
+            </span>
+          </div>
+        </>
+      )}
+      {spec.kind === 'feature' && (
+        <>
+          <div className="bug-spec-field"><b>User story:</b> {spec.userStory}</div>
+          <div className="bug-spec-field">
+            <b>Acceptance criteria:</b>
+            <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+              {spec.acceptanceCriteria.map((s, i) => (
+                <li key={i} style={{ marginBottom: 2 }}>{s}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="bug-spec-field">
+            <b>Priority:</b>{' '}
+            <span className={'chip ' + (spec.priority === 'Critical' ? 'warn' : 'info')}>
+              {spec.priority}
+            </span>
+          </div>
+        </>
+      )}
+      {spec.kind === 'suggestion' && (
+        <>
+          <div className="bug-spec-field"><b>Current behavior:</b> {spec.currentBehavior}</div>
+          <div className="bug-spec-field"><b>Suggested change:</b> {spec.suggestedChange}</div>
+          <div className="bug-spec-field"><b>Why it matters:</b> {spec.whyItMatters}</div>
+        </>
+      )}
     </div>
   );
 }
 
-function fakeRephrase(description: string, title: string, scope?: string): FridaySpec {
-  const lc = description.toLowerCase();
-  const inferSeverity = (): FridaySpec['severity'] => {
-    if (/(crash|broken|lost data|can't|cannot|fails|error)/i.test(description)) return 'High';
-    if (/(wrong|slow|unclear|missing)/i.test(description)) return 'Medium';
-    return 'Low';
-  };
+// Local heuristic — matches the original bug rephraser's style. When
+// the real Friday API is wired up the prompt will produce richer
+// output; this keeps the UX feeling responsive without a network call.
+function fakeRephrase(
+  type: FeedbackType,
+  description: string,
+  title: string,
+  scope?: string,
+): FridaySpec {
   const sentences = description
     .split(/[.\n]/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const steps = sentences.slice(0, 3).map((s, i) => {
-    if (i === 0) return `Open ${scope || 'the affected view'}`;
-    return s;
-  });
-  while (steps.length < 3) steps.push('Observe the behavior');
-  const expected = /(should|expected|wanted)/i.test(description)
-    ? sentences.find((s) => /(should|expected|wanted)/i.test(s)) ||
-      'Feature should work as documented'
-    : 'The action should complete without error, matching documented behavior.';
-  const actual = /(but|instead|however|actually)/i.test(description)
-    ? sentences.find((s) => /(but|instead|however|actually)/i.test(s)) ||
-      description.slice(0, 100)
-    : description.slice(0, 100);
-  const derived = title?.trim() || (lc.includes('click') ? 'Click action fails' : 'Unexpected behavior');
-  return {
-    title: scope ? `[${scope}] ${derived}` : derived,
-    steps,
-    expected,
-    actual,
-    severity: inferSeverity(),
-  };
+  const derivedTitle = (() => {
+    const t = title?.trim();
+    if (t) return scope ? `[${scope}] ${t}` : t;
+    const fallback =
+      type === 'bug' ? 'Unexpected behavior'
+        : type === 'feature' ? 'New capability requested'
+          : 'Improvement to existing flow';
+    return scope ? `[${scope}] ${fallback}` : fallback;
+  })();
+
+  if (type === 'bug') {
+    const inferSeverity = (): 'Low' | 'Medium' | 'High' | 'Critical' => {
+      if (/(crash|broken|lost data|can't|cannot|fails|error)/i.test(description)) return 'High';
+      if (/(wrong|slow|unclear|missing)/i.test(description)) return 'Medium';
+      return 'Low';
+    };
+    const steps = sentences.slice(0, 3).map((s, i) => i === 0 ? `Open ${scope || 'the affected view'}` : s);
+    while (steps.length < 3) steps.push('Observe the behavior');
+    const expected = /(should|expected|wanted)/i.test(description)
+      ? sentences.find((s) => /(should|expected|wanted)/i.test(s)) || 'Feature should work as documented'
+      : 'The action should complete without error, matching documented behavior.';
+    const actual = /(but|instead|however|actually)/i.test(description)
+      ? sentences.find((s) => /(but|instead|however|actually)/i.test(s)) || description.slice(0, 100)
+      : description.slice(0, 100);
+    return { kind: 'bug', title: derivedTitle, steps, expected, actual, severity: inferSeverity() };
+  }
+
+  if (type === 'feature') {
+    const inferPriority = (): 'Nice to have' | 'Important' | 'Critical' => {
+      if (/(blocker|must|critical|can't ship)/i.test(description)) return 'Critical';
+      if (/(needed|important|should|painful)/i.test(description)) return 'Important';
+      return 'Nice to have';
+    };
+    // Try to extract "as a X, I want Y, so that Z" if user wrote one;
+    // otherwise scaffold from scope + first sentence.
+    const userStoryMatch = description.match(/as an? [^,.\n]+,? i (?:want|need)[^.\n]+(?:so that[^.\n]+)?/i);
+    const userStory = userStoryMatch?.[0]
+      ?? `As a Friday team member, I want ${(sentences[0] || description).slice(0, 140)}${scope ? `, while working in ${scope}` : ''}.`;
+    const acRest = sentences.slice(1).filter((s) => s.length > 5);
+    const acceptanceCriteria = acRest.length
+      ? acRest.slice(0, 4)
+      : [
+          'The new capability is reachable from the current view.',
+          'It works on desktop and mobile breakpoints.',
+          'Existing flows continue to work unchanged.',
+        ];
+    return { kind: 'feature', title: derivedTitle, userStory, acceptanceCriteria, priority: inferPriority() };
+  }
+
+  // suggestion
+  const cleaned = description.trim();
+  // Heuristic split: "X but / instead / should be Y" → before/after.
+  const splitMatch = cleaned.match(/^(.{8,}?)\s+(?:but|instead|should be|could be|rather than)\s+(.+)$/i);
+  const currentBehavior = splitMatch?.[1]?.trim()
+    ?? (sentences[0] || cleaned.slice(0, 140));
+  const suggestedChange = splitMatch?.[2]?.trim()
+    ?? (sentences[1] || cleaned.slice(0, 140));
+  const whyItMatters = sentences.find((s) => /(because|so that|helps|saves|easier|faster|clearer)/i.test(s))
+    ?? 'Reduces friction in a common flow.';
+  return { kind: 'suggestion', title: derivedTitle, currentBehavior, suggestedChange, whyItMatters };
 }
