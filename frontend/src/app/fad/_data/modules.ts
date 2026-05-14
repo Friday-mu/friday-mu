@@ -26,6 +26,10 @@ export interface GroupDef {
 
 export const MODULES: ModuleDef[] = [
   { id: 'inbox', label: 'Inbox', group: 'Today', tier: 'live', ship: 'live', icon: 'IconInbox', path: '/gms/inbox' },
+  // Website inbox — separate surface from the GMS inbox above. Fed by
+  // webhooks from friday.mu (booking forms, payment proofs, contact,
+  // owner enquiries). Per-guest threads collapse multiple events.
+  { id: 'website-inbox', label: 'Website', group: 'Today', tier: 'live', ship: 'live', icon: 'IconInbox', path: '/fad/website-inbox' },
   { id: 'operations', label: 'Operations', group: 'Today', tier: 'live', ship: 'live', icon: 'IconTasks', path: '/fad/operations', subPages: [
     { id: 'overview', label: 'Overview' },
     { id: 'all', label: 'All tasks' },

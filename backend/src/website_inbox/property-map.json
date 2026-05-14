@@ -1,0 +1,5 @@
+{
+  "_note": "Residence slug (matches friday.mu's _seed/properties.json) → Guesty listing ID. Populated 2026-05-14, ad-hoc. When friday.mu Claude wires the webhook emitter, coordinate via Ishant to lock these IDs. Slugs not in this map fail the create_reservation job with a clear 'unmapped slug' error (visible in the DLQ).",
+  "_lastUpdated": "2026-05-14",
+  "slugs": {}
+}

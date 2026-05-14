@@ -33,7 +33,15 @@ const limiter = rateLimit({
 app.set('trust proxy', 1);
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+// Skip the global JSON body parser for the website-inbox webhook —
+// that route needs the RAW bytes to verify the friday.mu HMAC
+// signature, and its own express.raw() middleware can't read the
+// body once express.json() has consumed it. All other routes still
+// get the default JSON parsing.
+app.use((req, res, next) => {
+  if (req.path === '/api/inbox/website/friday-website') return next();
+  return express.json({ limit: '10mb' })(req, res, next);
+});
 app.use(limiter);
 
 // ====================================================================
@@ -873,6 +881,22 @@ app.use('/api/design', designRoutes);
 // GET / PATCH: admin/director only.
 const feedbackRoutes = require('./src/feedback');
 app.use('/api/feedback', feedbackRoutes);
+
+// Website inbox — receives webhooks from friday.mu (residence booking
+// form, payment proof uploads, experience enquiries, contact form,
+// owner enquiries) and orchestrates Guesty reservation creation +
+// confirmation. Mounted under /api/inbox/website/* so it doesn't
+// collide with the legacy /api/inbox/conversations* routes that
+// proxy to GMS for guest-messaging.
+//
+// The webhook itself (POST /api/inbox/website/friday-website) is
+// public — HMAC-signed via FRIDAY_WEBSITE_INBOX_SECRET. Everything
+// else under this router requires the standard FAD auth header.
+const websiteInbox = require('./src/website_inbox');
+app.use('/api/inbox/website', websiteInbox.router);
+// Start the DLQ worker that drains inbox_guesty_jobs. Cheap interval
+// poll (every 15s), runs in-process. See src/website_inbox/jobs.js.
+websiteInbox.startWorker();
 
 // Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
 // rarely; the index lets us resolve raw channel listing IDs to friendly

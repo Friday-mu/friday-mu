@@ -8,6 +8,7 @@ import { CommandPalette } from './CommandPalette';
 import { FridayDrawer } from './FridayDrawer';
 import { FridayFullscreen } from './FridayFullscreen';
 import { InboxModule } from './modules/InboxModule';
+import { WebsiteInboxModule } from './modules/WebsiteInboxModule';
 import { CalendarModule } from './modules/CalendarModule';
 import { SettingsModule } from './modules/SettingsModule';
 import {
@@ -330,6 +331,8 @@ function renderModuleInner(
   switch (mod.id) {
     case 'inbox':
       return <InboxModule onAskFriday={ctx.openFriday} />;
+    case 'website-inbox':
+      return <WebsiteInboxModule />;
     case 'calendar':
       return <CalendarModule />;
     case 'settings':
