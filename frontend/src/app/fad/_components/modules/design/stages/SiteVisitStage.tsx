@@ -845,19 +845,37 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
       </Field>
       <Grid>
         <Field label="Existing furniture to keep" full>
+          <Hint
+            body={`Per-room — what stays in ${room.name} specifically. The procurement crew reads this to know what NOT to remove on breakdown day. Project-wide things ("the whole house has paintings that stay") go on the Preferences page.`}
+            examples={[
+              'Wooden coffee table (centred, no scratches — owner likes)',
+              'Both bedside lamps — match the wall colour, keep',
+              'Wall-mounted TV — already wired correctly, leave',
+            ]}
+          />
           <textarea
             value={form.keepFurniture}
             onChange={(e) => { setForm((f) => ({ ...f, keepFurniture: e.target.value })); queuePatch({ keep_furniture: e.target.value || null }); }}
             rows={2}
             style={{ ...inputStyle(), resize: 'vertical' }}
+            placeholder={`What stays in ${room.name}`}
           />
         </Field>
         <Field label="To remove or sell" full>
+          <Hint
+            body={`Per-room — what goes from ${room.name} specifically. Procurement removes / sells these on breakdown day. Project-wide removals ("all wallpaper everywhere") go on the Preferences page.`}
+            examples={[
+              'Old dresser (broken drawer)',
+              'Floral curtains',
+              'Plastic bedside lamp — replace with proper light',
+            ]}
+          />
           <textarea
             value={form.removeFurniture}
             onChange={(e) => { setForm((f) => ({ ...f, removeFurniture: e.target.value })); queuePatch({ remove_furniture: e.target.value || null }); }}
             rows={2}
             style={{ ...inputStyle(), resize: 'vertical' }}
+            placeholder={`What goes from ${room.name}`}
           />
         </Field>
       </Grid>
@@ -1157,4 +1175,33 @@ function primaryBtn(): React.CSSProperties {
 }
 function secondaryBtn(): React.CSSProperties {
   return { padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)', fontSize: 13 };
+}
+
+// Inline contextual hint for an input — same pattern as PreferencesStage's
+// Hint. Should ultimately be promoted to a shared component once the
+// rollout reaches more stages (see docs/scoping/field-hint-pattern.md).
+function Hint({ body, examples }: { body: string; examples?: string[] }) {
+  return (
+    <div
+      style={{
+        marginBottom: 6,
+        padding: '8px 10px',
+        background: 'var(--color-brand-accent-soft)',
+        borderLeft: '2px solid var(--color-brand-accent)',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 11,
+        lineHeight: 1.5,
+        color: 'var(--color-text-secondary)',
+      }}
+    >
+      <div>{body}</div>
+      {examples && examples.length > 0 && (
+        <ul style={{ margin: '4px 0 0 16px', padding: 0, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+          {examples.map((ex, i) => (
+            <li key={i} style={{ marginBottom: 2 }}>{ex}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }

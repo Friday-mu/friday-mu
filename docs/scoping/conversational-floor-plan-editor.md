@@ -127,12 +127,55 @@ of silence. Cost: a half-day. Probably not worth it because Mathias has
 already told us the single-shot approach doesn't work — patching it is
 just kicking the can.
 
-## Decision needed
+## Decisions (locked 2026-05-14, Ishant)
 
-1. ⏸ Greenlight the 4–6 week vector-floor-plan sprint?
-2. ⏸ Build the 1-day Option A placebo in the meantime — yes / no?
-3. ⏸ Tell Mathias "we hear you, parking for next sprint" and revisit
-   when there's budget?
+| # | Decision | Locked |
+|---|----------|--------|
+| 1 | Greenlight the 4–6 week sprint | ✅ |
+| 2 | Ship Option A placebo | ❌ — skip the band-aid, ship the real thing |
+| 3 | Vectorisation source | ✅ **Manual trace** in-app. CV / hybrid parked as v2. |
+| 4 | Furniture catalog source | ✅ **Hardcoded ~50 shapes** for v1, swap to richer source later |
+| 5 | Renderer fidelity | ✅ **Photorealistic (Option C)** — vector layout + Gemini texture pass |
+| 6 | Placement in FAD shell | ✅ **Replace** `FloorPlanGenerator` entirely. Don't fragment the surface. |
 
-Default if no decision: option 3 (transparent acknowledgement, no code
-moves).
+## Sprint plan (W1 → W6)
+
+### W1–W2 — Vectorisation pipeline
+
+- Owner uploads a raster floor plan (jpg / png / pdf-first-page).
+- In-app tracing editor — Mathias draws walls / doors / windows on top of the uploaded image using a simple SVG line tool. Familiar pattern (he does this in Rayon today).
+- Vector model persisted server-side. Versioned per project.
+- Deliverables: migration, backend CRUD, TypeScript types, tracing editor route.
+
+### W3 — Operation grammar + Kimi prompt
+
+- Hardcoded furniture catalog: ~50 categories (sofa, bed, dining table, kitchen island, …) with category, dimensions, default style.
+- Operation grammar: `add { item, near?, room? }`, `move { id, dx, dy } | { id, to }`, `remove { id }`, `recolor { target, color }`, `retexture { surface, texture }`.
+- Kimi prompt: takes the current floor plan JSON + user message → returns a list of operations. Validation layer rejects invalid ops before they're applied.
+- Deliverables: catalog data, op schema, Kimi prompt + endpoint, op-applier.
+
+### W4 — Renderer
+
+- SVG layer: walls / doors / windows / furniture-as-shapes, deterministic from the vector model.
+- Raster layer: send the rendered SVG + a style prompt to Gemini for the final stylised image. Walls stay structurally fixed (anchored), only textures + colors vary.
+- Deliverables: renderer module, Gemini integration (or reuse existing `ai_images.js`), output caching.
+
+### W5 — Chat UI
+
+- Replaces `FloorPlanGenerator.tsx` and `FurnishedFloorPlanGenerator.tsx`. Same modal frame, chat-based interaction inside (reuses the bug-report chat pattern).
+- Each user message → Kimi → ops → re-render → screenshot in chat history.
+- "Revert" button on each step lets Mathias rewind to a previous render.
+- "Save as final" finalises the current render and writes it to the project's floor plan.
+
+### W6 — Integration + Mathias-led testing
+
+- Wire into Site Visit (where rooms are captured) and Floor Plan stage.
+- Mathias takes 2 real projects through the new flow end-to-end. Each one logs friction in the feedback inbox under module="Floor plan studio".
+- Triage round, ship fixes, tag `fad-floorplan-v1`.
+
+## Anti-goals (don't do)
+
+- **No CV-based auto-vectorisation in v1.** Plans vary too much, silent failures destroy trust. Park until we have plan samples + can pick a model.
+- **No 3D rendering.** SVG + texture pass only. 3D drives complexity 10× for marginal gain over a polished 2D render.
+- **No editing the raster output directly.** Edits flow through ops → renderer → raster. One-way pipeline keeps the data model authoritative.
+- **No placebo Option A in the meantime.** Mathias will treat any single-shot output as evidence the new system also fails. Wait and ship the real thing.

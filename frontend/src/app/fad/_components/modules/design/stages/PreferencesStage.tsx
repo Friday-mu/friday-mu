@@ -208,14 +208,33 @@ export function PreferencesStage({ project }: Props) {
         </div>
       </Section>
 
-      {/* 9 — Must keep */}
+      {/* 9 — Must keep — project-level, not per room. The per-room
+          version lives on the Site Visit RoomDetail form; that's for
+          the procurement / breakdown crew. This one feeds the design
+          brief, Annex B, and the owner-facing summary docs. */}
       <Section n={9} title="Must-keep items">
-        <Textarea value={prefs.mustKeep ?? ''} onChange={(v) => update('mustKeep', v)} placeholder="Heirlooms, sentimental pieces, expensive items already on-site" />
+        <Hint
+          body="Project-wide guidance — not per room. You already covered the per-room specifics under Site Visit → each room → 'Existing furniture to keep'. This is where you note the cross-cutting things the team must respect across the whole property."
+          examples={[
+            'Family-heirloom carved teak door — never to be moved or repainted',
+            'Owner\'s collection of Mauritian-artist paintings in the living room must stay on display',
+            'Custom-fitted curtains throughout — owner had them tailored',
+          ]}
+        />
+        <Textarea value={prefs.mustKeep ?? ''} onChange={(v) => update('mustKeep', v)} placeholder="Things that apply across the whole project (not just one room)" />
       </Section>
 
-      {/* 10 — Must remove */}
+      {/* 10 — Must remove — project-level. Same split as Must-keep. */}
       <Section n={10} title="Must-remove items">
-        <Textarea value={prefs.mustRemove ?? ''} onChange={(v) => update('mustRemove', v)} placeholder="Broken, dated, owner-disliked" />
+        <Hint
+          body="Project-wide — not per room. The per-room remove list is on Site Visit. Put cross-cutting removals here: things that need to go everywhere they appear, broad themes the owner wants killed."
+          examples={[
+            'All wallpaper throughout — owner wants paint everywhere',
+            'Previous tenant\'s remaining electronics — TVs, kettle, microwave (everywhere)',
+            'Anything floral / chintz — strong owner dislike, no exceptions',
+          ]}
+        />
+        <Textarea value={prefs.mustRemove ?? ''} onChange={(v) => update('mustRemove', v)} placeholder="Things to remove across the whole project (not just one room)" />
       </Section>
 
       {/* 11 — Style dislikes */}
@@ -395,6 +414,38 @@ function Textarea({ value, onChange, placeholder }: { value: string; onChange: (
         minHeight: 36,
       }}
     />
+  );
+}
+
+// Inline contextual hint for an input field. Mathias asked for this
+// on 2026-05-14 — when a field overlaps with another surface (e.g.
+// Must Keep is on both the Preferences page and per-room), users need
+// to know what THIS one is for, with a concrete example. Roll this
+// out gradually across all input-heavy stages. See
+// docs/scoping/field-hint-pattern.md for the rollout list.
+function Hint({ body, examples }: { body: string; examples?: string[] }) {
+  return (
+    <div
+      style={{
+        marginBottom: 8,
+        padding: '8px 10px',
+        background: 'var(--color-brand-accent-soft)',
+        borderLeft: '2px solid var(--color-brand-accent)',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 11,
+        lineHeight: 1.5,
+        color: 'var(--color-text-secondary)',
+      }}
+    >
+      <div>{body}</div>
+      {examples && examples.length > 0 && (
+        <ul style={{ margin: '4px 0 0 16px', padding: 0, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+          {examples.map((ex, i) => (
+            <li key={i} style={{ marginBottom: 2 }}>{ex}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
