@@ -792,6 +792,22 @@ export const listRooms = (propertyId: string) =>
     .then((r) => (r as { results: ApiRoom[] }).results);
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
+// DELETE /api/design/rooms/:id — backend returns 204. apiFetch parses the
+// body as JSON, which would throw on the empty 204 body, so we use raw
+// fetch here (same pattern the photo upload + stage reopen below use).
+export const deleteRoom = async (id: string): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/api/design/rooms/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(detail.error || `Failed to delete room (HTTP ${res.status})`);
+  }
+};
 
 // ─────────────────────────── Budget items ───────────────────────────
 export const updateBudgetItem = (id: string, patch: Partial<ApiBudgetItem>) =>

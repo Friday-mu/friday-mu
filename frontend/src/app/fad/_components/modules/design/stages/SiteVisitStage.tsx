@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { designClient, ROOMS, SITE_VISITS, PHOTOS, type DesignProject, type Photo, type PhotoKind, type Room, type SiteVisit } from '../../../../_data/design';
-import { createRoom as apiCreateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, uploadPhoto as apiUploadPhoto, apiPhotoToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
+import { createRoom as apiCreateRoom, deleteRoom as apiDeleteRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, uploadPhoto as apiUploadPhoto, apiPhotoToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
@@ -273,6 +273,40 @@ export function SiteVisitStage({ project }: Props) {
       return next;
     });
 
+  // Remove a room added by mistake. We confirm with the user — if the
+  // room already has photos attached, the FK is ON DELETE SET NULL, so
+  // the photos survive but become un-roomed. Warn explicitly in that
+  // case so the user can move them first if they want.
+  const handleRemoveRoom = async (room: Room) => {
+    const roomPhotos = photos.filter((p) => p.roomId === room.id);
+    const photoNote = roomPhotos.length > 0
+      ? `\n\n⚠️ ${roomPhotos.length} photo${roomPhotos.length === 1 ? '' : 's'} attached to this room will be kept, but unlinked. You'll need to re-assign them to another room manually.`
+      : '';
+    const ok = typeof window !== 'undefined'
+      && window.confirm(`Remove room "${room.name}"?${photoNote}`);
+    if (!ok) return;
+    try {
+      await apiDeleteRoom(room.id);
+      // Drop from the module-level ROOMS array — same path createRoom
+      // uses, so designClient.rooms.list() reflects the removal until
+      // the next hydrateDesignProject().
+      const idx = ROOMS.findIndex((r) => r.id === room.id);
+      if (idx !== -1) ROOMS.splice(idx, 1);
+      // Also clean expandedRooms so the now-gone id doesn't linger.
+      setExpandedRooms((prev) => {
+        if (!prev.has(room.id)) return prev;
+        const next = new Set(prev);
+        next.delete(room.id);
+        return next;
+      });
+      fireToast(`Room "${room.name}" removed.`);
+      bumpFixtureRev();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Failed to remove room: ${msg}`);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Visit metadata */}
@@ -482,30 +516,63 @@ export function SiteVisitStage({ project }: Props) {
                     borderRadius: 'var(--radius-sm)',
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => toggleRoom(r.id)}
+                  <div
                     style={{
                       display: 'flex',
                       width: '100%',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 12px',
-                      textAlign: 'left',
+                      gap: 4,
+                      padding: '4px 4px 4px 0',
                     }}
                   >
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>{r.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                        {r.lengthM && r.widthM ? `${r.lengthM}m × ${r.widthM}m` : '—'}
-                        {r.heightM ? ` × ${r.heightM}m` : ''}
-                        {' · '}
-                        {roomPhotos.length} photos
-                        {r.issues ? ' · ⚠️ has issues' : ''}
+                    <button
+                      type="button"
+                      onClick={() => toggleRoom(r.id)}
+                      aria-expanded={expanded}
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 8px 6px 12px',
+                        textAlign: 'left',
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>{r.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                          {r.lengthM && r.widthM ? `${r.lengthM}m × ${r.widthM}m` : '—'}
+                          {r.heightM ? ` × ${r.heightM}m` : ''}
+                          {' · '}
+                          {roomPhotos.length} photos
+                          {r.issues ? ' · ⚠️ has issues' : ''}
+                        </div>
                       </div>
-                    </div>
-                    <span style={{ color: 'var(--color-text-tertiary)' }}>{expanded ? '▾' : '▸'}</span>
-                  </button>
+                      <span style={{ color: 'var(--color-text-tertiary)' }}>{expanded ? '▾' : '▸'}</span>
+                    </button>
+                    {/* Remove room — for rooms added by mistake. Photo
+                        FK is ON DELETE SET NULL so attached photos
+                        survive (warned in confirm). Stays out of the
+                        toggle button to keep semantics clean. */}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleRemoveRoom(r); }}
+                      aria-label={`Remove room ${r.name}`}
+                      title="Remove room"
+                      data-design-room-remove={r.id}
+                      style={{
+                        flex: '0 0 auto',
+                        padding: '6px 10px',
+                        fontSize: 14,
+                        lineHeight: 1,
+                        color: 'var(--color-text-tertiary)',
+                        borderRadius: 'var(--radius-sm)',
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
                   {expanded && (
                     <RoomDetail
                       room={r}
