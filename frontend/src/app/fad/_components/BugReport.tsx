@@ -143,7 +143,14 @@ async function captureWithHtml2canvas(el: HTMLElement, backgroundColor: string):
 }
 
 async function captureViewport(): Promise<string | null> {
-  const el = document.querySelector('.fad-app') as HTMLElement | null;
+  // Prefer `.fad-app` (the shell on /fad/*) so we get the actual app
+  // surface with its background. On routes outside the FAD shell —
+  // /design-docs/[doc] in particular, which is where Mathias filed
+  // bugs from — `.fad-app` isn't in the DOM. Fall back to document
+  // body so the FAB still produces a screenshot.
+  const el =
+    (document.querySelector('.fad-app') as HTMLElement | null) ??
+    (document.body as HTMLElement | null);
   if (!el) return null;
   await settlePaint(el);
   const backgroundColor = resolveBackgroundColor(el);
