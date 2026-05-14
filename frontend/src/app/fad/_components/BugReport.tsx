@@ -288,7 +288,7 @@ function BugReportModal({
               on {currentModuleLabel}
             </span>
           )}
-          <button className="fad-util-btn" style={{ marginLeft: 'auto' }} onClick={onClose}>
+          <button type="button" className="fad-util-btn" style={{ marginLeft: 'auto' }} onClick={onClose}>
             <IconClose />
           </button>
         </div>
@@ -365,8 +365,9 @@ function BugReportModal({
               → user story/AC/priority, suggestion → before/after/why). */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
+              type="button"
               className="btn ghost sm"
-              onClick={rephrase}
+              onClick={(e) => { e.preventDefault(); rephrase(); }}
               disabled={!description.trim() || rephrasing}
               style={{ opacity: !description.trim() || rephrasing ? 0.5 : 1 }}
             >
@@ -394,10 +395,11 @@ function BugReportModal({
           )}
         </div>
         <div className="fad-modal-foot">
-          <button className="btn" onClick={onClose} disabled={submitting}>
+          <button type="button" className="btn" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
           <button
+            type="button"
             className="btn primary"
             onClick={submit}
             disabled={!description.trim() || submitting}
