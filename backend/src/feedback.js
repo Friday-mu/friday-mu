@@ -15,90 +15,94 @@ const { attachIdentity } = require('./design/auth');
 
 const router = express.Router();
 
-// ── Kimi-backed clarifying questions ─────────────────────────────────
+// ── Kimi-backed chat for feedback capture ────────────────────────────
 //
 // The team under-reports bug context ("X is broken" with no repro
-// steps). Instead of asking them to pre-structure their report (which
-// they won't), we let them brain-dump in one field, then Kimi reads
-// what they wrote + the page context and proposes 2–4 short, specific
-// follow-up questions that fill the most likely gaps for triage.
-// The user can answer some, all, or none and submit either way.
+// steps). Asking them to fill a structured form upfront fails — they
+// won't. Letting them just braindump fails the other way — we get
+// reports with no triage info. The compromise: chat.
+//
+// User describes the issue in their own words. Kimi reads it and
+// responds conversationally, asking 1–2 specific follow-ups per turn.
+// Team can answer or just submit at any point after Friday's first
+// reply (frontend gates submit on >=1 user msg + >=1 friday reply).
+//
+// Each frontend turn POSTs the full transcript so far; backend appends
+// the new assistant reply. Stateless — no DB persistence of the
+// in-flight transcript; only the final submission lands in `feedback`.
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
 const KIMI_TIMEOUT_MS = 20_000;
 
-const CLARIFYING_SYSTEM_PROMPT = `You are Friday's triage assistant. The user just filed a {{type}} report — bug, feature request, or suggestion — and we want to fill the context gaps BEFORE a human triages it.
+const CHAT_SYSTEM_PROMPT = `You are Friday, the team's friendly triage assistant. The user is filing a {{type}} report (bug / feature request / suggestion). Your job is to gather enough context so a human can triage and act on it later — nothing more.
 
-Read their description and propose 2–4 short, SPECIFIC follow-up questions that, if answered, would make this report dramatically easier to triage. Cover the most-likely gaps for the report type:
+Style:
+- Conversational, not interrogative. Plain language. Sound like a helpful colleague, not a form.
+- Ask AT MOST 1–2 short, specific questions per turn. Never a bulleted list of 5.
+- React to what they said. If their answer is great, say so. If it's vague, ask the specific clarifying bit.
+- Keep replies SHORT — 1 to 3 sentences total. The user is in a hurry.
+- Don't drag this out. 2–3 turns is the sweet spot. If you reach turn 4 without resolution, just thank them and tell them to submit.
 
-- BUG: reproduction steps, what they expected, what actually happened, frequency (always / sometimes / once), severity / impact, browser or device if relevant.
-- FEATURE: who benefits, what problem it solves, concrete example of when they'd use it, success criteria.
-- SUGGESTION: what they currently do / current behaviour, the friction it causes, the suggested change.
+What "enough context" means per type:
+- BUG: what they did (repro steps), what they expected, what actually happened, how often. Sometimes you need browser/device.
+- FEATURE: who benefits, what problem it solves, a concrete example of when they'd use it.
+- SUGGESTION: current behaviour, the friction it causes, the proposed change.
 
-RULES:
-1. DO NOT re-ask anything they already answered in their description. Scan their text first.
-2. Each question MUST be short (under 18 words) and ANSWERABLE in one or two sentences.
-3. Be specific. "Can you give more detail?" is useless. Ask about the specific thing that's missing.
-4. Skip questions that don't apply (e.g. don't ask repro steps if the bug is "the photo doesn't load" — that's already the repro).
-5. NEVER more than 4 questions. Fewer is fine — sometimes 2 is the right number.
+Critical rules:
+1. NEVER re-ask anything covered in the transcript. Read carefully before you respond.
+2. When you have enough context, end with something like: "Sounds clear — feel free to submit whenever you're ready."
+3. Do NOT include "Friday:" or any prefix in your reply. Just the message.
+4. Do NOT use JSON. Plain text only.
+5. The user can submit at any time after your first reply — don't ask them to keep answering if it feels done.`;
 
-OUTPUT FORMAT (strict JSON):
-{ "questions": ["...", "...", "..."] }
-
-If their description is already complete and there's nothing useful to ask, return { "questions": [] }.`;
-
-// Fallback question banks when KIMI_API_KEY isn't configured. Used so
-// the UX still works in dev / CI / before the env var is set on prod.
-const FALLBACK_QUESTIONS = {
-  bug: [
-    'What were you trying to do when this happened?',
-    'What did you expect to see instead?',
-    'Does this happen every time, or only sometimes?',
-  ],
-  feature: [
-    'Who on the team would use this most?',
-    'What problem does it solve that today is painful?',
-    'Can you give a concrete example of when you\'d use it?',
-  ],
-  suggestion: [
-    'What\'s the current behaviour you want to change?',
-    'Why does the current way feel wrong — what does it cost you?',
-  ],
+// Fallback replies for when KIMI_API_KEY isn't configured (dev / CI).
+// Keeps the chat UX working with a single canned response per type.
+const FALLBACK_REPLIES = {
+  bug: 'Got it. Quick check — does this happen every time, or only sometimes? And were you on desktop or mobile?',
+  feature: 'Thanks for raising this. Two quick things: who on the team would benefit most, and can you give a concrete example of when you\'d use it?',
+  suggestion: 'Thanks — tell me a bit more: what does the current behaviour cost you, and what would the ideal version look like?',
 };
 
-function parseModelJson(raw) {
-  if (typeof raw !== 'string') return null;
-  let s = raw.trim();
-  const fenceMatch = s.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) s = fenceMatch[1].trim();
-  try { return JSON.parse(s); } catch { return null; }
+const MAX_TRANSCRIPT_MESSAGES = 16; // 8 turns max
+const MAX_MESSAGE_LENGTH = 2000;
+
+function normalizeTranscript(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((m) => m && (m.role === 'user' || m.role === 'friday') && typeof m.text === 'string')
+    .map((m) => ({ role: m.role, text: m.text.trim().slice(0, MAX_MESSAGE_LENGTH) }))
+    .filter((m) => m.text.length > 0)
+    .slice(-MAX_TRANSCRIPT_MESSAGES);
 }
 
-async function generateClarifyingQuestions({ type, description, moduleLabel, routeUrl }) {
+async function generateChatReply({ type, transcript, moduleLabel, routeUrl }) {
   if (!process.env.KIMI_API_KEY) {
-    return { questions: FALLBACK_QUESTIONS[type] || [], source: 'fallback' };
+    return { reply: FALLBACK_REPLIES[type] || FALLBACK_REPLIES.bug, source: 'fallback' };
   }
-  const system = CLARIFYING_SYSTEM_PROMPT.replace('{{type}}', type);
-  const userContent = [
-    `Report type: ${type}`,
-    moduleLabel ? `Module: ${moduleLabel}` : null,
-    routeUrl ? `Page: ${routeUrl}` : null,
-    '',
-    'User\'s description:',
-    description,
-  ].filter(Boolean).join('\n');
+  const system = CHAT_SYSTEM_PROMPT.replace('{{type}}', type);
+  // Inject the page context as a system-level pre-pend so Kimi can use
+  // it but it doesn't appear as part of the user's message.
+  const contextHeader = [
+    moduleLabel ? `[user is on the "${moduleLabel}" module]` : null,
+    routeUrl ? `[page URL: ${routeUrl}]` : null,
+  ].filter(Boolean).join(' ');
+  const kimiMessages = [
+    { role: 'system', content: system },
+    ...(contextHeader ? [{ role: 'system', content: contextHeader }] : []),
+    ...transcript.map((m) => ({
+      role: m.role === 'friday' ? 'assistant' : 'user',
+      content: m.text,
+    })),
+  ];
   try {
     const { data } = await axios.post(
       `${KIMI_BASE_URL}/chat/completions`,
       {
         model: KIMI_MODEL,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: userContent },
-        ],
-        temperature: 0.3,
-        response_format: { type: 'json_object' },
+        messages: kimiMessages,
+        temperature: 0.5,
+        // No response_format here — we want plain text, not JSON.
       },
       {
         headers: {
@@ -109,39 +113,47 @@ async function generateClarifyingQuestions({ type, description, moduleLabel, rou
       },
     );
     const raw = data?.choices?.[0]?.message?.content;
-    const parsed = parseModelJson(raw);
-    const list = Array.isArray(parsed?.questions) ? parsed.questions : [];
-    // Defensive: clamp to 4 + drop empty / overlong items.
-    const cleaned = list
-      .filter((q) => typeof q === 'string' && q.trim().length > 0)
-      .map((q) => q.trim().slice(0, 220))
-      .slice(0, 4);
-    return { questions: cleaned, source: 'kimi' };
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+      return { reply: FALLBACK_REPLIES[type] || FALLBACK_REPLIES.bug, source: 'kimi-empty' };
+    }
+    // Strip any stray "Friday:" prefix the model might emit despite the
+    // system prompt; clamp to a sane length.
+    const cleaned = raw
+      .trim()
+      .replace(/^(friday|assistant)\s*[:\-]\s*/i, '')
+      .slice(0, 800);
+    return { reply: cleaned, source: 'kimi' };
   } catch (err) {
-    console.warn('[feedback] kimi clarifying-questions failed:', err.message);
-    return { questions: FALLBACK_QUESTIONS[type] || [], source: 'fallback-after-error' };
+    console.warn('[feedback] kimi chat failed:', err.message);
+    return { reply: FALLBACK_REPLIES[type] || FALLBACK_REPLIES.bug, source: 'fallback-after-error' };
   }
 }
 
-router.post('/clarifying-questions', attachIdentity, async (req, res) => {
+router.post('/chat', attachIdentity, async (req, res) => {
   try {
-    const { type, description, route_url: routeUrl, module_label: moduleLabel } = req.body || {};
+    const { type, transcript, route_url: routeUrl, module_label: moduleLabel } = req.body || {};
     if (!TYPES.has(type)) {
       return res.status(400).json({ error: 'type must be bug, feature, or suggestion' });
     }
-    if (typeof description !== 'string' || description.trim().length < 4) {
-      return res.status(400).json({ error: 'description is required (min 4 chars)' });
+    const normalized = normalizeTranscript(transcript);
+    if (normalized.length === 0) {
+      return res.status(400).json({ error: 'transcript must include at least one user message' });
     }
-    const result = await generateClarifyingQuestions({
+    // Last message must be from the user — otherwise we'd be replying
+    // to ourselves.
+    if (normalized[normalized.length - 1].role !== 'user') {
+      return res.status(400).json({ error: 'last transcript message must be from the user' });
+    }
+    const result = await generateChatReply({
       type,
-      description: description.trim().slice(0, 3000),
+      transcript: normalized,
       moduleLabel: typeof moduleLabel === 'string' ? moduleLabel.slice(0, 100) : null,
       routeUrl: typeof routeUrl === 'string' ? routeUrl.slice(0, 300) : null,
     });
     res.json(result);
   } catch (err) {
-    console.error('[feedback] clarifying-questions error:', err.message);
-    res.status(500).json({ error: 'Failed to generate questions' });
+    console.error('[feedback] chat error:', err.message);
+    res.status(500).json({ error: 'Friday is having trouble — try again or submit as-is' });
   }
 });
 

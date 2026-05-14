@@ -1809,6 +1809,99 @@ html.fad-dark .fad-feedback-tab.is-active {
 .bug-spec-field { margin-bottom: 6px; }
 .bug-spec-field b { font-weight: 500; color: var(--color-text-primary); }
 
+/* Feedback chat — chat-based capture flow (replaces the old single
+   textarea + rephrase preview UI). */
+.bug-chat-transcript {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-sm);
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bug-chat-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 4px;
+  color: var(--color-text-secondary);
+}
+.bug-chat-bubble {
+  max-width: 88%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.bug-chat-bubble.is-user {
+  align-self: flex-end;
+  background: var(--color-brand-accent);
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
+}
+.bug-chat-bubble.is-friday {
+  align-self: flex-start;
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  color: var(--color-text-primary);
+  border-bottom-left-radius: 4px;
+}
+.bug-chat-bubble-role {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+  margin-bottom: 3px;
+}
+.bug-chat-bubble.is-user .bug-chat-bubble-role { color: rgba(255,255,255,0.85); }
+.bug-chat-bubble.is-friday .bug-chat-bubble-role { color: var(--color-brand-accent); }
+.bug-chat-bubble-text { white-space: pre-wrap; }
+.bug-chat-thinking {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  padding: 4px 8px;
+  animation: bug-chat-fade 1.4s ease-in-out infinite;
+}
+@keyframes bug-chat-fade {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+.bug-chat-input {
+  margin-top: 12px;
+}
+.bug-chat-input textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  color: var(--color-text-primary);
+}
+.bug-chat-input textarea:focus {
+  outline: none;
+  border-color: var(--color-brand-accent);
+}
+.bug-chat-input textarea:disabled {
+  background: var(--color-background-tertiary);
+  opacity: 0.7;
+}
+.fad-app .btn.primary.sm { padding: 5px 12px; font-size: 12px; }
+
 @media (prefers-reduced-motion: reduce) {
   .fad-app *, .fad-drawer, .fad-palette { transition-duration: 0 !important; animation-duration: 0 !important; }
 }

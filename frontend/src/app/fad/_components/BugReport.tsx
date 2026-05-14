@@ -6,7 +6,7 @@
 // BugReport for backwards-compat with the existing FadApp import; the
 // public surface is broader now.
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
 
@@ -216,24 +216,22 @@ export function BugReportFab({ currentModuleLabel }: Props) {
 // one field. Friday reads what they wrote + page context and proposes
 // 2–4 short, specific follow-ups. The user can answer some, all, or
 // none and submit either way.
-interface ClarifyingQA {
-  question: string;
-  answer: string;
+// One message in the chat transcript. `role: 'friday'` is rendered on
+// the left with the AI bubble; 'user' on the right. The transcript is
+// posted in full to /api/feedback/chat on each turn — Kimi is stateless
+// on our side, so the frontend owns the conversation state.
+interface ChatMessage {
+  role: 'user' | 'friday';
+  text: string;
 }
-
-const ASK_FRIDAY_HELP: Record<FeedbackType, string> = {
-  bug: 'Friday reads your bug and asks specific follow-ups (repro steps, what you expected, frequency).',
-  feature: 'Friday reads your request and asks specific follow-ups (who benefits, what problem it solves, concrete use case).',
-  suggestion: 'Friday reads your suggestion and asks specific follow-ups (current behaviour, friction, suggested change).',
-};
 
 // Type-aware copy. Keeps the modal feeling tailored without three
 // near-duplicate components.
 const TYPE_META: Record<FeedbackType, {
   label: string;
   title: string;
-  descriptionLabel: string;
-  descriptionPlaceholder: string;
+  initialPlaceholder: string;
+  replyPlaceholder: string;
   submitButton: string;
   successHeading: string;
   successSub: string;
@@ -241,9 +239,8 @@ const TYPE_META: Record<FeedbackType, {
   bug: {
     label: 'Bug',
     title: 'Report a bug',
-    descriptionLabel: 'What happened?',
-    descriptionPlaceholder:
-      'Describe the issue in your own words — steps, what you expected, what happened instead. Friday will rephrase into a structured spec.',
+    initialPlaceholder: 'Tell Friday what happened — what you tried to do and what went wrong.',
+    replyPlaceholder: 'Reply to Friday…',
     submitButton: 'File bug',
     successHeading: 'Bug filed',
     successSub: "Friday saved it to the feedback inbox — we'll triage and follow up.",
@@ -251,9 +248,8 @@ const TYPE_META: Record<FeedbackType, {
   feature: {
     label: 'Feature request',
     title: 'Request a feature',
-    descriptionLabel: 'What would you like to see?',
-    descriptionPlaceholder:
-      "Describe the feature, who it's for, and why it matters. Concrete examples help.",
+    initialPlaceholder: 'Tell Friday what you\'d like — what should the app do that it doesn\'t?',
+    replyPlaceholder: 'Reply to Friday…',
     submitButton: 'Submit request',
     successHeading: 'Feature request filed',
     successSub: "Friday saved it to the feedback inbox — we'll review when we plan the next sprint.",
@@ -261,14 +257,17 @@ const TYPE_META: Record<FeedbackType, {
   suggestion: {
     label: 'Suggestion',
     title: 'Share a suggestion',
-    descriptionLabel: "What's on your mind?",
-    descriptionPlaceholder:
-      'Anything that could be better — UX papercut, wording, a workflow nudge. No detail too small.',
+    initialPlaceholder: "What's on your mind? Anything that could be better — Friday will ask follow-ups.",
+    replyPlaceholder: 'Reply to Friday…',
     submitButton: 'Submit suggestion',
     successHeading: 'Suggestion filed',
     successSub: 'Friday saved it to the feedback inbox — thank you.',
   },
 };
+
+// Cap to avoid runaway conversations. Friend is told via prompt to wrap
+// up by turn 3; this is a hard ceiling so cost / payload stays bounded.
+const MAX_TURNS_USER = 6;
 
 function BugReportModal({
   currentModuleLabel,
@@ -284,59 +283,92 @@ function BugReportModal({
   // mounts (so the modal itself isn't in the capture). The modal just
   // displays it.
   const screenshot = initialScreenshot;
-  const [description, setDescription] = useState('');
-  const [asking, setAsking] = useState(false);
-  // Once Friday has proposed follow-ups, they live here. Answers default
-  // to '' — submission appends only the ones the user actually filled in.
-  const [qas, setQas] = useState<ClarifyingQA[]>([]);
-  const [askError, setAskError] = useState<string | null>(null);
+  // The chat transcript. First message is always from the user (their
+  // initial description); from there Friday replies, user can reply
+  // back, etc. Posted in full to /api/feedback/chat on each turn.
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [thinking, setThinking] = useState(false); // Friday is replying
+  const [chatError, setChatError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
-  const trimmedDescription = description.trim();
-  const canAskFriday = trimmedDescription.length >= 4 && !asking;
-  // Submit is always available as long as there's a description. The
-  // follow-up questions are 100% optional — the user can ignore them
-  // and just submit raw text. This is the simplicity we lost with the
-  // mandatory-rephrase flow; we get the structure back via Kimi at
-  // triage time in the inbox, not at capture time.
-  const canSubmit = trimmedDescription.length > 0 && !submitting;
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  // Auto-scroll the chat to the bottom on new messages / thinking state.
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, thinking]);
 
-  const askFriday = async () => {
-    if (!canAskFriday) return;
-    setAsking(true);
-    setAskError(null);
+  const trimmedInput = input.trim();
+  const userMsgCount = messages.filter((m) => m.role === 'user').length;
+  const fridayMsgCount = messages.filter((m) => m.role === 'friday').length;
+  // Submit is unlocked once the user has sent at least 1 message AND
+  // Friday has replied at least once. After that, submit is always
+  // available — the user can keep chatting OR submit immediately.
+  const hasMinimumExchange = userMsgCount >= 1 && fridayMsgCount >= 1;
+  const canSubmit = hasMinimumExchange && !submitting;
+  // Lock further user messages once we hit the cap. They can still
+  // submit at any point.
+  const reachedTurnCap = userMsgCount >= MAX_TURNS_USER;
+  const canSend = trimmedInput.length > 0 && !thinking && !reachedTurnCap;
+
+  const send = async () => {
+    if (!canSend) return;
+    const userMsg: ChatMessage = { role: 'user', text: trimmedInput };
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
+    setInput('');
+    setThinking(true);
+    setChatError(null);
     try {
       const routeUrl =
         typeof window !== 'undefined'
           ? window.location.pathname + window.location.search
           : null;
-      const data = await apiFetch('/api/feedback/clarifying-questions', {
+      const data = await apiFetch('/api/feedback/chat', {
         method: 'POST',
         body: JSON.stringify({
           type,
-          description: trimmedDescription,
+          transcript: nextMessages,
           module_label: currentModuleLabel ?? null,
           route_url: routeUrl,
         }),
-      }) as { questions: string[] };
-      const list = Array.isArray(data?.questions) ? data.questions : [];
-      if (list.length === 0) {
-        setQas([]);
-        setAskError('Friday says your description is already complete — submit when ready.');
+      }) as { reply: string };
+      const reply = (data?.reply || '').trim();
+      if (reply.length > 0) {
+        setMessages((prev) => [...prev, { role: 'friday', text: reply }]);
       } else {
-        setQas(list.map((q) => ({ question: q, answer: '' })));
+        setChatError('Friday went quiet. You can keep typing or just submit.');
       }
     } catch (err) {
-      setAskError(err instanceof Error ? err.message : 'Failed to fetch questions');
+      setChatError(err instanceof Error
+        ? err.message
+        : 'Friday had trouble responding — you can keep typing or just submit.');
     } finally {
-      setAsking(false);
+      setThinking(false);
     }
   };
 
-  const setAnswer = (idx: number, value: string) => {
-    setQas((prev) => prev.map((q, i) => (i === idx ? { ...q, answer: value } : q)));
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Cmd/Ctrl+Enter sends. Plain Enter allows newlines (chat-style
+    // multi-line composition).
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (canSend) send();
+    }
+  };
+
+  // Switching feedback type mid-conversation resets the chat — the
+  // structure of useful questions differs across bug / feature /
+  // suggestion, so reusing a transcript would confuse Kimi.
+  const switchType = (t: FeedbackType) => {
+    if (t === type) return;
+    setType(t);
+    setMessages([]);
+    setInput('');
+    setChatError(null);
   };
 
   const submit = async () => {
@@ -344,26 +376,17 @@ function BugReportModal({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      // Title: first sentence of description, capped at 80 chars. Keeps
-      // the inbox row scannable without making the user invent one.
-      const title = deriveTitle(trimmedDescription, currentModuleLabel);
-      // Build the final description: raw text + any Q/A pairs the user
-      // bothered to answer. Unanswered questions are dropped entirely
-      // (no point persisting "Q: ... / A: ").
-      const answered = qas.filter((q) => q.answer.trim().length > 0);
-      const fullDescription = answered.length === 0
-        ? trimmedDescription
-        : [
-            trimmedDescription,
-            '',
-            '---',
-            '**Friday\'s follow-up questions:**',
-            ...answered.flatMap((q) => [`**Q:** ${q.question}`, `**A:** ${q.answer.trim()}`, '']),
-          ].join('\n').trim();
+      const firstUserMsg = messages.find((m) => m.role === 'user')?.text ?? '';
+      const title = deriveTitle(firstUserMsg, currentModuleLabel);
+      // Serialise the chat as the persisted description. Each turn is
+      // labelled so the inbox view stays scannable.
+      const description = messages
+        .map((m) => (m.role === 'user' ? `**You:** ${m.text}` : `**Friday:** ${m.text}`))
+        .join('\n\n');
       const payload: Record<string, unknown> = {
         type,
         title,
-        description: fullDescription,
+        description,
         route_url:
           typeof window !== 'undefined'
             ? window.location.pathname + window.location.search
@@ -433,20 +456,15 @@ function BugReportModal({
           </button>
         </div>
         <div className="fad-modal-body">
-          {/* Type tabs — clear any pending follow-ups on switch since
-              the question set is type-specific. */}
+          {/* Type tabs — switching mid-chat clears the transcript
+              since the structure of useful questions differs. */}
           <div role="tablist" aria-label="Feedback type" className="fad-feedback-tabs">
             {(['bug', 'feature', 'suggestion'] as FeedbackType[]).map((t) => (
               <button
                 key={t}
                 role="tab"
                 aria-selected={type === t}
-                onClick={() => {
-                  if (t === type) return;
-                  setType(t);
-                  setQas([]);
-                  setAskError(null);
-                }}
+                onClick={() => switchType(t)}
                 className={'fad-feedback-tab' + (type === t ? ' is-active' : '')}
                 type="button"
               >
@@ -477,72 +495,80 @@ function BugReportModal({
               </>
             )}
           </div>
-          <div className="fad-field">
-            <label>{meta.descriptionLabel}</label>
-            <textarea
-              rows={4}
-              placeholder={meta.descriptionPlaceholder}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          {/* Optional: Ask Friday for follow-up questions. Submission is
-              never gated on this — it's a "tell us a bit more if you can"
-              prompt, not a wall. */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={(e) => { e.preventDefault(); askFriday(); }}
-              disabled={!canAskFriday}
-              style={{ opacity: !canAskFriday ? 0.5 : 1 }}
-            >
-              <IconAI size={12} />{' '}
-              {asking
-                ? 'Friday is thinking…'
-                : qas.length > 0
-                  ? 'Ask Friday again'
-                  : 'Ask Friday for follow-ups'}
-            </button>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              {ASK_FRIDAY_HELP[type]}
-            </span>
-          </div>
-          {askError && (
-            <div
-              role="status"
-              style={{
-                marginTop: 8,
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--color-bg-info)',
-                color: 'var(--color-text-info)',
-                fontSize: 12,
-              }}
-            >
-              {askError}
-            </div>
-          )}
-          {qas.length > 0 && (
-            <div className="bug-spec" style={{ marginTop: 12 }}>
-              <div className="bug-spec-head">
-                <IconAI size={10} /> Friday asks — answer what you can (optional)
-              </div>
-              {qas.map((q, i) => (
-                <div key={i} className="fad-field" style={{ marginBottom: 10 }}>
-                  <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                    {q.question}
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="Skip if you don't have an answer"
-                    value={q.answer}
-                    onChange={(e) => setAnswer(i, e.target.value)}
-                  />
+
+          {/* Chat transcript. Empty state explains the flow. */}
+          <div
+            ref={transcriptRef}
+            className="bug-chat-transcript"
+            data-feedback-chat-transcript
+          >
+            {messages.length === 0 && (
+              <div className="bug-chat-empty">
+                <IconAI size={14} />
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 2 }}>
+                    Tell Friday what's going on
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                    Just braindump. Friday will ask one or two follow-ups, then you can file the report.
+                  </div>
                 </div>
-              ))}
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <ChatBubble key={i} role={m.role} text={m.text} />
+            ))}
+            {thinking && (
+              <div className="bug-chat-thinking" aria-live="polite">
+                <IconAI size={10} />
+                <span>Friday is thinking…</span>
+              </div>
+            )}
+            {chatError && (
+              <div
+                role="status"
+                style={{
+                  margin: '6px 0',
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-bg-warning)',
+                  color: 'var(--color-text-warning)',
+                  fontSize: 12,
+                }}
+              >
+                {chatError}
+              </div>
+            )}
+          </div>
+
+          {/* Input area. Cmd/Ctrl+Enter sends; plain Enter newlines. */}
+          <div className="bug-chat-input">
+            <textarea
+              rows={messages.length === 0 ? 4 : 2}
+              placeholder={messages.length === 0 ? TYPE_META[type].initialPlaceholder : TYPE_META[type].replyPlaceholder}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={thinking || reachedTurnCap}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 6 }}>
+              <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                {reachedTurnCap
+                  ? 'Friday\'s heard enough — submit when ready.'
+                  : 'Cmd/Ctrl+Enter to send.'}
+              </span>
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={send}
+                disabled={!canSend}
+                style={{ opacity: !canSend ? 0.5 : 1 }}
+              >
+                {thinking ? 'Sending…' : messages.length === 0 ? 'Send to Friday' : 'Reply'}
+              </button>
             </div>
-          )}
+          </div>
+
           {submitError && (
             <div
               role="alert"
@@ -560,6 +586,13 @@ function BugReportModal({
           )}
         </div>
         <div className="fad-modal-foot">
+          {!canSubmit && !submitting && (
+            <span style={{ marginRight: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>
+              {messages.length === 0
+                ? 'Send your first message to Friday'
+                : 'Waiting for Friday\'s reply…'}
+            </span>
+          )}
           <button type="button" className="btn" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
@@ -569,6 +602,13 @@ function BugReportModal({
             onClick={submit}
             disabled={!canSubmit}
             style={{ opacity: !canSubmit ? 0.5 : 1 }}
+            title={
+              messages.length === 0
+                ? 'Send your first message to Friday before filing'
+                : !hasMinimumExchange
+                  ? 'Waiting for Friday\'s reply'
+                  : undefined
+            }
           >
             {submitting ? 'Submitting…' : meta.submitButton}
           </button>
@@ -585,4 +625,20 @@ function deriveTitle(description: string, scope?: string): string {
   const truncated = firstSegment.length > 80 ? firstSegment.slice(0, 77) + '…' : firstSegment;
   const safe = truncated.length >= 4 ? truncated : 'Untitled report';
   return scope ? `[${scope}] ${safe}` : safe;
+}
+
+function ChatBubble({ role, text }: { role: 'user' | 'friday'; text: string }) {
+  const isUser = role === 'user';
+  return (
+    <div className={'bug-chat-bubble ' + (isUser ? 'is-user' : 'is-friday')}>
+      <div className="bug-chat-bubble-role">
+        {isUser ? 'You' : (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <IconAI size={10} /> Friday
+          </span>
+        )}
+      </div>
+      <div className="bug-chat-bubble-text">{text}</div>
+    </div>
+  );
 }
