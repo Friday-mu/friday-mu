@@ -337,28 +337,51 @@ function FeedbackInbox() {
         </div>
       )}
 
-      {entries.map((e) => (
-        <div
-          key={e.id}
-          className="settings-row"
-          style={{ alignItems: 'flex-start', cursor: 'pointer' }}
-          onClick={() => setSelectedId(selectedId === e.id ? null : e.id)}
-        >
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
-              <span className="chip">{TYPE_LABEL[e.type]}</span>
-              {e.severity && <span className="chip warn">{e.severity}</span>}
-              <h5 style={{ margin: 0 }}>{e.title || e.description.slice(0, 80)}</h5>
+      {entries.map((e) => {
+        // Count `**You:**` markers to derive the turn count. The
+        // bug-report FAB persists the full chat transcript as
+        // markdown (one **You:** per user message, one **Friday:**
+        // per assistant reply). Old single-textarea reports have 0
+        // user markers — those render without the turn chip.
+        const userTurns = (e.description.match(/\*\*You:\*\*/g) || []).length;
+        return (
+          <div
+            key={e.id}
+            className="settings-row"
+            style={{ alignItems: 'flex-start', cursor: 'pointer' }}
+            onClick={() => setSelectedId(selectedId === e.id ? null : e.id)}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
+                <span className="chip">{TYPE_LABEL[e.type]}</span>
+                {e.severity && <span className="chip warn">{e.severity}</span>}
+                <h5 style={{ margin: 0 }}>{e.title || e.description.slice(0, 80)}</h5>
+                {userTurns > 0 && (
+                  <span
+                    title={`${userTurns} user turn${userTurns === 1 ? '' : 's'} in the chat — open to read the full transcript`}
+                    style={{
+                      fontSize: 10,
+                      padding: '1px 7px',
+                      borderRadius: 999,
+                      background: 'var(--color-brand-accent-soft)',
+                      color: 'var(--color-brand-accent)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    💬 {userTurns}
+                  </span>
+                )}
+              </div>
+              <p style={{ margin: 0 }}>
+                {e.user_display_name || e.user_username || 'unknown'} · {new Date(e.created_at).toLocaleString()}
+                {e.module_label && <> · on <em>{e.module_label}</em></>}
+                {e.route_url && <> · <code style={{ fontSize: 10 }}>{e.route_url}</code></>}
+              </p>
             </div>
-            <p style={{ margin: 0 }}>
-              {e.user_display_name || e.user_username || 'unknown'} · {new Date(e.created_at).toLocaleString()}
-              {e.module_label && <> · on <em>{e.module_label}</em></>}
-              {e.route_url && <> · <code style={{ fontSize: 10 }}>{e.route_url}</code></>}
-            </p>
+            <span className={'chip ' + STATUS_TONE[e.status]}>{STATUS_LABEL[e.status]}</span>
           </div>
-          <span className={'chip ' + STATUS_TONE[e.status]}>{STATUS_LABEL[e.status]}</span>
-        </div>
-      ))}
+        );
+      })}
 
       {selected && (
         <FeedbackDetail

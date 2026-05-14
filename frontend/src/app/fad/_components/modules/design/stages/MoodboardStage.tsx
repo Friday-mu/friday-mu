@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { apiFetch } from '../../../../../../components/types';
 import {
   designClient,
   type ApprovalState,
@@ -51,12 +52,24 @@ export function MoodboardStage({ project }: Props) {
 
   // W7 — generate a 3-variant batch. Each variant becomes its own
   // version_number; they share variant_group_id so the UI can render
-  // them as a comparison set. Staff attach images to each via the
-  // existing per-variant generator below.
+  // them as a comparison set.
+  //
+  // Mathias 2026-05-14 (feedback b585654b): the old flow created
+  // empty shell variants and asked him to click "Generate image" on
+  // each — he submitted before doing that, ended up with 3 empty
+  // versions. Now we auto-fire 3 Nanobanana generations in parallel
+  // right after the shells are created, then PATCH each variant's
+  // links to attach the resulting image. He gets 3 ready-to-review
+  // variants in one click. ~3× the Gemini cost per "Create 3
+  // variants" press (~$0.06), worth it for the UX.
   const [creatingVariants, setCreatingVariants] = useState(false);
+  const [variantProgress, setVariantProgress] = useState<{ done: number; total: number } | null>(null);
+
   const handleCreateVariantSet = async () => {
     setCreatingVariants(true);
+    setVariantProgress(null);
     try {
+      // Phase 1 — create the 3 shells server-side.
       const response = await createMoodboardVariants({
         project_id: project.id,
         variants: DEFAULT_VARIANT_PROMPTS.map((v) => ({ name: v.name, notes: v.notes, links: [] })),
@@ -66,12 +79,64 @@ export function MoodboardStage({ project }: Props) {
       }
       bumpFixtureRev();
       setActiveId(response.variants[0]?.id ?? null);
-      fireToast(`Created ${response.variants.length} variants — attach images via ✨ Generate image on each.`);
+
+      // Phase 2 — fire 3 Nanobanana generations in parallel, each
+      // using its variant's style notes as the override prompt so
+      // Kimi/Nanobanana get a strong steer. Use allSettled so a
+      // partial failure (e.g. Gemini quota) doesn't kill the others.
+      setVariantProgress({ done: 0, total: response.variants.length });
+      let completed = 0;
+      const generations = response.variants.map(async (variant, i) => {
+        const variantNotes = DEFAULT_VARIANT_PROMPTS[i]?.notes ?? variant.notes ?? '';
+        try {
+          // 2a. Generate the image from project context + variant style notes.
+          const asset = await apiFetch('/api/design/ai_images/generate-from-project', {
+            method: 'POST',
+            body: JSON.stringify({
+              project_id: project.id,
+              kind: 'moodboard',
+              override_prompt: variantNotes,
+              include_property_photos: true,
+            }),
+          }) as { sha256: string; storage_url: string };
+
+          // 2b. Attach to the variant's links.
+          await apiFetch(`/api/design/moodboards/${variant.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              links: [{
+                url: asset.storage_url,
+                caption: variantNotes.slice(0, 80),
+                image_id: asset.sha256,
+              }],
+            }),
+          });
+        } finally {
+          completed += 1;
+          setVariantProgress({ done: completed, total: response.variants.length });
+        }
+      });
+      const results = await Promise.allSettled(generations);
+      const failed = results.filter((r) => r.status === 'rejected').length;
+
+      // Refetch the project's moodboards to pick up the new links —
+      // simpler than mutating the fixture array in place for each.
+      // Caller's useHydrateDesignProject re-fires on bumpFixtureRev.
+      bumpFixtureRev();
+
+      if (failed === 0) {
+        fireToast(`✓ ${response.variants.length} variants ready to review.`);
+      } else if (failed === response.variants.length) {
+        fireToast('Shells created, but image generation failed for all 3. Try "✨ Generate image" on each manually.');
+      } else {
+        fireToast(`${response.variants.length - failed}/${response.variants.length} variants generated. Click "✨ Generate image" on the failed ones to retry.`);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       fireToast(`Variant create failed: ${msg}`);
     } finally {
       setCreatingVariants(false);
+      setVariantProgress(null);
     }
   };
 
@@ -105,7 +170,11 @@ export function MoodboardStage({ project }: Props) {
                 cursor: creatingVariants ? 'not-allowed' : 'pointer',
               }}
             >
-              {creatingVariants ? 'Creating…' : '✨ Create 3 variants'}
+              {creatingVariants
+                ? (variantProgress
+                  ? `Generating images… ${variantProgress.done}/${variantProgress.total}`
+                  : 'Creating shells…')
+                : '✨ Create 3 variants'}
             </button>
             <button type="button" style={secondaryBtn()} onClick={() => fireToast('Single-version create — generate the image via ✨ Generate image inside the version detail.')}>+ Single version</button>
           </div>
