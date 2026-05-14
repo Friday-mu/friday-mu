@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { designClient, ROOMS, SITE_VISITS, PHOTOS, type DesignProject, type Photo, type PhotoKind, type Room, type SiteVisit } from '../../../../_data/design';
-import { createRoom as apiCreateRoom, deleteRoom as apiDeleteRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, uploadPhoto as apiUploadPhoto, apiPhotoToFixture, type ApiSiteVisit } from '../../../../_data/designClient';
+import { createRoom as apiCreateRoom, deleteRoom as apiDeleteRoom, updateRoom as apiUpdateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, uploadPhoto as apiUploadPhoto, apiPhotoToFixture, type ApiRoomPatch, type ApiSiteVisit } from '../../../../_data/designClient';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
@@ -656,43 +656,236 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
       setPhotoKind('before');
     }
   };
+  // Controlled state for ALL room detail fields. Before this fix every
+  // input was uncontrolled (`defaultValue` only, no onChange) and the
+  // RoomDetail form values were thrown away on every re-render — which
+  // is why users saw "all data disappeared after collapsing/refresh".
+  //
+  // Strategy: keep one local state blob, debounce-PATCH it to the API
+  // 600ms after the user stops typing. On success, splice the updated
+  // room into the in-memory ROOMS array and bump fixtureRev so siblings
+  // (room header card, photo metadata) re-read the new values.
+  const [form, setForm] = useState({
+    name: room.name,
+    lengthM: room.lengthM,
+    widthM: room.widthM,
+    heightM: room.heightM,
+    windows: room.windows,
+    doors: room.doors,
+    conditionNotes: room.conditionNotes ?? '',
+    issues: room.issues ?? '',
+    keepFurniture: room.keepFurniture ?? '',
+    removeFurniture: room.removeFurniture ?? '',
+    designOpportunity: room.designOpportunity ?? '',
+    accessNotes: room.accessNotes ?? '',
+    utilitiesNotes: room.utilitiesNotes ?? '',
+  });
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPatchRef = useRef<ApiRoomPatch>({});
+  const savedFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Re-seed local state when a fresh room object arrives (e.g. parent
+  // hydrates from the API after the user opens the stage). Compares by
+  // id so user keystrokes in the same room don't bounce.
+  useEffect(() => {
+    setForm({
+      name: room.name,
+      lengthM: room.lengthM,
+      widthM: room.widthM,
+      heightM: room.heightM,
+      windows: room.windows,
+      doors: room.doors,
+      conditionNotes: room.conditionNotes ?? '',
+      issues: room.issues ?? '',
+      keepFurniture: room.keepFurniture ?? '',
+      removeFurniture: room.removeFurniture ?? '',
+      designOpportunity: room.designOpportunity ?? '',
+      accessNotes: room.accessNotes ?? '',
+      utilitiesNotes: room.utilitiesNotes ?? '',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.id]);
+
+  const flushPatch = async () => {
+    const patch = pendingPatchRef.current;
+    pendingPatchRef.current = {};
+    if (Object.keys(patch).length === 0) return;
+    setSaveState('saving');
+    try {
+      const updated = await apiUpdateRoom(room.id, patch);
+      // Splice the new fields into ROOMS so the header card +
+      // floor-plan generator + portal pick this up immediately.
+      const idx = ROOMS.findIndex((r) => r.id === room.id);
+      if (idx !== -1) {
+        ROOMS[idx] = apiRoomToFixture(updated, room.projectId);
+      }
+      setSaveState('saved');
+      bumpFixtureRev();
+      if (savedFlashRef.current) clearTimeout(savedFlashRef.current);
+      savedFlashRef.current = setTimeout(() => setSaveState('idle'), 1400);
+    } catch (err) {
+      console.error('[site-visit] room save failed:', err);
+      setSaveState('error');
+      fireToast(`Failed to save: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
+  };
+
+  // Queue a debounced flush after every keystroke / select change.
+  const queuePatch = (partial: ApiRoomPatch) => {
+    pendingPatchRef.current = { ...pendingPatchRef.current, ...partial };
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(flushPatch, 600);
+  };
+
+  // Cleanup pending timers + flush on unmount so collapsing the room
+  // never loses in-flight edits.
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        // Fire-and-forget — by the time the effect runs the component
+        // is going away; flushing synchronously isn't possible but the
+        // promise will resolve and write to the live ROOMS array
+        // regardless.
+        flushPatch();
+      }
+      if (savedFlashRef.current) clearTimeout(savedFlashRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Number coercion for numeric inputs: empty string → null; otherwise
+  // parseFloat and reject NaN.
+  const parseNum = (v: string): number | null => {
+    if (v === '' || v.trim() === '') return null;
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const parseInt10 = (v: string): number | null => {
+    if (v === '' || v.trim() === '') return null;
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : null;
+  };
+
   return (
     <div style={{ borderTop: '0.5px solid var(--color-border-tertiary)', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, marginTop: -4, marginBottom: -4, minHeight: 16 }}>
+        {saveState === 'saving' && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>Saving…</span>}
+        {saveState === 'saved' && <span style={{ fontSize: 10, color: 'var(--color-text-success)' }}>✓ Saved</span>}
+        {saveState === 'error' && <span style={{ fontSize: 10, color: 'var(--color-text-danger)' }}>Save failed — retry by editing again</span>}
+      </div>
       <Grid>
         <Field label="Name">
-          <select defaultValue={ROOM_NAME_OPTIONS.includes(room.name) ? room.name : 'Other'} style={inputStyle()}>
+          <select
+            value={form.name}
+            onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); queuePatch({ name: e.target.value }); }}
+            style={inputStyle()}
+          >
             {ROOM_NAME_OPTIONS.map((o) => <option key={o}>{o}</option>)}
           </select>
         </Field>
-        <Field label="Length (m)"><input type="number" step="0.1" defaultValue={room.lengthM ?? ''} style={inputStyle()} /></Field>
-        <Field label="Width (m)"><input type="number" step="0.1" defaultValue={room.widthM ?? ''} style={inputStyle()} /></Field>
-        <Field label="Height (m)"><input type="number" step="0.1" defaultValue={room.heightM ?? ''} style={inputStyle()} /></Field>
-        <Field label="Windows"><input type="number" defaultValue={room.windows ?? ''} style={inputStyle()} /></Field>
-        <Field label="Doors"><input type="number" defaultValue={room.doors ?? ''} style={inputStyle()} /></Field>
+        <Field label="Length (m)">
+          <input
+            type="number" step="0.1"
+            value={form.lengthM ?? ''}
+            onChange={(e) => { const n = parseNum(e.target.value); setForm((f) => ({ ...f, lengthM: n })); queuePatch({ length_m: n }); }}
+            style={inputStyle()}
+          />
+        </Field>
+        <Field label="Width (m)">
+          <input
+            type="number" step="0.1"
+            value={form.widthM ?? ''}
+            onChange={(e) => { const n = parseNum(e.target.value); setForm((f) => ({ ...f, widthM: n })); queuePatch({ width_m: n }); }}
+            style={inputStyle()}
+          />
+        </Field>
+        <Field label="Height (m)">
+          <input
+            type="number" step="0.1"
+            value={form.heightM ?? ''}
+            onChange={(e) => { const n = parseNum(e.target.value); setForm((f) => ({ ...f, heightM: n })); queuePatch({ height_m: n }); }}
+            style={inputStyle()}
+          />
+        </Field>
+        <Field label="Windows">
+          <input
+            type="number"
+            value={form.windows ?? ''}
+            onChange={(e) => { const n = parseInt10(e.target.value); setForm((f) => ({ ...f, windows: n })); queuePatch({ windows: n }); }}
+            style={inputStyle()}
+          />
+        </Field>
+        <Field label="Doors">
+          <input
+            type="number"
+            value={form.doors ?? ''}
+            onChange={(e) => { const n = parseInt10(e.target.value); setForm((f) => ({ ...f, doors: n })); queuePatch({ doors: n }); }}
+            style={inputStyle()}
+          />
+        </Field>
       </Grid>
       <Field label="Condition notes" full>
-        <textarea defaultValue={room.conditionNotes ?? ''} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} />
+        <textarea
+          value={form.conditionNotes}
+          onChange={(e) => { setForm((f) => ({ ...f, conditionNotes: e.target.value })); queuePatch({ condition_notes: e.target.value || null }); }}
+          rows={2}
+          style={{ ...inputStyle(), resize: 'vertical' }}
+        />
       </Field>
       <Field label="Issues" full>
-        <textarea defaultValue={room.issues ?? ''} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} placeholder="Anything broken / non-functional / risky" />
+        <textarea
+          value={form.issues}
+          onChange={(e) => { setForm((f) => ({ ...f, issues: e.target.value })); queuePatch({ issues: e.target.value || null }); }}
+          rows={2}
+          style={{ ...inputStyle(), resize: 'vertical' }}
+          placeholder="Anything broken / non-functional / risky"
+        />
       </Field>
       <Grid>
         <Field label="Existing furniture to keep" full>
-          <textarea defaultValue={room.keepFurniture ?? ''} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} />
+          <textarea
+            value={form.keepFurniture}
+            onChange={(e) => { setForm((f) => ({ ...f, keepFurniture: e.target.value })); queuePatch({ keep_furniture: e.target.value || null }); }}
+            rows={2}
+            style={{ ...inputStyle(), resize: 'vertical' }}
+          />
         </Field>
         <Field label="To remove or sell" full>
-          <textarea defaultValue={room.removeFurniture ?? ''} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} />
+          <textarea
+            value={form.removeFurniture}
+            onChange={(e) => { setForm((f) => ({ ...f, removeFurniture: e.target.value })); queuePatch({ remove_furniture: e.target.value || null }); }}
+            rows={2}
+            style={{ ...inputStyle(), resize: 'vertical' }}
+          />
         </Field>
       </Grid>
       <Field label="Design opportunity" full>
-        <textarea defaultValue={room.designOpportunity ?? ''} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} />
+        <textarea
+          value={form.designOpportunity}
+          onChange={(e) => { setForm((f) => ({ ...f, designOpportunity: e.target.value })); queuePatch({ design_opportunity: e.target.value || null }); }}
+          rows={2}
+          style={{ ...inputStyle(), resize: 'vertical' }}
+        />
       </Field>
       <Grid>
         <Field label="Access / logistics" full>
-          <textarea defaultValue={room.accessNotes ?? ''} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} placeholder="Parking, lift, delivery hours…" />
+          <textarea
+            value={form.accessNotes}
+            onChange={(e) => { setForm((f) => ({ ...f, accessNotes: e.target.value })); queuePatch({ access_notes: e.target.value || null }); }}
+            rows={2}
+            style={{ ...inputStyle(), resize: 'vertical' }}
+            placeholder="Parking, lift, delivery hours…"
+          />
         </Field>
         <Field label="Electrical / plumbing" full>
-          <textarea defaultValue={room.utilitiesNotes ?? ''} rows={2} style={{ ...inputStyle(), resize: 'vertical' }} />
+          <textarea
+            value={form.utilitiesNotes}
+            onChange={(e) => { setForm((f) => ({ ...f, utilitiesNotes: e.target.value })); queuePatch({ utilities_notes: e.target.value || null }); }}
+            rows={2}
+            style={{ ...inputStyle(), resize: 'vertical' }}
+          />
         </Field>
       </Grid>
 

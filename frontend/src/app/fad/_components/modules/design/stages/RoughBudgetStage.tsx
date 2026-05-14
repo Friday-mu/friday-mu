@@ -108,6 +108,12 @@ export function RoughBudgetStage({ project }: Props) {
   const removeRow = (rid: string) => setRows((prev) => prev.filter((r) => r.rid !== rid));
   const addRow = () => setRows((prev) => [...prev, { rid: newRid(), itemName: '', qty: 1, unitCostMinorOverride: null }]);
 
+  // Which saved version (if any) the user clicked in the Versions list.
+  // Renders a read-only modal showing that version's totals, fees, and
+  // notes. Mathias reported the version rows weren't clickable
+  // (feedback row ad56fe97-f828-...) — this is the "open" affordance.
+  const [versionInspect, setVersionInspect] = useState<RoughBudget | null>(null);
+
   // ── AI Estimator state ───────────────────────────────────────────
   // Modal lifecycle + last response (so we can render provenance chips
   // next to the inserted rows). Each AI-suggested row carries its
@@ -501,18 +507,39 @@ export function RoughBudgetStage({ project }: Props) {
         ) : (
           <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {versions.map((v) => (
-              <li key={v.id} style={{ padding: 8, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', fontSize: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                  <span><strong>v{v.version}</strong> · {v.status} · {v.createdAt.slice(0, 10)}</span>
-                  <span style={{ color: 'var(--color-text-tertiary)' }}>
-                    {formatMUR(v.lowMinor)} / <strong style={{ color: 'var(--color-text-primary)' }}>{formatMUR(v.midMinor)}</strong> / {formatMUR(v.highMinor)}
-                  </span>
-                </div>
+              <li key={v.id}>
+                <button
+                  type="button"
+                  onClick={() => setVersionInspect(v)}
+                  data-rough-budget-version-row={v.id}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: 8,
+                    border: '0.5px solid var(--color-border-tertiary)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--color-background-primary)',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                    <span><strong>v{v.version}</strong> · {v.status} · {v.createdAt.slice(0, 10)}</span>
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>
+                      {formatMUR(v.lowMinor)} / <strong style={{ color: 'var(--color-text-primary)' }}>{formatMUR(v.midMinor)}</strong> / {formatMUR(v.highMinor)}
+                      <span style={{ marginLeft: 8, color: 'var(--color-brand-accent)' }}>Open ↗</span>
+                    </span>
+                  </div>
+                </button>
               </li>
             ))}
           </ul>
         )}
       </Card>
+      {versionInspect && (
+        <VersionInspectModal version={versionInspect} onClose={() => setVersionInspect(null)} />
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <a
@@ -1000,3 +1027,67 @@ function textareaStyle(): React.CSSProperties { return { ...inputStyle(), resize
 function primaryBtn(): React.CSSProperties { return { padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-brand-accent)', color: '#fff', fontSize: 13, fontWeight: 500 }; }
 function secondaryBtn(): React.CSSProperties { return { padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)', fontSize: 13 }; }
 function addBtn(): React.CSSProperties { return { padding: '6px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--color-brand-accent-soft)', color: 'var(--color-brand-accent)', fontSize: 12, fontWeight: 500 }; }
+
+// Read-only inspect modal — opens when the user clicks a row in the
+// "Versions" list. Renders the version's totals, tier, fees, and the
+// four notes fields exactly as saved. We don't load-into-editor here
+// to avoid surprising state mutations; the user can copy whatever they
+// need by eye and Save a new version.
+function VersionInspectModal({ version, onClose }: { version: RoughBudget; onClose: () => void }) {
+  return (
+    <div className="fad-modal-overlay" onClick={onClose}>
+      <div className="fad-modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="fad-modal-head">
+          <div className="fad-modal-title">Rough budget v{version.version}</div>
+          <span className="chip" style={{ marginLeft: 8 }}>{version.status}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            saved {version.createdAt.slice(0, 10)}
+          </span>
+          <button type="button" className="fad-util-btn" style={{ marginLeft: 12 }} onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="fad-modal-body">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+            <Stat label="Low" value={formatMUR(version.lowMinor)} />
+            <Stat label="Mid" value={formatMUR(version.midMinor)} accent />
+            <Stat label="High" value={formatMUR(version.highMinor)} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+            <Stat label="Tier" value={version.tier ?? '—'} />
+            <Stat label="Design fee" value={version.designFeeMinor != null ? formatMUR(version.designFeeMinor) : '—'} />
+            <Stat label="Procurement fee" value={version.procurementFeeMinor != null ? formatMUR(version.procurementFeeMinor) : '—'} />
+          </div>
+          <NotesBlock label="Assumptions" value={version.assumptions} />
+          <NotesBlock label="Exclusions" value={version.exclusions} />
+          <NotesBlock label="Risk items" value={version.riskItems} />
+          <NotesBlock label="Next steps" value={version.nextSteps} />
+        </div>
+        <div className="fad-modal-foot">
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, accent }: { label: string; value: string | null; accent?: boolean }) {
+  return (
+    <div style={{ padding: 10, borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)' }}>
+      <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-tertiary)' }}>{label}</div>
+      <div style={{ fontSize: accent ? 16 : 14, fontWeight: accent ? 600 : 500, marginTop: 4, color: accent ? 'var(--color-brand-accent)' : 'var(--color-text-primary)' }}>
+        {value || '—'}
+      </div>
+    </div>
+  );
+}
+
+function NotesBlock({ label, value }: { label: string; value: string | null }) {
+  if (!value || value.trim().length === 0) return null;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 13, color: 'var(--color-text-primary)', whiteSpace: 'pre-wrap', padding: 10, background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+        {value}
+      </div>
+    </div>
+  );
+}

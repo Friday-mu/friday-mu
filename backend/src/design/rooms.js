@@ -10,7 +10,15 @@ const { DEFAULT_TENANT_ID, shapeRoom } = require('./adapters');
 
 const router = express.Router();
 
-const WRITABLE_FIELDS = ['name', 'sqft', 'usage_kind'];
+const WRITABLE_FIELDS = [
+  'name', 'sqft', 'usage_kind',
+  // Migration 031 — Site Visit detail fields. Number columns accept
+  // null or numeric; PG coerces from JS numbers automatically.
+  'length_m', 'width_m', 'height_m', 'windows', 'doors',
+  'condition_notes', 'issues',
+  'keep_furniture', 'remove_furniture',
+  'design_opportunity', 'access_notes', 'utilities_notes',
+];
 
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {

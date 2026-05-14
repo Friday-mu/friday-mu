@@ -784,14 +784,51 @@ export interface ApiRoom {
   name: string;
   sqft?: number | null;
   usage_kind?: string | null;
+  // Migration 031 — Site Visit detail fields. snake_case to match the
+  // backend column names; the fixture mapper converts to camelCase.
+  length_m?: number | null;
+  width_m?: number | null;
+  height_m?: number | null;
+  windows?: number | null;
+  doors?: number | null;
+  condition_notes?: string | null;
+  issues?: string | null;
+  keep_furniture?: string | null;
+  remove_furniture?: string | null;
+  design_opportunity?: string | null;
+  access_notes?: string | null;
+  utilities_notes?: string | null;
   created_at: string;
   updated_at: string;
+}
+// Per-field patches send only the changed key. PATCH /api/design/rooms/:id.
+export interface ApiRoomPatch {
+  name?: string;
+  sqft?: number | null;
+  usage_kind?: string | null;
+  length_m?: number | null;
+  width_m?: number | null;
+  height_m?: number | null;
+  windows?: number | null;
+  doors?: number | null;
+  condition_notes?: string | null;
+  issues?: string | null;
+  keep_furniture?: string | null;
+  remove_furniture?: string | null;
+  design_opportunity?: string | null;
+  access_notes?: string | null;
+  utilities_notes?: string | null;
 }
 export const listRooms = (propertyId: string) =>
   apiFetch(`/api/design/rooms?property_id=${encodeURIComponent(propertyId)}`)
     .then((r) => (r as { results: ApiRoom[] }).results);
 export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
   apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
+export const updateRoom = (id: string, patch: ApiRoomPatch) =>
+  apiFetch(`/api/design/rooms/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }) as Promise<ApiRoom>;
 // DELETE /api/design/rooms/:id — backend returns 204. apiFetch parses the
 // body as JSON, which would throw on the empty 204 body, so we use raw
 // fetch here (same pattern the photo upload + stage reopen below use).
@@ -1594,18 +1631,18 @@ export function apiRoomToFixture(api: ApiRoom, projectId: string): FixtureRoom {
     id: api.id,
     projectId,
     name: api.name,
-    lengthM: null,
-    widthM: null,
-    heightM: null,
-    windows: null,
-    doors: null,
-    conditionNotes: null,
-    issues: null,
-    keepFurniture: null,
-    removeFurniture: null,
-    designOpportunity: null,
-    accessNotes: null,
-    utilitiesNotes: null,
+    lengthM: api.length_m ?? null,
+    widthM: api.width_m ?? null,
+    heightM: api.height_m ?? null,
+    windows: api.windows ?? null,
+    doors: api.doors ?? null,
+    conditionNotes: api.condition_notes ?? null,
+    issues: api.issues ?? null,
+    keepFurniture: api.keep_furniture ?? null,
+    removeFurniture: api.remove_furniture ?? null,
+    designOpportunity: api.design_opportunity ?? null,
+    accessNotes: api.access_notes ?? null,
+    utilitiesNotes: api.utilities_notes ?? null,
     photoCount: 0,
   } as unknown as FixtureRoom;
 }

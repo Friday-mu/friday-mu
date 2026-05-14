@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   designClient,
   type BudgetAttitude,
@@ -55,15 +55,30 @@ export function PreferencesStage({ project }: Props) {
   const [prefs, setPrefs] = useState<PreferenceProfile>(initial ?? EMPTY_PREFS(project.id));
   const [saving, setSaving] = useState(false);
 
+  // Tracks whether the user has touched any field. If they have, we
+  // refuse to apply a later-arriving server-load response — otherwise
+  // a slow GET that resolves AFTER a user click can silently wipe the
+  // click. (This is the bug Mathias hit on 2026-05-14 with the Budget
+  // attitude radio: he clicked Mid-range during the still-in-flight
+  // initial load, the load resolved with the prior "null" value and
+  // overwrote his selection.)
+  const userTouchedRef = useRef(false);
+
   // Fetch fresh preferences from the API on mount + when project changes.
   // The fixture lookup above seeds the form so it renders immediately;
   // this effect overwrites with whatever the backend has (returns {} if
   // never saved, in which case we keep the EMPTY_PREFS scaffold).
   useEffect(() => {
     let cancelled = false;
+    // New project → reset the touched flag so the initial load applies.
+    userTouchedRef.current = false;
     loadPreferences(project.id)
       .then((res) => {
         if (cancelled) return;
+        // Race-guard: if the user clicked anything between mount and now,
+        // ignore the server snapshot. We'd rather show their unsaved
+        // edits than silently revert to the last persisted state.
+        if (userTouchedRef.current) return;
         const stored = res.preferences as Partial<PreferenceProfile> | null;
         if (stored && Object.keys(stored).length > 0) {
           setPrefs((cur) => ({ ...EMPTY_PREFS(project.id), ...cur, ...stored, projectId: project.id }));
@@ -75,12 +90,17 @@ export function PreferencesStage({ project }: Props) {
     return () => { cancelled = true; };
   }, [project.id]);
 
-  const update = <K extends keyof PreferenceProfile>(k: K, v: PreferenceProfile[K]) => setPrefs((p) => ({ ...p, [k]: v }));
-  const toggleArr = (k: keyof PreferenceProfile, v: string) =>
+  const update = <K extends keyof PreferenceProfile>(k: K, v: PreferenceProfile[K]) => {
+    userTouchedRef.current = true;
+    setPrefs((p) => ({ ...p, [k]: v }));
+  };
+  const toggleArr = (k: keyof PreferenceProfile, v: string) => {
+    userTouchedRef.current = true;
     setPrefs((p) => {
       const arr = (p[k] as string[]) ?? [];
       return { ...p, [k]: arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v] };
     });
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -133,29 +153,23 @@ export function PreferencesStage({ project }: Props) {
 
       {/* 2 — Color palette */}
       <Section n={2} title="Color palette">
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6 }}>
+          Pick or type hex codes — add several so we know the full palette. {prefs.colorPalette.length === 0 ? 'Start with the primary swatch.' : `${prefs.colorPalette.length} added.`}
+        </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           {prefs.colorPalette.map((c, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-full)', fontSize: 11 }}>
               <span style={{ width: 14, height: 14, borderRadius: '50%', background: c, border: '0.5px solid var(--color-border-secondary)' }} />
               <code style={{ fontFamily: 'var(--font-mono-fad)' }}>{c}</code>
-              <button type="button" onClick={() => update('colorPalette', prefs.colorPalette.filter((_, idx) => idx !== i))} style={{ color: 'var(--color-text-tertiary)' }}>×</button>
+              <button type="button" onClick={() => update('colorPalette', prefs.colorPalette.filter((_, idx) => idx !== i))} style={{ color: 'var(--color-text-tertiary)' }} aria-label={`Remove ${c}`}>×</button>
             </span>
           ))}
-          <input
-            placeholder="#hex"
-            style={{ width: 90, padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-sm)', border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-primary)' }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const v = (e.target as HTMLInputElement).value.trim();
-                if (v) {
-                  update('colorPalette', [...prefs.colorPalette, v]);
-                  (e.target as HTMLInputElement).value = '';
-                }
-              }
-            }}
+          <ColorPaletteAdder
+            current={prefs.colorPalette}
+            onAdd={(c) => update('colorPalette', [...prefs.colorPalette, c])}
           />
         </div>
-        <Textarea value={prefs.colorNotes ?? ''} onChange={(v) => update('colorNotes', v)} placeholder="Notes" />
+        <Textarea value={prefs.colorNotes ?? ''} onChange={(v) => update('colorNotes', v)} placeholder="Notes (e.g. 'light beige walls, navy accents, brass fixtures')" />
       </Section>
 
       {/* 3 — Materials */}
@@ -381,5 +395,69 @@ function Textarea({ value, onChange, placeholder }: { value: string; onChange: (
         minHeight: 36,
       }}
     />
+  );
+}
+
+// Color picker + hex text input with explicit Add button. Replaces the
+// "type hex + Enter" affordance which Mathias missed entirely (he put
+// his colors in the notes textarea instead, leaving colorPalette
+// empty). Native <input type="color"> seeds the hex field with a
+// visual picker; users can also type a hex code directly.
+function ColorPaletteAdder({ current, onAdd }: { current: string[]; onAdd: (color: string) => void }) {
+  const [hex, setHex] = useState('#');
+
+  const normalize = (raw: string): string | null => {
+    const v = raw.trim().toLowerCase();
+    if (!v) return null;
+    // Accept #fff, #ffffff, ffffff, fff. Always emit a leading # and
+    // 6 digits.
+    const m = v.match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/);
+    if (!m) return null;
+    const digits = m[1];
+    const full = digits.length === 3
+      ? digits.split('').map((c) => c + c).join('')
+      : digits;
+    return `#${full}`;
+  };
+
+  const tryAdd = () => {
+    const normalized = normalize(hex);
+    if (!normalized) return;
+    if (current.includes(normalized)) {
+      // Already in the palette — no-op, but clear the input.
+      setHex('#');
+      return;
+    }
+    onAdd(normalized);
+    setHex('#');
+  };
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: 2, border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-primary)' }}>
+      <input
+        type="color"
+        value={normalize(hex) ?? '#cccccc'}
+        onChange={(e) => setHex(e.target.value)}
+        aria-label="Pick a color"
+        style={{ width: 28, height: 22, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
+      />
+      <input
+        type="text"
+        value={hex}
+        onChange={(e) => setHex(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryAdd(); } }}
+        placeholder="#hex"
+        aria-label="Hex code"
+        style={{ width: 80, padding: '2px 6px', fontSize: 11, fontFamily: 'var(--font-mono-fad)', border: 0, background: 'transparent', color: 'var(--color-text-primary)', outline: 'none' }}
+      />
+      <button
+        type="button"
+        onClick={tryAdd}
+        disabled={normalize(hex) === null}
+        style={{ padding: '3px 10px', fontSize: 11, fontWeight: 500, borderRadius: 'var(--radius-sm)', background: 'var(--color-brand-accent)', color: '#fff', opacity: normalize(hex) === null ? 0.5 : 1 }}
+      >
+        Add
+      </button>
+    </div>
   );
 }

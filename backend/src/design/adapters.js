@@ -244,12 +244,29 @@ function shapeSiteVisit(row) {
 
 function shapeRoom(row) {
   if (!row) return null;
+  // Note: pg returns NUMERIC columns as strings to preserve precision.
+  // The frontend treats these dimensions as numbers — parseFloat here
+  // so the shape is consistent regardless of column type.
+  const num = (v) => (v == null ? null : (typeof v === 'string' ? parseFloat(v) : v));
   return {
     id: row.id,
     property_id: row.property_id,
     name: row.name,
     sqft: row.sqft,
     usage_kind: row.usage_kind,
+    // Migration 031 — Site Visit room detail fields.
+    length_m: num(row.length_m),
+    width_m: num(row.width_m),
+    height_m: num(row.height_m),
+    windows: row.windows,
+    doors: row.doors,
+    condition_notes: row.condition_notes,
+    issues: row.issues,
+    keep_furniture: row.keep_furniture,
+    remove_furniture: row.remove_furniture,
+    design_opportunity: row.design_opportunity,
+    access_notes: row.access_notes,
+    utilities_notes: row.utilities_notes,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
