@@ -18,35 +18,48 @@ interface Props {
 
 // ── Screenshot capture ────────────────────────────────────────────────
 //
-// Three reliability layers stacked:
-//   1. Pre-warm: when the FAB mounts, kick off the dynamic import of
-//      html2canvas in the background (idle callback) so it's already
-//      compiled by the time the user clicks. Eliminates the "cold first
-//      click" timing window where styles weren't fully resolved.
-//   2. Paint stability: before capturing we wait on
-//        a) document.fonts.ready  (no web-font swap mid-capture)
-//        b) every in-flight <img> with !complete — html2canvas reads
-//           images from the DOM; if a thumbnail is mid-load we get a
-//           transparent block where it should be.
-//        c) two requestAnimationFrame ticks to let the browser commit
-//           any pending paint.
-//   3. Opaque base: pass .fad-app's resolved background color (not
-//      null) so JPEG can't fill un-painted pixels black.
+// We tried html2canvas first. It walks the DOM and re-implements
+// rendering pixel-by-pixel, which is inherently flaky with modern CSS
+// (custom properties, color-mix, gradients, oklch — FAD uses all of
+// these). Symptom: random "darker module" patches that came and went
+// based on style-cache warmth, even after layers of font/image/rAF
+// waits.
+//
+// We now use `html-to-image` (already in package.json). Different
+// approach: serialize the DOM → inline-SVG with foreignObject → let
+// the browser render the SVG into a canvas natively. Far more faithful
+// to actual CSS because we delegate rendering to the browser instead
+// of reimplementing it.
+//
+// html2canvas is kept as a fallback for the rare case `html-to-image`
+// errors — better a slightly-flaky screenshot than no screenshot.
+//
+// Reliability layers preserved on top:
+//   1. Pre-warm the dynamic import on FAB mount (no cold first click).
+//   2. Wait for fonts + in-flight images + 2 rAF ticks before capturing.
+//   3. Pass explicit backgroundColor so any un-painted pixel falls back
+//      to the page bg, not JPEG-black.
 
+let captureModulePromise: Promise<typeof import('html-to-image')> | null = null;
 let html2canvasModulePromise: Promise<typeof import('html2canvas')> | null = null;
 
 function prewarmHtml2canvas(): void {
-  if (html2canvasModulePromise) return;
+  // Keep the original name — the BugReportFab useEffect calls it on
+  // mount. Now warms BOTH the primary and fallback libs.
   const start = () => {
-    html2canvasModulePromise = import('html2canvas').catch(() => {
-      // If the lazy chunk fails (offline, network blip), reset the promise
-      // so the next click can retry rather than reuse the rejected one.
-      html2canvasModulePromise = null;
-      // Re-throw so the awaiter sees the failure too.
-      throw new Error('html2canvas chunk failed to load');
-    }) as Promise<typeof import('html2canvas')>;
+    if (!captureModulePromise) {
+      captureModulePromise = import('html-to-image').catch(() => {
+        captureModulePromise = null;
+        throw new Error('html-to-image chunk failed to load');
+      }) as Promise<typeof import('html-to-image')>;
+    }
+    if (!html2canvasModulePromise) {
+      html2canvasModulePromise = import('html2canvas').catch(() => {
+        html2canvasModulePromise = null;
+        throw new Error('html2canvas chunk failed to load');
+      }) as Promise<typeof import('html2canvas')>;
+    }
   };
-  // requestIdleCallback isn't in every browser (Safari). setTimeout fallback.
   const ric = (window as typeof window & { requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number }).requestIdleCallback;
   if (typeof ric === 'function') ric(start, { timeout: 2000 });
   else setTimeout(start, 200);
@@ -67,7 +80,6 @@ async function waitForImages(root: HTMLElement, timeoutMs = 1500): Promise<void>
           }),
       ),
     ),
-    // Don't block the screenshot forever on a stuck image — best-effort.
     new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
 }
@@ -76,45 +88,76 @@ function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+function resolveBackgroundColor(el: HTMLElement): string {
+  const computedBg = window.getComputedStyle(el).backgroundColor;
+  const isTransparent =
+    !computedBg || computedBg === 'rgba(0, 0, 0, 0)' || computedBg === 'transparent';
+  return isTransparent ? '#ffffff' : computedBg;
+}
+
+async function settlePaint(el: HTMLElement): Promise<void> {
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+  }
+  await waitForImages(el, 1500);
+  await nextFrame();
+  await nextFrame();
+}
+
+async function captureWithHtmlToImage(el: HTMLElement, backgroundColor: string): Promise<string> {
+  if (!captureModulePromise) {
+    captureModulePromise = import('html-to-image') as Promise<typeof import('html-to-image')>;
+  }
+  const { toJpeg } = await captureModulePromise;
+  return toJpeg(el, {
+    quality: 0.7,
+    pixelRatio: 0.5,
+    backgroundColor,
+    cacheBust: true,
+    // filter returns FALSE to drop a node. Skip the FAB so it doesn't
+    // appear in its own corner, and skip <script>/<style> children
+    // (no-op for capture, smaller serialized SVG).
+    filter: (node: HTMLElement) => {
+      if (!node.classList) return true;
+      if (node.classList.contains('bug-fab')) return false;
+      const tag = node.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false;
+      return true;
+    },
+  });
+}
+
+async function captureWithHtml2canvas(el: HTMLElement, backgroundColor: string): Promise<string> {
+  if (!html2canvasModulePromise) {
+    html2canvasModulePromise = import('html2canvas') as Promise<typeof import('html2canvas')>;
+  }
+  const mod = await html2canvasModulePromise;
+  const canvas = await mod.default(el, {
+    backgroundColor,
+    scale: 0.5,
+    logging: false,
+    useCORS: true,
+    ignoreElements: (node) => node.classList?.contains('bug-fab') ?? false,
+  });
+  return canvas.toDataURL('image/jpeg', 0.7);
+}
+
 async function captureViewport(): Promise<string | null> {
+  const el = document.querySelector('.fad-app') as HTMLElement | null;
+  if (!el) return null;
+  await settlePaint(el);
+  const backgroundColor = resolveBackgroundColor(el);
+  // Primary path: html-to-image (better modern-CSS fidelity).
   try {
-    // Reuse the pre-warmed import if the FAB seeded it; otherwise import now.
-    if (!html2canvasModulePromise) {
-      html2canvasModulePromise = import('html2canvas') as Promise<typeof import('html2canvas')>;
-    }
-    const mod = await html2canvasModulePromise;
-    const html2canvas = mod.default;
-
-    const el = document.querySelector('.fad-app') as HTMLElement | null;
-    if (!el) return null;
-
-    // (a) Fonts: never capture mid-swap.
-    if (document.fonts?.ready) {
-      await document.fonts.ready;
-    }
-    // (b) Images: wait for in-flight <img> loads (capped, so we don't hang).
-    await waitForImages(el, 1500);
-    // (c) Paint commit: two rAF ticks ensures layout + paint settled
-    //     after the (a)/(b) awaits, since they can land mid-frame.
-    await nextFrame();
-    await nextFrame();
-
-    // JPEG fills un-painted pixels with BLACK. Resolve .fad-app's actual
-    // bg color so the canvas starts opaque rather than transparent.
-    const computedBg = window.getComputedStyle(el).backgroundColor;
-    const isTransparent =
-      !computedBg || computedBg === 'rgba(0, 0, 0, 0)' || computedBg === 'transparent';
-    const backgroundColor = isTransparent ? '#ffffff' : computedBg;
-
-    const canvas = await html2canvas(el, {
-      backgroundColor,
-      scale: 0.5,
-      logging: false,
-      useCORS: true,
-      ignoreElements: (node) => node.classList?.contains('bug-fab') ?? false,
-    });
-    return canvas.toDataURL('image/jpeg', 0.7);
-  } catch {
+    return await captureWithHtmlToImage(el, backgroundColor);
+  } catch (err) {
+    console.warn('[feedback] html-to-image failed, falling back to html2canvas:', err);
+  }
+  // Fallback: html2canvas (legacy renderer).
+  try {
+    return await captureWithHtml2canvas(el, backgroundColor);
+  } catch (err) {
+    console.warn('[feedback] html2canvas fallback also failed:', err);
     return null;
   }
 }
