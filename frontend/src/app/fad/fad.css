@@ -1704,7 +1704,14 @@ html.fad-dark .fad-palette-overlay { background: rgba(0,0,0,0.6); }
   display: grid;
   place-items: center;
   cursor: pointer;
-  z-index: 70;
+  /* Sit above all modals, drawers, lightboxes, dropdowns. The current
+     ceiling in the app is 100 (context menus) — 110 keeps us above
+     everything so the team can report a bug while ANY UI is open,
+     including portal previews, share drawers, owner-portal lightbox,
+     budget-item dialogs, etc. We unmount the FAB itself while our own
+     bug-report modal is open (BugReportFab early-returns) so it doesn't
+     hover over the dialog we just opened. */
+  z-index: 110;
   box-shadow: 0 4px 12px rgba(15, 24, 54, 0.12);
   transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }

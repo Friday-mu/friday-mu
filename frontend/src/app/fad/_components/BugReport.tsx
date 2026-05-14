@@ -191,15 +191,23 @@ export function BugReportFab({ currentModuleLabel }: Props) {
 
   return (
     <>
-      <button
-        className={'bug-fab' + (capturing ? ' is-capturing' : '')}
-        title={capturing ? 'Capturing…' : 'Send feedback — bug · feature · suggestion'}
-        onClick={handleClick}
-        aria-label="Send feedback"
-        disabled={capturing}
-      >
-        <IconTool size={18} />
-      </button>
+      {/* Hide the FAB while our own modal is open. The FAB sits at
+          z-index 110 (above every other dialog so the team can report
+          bugs that occur inside modals); if we left it mounted while
+          our own bug-report dialog is open it would float on top of
+          itself, which looks awful. Unmounting is cleaner than
+          visibility:hidden since the dialog is the focus anyway. */}
+      {!open && (
+        <button
+          className={'bug-fab' + (capturing ? ' is-capturing' : '')}
+          title={capturing ? 'Capturing…' : 'Send feedback — bug · feature · suggestion'}
+          onClick={handleClick}
+          aria-label="Send feedback"
+          disabled={capturing}
+        >
+          <IconTool size={18} />
+        </button>
+      )}
       {open && (
         <BugReportModal
           currentModuleLabel={currentModuleLabel}
