@@ -87,6 +87,16 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
     res.json(shapeRoom(rows[0]));
   } catch (e) {
     console.error('[design/rooms] patch error:', e.message);
+    // 22003 = numeric_value_out_of_range — value exceeds the column's
+    // NUMERIC(p,s) capacity. Frontend already clamps per-field, but
+    // keep this here as a defence in depth so a direct API caller
+    // (curl / Postman / scripts) gets a clear 400 instead of a generic
+    // 500. 22P02 = invalid_text_representation (NaN/non-numeric).
+    if (e && (e.code === '22003' || e.code === '22P02')) {
+      return res.status(400).json({
+        error: 'A numeric field is out of range. Dimensions must be in metres (max ~200); counts must fit in a small integer.',
+      });
+    }
     res.status(500).json({ error: e.message });
   }
 });

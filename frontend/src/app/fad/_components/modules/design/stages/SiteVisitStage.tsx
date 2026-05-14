@@ -768,6 +768,56 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
     return Number.isFinite(n) ? n : null;
   };
 
+  // Per-field sanity caps. The DB columns are NUMERIC(8,2) so anything
+  // above 999,999.99 raises a "numeric field overflow" on PATCH; rather
+  // than surface that as a 500 we clamp client-side with hints so the
+  // user sees a friendly inline error. Mathias hit this 2026-05-14 by
+  // mistyping a length (likely treating the field as mm vs m). Even
+  // the relaxed caps below are 2-3 orders of magnitude beyond any
+  // realistic room dimension — they're guardrails, not constraints.
+  const DIMENSION_MAX_M = 200;   // length / width — bigger than the biggest villa.
+  const HEIGHT_MAX_M = 20;       // ceiling height — atriums fit.
+  const COUNT_MAX = 99;          // windows / doors per room — sanity cap.
+
+  // Validate-then-queue. When a value blows the cap we keep the local
+  // state (so the user can edit it down) but DON'T queue a PATCH — the
+  // backend never sees the bad value, and the UI shows a per-field
+  // hint until they fix it.
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof typeof form, string>>>({});
+  const setFieldError = (k: keyof typeof form, msg: string | null) => {
+    setFieldErrors((prev) => {
+      if (msg) return { ...prev, [k]: msg };
+      if (!(k in prev)) return prev;
+      const { [k]: _drop, ...rest } = prev;
+      void _drop;
+      return rest;
+    });
+  };
+  const guardedDimension = (key: keyof typeof form, n: number | null, max: number, label: string): boolean => {
+    if (n !== null && n > max) {
+      setFieldError(key, `Looks too big — max ${max} m for ${label.toLowerCase()}. Did you mean metres, not cm/mm?`);
+      return false;
+    }
+    if (n !== null && n < 0) {
+      setFieldError(key, `Must be 0 or positive.`);
+      return false;
+    }
+    setFieldError(key, null);
+    return true;
+  };
+  const guardedCount = (key: keyof typeof form, n: number | null, max: number, label: string): boolean => {
+    if (n !== null && n > max) {
+      setFieldError(key, `Max ${max} ${label} per room.`);
+      return false;
+    }
+    if (n !== null && n < 0) {
+      setFieldError(key, `Must be 0 or positive.`);
+      return false;
+    }
+    setFieldError(key, null);
+    return true;
+  };
+
   return (
     <div style={{ borderTop: '0.5px solid var(--color-border-tertiary)', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, marginTop: -4, marginBottom: -4, minHeight: 16 }}>
@@ -787,43 +837,68 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
         </Field>
         <Field label="Length (m)">
           <input
-            type="number" step="0.1"
+            type="number" step="0.1" min={0} max={DIMENSION_MAX_M}
             value={form.lengthM ?? ''}
-            onChange={(e) => { const n = parseNum(e.target.value); setForm((f) => ({ ...f, lengthM: n })); queuePatch({ length_m: n }); }}
+            onChange={(e) => {
+              const n = parseNum(e.target.value);
+              setForm((f) => ({ ...f, lengthM: n }));
+              if (guardedDimension('lengthM', n, DIMENSION_MAX_M, 'length')) queuePatch({ length_m: n });
+            }}
             style={inputStyle()}
           />
+          {fieldErrors.lengthM && <FieldHint message={fieldErrors.lengthM} />}
         </Field>
         <Field label="Width (m)">
           <input
-            type="number" step="0.1"
+            type="number" step="0.1" min={0} max={DIMENSION_MAX_M}
             value={form.widthM ?? ''}
-            onChange={(e) => { const n = parseNum(e.target.value); setForm((f) => ({ ...f, widthM: n })); queuePatch({ width_m: n }); }}
+            onChange={(e) => {
+              const n = parseNum(e.target.value);
+              setForm((f) => ({ ...f, widthM: n }));
+              if (guardedDimension('widthM', n, DIMENSION_MAX_M, 'width')) queuePatch({ width_m: n });
+            }}
             style={inputStyle()}
           />
+          {fieldErrors.widthM && <FieldHint message={fieldErrors.widthM} />}
         </Field>
         <Field label="Height (m)">
           <input
-            type="number" step="0.1"
+            type="number" step="0.1" min={0} max={HEIGHT_MAX_M}
             value={form.heightM ?? ''}
-            onChange={(e) => { const n = parseNum(e.target.value); setForm((f) => ({ ...f, heightM: n })); queuePatch({ height_m: n }); }}
+            onChange={(e) => {
+              const n = parseNum(e.target.value);
+              setForm((f) => ({ ...f, heightM: n }));
+              if (guardedDimension('heightM', n, HEIGHT_MAX_M, 'height')) queuePatch({ height_m: n });
+            }}
             style={inputStyle()}
           />
+          {fieldErrors.heightM && <FieldHint message={fieldErrors.heightM} />}
         </Field>
         <Field label="Windows">
           <input
-            type="number"
+            type="number" min={0} max={COUNT_MAX}
             value={form.windows ?? ''}
-            onChange={(e) => { const n = parseInt10(e.target.value); setForm((f) => ({ ...f, windows: n })); queuePatch({ windows: n }); }}
+            onChange={(e) => {
+              const n = parseInt10(e.target.value);
+              setForm((f) => ({ ...f, windows: n }));
+              if (guardedCount('windows', n, COUNT_MAX, 'windows')) queuePatch({ windows: n });
+            }}
             style={inputStyle()}
           />
+          {fieldErrors.windows && <FieldHint message={fieldErrors.windows} />}
         </Field>
         <Field label="Doors">
           <input
-            type="number"
+            type="number" min={0} max={COUNT_MAX}
             value={form.doors ?? ''}
-            onChange={(e) => { const n = parseInt10(e.target.value); setForm((f) => ({ ...f, doors: n })); queuePatch({ doors: n }); }}
+            onChange={(e) => {
+              const n = parseInt10(e.target.value);
+              setForm((f) => ({ ...f, doors: n }));
+              if (guardedCount('doors', n, COUNT_MAX, 'doors')) queuePatch({ doors: n });
+            }}
             style={inputStyle()}
           />
+          {fieldErrors.doors && <FieldHint message={fieldErrors.doors} />}
         </Field>
       </Grid>
       <Field label="Condition notes" full>
@@ -1175,6 +1250,25 @@ function primaryBtn(): React.CSSProperties {
 }
 function secondaryBtn(): React.CSSProperties {
   return { padding: '8px 16px', borderRadius: 'var(--radius-sm)', background: 'var(--color-background-tertiary)', color: 'var(--color-text-primary)', fontSize: 13 };
+}
+
+// Per-field validation error — small red note shown immediately below
+// a numeric input when the value blows a sanity cap. Distinct from
+// `Hint` (which is a guidance block on what to type).
+function FieldHint({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        marginTop: 4,
+        fontSize: 10,
+        color: 'var(--color-text-danger)',
+        lineHeight: 1.4,
+      }}
+    >
+      {message}
+    </div>
+  );
 }
 
 // Inline contextual hint for an input — same pattern as PreferencesStage's
