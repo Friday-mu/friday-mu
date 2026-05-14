@@ -682,7 +682,52 @@ const ALLOWED_FURNISHING_FETCH_MIME = new Set(['image/png', 'image/jpeg', 'image
 // imagegen's inlineImages list. Returns null on any failure path; the
 // caller decides whether that's fatal (floor plan + moodboard MUST
 // both load) or merely degraded (e.g. a third optional reference photo).
+//
+// Handles both HTTP(S) URLs and `data:image/...;base64,...` inline
+// URLs. Mathias's 2026-05-14 "floor plan returned unsupported
+// content-type" bug (feedback 74797b59) was caused by axios.get()
+// being called against a data: URL — axios doesn't unpack data URIs
+// the way HTTP responses unpack, so `content-type` came back as an
+// empty string and the MIME whitelist check rejected the call. All
+// AI-generated assets in design_assets are stored as data URLs, so
+// this affected every furnished-floor-plan / design-pack render /
+// moodboard-variant call that referenced a generated image.
 async function fetchInlineImage(url, label) {
+  if (typeof url !== 'string' || url.length === 0) {
+    return { error: `${label} has no URL` };
+  }
+
+  // Inline data URLs — parse without a network round-trip.
+  if (url.startsWith('data:')) {
+    // data:image/png;base64,<payload>
+    // Spec allows ;base64 to be absent (URL-encoded text) but our
+    // assets always use base64, and imagegen's wire format needs
+    // base64 either way.
+    const m = url.match(/^data:([^;,]+)(;[^,]+)?,(.+)$/);
+    if (!m) return { error: `${label} malformed data URL` };
+    const mimeType = m[1].toLowerCase();
+    const isBase64 = (m[2] || '').toLowerCase().includes('base64');
+    const payload = m[3];
+    if (!ALLOWED_FURNISHING_FETCH_MIME.has(mimeType)) {
+      console.warn(`[design/ai_images] ${label} unsupported data-url mime: ${mimeType}`);
+      return { error: `${label} returned unsupported content-type ${mimeType}` };
+    }
+    let base64;
+    if (isBase64) {
+      base64 = payload;
+    } else {
+      // text-form data URL — re-encode as base64 for imagegen.
+      base64 = Buffer.from(decodeURIComponent(payload)).toString('base64');
+    }
+    // Approximate decoded size from base64 length (4 chars → 3 bytes).
+    const approxBytes = Math.floor((base64.length * 3) / 4);
+    if (approxBytes > MAX_INLINE_IMAGE_BYTES) {
+      return { error: `${label} exceeds inline size cap (~${approxBytes} > ${MAX_INLINE_IMAGE_BYTES})` };
+    }
+    return { mimeType, base64 };
+  }
+
+  // HTTP(S) URLs — the original path.
   try {
     const r = await axios.get(url, {
       responseType: 'arraybuffer',

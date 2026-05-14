@@ -189,9 +189,9 @@ function SelectionsSection({ project }: { project: DesignProject }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         <div>
           <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Selections</h4>
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            Pick-one-of-three options for the owner. Replaces Slack threads with a structured record that flows into Final Budget.
-            {' · '}{drafts.length} draft · {sent.length} awaiting · {decided.length} decided
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)', maxWidth: 560 }}>
+            A <em>selection</em> = one design decision you want the owner to make. Create one for each meaningful choice (sofa style, rug pattern, paint colour, light fixture). Add 2–4 options with photos + price. Send to the portal → owner picks → their pick auto-creates a budget item under Final Budget.
+            {' · '}{drafts.length} draft · {sent.length} awaiting owner · {decided.length} decided
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -219,8 +219,25 @@ function SelectionsSection({ project }: { project: DesignProject }) {
       )}
 
       {selections.length === 0 && !showCreate ? (
-        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0' }}>
-          No selections yet. Create one when there's a real choice to put in front of the owner — sofa style, rug pattern, lighting fixture.
+        <div style={{
+          fontSize: 12,
+          color: 'var(--color-text-secondary)',
+          padding: '12px 14px',
+          background: 'var(--color-brand-accent-soft)',
+          borderLeft: '2px solid var(--color-brand-accent)',
+          borderRadius: 'var(--radius-sm)',
+          lineHeight: 1.55,
+        }}>
+          <div style={{ fontWeight: 500, marginBottom: 4 }}>How selections work</div>
+          <ol style={{ margin: '0 0 0 18px', padding: 0 }}>
+            <li>Click <strong>+ New selection</strong> for a specific choice (e.g. <em>&ldquo;Pick the living-room sofa&rdquo;</em>).</li>
+            <li>Add 2&ndash;4 options inside it (photo + name + cost).</li>
+            <li>Send to the owner via the portal.</li>
+            <li>Owner picks one. Their pick auto-creates a Final Budget line item.</li>
+          </ol>
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            One selection per decision, not per item. <em>&ldquo;Pick the sofa&rdquo;</em> is a selection. The 3 sofa candidates inside it are options.
+          </div>
         </div>
       ) : (
         <ul style={{ margin: '12px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -757,8 +774,21 @@ function PackDetail({ version }: { version: DesignPackVersion }) {
         </div>
       </div>
 
-      <div style={{ aspectRatio: '16 / 9', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)', fontSize: 12, marginBottom: 12 }}>
-        Cover — {version.coverImageUrl}
+      {/* Cover image — Mathias reported "no renders displayed" because
+          this block used to show the URL as TEXT instead of rendering
+          the actual <img>. Now it shows the image when a URL exists,
+          falls back to a placeholder label when the cover isn't set. */}
+      <div style={{ aspectRatio: '16 / 9', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {version.coverImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={version.coverImageUrl}
+            alt={`Design pack cover v${version.version}`}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : (
+          <span style={{ color: 'var(--color-text-tertiary)', fontSize: 12 }}>No cover yet</span>
+        )}
       </div>
 
       <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{version.narrative}</p>
@@ -769,8 +799,17 @@ function PackDetail({ version }: { version: DesignPackVersion }) {
           const room = designClient.rooms.list(version.projectId).find((rm) => rm.id === r.roomId);
           return (
             <div key={r.roomId} style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-              <div style={{ aspectRatio: '4 / 3', background: 'var(--color-background-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)', fontSize: 11 }}>
-                {r.renderImageUrl ? '3D render' : 'Layout'}
+              <div style={{ aspectRatio: '4 / 3', background: 'var(--color-background-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {r.renderImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={r.renderImageUrl}
+                    alt={`3D render — ${room?.name ?? r.roomId}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>No render yet</span>
+                )}
               </div>
               <div style={{ padding: 8, fontSize: 12 }}>
                 <strong>{room?.name ?? r.roomId}</strong>

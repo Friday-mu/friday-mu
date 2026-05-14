@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   designClient,
   designFeeForTier,
@@ -16,7 +16,7 @@ import {
   type RoughBudgetEstimateLine,
 } from '../../../../_data/design';
 import { FRIDAY_CATALOG_HISTORY, FRIDAY_STYLE_GUIDE } from '../../../../_data/fridayCatalogHistory';
-import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString, aiRoughBudgetEstimate, loadProject, apiProjectToFixture, type AiRoughBudgetResponse } from '../../../../_data/designClient';
+import { createRoughBudgetVersion, apiRoughBudgetVersionToFixture, tierNumToString, aiRoughBudgetEstimate, loadProject, apiProjectToFixture, listRoughBudgetItems, type AiRoughBudgetResponse, type ApiRoughBudgetItem } from '../../../../_data/designClient';
 import { PROJECTS as FIXTURE_PROJECTS } from '../../../../_data/design';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
@@ -1034,9 +1034,47 @@ function addBtn(): React.CSSProperties { return { padding: '6px 14px', borderRad
 // to avoid surprising state mutations; the user can copy whatever they
 // need by eye and Save a new version.
 function VersionInspectModal({ version, onClose }: { version: RoughBudget; onClose: () => void }) {
+  // Mathias's feedback ad56fe97 — what he actually wanted from clicking
+  // a saved version was to see the LINE ITEMS that made up that budget,
+  // not just the totals. Line items live in design_rough_budgets and
+  // carry version_id; we fetch the whole project's items and filter
+  // client-side by version_id.
+  const [lineItems, setLineItems] = useState<ApiRoughBudgetItem[] | null>(null);
+  const [loadingItems, setLoadingItems] = useState(true);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingItems(true);
+    listRoughBudgetItems(version.projectId)
+      .then((all) => {
+        if (cancelled) return;
+        // Older line items (from before migration 023) have null
+        // version_id — they're "ambient" items that pre-dated
+        // versioning. Don't show them on a specific version.
+        const filtered = all.filter((i) => i.version_id === version.id);
+        setLineItems(filtered);
+        setLoadingItems(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setItemsError(err instanceof Error ? err.message : 'Failed to load line items');
+        setLoadingItems(false);
+      });
+    return () => { cancelled = true; };
+  }, [version.id, version.projectId]);
+
+  const itemsTotal = useMemo(() => {
+    if (!lineItems) return 0;
+    return lineItems.reduce(
+      (sum, i) => sum + (i.unit_cost_minor ?? 0) * (i.quantity ?? 0),
+      0,
+    );
+  }, [lineItems]);
+
   return (
     <div className="fad-modal-overlay" onClick={onClose}>
-      <div className="fad-modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
+      <div className="fad-modal" style={{ width: 720 }} onClick={(e) => e.stopPropagation()}>
         <div className="fad-modal-head">
           <div className="fad-modal-title">Rough budget v{version.version}</div>
           <span className="chip" style={{ marginLeft: 8 }}>{version.status}</span>
@@ -1056,6 +1094,59 @@ function VersionInspectModal({ version, onClose }: { version: RoughBudget; onClo
             <Stat label="Design fee" value={version.designFeeMinor != null ? formatMUR(version.designFeeMinor) : '—'} />
             <Stat label="Procurement fee" value={version.procurementFeeMinor != null ? formatMUR(version.procurementFeeMinor) : '—'} />
           </div>
+
+          {/* Line items — the primary thing Mathias was looking for. */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Line items {lineItems ? `(${lineItems.length})` : ''}</span>
+              {lineItems && lineItems.length > 0 && (
+                <span style={{ fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
+                  items total: {formatMUR(itemsTotal)}
+                </span>
+              )}
+            </div>
+            {loadingItems && (
+              <div style={{ padding: 12, fontSize: 12, color: 'var(--color-text-tertiary)' }}>Loading line items…</div>
+            )}
+            {itemsError && (
+              <div style={{ padding: 12, fontSize: 12, color: 'var(--color-text-danger)' }}>{itemsError}</div>
+            )}
+            {!loadingItems && !itemsError && lineItems && lineItems.length === 0 && (
+              <div style={{ padding: 12, fontSize: 12, color: 'var(--color-text-tertiary)', background: 'var(--color-background-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+                No line items were saved with this version. It was likely created using the manual low/mid/high override.
+              </div>
+            )}
+            {!loadingItems && !itemsError && lineItems && lineItems.length > 0 && (
+              <div style={{ overflowX: 'auto', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ background: 'var(--color-background-tertiary)' }}>
+                    <tr>
+                      <th style={lineItemCell('left')}>Item</th>
+                      <th style={lineItemCell('left')}>Category</th>
+                      <th style={lineItemCell('right')}>Qty</th>
+                      <th style={lineItemCell('right')}>Unit cost</th>
+                      <th style={lineItemCell('right')}>Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.map((li) => {
+                      const sub = (li.unit_cost_minor ?? 0) * (li.quantity ?? 0);
+                      return (
+                        <tr key={li.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                          <td style={lineItemCell('left')}>{li.description ?? <em style={{ color: 'var(--color-text-tertiary)' }}>(no description)</em>}</td>
+                          <td style={lineItemCell('left')}>{li.category_code ?? '—'}</td>
+                          <td style={{ ...lineItemCell('right'), fontFamily: 'var(--font-mono-fad)' }}>{li.quantity ?? '—'}</td>
+                          <td style={{ ...lineItemCell('right'), fontFamily: 'var(--font-mono-fad)' }}>{li.unit_cost_minor != null ? formatMUR(li.unit_cost_minor) : '—'}</td>
+                          <td style={{ ...lineItemCell('right'), fontFamily: 'var(--font-mono-fad)', fontWeight: 500 }}>{formatMUR(sub)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           <NotesBlock label="Assumptions" value={version.assumptions} />
           <NotesBlock label="Exclusions" value={version.exclusions} />
           <NotesBlock label="Risk items" value={version.riskItems} />
@@ -1067,6 +1158,10 @@ function VersionInspectModal({ version, onClose }: { version: RoughBudget; onClo
       </div>
     </div>
   );
+}
+
+function lineItemCell(align: 'left' | 'right'): React.CSSProperties {
+  return { padding: '6px 10px', textAlign: align, color: 'var(--color-text-primary)' };
 }
 
 function Stat({ label, value, accent }: { label: string; value: string | null; accent?: boolean }) {

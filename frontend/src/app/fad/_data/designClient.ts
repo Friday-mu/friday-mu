@@ -1073,6 +1073,27 @@ export const createRoughBudgetVersion = (payload: Partial<ApiRoughBudgetVersion>
 export const updateRoughBudgetVersion = (id: string, patch: Partial<ApiRoughBudgetVersion>) =>
   apiFetch(`/api/design/rough_budget_versions/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiRoughBudgetVersion>;
 
+// Line items belonging to ANY rough-budget version in this project.
+// The caller filters by version_id client-side. Added 2026-05-14 for
+// the VersionInspectModal — Mathias wanted to see WHICH ITEMS made up
+// each saved version, not just the totals.
+export interface ApiRoughBudgetItem {
+  id: string;
+  project_id: string;
+  version_id: string | null;
+  category_code: string | null;
+  description: string | null;
+  unit_cost_minor: number | null;
+  quantity: number | null;
+  notes: string | null;
+  catalog_source_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export const listRoughBudgetItems = (projectId: string) =>
+  apiFetch(`/api/design/rough_budgets?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiRoughBudgetItem[] }).results);
+
 // ─────────────────────────── Site visits ───────────────────────────
 // Migration 022 added the metadata fields the SiteVisitStage form has
 // always rendered but never saved. The frontend treats site_visit as

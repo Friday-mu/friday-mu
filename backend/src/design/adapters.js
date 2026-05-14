@@ -300,6 +300,11 @@ function shapeRoughBudget(row) {
   return {
     id: row.id,
     project_id: row.project_id,
+    // Added 2026-05-14 — Mathias's bug ad56fe97 wanted to see line
+    // items per version in the inspect modal. We need version_id on
+    // the wire so the modal can filter the line items by which
+    // version they belong to.
+    version_id: row.version_id ?? null,
     category_code: row.category_code,
     description: row.description,
     unit_cost_minor: toNumberOrNull(row.unit_cost_minor),
