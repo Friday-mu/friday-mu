@@ -168,37 +168,20 @@ export function BugReportFab({ currentModuleLabel }: Props) {
   );
 }
 
-// Each feedback type gets its own structured shape — bugs care
-// about reproduction + severity, features want a user-story shape,
-// suggestions are about the delta from current behavior.
-type FridaySpec =
-  | {
-      kind: 'bug';
-      title: string;
-      steps: string[];
-      expected: string;
-      actual: string;
-      severity: 'Low' | 'Medium' | 'High' | 'Critical';
-    }
-  | {
-      kind: 'feature';
-      title: string;
-      userStory: string;
-      acceptanceCriteria: string[];
-      priority: 'Nice to have' | 'Important' | 'Critical';
-    }
-  | {
-      kind: 'suggestion';
-      title: string;
-      currentBehavior: string;
-      suggestedChange: string;
-      whyItMatters: string;
-    };
+// Friday's optional "fill-the-gaps" pass. Instead of asking the user
+// to pre-structure their report (which they won't), they brain-dump in
+// one field. Friday reads what they wrote + page context and proposes
+// 2–4 short, specific follow-ups. The user can answer some, all, or
+// none and submit either way.
+interface ClarifyingQA {
+  question: string;
+  answer: string;
+}
 
-const REPHRASE_HELP: Record<FeedbackType, string> = {
-  bug: 'Friday structures your report into Steps · Expected · Actual · Severity before filing.',
-  feature: 'Friday structures your request into User story · Acceptance criteria · Priority.',
-  suggestion: 'Friday structures your suggestion into Current behavior · Suggested change · Why it matters.',
+const ASK_FRIDAY_HELP: Record<FeedbackType, string> = {
+  bug: 'Friday reads your bug and asks specific follow-ups (repro steps, what you expected, frequency).',
+  feature: 'Friday reads your request and asks specific follow-ups (who benefits, what problem it solves, concrete use case).',
+  suggestion: 'Friday reads your suggestion and asks specific follow-ups (current behaviour, friction, suggested change).',
 };
 
 // Type-aware copy. Keeps the modal feeling tailored without three
@@ -259,52 +242,85 @@ function BugReportModal({
   // displays it.
   const screenshot = initialScreenshot;
   const [description, setDescription] = useState('');
-  const [rephrasing, setRephrasing] = useState(false);
-  const [spec, setSpec] = useState<FridaySpec | null>(null);
-  // The exact description text that produced the current `spec`. If the
-  // user edits the textarea after rephrasing, this no longer matches
-  // and we mark the spec stale (submit re-disabled until they rephrase
-  // again). This is the "mandatory verification loop" — rephrase →
-  // verify → edit if needed → re-rephrase → file.
-  const [specSourceText, setSpecSourceText] = useState<string>('');
+  const [asking, setAsking] = useState(false);
+  // Once Friday has proposed follow-ups, they live here. Answers default
+  // to '' — submission appends only the ones the user actually filled in.
+  const [qas, setQas] = useState<ClarifyingQA[]>([]);
+  const [askError, setAskError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
   const trimmedDescription = description.trim();
-  const isSpecStale = spec !== null && specSourceText !== trimmedDescription;
-  const canRephrase = trimmedDescription.length > 0 && !rephrasing;
-  // File-with-spec is the only path now. The user MUST rephrase first,
-  // verify the spec, and confirm it matches what they wrote. No more
-  // "raw description goes to inbox uncategorized" — that was throwing
-  // away the structured content the AI produced.
-  const canSubmit = spec !== null && !isSpecStale && !submitting;
+  const canAskFriday = trimmedDescription.length >= 4 && !asking;
+  // Submit is always available as long as there's a description. The
+  // follow-up questions are 100% optional — the user can ignore them
+  // and just submit raw text. This is the simplicity we lost with the
+  // mandatory-rephrase flow; we get the structure back via Kimi at
+  // triage time in the inbox, not at capture time.
+  const canSubmit = trimmedDescription.length > 0 && !submitting;
 
-  const rephrase = () => {
-    if (!canRephrase) return;
-    setRephrasing(true);
-    setSpec(null);
-    setTimeout(() => {
-      const next = fakeRephrase(type, description, '', currentModuleLabel);
-      setSpec(next);
-      setSpecSourceText(trimmedDescription);
-      setRephrasing(false);
-    }, 900);
+  const askFriday = async () => {
+    if (!canAskFriday) return;
+    setAsking(true);
+    setAskError(null);
+    try {
+      const routeUrl =
+        typeof window !== 'undefined'
+          ? window.location.pathname + window.location.search
+          : null;
+      const data = await apiFetch('/api/feedback/clarifying-questions', {
+        method: 'POST',
+        body: JSON.stringify({
+          type,
+          description: trimmedDescription,
+          module_label: currentModuleLabel ?? null,
+          route_url: routeUrl,
+        }),
+      }) as { questions: string[] };
+      const list = Array.isArray(data?.questions) ? data.questions : [];
+      if (list.length === 0) {
+        setQas([]);
+        setAskError('Friday says your description is already complete — submit when ready.');
+      } else {
+        setQas(list.map((q) => ({ question: q, answer: '' })));
+      }
+    } catch (err) {
+      setAskError(err instanceof Error ? err.message : 'Failed to fetch questions');
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const setAnswer = (idx: number, value: string) => {
+    setQas((prev) => prev.map((q, i) => (i === idx ? { ...q, answer: value } : q)));
   };
 
   const submit = async () => {
-    if (!canSubmit || spec === null) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      // Persist the STRUCTURED spec as the description so the inbox sees
-      // the rephrased content (steps / user-story / before-after) — not
-      // just the raw text the user typed. The original raw report is
-      // appended at the bottom for audit / context.
+      // Title: first sentence of description, capped at 80 chars. Keeps
+      // the inbox row scannable without making the user invent one.
+      const title = deriveTitle(trimmedDescription, currentModuleLabel);
+      // Build the final description: raw text + any Q/A pairs the user
+      // bothered to answer. Unanswered questions are dropped entirely
+      // (no point persisting "Q: ... / A: ").
+      const answered = qas.filter((q) => q.answer.trim().length > 0);
+      const fullDescription = answered.length === 0
+        ? trimmedDescription
+        : [
+            trimmedDescription,
+            '',
+            '---',
+            '**Friday\'s follow-up questions:**',
+            ...answered.flatMap((q) => [`**Q:** ${q.question}`, `**A:** ${q.answer.trim()}`, '']),
+          ].join('\n').trim();
       const payload: Record<string, unknown> = {
         type,
-        title: spec.title,
-        description: serializeSpec(spec, trimmedDescription),
+        title,
+        description: fullDescription,
         route_url:
           typeof window !== 'undefined'
             ? window.location.pathname + window.location.search
@@ -312,9 +328,6 @@ function BugReportModal({
         module_label: currentModuleLabel ?? null,
       };
       if (screenshot) payload.screenshot_data_url = screenshot;
-      // Severity only applies to bugs. Feature/suggestion specs carry
-      // priority instead — that's part of the description body now.
-      if (spec.kind === 'bug') payload.severity = spec.severity.toLowerCase();
 
       await apiFetch('/api/feedback', {
         method: 'POST',
@@ -377,9 +390,8 @@ function BugReportModal({
           </button>
         </div>
         <div className="fad-modal-body">
-          {/* Type tabs — clear the AI spec on switch since each type
-              produces a structurally different output (steps vs. user
-              story vs. before/after). */}
+          {/* Type tabs — clear any pending follow-ups on switch since
+              the question set is type-specific. */}
           <div role="tablist" aria-label="Feedback type" className="fad-feedback-tabs">
             {(['bug', 'feature', 'suggestion'] as FeedbackType[]).map((t) => (
               <button
@@ -389,8 +401,8 @@ function BugReportModal({
                 onClick={() => {
                   if (t === type) return;
                   setType(t);
-                  setSpec(null);
-                  setSpecSourceText('');
+                  setQas([]);
+                  setAskError(null);
                 }}
                 className={'fad-feedback-tab' + (type === t ? ' is-active' : '')}
                 type="button"
@@ -431,50 +443,61 @@ function BugReportModal({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          {/* Rephrase is mandatory: structured spec is what gets saved
-              to the inbox, so the user has to generate one (and verify
-              it) before filing. If they edit the description after
-              rephrasing, the spec is marked stale and submit re-locks. */}
+          {/* Optional: Ask Friday for follow-up questions. Submission is
+              never gated on this — it's a "tell us a bit more if you can"
+              prompt, not a wall. */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn ghost sm"
-              onClick={(e) => { e.preventDefault(); rephrase(); }}
-              disabled={!canRephrase}
-              style={{ opacity: !canRephrase ? 0.5 : 1 }}
+              onClick={(e) => { e.preventDefault(); askFriday(); }}
+              disabled={!canAskFriday}
+              style={{ opacity: !canAskFriday ? 0.5 : 1 }}
             >
               <IconAI size={12} />{' '}
-              {rephrasing
-                ? 'Rephrasing…'
-                : spec === null
-                  ? 'Rephrase with Friday'
-                  : isSpecStale
-                    ? 'Re-rephrase with Friday'
-                    : 'Rephrase again'}
+              {asking
+                ? 'Friday is thinking…'
+                : qas.length > 0
+                  ? 'Ask Friday again'
+                  : 'Ask Friday for follow-ups'}
             </button>
             <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              {REPHRASE_HELP[type]}
+              {ASK_FRIDAY_HELP[type]}
             </span>
           </div>
-          {isSpecStale && (
+          {askError && (
             <div
               role="status"
               style={{
                 marginTop: 8,
                 padding: '8px 10px',
                 borderRadius: 'var(--radius-sm)',
-                background: 'var(--color-bg-warning)',
-                color: 'var(--color-text-warning)',
+                background: 'var(--color-bg-info)',
+                color: 'var(--color-text-info)',
                 fontSize: 12,
               }}
             >
-              You edited the description since the last rephrase — re-rephrase to verify before filing.
+              {askError}
             </div>
           )}
-          {spec && !isSpecStale && <FridaySpecCard spec={spec} />}
-          {spec && isSpecStale && (
-            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              Previous spec hidden — text has changed.
+          {qas.length > 0 && (
+            <div className="bug-spec" style={{ marginTop: 12 }}>
+              <div className="bug-spec-head">
+                <IconAI size={10} /> Friday asks — answer what you can (optional)
+              </div>
+              {qas.map((q, i) => (
+                <div key={i} className="fad-field" style={{ marginBottom: 10 }}>
+                  <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                    {q.question}
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Skip if you don't have an answer"
+                    value={q.answer}
+                    onChange={(e) => setAnswer(i, e.target.value)}
+                  />
+                </div>
+              ))}
             </div>
           )}
           {submitError && (
@@ -494,17 +517,6 @@ function BugReportModal({
           )}
         </div>
         <div className="fad-modal-foot">
-          {/* Inline hint about why submit is disabled — beats a silent
-              greyed-out button. */}
-          {!canSubmit && !submitting && (
-            <span style={{ marginRight: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>
-              {spec === null
-                ? 'Rephrase first to verify the spec'
-                : isSpecStale
-                  ? 'Re-rephrase to verify your edits'
-                  : ''}
-            </span>
-          )}
           <button type="button" className="btn" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
@@ -514,15 +526,8 @@ function BugReportModal({
             onClick={submit}
             disabled={!canSubmit}
             style={{ opacity: !canSubmit ? 0.5 : 1 }}
-            title={
-              spec === null
-                ? 'Rephrase with Friday first'
-                : isSpecStale
-                  ? 'Re-rephrase to incorporate your edits'
-                  : undefined
-            }
           >
-            {submitting ? 'Submitting…' : `${meta.submitButton} with spec`}
+            {submitting ? 'Submitting…' : meta.submitButton}
           </button>
         </div>
       </div>
@@ -530,180 +535,11 @@ function BugReportModal({
   );
 }
 
-function FridaySpecCard({ spec }: { spec: FridaySpec }) {
-  return (
-    <div className="bug-spec">
-      <div className="bug-spec-head">
-        <IconAI size={10} /> Friday structured this
-      </div>
-      <div className="bug-spec-field">
-        <b>Title:</b> {spec.title}
-      </div>
-      {spec.kind === 'bug' && (
-        <>
-          <div className="bug-spec-field">
-            <b>Steps to reproduce:</b>
-            <ol style={{ margin: '4px 0 0 18px', padding: 0 }}>
-              {spec.steps.map((s, i) => (
-                <li key={i} style={{ marginBottom: 2 }}>{s}</li>
-              ))}
-            </ol>
-          </div>
-          <div className="bug-spec-field"><b>Expected:</b> {spec.expected}</div>
-          <div className="bug-spec-field"><b>Actual:</b> {spec.actual}</div>
-          <div className="bug-spec-field">
-            <b>Severity:</b>{' '}
-            <span
-              className={'chip ' + (spec.severity === 'Critical' || spec.severity === 'High' ? 'warn' : 'info')}
-            >
-              {spec.severity}
-            </span>
-          </div>
-        </>
-      )}
-      {spec.kind === 'feature' && (
-        <>
-          <div className="bug-spec-field"><b>User story:</b> {spec.userStory}</div>
-          <div className="bug-spec-field">
-            <b>Acceptance criteria:</b>
-            <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
-              {spec.acceptanceCriteria.map((s, i) => (
-                <li key={i} style={{ marginBottom: 2 }}>{s}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="bug-spec-field">
-            <b>Priority:</b>{' '}
-            <span className={'chip ' + (spec.priority === 'Critical' ? 'warn' : 'info')}>
-              {spec.priority}
-            </span>
-          </div>
-        </>
-      )}
-      {spec.kind === 'suggestion' && (
-        <>
-          <div className="bug-spec-field"><b>Current behavior:</b> {spec.currentBehavior}</div>
-          <div className="bug-spec-field"><b>Suggested change:</b> {spec.suggestedChange}</div>
-          <div className="bug-spec-field"><b>Why it matters:</b> {spec.whyItMatters}</div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// Local heuristic — matches the original bug rephraser's style. When
-// the real Friday API is wired up the prompt will produce richer
-// output; this keeps the UX feeling responsive without a network call.
-//
-// `_unusedTitle` is kept in the signature for API compatibility — the
-// manual title field is gone, so the title is always derived from the
-// description's first sentence or a type-specific fallback.
-function fakeRephrase(
-  type: FeedbackType,
-  description: string,
-  _unusedTitle: string,
-  scope?: string,
-): FridaySpec {
-  const sentences = description
-    .split(/[.\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  // Derive a concise title from the description: first sentence, capped
-  // at 80 chars. Fallback to a type-specific generic if the description
-  // is just a fragment.
-  const derivedTitle = (() => {
-    const firstSentence = sentences[0] || '';
-    const candidate = firstSentence.length > 80
-      ? firstSentence.slice(0, 77) + '…'
-      : firstSentence;
-    const fallback =
-      type === 'bug' ? 'Unexpected behavior'
-        : type === 'feature' ? 'New capability requested'
-          : 'Improvement to existing flow';
-    const base = candidate.length >= 4 ? candidate : fallback;
-    return scope ? `[${scope}] ${base}` : base;
-  })();
-
-  if (type === 'bug') {
-    const inferSeverity = (): 'Low' | 'Medium' | 'High' | 'Critical' => {
-      if (/(crash|broken|lost data|can't|cannot|fails|error)/i.test(description)) return 'High';
-      if (/(wrong|slow|unclear|missing)/i.test(description)) return 'Medium';
-      return 'Low';
-    };
-    const steps = sentences.slice(0, 3).map((s, i) => i === 0 ? `Open ${scope || 'the affected view'}` : s);
-    while (steps.length < 3) steps.push('Observe the behavior');
-    const expected = /(should|expected|wanted)/i.test(description)
-      ? sentences.find((s) => /(should|expected|wanted)/i.test(s)) || 'Feature should work as documented'
-      : 'The action should complete without error, matching documented behavior.';
-    const actual = /(but|instead|however|actually)/i.test(description)
-      ? sentences.find((s) => /(but|instead|however|actually)/i.test(s)) || description.slice(0, 100)
-      : description.slice(0, 100);
-    return { kind: 'bug', title: derivedTitle, steps, expected, actual, severity: inferSeverity() };
-  }
-
-  if (type === 'feature') {
-    const inferPriority = (): 'Nice to have' | 'Important' | 'Critical' => {
-      if (/(blocker|must|critical|can't ship)/i.test(description)) return 'Critical';
-      if (/(needed|important|should|painful)/i.test(description)) return 'Important';
-      return 'Nice to have';
-    };
-    // Try to extract "as a X, I want Y, so that Z" if user wrote one;
-    // otherwise scaffold from scope + first sentence.
-    const userStoryMatch = description.match(/as an? [^,.\n]+,? i (?:want|need)[^.\n]+(?:so that[^.\n]+)?/i);
-    const userStory = userStoryMatch?.[0]
-      ?? `As a Friday team member, I want ${(sentences[0] || description).slice(0, 140)}${scope ? `, while working in ${scope}` : ''}.`;
-    const acRest = sentences.slice(1).filter((s) => s.length > 5);
-    const acceptanceCriteria = acRest.length
-      ? acRest.slice(0, 4)
-      : [
-          'The new capability is reachable from the current view.',
-          'It works on desktop and mobile breakpoints.',
-          'Existing flows continue to work unchanged.',
-        ];
-    return { kind: 'feature', title: derivedTitle, userStory, acceptanceCriteria, priority: inferPriority() };
-  }
-
-  // suggestion
-  const cleaned = description.trim();
-  // Heuristic split: "X but / instead / should be Y" → before/after.
-  const splitMatch = cleaned.match(/^(.{8,}?)\s+(?:but|instead|should be|could be|rather than)\s+(.+)$/i);
-  const currentBehavior = splitMatch?.[1]?.trim()
-    ?? (sentences[0] || cleaned.slice(0, 140));
-  const suggestedChange = splitMatch?.[2]?.trim()
-    ?? (sentences[1] || cleaned.slice(0, 140));
-  const whyItMatters = sentences.find((s) => /(because|so that|helps|saves|easier|faster|clearer)/i.test(s))
-    ?? 'Reduces friction in a common flow.';
-  return { kind: 'suggestion', title: derivedTitle, currentBehavior, suggestedChange, whyItMatters };
-}
-
-// Flatten the structured spec into a markdown blob that gets saved as
-// the feedback row's description. The inbox renders this directly. The
-// raw user text is kept at the bottom under "Original report" so we
-// never lose what was actually typed (audit + context for triage).
-function serializeSpec(spec: FridaySpec, rawDescription: string): string {
-  const lines: string[] = [];
-  if (spec.kind === 'bug') {
-    lines.push('**Steps to reproduce**');
-    spec.steps.forEach((s, i) => lines.push(`${i + 1}. ${s}`));
-    lines.push('');
-    lines.push(`**Expected:** ${spec.expected}`);
-    lines.push(`**Actual:** ${spec.actual}`);
-    lines.push(`**Severity:** ${spec.severity}`);
-  } else if (spec.kind === 'feature') {
-    lines.push(`**User story:** ${spec.userStory}`);
-    lines.push('');
-    lines.push('**Acceptance criteria**');
-    spec.acceptanceCriteria.forEach((s) => lines.push(`- ${s}`));
-    lines.push('');
-    lines.push(`**Priority:** ${spec.priority}`);
-  } else {
-    lines.push(`**Current behavior:** ${spec.currentBehavior}`);
-    lines.push(`**Suggested change:** ${spec.suggestedChange}`);
-    lines.push(`**Why it matters:** ${spec.whyItMatters}`);
-  }
-  lines.push('');
-  lines.push('---');
-  lines.push('*Original report:*');
-  lines.push(rawDescription);
-  return lines.join('\n');
+// Concise title for the inbox row. First sentence (or first line),
+// capped at 80 chars, prefixed with the module label when available.
+function deriveTitle(description: string, scope?: string): string {
+  const firstSegment = description.split(/[.\n]/).map((s) => s.trim()).find(Boolean) || description.trim();
+  const truncated = firstSegment.length > 80 ? firstSegment.slice(0, 77) + '…' : firstSegment;
+  const safe = truncated.length >= 4 ? truncated : 'Untitled report';
+  return scope ? `[${scope}] ${safe}` : safe;
 }

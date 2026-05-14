@@ -9,10 +9,141 @@
 // GET  /api/feedback   — admin/director only (triage inbox)
 
 const express = require('express');
+const axios = require('axios');
 const { query } = require('./database/client');
 const { attachIdentity } = require('./design/auth');
 
 const router = express.Router();
+
+// ── Kimi-backed clarifying questions ─────────────────────────────────
+//
+// The team under-reports bug context ("X is broken" with no repro
+// steps). Instead of asking them to pre-structure their report (which
+// they won't), we let them brain-dump in one field, then Kimi reads
+// what they wrote + the page context and proposes 2–4 short, specific
+// follow-up questions that fill the most likely gaps for triage.
+// The user can answer some, all, or none and submit either way.
+
+const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
+const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+const KIMI_TIMEOUT_MS = 20_000;
+
+const CLARIFYING_SYSTEM_PROMPT = `You are Friday's triage assistant. The user just filed a {{type}} report — bug, feature request, or suggestion — and we want to fill the context gaps BEFORE a human triages it.
+
+Read their description and propose 2–4 short, SPECIFIC follow-up questions that, if answered, would make this report dramatically easier to triage. Cover the most-likely gaps for the report type:
+
+- BUG: reproduction steps, what they expected, what actually happened, frequency (always / sometimes / once), severity / impact, browser or device if relevant.
+- FEATURE: who benefits, what problem it solves, concrete example of when they'd use it, success criteria.
+- SUGGESTION: what they currently do / current behaviour, the friction it causes, the suggested change.
+
+RULES:
+1. DO NOT re-ask anything they already answered in their description. Scan their text first.
+2. Each question MUST be short (under 18 words) and ANSWERABLE in one or two sentences.
+3. Be specific. "Can you give more detail?" is useless. Ask about the specific thing that's missing.
+4. Skip questions that don't apply (e.g. don't ask repro steps if the bug is "the photo doesn't load" — that's already the repro).
+5. NEVER more than 4 questions. Fewer is fine — sometimes 2 is the right number.
+
+OUTPUT FORMAT (strict JSON):
+{ "questions": ["...", "...", "..."] }
+
+If their description is already complete and there's nothing useful to ask, return { "questions": [] }.`;
+
+// Fallback question banks when KIMI_API_KEY isn't configured. Used so
+// the UX still works in dev / CI / before the env var is set on prod.
+const FALLBACK_QUESTIONS = {
+  bug: [
+    'What were you trying to do when this happened?',
+    'What did you expect to see instead?',
+    'Does this happen every time, or only sometimes?',
+  ],
+  feature: [
+    'Who on the team would use this most?',
+    'What problem does it solve that today is painful?',
+    'Can you give a concrete example of when you\'d use it?',
+  ],
+  suggestion: [
+    'What\'s the current behaviour you want to change?',
+    'Why does the current way feel wrong — what does it cost you?',
+  ],
+};
+
+function parseModelJson(raw) {
+  if (typeof raw !== 'string') return null;
+  let s = raw.trim();
+  const fenceMatch = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) s = fenceMatch[1].trim();
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+async function generateClarifyingQuestions({ type, description, moduleLabel, routeUrl }) {
+  if (!process.env.KIMI_API_KEY) {
+    return { questions: FALLBACK_QUESTIONS[type] || [], source: 'fallback' };
+  }
+  const system = CLARIFYING_SYSTEM_PROMPT.replace('{{type}}', type);
+  const userContent = [
+    `Report type: ${type}`,
+    moduleLabel ? `Module: ${moduleLabel}` : null,
+    routeUrl ? `Page: ${routeUrl}` : null,
+    '',
+    'User\'s description:',
+    description,
+  ].filter(Boolean).join('\n');
+  try {
+    const { data } = await axios.post(
+      `${KIMI_BASE_URL}/chat/completions`,
+      {
+        model: KIMI_MODEL,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: KIMI_TIMEOUT_MS,
+      },
+    );
+    const raw = data?.choices?.[0]?.message?.content;
+    const parsed = parseModelJson(raw);
+    const list = Array.isArray(parsed?.questions) ? parsed.questions : [];
+    // Defensive: clamp to 4 + drop empty / overlong items.
+    const cleaned = list
+      .filter((q) => typeof q === 'string' && q.trim().length > 0)
+      .map((q) => q.trim().slice(0, 220))
+      .slice(0, 4);
+    return { questions: cleaned, source: 'kimi' };
+  } catch (err) {
+    console.warn('[feedback] kimi clarifying-questions failed:', err.message);
+    return { questions: FALLBACK_QUESTIONS[type] || [], source: 'fallback-after-error' };
+  }
+}
+
+router.post('/clarifying-questions', attachIdentity, async (req, res) => {
+  try {
+    const { type, description, route_url: routeUrl, module_label: moduleLabel } = req.body || {};
+    if (!TYPES.has(type)) {
+      return res.status(400).json({ error: 'type must be bug, feature, or suggestion' });
+    }
+    if (typeof description !== 'string' || description.trim().length < 4) {
+      return res.status(400).json({ error: 'description is required (min 4 chars)' });
+    }
+    const result = await generateClarifyingQuestions({
+      type,
+      description: description.trim().slice(0, 3000),
+      moduleLabel: typeof moduleLabel === 'string' ? moduleLabel.slice(0, 100) : null,
+      routeUrl: typeof routeUrl === 'string' ? routeUrl.slice(0, 300) : null,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('[feedback] clarifying-questions error:', err.message);
+    res.status(500).json({ error: 'Failed to generate questions' });
+  }
+});
 
 const TYPES = new Set(['bug', 'feature', 'suggestion']);
 const SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
