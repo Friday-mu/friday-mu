@@ -27,6 +27,7 @@ import {
 } from './modules/Tier3Modules';
 import { ReviewsModule } from './modules/ReviewsModule';
 import { BugReportFab } from './BugReport';
+import { UpdateBanner } from './UpdateBanner';
 import { AnalyticsModule } from './modules/AnalyticsModule';
 import { ReservationsModule } from './modules/ReservationsModule';
 import { TrainingModule } from './modules/TrainingModule';
@@ -208,6 +209,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
 
   return (
     <div className="fad-app">
+      <UpdateBanner />
       <Header
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenFriday={() => fridayOpen ? closeFriday() : openFriday()}

@@ -12,6 +12,7 @@
 
 import type { ReactNode } from 'react';
 import { BugReportFab } from '../fad/_components/BugReport';
+import { UpdateBanner } from '../fad/_components/UpdateBanner';
 
 export default function DesignDocsLayout({ children }: { children: ReactNode }) {
   return (
@@ -24,6 +25,7 @@ export default function DesignDocsLayout({ children }: { children: ReactNode }) 
           background: #e8e6e0;
         }
       `}</style>
+      <UpdateBanner />
       {children}
       <BugReportFab currentModuleLabel="Design document" />
     </>
