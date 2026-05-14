@@ -6,7 +6,7 @@
 // BugReport for backwards-compat with the existing FadApp import; the
 // public surface is broader now.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
 
@@ -16,38 +16,94 @@ interface Props {
   currentModuleLabel?: string;
 }
 
-// Capture the underlying page BEFORE the modal mounts. Doing it inside
-// the modal's useEffect meant html2canvas saw the modal overlay over
-// the content — every screenshot was a giant dimmed rectangle with
-// the bug form on top. By moving capture into the FAB onClick, the
-// modal opens with a screenshot of the *previous* viewport state.
+// ── Screenshot capture ────────────────────────────────────────────────
 //
-// `.bug-fab` is excluded via ignoreElements so the FAB itself doesn't
-// show in the bottom-right corner of the capture.
+// Three reliability layers stacked:
+//   1. Pre-warm: when the FAB mounts, kick off the dynamic import of
+//      html2canvas in the background (idle callback) so it's already
+//      compiled by the time the user clicks. Eliminates the "cold first
+//      click" timing window where styles weren't fully resolved.
+//   2. Paint stability: before capturing we wait on
+//        a) document.fonts.ready  (no web-font swap mid-capture)
+//        b) every in-flight <img> with !complete — html2canvas reads
+//           images from the DOM; if a thumbnail is mid-load we get a
+//           transparent block where it should be.
+//        c) two requestAnimationFrame ticks to let the browser commit
+//           any pending paint.
+//   3. Opaque base: pass .fad-app's resolved background color (not
+//      null) so JPEG can't fill un-painted pixels black.
+
+let html2canvasModulePromise: Promise<typeof import('html2canvas')> | null = null;
+
+function prewarmHtml2canvas(): void {
+  if (html2canvasModulePromise) return;
+  const start = () => {
+    html2canvasModulePromise = import('html2canvas').catch(() => {
+      // If the lazy chunk fails (offline, network blip), reset the promise
+      // so the next click can retry rather than reuse the rejected one.
+      html2canvasModulePromise = null;
+      // Re-throw so the awaiter sees the failure too.
+      throw new Error('html2canvas chunk failed to load');
+    }) as Promise<typeof import('html2canvas')>;
+  };
+  // requestIdleCallback isn't in every browser (Safari). setTimeout fallback.
+  const ric = (window as typeof window & { requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number }).requestIdleCallback;
+  if (typeof ric === 'function') ric(start, { timeout: 2000 });
+  else setTimeout(start, 200);
+}
+
+async function waitForImages(root: HTMLElement, timeoutMs = 1500): Promise<void> {
+  const imgs = Array.from(root.querySelectorAll('img')) as HTMLImageElement[];
+  const pending = imgs.filter((img) => !img.complete || img.naturalWidth === 0);
+  if (pending.length === 0) return;
+  await Promise.race([
+    Promise.all(
+      pending.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+          }),
+      ),
+    ),
+    // Don't block the screenshot forever on a stuck image — best-effort.
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
 async function captureViewport(): Promise<string | null> {
   try {
-    const html2canvas = (await import('html2canvas')).default;
+    // Reuse the pre-warmed import if the FAB seeded it; otherwise import now.
+    if (!html2canvasModulePromise) {
+      html2canvasModulePromise = import('html2canvas') as Promise<typeof import('html2canvas')>;
+    }
+    const mod = await html2canvasModulePromise;
+    const html2canvas = mod.default;
+
     const el = document.querySelector('.fad-app') as HTMLElement | null;
     if (!el) return null;
 
-    // Wait for in-flight font loads so glyphs aren't mid-swap during
-    // capture (otherwise headings render in the fallback font).
+    // (a) Fonts: never capture mid-swap.
     if (document.fonts?.ready) {
       await document.fonts.ready;
     }
+    // (b) Images: wait for in-flight <img> loads (capped, so we don't hang).
+    await waitForImages(el, 1500);
+    // (c) Paint commit: two rAF ticks ensures layout + paint settled
+    //     after the (a)/(b) awaits, since they can land mid-frame.
+    await nextFrame();
+    await nextFrame();
 
-    // JPEG encoding cannot represent transparency — any pixel left
-    // transparent by html2canvas gets filled BLACK by the JPEG encoder.
-    // On the first capture html2canvas's style-resolution cache is cold
-    // and some nested elements come back without their resolved
-    // background, producing the "module looks dark" symptom users see.
-    // Reading .fad-app's actual background and passing it explicitly
-    // makes the canvas opaque from the start, so any unpainted regions
-    // fall back to the page's real background color.
+    // JPEG fills un-painted pixels with BLACK. Resolve .fad-app's actual
+    // bg color so the canvas starts opaque rather than transparent.
     const computedBg = window.getComputedStyle(el).backgroundColor;
-    const isTransparent = !computedBg
-      || computedBg === 'rgba(0, 0, 0, 0)'
-      || computedBg === 'transparent';
+    const isTransparent =
+      !computedBg || computedBg === 'rgba(0, 0, 0, 0)' || computedBg === 'transparent';
     const backgroundColor = isTransparent ? '#ffffff' : computedBg;
 
     const canvas = await html2canvas(el, {
@@ -67,6 +123,14 @@ export function BugReportFab({ currentModuleLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
+
+  // Kick off the html2canvas dynamic import in the background as soon as
+  // the FAB mounts. By the time the user clicks, the module is parsed
+  // and the first capture is no slower than the second — eliminates the
+  // "first click looks dark" timing failure mode.
+  useEffect(() => {
+    prewarmHtml2canvas();
+  }, []);
 
   const handleClick = async () => {
     if (capturing || open) return;

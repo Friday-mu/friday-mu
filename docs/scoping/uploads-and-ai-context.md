@@ -163,5 +163,26 @@ periodic re-captions adds up. Gate on:
 3. ⏸ Greenlight the derived-text pipeline as a 4-week sprint (W1–W4 above)?
 4. ⏸ VLM captioning — opt-in or always-on?
 
-Park until at least Q3 unless one of the AI features (Ask Friday, Annex B
-edit, rough-budget AI) starts needing structured PDF context.
+## Status: PARKED (2026-05-14)
+
+Decided to park the derived-text + VLM pipeline. It's an optimization, not table
+stakes — current AI features (Ask Friday, Annex B edit, rough-budget AI) don't
+yet need structured context from attached docs, and at current scale (handful
+of active projects) the cost-benefit is bad. VLM captioning alone would run
+~$50–100/mo for value no one's asking for yet.
+
+### Triggers to revisit
+
+Revisit the moment any of these become true:
+
+1. **AI features start needing it.** Ask Friday answers degrade because we're
+   tokenizing whole PDFs as fallback. Annex B edit can't reference vendor quotes
+   inline. The rough-budget AI wants to extract figures from an uploaded scope
+   doc.
+2. **Volume threshold.** ≥50 active projects with ≥10 attached docs each,
+   where "search inside my uploads" becomes a feature people actually use.
+3. **Direct user demand.** Onboarding feedback or feature requests explicitly
+   ask for cross-document search or AI summarization of attachments.
+
+Until then: ✅ #1 and #2 from the decision list still proceed (draft delete +
+allowlist widening); #3 and #4 sit here.

@@ -2773,6 +2773,28 @@ function PhaseView({
   onChangeSection: (s: ProjectScreen) => void;
 }) {
   const phase = PHASES.find((p) => p.id === activePhase);
+
+  // Local open-set, decoupled from the URL-driven `activeSection`. The URL
+  // still drives which section is initially open + auto-opens the new
+  // section when the user clicks a phase tab, but inside a phase each
+  // section can be expanded/collapsed independently. Without this the
+  // section header re-set the same `activeSection` and nothing happened —
+  // the only way to "close" the open section was to open a different one.
+  const [openSections, setOpenSections] = useState<Set<ProjectScreen>>(() => new Set([activeSection]));
+
+  // When the active section changes externally (phase tab click, deep
+  // link, Friday navigation), make sure it ends up open. We don't close
+  // the previously-open ones — that matches "multiple can be open at
+  // once" UX the user asked for.
+  useEffect(() => {
+    setOpenSections((prev) => {
+      if (prev.has(activeSection)) return prev;
+      const next = new Set(prev);
+      next.add(activeSection);
+      return next;
+    });
+  }, [activeSection]);
+
   if (!phase) return null;
 
   // Brief is a single section view; render it directly without accordion chrome.
@@ -2785,18 +2807,31 @@ function PhaseView({
   }
 
   const sections = phase.sections;
-  // Default-open: the active section. Other sections collapsed.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {sections.map((sec) => {
-        const isOpen = sec === activeSection;
+        const isOpen = openSections.has(sec);
         return (
           <SectionAccordion
             key={sec}
             project={project}
             section={sec}
             isOpen={isOpen}
-            onToggle={() => onChangeSection(sec)}
+            onToggle={() => {
+              setOpenSections((prev) => {
+                const next = new Set(prev);
+                if (next.has(sec)) {
+                  next.delete(sec);
+                } else {
+                  next.add(sec);
+                  // Sync the URL when the user opens a section — keeps
+                  // deep links + Ask Friday "open <stage>" working as
+                  // before.
+                  onChangeSection(sec);
+                }
+                return next;
+              });
+            }}
           >
             <Suspense fallback={<StageSkeleton compact />}>
               <ProjectScreenContent project={project} screen={sec} />
