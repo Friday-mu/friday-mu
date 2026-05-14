@@ -29,8 +29,29 @@ async function captureViewport(): Promise<string | null> {
     const html2canvas = (await import('html2canvas')).default;
     const el = document.querySelector('.fad-app') as HTMLElement | null;
     if (!el) return null;
+
+    // Wait for in-flight font loads so glyphs aren't mid-swap during
+    // capture (otherwise headings render in the fallback font).
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+
+    // JPEG encoding cannot represent transparency — any pixel left
+    // transparent by html2canvas gets filled BLACK by the JPEG encoder.
+    // On the first capture html2canvas's style-resolution cache is cold
+    // and some nested elements come back without their resolved
+    // background, producing the "module looks dark" symptom users see.
+    // Reading .fad-app's actual background and passing it explicitly
+    // makes the canvas opaque from the start, so any unpainted regions
+    // fall back to the page's real background color.
+    const computedBg = window.getComputedStyle(el).backgroundColor;
+    const isTransparent = !computedBg
+      || computedBg === 'rgba(0, 0, 0, 0)'
+      || computedBg === 'transparent';
+    const backgroundColor = isTransparent ? '#ffffff' : computedBg;
+
     const canvas = await html2canvas(el, {
-      backgroundColor: null,
+      backgroundColor,
       scale: 0.5,
       logging: false,
       useCORS: true,
