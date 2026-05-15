@@ -189,9 +189,18 @@ export function FloorPlanTracingEditor({
   }
 
   // ── coord conversion ────────────────────────────────────────────────
-
-  const svgWidthPx = model.canvas.width * pixelsPerMetre;
-  const svgHeightPx = model.canvas.height * pixelsPerMetre;
+  // Defensive: if a malformed initialModel arrives without a canvas
+  // (eg. a corrupted version row, or a future schema change), fall
+  // back to the default 10×10m canvas rather than rendering NaN-sized
+  // SVG that crashes the modal.
+  const canvasW = Number.isFinite(model.canvas?.width) && model.canvas.width > 0
+    ? model.canvas.width
+    : 10;
+  const canvasH = Number.isFinite(model.canvas?.height) && model.canvas.height > 0
+    ? model.canvas.height
+    : 10;
+  const svgWidthPx = canvasW * pixelsPerMetre;
+  const svgHeightPx = canvasH * pixelsPerMetre;
 
   function mouseToMetres(e: React.MouseEvent<SVGElement>): Point {
     const svg = svgRef.current;
@@ -492,6 +501,21 @@ export function FloorPlanTracingEditor({
         model,
         label: 'Initial trace',
       });
+      // Reset saving + dirty BEFORE handing control to the parent. If
+      // the parent re-renders this editor (eg. edit-walls flow keeps
+      // the same instance mounted across versions) the button needs to
+      // be clickable again. The previous version of this function only
+      // reset `saving` in the catch branch, leaving the button stuck
+      // in "Saving…" on the happy path.
+      setSaving(false);
+      setDirty(false);
+      setUndoStack([]);
+      // eslint-disable-next-line no-console
+      console.log('[FloorPlanTracingEditor] saved version', version.id, {
+        walls: model.walls.length,
+        doors: model.doors.length,
+        windows: model.windows.length,
+      });
       onSaved(version.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -671,10 +695,13 @@ export function FloorPlanTracingEditor({
           onMouseLeave={() => { setHoverSnap(null); }}
           style={{ display: 'block', cursor: cursorForTool(tool, !!drawingWall) }}
         >
-          {/* Background raster */}
+          {/* Background raster — supply both `href` (SVG 2) and
+              `xlinkHref` (SVG 1.1) so the image paints reliably across
+              browsers, including Safari which still prefers xlink. */}
           {sourceImageUrl && (
             <image
               href={sourceImageUrl}
+              xlinkHref={sourceImageUrl}
               x={0}
               y={0}
               width={svgWidthPx}
@@ -686,7 +713,7 @@ export function FloorPlanTracingEditor({
 
           {/* Subtle metre grid */}
           <g pointerEvents="none">
-            {gridLines(model.canvas.width, model.canvas.height, pixelsPerMetre)}
+            {gridLines(canvasW, canvasH, pixelsPerMetre)}
           </g>
 
           {/* Walls */}
@@ -879,7 +906,7 @@ export function FloorPlanTracingEditor({
           {model.windows.length} window{model.windows.length === 1 ? '' : 's'}
         </span>
         <span>
-          Canvas {model.canvas.width}×{model.canvas.height} m · {svgWidthPx}×{svgHeightPx} px
+          Canvas {canvasW}×{canvasH} m · {svgWidthPx}×{svgHeightPx} px
         </span>
       </div>
 
@@ -1037,12 +1064,22 @@ function WindowGlyph({
 }
 
 function gridLines(widthM: number, heightM: number, pxPerM: number) {
+  // Bail out cleanly on bad inputs rather than entering a runaway or
+  // NaN-spewing loop. A NaN here used to render an SVG with NaN coords,
+  // and Floor()-ing the bounds keeps the loop count finite even if
+  // someone pumps in a fractional canvas. Keys also use the bare
+  // namespace so the vertical vs horizontal grid lines can't collide.
   const out: React.ReactElement[] = [];
-  for (let x = 1; x < widthM; x++) {
-    out.push(<line key={`vx-${x}`} x1={x * pxPerM} y1={0} x2={x * pxPerM} y2={heightM * pxPerM} stroke="#e5e7eb" strokeWidth={0.5} />);
+  if (!Number.isFinite(widthM) || !Number.isFinite(heightM) || !Number.isFinite(pxPerM)) {
+    return out;
   }
-  for (let y = 1; y < heightM; y++) {
-    out.push(<line key={`vy-${y}`} x1={0} y1={y * pxPerM} x2={widthM * pxPerM} y2={y * pxPerM} stroke="#e5e7eb" strokeWidth={0.5} />);
+  const wMax = Math.max(0, Math.floor(widthM));
+  const hMax = Math.max(0, Math.floor(heightM));
+  for (let x = 1; x < wMax; x++) {
+    out.push(<line key={`gv-${x}`} x1={x * pxPerM} y1={0} x2={x * pxPerM} y2={heightM * pxPerM} stroke="#e5e7eb" strokeWidth={0.5} />);
+  }
+  for (let y = 1; y < hMax; y++) {
+    out.push(<line key={`gh-${y}`} x1={0} y1={y * pxPerM} x2={widthM * pxPerM} y2={y * pxPerM} stroke="#e5e7eb" strokeWidth={0.5} />);
   }
   return out;
 }

@@ -24,7 +24,10 @@ const { requireDesignPerm } = require('./auth');
 const { shapeFloorPlanChat, shapeFloorPlanVersion } = require('./adapters');
 const { appendActivity } = require('./activities');
 const { applyOps } = require('./floor_plan_ops');
-const { translateToOps } = require('./floor_plan_kimi');
+// Migrated 2026-05-16: Kimi → Gemini for op translation. Same exported
+// signature (translateToOps(model, userMessage[, opts])) so this call
+// site doesn't need to change.
+const { translateToOps } = require('./floor_plan_ai');
 
 const router = express.Router();
 
@@ -92,8 +95,13 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     );
     chatRowId = chatRows[0].id;
 
-    // Kimi pass.
-    const { ops, reply } = await translateToOps(latest.model, userMessage);
+    // Gemini pass. room_kind is optional — when the frontend sends it
+    // we ship only the relevant slice of the KB; otherwise we ship the
+    // whole thing (still well within Gemini's context budget).
+    const roomKind = typeof body.room_kind === 'string' && body.room_kind.trim()
+      ? body.room_kind.trim()
+      : null;
+    const { ops, reply } = await translateToOps(latest.model, userMessage, { roomKind });
 
     if (!Array.isArray(ops) || ops.length === 0) {
       const { rows: rejected } = await query(

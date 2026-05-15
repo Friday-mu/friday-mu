@@ -140,16 +140,28 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
   // ── handlers ─────────────────────────────────────────────────────
 
   function handleTracingSaved(versionId: string) {
-    // Tracing editor created v1. Reload + drop into chat.
+    // Tracing editor created v1. Fire the toast immediately so the
+    // designer gets confirmation even if reload() is slow, then await
+    // the version-list refresh before dropping into chat. The editor
+    // itself has already reset its own saving/dirty state before
+    // calling us, so the user is not stuck in a "Saving…" button.
+    showToast('Floor plan saved');
     void reload().then(({ versions: vs }) => {
       const created = vs.find((v) => v.id === versionId) || vs[vs.length - 1];
       if (created) setSelectedVersionId(created.id);
+      setStage('chat');
+    }).catch(() => {
+      // Even if reload fails, get out of the tracing modal — the
+      // version is persisted server-side; user can refresh the page
+      // to see it. Showing the chat empty-state is better than
+      // appearing to do nothing.
       setStage('chat');
     });
   }
 
   function handleEditWallsSaved(versionId: string) {
     // Wall-edit creates a NEW version (we call createFloorPlan again).
+    showToast('Floor plan saved');
     setEditingWalls(false);
     void reload().then(({ versions: vs }) => {
       const created = vs.find((v) => v.id === versionId) || vs[vs.length - 1];

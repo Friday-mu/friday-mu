@@ -1,6 +1,6 @@
 'use client';
 
-// Public signup → Friday Studios trial. Single-page form, no card required.
+// Public signup → FridayOS Design trial. Single-page form, no card required.
 // Mirrors the visual minimalism of /reset-password (LoginScreen card layout)
 // but stripped to a single-column form. On success: stashes the JWT under
 // `gms_token` and redirects to /fad?m=design (the first paid module the
@@ -131,7 +131,7 @@ export default function SignupPage() {
           margin: 0,
           marginBottom: 4,
         }}>
-          Start your Friday Studios trial
+          Start your FridayOS Design trial
         </h1>
         <p style={{ fontSize: 13, color: palette.textSecondary, margin: 0, marginBottom: 20 }}>
           14-day free trial. No card required.

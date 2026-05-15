@@ -1,7 +1,7 @@
-# Friday Studios — The interior design studio's operations cockpit
+# FridayOS Design — The interior design studio's operations cockpit
 
 **Stop juggling Rayon Design, spreadsheets, WhatsApp threads, and 12
-tabs of vendor quotes.** Friday Studios runs the project from owner
+tabs of vendor quotes.** FridayOS Design runs the project from owner
 sign-off to handover binder.
 
 ---
@@ -32,7 +32,7 @@ Today you redraw walls in Rayon. Then you fight a single-shot AI to
 add furniture — every prompt redraws the whole layout. So you stop
 using the AI and place every piece manually.
 
-In Friday Studios:
+In FridayOS Design:
 
 1. Upload the scanned plan
 2. Trace the walls / doors / windows once (10 minutes max)
@@ -94,7 +94,7 @@ We're up-front about gaps:
 
 ## Who built it
 
-Friday Studios is the design module from Friday Retreats' internal
+FridayOS Design is the design module from Friday Retreats' internal
 operations stack — the tool we built for ourselves to run a 24-villa
 boutique short-stay business in Mauritius. We're now pulling that
 out of our own stack and selling it.
