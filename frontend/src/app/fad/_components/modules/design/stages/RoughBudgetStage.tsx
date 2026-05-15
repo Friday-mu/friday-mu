@@ -21,6 +21,7 @@ import { PROJECTS as FIXTURE_PROJECTS } from '../../../../_data/design';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
+import { Hint } from '../Hint';
 
 interface Props {
   project: DesignProject;
@@ -487,15 +488,47 @@ export function RoughBudgetStage({ project }: Props) {
       <Card>
         <h4 style={subhead()}>Narrative</h4>
         <Field label="Assumptions" full>
+          <Hint
+            body="What this budget DEPENDS ON being true. Each assumption is an unstated 'if X breaks, the number breaks too.' Make them explicit so a change in conditions is visible — not a surprise."
+            examples={[
+              'Owner provides existing curtain rails — not replaced as part of this budget',
+              'Local artisan rate of Rs 1,500/day holds across the project window (no public-holiday spike)',
+              'No structural works needed — walls / plumbing / electrical positions as found',
+            ]}
+          />
           <textarea value={assumptions} onChange={(e) => setAssumptions(e.target.value)} rows={3} style={textareaStyle()} placeholder="Gross of VAT. Excludes architect fees…" />
         </Field>
         <Field label="Exclusions" full>
+          <Hint
+            body="What this number does NOT cover. Anything the owner might assume IS included unless you spell it out. The most common dispute source — be ruthless about listing things that aren't here."
+            examples={[
+              'Architect fees (sub-contracted by owner) and planning permits',
+              'Building insurance during the works window',
+              'Owner-supplied artwork installation (frames, hanging, lighting)',
+            ]}
+          />
           <textarea value={exclusions} onChange={(e) => setExclusions(e.target.value)} rows={3} style={textareaStyle()} placeholder="Architect fees, planning permit, insurance…" />
         </Field>
         <Field label="Risk items" full>
+          <Hint
+            body="Where this budget COULD slip and by roughly how much. Cost volatility, supply lead times, vendor reliability, weather windows. The 'I'm telling you now, not in week 6' list. Each risk should have a vague magnitude — even if it's just S / M / L."
+            examples={[
+              'Imported fabric prices fluctuate ±15% over the project window — buffer +5% reserved',
+              'Curtain workshop currently 4 weeks lead time; risk of slipping if booked late (S)',
+              'Cyclone season overlap — exterior works may need a 1–2 week pause (M)',
+            ]}
+          />
           <textarea value={riskItems} onChange={(e) => setRiskItems(e.target.value)} rows={2} style={textareaStyle()} placeholder="Cost volatility flags, dependencies…" />
         </Field>
         <Field label="Next steps" full>
+          <Hint
+            body="The concrete things that need to happen next to lock this budget — typically before Annex B + signature. Each should have an owner and an approximate when. This is the action list, not a wish list."
+            examples={[
+              'Owner signs Annex B (this week)',
+              'Confirm EPC schedule + vendor with site lead — by Friday',
+              'Lock fabric selections — needs site visit photos finalised first',
+            ]}
+          />
           <textarea value={nextSteps} onChange={(e) => setNextSteps(e.target.value)} rows={2} style={textareaStyle()} placeholder="Annex B + signature, EPC confirmation, …" />
         </Field>
       </Card>

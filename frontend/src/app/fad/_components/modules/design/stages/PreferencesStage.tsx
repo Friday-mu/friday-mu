@@ -12,6 +12,7 @@ import { bumpFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 import { UrlOrUploadInput } from '../UrlOrUploadInput';
+import { Hint } from '../Hint';
 
 interface Props {
   project: DesignProject;
@@ -191,11 +192,27 @@ export function PreferencesStage({ project }: Props) {
 
       {/* 6 — Functional priorities */}
       <Section n={6} title="Functional priorities">
+        <Hint
+          body="How the property needs to FUNCTION — distinct from how it should look. Think about who uses what, how often, and what failures would hurt the host's reputation or rental performance."
+          examples={[
+            'Sleeps 8 comfortably without using sofa beds; 2 ensuites for the two couples',
+            'Work-from-anywhere — every bedroom needs a usable desk + fast wi-fi',
+            'Quick-turnover ready — easy-clean fabrics, no fussy decor that breaks weekly',
+          ]}
+        />
         <Textarea value={prefs.functionalPriorities ?? ''} onChange={(v) => update('functionalPriorities', v)} placeholder="Family-friendly, host count, work-from-anywhere…" />
       </Section>
 
       {/* 7 — Target guest profile */}
       <Section n={7} title="Target guest profile">
+        <Hint
+          body="Who the property is FOR. Pick the segment(s) the owner is targeting; this drives everything from styling and amenities to nightly rate. Be specific about the trade-off — e.g. 'families OR couples' usually picks one and styles for them."
+          examples={[
+            'High-end couples on honeymoon / anniversary — 28-50, no kids, willing to pay premium for ambience',
+            'Families with young kids — durability + child-friendly amenities > styling refinement',
+            'Digital nomads, 30-day stays — desk setup + kitchen functionality matter more than aesthetics',
+          ]}
+        />
         <Textarea value={prefs.targetGuestProfile ?? ''} onChange={(v) => update('targetGuestProfile', v)} placeholder="Couples / families / segment / luxury level" />
       </Section>
 
@@ -290,17 +307,49 @@ export function PreferencesStage({ project }: Props) {
         <Textarea value={prefs.accessibilityNotes ?? ''} onChange={(v) => update('accessibilityNotes', v)} placeholder="Handrails, step-free, wider doorways…" />
       </Section>
       <Section n={14} title="Scent / smell preferences">
+        <Hint
+          body="What the property should SMELL like when a guest walks in. This feeds vendor briefs for diffusers / candles / cleaning products and protects the owner from unwanted surprises (heavy fragrances they hate, or none at all)."
+          examples={[
+            'Subtle, fresh — sea salt or eucalyptus; no sweet/floral; nothing strong enough to stick to fabrics',
+            'No artificial fragrances at all (owner has sensitivity); rely on natural materials only',
+            'Tropical: vanilla + frangipani; reed diffuser in the entry only, nothing in the bedrooms',
+          ]}
+        />
         <Textarea value={prefs.scentPrefs ?? ''} onChange={(v) => update('scentPrefs', v)} placeholder="Subtle citrus, no heavy florals, …" />
       </Section>
       <Section n={15} title="Sound / acoustic preferences">
+        <Hint
+          body="How the property should SOUND. Hard-surface villas echo badly and guests notice. This drives rug coverage, soft-furnishing density, and whether you over-spec curtains for sound absorption. Flag any external noise issue too — neighbours, road, generators."
+          examples={[
+            'Echo in the living room (tile + glass) — needs at least 60% rug coverage + heavy curtains',
+            'Master bedroom faces the street; needs double-glazing or heavy drapes if budget allows',
+            'No sound issues; standard fabric density fine',
+          ]}
+        />
         <Textarea value={prefs.acousticPrefs ?? ''} onChange={(v) => update('acousticPrefs', v)} placeholder="Soft furnishings, rugs, sound-dampening" />
       </Section>
       <Section n={16} title="Allergens / material sensitivities">
+        <Hint
+          body="Anything the owner (or their typical guest) reacts to. Hard constraint on materials — affects sofa fillings, paint VOCs, bedding, rugs, cleaning products. Cheaper to know now than swap a $2k sofa later."
+          examples={[
+            'No down feathers anywhere — owner is allergic; use polyester or wool fill',
+            'Low-VOC paints only (kids under 3 sometimes stay); no oil-based finishes inside',
+            'Latex sensitivity — check mattress toppers and rug undercoats before specifying',
+          ]}
+        />
         <Textarea value={prefs.allergens ?? ''} onChange={(v) => update('allergens', v)} placeholder="No down feathers, low-VOC paint, …" />
       </Section>
 
       {/* 17 — Revision expectations */}
       <Section n={17} title="Revision expectations" extra="(2 included; +Rs 5,000 per additional per agreement)">
+        <Hint
+          body="How many full revision rounds the owner expects across moodboard / floor plan / selections. 2 rounds are included in the agreement; any beyond that bills at Rs 5,000 each. Capture the owner's intent now so there's no surprise later — and a friction signal if they expect more than 4."
+          examples={[
+            'Owner expects 1–2 rounds; OK with paying for a 3rd if needed',
+            'Likely 3 rounds — owner has strong opinions but acknowledges the fee for round 3+',
+            'Indecisive owner; flag risk of 4+ rounds; pre-discuss budget so the overage conversation is easier',
+          ]}
+        />
         <Textarea value={prefs.revisionExpectations ?? ''} onChange={(v) => update('revisionExpectations', v)} placeholder="Number expected, willingness to pay extra" />
       </Section>
 
@@ -414,38 +463,6 @@ function Textarea({ value, onChange, placeholder }: { value: string; onChange: (
         minHeight: 36,
       }}
     />
-  );
-}
-
-// Inline contextual hint for an input field. Mathias asked for this
-// on 2026-05-14 — when a field overlaps with another surface (e.g.
-// Must Keep is on both the Preferences page and per-room), users need
-// to know what THIS one is for, with a concrete example. Roll this
-// out gradually across all input-heavy stages. See
-// docs/scoping/field-hint-pattern.md for the rollout list.
-function Hint({ body, examples }: { body: string; examples?: string[] }) {
-  return (
-    <div
-      style={{
-        marginBottom: 8,
-        padding: '8px 10px',
-        background: 'var(--color-brand-accent-soft)',
-        borderLeft: '2px solid var(--color-brand-accent)',
-        borderRadius: 'var(--radius-sm)',
-        fontSize: 11,
-        lineHeight: 1.5,
-        color: 'var(--color-text-secondary)',
-      }}
-    >
-      <div>{body}</div>
-      {examples && examples.length > 0 && (
-        <ul style={{ margin: '4px 0 0 16px', padding: 0, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-          {examples.map((ex, i) => (
-            <li key={i} style={{ marginBottom: 2 }}>{ex}</li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }
 

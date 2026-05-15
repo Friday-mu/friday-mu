@@ -7,6 +7,7 @@ import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
 import { UrlOrUploadInput } from '../UrlOrUploadInput';
+import { Hint } from '../Hint';
 
 interface Props {
   project: DesignProject;
@@ -1029,6 +1030,14 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
         </Field>
       </Grid>
       <Field label="Design opportunity" full>
+        <Hint
+          body={`The "what could this room BECOME" note. Not what's there now, not what's broken — what would unlock the most value with a smart move. Feeds the moodboard brief and helps the designer prioritise where to spend.`}
+          examples={[
+            'Underused alcove between the bedroom and bathroom — could become a vanity / reading nook',
+            'Wall-mounted TV cabinet eating 1.2m of length; remove and gain visual space + storage redesign',
+            'No ceiling fan despite the ceiling height + climate — easy win for guest comfort',
+          ]}
+        />
         <textarea
           value={form.designOpportunity}
           onChange={(e) => { setForm((f) => ({ ...f, designOpportunity: e.target.value })); queuePatch({ design_opportunity: e.target.value || null }); }}
@@ -1038,6 +1047,14 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
       </Field>
       <Grid>
         <Field label="Access / logistics" full>
+          <Hint
+            body="Anything that constrains the procurement / install crew getting furniture INTO this room. Forgotten until a 2.4m sofa hits a 2.1m doorway. Capture the worst dimension and any time/scheduling restriction here."
+            examples={[
+              'Stairwell turn is the tightest point — max sofa width 2m, must come up in pieces',
+              'Lift available but capped at 200kg / 1.2×1m floor — anything wider goes up the stairs',
+              'Building only allows deliveries Mon-Sat 9am-5pm; no Sundays, no after-hours',
+            ]}
+          />
           <textarea
             value={form.accessNotes}
             onChange={(e) => { setForm((f) => ({ ...f, accessNotes: e.target.value })); queuePatch({ access_notes: e.target.value || null }); }}
@@ -1047,6 +1064,14 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
           />
         </Field>
         <Field label="Electrical / plumbing" full>
+          <Hint
+            body="What the room ALREADY has, what's broken, and what the design will need that isn't there yet. Procurement uses this to decide on local electricians / plumbers BEFORE furniture lands. Cheaper to add an outlet during the site visit than after a sofa is in place."
+            examples={[
+              'Only 2 outlets in the room, both on one wall — needs 3 more (TV, lamp, bedside) before furnishing',
+              'Bathroom plumbing dated; tap drips, no hot water at sink — fix before mirror/vanity install',
+              'A/C unit fine; ceiling light socket exists but no switch — wire to a wall switch during touch-ups',
+            ]}
+          />
           <textarea
             value={form.utilitiesNotes}
             onChange={(e) => { setForm((f) => ({ ...f, utilitiesNotes: e.target.value })); queuePatch({ utilities_notes: e.target.value || null }); }}
@@ -1345,31 +1370,3 @@ function FieldHint({ message }: { message: string }) {
   );
 }
 
-// Inline contextual hint for an input — same pattern as PreferencesStage's
-// Hint. Should ultimately be promoted to a shared component once the
-// rollout reaches more stages (see docs/scoping/field-hint-pattern.md).
-function Hint({ body, examples }: { body: string; examples?: string[] }) {
-  return (
-    <div
-      style={{
-        marginBottom: 6,
-        padding: '8px 10px',
-        background: 'var(--color-brand-accent-soft)',
-        borderLeft: '2px solid var(--color-brand-accent)',
-        borderRadius: 'var(--radius-sm)',
-        fontSize: 11,
-        lineHeight: 1.5,
-        color: 'var(--color-text-secondary)',
-      }}
-    >
-      <div>{body}</div>
-      {examples && examples.length > 0 && (
-        <ul style={{ margin: '4px 0 0 16px', padding: 0, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-          {examples.map((ex, i) => (
-            <li key={i} style={{ marginBottom: 2 }}>{ex}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
