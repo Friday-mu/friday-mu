@@ -5,6 +5,7 @@ import { MODULES, GROUPS, type ModuleDef } from '../_data/modules';
 import { iconFor, IconExpand, IconSparkle } from './icons';
 import { canSeeModule, useCurrentRole, useCurrentUserId } from './usePermissions';
 import { pendingCountFor, pendingCountForSubpage, subscribePendingRev, type PendingCount } from '../_data/pendingCounts';
+import { useEnabledModules } from '../_data/useEnabledModules';
 
 interface Props {
   active: string;
@@ -34,6 +35,7 @@ export function Sidebar({
 }: Props) {
   const role = useCurrentRole();
   const userId = useCurrentUserId();
+  const { enabledSet } = useEnabledModules();
 
   // Subscribe to fixture-mutation bumps so badges re-compute reactively
   const [pendingRev, setPendingRev] = useState(0);
@@ -43,10 +45,14 @@ export function Sidebar({
     const m: Record<string, ModuleDef[]> = {};
     MODULES.forEach((mod) => {
       if (!canSeeModule(role, mod.id)) return;
+      // SaaS module gate — when enabledSet has loaded, only show modules the
+      // tenant has enabled. Before it loads (null), show everything to avoid
+      // a flash of empty sidebar.
+      if (enabledSet && !enabledSet.has(mod.id)) return;
       (m[mod.group] = m[mod.group] || []).push(mod);
     });
     return m;
-  }, [role]);
+  }, [role, enabledSet]);
 
   // Allow re-clicking the active module to collapse its sub-pages.
   // Resets when the user navigates to a different module.

@@ -237,6 +237,10 @@ export const MODULE_RESOURCE: Record<string, Resource[]> = {
   agency: ['owners'],
   training: ['owners'],
   settings: ['settings'],
+  // SaaS surfaces — admin-only. Gated on `settings` resource (same as system Settings)
+  // so Field roles don't see them. Tenant module-enable gate runs on top.
+  'tenant-settings': ['settings'],
+  billing: ['settings'],
   hr: ['hr_staff'],
 };
 

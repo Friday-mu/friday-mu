@@ -92,6 +92,12 @@ export const MODULES: ModuleDef[] = [
     { id: 'settings', label: 'Settings' },
   ] },
   { id: 'agency', label: 'Agency', group: 'Units', tier: 'tease', ship: 'TBD', icon: 'IconAgency', path: '/gms/agency' },
+  { id: 'tenant-settings', label: 'Settings', group: 'Manage', tier: 'live', ship: 'live', icon: 'IconSettings', path: '/fad/tenant-settings', subPages: [
+    { id: 'general', label: 'General' },
+    { id: 'brand', label: 'Brand' },
+    { id: 'vendors', label: 'Vendor defaults' },
+  ] },
+  { id: 'billing', label: 'Billing', group: 'Manage', tier: 'live', ship: 'live', icon: 'IconFinance', path: '/fad/billing' },
   { id: 'notifications', label: 'Notifications', group: 'System', tier: 'live', ship: 'live', icon: 'IconBell', path: '/fad/notifications' },
   { id: 'training', label: 'Training', group: 'System', tier: 'preview', ship: "May '26", icon: 'IconAI', path: '/gms/training' },
   { id: 'settings', label: 'Settings', group: 'System', tier: 'live', ship: 'live', icon: 'IconSettings', path: '/gms/settings' },
@@ -104,5 +110,6 @@ export const GROUPS: GroupDef[] = [
   { id: 'People', label: 'People', tier: 'manage' },
   { id: 'Growth', label: 'Growth', tier: 'manage' },
   { id: 'Units', label: 'Business Units', tier: 'manage' },
+  { id: 'Manage', label: 'Manage', tier: 'manage' },
   { id: 'System', label: 'System', tier: 'manage' },
 ];

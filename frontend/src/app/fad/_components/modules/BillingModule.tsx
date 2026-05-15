@@ -1,0 +1,532 @@
+'use client';
+
+// Billing — two surfaces in one module:
+//   • Tenant view: list-my-invoices, "I've paid" flow with bank details.
+//   • FR-admin view (Friday Retreats tenant + admin role): list-all
+//     invoices across tenants, confirm bank-transfer payments, and issue
+//     new invoices.
+//
+// The FR admin sees a tabbed surface; everyone else only sees their own
+// invoices.
+
+import { useEffect, useState } from 'react';
+import { ModuleHeader } from '../ModuleHeader';
+import { apiFetch } from '../../../../components/types';
+import { useCurrentTenantRole, useIsFrAdmin } from '../../_data/useTenantIdentity';
+
+// Hardcoded bank details for v0. When the FR tenant configures a
+// different account this should move to a tenant setting; for now this
+// is the only set of receiving credentials.
+const FR_BANK_DETAILS = {
+  bank: 'Banque des Mascareignes',
+  account: '60000000XXXXX',
+  accountName: 'Friday Retreats Ltd',
+  iban: 'MU17BOMM0101101030300200000MUR',
+};
+
+type InvoiceStatus = 'pending' | 'paid_pending_confirmation' | 'paid' | 'void';
+
+interface Invoice {
+  id: string;
+  tenant_id: string;
+  invoice_number: string;
+  period_start: string | null;
+  period_end: string | null;
+  amount_minor: number;
+  currency_code: string;
+  amount_display: string;
+  due_date: string | null;
+  status: InvoiceStatus;
+  bank_transfer_ref: string | null;
+  paid_at: string | null;
+  notes: string | null;
+  created_at: string;
+  // Admin-list responses join the tenant row
+  tenant_name?: string;
+  tenant_slug?: string;
+}
+
+export function BillingModule() {
+  const isFrAdmin = useIsFrAdmin();
+  const [adminTab, setAdminTab] = useState<'all' | 'mine'>('all');
+
+  if (isFrAdmin) {
+    const tabs = [
+      { id: 'all', label: 'All tenant invoices' },
+      { id: 'mine', label: 'My invoices' },
+    ];
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <ModuleHeader
+          title="Billing"
+          subtitle="Issue invoices, confirm payments, and review your own bill."
+          tabs={tabs}
+          activeTab={adminTab}
+          onTabChange={(id) => setAdminTab(id as 'all' | 'mine')}
+        />
+        <div className="fad-module-body">
+          {adminTab === 'all' ? <AdminAllInvoices /> : <TenantInvoices />}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <ModuleHeader title="Billing" subtitle="Your invoices and payment status." />
+      <div className="fad-module-body">
+        <TenantInvoices />
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tenant view
+// ─────────────────────────────────────────────────────────────
+
+function TenantInvoices() {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = (await apiFetch('/api/tenants/me/invoices')) as { results: Invoice[] } | Invoice[];
+      setInvoices(Array.isArray(res) ? res : res.results || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBlock message={error} />;
+
+  if (invoices.length === 0) {
+    return (
+      <div className="card" style={{ padding: 24, textAlign: 'center' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 500 }}>No invoices yet</h3>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+          Invoices will appear here once Friday Retreats issues your first bill.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {invoices.map((inv) => (
+        <TenantInvoiceCard key={inv.id} invoice={inv} onRefresh={load} />
+      ))}
+    </div>
+  );
+}
+
+function TenantInvoiceCard({ invoice, onRefresh }: { invoice: Invoice; onRefresh: () => void }) {
+  const [bankRef, setBankRef] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const markPaid = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/tenants/me/invoices/${invoice.id}/mark-paid`, {
+        method: 'POST',
+        body: JSON.stringify({ bank_transfer_ref: bankRef.trim() || null }),
+      });
+      await onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>{invoice.invoice_number}</div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            {formatPeriod(invoice.period_start, invoice.period_end)} · Due {formatDate(invoice.due_date)}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>{invoice.amount_display}</div>
+          <StatusChip status={invoice.status} />
+        </div>
+      </div>
+
+      {invoice.status === 'pending' && (
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8, fontWeight: 500 }}>Pay by bank transfer</div>
+          <BankDetails reference={invoice.invoice_number} />
+          <div style={{ marginTop: 12 }}>
+            <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
+              Bank transfer reference (optional — helps us match your payment)
+            </label>
+            <input
+              type="text"
+              value={bankRef}
+              onChange={(e) => setBankRef(e.target.value)}
+              placeholder="e.g. TX-2026-04-001"
+              style={inputStyle}
+            />
+          </div>
+          {error && <ErrorMsg message={error} />}
+          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="button" onClick={markPaid} disabled={submitting} style={primaryBtn()}>
+              {submitting ? 'Submitting…' : "I've paid"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {invoice.status === 'paid_pending_confirmation' && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--color-border-tertiary)', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          Awaiting confirmation from Friday Retreats.
+          {invoice.bank_transfer_ref && <> Ref: <code>{invoice.bank_transfer_ref}</code></>}
+        </div>
+      )}
+
+      {invoice.status === 'paid' && invoice.paid_at && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--color-border-tertiary)', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          ✓ Paid on {formatDate(invoice.paid_at)}.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BankDetails({ reference }: { reference: string }) {
+  return (
+    <div style={{ background: 'var(--color-background-tertiary)', borderRadius: 6, padding: 12, fontSize: 12, lineHeight: 1.7 }}>
+      <BankRow label="Bank" value={FR_BANK_DETAILS.bank} />
+      <BankRow label="Account" value={FR_BANK_DETAILS.account} mono />
+      <BankRow label="Account name" value={FR_BANK_DETAILS.accountName} />
+      <BankRow label="IBAN" value={FR_BANK_DETAILS.iban} mono />
+      <BankRow label="Reference" value={reference} mono highlight />
+    </div>
+  );
+}
+
+function BankRow({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
+      <span style={{
+        fontFamily: mono ? 'var(--font-mono-fad, monospace)' : undefined,
+        fontWeight: highlight ? 600 : 400,
+        color: highlight ? 'var(--color-brand-accent)' : undefined,
+      }}>{value}</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// FR admin view
+// ─────────────────────────────────────────────────────────────
+
+interface TenantSummary {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+function AdminAllInvoices() {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [tenants, setTenants] = useState<TenantSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showIssue, setShowIssue] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [invRes, tRes] = await Promise.all([
+        apiFetch('/api/tenants/admin/invoices') as Promise<{ results: Invoice[] } | Invoice[]>,
+        apiFetch('/api/tenants/admin/list').catch(() => ({ results: [] })) as Promise<{ results: TenantSummary[] } | TenantSummary[]>,
+      ]);
+      setInvoices(Array.isArray(invRes) ? invRes : invRes.results || []);
+      setTenants(Array.isArray(tRes) ? tRes : tRes.results || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const confirmPayment = async (id: string) => {
+    try {
+      await apiFetch(`/api/tenants/admin/invoices/${id}/confirm-payment`, { method: 'POST' });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  if (loading) return <Loading />;
+
+  // Group by tenant for display
+  const byTenant = new Map<string, { name: string; invoices: Invoice[] }>();
+  invoices.forEach((inv) => {
+    const key = inv.tenant_id;
+    const name = inv.tenant_name || inv.tenant_slug || key;
+    if (!byTenant.has(key)) byTenant.set(key, { name, invoices: [] });
+    byTenant.get(key)!.invoices.push(inv);
+  });
+
+  return (
+    <div>
+      {/* Issue invoice */}
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 500 }}>Issue invoice</h3>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>Bill a tenant for the current period.</p>
+          </div>
+          <button type="button" onClick={() => setShowIssue((v) => !v)} style={secondaryBtn()}>
+            {showIssue ? 'Cancel' : '+ New invoice'}
+          </button>
+        </div>
+        {showIssue && (
+          <IssueInvoiceForm
+            tenants={tenants}
+            onIssued={() => { setShowIssue(false); void load(); }}
+          />
+        )}
+      </div>
+
+      {error && <ErrorMsg message={error} />}
+
+      {byTenant.size === 0 ? (
+        <div className="card" style={{ padding: 24, textAlign: 'center' }}>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>No invoices issued yet.</p>
+        </div>
+      ) : (
+        Array.from(byTenant.entries()).map(([tenantId, group]) => (
+          <div key={tenantId} className="card" style={{ padding: 16, marginBottom: 12 }}>
+            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 500 }}>{group.name}</h4>
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--color-text-tertiary)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <th style={{ padding: '6px 8px' }}>Invoice</th>
+                  <th style={{ padding: '6px 8px' }}>Period</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
+                  <th style={{ padding: '6px 8px' }}>Due</th>
+                  <th style={{ padding: '6px 8px' }}>Status</th>
+                  <th style={{ padding: '6px 8px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.invoices.map((inv) => (
+                  <tr key={inv.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                    <td style={{ padding: '8px', fontFamily: 'var(--font-mono-fad, monospace)' }}>{inv.invoice_number}</td>
+                    <td style={{ padding: '8px' }}>{formatPeriod(inv.period_start, inv.period_end)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: 500 }}>{inv.amount_display}</td>
+                    <td style={{ padding: '8px' }}>{formatDate(inv.due_date)}</td>
+                    <td style={{ padding: '8px' }}><StatusChip status={inv.status} /></td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>
+                      {inv.status === 'paid_pending_confirmation' && (
+                        <button type="button" onClick={() => confirmPayment(inv.id)} style={primaryBtnXs()}>
+                          Confirm payment
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function IssueInvoiceForm({ tenants, onIssued }: { tenants: TenantSummary[]; onIssued: () => void }) {
+  const [tenantId, setTenantId] = useState('');
+  const [amountMinor, setAmountMinor] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!tenantId) { setError('Pick a tenant.'); return; }
+    const amt = Number(amountMinor);
+    if (!Number.isFinite(amt) || amt <= 0) { setError('Amount (in cents) must be a positive number.'); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await apiFetch('/api/tenants/admin/invoices', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenant_id: tenantId,
+          amount_minor: amt,
+          currency_code: currency.toUpperCase(),
+          period_start: periodStart || null,
+          period_end: periodEnd || null,
+          due_date: dueDate || null,
+          notes: notes.trim() || null,
+        }),
+      });
+      onIssued();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <FieldInline label="Tenant">
+          <select value={tenantId} onChange={(e) => setTenantId(e.target.value)} style={inputStyle}>
+            <option value="">— select —</option>
+            {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </FieldInline>
+        <FieldInline label="Amount (cents)" hint="In minor units. 1000 = $10.00">
+          <input type="number" value={amountMinor} onChange={(e) => setAmountMinor(e.target.value)} placeholder="1000" style={inputStyle} />
+        </FieldInline>
+        <FieldInline label="Currency">
+          <input type="text" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} style={inputStyle} />
+        </FieldInline>
+        <FieldInline label="Period start">
+          <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} style={inputStyle} />
+        </FieldInline>
+        <FieldInline label="Period end">
+          <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} style={inputStyle} />
+        </FieldInline>
+        <FieldInline label="Due date">
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={inputStyle} />
+        </FieldInline>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <FieldInline label="Notes">
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+          </FieldInline>
+        </div>
+      </div>
+      {error && <ErrorMsg message={error} />}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+        <button type="button" onClick={submit} disabled={submitting} style={primaryBtn()}>
+          {submitting ? 'Issuing…' : 'Issue invoice'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FieldInline({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>{label}</label>
+      {children}
+      {hint && <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>{hint}</div>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Shared helpers
+// ─────────────────────────────────────────────────────────────
+
+function StatusChip({ status }: { status: InvoiceStatus }) {
+  const map: Record<InvoiceStatus, { label: string; tone: 'info' | 'warn' | '' }> = {
+    pending: { label: 'Pending', tone: 'warn' },
+    paid_pending_confirmation: { label: 'Payment submitted', tone: 'info' },
+    paid: { label: 'Paid', tone: 'info' },
+    void: { label: 'Void', tone: '' },
+  };
+  const entry = map[status] || { label: status, tone: '' };
+  return <span className={'chip ' + entry.tone}>{entry.label}</span>;
+}
+
+function Loading() {
+  return <div style={{ padding: 24, fontSize: 13, color: 'var(--color-text-tertiary)' }}>Loading…</div>;
+}
+
+function ErrorBlock({ message }: { message: string }) {
+  return <div style={{ padding: 24 }}><ErrorMsg message={message} /></div>;
+}
+
+function ErrorMsg({ message }: { message: string }) {
+  return (
+    <div role="alert" style={{ padding: '8px 10px', borderRadius: 6, background: 'var(--color-bg-danger, #fef2f2)', color: 'var(--color-text-danger, #991b1b)', fontSize: 12, marginTop: 8 }}>
+      {message}
+    </div>
+  );
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleDateString(); } catch { return iso; }
+}
+
+function formatPeriod(start: string | null, end: string | null): string {
+  if (!start && !end) return '—';
+  return `${formatDate(start)} – ${formatDate(end)}`;
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '6px 8px',
+  fontSize: 13,
+  borderRadius: 4,
+  border: '0.5px solid var(--color-border-secondary)',
+  background: 'var(--color-background-primary)',
+  color: 'var(--color-text-primary)',
+};
+
+function primaryBtn(): React.CSSProperties {
+  return {
+    padding: '8px 16px',
+    borderRadius: 'var(--radius-sm, 6px)',
+    background: 'var(--color-brand-accent)',
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 500,
+    border: 'none',
+    cursor: 'pointer',
+  };
+}
+
+function primaryBtnXs(): React.CSSProperties {
+  return {
+    padding: '4px 10px',
+    borderRadius: 'var(--radius-sm, 4px)',
+    background: 'var(--color-brand-accent)',
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 500,
+    border: 'none',
+    cursor: 'pointer',
+  };
+}
+
+function secondaryBtn(): React.CSSProperties {
+  return {
+    padding: '6px 12px',
+    borderRadius: 'var(--radius-sm, 6px)',
+    background: 'var(--color-background-tertiary)',
+    color: 'var(--color-text-primary)',
+    fontSize: 12,
+    border: '0.5px solid var(--color-border-secondary)',
+    cursor: 'pointer',
+  };
+}

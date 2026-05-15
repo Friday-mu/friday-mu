@@ -35,9 +35,12 @@ import { TrainingModule } from './modules/TrainingModule';
 import { NotificationsModule } from './modules/NotificationsModule';
 import { HRModule } from './modules/HRModule';
 import { DesignModule } from './modules/DesignModule';
+import { TenantSettingsModule } from './modules/TenantSettingsModule';
+import { BillingModule } from './modules/BillingModule';
 import { MODULE_RESOURCE, PermissionsProvider } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
+import { useEnabledModules } from '../_data/useEnabledModules';
 
 type Theme = 'light' | 'dark';
 
@@ -54,6 +57,7 @@ export default function FadApp(props: FadAppProps = {}) {
 }
 
 function FadAppInner({ initialFridayFs = true }: FadAppProps) {
+  const { enabledSet } = useEnabledModules();
   const [active, setActive] = useState('inbox');
   const [subPage, setSubPage] = useState<string | null>(null);
   const [finRole, setFinRole] = useState<FinRole>('admin');
@@ -278,7 +282,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
               onExit={() => setFridayFs(false)}
             />
           ) : (
-            renderModule(mod, subPage, { theme, toggleTheme, openFriday, finRole, setFinRole, setSubPage })
+            renderModule(mod, subPage, { theme, toggleTheme, openFriday, finRole, setFinRole, setSubPage, enabledSet })
           )}
         </main>
       </div>
@@ -305,10 +309,21 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   );
 }
 
+interface RenderCtx {
+  theme: Theme;
+  toggleTheme: () => void;
+  openFriday: (scope?: string) => void;
+  finRole: FinRole;
+  setFinRole: (r: FinRole) => void;
+  setSubPage: (sub: string) => void;
+  /** Tenant-enabled modules. null until /api/tenants/me/modules resolves. */
+  enabledSet: Set<string> | null;
+}
+
 function renderModule(
   mod: ModuleDef,
   subPage: string | null,
-  ctx: { theme: Theme; toggleTheme: () => void; openFriday: (scope?: string) => void; finRole: FinRole; setFinRole: (r: FinRole) => void; setSubPage: (sub: string) => void }
+  ctx: RenderCtx
 ) {
   const inner = renderModuleInner(mod, subPage, ctx);
   const resources = MODULE_RESOURCE[mod.id];
@@ -323,10 +338,23 @@ function renderModule(
   );
 }
 
+function ModuleNotEnabled({ label }: { label: string }) {
+  return (
+    <div className="fad-module-body">
+      <div className="card" style={{ padding: 24, maxWidth: 560, margin: '40px auto', textAlign: 'center' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 500 }}>{label} is not enabled</h3>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+          This module is not enabled on your tenant. Contact your admin to enable it.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function renderModuleInner(
   mod: ModuleDef,
   subPage: string | null,
-  ctx: { theme: Theme; toggleTheme: () => void; openFriday: (scope?: string) => void; finRole: FinRole; setFinRole: (r: FinRole) => void; setSubPage: (sub: string) => void }
+  ctx: RenderCtx
 ) {
   switch (mod.id) {
     case 'inbox':
@@ -368,7 +396,18 @@ function renderModuleInner(
     case 'notifications':
       return <NotificationsModule />;
     case 'design':
+      // Defense-in-depth: a direct ?m=design URL bypasses the sidebar filter.
+      // Once enabledSet has loaded and design is NOT in it, refuse to render.
+      // While enabledSet is still null (loading), keep rendering — matches the
+      // sidebar's "show full list during load" behaviour.
+      if (ctx.enabledSet && !ctx.enabledSet.has('design')) {
+        return <ModuleNotEnabled label="Design" />;
+      }
       return <DesignModule subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} openFriday={ctx.openFriday} />;
+    case 'tenant-settings':
+      return <TenantSettingsModule subPage={subPage || 'general'} onChangeSubPage={ctx.setSubPage} />;
+    case 'billing':
+      return <BillingModule />;
     case 'syndic':
     case 'agency':
       return <TeaseModule mod={mod} />;
