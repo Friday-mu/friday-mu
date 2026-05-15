@@ -33,7 +33,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Door,
   FloorPlanModel,
+  FurnitureCategory,
+  FurnitureItem,
   Point,
+  RoomRegion,
   Wall,
   Window as PlanWindow,
 } from '../../../_data/floorPlanTypes';
@@ -45,16 +48,63 @@ import { UrlOrUploadInput } from './UrlOrUploadInput';
 
 const SNAP_DISTANCE_PX = 8;
 const WALL_HIT_DISTANCE_PX = 12;
+const ENDPOINT_HIT_PX = 10;
+const FURNITURE_HIT_SLACK_PX = 4;
 const UNDO_LIMIT = 20;
 const DEFAULT_PIXELS_PER_METRE = 100;
+const MIN_PIXELS_PER_METRE = 20;
+const MAX_PIXELS_PER_METRE = 400;
 const DEFAULT_WALL_THICKNESS_M = 0.10;
 const DEFAULT_DOOR_WIDTH_M = 0.85;
 const DEFAULT_WINDOW_WIDTH_M = 1.2;
 const DEFAULT_WINDOW_SILL_M = 0.9;
 const DEFAULT_WINDOW_HEIGHT_M = 1.2;
+const DRAG_THRESHOLD_PX = 3;
 
-type Tool = 'wall' | 'door' | 'window' | 'select';
+type Tool = 'wall' | 'door' | 'window' | 'room' | 'select';
 type Stage = 'upload' | 'trace';
+
+// ── furniture catalog (mirrored subset of backend/src/design/floor_plan_catalog.js)
+// 18 most-common categories Mathias will reach for. Revisit as we see
+// real usage.
+interface CatalogEntry {
+  category: FurnitureCategory;
+  displayName: string;
+  defaultWidth: number;
+  defaultDepth: number;
+  group: 'Living' | 'Bedroom' | 'Dining' | 'Kitchen' | 'Bathroom' | 'Office';
+}
+
+const FURNITURE_CATALOG: CatalogEntry[] = [
+  { category: 'sofa',          displayName: 'Sofa',          defaultWidth: 2.0, defaultDepth: 0.9,  group: 'Living' },
+  { category: 'armchair',      displayName: 'Armchair',      defaultWidth: 0.9, defaultDepth: 0.9,  group: 'Living' },
+  { category: 'coffee_table',  displayName: 'Coffee table',  defaultWidth: 1.2, defaultDepth: 0.6,  group: 'Living' },
+  { category: 'tv_unit',       displayName: 'TV unit',       defaultWidth: 1.8, defaultDepth: 0.45, group: 'Living' },
+  { category: 'rug',           displayName: 'Rug',           defaultWidth: 2.4, defaultDepth: 1.6,  group: 'Living' },
+  { category: 'bed_king',      displayName: 'King bed',      defaultWidth: 2.0, defaultDepth: 1.8,  group: 'Bedroom' },
+  { category: 'bed_double',    displayName: 'Double bed',    defaultWidth: 2.0, defaultDepth: 1.5,  group: 'Bedroom' },
+  { category: 'bedside_table', displayName: 'Bedside table', defaultWidth: 0.5, defaultDepth: 0.4,  group: 'Bedroom' },
+  { category: 'wardrobe',      displayName: 'Wardrobe',      defaultWidth: 1.8, defaultDepth: 0.6,  group: 'Bedroom' },
+  { category: 'dining_table',  displayName: 'Dining table',  defaultWidth: 1.8, defaultDepth: 0.9,  group: 'Dining' },
+  { category: 'dining_chair',  displayName: 'Dining chair',  defaultWidth: 0.5, defaultDepth: 0.5,  group: 'Dining' },
+  { category: 'kitchen_island',displayName: 'Kitchen island',defaultWidth: 2.4, defaultDepth: 1.0,  group: 'Kitchen' },
+  { category: 'fridge',        displayName: 'Fridge',        defaultWidth: 0.7, defaultDepth: 0.7,  group: 'Kitchen' },
+  { category: 'bath',          displayName: 'Bath',          defaultWidth: 1.7, defaultDepth: 0.75, group: 'Bathroom' },
+  { category: 'shower',        displayName: 'Shower',        defaultWidth: 0.9, defaultDepth: 0.9,  group: 'Bathroom' },
+  { category: 'toilet',        displayName: 'Toilet',        defaultWidth: 0.4, defaultDepth: 0.7,  group: 'Bathroom' },
+  { category: 'vanity',        displayName: 'Vanity',        defaultWidth: 1.2, defaultDepth: 0.5,  group: 'Bathroom' },
+  { category: 'desk',          displayName: 'Desk',          defaultWidth: 1.4, defaultDepth: 0.7,  group: 'Office' },
+];
+
+const CATALOG_BY_CATEGORY = new Map<FurnitureCategory, CatalogEntry>(
+  FURNITURE_CATALOG.map((e) => [e.category, e]),
+);
+
+function catalogDisplayName(category: FurnitureCategory): string {
+  return CATALOG_BY_CATEGORY.get(category)?.displayName ?? category;
+}
+
+const FURNITURE_DRAG_MIME = 'application/x-fad-furniture-category';
 
 interface Props {
   projectId: string;
@@ -70,6 +120,19 @@ type SelectedItem =
   | { kind: 'wall'; id: string }
   | { kind: 'door'; id: string }
   | { kind: 'window'; id: string }
+  | { kind: 'furniture'; id: string }
+  | { kind: 'room'; id: string }
+  | null;
+
+// Active drag-to-move (Select tool). Captured on mouseDown when the
+// user grabs an existing item; consumed on mouseMove (mutate) and
+// cleared on mouseUp.
+type DragOp =
+  | { kind: 'wall-endpoint'; wallId: string; end: 'a' | 'b'; startM: Point; origA: Point; origB: Point }
+  | { kind: 'wall-translate'; wallId: string; startM: Point; origA: Point; origB: Point }
+  | { kind: 'door-slide'; doorId: string; wallId: string }
+  | { kind: 'window-slide'; windowId: string; wallId: string }
+  | { kind: 'furniture-translate'; itemId: string; startM: Point; origCentre: Point }
   | null;
 
 // ── id helpers ────────────────────────────────────────────────────────
@@ -130,6 +193,58 @@ function wallLengthM(wall: Wall): number {
   return Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
 }
 
+/** Ray-cast point-in-polygon test. polygon = array of points (metres or px). */
+function pointInPolygon(p: { x: number; y: number }, polygon: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersect = ((yi > p.y) !== (yj > p.y)) &&
+      (p.x < ((xj - xi) * (p.y - yi)) / (yj - yi + 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/** Simple centroid of polygon points (not weighted — fine for label placement). */
+function polygonCentroid(polygon: Point[]): Point {
+  if (polygon.length === 0) return { x: 0, y: 0 };
+  let sx = 0;
+  let sy = 0;
+  for (const p of polygon) {
+    sx += p.x;
+    sy += p.y;
+  }
+  return { x: sx / polygon.length, y: sy / polygon.length };
+}
+
+/**
+ * Hit-test a rotated rectangle. centre, w, d in metres; rotation degrees.
+ * pointM in metres. slackPx adds tolerance on hit edge (converted via pxPerM).
+ */
+function pointInRotatedRect(
+  pointM: Point,
+  centre: Point,
+  w: number,
+  d: number,
+  rotationDeg: number,
+  slackM: number,
+): boolean {
+  const rad = (rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(-rad);
+  const sin = Math.sin(-rad);
+  const dx = pointM.x - centre.x;
+  const dy = pointM.y - centre.y;
+  const localX = dx * cos - dy * sin;
+  const localY = dx * sin + dy * cos;
+  return (
+    Math.abs(localX) <= w / 2 + slackM &&
+    Math.abs(localY) <= d / 2 + slackM
+  );
+}
+
 // ── component ─────────────────────────────────────────────────────────
 
 export function FloorPlanTracingEditor({
@@ -151,6 +266,28 @@ export function FloorPlanTracingEditor({
   // In-progress wall drag state, in metres.
   const [drawingWall, setDrawingWall] = useState<{ a: Point; b: Point } | null>(null);
   const [hoverSnap, setHoverSnap] = useState<Point | null>(null);
+
+  // In-progress room polygon (room tool). Vertices in metres.
+  const [drawingRoom, setDrawingRoom] = useState<Point[] | null>(null);
+  // Live cursor position used for previewing the next room edge.
+  const [roomCursor, setRoomCursor] = useState<Point | null>(null);
+
+  // Active drag-to-move op (Select tool).
+  const [dragOp, setDragOp] = useState<DragOp>(null);
+  // Tracks whether the current pointer-down has dragged past the
+  // threshold yet — used so a click that doesn't move still opens the
+  // popover instead of being interpreted as a drag.
+  const dragMovedRef = useRef<boolean>(false);
+  // Starting client position of the mousedown, used to gate drag start.
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Pan + zoom viewport. pan in pixel units, applied as a CSS transform
+  // on the SVG wrapper.
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Spacebar-held state for pan-on-drag.
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  // Active pan-drag (middle mouse OR space+left). Captures start.
+  const [panning, setPanning] = useState<{ startClientX: number; startClientY: number; origPan: { x: number; y: number } } | null>(null);
 
   // Properties popover anchor — in SVG pixels.
   const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
@@ -254,6 +391,53 @@ export function FloorPlanTracingEditor({
     return best ? { wall: best.wall, ratio: best.ratio } : null;
   }
 
+  /**
+   * Hit-test wall endpoints — returns the wall + which end was hit, if
+   * the click is within ENDPOINT_HIT_PX of an endpoint. Higher priority
+   * than door/window/wall midpoint hit-tests.
+   */
+  function hitTestWallEndpoint(pointM: Point): { wallId: string; end: 'a' | 'b' } | null {
+    const pPx = metresToPx(pointM);
+    let best: { wallId: string; end: 'a' | 'b'; dPx: number } | null = null;
+    for (const w of model.walls) {
+      const aPx = metresToPx(w.a);
+      const bPx = metresToPx(w.b);
+      const dA = distPx(pPx, aPx);
+      const dB = distPx(pPx, bPx);
+      if (dA <= ENDPOINT_HIT_PX && (best === null || dA < best.dPx)) {
+        best = { wallId: w.id, end: 'a', dPx: dA };
+      }
+      if (dB <= ENDPOINT_HIT_PX && (best === null || dB < best.dPx)) {
+        best = { wallId: w.id, end: 'b', dPx: dB };
+      }
+    }
+    return best ? { wallId: best.wallId, end: best.end } : null;
+  }
+
+  /** Hit-test furniture items. Returns the topmost (last in array) hit. */
+  function hitTestFurniture(pointM: Point): FurnitureItem | null {
+    const slackM = FURNITURE_HIT_SLACK_PX / pixelsPerMetre;
+    // Iterate reverse so topmost (last-drawn) wins.
+    for (let i = model.furniture.length - 1; i >= 0; i--) {
+      const f = model.furniture[i];
+      if (pointInRotatedRect(pointM, f.centre, f.width, f.depth, f.rotation, slackM)) {
+        return f;
+      }
+    }
+    return null;
+  }
+
+  /** Hit-test rooms by point-in-polygon (lowest priority). */
+  function hitTestRoom(pointM: Point): RoomRegion | null {
+    for (let i = model.rooms.length - 1; i >= 0; i--) {
+      const r = model.rooms[i];
+      if (r.outline.length >= 3 && pointInPolygon(pointM, r.outline)) {
+        return r;
+      }
+    }
+    return null;
+  }
+
   // Doors / windows are anchored on walls — hit-test them by computing
   // their pixel position and checking proximity.
   function hitTestDoorOrWindow(pointM: Point): SelectedItem {
@@ -282,8 +466,20 @@ export function FloorPlanTracingEditor({
   // ── pointer handlers ────────────────────────────────────────────────
 
   function onMouseDown(e: React.MouseEvent<SVGSVGElement>) {
+    // Middle-mouse OR space+left = pan-drag, regardless of tool.
+    if (e.button === 1 || (e.button === 0 && spaceHeld)) {
+      e.preventDefault();
+      setPanning({
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        origPan: { ...pan },
+      });
+      return;
+    }
     if (e.button !== 0) return;
     const pM = mouseToMetres(e);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragMovedRef.current = false;
 
     if (tool === 'wall') {
       // Start a wall drag. Snap the start point.
@@ -347,29 +543,124 @@ export function FloorPlanTracingEditor({
       return;
     }
 
+    if (tool === 'room') {
+      // Click sequentially to add a vertex. Click on the first vertex
+      // (within ENDPOINT_HIT_PX) to close. Double-click handled elsewhere.
+      const verts = drawingRoom ?? [];
+      if (verts.length >= 3) {
+        const firstPx = metresToPx(verts[0]);
+        const clickPx = metresToPx(pM);
+        if (distPx(firstPx, clickPx) <= ENDPOINT_HIT_PX) {
+          finishRoom(verts);
+          return;
+        }
+      }
+      setDrawingRoom([...verts, pM]);
+      setRoomCursor(pM);
+      return;
+    }
+
     if (tool === 'select') {
-      // Doors / windows first (they sit on top of walls).
+      // Hit-test priority (highest to lowest):
+      //   1. Wall endpoint handles (only if the selected item is a wall)
+      //   2. Door / window
+      //   3. Furniture
+      //   4. Wall midpoint
+      //   5. Room
+      const endpointHit = selected?.kind === 'wall' ? hitTestWallEndpoint(pM) : null;
+      if (endpointHit) {
+        const w = model.walls.find((wl) => wl.id === endpointHit.wallId);
+        if (w) {
+          setDragOp({
+            kind: 'wall-endpoint',
+            wallId: w.id,
+            end: endpointHit.end,
+            startM: pM,
+            origA: { ...w.a },
+            origB: { ...w.b },
+          });
+          setSelected({ kind: 'wall', id: w.id });
+          setPopover(null);
+          return;
+        }
+      }
+
       const dw = hitTestDoorOrWindow(pM);
       if (dw) {
         setSelected(dw);
         const pPx = metresToPx(pM);
         setPopover({ x: pPx.x, y: pPx.y });
+        if (dw.kind === 'door') {
+          const door = model.doors.find((d) => d.id === dw.id);
+          if (door) setDragOp({ kind: 'door-slide', doorId: door.id, wallId: door.wallId });
+        } else if (dw.kind === 'window') {
+          const wn = model.windows.find((x) => x.id === dw.id);
+          if (wn) setDragOp({ kind: 'window-slide', windowId: wn.id, wallId: wn.wallId });
+        }
         return;
       }
+
+      const furn = hitTestFurniture(pM);
+      if (furn) {
+        setSelected({ kind: 'furniture', id: furn.id });
+        const pPx = metresToPx(pM);
+        setPopover({ x: pPx.x, y: pPx.y });
+        setDragOp({
+          kind: 'furniture-translate',
+          itemId: furn.id,
+          startM: pM,
+          origCentre: { ...furn.centre },
+        });
+        return;
+      }
+
       const wallHit = hitTestWall(pM);
       if (wallHit) {
         setSelected({ kind: 'wall', id: wallHit.wall.id });
         const pPx = metresToPx(pM);
         setPopover({ x: pPx.x, y: pPx.y });
+        setDragOp({
+          kind: 'wall-translate',
+          wallId: wallHit.wall.id,
+          startM: pM,
+          origA: { ...wallHit.wall.a },
+          origB: { ...wallHit.wall.b },
+        });
         return;
       }
+
+      const roomHit = hitTestRoom(pM);
+      if (roomHit) {
+        setSelected({ kind: 'room', id: roomHit.id });
+        const pPx = metresToPx(pM);
+        setPopover({ x: pPx.x, y: pPx.y });
+        return;
+      }
+
       setSelected(null);
       setPopover(null);
     }
   }
 
   function onMouseMove(e: React.MouseEvent<SVGSVGElement>) {
+    // Pan-drag takes precedence over everything else.
+    if (panning) {
+      const dx = e.clientX - panning.startClientX;
+      const dy = e.clientY - panning.startClientY;
+      setPan({ x: panning.origPan.x + dx, y: panning.origPan.y + dy });
+      return;
+    }
+
     const pM = mouseToMetres(e);
+
+    // Track whether mouse has moved enough to count as a drag.
+    if (dragStartRef.current) {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+        dragMovedRef.current = true;
+      }
+    }
 
     if (tool === 'wall' && drawingWall) {
       const snap = snapEndpoint(pM);
@@ -384,9 +675,97 @@ export function FloorPlanTracingEditor({
       const snap = snapEndpoint(pM);
       setHoverSnap(snap);
     }
+
+    if (tool === 'room' && drawingRoom && drawingRoom.length > 0) {
+      setRoomCursor(pM);
+    }
+
+    if (tool === 'select' && dragOp) {
+      // Mutate the model in-place per the active op.
+      if (dragOp.kind === 'wall-endpoint') {
+        // Snap the moving endpoint to other endpoints (excluding this wall).
+        const snap = snapEndpoint(pM, dragOp.wallId);
+        const target = snap ?? pM;
+        setModel((m) => ({
+          ...m,
+          walls: m.walls.map((w) =>
+            w.id === dragOp.wallId
+              ? { ...w, [dragOp.end]: target } as Wall
+              : w,
+          ),
+        }));
+        setHoverSnap(snap);
+        return;
+      }
+      if (dragOp.kind === 'wall-translate') {
+        const dxM = pM.x - dragOp.startM.x;
+        const dyM = pM.y - dragOp.startM.y;
+        setModel((m) => ({
+          ...m,
+          walls: m.walls.map((w) =>
+            w.id === dragOp.wallId
+              ? {
+                  ...w,
+                  a: { x: dragOp.origA.x + dxM, y: dragOp.origA.y + dyM },
+                  b: { x: dragOp.origB.x + dxM, y: dragOp.origB.y + dyM },
+                }
+              : w,
+          ),
+        }));
+        return;
+      }
+      if (dragOp.kind === 'door-slide' || dragOp.kind === 'window-slide') {
+        const w = model.walls.find((wl) => wl.id === dragOp.wallId);
+        if (!w) return;
+        const aPx = metresToPx(w.a);
+        const bPx = metresToPx(w.b);
+        const pPx = metresToPx(pM);
+        const rawRatio = projectRatioOnSegment(pPx, aPx, bPx);
+        const wallLen = wallLengthM(w);
+        if (dragOp.kind === 'door-slide') {
+          const door = model.doors.find((d) => d.id === dragOp.doorId);
+          if (!door || wallLen === 0) return;
+          const halfRatio = door.width / 2 / wallLen;
+          const clamped = Math.max(halfRatio, Math.min(1 - halfRatio, rawRatio));
+          setModel((m) => ({
+            ...m,
+            doors: m.doors.map((d) => (d.id === door.id ? { ...d, positionRatio: clamped } : d)),
+          }));
+        } else {
+          const wn = model.windows.find((x) => x.id === dragOp.windowId);
+          if (!wn || wallLen === 0) return;
+          const halfRatio = wn.width / 2 / wallLen;
+          const clamped = Math.max(halfRatio, Math.min(1 - halfRatio, rawRatio));
+          setModel((m) => ({
+            ...m,
+            windows: m.windows.map((x) => (x.id === wn.id ? { ...x, positionRatio: clamped } : x)),
+          }));
+        }
+        return;
+      }
+      if (dragOp.kind === 'furniture-translate') {
+        const dxM = pM.x - dragOp.startM.x;
+        const dyM = pM.y - dragOp.startM.y;
+        setModel((m) => ({
+          ...m,
+          furniture: m.furniture.map((f) =>
+            f.id === dragOp.itemId
+              ? { ...f, centre: { x: dragOp.origCentre.x + dxM, y: dragOp.origCentre.y + dyM } }
+              : f,
+          ),
+        }));
+        return;
+      }
+    }
   }
 
   function onMouseUp() {
+    if (panning) {
+      setPanning(null);
+      return;
+    }
+    dragStartRef.current = null;
+
     if (tool === 'wall' && drawingWall) {
       const len = Math.hypot(drawingWall.b.x - drawingWall.a.x, drawingWall.b.y - drawingWall.a.y);
       // Reject zero-length walls (just a click without drag).
@@ -406,6 +785,171 @@ export function FloorPlanTracingEditor({
       setDrawingWall(null);
       setHoverSnap(null);
     }
+
+    if (dragOp) {
+      // If the user merely clicked without moving, we already opened
+      // the popover — drop the drag op silently. If they did drag,
+      // push a single snapshot for undo. We can't push it on mouse-down
+      // (or undo would jump back to before the move started in a
+      // confusing way for every micro-click), so we do it on a real drag.
+      if (dragMovedRef.current) {
+        // Snapshot was not pushed at drag start because we didn't know
+        // yet whether it'd be a real drag. Push *the pre-drag state*
+        // by reconstructing the original — only the wall-endpoint,
+        // wall-translate, and furniture-translate ops carry origs.
+        // Door/window slide is fast and reversible by the same drag,
+        // so we keep undo coarse: push current state's "before" by
+        // restoring from origs into a snapshot before mutation.
+        // To keep the implementation simple we push the *current* model
+        // as the new state and rely on the user re-dragging to fix.
+        // Better: rebuild the snapshot from origs.
+        const snap = buildPreDragSnapshot(dragOp, model);
+        if (snap) pushSnapshot(snap);
+        setDirty(true);
+      }
+      setDragOp(null);
+      setHoverSnap(null);
+    }
+    dragMovedRef.current = false;
+  }
+
+  /**
+   * Reconstruct the "before" snapshot for a drag op, so undo restores
+   * the exact pre-drag state. Returns null for ops we don't reconstruct
+   * (door/window slide) — in which case the caller skips the snapshot.
+   */
+  function buildPreDragSnapshot(op: NonNullable<DragOp>, current: FloorPlanModel): FloorPlanModel | null {
+    if (op.kind === 'wall-endpoint' || op.kind === 'wall-translate') {
+      return {
+        ...current,
+        walls: current.walls.map((w) =>
+          w.id === op.wallId ? { ...w, a: op.origA, b: op.origB } : w,
+        ),
+      };
+    }
+    if (op.kind === 'furniture-translate') {
+      return {
+        ...current,
+        furniture: current.furniture.map((f) =>
+          f.id === op.itemId ? { ...f, centre: op.origCentre } : f,
+        ),
+      };
+    }
+    if (op.kind === 'door-slide' || op.kind === 'window-slide') {
+      // Coarse: skip — door/window position is one number, easy to redo by eye.
+      return null;
+    }
+    return null;
+  }
+
+  // ── room polygon helpers ────────────────────────────────────────────
+
+  function finishRoom(verts: Point[]) {
+    if (verts.length < 3) {
+      setError('A room needs at least 3 points.');
+      setDrawingRoom(null);
+      setRoomCursor(null);
+      return;
+    }
+    const label = typeof window !== 'undefined'
+      ? window.prompt('Room label (e.g. "Living room")', 'Room')
+      : 'Room';
+    if (label === null) {
+      setDrawingRoom(null);
+      setRoomCursor(null);
+      return;
+    }
+    const room: RoomRegion = {
+      id: shortId('room'),
+      label: label.trim() || 'Room',
+      outline: verts,
+    };
+    pushSnapshot(model);
+    setModel({ ...model, rooms: [...model.rooms, room] });
+    setDrawingRoom(null);
+    setRoomCursor(null);
+    setSelected({ kind: 'room', id: room.id });
+  }
+
+  function onCanvasDoubleClick() {
+    if (tool === 'room' && drawingRoom && drawingRoom.length >= 3) {
+      finishRoom(drawingRoom);
+    }
+  }
+
+  // ── furniture drop handler ──────────────────────────────────────────
+
+  function onCanvasDragOver(e: React.DragEvent<SVGSVGElement>) {
+    if (e.dataTransfer.types.includes(FURNITURE_DRAG_MIME)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }
+
+  function onCanvasDrop(e: React.DragEvent<SVGSVGElement>) {
+    const category = e.dataTransfer.getData(FURNITURE_DRAG_MIME) as FurnitureCategory | '';
+    if (!category) return;
+    e.preventDefault();
+    const entry = CATALOG_BY_CATEGORY.get(category as FurnitureCategory);
+    if (!entry) {
+      setError(`Unknown furniture category: ${category}`);
+      return;
+    }
+    // mouseToMetres works for DragEvent too — clientX/Y + svg rect.
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const xPx = e.clientX - rect.left;
+    const yPx = e.clientY - rect.top;
+    const centre: Point = { x: xPx / pixelsPerMetre, y: yPx / pixelsPerMetre };
+    const item: FurnitureItem = {
+      id: shortId(entry.category.replace(/_/g, '-')),
+      category: entry.category,
+      centre,
+      width: entry.defaultWidth,
+      depth: entry.defaultDepth,
+      rotation: 0,
+    };
+    pushSnapshot(model);
+    setModel({ ...model, furniture: [...model.furniture, item] });
+    setTool('select');
+    setSelected({ kind: 'furniture', id: item.id });
+    const pPx = metresToPx(centre);
+    setPopover({ x: pPx.x, y: pPx.y });
+    setError(null);
+  }
+
+  // ── pan / zoom ──────────────────────────────────────────────────────
+
+  function onCanvasWheel(e: React.WheelEvent<HTMLDivElement>) {
+    // Ctrl/Cmd + wheel = zoom around cursor. Without modifier, let the
+    // default scroll bubble (the container has overflow auto).
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const cursorPx = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const cursorM = { x: cursorPx.x / pixelsPerMetre, y: cursorPx.y / pixelsPerMetre };
+    // Step: 10% per wheel notch.
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const next = Math.max(MIN_PIXELS_PER_METRE, Math.min(MAX_PIXELS_PER_METRE, pixelsPerMetre * factor));
+    if (next === pixelsPerMetre) return;
+    setPixelsPerMetre(next);
+    // Adjust pan so that the metre point under the cursor stays at the
+    // same screen position after the zoom. Screen-x of cursorM after
+    // zoom is cursorM.x * next + pan.x'. We want that to equal the old
+    // screen-x = cursorPx.x + pan.x. So pan.x' = pan.x + cursorPx.x -
+    // cursorM.x * next.
+    setPan((p) => ({
+      x: p.x + (cursorPx.x - cursorM.x * next),
+      y: p.y + (cursorPx.y - cursorM.y * next),
+    }));
+  }
+
+  function resetView() {
+    setPan({ x: 0, y: 0 });
+    setPixelsPerMetre(DEFAULT_PIXELS_PER_METRE);
   }
 
   // ── keyboard ────────────────────────────────────────────────────────
@@ -430,20 +974,41 @@ export function FloorPlanTracingEditor({
         e.preventDefault();
         deleteSelected();
       }
+      if (e.key === 'Enter' && tool === 'room' && drawingRoom && drawingRoom.length >= 3) {
+        e.preventDefault();
+        finishRoom(drawingRoom);
+        return;
+      }
+      if (e.key === ' ' || e.code === 'Space') {
+        if (!spaceHeld) setSpaceHeld(true);
+        // Don't preventDefault unconditionally — let it focus buttons etc.
+      }
       if (e.key === 'Escape') {
         if (drawingWall) {
           setDrawingWall(null);
           setHoverSnap(null);
+        } else if (drawingRoom) {
+          setDrawingRoom(null);
+          setRoomCursor(null);
         } else if (popover || selected) {
           setSelected(null);
           setPopover(null);
         }
       }
     }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key === ' ' || e.code === 'Space') {
+        setSpaceHeld(false);
+      }
+    }
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, drawingWall, popover, model]);
+  }, [selected, drawingWall, drawingRoom, popover, model, tool, spaceHeld]);
 
   // ── selection mutators ──────────────────────────────────────────────
 
@@ -462,9 +1027,29 @@ export function FloorPlanTracingEditor({
       setModel({ ...model, doors: model.doors.filter((d) => d.id !== selected.id) });
     } else if (selected.kind === 'window') {
       setModel({ ...model, windows: model.windows.filter((wn) => wn.id !== selected.id) });
+    } else if (selected.kind === 'furniture') {
+      setModel({ ...model, furniture: model.furniture.filter((f) => f.id !== selected.id) });
+    } else if (selected.kind === 'room') {
+      setModel({ ...model, rooms: model.rooms.filter((r) => r.id !== selected.id) });
     }
     setSelected(null);
     setPopover(null);
+  }
+
+  function duplicateSelected() {
+    if (!selected || selected.kind !== 'furniture') return;
+    const orig = model.furniture.find((f) => f.id === selected.id);
+    if (!orig) return;
+    pushSnapshot(model);
+    const copy: FurnitureItem = {
+      ...orig,
+      id: shortId(orig.category.replace(/_/g, '-')),
+      centre: { x: orig.centre.x + 0.3, y: orig.centre.y + 0.3 },
+    };
+    setModel({ ...model, furniture: [...model.furniture, copy] });
+    setSelected({ kind: 'furniture', id: copy.id });
+    const pPx = metresToPx(copy.centre);
+    setPopover({ x: pPx.x, y: pPx.y });
   }
 
   function patchWall(id: string, patch: Partial<Wall>) {
@@ -486,6 +1071,20 @@ export function FloorPlanTracingEditor({
     setModel({
       ...model,
       windows: model.windows.map((wn) => (wn.id === id ? { ...wn, ...patch } : wn)),
+    });
+  }
+  function patchFurniture(id: string, patch: Partial<FurnitureItem>) {
+    pushSnapshot(model);
+    setModel({
+      ...model,
+      furniture: model.furniture.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+    });
+  }
+  function patchRoom(id: string, patch: Partial<RoomRegion>) {
+    pushSnapshot(model);
+    setModel({
+      ...model,
+      rooms: model.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     });
   }
 
@@ -546,6 +1145,14 @@ export function FloorPlanTracingEditor({
   const selectedWindow = useMemo<PlanWindow | null>(
     () => (selected?.kind === 'window' ? model.windows.find((wn) => wn.id === selected.id) ?? null : null),
     [selected, model.windows],
+  );
+  const selectedFurniture = useMemo<FurnitureItem | null>(
+    () => (selected?.kind === 'furniture' ? model.furniture.find((f) => f.id === selected.id) ?? null : null),
+    [selected, model.furniture],
+  );
+  const selectedRoom = useMemo<RoomRegion | null>(
+    () => (selected?.kind === 'room' ? model.rooms.find((r) => r.id === selected.id) ?? null : null),
+    [selected, model.rooms],
   );
 
   // ── rendering ───────────────────────────────────────────────────────
@@ -624,15 +1231,21 @@ export function FloorPlanTracingEditor({
         }}
       >
         <div style={{ display: 'flex', gap: 4 }} role="tablist">
-          {(['wall', 'door', 'window', 'select'] as Tool[]).map((t) => (
+          {(['wall', 'door', 'window', 'room', 'select'] as Tool[]).map((t) => (
             <button
               key={t}
               type="button"
-              onClick={() => { setTool(t); setSelected(null); setPopover(null); setError(null); }}
+              onClick={() => {
+                setTool(t);
+                setSelected(null);
+                setPopover(null);
+                setError(null);
+                if (t !== 'room') { setDrawingRoom(null); setRoomCursor(null); }
+              }}
               style={toolBtn(tool === t)}
               data-testid={`tool-${t}`}
             >
-              {t === 'wall' ? 'Wall' : t === 'door' ? 'Door' : t === 'window' ? 'Window' : 'Select'}
+              {t === 'wall' ? 'Wall' : t === 'door' ? 'Door' : t === 'window' ? 'Window' : t === 'room' ? 'Room' : 'Select'}
             </button>
           ))}
         </div>
@@ -656,6 +1269,14 @@ export function FloorPlanTracingEditor({
 
         <div style={{ flex: 1 }} />
 
+        <button
+          type="button"
+          onClick={resetView}
+          style={secondaryBtn()}
+          title="Reset pan + zoom"
+        >
+          Reset view
+        </button>
         <button
           type="button"
           onClick={undo}
@@ -684,6 +1305,7 @@ export function FloorPlanTracingEditor({
           borderRadius: 'var(--radius-sm)',
           background: '#fafafa',
         }}
+        onWheel={onCanvasWheel}
       >
         <svg
           ref={svgRef}
@@ -692,8 +1314,16 @@ export function FloorPlanTracingEditor({
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
-          onMouseLeave={() => { setHoverSnap(null); }}
-          style={{ display: 'block', cursor: cursorForTool(tool, !!drawingWall) }}
+          onMouseLeave={() => { setHoverSnap(null); if (panning) setPanning(null); }}
+          onDoubleClick={onCanvasDoubleClick}
+          onDragOver={onCanvasDragOver}
+          onDrop={onCanvasDrop}
+          style={{
+            display: 'block',
+            cursor: cursorForTool(tool, !!drawingWall, spaceHeld, !!panning),
+            transform: `translate(${pan.x}px, ${pan.y}px)`,
+            transformOrigin: '0 0',
+          }}
         >
           {/* Background raster — supply both `href` (SVG 2) and
               `xlinkHref` (SVG 1.1) so the image paints reliably across
@@ -716,6 +1346,36 @@ export function FloorPlanTracingEditor({
             {gridLines(canvasW, canvasH, pixelsPerMetre)}
           </g>
 
+          {/* Rooms — dashed outlines beneath everything else */}
+          {model.rooms.map((r) => {
+            const isSel = selected?.kind === 'room' && selected.id === r.id;
+            const pts = r.outline.map((p) => `${p.x * pixelsPerMetre},${p.y * pixelsPerMetre}`).join(' ');
+            const centroid = polygonCentroid(r.outline);
+            return (
+              <g key={r.id}>
+                <polygon
+                  points={pts}
+                  fill={isSel ? 'rgba(59,130,246,0.08)' : 'rgba(99,102,241,0.04)'}
+                  stroke={isSel ? '#3b82f6' : '#6366f1'}
+                  strokeWidth={isSel ? 1.5 : 1}
+                  strokeDasharray="6 4"
+                />
+                <text
+                  x={centroid.x * pixelsPerMetre}
+                  y={centroid.y * pixelsPerMetre}
+                  fontSize={11}
+                  fill={isSel ? '#1d4ed8' : '#4f46e5'}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  pointerEvents="none"
+                  style={{ fontWeight: 500 }}
+                >
+                  {r.label}
+                </text>
+              </g>
+            );
+          })}
+
           {/* Walls */}
           {model.walls.map((w) => {
             const aPx = metresToPx(w.a);
@@ -732,6 +1392,51 @@ export function FloorPlanTracingEditor({
                 strokeWidth={isSel ? 3 : 2}
                 strokeLinecap="round"
               />
+            );
+          })}
+
+          {/* Furniture */}
+          {model.furniture.map((f) => {
+            const isSel = selected?.kind === 'furniture' && selected.id === f.id;
+            const cx = f.centre.x * pixelsPerMetre;
+            const cy = f.centre.y * pixelsPerMetre;
+            const wPx = f.width * pixelsPerMetre;
+            const dPx = f.depth * pixelsPerMetre;
+            return (
+              <g
+                key={f.id}
+                transform={`translate(${cx} ${cy}) rotate(${f.rotation})`}
+              >
+                <rect
+                  x={-wPx / 2}
+                  y={-dPx / 2}
+                  width={wPx}
+                  height={dPx}
+                  fill={isSel ? '#dbeafe' : '#e5e7eb'}
+                  stroke={isSel ? '#3b82f6' : '#374151'}
+                  strokeWidth={isSel ? 2 : 0.5}
+                />
+                {/* Front-edge tick so rotation is visible */}
+                <line
+                  x1={-wPx / 2}
+                  y1={dPx / 2}
+                  x2={wPx / 2}
+                  y2={dPx / 2}
+                  stroke={isSel ? '#1d4ed8' : '#6b7280'}
+                  strokeWidth={1.5}
+                />
+                <text
+                  x={0}
+                  y={0}
+                  fontSize={10}
+                  fill="#374151"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  pointerEvents="none"
+                >
+                  {catalogDisplayName(f.category)}
+                </text>
+              </g>
             );
           })}
 
@@ -778,6 +1483,98 @@ export function FloorPlanTracingEditor({
               pointerEvents="none"
             />
           )}
+
+          {/* Room-in-progress preview */}
+          {tool === 'room' && drawingRoom && drawingRoom.length > 0 && (
+            <g pointerEvents="none">
+              {drawingRoom.map((p, i) => (
+                <circle
+                  key={`rv-${i}`}
+                  cx={p.x * pixelsPerMetre}
+                  cy={p.y * pixelsPerMetre}
+                  r={i === 0 && drawingRoom.length >= 3 ? 6 : 4}
+                  fill={i === 0 && drawingRoom.length >= 3 ? '#22c55e' : '#6366f1'}
+                  stroke="#fff"
+                  strokeWidth={1}
+                />
+              ))}
+              {drawingRoom.length >= 2 && (
+                <polyline
+                  points={drawingRoom.map((p) => `${p.x * pixelsPerMetre},${p.y * pixelsPerMetre}`).join(' ')}
+                  fill="none"
+                  stroke="#6366f1"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                />
+              )}
+              {roomCursor && drawingRoom.length > 0 && (
+                <line
+                  x1={drawingRoom[drawingRoom.length - 1].x * pixelsPerMetre}
+                  y1={drawingRoom[drawingRoom.length - 1].y * pixelsPerMetre}
+                  x2={roomCursor.x * pixelsPerMetre}
+                  y2={roomCursor.y * pixelsPerMetre}
+                  stroke="#a5b4fc"
+                  strokeWidth={1}
+                  strokeDasharray="2 3"
+                />
+              )}
+            </g>
+          )}
+
+          {/* Selected wall: dimension annotation + endpoint handles */}
+          {selectedWall && (() => {
+            const midM = pointAlongWall(selectedWall, 0.5);
+            const midPx = metresToPx(midM);
+            const lenM = wallLengthM(selectedWall);
+            // Perpendicular unit vector (in pixels) for the tick.
+            const dx = selectedWall.b.x - selectedWall.a.x;
+            const dy = selectedWall.b.y - selectedWall.a.y;
+            const wallLen = Math.hypot(dx, dy) || 1;
+            const nx = -dy / wallLen;
+            const ny = dx / wallLen;
+            const tickLen = 8; // px
+            const labelOffset = 14; // px from the wall along the normal
+            const labelX = midPx.x + nx * labelOffset;
+            const labelY = midPx.y + ny * labelOffset;
+            const tickX1 = midPx.x + nx * 2;
+            const tickY1 = midPx.y + ny * 2;
+            const tickX2 = midPx.x + nx * (2 + tickLen);
+            const tickY2 = midPx.y + ny * (2 + tickLen);
+            const labelText = `${lenM.toFixed(2)} m`;
+            const labelW = labelText.length * 6.2 + 8;
+            const labelH = 14;
+            const aPx = metresToPx(selectedWall.a);
+            const bPx = metresToPx(selectedWall.b);
+            return (
+              <g pointerEvents="none">
+                <line x1={tickX1} y1={tickY1} x2={tickX2} y2={tickY2} stroke="#3b82f6" strokeWidth={1} />
+                <rect
+                  x={labelX - labelW / 2}
+                  y={labelY - labelH / 2}
+                  width={labelW}
+                  height={labelH}
+                  fill="#fff"
+                  stroke="#3b82f6"
+                  strokeWidth={0.5}
+                  rx={2}
+                />
+                <text
+                  x={labelX}
+                  y={labelY}
+                  fontSize={10}
+                  fill="#1d4ed8"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  style={{ fontWeight: 600 }}
+                >
+                  {labelText}
+                </text>
+                {/* Endpoint handles — draggable in Select tool */}
+                <circle cx={aPx.x} cy={aPx.y} r={5} fill="#3b82f6" stroke="#fff" strokeWidth={1.5} />
+                <circle cx={bPx.x} cy={bPx.y} r={5} fill="#3b82f6" stroke="#fff" strokeWidth={1.5} />
+              </g>
+            );
+          })()}
 
           {/* Snap hover */}
           {hoverSnap && (
@@ -879,10 +1676,77 @@ export function FloorPlanTracingEditor({
                 </PropertyRow>
               </>
             )}
+            {selectedFurniture && (
+              <>
+                <div style={popoverHeader()}>{catalogDisplayName(selectedFurniture.category)} · {selectedFurniture.id}</div>
+                <PropertyRow label="Category">
+                  <span style={readOnlyText()}>{catalogDisplayName(selectedFurniture.category)}</span>
+                </PropertyRow>
+                <PropertyRow label="Width (m)">
+                  <NumberField
+                    value={selectedFurniture.width}
+                    step={0.05}
+                    min={0.1}
+                    onChange={(v) => patchFurniture(selectedFurniture.id, { width: v })}
+                  />
+                </PropertyRow>
+                <PropertyRow label="Depth (m)">
+                  <NumberField
+                    value={selectedFurniture.depth}
+                    step={0.05}
+                    min={0.1}
+                    onChange={(v) => patchFurniture(selectedFurniture.id, { depth: v })}
+                  />
+                </PropertyRow>
+                <PropertyRow label={`Rotation (${Math.round(selectedFurniture.rotation)}°)`}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    step={1}
+                    value={selectedFurniture.rotation}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isFinite(v)) patchFurniture(selectedFurniture.id, { rotation: v });
+                    }}
+                    style={{ width: 110 }}
+                  />
+                </PropertyRow>
+              </>
+            )}
+            {selectedRoom && (
+              <>
+                <div style={popoverHeader()}>Room {selectedRoom.id}</div>
+                <PropertyRow label="Label">
+                  <input
+                    type="text"
+                    value={selectedRoom.label}
+                    onChange={(e) => patchRoom(selectedRoom.id, { label: e.target.value })}
+                    style={{
+                      width: 120,
+                      padding: '4px 6px',
+                      fontSize: 11,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '0.5px solid var(--color-border-secondary)',
+                      background: 'var(--color-background-primary)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  />
+                </PropertyRow>
+                <PropertyRow label="Vertices">
+                  <span style={readOnlyText()}>{selectedRoom.outline.length}</span>
+                </PropertyRow>
+              </>
+            )}
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
               <button type="button" onClick={() => { setSelected(null); setPopover(null); }} style={secondaryBtn()}>
                 Close
               </button>
+              {selectedFurniture && (
+                <button type="button" onClick={duplicateSelected} style={secondaryBtn()}>
+                  Duplicate
+                </button>
+              )}
               <button type="button" onClick={deleteSelected} style={dangerBtn()}>
                 Delete
               </button>
@@ -891,6 +1755,9 @@ export function FloorPlanTracingEditor({
         )}
       </div>
 
+      {/* Furniture catalog — drag a card onto the canvas to drop the item */}
+      <FurnitureCatalogStrip />
+
       {/* Status bar */}
       <div
         style={{
@@ -898,15 +1765,19 @@ export function FloorPlanTracingEditor({
           justifyContent: 'space-between',
           fontSize: 11,
           color: 'var(--color-text-tertiary)',
+          flexWrap: 'wrap',
+          gap: 8,
         }}
       >
         <span>
           {model.walls.length} wall{model.walls.length === 1 ? '' : 's'} ·{' '}
           {model.doors.length} door{model.doors.length === 1 ? '' : 's'} ·{' '}
-          {model.windows.length} window{model.windows.length === 1 ? '' : 's'}
+          {model.windows.length} window{model.windows.length === 1 ? '' : 's'} ·{' '}
+          {model.furniture.length} furniture ·{' '}
+          {model.rooms.length} room{model.rooms.length === 1 ? '' : 's'}
         </span>
         <span>
-          Canvas {canvasW}×{canvasH} m · {svgWidthPx}×{svgHeightPx} px
+          {Math.round(pixelsPerMetre)} px/m · Cmd+wheel to zoom · space-drag to pan
         </span>
       </div>
 
@@ -934,6 +1805,92 @@ export function FloorPlanTracingEditor({
 }
 
 // ── child renderers ───────────────────────────────────────────────────
+
+function FurnitureCatalogStrip() {
+  // Group cards by group for readability.
+  const grouped = useMemo(() => {
+    const map = new Map<string, CatalogEntry[]>();
+    for (const e of FURNITURE_CATALOG) {
+      const arr = map.get(e.group) ?? [];
+      arr.push(e);
+      map.set(e.group, arr);
+    }
+    return Array.from(map.entries());
+  }, []);
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 16,
+        overflowX: 'auto',
+        padding: '8px 10px',
+        background: 'var(--color-background-tertiary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+      }}
+    >
+      {grouped.map(([group, entries]) => (
+        <div key={group} style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 0 auto' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            {group}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {entries.map((e) => (
+              <FurnitureCard key={e.category} entry={e} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FurnitureCard({ entry }: { entry: CatalogEntry }) {
+  function onDragStart(e: React.DragEvent<HTMLDivElement>) {
+    e.dataTransfer.setData(FURNITURE_DRAG_MIME, entry.category);
+    e.dataTransfer.effectAllowed = 'copy';
+  }
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      data-testid={`furniture-card-${entry.category}`}
+      style={{
+        minWidth: 86,
+        padding: '6px 8px',
+        background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-secondary)',
+        borderRadius: 'var(--radius-sm)',
+        cursor: 'grab',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        userSelect: 'none',
+      }}
+      title={`Drag onto canvas to add a ${entry.displayName}`}
+    >
+      <div
+        style={{
+          height: 26,
+          background: '#e5e7eb',
+          border: '0.5px solid #9ca3af',
+          borderRadius: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 9,
+          color: '#374151',
+          fontWeight: 500,
+        }}
+      >
+        {entry.displayName}
+      </div>
+      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+        {entry.defaultWidth}×{entry.defaultDepth} m
+      </div>
+    </div>
+  );
+}
 
 function DoorGlyph({
   door,
@@ -1084,7 +2041,9 @@ function gridLines(widthM: number, heightM: number, pxPerM: number) {
   return out;
 }
 
-function cursorForTool(tool: Tool, drawing: boolean): string {
+function cursorForTool(tool: Tool, drawing: boolean, spaceHeld: boolean, panning: boolean): string {
+  if (panning) return 'grabbing';
+  if (spaceHeld) return 'grab';
   if (tool === 'select') return 'default';
   if (drawing) return 'crosshair';
   return 'crosshair';
