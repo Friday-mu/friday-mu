@@ -23,6 +23,7 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const multer = require('multer');
 const { requireDesignPerm } = require('./auth');
+const { KIND_CONFIG, isAcceptable, publicPolicy } = require('./upload-policy');
 
 const router = express.Router();
 
@@ -30,25 +31,6 @@ const UPLOAD_ROOT = process.env.FAD_GENERIC_UPLOAD_DIR
   || path.join(__dirname, '../../uploads/files');
 const UPLOAD_PUBLIC_PREFIX = process.env.FAD_GENERIC_UPLOAD_PUBLIC_PREFIX
   || '/uploads/files';
-
-const KIND_CONFIG = {
-  image: {
-    mimes: new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif']),
-    maxBytes: 10 * 1024 * 1024, // 10 MB
-  },
-  document: {
-    mimes: new Set([
-      'application/pdf',
-      'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
-    ]),
-    maxBytes: 20 * 1024 * 1024, // 20 MB
-  },
-  video: {
-    mimes: new Set(['video/mp4', 'video/quicktime', 'video/webm']),
-    maxBytes: 50 * 1024 * 1024, // 50 MB — small cap for v1; large videos
-                                //         should still go to Drive as a URL.
-  },
-};
 
 try { fs.mkdirSync(UPLOAD_ROOT, { recursive: true }); } catch (e) {
   console.warn('[design/uploads] could not pre-create upload dir:', e.message);
@@ -71,8 +53,8 @@ function makeUploader(kind) {
     }),
     limits: { fileSize: cfg.maxBytes },
     fileFilter: (req, file, cb) => {
-      if (!cfg.mimes.has(file.mimetype)) {
-        cb(new Error(`Unsupported file type for ${kind}: ${file.mimetype}`));
+      if (!isAcceptable(kind, file)) {
+        cb(new Error(`Unsupported file type for ${kind}: ${file.mimetype} (${file.originalname || 'no filename'})`));
         return;
       }
       cb(null, true);
@@ -80,11 +62,17 @@ function makeUploader(kind) {
   }).single('file');
 }
 
+// GET /api/design/uploads/policy — frontends use this to render
+// per-family caps + hints in upload UI (e.g. "PDF, DOCX, … ≤ 25 MB").
+router.get('/policy', requireDesignPerm('design:read'), (_req, res) => {
+  res.json(publicPolicy());
+});
+
 router.post('/:project_id/:kind', requireDesignPerm('design:write'), (req, res) => {
   const kind = req.params.kind;
   const cfg = KIND_CONFIG[kind];
   if (!cfg) {
-    return res.status(400).json({ error: 'kind must be one of: image, document, video' });
+    return res.status(400).json({ error: `kind must be one of: ${Object.keys(KIND_CONFIG).join(', ')}` });
   }
   const uploader = makeUploader(kind);
   uploader(req, res, (err) => {

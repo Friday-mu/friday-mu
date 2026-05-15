@@ -25,13 +25,16 @@ const multer = require('multer');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { DEFAULT_TENANT_ID, shapePhoto } = require('./adapters');
+const { isAcceptable, KIND_CONFIG } = require('./upload-policy');
 
 const router = express.Router();
 
 const UPLOAD_DIR = process.env.FAD_UPLOAD_DIR || path.join(__dirname, '../../uploads/photos');
 const UPLOAD_PUBLIC_PREFIX = process.env.FAD_UPLOAD_PUBLIC_PREFIX || '/uploads/photos';
-const MAX_FILE_SIZE = parseInt(process.env.FAD_PHOTO_MAX_BYTES || '10485760', 10); // 10MB
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic']);
+// Allow env override to tighten the cap below the shared policy. The
+// shared image policy (mig 034 sister change) is 50 MB; keeping the
+// env override lets ops dial it down without a code change if needed.
+const MAX_FILE_SIZE = parseInt(process.env.FAD_PHOTO_MAX_BYTES || String(KIND_CONFIG.image.maxBytes), 10);
 
 // Ensure the upload root exists at boot. Per-project subdirs are
 // created on demand by multer.
@@ -59,8 +62,12 @@ const uploader = multer({
   storage,
   limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (req, file, cb) => {
-    if (!ALLOWED_MIME.has(file.mimetype)) {
-      cb(new Error(`Unsupported mime type: ${file.mimetype}. Use jpeg/png/webp/heic.`));
+    // Photos endpoint accepts the full image family from the shared
+    // policy — that's JPG, PNG, HEIC, HEIF, WEBP, AVIF, GIF, TIFF,
+    // BMP and raw camera formats. Previously this was a narrow
+    // jpeg/png/webp/heic set, which rejected HEIF from newer iPhones.
+    if (!isAcceptable('image', file)) {
+      cb(new Error(`Unsupported image type: ${file.mimetype} (${file.originalname || 'no filename'})`));
       return;
     }
     cb(null, true);

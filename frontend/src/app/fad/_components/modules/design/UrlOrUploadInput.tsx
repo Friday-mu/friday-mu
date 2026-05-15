@@ -21,7 +21,7 @@
 
 import { useRef, useState } from 'react';
 
-export type UploadKind = 'image' | 'document' | 'video';
+export type UploadKind = 'image' | 'document' | 'video' | 'design_file';
 
 interface Props {
   value: string | null | undefined;
@@ -39,16 +39,34 @@ interface Props {
   testIdSuffix?: string;
 }
 
+// `accept` attribute on the file picker. Wildcard for image keeps the
+// list short while letting the server (upload-policy.js) enforce the
+// real allowlist. Documents enumerate extensions so the OS picker
+// surfaces Office, OpenDocument, and archive formats. Design files
+// list extensions only — MIME is unreliable for PSD/AI/INDD/SKETCH/
+// FIG/XD across browsers.
 const DEFAULT_ACCEPT: Record<UploadKind, string> = {
-  image: 'image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif',
-  document: 'application/pdf,image/jpeg,image/png,image/webp',
+  image: 'image/*',
+  document:
+    'application/pdf,' +
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation,' +
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,' +
+    'application/msword,application/vnd.ms-powerpoint,application/vnd.ms-excel,' +
+    'application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.spreadsheet,application/vnd.oasis.opendocument.presentation,' +
+    'application/rtf,text/plain,text/markdown,text/csv,' +
+    'application/zip,' +
+    '.docx,.doc,.pptx,.ppt,.xlsx,.xls,.odt,.ods,.odp,.rtf,.txt,.md,.csv,.tsv,.zip,' +
+    'image/*',
   video: 'video/mp4,video/quicktime,video/webm',
+  design_file: '.psd,.ai,.indd,.sketch,.fig,.xd',
 };
 
 const KIND_LIMIT_TEXT: Record<UploadKind, string> = {
-  image: 'jpg/png/webp/heic, max 10MB',
-  document: 'pdf/jpg/png, max 20MB',
-  video: 'mp4/mov/webm, max 50MB',
+  image: 'JPG/PNG/HEIC/WEBP/AVIF/TIFF/GIF/raw, max 50MB',
+  document: 'PDF/DOCX/PPTX/XLSX/ODT/RTF/TXT/MD/CSV/ZIP, max 25MB',
+  video: 'MP4/MOV/WEBM, max 50MB',
+  design_file: 'PSD/AI/INDD/SKETCH/FIG/XD, max 500MB',
 };
 
 function getAuthToken(): string | null {

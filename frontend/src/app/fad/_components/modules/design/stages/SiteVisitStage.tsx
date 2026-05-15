@@ -1085,10 +1085,10 @@ function RoomDetail({ room, photos, onPhotoClick, onAddPhoto, onUploadPhoto }: {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
               {addMode === 'upload' ? (
-                <Field label="Choose file (jpg/png/webp, max 10MB)" full>
+                <Field label="Choose file (any image incl. HEIC / raw, max 50MB)" full>
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/heic"
+                    accept="image/*"
                     onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
                     data-room-photo-file
                     style={{ ...inputStyle(), padding: 4 }}
