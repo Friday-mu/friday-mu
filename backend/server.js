@@ -878,12 +878,37 @@ const invoicesRoutes = require('./src/tenants/invoices');
 app.use('/api/tenants', tenantsRoutes);
 app.use('/api/tenants', invoicesRoutes);
 
-// TODO: gate when tenant-scoped — HR routes don't yet scope queries by
-// req.tenantId. Adding requireModule('hr') now would lock FR out if
-// their JWT happens to omit tenant_id (which the legacy GMS login can
-// still do for older sessions).
+// Defensive multitenant lockdown — applied to every route mounted
+// below this line. Non-FR tenants get 403 on any non-design / non-
+// tenants route; FR continues unchanged. Routes whose queries have
+// been tenant-scoped + module-gated (currently just /api/design)
+// don't reach here because they're mounted earlier.
+//
+// This is v0 belt-and-braces: the underlying queries STILL hardcode
+// FR's tenant_id. Once we sweep a given module the way we did design,
+// remove its path from the lockdown and add a requireModule gate.
+{
+  const { attachIdentitySoft: _ais } = require('./src/design/auth');
+  const { requireFrTenant: _rft } = require('./src/tenants/middleware');
+  app.use((req, res, next) => {
+    const p = req.path;
+    // Skip the lockdown for intentionally public / already-gated routes.
+    if (
+      p === '/api/health' ||
+      p === '/api/version' ||
+      p.startsWith('/api/tenants') ||      // signup + tenant CRUD (own auth)
+      p.startsWith('/api/design') ||       // module-gated above
+      p.startsWith('/api/inbox/website')   // public HMAC-signed webhook
+    ) {
+      return next();
+    }
+    _ais(req, res, () => _rft(req, res, next));
+  });
+}
+
 // HR routes — FAD-owned tables, direct pg access. JWT-gated per
 // Director permission matrix (see src/hr/auth.js).
+// TODO: tenant-scope queries here + drop the FR lockdown above.
 const hrStaffRoutes = require('./src/hr/staff');
 const hrTimeOffRoutes = require('./src/hr/time-off');
 app.use('/api/hr/staff', hrStaffRoutes);
@@ -901,7 +926,7 @@ app.use('/api/hr/time-off', hrTimeOffRoutes);
 //     (returns 401 "no tenant context" if the JWT was absent / bad,
 //     which is correct: the inner requireDesignPerm would 401 anyway)
 const { attachIdentitySoft } = require('./src/design/auth');
-const { requireModule } = require('./src/tenants/middleware');
+const { requireModule, requireFrTenant } = require('./src/tenants/middleware');
 const designRoutes = require('./src/design');
 app.use('/api/design', attachIdentitySoft, requireModule('design'), designRoutes);
 

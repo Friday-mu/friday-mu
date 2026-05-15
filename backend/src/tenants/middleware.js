@@ -21,6 +21,8 @@
 const { query } = require('../database/client');
 const { isKnownModule } = require('./modules');
 
+const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
 const CACHE_TTL_MS = 60 * 1000;
 const cache = new Map(); // key: `${tenantId}:${moduleKey}` → { enabled, expires }
 
@@ -89,8 +91,35 @@ if (process.env.DISABLE_MODULE_GATE === '1') {
   console.warn('[tenants/middleware] DISABLE_MODULE_GATE=1 — module gate is BYPASSED. Do not run this in production.');
 }
 
+// Defensive lockdown for non-design routes that haven't been tenant-
+// scoped yet (HR / feedback / website-inbox / GMS-proxy /api/inbox /
+// /api/reviews / etc.). These routes still hardcode FR-tenant assumptions
+// in their queries; until they're swept the way design/* was, we block
+// non-FR tenants from hitting them at all.
+//
+// Behaviour:
+//   - req.tenantId === FR_TENANT_ID → next() (FR continues unchanged)
+//   - req.tenantId set and != FR    → 403
+//   - req.tenantId undefined        → next() (let downstream auth 401)
+//
+// Pair with attachIdentitySoft mounted earlier in the chain so
+// req.tenantId is populated for already-authenticated requests.
+//
+// Remove the wrapper from a route once its queries honour req.tenantId
+// AND a corresponding `requireModule` gate is in place.
+function requireFrTenant(req, res, next) {
+  if (req.tenantId && req.tenantId !== FR_TENANT_ID) {
+    return res.status(403).json({
+      error: 'Forbidden — this feature isn\'t part of your subscription.',
+    });
+  }
+  next();
+}
+
 module.exports = {
+  FR_TENANT_ID,
   isModuleEnabled,
   invalidateModuleCache,
   requireModule,
+  requireFrTenant,
 };
