@@ -4,6 +4,7 @@ const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { DEFAULT_TENANT_ID, shapeSiteVisit } = require('./adapters');
+const { appendActivity } = require('./activities');
 
 const router = express.Router();
 
@@ -112,6 +113,44 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
     res.json(shapeSiteVisit(rows[0]));
   } catch (e) {
     console.error('[design/site_visits] patch error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE — gated on status = 'not_started' (the closest analogue to
+// "draft" in the site_visits enum, per migration 022:
+// status IN ('not_started', 'in_progress', 'closed')). Once a visit
+// has been started (rooms photographed, notes captured), it's a
+// record we keep. Note: design_rooms also reference the project, not
+// the site_visit row, so deleting the site_visit row is safe even
+// when rooms exist — they survive.
+router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT sv.id, sv.project_id, sv.status, sv.visit_date
+       FROM design_site_visits sv
+       JOIN design_projects p ON p.id = sv.project_id
+       WHERE p.tenant_id = $1 AND sv.id = $2`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    if (existing.length === 0) return res.status(404).json({ error: 'Site visit not found' });
+    if (existing[0].status !== 'not_started') {
+      return res.status(409).json({
+        error: `Cannot delete a site visit in status "${existing[0].status}". Only not-started visits can be deleted.`,
+      });
+    }
+    await query(`DELETE FROM design_site_visits WHERE id = $1`, [req.params.id]);
+    appendActivity({
+      projectId: existing[0].project_id,
+      actorUserId: req.identity?.userId,
+      actorName: req.identity?.displayName || req.identity?.username,
+      action: 'site_visit.deleted',
+      payload: { site_visit_id: existing[0].id, visit_date: existing[0].visit_date },
+      visibility: 'internal',
+    }).catch(() => {});
+    res.status(204).end();
+  } catch (e) {
+    console.error('[design/site_visits] delete error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

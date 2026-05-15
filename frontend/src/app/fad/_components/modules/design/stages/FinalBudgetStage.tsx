@@ -11,7 +11,7 @@ import {
   type ChangeOrderLineItem,
   type DesignProject,
 } from '../../../../_data/design';
-import { createChangeOrder as apiCreateChangeOrder, apiChangeOrderToFixture } from '../../../../_data/designClient';
+import { createChangeOrder as apiCreateChangeOrder, apiChangeOrderToFixture, deleteChangeOrder } from '../../../../_data/designClient';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
@@ -503,21 +503,75 @@ function ChangeOrderRow({
 }) {
   const total = designClient.changeOrders.total(co);
   const isDraft = co.state === 'draft';
+  // ✕-button in-flight tracker. Shown only on drafts (UI safety;
+  // backend 409s on anything else). Optimistic splice with rollback
+  // on error — mirrors the moodboard archive pattern.
+  const [deleting, setDeleting] = useState(false);
+  const handleDelete = async () => {
+    const label = `${co.number} ${co.title || ''}`.trim();
+    if (!window.confirm(`Delete change order ${label}? This cannot be undone.`)) return;
+    setDeleting(true);
+    const beforeIdx = FIXTURE_CHANGE_ORDERS.findIndex((c) => c.id === co.id);
+    const before = beforeIdx >= 0 ? FIXTURE_CHANGE_ORDERS[beforeIdx] : null;
+    if (beforeIdx >= 0) {
+      FIXTURE_CHANGE_ORDERS.splice(beforeIdx, 1);
+      bumpFixtureRev();
+    }
+    try {
+      await deleteChangeOrder(co.id);
+      fireToast(`Deleted ${co.number}.`);
+      onChanged();
+    } catch (err) {
+      if (before && beforeIdx >= 0) {
+        FIXTURE_CHANGE_ORDERS.splice(beforeIdx, 0, before);
+        bumpFixtureRev();
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(msg);
+    } finally {
+      setDeleting(false);
+    }
+  };
   return (
     <li
       data-design-co-row={co.id}
       style={{
+        position: 'relative',
         background: 'var(--color-background-primary)',
         border: '0.5px solid var(--color-border-tertiary)',
         borderRadius: 'var(--radius-md)',
         padding: 12,
       }}
     >
+      {isDraft && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+          disabled={deleting}
+          aria-label={`Delete change order ${co.number}`}
+          title="Delete (drafts only)"
+          data-change-order-delete
+          style={{
+            position: 'absolute', top: 4, right: 4,
+            width: 22, height: 22, padding: 0,
+            background: 'transparent',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--color-text-tertiary)',
+            fontSize: 12, lineHeight: 1,
+            cursor: deleting ? 'not-allowed' : 'pointer',
+            opacity: deleting ? 0.4 : 0.7,
+            zIndex: 1,
+          }}
+        >
+          ✕
+        </button>
+      )}
       <div
         role="button"
         tabIndex={0}
         aria-expanded={isOpen}
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', cursor: 'pointer' }}
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', cursor: 'pointer', paddingRight: isDraft ? 28 : 0 }}
         onClick={onToggle}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
         data-design-co-toggle={co.id}

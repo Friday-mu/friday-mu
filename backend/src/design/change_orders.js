@@ -182,4 +182,43 @@ router.post('/:id/reject', requireDesignPerm('design:approve'), async (req, res)
   }
 });
 
+// DELETE — draft-only. Sent / approved / rejected change orders are
+// audit artifacts and cannot be removed. co_number stays even with
+// gaps from deletes (per migration 021 design note — "gaps are
+// expected when COs are rejected/deleted").
+router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT co.id, co.project_id, co.title, co.co_number, co.status
+       FROM design_change_orders co
+       JOIN design_projects p ON p.id = co.project_id
+       WHERE p.tenant_id = $1 AND co.id = $2`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    if (existing.length === 0) return res.status(404).json({ error: 'Change order not found' });
+    if (existing[0].status !== 'draft') {
+      return res.status(409).json({
+        error: `Cannot delete a ${existing[0].status} change order — it has been sent or decided.`,
+      });
+    }
+    await query(`DELETE FROM design_change_orders WHERE id = $1`, [req.params.id]);
+    appendActivity({
+      projectId: existing[0].project_id,
+      actorUserId: req.identity?.userId,
+      actorName: req.identity?.displayName || req.identity?.username,
+      action: 'change_order.deleted',
+      payload: {
+        change_order_id: existing[0].id,
+        title: existing[0].title,
+        co_number: existing[0].co_number,
+      },
+      visibility: 'internal',
+    }).catch(() => {});
+    res.status(204).end();
+  } catch (e) {
+    console.error('[design/change_orders] delete error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

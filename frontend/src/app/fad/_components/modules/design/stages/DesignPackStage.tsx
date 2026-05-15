@@ -12,7 +12,7 @@ import {
   type DesignSelection,
   type SelectionOption,
 } from '../../../../_data/design';
-import { createSelection as apiCreateSelection, apiSelectionToFixture, createPack, apiPackToFixture } from '../../../../_data/designClient';
+import { createSelection as apiCreateSelection, apiSelectionToFixture, createPack, apiPackToFixture, deleteSelection } from '../../../../_data/designClient';
 import { DESIGN_PACKS as FIXTURE_PACKS } from '../../../../_data/design';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
@@ -368,22 +368,77 @@ function SelectionRow({
   const rooms = designClient.rooms.list(project.id);
   const room = rooms.find((r) => r.id === selection.roomId);
   const isDraft = selection.state === 'draft';
+  // ✕-button in-flight tracker. The button is only rendered for
+  // drafts (UI safety; backend 409s on anything else), and we
+  // optimistically splice the row out of the fixture so the
+  // surrounding list re-renders without it. On failure we restore.
+  const [deleting, setDeleting] = useState(false);
+  const handleDelete = async () => {
+    const label = selection.prompt.trim() || 'Untitled selection';
+    if (!window.confirm(`Delete selection "${label}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    const beforeIdx = FIXTURE_SELECTIONS.findIndex((s) => s.id === selection.id);
+    const before = beforeIdx >= 0 ? FIXTURE_SELECTIONS[beforeIdx] : null;
+    if (beforeIdx >= 0) {
+      FIXTURE_SELECTIONS.splice(beforeIdx, 1);
+      bumpFixtureRev();
+    }
+    try {
+      await deleteSelection(selection.id);
+      fireToast(`Deleted ${label}.`);
+      onChanged();
+    } catch (err) {
+      if (before && beforeIdx >= 0) {
+        FIXTURE_SELECTIONS.splice(beforeIdx, 0, before);
+        bumpFixtureRev();
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(msg);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <li
       data-design-selection-row={selection.id}
       style={{
+        position: 'relative',
         background: 'var(--color-background-primary)',
         border: '0.5px solid var(--color-border-tertiary)',
         borderRadius: 'var(--radius-md)',
         padding: 12,
       }}
     >
+      {isDraft && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+          disabled={deleting}
+          aria-label={`Delete selection ${selection.prompt.trim() || 'Untitled'}`}
+          title="Delete (drafts only)"
+          data-selection-delete
+          style={{
+            position: 'absolute', top: 4, right: 4,
+            width: 22, height: 22, padding: 0,
+            background: 'transparent',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--color-text-tertiary)',
+            fontSize: 12, lineHeight: 1,
+            cursor: deleting ? 'not-allowed' : 'pointer',
+            opacity: deleting ? 0.4 : 0.7,
+            zIndex: 1,
+          }}
+        >
+          ✕
+        </button>
+      )}
       <div
         role="button"
         tabIndex={0}
         aria-expanded={isOpen}
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', cursor: 'pointer' }}
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', cursor: 'pointer', paddingRight: isDraft ? 28 : 0 }}
         onClick={onToggle}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
         data-design-selection-toggle={selection.id}

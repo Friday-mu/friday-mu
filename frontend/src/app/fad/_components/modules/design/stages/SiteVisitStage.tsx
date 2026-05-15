@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { designClient, ROOMS, SITE_VISITS, PHOTOS, type DesignProject, type Photo, type PhotoKind, type Room, type SiteVisit } from '../../../../_data/design';
-import { createRoom as apiCreateRoom, deleteRoom as apiDeleteRoom, updateRoom as apiUpdateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, uploadPhoto as apiUploadPhoto, apiPhotoToFixture, type ApiRoomPatch, type ApiSiteVisit } from '../../../../_data/designClient';
+import { createRoom as apiCreateRoom, deleteRoom as apiDeleteRoom, updateRoom as apiUpdateRoom, apiRoomToFixture, loadSiteVisits, createSiteVisit, updateSiteVisit, apiSiteVisitToFixture, createPhoto as apiCreatePhoto, uploadPhoto as apiUploadPhoto, apiPhotoToFixture, deleteSiteVisit, type ApiRoomPatch, type ApiSiteVisit } from '../../../../_data/designClient';
 import { bumpFixtureRev, useFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
 import { AIPlaceholder } from '../AIPlaceholder';
@@ -50,6 +50,7 @@ export function SiteVisitStage({ project }: Props) {
   const [apiVisitId, setApiVisitId] = useState<string | null>(null);
   const [savingVisit, setSavingVisit] = useState(false);
   const [closingVisit, setClosingVisit] = useState(false);
+  const [deletingVisit, setDeletingVisit] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +193,53 @@ export function SiteVisitStage({ project }: Props) {
     }
   };
 
+  // ✕-delete the current site visit. Backend gates on
+  // status='not_started' (409 otherwise); we mirror that on the UI by
+  // only rendering the button when the local status agrees. Optimistic
+  // splice with rollback — same pattern as moodboard archive.
+  const handleDeleteVisit = async () => {
+    if (!apiVisitId) {
+      // Brand-new draft that hasn't been POSTed yet — just clear local state.
+      if (!window.confirm('Discard this site visit draft? Nothing has been saved yet.')) return;
+      setVisitedAt('');
+      setVisitedBy('');
+      setWalkthroughUrl('');
+      setMarketingConsent(true);
+      setVisitNotes('');
+      setVisitStatus('not_started');
+      fireToast('Site visit draft cleared.');
+      return;
+    }
+    if (!window.confirm('Delete this site visit? This cannot be undone — backend only allows delete on not-started visits.')) return;
+    setDeletingVisit(true);
+    const beforeIdx = SITE_VISITS.findIndex((v) => v.projectId === project.id);
+    const before = beforeIdx >= 0 ? { ...SITE_VISITS[beforeIdx] } : null;
+    if (beforeIdx >= 0) {
+      SITE_VISITS.splice(beforeIdx, 1);
+      bumpFixtureRev();
+    }
+    try {
+      await deleteSiteVisit(apiVisitId);
+      setApiVisitId(null);
+      setVisitedAt('');
+      setVisitedBy('');
+      setWalkthroughUrl('');
+      setMarketingConsent(true);
+      setVisitNotes('');
+      setVisitStatus('not_started');
+      fireToast('Site visit deleted.');
+    } catch (err) {
+      if (before && beforeIdx >= 0) {
+        SITE_VISITS.splice(beforeIdx, 0, before);
+        bumpFixtureRev();
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(msg);
+    } finally {
+      setDeletingVisit(false);
+    }
+  };
+
   const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set());
   const [photoLightbox, setPhotoLightbox] = useState<Photo | null>(null);
 
@@ -310,8 +358,33 @@ export function SiteVisitStage({ project }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Visit metadata */}
+      <div style={{ position: 'relative' }}>
       <Card>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        {visitStatus === 'not_started' && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleDeleteVisit(); }}
+            disabled={deletingVisit}
+            aria-label="Delete site visit"
+            title="Delete (not-started visits only)"
+            data-site-visit-delete
+            style={{
+              position: 'absolute', top: 4, right: 4,
+              width: 22, height: 22, padding: 0,
+              background: 'transparent',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--color-text-tertiary)',
+              fontSize: 12, lineHeight: 1,
+              cursor: deletingVisit ? 'not-allowed' : 'pointer',
+              opacity: deletingVisit ? 0.4 : 0.7,
+              zIndex: 1,
+            }}
+          >
+            ✕
+          </button>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8, paddingRight: visitStatus === 'not_started' ? 28 : 0 }}>
           <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Site visit</h3>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <AIPlaceholder feature="site-visit-audit" label="Run AI audit" size="sm" />
@@ -370,6 +443,7 @@ export function SiteVisitStage({ project }: Props) {
           </Field>
         </Grid>
       </Card>
+      </div>
 
       {/* Rooms */}
       <Card>

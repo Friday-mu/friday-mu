@@ -1130,6 +1130,9 @@ export const createSiteVisit = (payload: Partial<ApiSiteVisit> & { project_id: s
   apiFetch('/api/design/site_visits', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiSiteVisit>;
 export const updateSiteVisit = (id: string, patch: Partial<ApiSiteVisit>) =>
   apiFetch(`/api/design/site_visits/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiSiteVisit>;
+// Draft-only delete (status='not_started'). 409 if started.
+export const deleteSiteVisit = (id: string) =>
+  apiFetch(`/api/design/site_visits/${id}`, { method: 'DELETE' }) as Promise<void>;
 
 // ─────────────────────────── Preferences ───────────────────────────
 // Single row per project, stored as opaque JSONB on the backend. The
@@ -1163,6 +1166,9 @@ export const createVendor = (payload: Partial<ApiVendor> & { name: string }) =>
   apiFetch('/api/design/vendors', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiVendor>;
 export const updateVendor = (id: string, patch: Partial<ApiVendor>) =>
   apiFetch(`/api/design/vendors/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiVendor>;
+// 409 with { references } if any budget_items reference this vendor.
+export const deleteVendor = (id: string) =>
+  apiFetch(`/api/design/vendors/${id}`, { method: 'DELETE' }) as Promise<void>;
 
 // design-be-18: task CRUD. category is part of the create payload so
 // the BlockersPanel / NextActionsPanel can post tasks pre-categorised.
@@ -1268,6 +1274,9 @@ export const pickSelection = (id: string, pickedOptionId: string) =>
   apiFetch(`/api/design/selections/${id}/pick`, { method: 'POST', body: JSON.stringify({ picked_option_id: pickedOptionId }) }) as Promise<ApiSelection>;
 export const requestSelectionChanges = (id: string, comment?: string) =>
   apiFetch(`/api/design/selections/${id}/request-changes`, { method: 'POST', body: JSON.stringify({ comment }) }) as Promise<ApiSelection>;
+// Draft-only delete. 409 once sent/picked/changes_requested.
+export const deleteSelection = (id: string) =>
+  apiFetch(`/api/design/selections/${id}`, { method: 'DELETE' }) as Promise<void>;
 
 export const createChangeOrder = (payload: Partial<ApiChangeOrder> & { project_id: string }) =>
   apiFetch('/api/design/change_orders', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiChangeOrder>;
@@ -1279,6 +1288,9 @@ export const approveChangeOrder = (id: string, note?: string) =>
   apiFetch(`/api/design/change_orders/${id}/approve`, { method: 'POST', body: JSON.stringify({ decision_note: note }) }) as Promise<ApiChangeOrder>;
 export const rejectChangeOrder = (id: string, note?: string) =>
   apiFetch(`/api/design/change_orders/${id}/reject`, { method: 'POST', body: JSON.stringify({ decision_note: note }) }) as Promise<ApiChangeOrder>;
+// Draft-only delete. 409 once sent/approved/rejected.
+export const deleteChangeOrder = (id: string) =>
+  apiFetch(`/api/design/change_orders/${id}`, { method: 'DELETE' }) as Promise<void>;
 
 export const upsertCloseoutBinder = (projectId: string, patch: Partial<ApiCloseoutBinder>) =>
   apiFetch(`/api/design/closeout_binders/${projectId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiCloseoutBinder>;

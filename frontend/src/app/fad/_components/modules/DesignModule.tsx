@@ -28,10 +28,13 @@ import {
   useHydrateDesignProject,
   convertLeadToProject as apiConvertLeadToProject,
   deleteLead as apiDeleteLead,
+  deleteVendor,
   reopenStage as apiReopenStage,
   StageReopenLockedError,
   type ApiLead,
 } from '../../_data/designClient';
+import { VENDORS as FIXTURE_VENDORS } from '../../_data/design';
+import { bumpFixtureRev } from '../../_data/fixtureRev';
 import { LeadIntakeDrawer } from './design/LeadIntakeDrawer';
 import { ProjectContextBar } from './design/ProjectContextBar';
 import { StageTracker, stageStatusLabel } from './design/StageTracker';
@@ -1196,6 +1199,38 @@ function VendorsList() {
   const allRows = designClient.vendors.listPerformance();
   const [openId, setOpenId] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(() => new Set());
+  // Per-row in-flight tracker for ✕-delete. Backend 409s if any
+  // design_budget_items reference the vendor — we surface that
+  // message directly to the toast (it names the count, more helpful
+  // than guessing client-side).
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const handleDeleteVendor = async (vendorId: string, vendorName: string) => {
+    if (!window.confirm(`Delete vendor "${vendorName}"? This cannot be undone.`)) return;
+    setDeletingId(vendorId);
+    const beforeIdx = FIXTURE_VENDORS.findIndex((v) => v.id === vendorId);
+    const before = beforeIdx >= 0 ? FIXTURE_VENDORS[beforeIdx] : null;
+    if (beforeIdx >= 0) {
+      FIXTURE_VENDORS.splice(beforeIdx, 1);
+      bumpFixtureRev();
+    }
+    try {
+      await deleteVendor(vendorId);
+      fireToast(`Vendor "${vendorName}" deleted.`);
+      if (openId === vendorId) setOpenId(null);
+      bump();
+    } catch (err) {
+      if (before && beforeIdx >= 0) {
+        FIXTURE_VENDORS.splice(beforeIdx, 0, before);
+        bumpFixtureRev();
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      // Surface the backend message verbatim — for 409s it includes
+      // the helpful "referenced by N budget item(s)" hint.
+      fireToast(msg);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // Categories present in the data — only show chips for vendors that exist.
   const categories = useMemo(() => {
@@ -1299,6 +1334,7 @@ function VendorsList() {
                 <th style={cellStyle('right')}>Total spend</th>
                 <th style={cellStyle('right')}>Variance</th>
                 <th style={cellStyle('right')}>On-time</th>
+                <th style={cellStyle('right')} aria-label="Actions"> </th>
               </tr>
             </thead>
             <tbody>
@@ -1327,10 +1363,32 @@ function VendorsList() {
                       <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: perf.deliveryCompletionPct >= 0.8 ? 'var(--color-text-success)' : perf.deliveryCompletionPct < 0.5 && perf.itemCount > 0 ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)' }}>
                         {perf.itemCount === 0 ? '—' : `${Math.round(perf.deliveryCompletionPct * 100)}%`}
                       </td>
+                      <td style={{ ...cellStyle('right'), width: 32 }}>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteVendor(vendor.id, vendor.name); }}
+                          disabled={deletingId === vendor.id}
+                          aria-label={`Delete vendor ${vendor.name}`}
+                          title="Delete vendor"
+                          data-vendor-delete
+                          style={{
+                            width: 22, height: 22, padding: 0,
+                            background: 'transparent',
+                            border: '0.5px solid var(--color-border-tertiary)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--color-text-tertiary)',
+                            fontSize: 12, lineHeight: 1,
+                            cursor: deletingId === vendor.id ? 'not-allowed' : 'pointer',
+                            opacity: deletingId === vendor.id ? 0.4 : 0.7,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </td>
                     </tr>
                     {isOpen && perf.projects.length > 0 && (
                       <tr>
-                        <td colSpan={7} style={{ padding: 0 }}>
+                        <td colSpan={8} style={{ padding: 0 }}>
                           <VendorProjectBreakdown projects={perf.projects} />
                         </td>
                       </tr>

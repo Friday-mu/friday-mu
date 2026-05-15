@@ -193,4 +193,43 @@ router.post('/:id/request-changes', requireDesignPerm('design:write'), async (re
   }
 });
 
+// DELETE — draft-only. Once a selection has been sent (or picked /
+// changes_requested) it has been seen by the counterparty and is an
+// audit artifact: returns 409. Drafts hard-delete; activity log
+// records the action so the timeline still shows "removed X".
+//
+// Scoping source: docs/scoping/uploads-and-ai-context.md decision #1
+// (NOT parked). Companion handlers in change_orders, vendors,
+// site_visits.
+router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT s.id, s.project_id, s.title, s.status
+       FROM design_selections s
+       JOIN design_projects p ON p.id = s.project_id
+       WHERE p.tenant_id = $1 AND s.id = $2`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    if (existing.length === 0) return res.status(404).json({ error: 'Selection not found' });
+    if (existing[0].status !== 'draft') {
+      return res.status(409).json({
+        error: `Cannot delete a ${existing[0].status} selection — it has been sent to the counterparty.`,
+      });
+    }
+    await query(`DELETE FROM design_selections WHERE id = $1`, [req.params.id]);
+    appendActivity({
+      projectId: existing[0].project_id,
+      actorUserId: req.identity?.userId,
+      actorName: req.identity?.displayName || req.identity?.username,
+      action: 'selection.deleted',
+      payload: { selection_id: existing[0].id, title: existing[0].title },
+      visibility: 'internal',
+    }).catch(() => {});
+    res.status(204).end();
+  } catch (e) {
+    console.error('[design/selections] delete error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
