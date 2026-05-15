@@ -8,7 +8,7 @@ import {
   type DesignProject,
   type MoodboardVersion,
 } from '../../../../_data/design';
-import { useHydrateDesignProject, createMoodboardVariants, apiMoodboardToFixture } from '../../../../_data/designClient';
+import { useHydrateDesignProject, createMoodboardVariants, apiMoodboardToFixture, archiveMoodboard } from '../../../../_data/designClient';
 import { MOODBOARDS as FIXTURE_MOODBOARDS } from '../../../../_data/design';
 import { bumpFixtureRev } from '../../../../_data/fixtureRev';
 import { fireToast } from '../../../Toaster';
@@ -64,6 +64,46 @@ export function MoodboardStage({ project }: Props) {
   // variants" press (~$0.06), worth it for the UX.
   const [creatingVariants, setCreatingVariants] = useState(false);
   const [variantProgress, setVariantProgress] = useState<{ done: number; total: number } | null>(null);
+  // f82e1dea — archiving a variant. Tracks the id mid-flight to disable
+  // the button + show a spinner; cleared on success/error.
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+
+  // Soft-delete a moodboard variant. Backend flips is_archived; we
+  // optimistically remove the row from the fixture so the UI updates
+  // instantly. If the call fails, we restore the row and toast the
+  // error. Confirm dialog uses window.confirm — matches the existing
+  // destructive-action pattern elsewhere in the design module.
+  const handleArchiveVariant = async (v: MoodboardVersion) => {
+    const label = `v${v.version}${(v as { variantIndex?: number | null }).variantIndex ? ` (variant ${(v as { variantIndex?: number | null }).variantIndex})` : ''}`;
+    if (!window.confirm(`Archive ${label}? You can restore it later from admin recovery.`)) return;
+    setArchivingId(v.id);
+    const beforeIdx = FIXTURE_MOODBOARDS.findIndex((m) => m.id === v.id);
+    const before = beforeIdx >= 0 ? FIXTURE_MOODBOARDS[beforeIdx] : null;
+    // Optimistic: splice out and bump.
+    if (beforeIdx >= 0) {
+      FIXTURE_MOODBOARDS.splice(beforeIdx, 1);
+      bumpFixtureRev();
+    }
+    // If the archived one was active, pick the next available.
+    if (activeId === v.id) {
+      const remaining = FIXTURE_MOODBOARDS.filter((m) => m.projectId === project.id);
+      setActiveId(remaining[0]?.id ?? null);
+    }
+    try {
+      await archiveMoodboard(v.id);
+      fireToast(`Archived ${label}.`);
+    } catch (err) {
+      // Roll back the optimistic splice.
+      if (before && beforeIdx >= 0) {
+        FIXTURE_MOODBOARDS.splice(beforeIdx, 0, before);
+        bumpFixtureRev();
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      fireToast(`Archive failed: ${msg}`);
+    } finally {
+      setArchivingId(null);
+    }
+  };
 
   const handleCreateVariantSet = async () => {
     setCreatingVariants(true);
@@ -193,16 +233,22 @@ export function MoodboardStage({ project }: Props) {
                 const groupSize = variant.variantGroupId
                   ? versions.filter((x) => (x as { variantGroupId?: string }).variantGroupId === variant.variantGroupId).length
                   : 0;
+                const isArchiving = archivingId === v.id;
+                // Once an owner has approved a variant, archive
+                // shouldn't be an offhand click — gate behind approval
+                // state. (Backend allows it; this is just UX safety.)
+                const canArchive = v.state !== 'approved';
                 return (
-                  <li key={v.id}>
+                  <li key={v.id} style={{ position: 'relative' }}>
                     <button
                       type="button"
                       onClick={() => setActiveId(v.id)}
                       style={{
-                        width: '100%', textAlign: 'left', padding: 8,
+                        width: '100%', textAlign: 'left', padding: 8, paddingRight: 28,
                         borderRadius: 'var(--radius-sm)',
                         background: activeId === v.id ? 'var(--color-brand-accent-soft)' : 'transparent',
                         border: '0.5px solid var(--color-border-tertiary)',
+                        opacity: isArchiving ? 0.5 : 1,
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
@@ -218,6 +264,29 @@ export function MoodboardStage({ project }: Props) {
                         {v.createdAt.slice(0, 10)}
                       </div>
                     </button>
+                    {canArchive && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleArchiveVariant(v); }}
+                        disabled={isArchiving}
+                        aria-label={`Archive v${v.version}`}
+                        title="Archive this variant"
+                        data-moodboard-archive-variant
+                        style={{
+                          position: 'absolute', top: 4, right: 4,
+                          width: 22, height: 22, padding: 0,
+                          background: 'transparent',
+                          border: '0.5px solid var(--color-border-tertiary)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'var(--color-text-tertiary)',
+                          fontSize: 12, lineHeight: 1,
+                          cursor: isArchiving ? 'not-allowed' : 'pointer',
+                          opacity: isArchiving ? 0.4 : 0.7,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </li>
                 );
               })}

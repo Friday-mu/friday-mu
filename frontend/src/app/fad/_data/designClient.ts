@@ -258,6 +258,13 @@ export interface ApiMoodboard {
   // (Tier A #5). variant_index is 1-based.
   variant_group_id?: string | null;
   variant_index?: number | null;
+  // Migration 034 — soft delete. Archived rows are filtered out of
+  // the default list response; clients only see these when calling
+  // with ?include_archived=1 (admin recovery view) or right after
+  // an archive call returns the row.
+  is_archived?: boolean;
+  archived_at?: string | null;
+  archived_by?: string | null;
   sent_at?: string | null;
   approved_at?: string | null;
   created_at: string;
@@ -1233,6 +1240,14 @@ export const sendMoodboard = (id: string) =>
   apiFetch(`/api/design/moodboards/${id}/send`, { method: 'POST' }) as Promise<ApiMoodboard>;
 export const approveMoodboard = (id: string) =>
   apiFetch(`/api/design/moodboards/${id}/approve`, { method: 'POST' }) as Promise<ApiMoodboard>;
+// Migration 034 — soft delete a moodboard variant. Backend flips
+// is_archived; archived rows disappear from the default list. The
+// promise resolves with the archived row (status visible via
+// is_archived) for optimistic UI confirmation.
+export const archiveMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}`, { method: 'DELETE' }) as Promise<ApiMoodboard>;
+export const restoreMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}/restore`, { method: 'POST' }) as Promise<ApiMoodboard>;
 
 export const createPack = (payload: Partial<ApiPack> & { project_id: string }) =>
   apiFetch('/api/design/packs', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiPack>;

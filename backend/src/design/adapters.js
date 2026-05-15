@@ -368,6 +368,12 @@ function shapeMoodboard(row) {
     // moodboard generations; populated for /variants batches.
     variant_group_id: row.variant_group_id || null,
     variant_index: row.variant_index != null ? Number(row.variant_index) : null,
+    // Migration 034 — soft delete. is_archived defaults false; the
+    // list endpoint filters archived out by default so most callers
+    // never see these fields populated.
+    is_archived: row.is_archived === true,
+    archived_at: row.archived_at || null,
+    archived_by: row.archived_by || null,
     sent_at: row.sent_at,
     approved_at: row.approved_at,
     created_at: row.created_at,

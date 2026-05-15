@@ -23,15 +23,18 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     if (typeof projectId !== 'string') {
       return res.status(400).json({ error: 'project_id query param is required' });
     }
+    // mig 034 — archived variants are hidden by default. Pass
+    // ?include_archived=1 to see the full set (admin recovery view).
+    const includeArchived = req.query.include_archived === '1' || req.query.include_archived === 'true';
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
       [DEFAULT_TENANT_ID, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
-    const { rows } = await query(
-      `SELECT * FROM design_moodboards WHERE project_id = $1 ORDER BY version_number DESC`,
-      [projectId],
-    );
+    const sql = includeArchived
+      ? `SELECT * FROM design_moodboards WHERE project_id = $1 ORDER BY version_number DESC`
+      : `SELECT * FROM design_moodboards WHERE project_id = $1 AND is_archived = false ORDER BY version_number DESC`;
+    const { rows } = await query(sql, [projectId]);
     res.json({ results: rows.map(shapeMoodboard) });
   } catch (e) {
     console.error('[design/moodboards] list error:', e.message);
@@ -254,6 +257,87 @@ router.post('/variants', requireDesignPerm('design:write'), async (req, res) => 
     res.status(500).json({ error: e.message });
   } finally {
     client.release();
+  }
+});
+
+// mig 034 — soft delete (archive) a moodboard variant.
+//
+// Mathias feedback f82e1dea: he often generates 3 variants and wants
+// to discard the ones he doesn't like. Hard delete would orthogonally
+// destroy approval history / activity references; we soft-delete by
+// flipping is_archived. The list endpoint hides archived rows by
+// default; admin can pass ?include_archived=1 to see the full set.
+//
+// Idempotent: archiving an already-archived row returns 200 with the
+// existing archived_at timestamp.
+router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows } = await query(
+      `UPDATE design_moodboards m
+       SET is_archived = true,
+           archived_at = COALESCE(m.archived_at, NOW()),
+           archived_by = COALESCE(m.archived_by, $3),
+           updated_at = NOW()
+       FROM design_projects p
+       WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2
+       RETURNING m.*`,
+      [DEFAULT_TENANT_ID, req.params.id, req.identity?.userId || null],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Moodboard not found' });
+    appendActivity({
+      projectId: rows[0].project_id,
+      actorUserId: req.identity?.userId,
+      actorName: req.identity?.displayName || req.identity?.username,
+      action: 'moodboard.archived',
+      payload: {
+        moodboard_id: rows[0].id,
+        version_number: rows[0].version_number,
+        variant_group_id: rows[0].variant_group_id,
+        variant_index: rows[0].variant_index,
+      },
+      visibility: 'internal',
+    }).catch(() => {});
+    res.json(shapeMoodboard(rows[0]));
+  } catch (e) {
+    console.error('[design/moodboards] archive error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// mig 034 — restore an archived moodboard variant.
+//
+// Admin-only recovery path. Mirrors the archive endpoint but flips
+// the flag back to false and clears the metadata. We keep this so
+// accidental archives are reversible without manual SQL.
+router.post('/:id/restore', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows } = await query(
+      `UPDATE design_moodboards m
+       SET is_archived = false,
+           archived_at = NULL,
+           archived_by = NULL,
+           updated_at = NOW()
+       FROM design_projects p
+       WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2
+       RETURNING m.*`,
+      [DEFAULT_TENANT_ID, req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Moodboard not found' });
+    appendActivity({
+      projectId: rows[0].project_id,
+      actorUserId: req.identity?.userId,
+      actorName: req.identity?.displayName || req.identity?.username,
+      action: 'moodboard.restored',
+      payload: {
+        moodboard_id: rows[0].id,
+        version_number: rows[0].version_number,
+      },
+      visibility: 'internal',
+    }).catch(() => {});
+    res.json(shapeMoodboard(rows[0]));
+  } catch (e) {
+    console.error('[design/moodboards] restore error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
