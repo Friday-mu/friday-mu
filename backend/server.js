@@ -863,6 +863,25 @@ guestyAPI.interceptors.request.use(async (config) => {
 // default with a "Show original" toggle on the frontend.
 const { translateText } = require('./src/ai/translate');
 
+// SaaS-scaffolding routers. tenants/index.js handles signup + tenant
+// CRUD; invoices.js handles billing. Mounted BEFORE the design router
+// so the design module-gate can lean on attachIdentitySoft (added in
+// design/auth.js) to populate req.tenantId before requireModule runs.
+//
+// The /api/tenants/signup endpoint is intentionally public — sits
+// inside tenants/index.js with its own validation and is mounted on
+// the unauthenticated router. Every other route in here either uses
+// attachIdentity (tenant CRUD) or attachIdentity + requireModule
+// ('billing') (invoices).
+const tenantsRoutes = require('./src/tenants');
+const invoicesRoutes = require('./src/tenants/invoices');
+app.use('/api/tenants', tenantsRoutes);
+app.use('/api/tenants', invoicesRoutes);
+
+// TODO: gate when tenant-scoped — HR routes don't yet scope queries by
+// req.tenantId. Adding requireModule('hr') now would lock FR out if
+// their JWT happens to omit tenant_id (which the legacy GMS login can
+// still do for older sessions).
 // HR routes — FAD-owned tables, direct pg access. JWT-gated per
 // Director permission matrix (see src/hr/auth.js).
 const hrStaffRoutes = require('./src/hr/staff');
@@ -873,15 +892,29 @@ app.use('/api/hr/time-off', hrTimeOffRoutes);
 // Design module routes — FAD-owned tables (design_*), Director-gated.
 // Sub-routers land progressively per design-be-N slices. See
 // src/design/index.js for the aggregator + auth.js for the perm matrix.
+//
+// Module-gate composition:
+//   attachIdentitySoft → populates req.tenantId from JWT (without 401
+//     if the header is missing — the inner requireDesignPerm on each
+//     route still does the actual 401)
+//   requireModule('design') → 403 if the tenant hasn't subscribed
+//     (returns 401 "no tenant context" if the JWT was absent / bad,
+//     which is correct: the inner requireDesignPerm would 401 anyway)
+const { attachIdentitySoft } = require('./src/design/auth');
+const { requireModule } = require('./src/tenants/middleware');
 const designRoutes = require('./src/design');
-app.use('/api/design', designRoutes);
+app.use('/api/design', attachIdentitySoft, requireModule('design'), designRoutes);
 
+// TODO: gate when tenant-scoped — feedback.* tables aren't yet keyed
+// by tenant_id.
 // Feedback inbox — bug reports + feature requests + suggestions.
 // FAD-wide (not design-scoped). POST: any authenticated user.
 // GET / PATCH: admin/director only.
 const feedbackRoutes = require('./src/feedback');
 app.use('/api/feedback', feedbackRoutes);
 
+// TODO: gate when tenant-scoped — website_inbox tables aren't yet
+// keyed by tenant_id; the webhook is shared across all tenants.
 // Website inbox — receives webhooks from friday.mu (residence booking
 // form, payment proof uploads, experience enquiries, contact form,
 // owner enquiries) and orchestrates Guesty reservation creation +

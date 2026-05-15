@@ -87,6 +87,26 @@ function attachIdentity(req, res, next) {
   next();
 }
 
+// Soft variant: decodes JWT if present, sets req.identity / req.tenantId,
+// but does NOT 401 when the header is missing or invalid. Used as a
+// pre-step before `requireModule(...)` at the router-mount level — the
+// module gate needs req.tenantId, but the downstream router has its own
+// requireDesignPerm middleware that handles the actual auth challenge.
+//
+// If the token is absent or invalid we leave req.identity unset and
+// req.tenantId undefined; requireModule will then 401 with "no tenant
+// context", and the inner requireDesignPerm (if reached) would 401 too.
+// Net behaviour: missing/invalid tokens still get a 401, just from a
+// different middleware in the chain.
+function attachIdentitySoft(req, res, next) {
+  const identity = decodeJwt(req);
+  if (identity) {
+    req.identity = identity;
+    req.tenantId = identity.tenantId || DEFAULT_TENANT_ID;
+  }
+  next();
+}
+
 module.exports = {
   ROLE_PERMS,
   ALL_DESIGN_PERMS,
@@ -94,5 +114,6 @@ module.exports = {
   hasPerm,
   requireDesignPerm,
   attachIdentity,
+  attachIdentitySoft,
   resolveTenantId,
 };
