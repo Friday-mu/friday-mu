@@ -21,6 +21,7 @@ const express = require('express');
 const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
+const { loadTenantConfig } = require('./adapters');
 
 const router = express.Router();
 
@@ -29,7 +30,37 @@ const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
 const MAX_RETRIES = 2;
 const TIMEOUT_MS = 35_000;
 
-const SYSTEM_PROMPT = `You are Friday's design module rough-budget estimator for Mauritius short-term-rental properties.
+// Build the rough-budget system prompt with per-tenant overrides (mig 035).
+//
+// Locale handling: we don't (yet) store a clean ISO locale on the tenant
+// config — the closest signal is `legal_jurisdiction_text`. Approach: if
+// it mentions "Mauritius", we keep the existing Mauritius mention in the
+// prompt (Kimi handles the local market context well). Otherwise we drop
+// the geographic anchor entirely so non-MU tenants don't get a confused
+// model. Cheap heuristic; refine if/when we add a real locale column.
+//
+// Vendor defaults: assembled from config.vendor_defaults if present.
+// Expected shape: { primary: string, small_decor: string, fixtures: string[] }.
+// If the object is empty, the vendor-style sentence is omitted entirely
+// rather than emitting "as primary vendor across categories" against an
+// empty name, which would just confuse the model.
+function buildSystemPrompt(config) {
+  const company = config.company_name || 'the';
+  const isMU = (config.legal_jurisdiction_text || '').includes('Mauritius');
+  const localePhrase = isMU ? ' for Mauritius short-term-rental properties' : '';
+  const v = config.vendor_defaults || {};
+  const fixtures = Array.isArray(v.fixtures) ? v.fixtures : [];
+  const hasVendorDefaults = v.primary || v.small_decor || fixtures.length > 0;
+  let vendorLine = '';
+  if (hasVendorDefaults) {
+    const parts = [];
+    if (v.primary) parts.push(`${v.primary} as primary vendor across categories`);
+    if (v.small_decor) parts.push(`${v.small_decor} for small decor`);
+    if (fixtures.length > 0) parts.push(`${fixtures.join(' + ')} for fixtures`);
+    vendorLine = `\n- "${company} style" defaults: ${parts.join(', ')}.`;
+  }
+
+  return `You are ${company}'s design module rough-budget estimator${localePhrase}.
 
 Output ONLY a JSON object with this shape:
 {
@@ -39,14 +70,14 @@ Output ONLY a JSON object with this shape:
       "category": "furniture" | "appliance" | "decor" | "lighting" | "linen" | "contractor" | "labour" | "transport" | "cleaning",
       "item": "Short item name as it would appear on a budget line",
       "qty": <integer, default 1>,
-      "unitCostMinor": <integer, MUR cents — per-unit cost>,
+      "unitCostMinor": <integer, ${config.currency_code || 'MUR'} cents — per-unit cost>,
       "sourceKeys": ["<normalizedKey from the catalog sample, OR style-guide:<category>.<p25|p50|p75>>", ...],
       "rationale": "<one short sentence why this line + this price>"
     }
   ],
-  "lowMinor": <integer, MUR cents — pessimistic total>,
-  "midMinor": <integer, MUR cents — expected total>,
-  "highMinor": <integer, MUR cents — optimistic-upgrade total>,
+  "lowMinor": <integer, ${config.currency_code || 'MUR'} cents — pessimistic total>,
+  "midMinor": <integer, ${config.currency_code || 'MUR'} cents — expected total>,
+  "highMinor": <integer, ${config.currency_code || 'MUR'} cents — optimistic-upgrade total>,
   "contingencyPct": <number, recommended contingency 5–20>,
   "narrative": "<2–4 sentence summary explaining the budget shape>"
 }
@@ -55,11 +86,11 @@ Rules:
 - Price every line against the supplied catalog sample OR style-guide percentile bands. NEVER invent prices without provenance.
 - Group lines by room when the brief implies a room-by-room scope; otherwise use "Whole property" sparingly.
 - T1 (renovation) projects need contractor/labour lines (partition walls, paint, electrical, plumbing, tiles). T2/T3 (furnishing) skip contractor unless the brief explicitly mentions structural work.
-- Mixed classification uses renovation rate but includes furnishing lines.
-- "Friday style" defaults: Courts as primary vendor across categories, La Foir Fouille for small decor, Quality Decor + Kalachand for fixtures.
+- Mixed classification uses renovation rate but includes furnishing lines.${vendorLine}
 - Stay within the price discipline of the supplied catalog. If the brief asks for upgraded/luxury, push to p75; minimum-viable pushes to p25.
 - contingencyPct default 10 for furnishing-only, 15 for renovation, 20 for mixed.
 - Return 8–25 lines for a typical 2-bedroom; scale linearly with bedrooms.`;
+}
 
 function parseModelJson(raw) {
   if (typeof raw !== 'string') return null;
@@ -222,9 +253,12 @@ router.post('/rough-budget-estimate', requireDesignPerm('design:write'), async (
       classification,
     });
 
+    const tenantConfig = await loadTenantConfig(req.tenantId);
+    const systemPrompt = buildSystemPrompt(tenantConfig);
+
     let lastErr = null;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const result = await callKimi(SYSTEM_PROMPT, userContent);
+      const result = await callKimi(systemPrompt, userContent);
       if (result.ok) {
         const parsed = result.parsed;
         // Guard against the model returning malformed lines — coerce

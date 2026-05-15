@@ -24,12 +24,14 @@ const express = require('express');
 const PDFDocument = require('pdfkit');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
+const { loadTenantConfig } = require('./adapters');
 
 const router = express.Router();
 
 router.get('/:project_id/evidence-pdf', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const projectId = req.params.project_id;
+    const config = await loadTenantConfig(req.tenantId);
 
     // One round-trip to grab everything we need: project, agreement,
     // signature, owner counterparty.
@@ -77,7 +79,7 @@ router.get('/:project_id/evidence-pdf', requireDesignPerm('design:read'), async 
 
     // Header.
     doc.fontSize(18).fillColor('#1f2937').text('Signed Agreement — Evidence Bundle', { align: 'left' });
-    doc.fontSize(10).fillColor('#6b7280').text('Friday Retreats Design OS · Mauritius', { align: 'left' });
+    doc.fontSize(10).fillColor('#6b7280').text(config.pdf_footer_text, { align: 'left' });
     doc.moveDown(1.5);
 
     // Section: Project + owner.
@@ -86,7 +88,7 @@ router.get('/:project_id/evidence-pdf', requireDesignPerm('design:read'), async 
     kv(doc, 'Slug', project.slug);
     kv(doc, 'Classification', project.classification ?? '—');
     kv(doc, 'Tier', project.tier ? `T${project.tier}` : '—');
-    if (project.epc_minor) kv(doc, 'EPC', formatMUR(project.epc_minor));
+    if (project.epc_minor) kv(doc, 'EPC', formatCurrency(project.epc_minor, config.currency_code));
     kv(doc, 'Property', project.property_name ? `${project.property_name}${project.property_address ? ` · ${project.property_address}` : ''}` : '—');
     doc.moveDown(0.5);
 
@@ -126,8 +128,8 @@ router.get('/:project_id/evidence-pdf', requireDesignPerm('design:read'), async 
     if (agreement.design_fee_percent != null) kv(doc, 'Design fee %', String(agreement.design_fee_percent));
     if (agreement.procurement_fee_percent != null) kv(doc, 'Procurement fee %', String(agreement.procurement_fee_percent));
     if (agreement.contingency_percent != null) kv(doc, 'Contingency %', String(agreement.contingency_percent));
-    if (project.design_fee_minor) kv(doc, 'Design fee', formatMUR(project.design_fee_minor));
-    if (project.procurement_fee_minor) kv(doc, 'Procurement fee', formatMUR(project.procurement_fee_minor));
+    if (project.design_fee_minor) kv(doc, 'Design fee', formatCurrency(project.design_fee_minor, config.currency_code));
+    if (project.procurement_fee_minor) kv(doc, 'Procurement fee', formatCurrency(project.procurement_fee_minor, config.currency_code));
     doc.moveDown(0.5);
 
     // Section: audit trail.
@@ -145,7 +147,7 @@ router.get('/:project_id/evidence-pdf', requireDesignPerm('design:read'), async 
     // Footer disclaimer.
     doc.fontSize(8).fillColor('#9ca3af').text(
       'This evidence bundle is generated from the design_agreement_signatures row on demand. It does NOT replace the underlying database record. ' +
-      'Signatures captured in this system are intended to have the same legal effect as wet-ink signatures under Mauritius law (Electronic Transactions Act 2000).',
+      `Signatures captured in this system are intended to have the same legal effect as wet-ink signatures under ${config.legal_jurisdiction_text}.`,
       { align: 'left', width: 500 },
     );
 
@@ -176,9 +178,25 @@ function kv(doc, label, value) {
   doc.moveDown(0.1);
 }
 
-function formatMUR(minor) {
+// Per-tenant currency formatter (mig 035). Intl.NumberFormat picks the
+// right symbol for the ISO 4217 code — MUR renders as "Rs" on Node.
+// We strip any fractional digits (FAD stores amounts in minor units
+// but the PDF audience reads major-unit whole values).
+function formatCurrency(minor, currencyCode) {
   const major = Math.round(Number(minor) / 100);
-  return `Rs ${major.toLocaleString()}`;
+  const code = currencyCode || 'MUR';
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(major);
+  } catch {
+    // Bad currency code — fall back to the code-prefixed plain number
+    // so we never crash a PDF render over a config typo.
+    return `${code} ${major.toLocaleString()}`;
+  }
 }
 
 module.exports = router;

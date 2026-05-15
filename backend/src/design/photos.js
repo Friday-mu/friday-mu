@@ -46,10 +46,20 @@ try { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); } catch (e) {
 // destination() runs (multer processes the file stream first, then
 // the remaining fields). So we read project_id from req.params, which
 // IS available — hence the route shape POST /upload/:project_id.
+//
+// Multitenant v0 (2026-05-16): new uploads land under
+// <UPLOAD_DIR>/<tenant_id>/<project_id>/<uuid>.<ext>. Existing files
+// at <UPLOAD_DIR>/<project_id>/<uuid>.<ext> stay reachable — the
+// nginx alias serves both shapes since it just exposes the whole
+// directory tree. No migration needed for legacy files; their URLs
+// in the DB remain valid as-is.
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const projectId = req.params.project_id || 'unscoped';
-    const dest = path.join(UPLOAD_DIR, projectId);
+    // req.tenantId is set by requireDesignPerm (runs before this
+    // multer middleware), so it's reliably present here.
+    const tenantId = req.tenantId || 'unknown-tenant';
+    const dest = path.join(UPLOAD_DIR, tenantId, projectId);
     fs.mkdirSync(dest, { recursive: true });
     cb(null, dest);
   },
@@ -201,8 +211,11 @@ router.post('/upload/:project_id', requireDesignPerm('design:write'), uploader.s
     }
 
     // Build the public URL. The filename is already a UUID so we can
-    // safely concat without sanitising.
-    const url = `${UPLOAD_PUBLIC_PREFIX}/${projectId}/${req.file.filename}`;
+    // safely concat without sanitising. Includes the tenant prefix so
+    // the on-disk layout (tenant/project/file) round-trips through
+    // the URL. Legacy URLs without the tenant segment continue to
+    // serve from disk too — nginx is path-agnostic.
+    const url = `${UPLOAD_PUBLIC_PREFIX}/${req.tenantId}/${projectId}/${req.file.filename}`;
     const { rows } = await query(
       `INSERT INTO design_photos (project_id, room_id, kind, caption, url)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,

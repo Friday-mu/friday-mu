@@ -42,7 +42,12 @@ function makeUploader(kind) {
     storage: multer.diskStorage({
       destination: (req, file, cb) => {
         const projectId = req.params.project_id || 'unscoped';
-        const dest = path.join(UPLOAD_ROOT, projectId, kind);
+        // Multitenant v0: tenant prefix in the disk path. Legacy
+        // files (no tenant segment) remain reachable — nginx serves
+        // the whole tree. req.tenantId is set by requireDesignPerm
+        // which runs before this multer middleware.
+        const tenantId = req.tenantId || 'unknown-tenant';
+        const dest = path.join(UPLOAD_ROOT, tenantId, projectId, kind);
         fs.mkdirSync(dest, { recursive: true });
         cb(null, dest);
       },
@@ -83,7 +88,7 @@ router.post('/:project_id/:kind', requireDesignPerm('design:write'), (req, res) 
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const projectId = req.params.project_id;
     const filename = path.basename(req.file.path);
-    const publicUrl = `${UPLOAD_PUBLIC_PREFIX}/${projectId}/${kind}/${filename}`;
+    const publicUrl = `${UPLOAD_PUBLIC_PREFIX}/${req.tenantId}/${projectId}/${kind}/${filename}`;
     res.json({
       url: publicUrl,
       size: req.file.size,

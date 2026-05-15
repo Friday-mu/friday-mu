@@ -27,6 +27,7 @@ const express = require('express');
 const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
+const { loadTenantConfig } = require('./adapters');
 
 const router = express.Router();
 
@@ -46,7 +47,14 @@ const ALLOWED_FIELDS = new Set([
   'estimatedCompletion',
 ]);
 
-const SYSTEM_PROMPT = `You are Friday's Annex B (project terms) editor for interior-design contracts in Mauritius.
+// System prompt built per request so per-tenant config (mig 035) can
+// thread company name + locale phrasing. See ai_rough_budget.js for the
+// rationale on the Mauritius-mention heuristic.
+function buildSystemPrompt(config) {
+  const company = config.company_name || 'the';
+  const isMU = (config.legal_jurisdiction_text || '').includes('Mauritius');
+  const localePhrase = isMU ? ' in Mauritius' : '';
+  return `You are ${company}'s Annex B (project terms) editor for interior-design contracts${localePhrase}.
 
 The user gives you an instruction ("shorten clause 7", "add a custom inclusion about kitchen plumbing", "move start date to mid-July"). You propose a JSON mutation to the Annex B fields.
 
@@ -67,10 +75,11 @@ STRICT RULES:
 1. You may only propose changes to: customInclusions, saleOfFurniture, strWorkingCapital, startDate, estimatedCompletion. Other Annex B fields (clientName, address, NIC, classification, tier, EPC, design / procurement fees, effectiveDate) are read-only — they're derived from project state or set by the director and not safe to AI-mutate.
 2. If the instruction asks you to change a field outside that set, return proposed: {} and explain why in reasoning. Don't refuse rudely; the team uses you in flow.
 3. customInclusions is a free-text addendum — usually 1–4 sentences. When the user asks to "add" something, return the FULL new string (existing text + your addition). When they ask to "remove" or "shorten", return the trimmed full string.
-4. Dates are calendar dates in YYYY-MM-DD form. Mauritius — assume current year unless the user is explicit.
+4. Dates are calendar dates in YYYY-MM-DD form. Assume the current year unless the user is explicit.
 5. confidence = "high" when the instruction is unambiguous and within scope; "medium" when you had to guess phrasing; "low" when the instruction is ambiguous or partially out of scope.
 6. Never invent contractual obligations not implied by the instruction. If the user says "add carve-out for kitchen", don't also add scope changes to bathrooms.
 7. Return ONLY the JSON object. No prose before or after.`;
+}
 
 function parseModelJson(raw) {
   if (typeof raw !== 'string') return null;
@@ -185,9 +194,12 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
       allowed_fields: Array.from(ALLOWED_FIELDS),
     }, null, 2);
 
+    const tenantConfig = await loadTenantConfig(req.tenantId);
+    const systemPrompt = buildSystemPrompt(tenantConfig);
+
     let lastErr = null;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const result = await callKimi(SYSTEM_PROMPT, userContent);
+      const result = await callKimi(systemPrompt, userContent);
       if (result.ok) {
         const parsed = result.parsed;
         const proposed = shapeProposed(parsed.proposed);

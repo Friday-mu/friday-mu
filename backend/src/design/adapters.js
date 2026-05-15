@@ -7,6 +7,8 @@
 // The shape functions intentionally pass JSONB columns through unchanged
 // (they were authored as JSON on insert and remain JSON on read).
 
+const { query } = require('../database/client');
+
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
 // Strip retail / negotiated / internal-work cost from a budget item row.
@@ -555,9 +557,95 @@ function shapeAnnexA(row) {
   return {
     tenant_id: row.tenant_id,
     annex_a: row.annex_a,
+    // Migration 035 — per-tenant config columns. Null-tolerant on the
+    // wire: callers reading shapeAnnexA() directly don't need fallbacks
+    // unless they want them. The richer fallback logic lives in
+    // loadTenantConfig() below.
+    company_name: row.company_name ?? null,
+    pdf_footer_text: row.pdf_footer_text ?? null,
+    legal_jurisdiction_text: row.legal_jurisdiction_text ?? null,
+    currency_code: row.currency_code ?? null,
+    date_format: row.date_format ?? null,
+    vendor_defaults: row.vendor_defaults ?? {},
     updated_at: row.updated_at,
     updated_by_user_id: row.updated_by_user_id,
   };
+}
+
+// ─── Per-tenant config loader ────────────────────────────────────────
+//
+// Single source of truth for "what string / number / vendor list does
+// this tenant want?". Backed by design_annex_a (mig 035). Used by:
+//   - agreement_evidence.js  (PDF footer, jurisdiction text, currency)
+//   - ai_rough_budget.js     (company name, locale conditional, vendor defaults)
+//   - ai_ask.js              (company name, locale conditional)
+//   - ai_annex_b_edit.js     (company name, locale conditional)
+//
+// Caching: 60-second per-tenant TTL in-process. Tenant config is
+// read on every AI call and on every signed-evidence PDF render; we
+// don't want DB round-trips for what's effectively static data. A
+// fresh deploy or process restart picks up changes within 60s of the
+// next request — fine for branding / vendor lists, fine for legal text
+// because settings PUTs are director-only and infrequent.
+const _tenantConfigCache = new Map(); // tenantId → { value, expires }
+const _TENANT_CONFIG_TTL_MS = 60_000;
+
+function _fallbackConfig(tenantId) {
+  return {
+    tenant_id: tenantId,
+    company_name: 'Friday Retreats',                                // safe default — FR is the only live tenant
+    pdf_footer_text: 'Design OS',
+    legal_jurisdiction_text: 'Local jurisdiction',
+    currency_code: 'MUR',
+    date_format: 'DD/MM/YYYY',
+    vendor_defaults: {},
+    annex_a: {},
+  };
+}
+
+async function loadTenantConfig(tenantId) {
+  const tid = tenantId || DEFAULT_TENANT_ID;
+  const now = Date.now();
+  const hit = _tenantConfigCache.get(tid);
+  if (hit && hit.expires > now) return hit.value;
+
+  let row = null;
+  try {
+    const { rows } = await query(
+      `SELECT tenant_id, annex_a,
+              company_name, pdf_footer_text, legal_jurisdiction_text,
+              currency_code, date_format, vendor_defaults
+       FROM design_annex_a WHERE tenant_id = $1`,
+      [tid],
+    );
+    row = rows[0] || null;
+  } catch (e) {
+    // Don't 500 callers if the config table is unavailable — surface
+    // the fallback so AI / PDF endpoints keep working. Log once.
+    console.error('[design/adapters] loadTenantConfig query failed:', e.message);
+  }
+
+  const value = row
+    ? {
+        tenant_id: row.tenant_id,
+        // Column null → string fallback so callers never need ?? at the
+        // call site. The fallbacks deliberately avoid mentioning "Friday"
+        // or "Mauritius" — that's the whole point of this migration.
+        // Exception: company_name's fallback IS 'Friday Retreats' because
+        // FR is the only live tenant; non-FR tenants will have a backfilled
+        // row before they go live.
+        company_name: row.company_name ?? 'Friday Retreats',
+        pdf_footer_text: row.pdf_footer_text ?? 'Design OS',
+        legal_jurisdiction_text: row.legal_jurisdiction_text ?? 'Local jurisdiction',
+        currency_code: row.currency_code ?? 'MUR',
+        date_format: row.date_format ?? 'DD/MM/YYYY',
+        vendor_defaults: row.vendor_defaults ?? {},
+        annex_a: row.annex_a ?? {},
+      }
+    : _fallbackConfig(tid);
+
+  _tenantConfigCache.set(tid, { value, expires: now + _TENANT_CONFIG_TTL_MS });
+  return value;
 }
 
 function shapeAsset(row) {
@@ -576,6 +664,7 @@ function shapeAsset(row) {
 
 module.exports = {
   DEFAULT_TENANT_ID,
+  loadTenantConfig,
   stripSensitiveBudgetItem,
   shapeCounterparty,
   shapeProperty,

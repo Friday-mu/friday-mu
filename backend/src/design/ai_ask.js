@@ -18,6 +18,7 @@ const express = require('express');
 const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
+const { loadTenantConfig } = require('./adapters');
 
 const router = express.Router();
 
@@ -26,7 +27,14 @@ const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
 const MAX_RETRIES = 2;
 const TIMEOUT_MS = 35_000;
 
-const SYSTEM_PROMPT = `You are Friday's design module assistant, helping the team manage interior-design projects in Mauritius.
+// System prompt built per request so per-tenant config (mig 035) can
+// thread through company name + locale phrasing. See ai_rough_budget.js
+// for the rationale on the Mauritius-mention heuristic.
+function buildSystemPrompt(config) {
+  const company = config.company_name || 'the';
+  const isMU = (config.legal_jurisdiction_text || '').includes('Mauritius');
+  const localePhrase = isMU ? ' in Mauritius' : '';
+  return `You are ${company}'s design module assistant, helping the team manage interior-design projects${localePhrase}.
 
 STRICT RULES:
 1. READ-ONLY. You may answer questions about the project state. You MUST NOT draft emails, write content for owners, or take any action — refuse those requests politely and tell the user "I'm read-only — to draft anything, ask me again with explicit confirmation."
@@ -44,6 +52,7 @@ Return ONLY a JSON object with this shape:
 }
 
 Citations array must list each tag that appears in the answer exactly once.`;
+}
 
 function parseModelJson(raw) {
   if (typeof raw !== 'string') return null;
@@ -240,9 +249,12 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
       context,
     }, null, 2);
 
+    const tenantConfig = await loadTenantConfig(req.tenantId);
+    const systemPrompt = buildSystemPrompt(tenantConfig);
+
     let lastErr = null;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const result = await callKimi(SYSTEM_PROMPT, userContent);
+      const result = await callKimi(systemPrompt, userContent);
       if (result.ok) {
         const parsed = result.parsed;
         const answer = typeof parsed.answer === 'string' ? parsed.answer : '';
