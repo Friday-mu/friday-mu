@@ -18,7 +18,6 @@ const express = require('express');
 const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID } = require('./adapters');
 
 const router = express.Router();
 
@@ -99,7 +98,7 @@ async function callKimi(systemPrompt, userContent) {
 // the token budget tight (system + context + question should stay < 6k
 // tokens). When project_id is null we load a cross-project summary
 // instead (name + current_stage + tier + EPC per project).
-async function loadProjectContext(projectId) {
+async function loadProjectContext(projectId, tenantId) {
   if (!projectId) {
     const { rows } = await query(
       `SELECT id, name, slug, current_stage, tier, classification, epc_minor,
@@ -107,7 +106,7 @@ async function loadProjectContext(projectId) {
        FROM design_projects
        WHERE tenant_id = $1 AND lifecycle_status = 'active'
        ORDER BY created_at DESC LIMIT 30`,
-      [DEFAULT_TENANT_ID],
+      [tenantId],
     );
     return { kind: 'all_projects', projects: rows };
   }
@@ -121,7 +120,7 @@ async function loadProjectContext(projectId) {
               epc_minor, design_fee_minor, procurement_fee_minor,
               engagement_scope, lifecycle_status
        FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [tenantId, projectId],
     ),
     query(
       `SELECT id, title, status, category, due_date, assignee_user_id
@@ -212,7 +211,7 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
     if (project_id) {
       const ownerCheck = await query(
         `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-        [DEFAULT_TENANT_ID, project_id],
+        [req.tenantId, project_id],
       );
       if (ownerCheck.rows.length === 0) {
         return res.status(404).json({ error: 'Project not found' });
@@ -220,7 +219,7 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
     }
 
     const start = Date.now();
-    const context = await loadProjectContext(project_id || null);
+    const context = await loadProjectContext(project_id || null, req.tenantId);
 
     // Template fallback when KIMI_API_KEY is unset — surface a minimal
     // structured response so the staff still gets something useful.

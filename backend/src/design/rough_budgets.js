@@ -7,7 +7,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeRoughBudget } = require('./adapters');
+const { shapeRoughBudget } = require('./adapters');
 
 const router = express.Router();
 
@@ -24,7 +24,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -48,7 +48,7 @@ router.get('/where-used/:catalog_source_id', requireDesignPerm('design:read'), a
        JOIN design_projects p ON p.id = rb.project_id
        WHERE p.tenant_id = $1 AND rb.catalog_source_id = $2
        ORDER BY rb.created_at DESC`,
-      [DEFAULT_TENANT_ID, req.params.catalog_source_id],
+      [req.tenantId, req.params.catalog_source_id],
     );
     res.json({
       results: rows.map((r) => ({
@@ -68,7 +68,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.project_id) return res.status(400).json({ error: 'project_id is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const cols = ['project_id'];
@@ -95,7 +95,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -124,7 +124,7 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
       `DELETE FROM design_rough_budgets rb USING design_projects p
        WHERE p.id = rb.project_id AND p.tenant_id = $1 AND rb.id = $2
        RETURNING rb.id`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Rough budget row not found' });
     res.status(204).end();

@@ -15,6 +15,13 @@
 //
 // Owner-stripping applied to every read: sensitive cost fields removed,
 // internal activities filtered out, raw vendor info hidden.
+//
+// Multitenant: magic-link tokens minted after 2026-05-16 carry a
+// tenant_id claim. portalAuth reads it; legacy tokens fall back to
+// DEFAULT_TENANT_ID via the same logic used for staff JWTs. The
+// loaded project's tenant_id is used as the source of truth for the
+// tenant check below — keyed off the row, not the token, so a token
+// minted under a wrong tenant cannot read another tenant's project.
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -60,7 +67,13 @@ async function portalAuth(req, res, next) {
     if (row.expires_at && new Date(row.expires_at) < new Date()) {
       return res.status(401).json({ error: 'Unauthorized — token expired' });
     }
-    if (row.ptenant !== DEFAULT_TENANT_ID) {
+    // Resolve tenant from the token payload (newer tokens) or fall back
+    // to DEFAULT_TENANT_ID for legacy tokens minted before tenant_id
+    // was embedded. Then verify the project actually lives under that
+    // tenant — defence-in-depth in case a token's tenant claim drifts
+    // from its project's tenant_id.
+    const claimedTenantId = payload.tenant_id || DEFAULT_TENANT_ID;
+    if (row.ptenant !== claimedTenantId) {
       return res.status(401).json({ error: 'Unauthorized — tenant mismatch' });
     }
     if (row.pid !== payload.project_id || row.pslug !== payload.project_slug) {
@@ -71,6 +84,7 @@ async function portalAuth(req, res, next) {
     query(`UPDATE design_magic_links SET last_used_at = NOW() WHERE id = $1`, [row.id]).catch(() => {});
 
     req.portalProject = { id: row.pid, slug: row.pslug, tenant_id: row.ptenant };
+    req.tenantId = row.ptenant;
     req.magicLink = row;
     next();
   } catch (e) {

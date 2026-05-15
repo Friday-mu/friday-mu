@@ -24,7 +24,7 @@ const { randomUUID } = require('crypto');
 const multer = require('multer');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapePhoto } = require('./adapters');
+const { shapePhoto } = require('./adapters');
 const { isAcceptable, KIND_CONFIG } = require('./upload-policy');
 
 const router = express.Router();
@@ -84,7 +84,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const filters = ['project_id = $1'];
@@ -115,7 +115,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.url) return res.status(400).json({ error: 'url is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -134,7 +134,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -162,7 +162,7 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
       `DELETE FROM design_photos ph USING design_projects p
        WHERE p.id = ph.project_id AND p.tenant_id = $1 AND ph.id = $2
        RETURNING ph.id`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Photo not found' });
     res.status(204).end();
@@ -193,7 +193,7 @@ router.post('/upload/:project_id', requireDesignPerm('design:write'), uploader.s
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) {
       try { fs.unlinkSync(req.file.path); } catch { /* swallow */ }

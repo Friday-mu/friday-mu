@@ -8,7 +8,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeTask } = require('./adapters');
+const { shapeTask } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -24,7 +24,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });
@@ -66,7 +66,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });
@@ -116,7 +116,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
       return res.status(400).json({ error: `category must be one of ${VALID_CATEGORIES.join(', ')}` });
     }
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -162,7 +162,7 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
       `DELETE FROM design_tasks t USING design_projects p
        WHERE p.id = t.project_id AND p.tenant_id = $1 AND t.id = $2
        RETURNING t.id`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Task not found' });
     res.status(204).end();

@@ -10,7 +10,6 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID } = require('./adapters');
 
 const router = express.Router();
 
@@ -30,7 +29,7 @@ router.get('/time-in-stage', requireDesignPerm('design:read'), async (req, res) 
          AND s.entered_at >= NOW() - ($2 || ' days')::interval
        GROUP BY s.stage_key
        ORDER BY s.stage_key`,
-      [DEFAULT_TENANT_ID, String(days)],
+      [req.tenantId, String(days)],
     );
     res.json({ window_days: days, results: rows });
   } catch (e) {
@@ -45,17 +44,17 @@ router.get('/funnel', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const leadCounts = await query(
       `SELECT status, COUNT(*)::int AS count FROM design_leads WHERE tenant_id = $1 GROUP BY status`,
-      [DEFAULT_TENANT_ID],
+      [req.tenantId],
     );
     const projectCounts = await query(
       `SELECT lifecycle_status, COUNT(*)::int AS count FROM design_projects WHERE tenant_id = $1 GROUP BY lifecycle_status`,
-      [DEFAULT_TENANT_ID],
+      [req.tenantId],
     );
     const stageCounts = await query(
       `SELECT current_stage, COUNT(*)::int AS count
        FROM design_projects WHERE tenant_id = $1 AND lifecycle_status = 'active'
        GROUP BY current_stage`,
-      [DEFAULT_TENANT_ID],
+      [req.tenantId],
     );
     const leadsByStatus = {};
     for (const r of leadCounts.rows) leadsByStatus[r.status] = r.count;
@@ -88,7 +87,7 @@ router.get('/spend-curve', requireDesignPerm('design:read_sensitive'), async (re
        WHERE p.tenant_id = $1 AND b.created_at >= NOW() - ($2 || ' days')::interval
        GROUP BY day
        ORDER BY day`,
-      [DEFAULT_TENANT_ID, String(days)],
+      [req.tenantId, String(days)],
     );
     res.json({ window_days: days, results: rows });
   } catch (e) {
@@ -121,7 +120,7 @@ router.get('/revenue-curve', requireDesignPerm('design:read_sensitive'), async (
          AND g.received_at >= NOW() - ($2 || ' days')::interval
        GROUP BY day
        ORDER BY day`,
-      [DEFAULT_TENANT_ID, String(days)],
+      [req.tenantId, String(days)],
     );
     res.json({ window_days: days, results: rows });
   } catch (e) {
@@ -145,7 +144,7 @@ router.get('/vendor-performance', requireDesignPerm('design:read_sensitive'), as
        WHERE v.tenant_id = $1
        GROUP BY v.id, v.name, v.category
        ORDER BY total_spend_minor DESC NULLS LAST`,
-      [DEFAULT_TENANT_ID],
+      [req.tenantId],
     );
     res.json({ results: rows });
   } catch (e) {

@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeMagicLink } = require('./adapters');
+const { shapeMagicLink } = require('./adapters');
 
 const router = express.Router();
 
@@ -34,7 +34,7 @@ router.post('/', requireDesignPerm('design:portal_admin'), async (req, res) => {
 
     const projectRes = await query(
       `SELECT id, slug FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, project_id],
+      [req.tenantId, project_id],
     );
     if (projectRes.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const project = projectRes.rows[0];
@@ -42,7 +42,9 @@ router.post('/', requireDesignPerm('design:portal_admin'), async (req, res) => {
     const jti = crypto.randomUUID();
     const ttl = Math.min(Math.max(expires_in_seconds || TEN_YEARS_SEC, 60), TEN_YEARS_SEC);
     const token = jwt.sign(
-      { kind: 'portal', project_id: project.id, project_slug: project.slug, jti },
+      // tenant_id embedded so portal middleware can scope queries to
+      // the issuing tenant without a fallback to DEFAULT_TENANT_ID.
+      { kind: 'portal', project_id: project.id, project_slug: project.slug, tenant_id: req.tenantId, jti },
       process.env.JWT_SECRET || '',
       { algorithm: 'HS256', expiresIn: ttl },
     );
@@ -83,7 +85,7 @@ router.get('/', requireDesignPerm('design:portal_admin'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -104,7 +106,7 @@ router.post('/:id/revoke', requireDesignPerm('design:portal_admin'), async (req,
        FROM design_projects p
        WHERE p.id = ml.project_id AND p.tenant_id = $1 AND ml.id = $2 AND ml.revoked_at IS NULL
        RETURNING ml.*`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Active magic link not found' });
     res.json(shapeMagicLink(rows[0]));

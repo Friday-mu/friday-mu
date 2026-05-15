@@ -3,7 +3,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeSiteVisit } = require('./adapters');
+const { shapeSiteVisit } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -33,7 +33,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -61,7 +61,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!visitDate) return res.status(400).json({ error: 'visit_date or visited_at is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -94,7 +94,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -131,7 +131,7 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
        FROM design_site_visits sv
        JOIN design_projects p ON p.id = sv.project_id
        WHERE p.tenant_id = $1 AND sv.id = $2`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Site visit not found' });
     if (existing[0].status !== 'not_started') {

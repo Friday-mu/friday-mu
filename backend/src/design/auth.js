@@ -9,8 +9,17 @@
 // design:* access. Mathias is the commercial lead; for v0.1 he uses
 // the same admin token so the in-code matrix covers him implicitly.
 // Future: dedicated 'commercial' role with a subset.
+//
+// Multitenant v0 (2026-05-16): the JWT carries a tenant_id claim. When
+// present, every design query scopes to that tenant; when absent
+// (legacy tokens), we fall back to DEFAULT_TENANT_ID (Friday Retreats'
+// canonical UUID). The middleware exposes req.tenantId so route
+// handlers can pass it into queries without re-reading the JWT or
+// importing the default. This lets a future second-tenant token flow
+// through without further code changes.
 
 const jwt = require('jsonwebtoken');
+const { DEFAULT_TENANT_ID } = require('./adapters');
 
 const ALL_DESIGN_PERMS = [
   'design:read',
@@ -49,6 +58,14 @@ function hasPerm(role, perm) {
   return ROLE_PERMS[role]?.has(perm) ?? false;
 }
 
+// Resolve the active tenant for a request. Reads identity.tenantId
+// (set by decodeJwt) and falls back to DEFAULT_TENANT_ID for legacy
+// tokens that predate the multitenant claim. Pure function; safe to
+// call from anywhere a Request-like object is available.
+function resolveTenantId(req) {
+  return req.identity?.tenantId || DEFAULT_TENANT_ID;
+}
+
 function requireDesignPerm(perm) {
   return (req, res, next) => {
     const identity = decodeJwt(req);
@@ -57,6 +74,7 @@ function requireDesignPerm(perm) {
       return res.status(403).json({ error: `Forbidden — missing permission ${perm}` });
     }
     req.identity = identity;
+    req.tenantId = identity.tenantId || DEFAULT_TENANT_ID;
     next();
   };
 }
@@ -65,6 +83,7 @@ function attachIdentity(req, res, next) {
   const identity = decodeJwt(req);
   if (!identity) return res.status(401).json({ error: 'Unauthorized' });
   req.identity = identity;
+  req.tenantId = identity.tenantId || DEFAULT_TENANT_ID;
   next();
 }
 
@@ -75,4 +94,5 @@ module.exports = {
   hasPerm,
   requireDesignPerm,
   attachIdentity,
+  resolveTenantId,
 };

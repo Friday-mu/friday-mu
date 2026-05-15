@@ -27,7 +27,6 @@ const express = require('express');
 const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID } = require('./adapters');
 
 const router = express.Router();
 
@@ -161,7 +160,7 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
 
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, project_id],
+      [req.tenantId, project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
 

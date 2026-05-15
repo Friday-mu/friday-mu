@@ -20,7 +20,6 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID } = require('./adapters');
 const { suggestMatches } = require('./match_scoring');
 
 const PARSE_STATUSES = new Set(['pending', 'parsed', 'failed']);
@@ -88,10 +87,10 @@ function shapeMatch(row) {
 
 const projectBankRouter = express.Router({ mergeParams: true });
 
-async function assertProject(projectId) {
+async function assertProject(projectId, tenantId) {
   const ownerCheck = await query(
     `SELECT id FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-    [DEFAULT_TENANT_ID, projectId],
+    [tenantId, projectId],
   );
   return ownerCheck.rows.length > 0;
 }
@@ -100,7 +99,7 @@ async function assertProject(projectId) {
 projectBankRouter.get('/:project_id/bank-statements', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { project_id } = req.params;
-    if (!(await assertProject(project_id))) return res.status(404).json({ error: 'Project not found' });
+    if (!(await assertProject(project_id, req.tenantId))) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
       `SELECT * FROM design_bank_statements WHERE project_id = $1 ORDER BY statement_period_end DESC, uploaded_at DESC`,
       [project_id],
@@ -116,7 +115,7 @@ projectBankRouter.get('/:project_id/bank-statements', requireDesignPerm('design:
 projectBankRouter.post('/:project_id/bank-statements', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const { project_id } = req.params;
-    if (!(await assertProject(project_id))) return res.status(404).json({ error: 'Project not found' });
+    if (!(await assertProject(project_id, req.tenantId))) return res.status(404).json({ error: 'Project not found' });
     const body = req.body || {};
     const {
       account_label,
@@ -262,7 +261,7 @@ projectBankRouter.post('/:project_id/bank-statements', requireDesignPerm('design
 projectBankRouter.get('/:project_id/bank-transactions', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { project_id } = req.params;
-    if (!(await assertProject(project_id))) return res.status(404).json({ error: 'Project not found' });
+    if (!(await assertProject(project_id, req.tenantId))) return res.status(404).json({ error: 'Project not found' });
     const filters = ['project_id = $1'];
     const params = [project_id];
     let idx = 2;
@@ -283,7 +282,7 @@ projectBankRouter.get('/:project_id/bank-transactions', requireDesignPerm('desig
 projectBankRouter.get('/:project_id/bank-matches', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { project_id } = req.params;
-    if (!(await assertProject(project_id))) return res.status(404).json({ error: 'Project not found' });
+    if (!(await assertProject(project_id, req.tenantId))) return res.status(404).json({ error: 'Project not found' });
     const filters = ['project_id = $1'];
     const params = [project_id];
     let idx = 2;
@@ -307,7 +306,7 @@ projectBankRouter.get('/:project_id/bank-matches', requireDesignPerm('design:rea
 projectBankRouter.post('/:project_id/bank-matches', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const { project_id } = req.params;
-    if (!(await assertProject(project_id))) return res.status(404).json({ error: 'Project not found' });
+    if (!(await assertProject(project_id, req.tenantId))) return res.status(404).json({ error: 'Project not found' });
     const { budget_item_id, transaction_id, notes = null } = req.body || {};
     if (!budget_item_id || !transaction_id) {
       return res.status(400).json({ error: 'budget_item_id and transaction_id are required' });

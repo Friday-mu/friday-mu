@@ -24,7 +24,6 @@ const express = require('express');
 const PDFDocument = require('pdfkit');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID } = require('./adapters');
 
 const router = express.Router();
 
@@ -43,7 +42,7 @@ router.get('/:project_id/evidence-pdf', requireDesignPerm('design:read'), async 
        LEFT JOIN design_counterparties cp ON cp.id = p.counterparty_id
        LEFT JOIN design_properties prop ON prop.id = p.property_id
        WHERE p.tenant_id = $1 AND p.id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (pjRows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const project = pjRows[0];

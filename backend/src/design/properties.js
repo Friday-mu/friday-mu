@@ -9,7 +9,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeProperty } = require('./adapters');
+const { shapeProperty } = require('./adapters');
 
 const router = express.Router();
 
@@ -21,7 +21,7 @@ const WRITABLE_FIELDS = [
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const filters = ['tenant_id = $1'];
-    const params = [DEFAULT_TENANT_ID];
+    const params = [req.tenantId];
     let idx = 2;
     if (typeof req.query.counterparty_id === 'string') {
       filters.push(`counterparty_id = $${idx++}`);
@@ -40,7 +40,7 @@ router.get('/:id', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT * FROM design_properties WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Property not found' });
     res.json(shapeProperty(rows[0]));
@@ -56,7 +56,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.name) return res.status(400).json({ error: 'name is required' });
     const cols = ['tenant_id', 'name'];
     const placeholders = ['$1', '$2'];
-    const params = [DEFAULT_TENANT_ID, body.name];
+    const params = [req.tenantId, body.name];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (field === 'name') continue;
@@ -79,7 +79,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {

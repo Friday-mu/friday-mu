@@ -9,7 +9,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeSelection } = require('./adapters');
+const { shapeSelection } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -33,7 +33,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -54,7 +54,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.title) return res.status(400).json({ error: 'title is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -85,7 +85,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -120,7 +120,7 @@ router.post('/:id/send', requireDesignPerm('design:write'), async (req, res) => 
        FROM design_projects p
        WHERE p.id = s.project_id AND p.tenant_id = $1 AND s.id = $2 AND s.status = 'draft'
        RETURNING s.*`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Draft selection not found' });
     await appendActivity({
@@ -149,7 +149,7 @@ router.post('/:id/pick', requireDesignPerm('design:write'), async (req, res) => 
        FROM design_projects p
        WHERE p.id = s.project_id AND p.tenant_id = $1 AND s.id = $2 AND s.status = 'sent'
        RETURNING s.*`,
-      [DEFAULT_TENANT_ID, req.params.id, picked_option_id],
+      [req.tenantId, req.params.id, picked_option_id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sent selection not found' });
     await appendActivity({
@@ -175,7 +175,7 @@ router.post('/:id/request-changes', requireDesignPerm('design:write'), async (re
        FROM design_projects p
        WHERE p.id = s.project_id AND p.tenant_id = $1 AND s.id = $2 AND s.status = 'sent'
        RETURNING s.*`,
-      [DEFAULT_TENANT_ID, req.params.id, comment || null],
+      [req.tenantId, req.params.id, comment || null],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sent selection not found' });
     await appendActivity({
@@ -208,7 +208,7 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
        FROM design_selections s
        JOIN design_projects p ON p.id = s.project_id
        WHERE p.tenant_id = $1 AND s.id = $2`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Selection not found' });
     if (existing[0].status !== 'draft') {

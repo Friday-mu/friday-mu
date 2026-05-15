@@ -8,7 +8,7 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const { query, pool } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeMoodboard } = require('./adapters');
+const { shapeMoodboard } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -28,7 +28,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     const includeArchived = req.query.include_archived === '1' || req.query.include_archived === 'true';
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const sql = includeArchived
@@ -48,7 +48,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.project_id) return res.status(400).json({ error: 'project_id is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
 
@@ -89,7 +89,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -127,7 +127,7 @@ router.post('/:id/send', requireDesignPerm('design:write'), async (req, res) => 
        FROM design_projects p
        WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2 AND m.status = 'draft'
        RETURNING m.*`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Draft moodboard not found' });
     await appendActivity({
@@ -152,7 +152,7 @@ router.post('/:id/approve', requireDesignPerm('design:approve'), async (req, res
        FROM design_projects p
        WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2 AND m.status = 'sent'
        RETURNING m.*`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sent moodboard not found' });
     await appendActivity({
@@ -199,7 +199,7 @@ router.post('/variants', requireDesignPerm('design:write'), async (req, res) => 
     await client.query('BEGIN');
     const ownerCheck = await client.query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -281,7 +281,7 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
        FROM design_projects p
        WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2
        RETURNING m.*`,
-      [DEFAULT_TENANT_ID, req.params.id, req.identity?.userId || null],
+      [req.tenantId, req.params.id, req.identity?.userId || null],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Moodboard not found' });
     appendActivity({
@@ -320,7 +320,7 @@ router.post('/:id/restore', requireDesignPerm('design:write'), async (req, res) 
        FROM design_projects p
        WHERE p.id = m.project_id AND p.tenant_id = $1 AND m.id = $2
        RETURNING m.*`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Moodboard not found' });
     appendActivity({

@@ -18,7 +18,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapePaymentGate } = require('./adapters');
+const { shapePaymentGate } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -26,10 +26,10 @@ const router = express.Router();
 const LEDGER_TYPES = new Set(['fee_invoice', 'project_fund']);
 const DIRECTIONS = new Set(['debit', 'credit']);
 
-async function assertProjectExists(projectId) {
+async function assertProjectExists(projectId, tenantId) {
   const ownerCheck = await query(
     `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-    [DEFAULT_TENANT_ID, projectId],
+    [tenantId, projectId],
   );
   return ownerCheck.rows.length > 0;
 }
@@ -45,7 +45,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     if (ledgerType !== null && !LEDGER_TYPES.has(ledgerType)) {
       return res.status(400).json({ error: 'ledger_type must be fee_invoice or project_fund' });
     }
-    if (!(await assertProjectExists(projectId))) {
+    if (!(await assertProjectExists(projectId, req.tenantId))) {
       return res.status(404).json({ error: 'Project not found' });
     }
     const sql = ledgerType
@@ -79,7 +79,7 @@ router.get('/reconciliation', requireDesignPerm('design:read'), async (req, res)
     if (typeof projectId !== 'string') {
       return res.status(400).json({ error: 'project_id query param is required' });
     }
-    if (!(await assertProjectExists(projectId))) {
+    if (!(await assertProjectExists(projectId, req.tenantId))) {
       return res.status(404).json({ error: 'Project not found' });
     }
     const { rows } = await query(
@@ -152,7 +152,7 @@ router.get('/reconciliation', requireDesignPerm('design:read'), async (req, res)
 router.put('/:project_id/:gate_id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const { project_id: projectId, gate_id: gateId } = req.params;
-    if (!(await assertProjectExists(projectId))) {
+    if (!(await assertProjectExists(projectId, req.tenantId))) {
       return res.status(404).json({ error: 'Project not found' });
     }
     const body = req.body || {};
@@ -262,7 +262,7 @@ router.post('/:project_id/:gate_id/waive', requireDesignPerm('design:write'), as
 router.post('/:project_id/project_fund/movement', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const { project_id: projectId } = req.params;
-    if (!(await assertProjectExists(projectId))) {
+    if (!(await assertProjectExists(projectId, req.tenantId))) {
       return res.status(404).json({ error: 'Project not found' });
     }
     const body = req.body || {};

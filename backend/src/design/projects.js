@@ -9,7 +9,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeProject, shapeAsset } = require('./adapters');
+const { shapeProject, shapeAsset } = require('./adapters');
 
 // Mirror of the same constant in ai_images.js — strip the kind marker
 // from the generator_prompt before handing the asset row back. Kept
@@ -76,7 +76,7 @@ const VALID_ENGAGEMENT_SCOPES = new Set(['design_only', 'design_and_execution'])
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const filters = [`tenant_id = $1`];
-    const params = [DEFAULT_TENANT_ID];
+    const params = [req.tenantId];
     let idx = 2;
     if (typeof req.query.lifecycle_status === 'string') {
       filters.push(`lifecycle_status = $${idx++}`);
@@ -104,7 +104,7 @@ router.get('/by-slug/:slug', requireDesignPerm('design:read'), async (req, res) 
   try {
     const { rows } = await query(
       `SELECT * FROM design_projects WHERE tenant_id = $1 AND slug = $2`,
-      [DEFAULT_TENANT_ID, req.params.slug],
+      [req.tenantId, req.params.slug],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     res.json(shapeProject(rows[0]));
@@ -119,7 +119,7 @@ router.get('/:id', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT * FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     res.json(shapeProject(rows[0]));
@@ -144,7 +144,7 @@ router.get('/:id/floor-plan', requireDesignPerm('design:read'), async (req, res)
          JOIN design_assets a
            ON a.sha256 = p.floor_plan_image_id
         WHERE p.tenant_id = $1 AND p.id = $2`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'No floor plan set for this project' });
     res.json(shapeFloorPlanAsset(rows[0]));
@@ -169,7 +169,7 @@ router.get('/:id/floor-plan-furnished', requireDesignPerm('design:read'), async 
          JOIN design_assets a
            ON a.sha256 = p.floor_plan_furnished_image_id
         WHERE p.tenant_id = $1 AND p.id = $2`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'No furnished floor plan set for this project' });
     res.json(shapeFloorPlanAsset(rows[0]));
@@ -188,7 +188,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     }
     const cols = ['tenant_id', 'name', 'slug'];
     const placeholders = ['$1', '$2', '$3'];
-    const params = [DEFAULT_TENANT_ID, body.name, body.slug];
+    const params = [req.tenantId, body.name, body.slug];
     let idx = 4;
     for (const field of WRITABLE_FIELDS) {
       if (field === 'name' || field === 'slug') continue;
@@ -245,7 +245,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
     }
 
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -278,7 +278,7 @@ router.post('/:id/pause', requireDesignPerm('design:write'), async (req, res) =>
            updated_at = NOW()
        WHERE tenant_id = $1 AND id = $2 AND lifecycle_status = 'active'
        RETURNING *`,
-      [DEFAULT_TENANT_ID, req.params.id, reason || null, req.identity.userId || null],
+      [req.tenantId, req.params.id, reason || null, req.identity.userId || null],
     );
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Active project not found' });
@@ -302,7 +302,7 @@ router.post('/:id/resume', requireDesignPerm('design:write'), async (req, res) =
            updated_at = NOW()
        WHERE tenant_id = $1 AND id = $2 AND lifecycle_status = 'paused'
        RETURNING *`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Paused project not found' });
@@ -330,7 +330,7 @@ router.post('/:id/cancel', requireDesignPerm('design:write'), async (req, res) =
        WHERE tenant_id = $1 AND id = $2 AND lifecycle_status <> 'cancelled'
        RETURNING *`,
       [
-        DEFAULT_TENANT_ID,
+        req.tenantId,
         req.params.id,
         reason || null,
         req.identity.userId || null,

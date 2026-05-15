@@ -11,7 +11,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeStage, shapeProject } = require('./adapters');
+const { shapeStage, shapeProject } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -49,7 +49,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });
@@ -71,7 +71,7 @@ router.put('/:project_id/:stage_key', requireDesignPerm('design:write'), async (
     const { project_id: projectId, stage_key: stageKey } = req.params;
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });
@@ -119,7 +119,7 @@ router.post('/:project_id/:stage_key/reopen', requireDesignPerm('design:write'),
 
     const ownerCheck = await query(
       `SELECT * FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });
@@ -193,7 +193,7 @@ router.post('/:project_id/:stage_key/reopen', requireDesignPerm('design:write'),
          SET current_stage = $3, stage_status = 'in-progress', updated_at = NOW()
          WHERE tenant_id = $1 AND id = $2
          RETURNING *`,
-        [DEFAULT_TENANT_ID, projectId, stageKey],
+        [req.tenantId, projectId, stageKey],
       );
       updatedProject = projRows[0] || project;
     }

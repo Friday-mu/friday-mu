@@ -8,7 +8,7 @@
 const express = require('express');
 const { query, pool } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeApproval, shapeApprovalEvent } = require('./adapters');
+const { shapeApproval, shapeApprovalEvent } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -21,7 +21,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const filters = ['project_id = $1'];
@@ -50,7 +50,7 @@ router.get('/:id', requireDesignPerm('design:read'), async (req, res) => {
       `SELECT a.* FROM design_approvals a
        JOIN design_projects p ON p.id = a.project_id
        WHERE p.tenant_id = $1 AND a.id = $2`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (approvalRows.length === 0) return res.status(404).json({ error: 'Approval not found' });
     const { rows: eventRows } = await query(
@@ -75,7 +75,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.target_id) return res.status(400).json({ error: 'target_id is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -113,7 +113,7 @@ router.post('/:id/respond', requireDesignPerm('design:approve'), async (req, res
        JOIN design_projects p ON p.id = a.project_id
        WHERE p.tenant_id = $1 AND a.id = $2 AND a.status = 'pending'
        FOR UPDATE OF a`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (approvalRes.rows.length === 0) {
       await client.query('ROLLBACK');

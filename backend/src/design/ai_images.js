@@ -21,7 +21,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeAsset } = require('./adapters');
+const { shapeAsset } = require('./adapters');
 const { generateImage } = require('../ai/imagegen');
 const { buildMoodboardPrompt, buildFurnishingPrompt } = require('../ai/promptbuilder');
 const { appendActivity } = require('./activities');
@@ -123,7 +123,7 @@ router.post('/generate', requireDesignPerm('design:write'), async (req, res) => 
     // route in this module.
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
 
@@ -148,7 +148,7 @@ router.post('/generate', requireDesignPerm('design:write'), async (req, res) => 
        RETURNING *`,
       [
         result.sha256,
-        DEFAULT_TENANT_ID,
+        req.tenantId,
         result.mimeType || 'image/png',
         result.byteSize || null,
         result.imageUrl,
@@ -162,7 +162,7 @@ router.post('/generate', requireDesignPerm('design:write'), async (req, res) => 
     if (!row) {
       const existing = await query(
         `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
-        [result.sha256, DEFAULT_TENANT_ID],
+        [result.sha256, req.tenantId],
       );
       row = existing.rows[0];
     }
@@ -227,7 +227,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
     const [projectRes, prefRes, siteVisitRes, photoRes] = await Promise.all([
       query(
         `SELECT * FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-        [DEFAULT_TENANT_ID, projectId],
+        [req.tenantId, projectId],
       ),
       query(
         `SELECT * FROM design_preferences WHERE project_id = $1`,
@@ -262,7 +262,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
     if (project.property_id) {
       const propRes = await query(
         `SELECT * FROM design_properties WHERE tenant_id = $1 AND id = $2`,
-        [DEFAULT_TENANT_ID, project.property_id],
+        [req.tenantId, project.property_id],
       );
       property = propRes.rows[0] || null;
     }
@@ -426,7 +426,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
          RETURNING *`,
         [
           result.sha256,
-          DEFAULT_TENANT_ID,
+          req.tenantId,
           result.mimeType || 'image/png',
           result.byteSize || null,
           result.imageUrl,
@@ -440,7 +440,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
       if (!row) {
         const existing = await query(
           `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
-          [result.sha256, DEFAULT_TENANT_ID],
+          [result.sha256, req.tenantId],
         );
         row = existing.rows[0];
       }
@@ -458,7 +458,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
            RETURNING *`,
           [
             result.sha256,
-            DEFAULT_TENANT_ID,
+            req.tenantId,
             result.mimeType || 'image/png',
             result.byteSize || null,
             result.imageUrl,
@@ -471,7 +471,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
         if (!row) {
           const existing = await query(
             `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
-            [result.sha256, DEFAULT_TENANT_ID],
+            [result.sha256, req.tenantId],
           );
           row = existing.rows[0];
         }
@@ -546,7 +546,7 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
 
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
 
@@ -579,7 +579,7 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
        RETURNING *`,
       [
         result.sha256,
-        DEFAULT_TENANT_ID,
+        req.tenantId,
         result.mimeType || 'image/png',
         result.byteSize || null,
         result.imageUrl,
@@ -593,7 +593,7 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
     if (!row) {
       const existing = await query(
         `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
-        [result.sha256, DEFAULT_TENANT_ID],
+        [result.sha256, req.tenantId],
       );
       row = existing.rows[0];
     }
@@ -608,7 +608,7 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
            SET floor_plan_image_id = $3, updated_at = NOW()
          WHERE tenant_id = $1 AND id = $2
          RETURNING id`,
-        [DEFAULT_TENANT_ID, projectId, result.sha256],
+        [req.tenantId, projectId, result.sha256],
       );
       projectUpdated = upd.rows.length > 0;
     }
@@ -764,7 +764,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
     // ── load project (ownership + furnished pin source) ──
     const projectRes = await query(
       `SELECT * FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (projectRes.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const project = projectRes.rows[0];
@@ -780,7 +780,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
     }
     const floorPlanAssetRes = await query(
       `SELECT * FROM design_assets WHERE tenant_id = $1 AND sha256 = $2`,
-      [DEFAULT_TENANT_ID, floorPlanSha],
+      [req.tenantId, floorPlanSha],
     );
     if (floorPlanAssetRes.rows.length === 0) {
       return res.status(404).json({ error: 'Source floor plan asset not found (orphan FK?)' });
@@ -797,7 +797,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
         `SELECT m.* FROM design_moodboards m
            JOIN design_projects p ON p.id = m.project_id
           WHERE p.tenant_id = $1 AND m.id = $2 AND m.project_id = $3`,
-        [DEFAULT_TENANT_ID, bodyMoodboardId.trim(), projectId],
+        [req.tenantId, bodyMoodboardId.trim(), projectId],
       );
       if (mbRes.rows.length === 0) {
         return res.status(404).json({ error: 'Specified moodboard not found for this project' });
@@ -860,7 +860,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
     if (project.property_id) {
       const propRes = await query(
         `SELECT * FROM design_properties WHERE tenant_id = $1 AND id = $2`,
-        [DEFAULT_TENANT_ID, project.property_id],
+        [req.tenantId, project.property_id],
       );
       property = propRes.rows[0] || null;
     }
@@ -957,7 +957,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
          RETURNING *`,
         [
           result.sha256,
-          DEFAULT_TENANT_ID,
+          req.tenantId,
           result.mimeType || 'image/png',
           result.byteSize || null,
           result.imageUrl,
@@ -971,7 +971,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
       if (!row) {
         const existing = await query(
           `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
-          [result.sha256, DEFAULT_TENANT_ID],
+          [result.sha256, req.tenantId],
         );
         row = existing.rows[0];
       }
@@ -988,7 +988,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
            RETURNING *`,
           [
             result.sha256,
-            DEFAULT_TENANT_ID,
+            req.tenantId,
             result.mimeType || 'image/png',
             result.byteSize || null,
             result.imageUrl,
@@ -1001,7 +1001,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
         if (!row) {
           const existing = await query(
             `SELECT * FROM design_assets WHERE sha256 = $1 AND tenant_id = $2`,
-            [result.sha256, DEFAULT_TENANT_ID],
+            [result.sha256, req.tenantId],
           );
           row = existing.rows[0];
         }
@@ -1021,7 +1021,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
            SET floor_plan_furnished_image_id = $3, updated_at = NOW()
          WHERE tenant_id = $1 AND id = $2
          RETURNING id`,
-        [DEFAULT_TENANT_ID, projectId, result.sha256],
+        [req.tenantId, projectId, result.sha256],
       );
       projectUpdated = upd.rows.length > 0;
     }
@@ -1074,7 +1074,7 @@ router.get('/:sha256', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT * FROM design_assets WHERE tenant_id = $1 AND sha256 = $2`,
-      [DEFAULT_TENANT_ID, req.params.sha256],
+      [req.tenantId, req.params.sha256],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Asset not found' });
     res.json(shapeAiAsset(rows[0]));
@@ -1090,7 +1090,7 @@ router.get('/:sha256', requireDesignPerm('design:read'), async (req, res) => {
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const filters = ['tenant_id = $1'];
-    const params = [DEFAULT_TENANT_ID];
+    const params = [req.tenantId];
     let idx = 2;
     if (typeof req.query.source === 'string') {
       filters.push(`source = $${idx++}`);

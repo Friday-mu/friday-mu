@@ -7,7 +7,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeDecision } = require('./adapters');
+const { shapeDecision } = require('./adapters');
 
 const router = express.Router();
 
@@ -19,7 +19,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, projectId],
+      [req.tenantId, projectId],
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });
@@ -44,7 +44,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.decision_key) return res.status(400).json({ error: 'decision_key is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.project_id],
+      [req.tenantId, body.project_id],
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });

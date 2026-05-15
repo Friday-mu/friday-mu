@@ -7,7 +7,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeCloseoutBinder } = require('./adapters');
+const { shapeCloseoutBinder } = require('./adapters');
 const { appendActivity } = require('./activities');
 
 const router = express.Router();
@@ -16,7 +16,7 @@ router.get('/:project_id', requireDesignPerm('design:read'), async (req, res) =>
   try {
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, req.params.project_id],
+      [req.tenantId, req.params.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const { rows } = await query(
@@ -48,7 +48,7 @@ router.put('/:project_id', requireDesignPerm('design:write'), async (req, res) =
   try {
     const ownerCheck = await query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, req.params.project_id],
+      [req.tenantId, req.params.project_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const body = req.body || {};

@@ -9,7 +9,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeAnnexA } = require('./adapters');
+const { shapeAnnexA } = require('./adapters');
 
 const router = express.Router();
 
@@ -17,11 +17,11 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT * FROM design_annex_a WHERE tenant_id = $1`,
-      [DEFAULT_TENANT_ID],
+      [req.tenantId],
     );
     if (rows.length === 0) {
       return res.json({
-        tenant_id: DEFAULT_TENANT_ID,
+        tenant_id: req.tenantId,
         annex_a: {},
         updated_at: null,
         updated_by_user_id: null,
@@ -47,7 +47,7 @@ router.put('/', requireDesignPerm('design:settings'), async (req, res) => {
            updated_at = NOW(),
            updated_by_user_id = EXCLUDED.updated_by_user_id
        RETURNING *`,
-      [DEFAULT_TENANT_ID, body.annex_a, req.identity.userId || null],
+      [req.tenantId, body.annex_a, req.identity.userId || null],
     );
     res.json(shapeAnnexA(rows[0]));
   } catch (e) {

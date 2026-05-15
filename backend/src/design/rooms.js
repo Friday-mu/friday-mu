@@ -6,7 +6,7 @@
 const express = require('express');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
-const { DEFAULT_TENANT_ID, shapeRoom } = require('./adapters');
+const { shapeRoom } = require('./adapters');
 
 const router = express.Router();
 
@@ -28,7 +28,7 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     }
     const ownerCheck = await query(
       `SELECT 1 FROM design_properties WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, propertyId],
+      [req.tenantId, propertyId],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
     const { rows } = await query(
@@ -49,7 +49,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     if (!body.name) return res.status(400).json({ error: 'name is required' });
     const ownerCheck = await query(
       `SELECT 1 FROM design_properties WHERE tenant_id = $1 AND id = $2`,
-      [DEFAULT_TENANT_ID, body.property_id],
+      [req.tenantId, body.property_id],
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Property not found' });
     const { rows } = await query(
@@ -68,7 +68,7 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
   try {
     const body = req.body || {};
     const sets = [];
-    const params = [DEFAULT_TENANT_ID, req.params.id];
+    const params = [req.tenantId, req.params.id];
     let idx = 3;
     for (const field of WRITABLE_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -107,7 +107,7 @@ router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
       `DELETE FROM design_rooms r USING design_properties p
        WHERE p.id = r.property_id AND p.tenant_id = $1 AND r.id = $2
        RETURNING r.id`,
-      [DEFAULT_TENANT_ID, req.params.id],
+      [req.tenantId, req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Room not found' });
     res.status(204).end();
