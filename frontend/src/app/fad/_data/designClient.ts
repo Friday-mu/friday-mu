@@ -1362,6 +1362,81 @@ export const generateFurnishedFloorPlan = (body: GenerateFurnishedFloorPlanPaylo
   }) as Promise<FurnishedFloorPlanGenerationResult>;
 
 // ════════════════════════════════════════════════════════════════════
+// FLOOR PLANS (vector model) — sprint W2 backend
+// ════════════════════════════════════════════════════════════════════
+// CRUD wrappers around the W2 backend routes that persist the vector
+// FloorPlanModel produced by the tracing editor / Kimi op-applier. The
+// canonical shape lives in floorPlanTypes.ts — we re-export the API
+// types here so callers can import everything from this client.
+
+export type {
+  FloorPlanModel,
+  ApiFloorPlanVersion,
+  ApiFloorPlanChat,
+  FloorPlanOperation,
+} from './floorPlanTypes';
+
+import type { FloorPlanModel, ApiFloorPlanVersion, ApiFloorPlanChat } from './floorPlanTypes';
+
+export const createFloorPlan = (payload: {
+  project_id: string;
+  source_image_url?: string;
+  model: FloorPlanModel;
+  label?: string;
+}) =>
+  apiFetch('/api/design/floor-plans', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<ApiFloorPlanVersion>;
+
+export const listFloorPlans = async (projectId: string) =>
+  unwrap(
+    await apiFetch(`/api/design/floor-plans?project_id=${encodeURIComponent(projectId)}`) as { results: ApiFloorPlanVersion[] },
+  );
+
+export const updateFloorPlan = (id: string, patch: { model?: FloorPlanModel; label?: string }) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }) as Promise<ApiFloorPlanVersion>;
+
+export const finalizeFloorPlan = (id: string) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(id)}/finalize`, { method: 'POST' }) as Promise<ApiFloorPlanVersion>;
+
+export const revertFloorPlan = (id: string) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(id)}/revert`, { method: 'POST' }) as Promise<ApiFloorPlanVersion>;
+
+// ── Chat (Phase 2D) ─────────────────────────────────────────────────
+// Conversational edits. Each POST sends a user message and gets back
+// the persisted chat turn + (on success) the new floor-plan version
+// produced by Kimi's operations. listFloorPlanChats returns the whole
+// transcript for a project, oldest-first.
+
+export const sendFloorPlanChat = (payload: { project_id: string; user_message: string }) =>
+  apiFetch('/api/design/floor-plan-chats', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<{ chat: ApiFloorPlanChat; version: ApiFloorPlanVersion | null }>;
+
+export const listFloorPlanChats = async (projectId: string) =>
+  unwrap(
+    await apiFetch(`/api/design/floor-plan-chats?project_id=${encodeURIComponent(projectId)}`) as { results: ApiFloorPlanChat[] },
+  );
+
+// loadFloorPlanRender hits the lazy-render endpoint and returns the
+// stylized raster URL for a version. The backend caches the result
+// against the model hash so subsequent calls are instant. When the
+// Gemini key is missing the renderer degrades to an SVG-as-data-URL
+// preview with stub: true so the UI can flag it.
+export const loadFloorPlanRender = (versionId: string) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(versionId)}/render`, { method: 'GET' }) as Promise<{
+    url: string;
+    sha256?: string;
+    cached?: boolean;
+    stub?: boolean;
+  }>;
+
+// ════════════════════════════════════════════════════════════════════
 // HOOKS — simple list/detail wrappers around the fetchers above
 // ════════════════════════════════════════════════════════════════════
 

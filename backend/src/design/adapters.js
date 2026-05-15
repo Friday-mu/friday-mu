@@ -662,6 +662,41 @@ function shapeAsset(row) {
   };
 }
 
+// Migration 032 — Conversational Floor-Plan Editor. Mirrors
+// ApiFloorPlanVersion in frontend/src/app/fad/_data/floorPlanTypes.ts.
+// `model` is passed through unchanged as a JSONB blob.
+function shapeFloorPlanVersion(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    version: row.version != null ? Number(row.version) : null,
+    source_image_url: row.source_image_url ?? null,
+    model: row.model || {},
+    rendered_image_url: row.rendered_image_url ?? null,
+    label: row.label ?? null,
+    is_final: row.is_final === true,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+// Mirrors ApiFloorPlanChat. `operations` is the JSONB list Kimi
+// returned for the turn — useful for debugging surprising outcomes.
+function shapeFloorPlanChat(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    resulting_version_id: row.resulting_version_id ?? null,
+    user_message: row.user_message,
+    friday_reply: row.friday_reply ?? null,
+    operations: row.operations || [],
+    status: row.status,
+    created_at: row.created_at,
+  };
+}
+
 module.exports = {
   DEFAULT_TENANT_ID,
   loadTenantConfig,
@@ -695,4 +730,6 @@ module.exports = {
   shapePortalLog,
   shapeAnnexA,
   shapeAsset,
+  shapeFloorPlanVersion,
+  shapeFloorPlanChat,
 };

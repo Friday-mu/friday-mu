@@ -61,6 +61,8 @@ router.use('/agreements', require('./agreements'));
 router.use('/agreements', require('./agreement_evidence'));
 router.use('/payment_gates', require('./payment_gates'));
 router.use('/moodboards', require('./moodboards'));
+router.use('/floor-plans', require('./floor_plans'));
+router.use('/floor-plan-chats', require('./floor_plan_chats'));
 router.use('/packs', require('./packs'));
 router.use('/selections', require('./selections'));
 router.use('/change_orders', require('./change_orders'));
