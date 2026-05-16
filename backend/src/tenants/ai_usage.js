@@ -53,6 +53,11 @@ const RATE_TABLE = {
   // a clean 5¢ per generation to avoid token-parsing the inlineData
   // response shape.
   'gemini-2.5-flash-image-preview':{ kind: 'image', flatUsdPerImage: 0.05 },
+  // Same model, alias used when prod env sets NANOBANANA_MODEL without
+  // the "-preview" suffix (Google sometimes drops the suffix in
+  // response.modelVersion). Keeping both keys avoids a "unknown model"
+  // warning + zero-cost capture.
+  'gemini-2.5-flash-image':        { kind: 'image', flatUsdPerImage: 0.05 },
   'imagen-3.0-generate-002':       { kind: 'image', flatUsdPerImage: 0.04 },
   // Moonshot / Kimi text models — pricing per Moonshot pricing page.
   'moonshot-v1-8k':                { kind: 'text',  inputUsdPerM:  1.40,  outputUsdPerM: 1.40 },

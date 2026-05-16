@@ -166,22 +166,37 @@ function _formatHistory(history) {
   return lines.join('\n');
 }
 
-// Render the current model as an SVG, then base64-encode it as an
-// image/svg+xml data part for Gemini's multi-modal input. Returns null
-// if rendering fails — we'd rather degrade to text-only than fail the
-// whole turn.
+// Render the current model as an SVG, rasterise to PNG, then base64-
+// encode for Gemini's multi-modal input. Returns null if rendering
+// fails — we'd rather degrade to text-only than fail the whole turn.
+//
+// Gemini 2.5 Flash rejects image/svg+xml inlineData ("Unsupported MIME
+// type") — same root cause as the renderer fix in ae852cd. Rasterise
+// via @resvg/resvg-js (pure-Node, already a dep) at 2× canvas px so
+// furniture labels survive Gemini's downsampling.
 function _renderSvgPart(model) {
+  let svg;
   try {
-    const svg = renderModelToSvg(model);
-    const b64 = Buffer.from(svg, 'utf-8').toString('base64');
-    return {
-      inlineData: {
-        mimeType: 'image/svg+xml',
-        data: b64,
-      },
-    };
+    svg = renderModelToSvg(model);
   } catch (e) {
     console.warn('[floor_plan_ai] SVG render failed (degrading to text-only):', e.message);
+    return null;
+  }
+  try {
+    const { Resvg } = require('@resvg/resvg-js');
+    const resvg = new Resvg(svg, {
+      fitTo: { mode: 'zoom', value: 2 },
+      background: 'white',
+    });
+    const pngBase64 = resvg.render().asPng().toString('base64');
+    return {
+      inlineData: {
+        mimeType: 'image/png',
+        data: pngBase64,
+      },
+    };
+  } catch (rasteriseErr) {
+    console.warn('[floor_plan_ai] SVG → PNG rasterisation failed (degrading to text-only):', rasteriseErr.message);
     return null;
   }
 }
