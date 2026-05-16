@@ -243,6 +243,17 @@ export default function SignupPage() {
           Already have an account?{' '}
           <a href="/" style={{ color: palette.brandAccent, textDecoration: 'none' }}>Sign in</a>.
         </p>
+        <p style={{
+          fontSize: 12,
+          color: palette.textTertiary,
+          textAlign: 'center',
+          marginTop: 8,
+          marginBottom: 0,
+        }}>
+          <a href="/reset-password" style={{ color: palette.brandAccent, textDecoration: 'none' }}>
+            Forgot password?
+          </a>
+        </p>
       </div>
     </div>
   );

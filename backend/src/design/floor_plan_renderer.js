@@ -490,7 +490,7 @@ async function renderModelToStylizedRaster(model, styleNotes, opts = {}) {
          (sha256, tenant_id, mime_type, byte_size, storage_url, source,
           generator_prompt, prompt_context, created_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (sha256) DO NOTHING`,
+       ON CONFLICT (tenant_id, sha256) DO NOTHING`,
       [
         result.sha256,
         tenantId,
@@ -515,7 +515,7 @@ async function renderModelToStylizedRaster(model, styleNotes, opts = {}) {
              (sha256, tenant_id, mime_type, byte_size, storage_url, source,
               generator_prompt, created_by_user_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (sha256) DO NOTHING`,
+           ON CONFLICT (tenant_id, sha256) DO NOTHING`,
           [
             result.sha256,
             tenantId,

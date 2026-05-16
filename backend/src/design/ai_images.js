@@ -196,14 +196,14 @@ router.post('/generate', requireDesignPerm('design:write'), async (req, res) => 
 
     const storedPrompt = encodeKindIntoPrompt(kind, result.generatorPrompt);
 
-    // ON CONFLICT (sha256) DO NOTHING — identical re-generates (same
+    // ON CONFLICT (tenant_id, sha256) DO NOTHING — identical re-generates (same
     // prompt → same bytes for deterministic models, or cache hits) dedupe
     // naturally on the PK. We then SELECT to return the canonical row.
     const insert = await query(
       `INSERT INTO design_assets
          (sha256, tenant_id, mime_type, byte_size, storage_url, source, generator_prompt, created_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (sha256) DO NOTHING
+       ON CONFLICT (tenant_id, sha256) DO NOTHING
        RETURNING *`,
       [
         result.sha256,
@@ -531,7 +531,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
            (sha256, tenant_id, mime_type, byte_size, storage_url, source,
             generator_prompt, prompt_context, created_by_user_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (sha256) DO NOTHING
+         ON CONFLICT (tenant_id, sha256) DO NOTHING
          RETURNING *`,
         [
           result.sha256,
@@ -563,7 +563,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
              (sha256, tenant_id, mime_type, byte_size, storage_url, source,
               generator_prompt, created_by_user_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (sha256) DO NOTHING
+           ON CONFLICT (tenant_id, sha256) DO NOTHING
            RETURNING *`,
           [
             result.sha256,
@@ -716,7 +716,7 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
       `INSERT INTO design_assets
          (sha256, tenant_id, mime_type, byte_size, storage_url, source, generator_prompt, created_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (sha256) DO NOTHING
+       ON CONFLICT (tenant_id, sha256) DO NOTHING
        RETURNING *`,
       [
         result.sha256,
@@ -1138,7 +1138,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
            (sha256, tenant_id, mime_type, byte_size, storage_url, source,
             generator_prompt, prompt_context, created_by_user_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (sha256) DO NOTHING
+         ON CONFLICT (tenant_id, sha256) DO NOTHING
          RETURNING *`,
         [
           result.sha256,
@@ -1169,7 +1169,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
              (sha256, tenant_id, mime_type, byte_size, storage_url, source,
               generator_prompt, created_by_user_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (sha256) DO NOTHING
+           ON CONFLICT (tenant_id, sha256) DO NOTHING
            RETURNING *`,
           [
             result.sha256,

@@ -49,7 +49,14 @@ const WRITABLE_FIELDS = [
   // Migration 027: CIA Mauritius compliance fields. Status transitions
   // are recorded in cia_notes for audit (frontend appends new lines on
   // each save).
+  // DEPRECATED in favour of regional_compliance JSONB (migration 043).
+  // Kept writable for backward compatibility; the CiaCompliancePanel
+  // still patches these directly. Newer regional-compliance UIs should
+  // use regional_compliance.
   'cia_registration_status', 'cia_registration_ref', 'cia_notes',
+  // Migration 043: free-form per-region compliance JSONB. MU tenants
+  // store cia_* keys here; other regions store their own.
+  'regional_compliance',
 ];
 
 // Mirrors the 17-stage workflow + 6 stage statuses from the frontend
@@ -142,7 +149,7 @@ router.get('/:id/floor-plan', requireDesignPerm('design:read'), async (req, res)
       `SELECT a.*
          FROM design_projects p
          JOIN design_assets a
-           ON a.sha256 = p.floor_plan_image_id
+           ON a.sha256 = p.floor_plan_image_id AND a.tenant_id = p.tenant_id
         WHERE p.tenant_id = $1 AND p.id = $2`,
       [req.tenantId, req.params.id],
     );
@@ -167,7 +174,7 @@ router.get('/:id/floor-plan-furnished', requireDesignPerm('design:read'), async 
       `SELECT a.*
          FROM design_projects p
          JOIN design_assets a
-           ON a.sha256 = p.floor_plan_furnished_image_id
+           ON a.sha256 = p.floor_plan_furnished_image_id AND a.tenant_id = p.tenant_id
         WHERE p.tenant_id = $1 AND p.id = $2`,
       [req.tenantId, req.params.id],
     );

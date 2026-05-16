@@ -137,9 +137,16 @@ function shapeProject(row) {
     engagement_scope: row.engagement_scope ?? 'design_and_execution',
     // Migration 027 — CIA Mauritius compliance state. Default 'unknown'
     // for rows materialised before the column existed.
+    // DEPRECATED (migration 043): readers should pull from
+    // regional_compliance JSONB; these top-level fields are kept for
+    // backward compat and will be removed in a later migration.
     cia_registration_status: row.cia_registration_status ?? 'unknown',
     cia_registration_ref: row.cia_registration_ref ?? null,
     cia_notes: row.cia_notes ?? null,
+    // Migration 043 — region-specific compliance scaffolding. MU
+    // tenants populate the cia_* keys; future regions add their own
+    // (UAE RERA, FR Loi ALUR, etc.). Default '{}' for non-MU projects.
+    regional_compliance: row.regional_compliance ?? {},
     lifecycle_status: row.lifecycle_status,
     paused_at: row.paused_at,
     paused_reason: row.paused_reason,

@@ -19,9 +19,9 @@ interface Props {
 // Mirrors LEAD_SOURCES + LEAD_SOURCE_LABEL in DesignModule.tsx. Kept
 // local so the drawer doesn't need a circular import.
 const SOURCE_OPTIONS: { id: LeadSource; label: string }[] = [
-  { id: 'friday_outreach',         label: 'Friday outreach' },
+  { id: 'outreach',                label: 'Cold outreach' },
   { id: 'owner_referral',          label: 'Owner referral' },
-  { id: 'existing_owner',          label: 'Existing Friday owner' },
+  { id: 'existing_owner',          label: 'Existing owner' },
   { id: 'repeat_customer',         label: 'Repeat customer' },
   { id: 'industry_referral',       label: 'Industry referral (agent / notary / contractor)' },
   { id: 'press_media',             label: 'Press / media' },

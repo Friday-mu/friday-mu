@@ -45,6 +45,7 @@ import { OwnerPortalPreview } from './design/OwnerPortalPreview';
 import { ShareWithOwnerDrawer } from './design/ShareWithOwnerDrawer';
 import { BlockersPanel } from './design/BlockersPanel';
 import { CiaCompliancePanel, requiresCiaRegistration } from './design/CiaCompliancePanel';
+import { useTenantCountry } from '../../_data/useTenantCountry';
 import { NextActionsPanel } from './design/NextActionsPanel';
 import {
   NeedsAttentionQueue,
@@ -798,9 +799,9 @@ function SignalChip({ label, tone, title }: { label: string; tone: 'info' | 'war
 // ─────────────────────────── Leads / Vendors / Settings (Phase 1 stubs) ───────────────────────────
 
 const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
-  friday_outreach: 'Friday outreach',
+  outreach: 'Cold outreach',
   owner_referral: 'Owner referral',
-  existing_owner: 'Existing Friday owner',
+  existing_owner: 'Existing owner',
   repeat_customer: 'Repeat customer',
   industry_referral: 'Industry referral',
   press_media: 'Press / media',
@@ -815,7 +816,7 @@ const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   other: 'Other',
 };
 const LEAD_SOURCES: LeadSource[] = [
-  'friday_outreach', 'owner_referral', 'existing_owner', 'repeat_customer',
+  'outreach', 'owner_referral', 'existing_owner', 'repeat_customer',
   'industry_referral', 'press_media', 'trade_show_event',
   'website', 'whatsapp', 'email_campaign',
   'social_media', 'social_media_influencer', 'social_media_ad',
@@ -3129,14 +3130,20 @@ function ProjectOverview({ project }: { project: DesignProject }) {
   const prop = designClient.properties.get(project.propertyId);
   const activity = designClient.activity.list(project.id);
   const docs = designClient.documents.list(project.id).filter((d) => d.status !== 'not_yet');
+  // Wave C2: CIA panel is Mauritius-specific. Other tenants don't see it
+  // even if a project's `cia_*` fields are populated (e.g., a project
+  // migrated from another tenant); we'll add region-specific panels as
+  // those compliance regimes come online.
+  const tenantCountry = useTenantCountry();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* W6 — CIA Mauritius compliance check. Renders at the top of
          the overview when registration is required AND not yet
          confirmed; collapses to a muted "not required" tile otherwise.
-         The team can update status / paste registration ref inline. */}
-      {(requiresCiaRegistration(project).required ||
+         The team can update status / paste registration ref inline.
+         Wave C2: gated on tenant.country === 'MU'. */}
+      {tenantCountry === 'MU' && (requiresCiaRegistration(project).required ||
         ((project as DesignProject & { ciaRegistrationStatus?: string }).ciaRegistrationStatus &&
          (project as DesignProject & { ciaRegistrationStatus?: string }).ciaRegistrationStatus !== 'unknown')) && (
         <CiaCompliancePanel project={project} />

@@ -22,6 +22,7 @@ const TABS = [
   { id: 'brand', label: 'Brand' },
   { id: 'vendors', label: 'Vendor defaults' },
   { id: 'billing', label: 'Payment instructions' },
+  { id: 'users', label: 'Users' },
 ];
 
 export function TenantSettingsModule({ subPage, onChangeSubPage }: Props) {
@@ -40,6 +41,7 @@ export function TenantSettingsModule({ subPage, onChangeSubPage }: Props) {
         {active === 'brand' && <BrandTab />}
         {active === 'vendors' && <VendorsTab />}
         {active === 'billing' && <PaymentInstructionsTab />}
+        {active === 'users' && <UsersTab />}
       </div>
     </div>
   );
@@ -536,6 +538,330 @@ function PaymentInstructionsTab() {
       )}
     </Card>
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Users tab
+// ─────────────────────────────────────────────────────────────
+
+// Mirrors the JSON shapes returned by backend/src/tenants/users.js.
+interface TenantUser {
+  id: string;
+  email: string;
+  role: string; // GMS role: 'admin' / 'manager' / 'staff' / etc.
+  display_name: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface TenantInvitation {
+  id: string;
+  email: string;
+  role: 'admin' | 'agent';
+  status: string;
+  expires_at: string;
+  created_at: string;
+}
+
+// GMS-role → display chip. 'admin' is the privileged tier; everything
+// else maps to "Agent" in the UI. Keeps the chip stable while we
+// migrate roles around in the backend.
+function _roleLabel(gmsRole: string): { label: string; tone: 'admin' | 'agent' } {
+  return gmsRole === 'admin'
+    ? { label: 'Admin', tone: 'admin' }
+    : { label: 'Agent', tone: 'agent' };
+}
+
+function UsersTab() {
+  const role = useCurrentTenantRole();
+  const isAdmin = role === 'admin';
+
+  const [users, setUsers] = useState<TenantUser[] | null>(null);
+  const [invites, setInvites] = useState<TenantInvitation[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Invite form state
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'agent'>('agent');
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSent, setInviteSent] = useState<string | null>(null);
+
+  // Per-row in-flight state — keyed by id, so we can disable the right
+  // button without blocking the rest of the table.
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+
+  const refresh = async () => {
+    setError(null);
+    try {
+      const [u, i] = await Promise.all([
+        apiFetch('/api/tenants/me/users') as Promise<TenantUser[]>,
+        apiFetch('/api/tenants/me/invitations') as Promise<TenantInvitation[]>,
+      ]);
+      setUsers(u);
+      setInvites(i);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  const submitInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError(null);
+    setInviteSent(null);
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    try {
+      await apiFetch('/api/tenants/me/invitations', {
+        method: 'POST',
+        body: JSON.stringify({ email: inviteEmail.trim().toLowerCase(), role: inviteRole }),
+      });
+      setInviteSent(`Invitation sent to ${inviteEmail.trim().toLowerCase()}.`);
+      setInviteEmail('');
+      setInviteRole('agent');
+      await refresh();
+      setTimeout(() => setInviteSent(null), 3000);
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : 'Failed to send invitation');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const revokeInvite = async (id: string) => {
+    setBusy((b) => ({ ...b, [id]: true }));
+    try {
+      await apiFetch(`/api/tenants/me/invitations/${id}`, { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+
+  const changeRole = async (userId: string, nextRole: 'admin' | 'agent') => {
+    setBusy((b) => ({ ...b, [userId]: true }));
+    try {
+      await apiFetch(`/api/tenants/me/users/${userId}/role`, {
+        method: 'POST',
+        body: JSON.stringify({ role: nextRole }),
+      });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[userId]; return n; });
+    }
+  };
+
+  const deactivate = async (userId: string) => {
+    setBusy((b) => ({ ...b, [userId]: true }));
+    try {
+      await apiFetch(`/api/tenants/me/users/${userId}/deactivate`, { method: 'POST' });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[userId]; return n; });
+    }
+  };
+
+  if (loading) return <Loading />;
+  if (!isAdmin) {
+    return (
+      <Card>
+        <SectionHeader title="Users" description="Manage who has access to this workspace." />
+        <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+          You need admin role to view or manage users.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card>
+        <SectionHeader title="Invite a user" description="Send an email invitation. The recipient sets their own password to join your workspace." />
+        <form onSubmit={submitInvite} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, alignItems: 'end' }}>
+          <Field label="Email">
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="teammate@studio.com"
+              required
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="Role">
+            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as 'admin' | 'agent')} style={inputStyle}>
+              <option value="agent">Agent</option>
+              <option value="admin">Admin</option>
+            </select>
+          </Field>
+          <button type="submit" disabled={inviting || !inviteEmail.trim()} style={{ ...primaryBtn(), height: 32 }}>
+            {inviting ? 'Sending…' : 'Send invitation'}
+          </button>
+        </form>
+        {inviteError && <ErrorMsg message={inviteError} />}
+        {inviteSent && (
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--color-text-tertiary)' }}>{inviteSent}</div>
+        )}
+      </Card>
+
+      <div style={{ height: 16 }} />
+
+      <Card>
+        <SectionHeader title="Pending invitations" description="Invitations awaiting acceptance. Each link expires 7 days after it's sent." />
+        {!invites || invites.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>No pending invitations.</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Email</th>
+                <th style={thStyle}>Role</th>
+                <th style={thStyle}>Sent</th>
+                <th style={thStyle}>Expires</th>
+                <th style={thStyle}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map((inv) => (
+                <tr key={inv.id}>
+                  <td style={tdStyle}>{inv.email}</td>
+                  <td style={tdStyle}>
+                    <span className="chip info" style={{ fontSize: 11 }}>{inv.role === 'admin' ? 'Admin' : 'Agent'}</span>
+                  </td>
+                  <td style={tdStyle}>{formatDate(inv.created_at)}</td>
+                  <td style={tdStyle}>{formatDate(inv.expires_at)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      onClick={() => revokeInvite(inv.id)}
+                      disabled={!!busy[inv.id]}
+                      style={ghostBtn()}
+                    >
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <div style={{ height: 16 }} />
+
+      <Card>
+        <SectionHeader title="Team members" description="Everyone with access to your workspace." />
+        {error && <ErrorMsg message={error} />}
+        {!users || users.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>No users yet.</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Name</th>
+                <th style={thStyle}>Email</th>
+                <th style={thStyle}>Role</th>
+                <th style={thStyle}>Status</th>
+                <th style={thStyle}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const r = _roleLabel(u.role);
+                const isUserAdmin = u.role === 'admin';
+                return (
+                  <tr key={u.id} style={{ opacity: u.is_active ? 1 : 0.55 }}>
+                    <td style={tdStyle}>{u.display_name || '—'}</td>
+                    <td style={tdStyle}>{u.email}</td>
+                    <td style={tdStyle}>
+                      <span className="chip info" style={{ fontSize: 11 }}>{r.label}</span>
+                    </td>
+                    <td style={tdStyle}>
+                      <span className="chip" style={{ fontSize: 11, opacity: 0.8 }}>
+                        {u.is_active ? 'Active' : 'Deactivated'}
+                      </span>
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => changeRole(u.id, isUserAdmin ? 'agent' : 'admin')}
+                        disabled={!!busy[u.id] || !u.is_active}
+                        style={ghostBtn()}
+                        title={isUserAdmin ? 'Demote to Agent' : 'Promote to Admin'}
+                      >
+                        {isUserAdmin ? 'Demote' : 'Promote'}
+                      </button>
+                      {u.is_active && (
+                        <button
+                          type="button"
+                          onClick={() => deactivate(u.id)}
+                          disabled={!!busy[u.id]}
+                          style={{ ...ghostBtn(), marginLeft: 6 }}
+                        >
+                          Deactivate
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </>
+  );
+}
+
+const tableStyle: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: 13,
+};
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '6px 8px',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  color: 'var(--color-text-tertiary)',
+  letterSpacing: 0.5,
+  borderBottom: '0.5px solid var(--color-border-secondary)',
+  fontWeight: 500,
+};
+const tdStyle: React.CSSProperties = {
+  padding: '8px',
+  borderBottom: '0.5px solid var(--color-border-secondary)',
+  verticalAlign: 'middle',
+};
+
+function ghostBtn(): React.CSSProperties {
+  return {
+    padding: '4px 10px',
+    borderRadius: 4,
+    background: 'transparent',
+    color: 'var(--color-text-primary)',
+    fontSize: 12,
+    border: '0.5px solid var(--color-border-secondary)',
+    cursor: 'pointer',
+  };
 }
 
 // ─────────────────────────────────────────────────────────────

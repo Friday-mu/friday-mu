@@ -371,6 +371,41 @@ function tplPasswordReset({ user, resetUrl }) {
   return { subject, html, text };
 }
 
+// tplInvitation — sent when a tenant admin invites a teammate. The
+// acceptUrl carries the single-use token; the recipient lands on a
+// public page that lets them set a password and join the workspace.
+function tplInvitation({ tenant, inviter, role, acceptUrl }) {
+  const company = tenant?.name || 'a FridayOS Design workspace';
+  const inviterName = inviter?.display_name || inviter?.email || 'A teammate';
+  const roleLabel = role === 'admin' ? 'an admin' : 'a teammate';
+  const subject = `You're invited to join ${company} on FridayOS Design.`;
+
+  const html = _wrap(`
+    <h1 style="font-size: 18px; margin: 0 0 16px; font-weight: 500;">You're invited</h1>
+    <p>${_esc(inviterName)} has invited you to join <strong>${_esc(company)}</strong> on FridayOS Design as ${_esc(roleLabel)}.</p>
+    <p>FridayOS Design is the workspace your studio uses for moodboards, floor plans, budgets, and project handoffs.</p>
+    <p style="margin: 20px 0;"><a href="${_esc(acceptUrl)}" style="display: inline-block; background: #2B4A93; color: white; padding: 10px 18px; border-radius: 6px; text-decoration: none;">Accept invitation</a></p>
+    <p style="font-size: 12px; color: #5b6776;">Or copy this link into your browser:<br><code style="word-break: break-all;">${_esc(acceptUrl)}</code></p>
+    <p style="margin-top: 20px; font-size: 12px; color: #9b9b9b;">This invitation expires in 7 days. If you weren't expecting it, you can safely ignore this email.</p>
+    <p style="margin-top: 24px;">— The Friday team</p>
+  `);
+
+  const text = [
+    `You're invited`,
+    '',
+    `${inviterName} has invited you to join ${company} on FridayOS Design as ${roleLabel}.`,
+    '',
+    `Accept the invitation:`,
+    acceptUrl,
+    '',
+    `This invitation expires in 7 days. If you weren't expecting it, you can safely ignore this email.`,
+    '',
+    '— The Friday team',
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
 module.exports = {
   sendEmail,
   tplInvoiceIssued,
@@ -378,4 +413,5 @@ module.exports = {
   tplWelcome,
   tplTrialEndingSoon,
   tplPasswordReset,
+  tplInvitation,
 };

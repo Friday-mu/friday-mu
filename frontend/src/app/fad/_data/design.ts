@@ -107,9 +107,9 @@ export type DesignTier = 1 | 2 | 3;
 export type ProjectClassification = 'renovation' | 'furnishing' | 'mixed';
 
 export type LeadSource =
-  | 'friday_outreach'
+  | 'outreach'               // Cold outreach (we initiated contact)
   | 'owner_referral'
-  | 'existing_owner'         // Existing Friday PM owner upselling into design
+  | 'existing_owner'         // Existing PM owner upselling into design
   | 'repeat_customer'        // Previous design project, commissioning another
   | 'industry_referral'      // Agent / notary / contractor / architect referral
   | 'press_media'            // MBC feature, magazine article, news coverage
@@ -124,9 +124,9 @@ export type LeadSource =
   | 'other';
 
 export type EntryPath =
-  | 'friday_pitches'
+  | 'direct_pitch'           // We pitched the owner
   | 'owner_direct'
-  | 'existing_friday_owner'
+  | 'existing_owner'         // Existing PM client expanding to design
   | 'new_owner_no_str';
 
 export type ProjectGoal =
@@ -145,7 +145,7 @@ export type TargetOutcome =
   | 'improve_owner_usage';
 
 export type ProposalStatus = 'not_needed' | 'draft' | 'sent' | 'accepted' | 'declined';
-export type PMLink = 'managed_by_friday' | 'will_be_managed' | 'not_managed';
+export type PMLink = 'managed_by_company' | 'will_manage' | 'not_managed';
 
 /**
  * design-be-23: project-level engagement scope. Some Friday clients pay
@@ -189,10 +189,19 @@ export interface DesignProject {
    * project triggers Construction Industry Authority registration
    * under the 2023 Act (any T1, T2-renovation, or EPC ≥ Rs 1M).
    * Static fixtures default to 'unknown'.
+   *
+   * DEPRECATED in favour of regionalCompliance (migration 043). Still
+   * exposed for backward compat; new code should read regionalCompliance.
    */
   ciaRegistrationStatus?: 'unknown' | 'not_required' | 'pending' | 'registered' | 'exempt';
   ciaRegistrationRef?: string | null;
   ciaNotes?: string | null;
+  /**
+   * Migration 043 — per-region compliance scaffolding. Frontend renders
+   * conditionally on `tenant.country`. MU tenants store cia_* keys here;
+   * future regions add their own (UAE RERA, FR Loi ALUR, etc.).
+   */
+  regionalCompliance?: Record<string, unknown>;
   /**
    * design-be-23: derived total fee for the owner-facing summary.
    *   design_and_execution => designFeeMinor + procurementFeeMinor
@@ -1147,7 +1156,7 @@ export const PROJECTS: DesignProject[] = [
     outcomes: ['list_property', 'prepare_sale'],
     budgetExpectationMinor: 1_800_000_00,
     urgency: '2026-07-02',
-    pmLink: 'will_be_managed',
+    pmLink: 'will_manage',
     designLeadUserId: 'u-mathias',
     currentStage: 'site-visit',
     stageStatus: 'in-progress',
@@ -1183,7 +1192,7 @@ export const PROJECTS: DesignProject[] = [
     outcomes: ['raise_adr', 'improve_reviews'],
     budgetExpectationMinor: 3_000_000_00,
     urgency: '2026-09-30',
-    pmLink: 'managed_by_friday',
+    pmLink: 'managed_by_company',
     designLeadUserId: 'u-jaabir-ext',
     currentStage: 'execution',
     stageStatus: 'in-progress',
@@ -1219,7 +1228,7 @@ export const PROJECTS: DesignProject[] = [
     outcomes: ['raise_adr'],
     budgetExpectationMinor: 1_200_000_00,
     urgency: '2026-08-01',
-    pmLink: 'will_be_managed',
+    pmLink: 'will_manage',
     designLeadUserId: null,
     currentStage: 'lead',
     stageStatus: 'in-progress',
@@ -1255,7 +1264,7 @@ export const PROJECTS: DesignProject[] = [
     outcomes: ['list_property'],
     budgetExpectationMinor: 420_000_00,
     urgency: null,
-    pmLink: 'managed_by_friday',
+    pmLink: 'managed_by_company',
     designLeadUserId: 'u-mathias',
     currentStage: 'reconciliation',
     stageStatus: 'waiting-on-owner',
@@ -1291,7 +1300,7 @@ export const PROJECTS: DesignProject[] = [
     outcomes: ['list_property'],
     budgetExpectationMinor: 850_000_00,
     urgency: null,
-    pmLink: 'managed_by_friday',
+    pmLink: 'managed_by_company',
     designLeadUserId: 'u-mathias',
     currentStage: 'reconciliation',
     stageStatus: 'in-progress',
@@ -1327,7 +1336,7 @@ export const PROJECTS: DesignProject[] = [
     outcomes: ['list_property'],
     budgetExpectationMinor: 720_000_00,
     urgency: null,
-    pmLink: 'managed_by_friday',
+    pmLink: 'managed_by_company',
     designLeadUserId: 'u-mathias',
     currentStage: 'reconciliation',
     stageStatus: 'waiting-on-owner',
@@ -1499,7 +1508,7 @@ export const LEADS: DesignLead[] = [
     id: 'l-bel-air',
     entityId: DESIGN_ENTITY_ID,
     source: 'owner_referral',
-    entryPath: 'friday_pitches',
+    entryPath: 'direct_pitch',
     counterpartyName: 'Roshan Bel-Air',
     counterpartyPhone: '+230 5444 1122',
     counterpartyEmail: null,
@@ -1526,8 +1535,8 @@ export const LEADS: DesignLead[] = [
   {
     id: 'l-grand-baie',
     entityId: DESIGN_ENTITY_ID,
-    source: 'friday_outreach',
-    entryPath: 'friday_pitches',
+    source: 'outreach',
+    entryPath: 'direct_pitch',
     counterpartyName: 'Marc Aboubakar',
     counterpartyPhone: null,
     counterpartyEmail: 'marc.a@example.com',
@@ -1569,7 +1578,7 @@ export const LEADS: DesignLead[] = [
     id: 'l-mont-choisy',
     entityId: DESIGN_ENTITY_ID,
     source: 'whatsapp',
-    entryPath: 'friday_pitches',
+    entryPath: 'direct_pitch',
     counterpartyName: 'Hassen Lalmamod',
     counterpartyPhone: '+230 5345 1234',
     counterpartyEmail: null,
@@ -1583,7 +1592,7 @@ export const LEADS: DesignLead[] = [
     id: 'l-trou-aux-biches',
     entityId: DESIGN_ENTITY_ID,
     source: 'existing_owner',
-    entryPath: 'existing_friday_owner',
+    entryPath: 'existing_owner',
     counterpartyName: 'Davisen Nursoo',
     counterpartyPhone: '+230 5800 4422',
     counterpartyEmail: 'davisen.nursoo@example.com',
@@ -1596,7 +1605,7 @@ export const LEADS: DesignLead[] = [
   {
     id: 'l-souillac',
     entityId: DESIGN_ENTITY_ID,
-    source: 'friday_outreach',
+    source: 'outreach',
     entryPath: 'new_owner_no_str',
     counterpartyName: 'Jean-Luc Tirvengadum',
     counterpartyPhone: '+230 5456 7890',
@@ -1611,7 +1620,7 @@ export const LEADS: DesignLead[] = [
     id: 'l-blue-bay',
     entityId: DESIGN_ENTITY_ID,
     source: 'owner_referral',
-    entryPath: 'friday_pitches',
+    entryPath: 'direct_pitch',
     counterpartyName: 'Karuna Ramphul',
     counterpartyPhone: null,
     counterpartyEmail: 'karuna.r@example.com',

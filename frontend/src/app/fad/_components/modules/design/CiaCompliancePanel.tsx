@@ -75,25 +75,37 @@ function statusTone(s: CiaStatus, required: boolean): { bg: string; fg: string; 
   return { bg: 'var(--color-background-tertiary)', fg: 'var(--color-text-tertiary)', border: 'var(--color-border-tertiary)' };
 }
 
+// Wave C2: reads prefer regionalCompliance JSONB (migration 043) and
+// fall back to the legacy top-level cia_* fields for older API rows.
+function readCiaState(project: DesignProject): { status: CiaStatus; ref: string; notes: string } {
+  const rc = (project as DesignProject & { regionalCompliance?: Record<string, unknown> }).regionalCompliance ?? {};
+  const legacy = project as DesignProject & {
+    ciaRegistrationStatus?: CiaStatus;
+    ciaRegistrationRef?: string | null;
+    ciaNotes?: string | null;
+  };
+  return {
+    status: (rc.cia_registration_status as CiaStatus | undefined) ?? legacy.ciaRegistrationStatus ?? 'unknown',
+    ref:    ((rc.cia_registration_ref    as string | null | undefined) ?? legacy.ciaRegistrationRef ?? '') as string,
+    notes:  ((rc.cia_notes               as string | null | undefined) ?? legacy.ciaNotes ?? '') as string,
+  };
+}
+
 export function CiaCompliancePanel({ project }: Props) {
   const { required, reason } = requiresCiaRegistration(project);
-  const [status, setStatus] = useState<CiaStatus>(
-    (project as DesignProject & { ciaRegistrationStatus?: CiaStatus }).ciaRegistrationStatus ?? 'unknown',
-  );
-  const [refNum, setRefNum] = useState<string>(
-    (project as DesignProject & { ciaRegistrationRef?: string | null }).ciaRegistrationRef ?? '',
-  );
-  const [notes, setNotes] = useState<string>(
-    (project as DesignProject & { ciaNotes?: string | null }).ciaNotes ?? '',
-  );
+  const initial = readCiaState(project);
+  const [status, setStatus] = useState<CiaStatus>(initial.status);
+  const [refNum, setRefNum] = useState<string>(initial.ref);
+  const [notes, setNotes] = useState<string>(initial.notes);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
 
   // Sync from project changes if the parent re-fetches.
   useEffect(() => {
-    setStatus((project as DesignProject & { ciaRegistrationStatus?: CiaStatus }).ciaRegistrationStatus ?? 'unknown');
-    setRefNum((project as DesignProject & { ciaRegistrationRef?: string | null }).ciaRegistrationRef ?? '');
-    setNotes((project as DesignProject & { ciaNotes?: string | null }).ciaNotes ?? '');
+    const next = readCiaState(project);
+    setStatus(next.status);
+    setRefNum(next.ref);
+    setNotes(next.notes);
   }, [project.id]);
 
   const tone = statusTone(status, required);
@@ -113,10 +125,22 @@ export function CiaCompliancePanel({ project }: Props) {
       const stampedNotes = notes.trim()
         ? `${notes.trim()}\n[${new Date().toISOString().slice(0, 10)}] Status set to ${status}`
         : `[${new Date().toISOString().slice(0, 10)}] Status set to ${status}`;
+      // Wave C2: dual-write — populate both regional_compliance (the
+      // new home, migration 043) and the legacy top-level cia_* fields
+      // until the backfill rollout completes and we drop the legacy
+      // columns in a future migration.
+      const existingRc =
+        ((project as DesignProject & { regionalCompliance?: Record<string, unknown> }).regionalCompliance) ?? {};
       await updateProject(project.id, {
         cia_registration_status: status,
         cia_registration_ref: refNum.trim() || null,
         cia_notes: stampedNotes,
+        regional_compliance: {
+          ...existingRc,
+          cia_registration_status: status,
+          cia_registration_ref: refNum.trim() || null,
+          cia_notes: stampedNotes,
+        },
       });
       // Refetch + splice the project row into FIXTURE_PROJECTS so the
       // Design Overview "Needs attention" dashboard, project list

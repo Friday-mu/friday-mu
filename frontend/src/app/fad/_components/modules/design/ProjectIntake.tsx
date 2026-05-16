@@ -18,9 +18,9 @@ interface Props {
 }
 
 const SOURCE_OPTIONS: { id: LeadSource; label: string }[] = [
-  { id: 'friday_outreach',         label: 'Friday outreach' },
+  { id: 'outreach',                label: 'Cold outreach' },
   { id: 'owner_referral',          label: 'Owner referral' },
-  { id: 'existing_owner',          label: 'Existing Friday owner' },
+  { id: 'existing_owner',          label: 'Existing owner' },
   { id: 'repeat_customer',         label: 'Repeat customer' },
   { id: 'industry_referral',       label: 'Industry referral (agent / notary / contractor)' },
   { id: 'press_media',             label: 'Press / media' },
@@ -36,10 +36,10 @@ const SOURCE_OPTIONS: { id: LeadSource; label: string }[] = [
 ];
 
 const ENTRY_PATH_OPTIONS: { id: EntryPath; label: string; description: string }[] = [
-  { id: 'friday_pitches',         label: 'Friday pitches owner',         description: 'We initiate; owner is new prospect.' },
-  { id: 'owner_direct',           label: 'Owner came directly',           description: 'Owner reached out asking for our service.' },
-  { id: 'existing_friday_owner',  label: 'Existing Friday Retreats owner', description: 'PM client already; expanding to ID.' },
-  { id: 'new_owner_no_str',       label: 'New owner, not yet in STR',     description: 'No PM relationship yet.' },
+  { id: 'direct_pitch',     label: 'We pitched the owner',  description: 'We initiate; owner is new prospect.' },
+  { id: 'owner_direct',     label: 'Owner came directly',    description: 'Owner reached out asking for our service.' },
+  { id: 'existing_owner',   label: 'Existing owner',         description: 'PM client already; expanding to ID.' },
+  { id: 'new_owner_no_str', label: 'New owner, not yet in STR', description: 'No PM relationship yet.' },
 ];
 
 const GOAL_OPTIONS: { id: ProjectGoal; label: string }[] = [
@@ -60,9 +60,9 @@ const OUTCOME_OPTIONS: { id: TargetOutcome; label: string }[] = [
 ];
 
 const PM_OPTIONS: { id: PMLink; label: string }[] = [
-  { id: 'managed_by_friday', label: 'Already managed by Friday' },
-  { id: 'will_be_managed',   label: 'Will be managed by Friday' },
-  { id: 'not_managed',       label: 'Not managed by Friday' },
+  { id: 'managed_by_company', label: 'Already managed by us' },
+  { id: 'will_manage',        label: 'Will be managed by us' },
+  { id: 'not_managed',        label: 'Not managed by us' },
 ];
 
 const PROPOSAL_OPTIONS: { id: ProposalStatus; label: string }[] = [
@@ -75,8 +75,8 @@ const PROPOSAL_OPTIONS: { id: ProposalStatus; label: string }[] = [
 
 export function ProjectIntake({ onClose }: Props) {
   // Lead intake fields
-  const [source, setSource] = useState<LeadSource>('friday_outreach');
-  const [entryPath, setEntryPath] = useState<EntryPath>('friday_pitches');
+  const [source, setSource] = useState<LeadSource>('outreach');
+  const [entryPath, setEntryPath] = useState<EntryPath>('direct_pitch');
 
   // Counterparty typeahead — using existing fixture as the search source.
   const [counterpartyQuery, setCounterpartyQuery] = useState('');
@@ -118,7 +118,7 @@ export function ProjectIntake({ onClose }: Props) {
   const [outcomes, setOutcomes] = useState<TargetOutcome[]>([]);
   const [budgetExpectation, setBudgetExpectation] = useState('');
   const [urgency, setUrgency] = useState('');
-  const [pmLink, setPmLink] = useState<PMLink>('will_be_managed');
+  const [pmLink, setPmLink] = useState<PMLink>('will_manage');
   const [siteFloorRequested, setSiteFloorRequested] = useState(false);
   const [proposalStatus, setProposalStatus] = useState<ProposalStatus>('not_needed');
 

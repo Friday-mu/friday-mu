@@ -181,10 +181,21 @@ export interface ApiProject {
    * Migration 027 — CIA Mauritius compliance state. Projects above
    * Rs 1M EPC (and/or any T1 renovation) require Construction Industry
    * Authority registration before execution starts.
+   *
+   * DEPRECATED in favour of regional_compliance JSONB (migration 043).
+   * Still emitted by the API for backward compat; new readers should
+   * pull from regional_compliance.
    */
   cia_registration_status?: 'unknown' | 'not_required' | 'pending' | 'registered' | 'exempt';
   cia_registration_ref?: string | null;
   cia_notes?: string | null;
+  /**
+   * Migration 043 — region-specific compliance JSONB. MU tenants store
+   * `{ cia_registration_status, cia_registration_ref, cia_notes }`
+   * here. Future regions store their own keys (UAE RERA, FR Loi ALUR,
+   * etc.). Frontend rendering is gated on `tenant.country`.
+   */
+  regional_compliance?: Record<string, unknown>;
   lifecycle_status: 'active' | 'paused' | 'cancelled';
   paused_at?: string | null;
   paused_reason?: string | null;
@@ -1614,9 +1625,18 @@ export function apiProjectToFixture(api: ApiProject): FixtureProject {
     procurementFeeMinorOverride: api.procurement_fee_minor_override ?? null,
     engagementScope,
     // Migration 027 — CIA Mauritius compliance state from the API.
-    ciaRegistrationStatus: api.cia_registration_status ?? 'unknown',
-    ciaRegistrationRef: api.cia_registration_ref ?? null,
-    ciaNotes: api.cia_notes ?? null,
+    // Prefer regional_compliance (migration 043); fall back to the
+    // legacy top-level fields for older API rows / older backends.
+    ciaRegistrationStatus:
+      ((api.regional_compliance?.cia_registration_status as string | undefined) ?? api.cia_registration_status ?? 'unknown') as
+        'unknown' | 'not_required' | 'pending' | 'registered' | 'exempt',
+    ciaRegistrationRef:
+      (api.regional_compliance?.cia_registration_ref as string | null | undefined)
+        ?? api.cia_registration_ref ?? null,
+    ciaNotes:
+      (api.regional_compliance?.cia_notes as string | null | undefined)
+        ?? api.cia_notes ?? null,
+    regionalCompliance: api.regional_compliance ?? {},
     // design-be-23: pre-computed total fee. For design_only this is
     // just the design fee (procurement is out of scope and already
     // masked to 0 above). Components can read this directly without

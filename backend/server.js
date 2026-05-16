@@ -875,8 +875,20 @@ const { translateText } = require('./src/ai/translate');
 // ('billing') (invoices).
 const tenantsRoutes = require('./src/tenants');
 const invoicesRoutes = require('./src/tenants/invoices');
+const tenantUsersRoutes = require('./src/tenants/users');
 app.use('/api/tenants', tenantsRoutes);
 app.use('/api/tenants', invoicesRoutes);
+// Tenant user-management + invitation accept routes. Paths are scoped
+// to /me/users, /me/invitations, and /invitations/:token so they don't
+// collide with the existing /me/invoices etc. The /invitations/:token
+// routes are intentionally public (no auth) — token IS the credential.
+app.use('/api/tenants', tenantUsersRoutes);
+
+// Public password-reset endpoints — mounted before the FR lockdown
+// because they're explicitly cross-tenant (the email→user lookup
+// resolves whichever tenant the user belongs to).
+const passwordResetRoutes = require('./src/auth/password_reset');
+app.use('/api/auth', passwordResetRoutes);
 
 // Defensive multitenant lockdown — applied to every route mounted
 // below this line. Non-FR tenants get 403 on any non-design / non-
@@ -897,6 +909,7 @@ app.use('/api/tenants', invoicesRoutes);
       p === '/api/health' ||
       p === '/api/version' ||
       p.startsWith('/api/tenants') ||      // signup + tenant CRUD (own auth)
+      p.startsWith('/api/auth') ||         // public password-reset (own validation)
       p.startsWith('/api/design') ||       // module-gated above
       p.startsWith('/api/feedback') ||     // tenant-scoped via mig 037 — every tenant can file bugs
       p.startsWith('/api/inbox/website')   // public HMAC-signed webhook
