@@ -320,9 +320,55 @@ What's still on fixtures (deferred follow-ups):
   `finance_expenses` lands, `task_costs.flowed_to_finance_expense_id`
   gets an FK + the integration moves to backend.
 
+## Tenant users hook + Operations rewire — `d003ee2` + `ffb5e79`
+
+`useTenantUsers` joins the existing `useApiTasks` / `useTenantCurrency`
+/ `useEnabledModules` pattern — module-cache hook backed by
+`/api/tenants/me/users`. Maps the API shape (username + email +
+display_name + role) to a `TaskUser`-compatible shape so consumers
+swap imports without touching their render code.
+
+Surfaces moved off `TASK_USER_BY_ID` fixture:
+- `operations/CreateTaskDrawer` — assignee picker
+- `operations/TaskDetail` — Body assignees, CostRow added-by,
+  ActivityLog actor, CommentRow author, generateThreadSummary
+- `roster/RosterPage` — visibleUsers grid, PublishDrawer publisher,
+  runConstraintChecks field-role filter
+
+17 other files still on the fixture (CalendarModule, InboxModule,
+NotificationsModule, FinanceModule, ScheduleCallDrawer,
+ReservationDetail, TeamInbox, PropertyTasksTab, hr/* drawers,
+StaffPerformancePage, FridayDrawer) — each can swap to
+`useTenantUsers` when its module gets tenant-scoped.
+
+## Deferred: full Roster backend
+
+Slim slice landed (TASK_USER_BY_ID swap only). The roster data
+itself (`ROSTER_LAST_WEEK / THIS_WEEK / NEXT_WEEK`, weekly publish
+state, AI constraint engine) stays on the in-memory fixture. Real
+backend is a discrete next-session task:
+
+1. Migration 052: `roster_weeks` (id, tenant_id, week_start, status,
+   published_at, published_by, ai_suggested + ai_notes, constraint
+   warnings) + `roster_days` (roster_week_id, user_id, date,
+   availability, zone, notes, leave_type).
+2. `backend/src/roster/{sync,index}.js` — list weeks, get week with
+   days joined, upsert day (the cell editor mutation), publish-to-
+   breezeway action. Constraint engine moves to the backend so the
+   same checks apply when the API is hit from elsewhere.
+3. Frontend: `useRosterWeek(weekId)` + `useRosterWeeks()` hooks +
+   rewire RosterPage (928 lines, ~3-4hr).
+4. Replace `breezeway.ts` `publishRosterToBreezeway` with the new
+   API call.
+
+Estimate: 4-6 hours focused. HR-adjacent — fits the brief's
+"HR sweep" follow-up sprint.
+
 ## Commits this session
 
 ```
+ffb5e79 fix(roster): TASK_USER_BY_ID → useTenantUsers (slim slice; full backend deferred)
+d003ee2 fix(operations): assignee picker + comment/cost/activity authors read from live tenant users
 8e76b5f feat(operations): wire Tasks module backend + frontend — multi-assignee, cross-module links, comments, costs
 9aee15d feat(tasks): tenant-scoped operational tasks module — schema + CRUD + assignment emails
 cccd61d feat(guesty): Reservations + Properties sync — schema, API, worker, webhook
@@ -333,6 +379,14 @@ cccd61d feat(guesty): Reservations + Properties sync — schema, API, worker, we
 e639e3b fix(floor-plan): rasterise SVG → PNG in chat path too + rate-table alias
 ```
 
-All eight pushed to `origin/fad-design-os-v01-frontend`. All deployed.
+All ten pushed to `origin/fad-design-os-v01-frontend`. All deployed.
 Migrations 049 + 050 + 051 applied (51/51 registered in
 `fad_schema_migrations`).
+
+## Guesty status (re-checked end of session)
+
+Still 429 cooldown — both API and token endpoints. Last 5 poll
+attempts (every 15 min) all failed at ~62s (30s wait + retry + 429).
+Tables empty. Per the brief's `7fa99bac` coordination note this is
+upstream and clears on its own. Once it does, the next poll
+auto-fills the cache; no code action required.
