@@ -1,0 +1,132 @@
+'use strict';
+
+// /api/reservations — read-only API over `guesty_reservations`.
+// Same shape as /api/properties: list + get-by-guesty-id + manual
+// re-sync. Joins guesty_listings inline so the list view can show
+// the listing nickname without a second round-trip.
+
+const express = require('express');
+const { query } = require('../database/client');
+const { attachIdentity } = require('../design/auth');
+const { syncReservationsForTenant } = require('./sync');
+
+const router = express.Router();
+
+function shapeReservation(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    guesty_id: row.guesty_id,
+    listing_guesty_id: row.listing_guesty_id,
+    listing_nickname: row.listing_nickname, // joined
+    confirmation_code: row.confirmation_code,
+    status: row.status,
+    source: row.source,
+    channel: row.channel,
+    check_in_date: row.check_in_date,
+    check_out_date: row.check_out_date,
+    nights: row.nights,
+    guests_count: row.guests_count,
+    party: {
+      adults: row.adults,
+      children: row.children,
+      infants: row.infants,
+    },
+    guest: {
+      first_name: row.guest_first_name,
+      last_name: row.guest_last_name,
+      email: row.guest_email,
+      phone: row.guest_phone,
+    },
+    total_amount_minor: row.total_amount_minor != null ? Number(row.total_amount_minor) : null,
+    currency_code: row.currency_code,
+    synced_at: row.synced_at,
+  };
+}
+
+// GET / — list reservations.
+//   ?status=reserved|confirmed|canceled
+//   ?listing=<guesty_id>
+//   ?from=YYYY-MM-DD&to=YYYY-MM-DD   filter by check_in_date range
+//   ?upcoming=true                   shortcut: check_in_date >= today
+//   ?limit=N (default 200, max 500)
+router.get('/', attachIdentity, async (req, res) => {
+  try {
+    const filters = ['r.tenant_id = $1'];
+    const params = [req.tenantId];
+    let i = 2;
+    if (typeof req.query.status === 'string') {
+      filters.push(`r.status = $${i++}`);
+      params.push(req.query.status);
+    }
+    if (typeof req.query.listing === 'string') {
+      filters.push(`r.listing_guesty_id = $${i++}`);
+      params.push(req.query.listing);
+    }
+    if (typeof req.query.from === 'string') {
+      filters.push(`r.check_in_date >= $${i++}`);
+      params.push(req.query.from);
+    }
+    if (typeof req.query.to === 'string') {
+      filters.push(`r.check_in_date <= $${i++}`);
+      params.push(req.query.to);
+    }
+    if (req.query.upcoming === 'true') {
+      filters.push('r.check_in_date >= CURRENT_DATE');
+    }
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 200;
+    const { rows } = await query(
+      `SELECT r.*, l.nickname AS listing_nickname
+       FROM guesty_reservations r
+       LEFT JOIN guesty_listings l
+         ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
+       WHERE ${filters.join(' AND ')}
+       ORDER BY r.check_in_date ASC NULLS LAST, r.created_at ASC
+       LIMIT ${limit}`,
+      params,
+    );
+    res.json({ reservations: rows.map(shapeReservation) });
+  } catch (e) {
+    console.error('[reservations] list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/:guestyId', attachIdentity, async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT r.*, l.nickname AS listing_nickname
+       FROM guesty_reservations r
+       LEFT JOIN guesty_listings l
+         ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
+       WHERE r.tenant_id = $1 AND r.guesty_id = $2`,
+      [req.tenantId, req.params.guestyId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Reservation not found' });
+    res.json(shapeReservation(rows[0]));
+  } catch (e) {
+    console.error('[reservations] get error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/sync', attachIdentity, async (req, res) => {
+  if (req.identity?.role !== 'admin') {
+    return res.status(403).json({ error: 'admin role required' });
+  }
+  try {
+    const opts = {};
+    if (typeof req.body?.fromDate === 'string') opts.fromDate = req.body.fromDate;
+    if (typeof req.body?.toDate === 'string') opts.toDate = req.body.toDate;
+    if (Number.isFinite(req.body?.daysBack)) opts.daysBack = req.body.daysBack;
+    if (Number.isFinite(req.body?.daysForward)) opts.daysForward = req.body.daysForward;
+    const summary = await syncReservationsForTenant(req.tenantId, opts);
+    res.json({ ok: true, ...summary });
+  } catch (e) {
+    console.error('[reservations] sync error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+module.exports = router;

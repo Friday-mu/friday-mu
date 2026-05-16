@@ -987,6 +987,30 @@ app.use('/api/inbox/website', websiteInbox.router);
 // poll (every 15s), runs in-process. See src/website_inbox/jobs.js.
 websiteInbox.startWorker();
 
+// ────────────────────────────────────────────────────────────────────
+// Guesty sync — Properties + Reservations modules (mig 049).
+//
+// /api/properties: read-only over guesty_listings cache.
+// /api/reservations: read-only over guesty_reservations cache.
+// /api/integrations/guesty/webhook: HMAC-verified reservation events.
+//
+// Both caches hydrated by a single 5-min poller (worker.js) that
+// loops over tenants with Guesty credentials. v1: env-var FR
+// credentials only; per-tenant credential storage is a follow-up.
+// ────────────────────────────────────────────────────────────────────
+app.use('/api/properties', require('./src/properties'));
+app.use('/api/reservations', require('./src/reservations'));
+// Webhook needs the RAW body (Buffer) for HMAC verification — Guesty
+// signs the exact bytes they send, and express.json() restringifies.
+const guestyWebhook = require('./src/reservations/webhook');
+app.post(
+  '/api/integrations/guesty/webhook',
+  express.raw({ type: '*/*', limit: '2mb' }),
+  guestyWebhook.handleWebhook,
+);
+const guestyPoller = require('./src/reservations/worker');
+guestyPoller.start();
+
 // Trial-expiry worker — hourly tick that flips trial → past_due once
 // trial_ends_at passes, sends 3-day "trial ending soon" reminders, and
 // cancels stale past_due tenants after 30d. See src/tenants/trial_jobs.js.

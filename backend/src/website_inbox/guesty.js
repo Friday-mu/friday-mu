@@ -20,7 +20,7 @@ const TOKEN_SAFETY_MS = 60_000;
 
 let tokenCache = { token: null, expiresAt: 0 };
 
-async function getAccessToken() {
+async function getAccessToken({ retries = 1 } = {}) {
   if (tokenCache.token && Date.now() < tokenCache.expiresAt - TOKEN_SAFETY_MS) {
     return tokenCache.token;
   }
@@ -33,29 +33,59 @@ async function getAccessToken() {
     client_secret: CLIENT_SECRET,
     scope: 'open-api',
   });
-  const { data } = await axios.post(TOKEN_URL, params.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    timeout: 15_000,
-  });
-  if (!data?.access_token) throw new Error('Guesty token response missing access_token');
-  tokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in || 86400) * 1000,
-  };
-  return tokenCache.token;
+  try {
+    const { data } = await axios.post(TOKEN_URL, params.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 15_000,
+    });
+    if (!data?.access_token) throw new Error('Guesty token response missing access_token');
+    tokenCache = {
+      token: data.access_token,
+      expiresAt: Date.now() + (data.expires_in || 86400) * 1000,
+    };
+    return tokenCache.token;
+  } catch (e) {
+    // The token endpoint is in the same rate-limit bucket as the
+    // regular API. Same single-retry treatment — burn 30s waiting on
+    // Retry-After (or default), then bubble. Without this the 5-min
+    // poller can't recover from a transient 429 burst because every
+    // call starts with this token fetch.
+    if (retries > 0 && e?.response?.status === 429) {
+      const retryAfterSec = Number(e.response.headers?.['retry-after']) || 30;
+      const waitMs = Math.min(retryAfterSec * 1000, 60_000);
+      await new Promise((r) => setTimeout(r, waitMs));
+      return getAccessToken({ retries: retries - 1 });
+    }
+    throw e;
+  }
 }
 
-async function guestyRequest({ method, path, data, params }) {
+async function guestyRequest({ method, path, data, params, retries = 1 }) {
   const token = await getAccessToken();
-  return axios.request({
-    method,
-    baseURL: BASE_URL,
-    url: path,
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    timeout: 25_000,
-    data,
-    params,
-  });
+  try {
+    return await axios.request({
+      method,
+      baseURL: BASE_URL,
+      url: path,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      timeout: 25_000,
+      data,
+      params,
+    });
+  } catch (e) {
+    // Single in-process retry with Retry-After honoured. Guesty's rate
+    // limit is shared across all consumers (fad-backend, friday.mu,
+    // friday-gms), so collisions are common — burning one retry inline
+    // is cheaper than letting the caller fail + the 5-min poller waiting
+    // a full window. For deeper failures the caller catches + decides.
+    if (retries > 0 && e?.response?.status === 429) {
+      const retryAfterSec = Number(e.response.headers?.['retry-after']) || 30;
+      const waitMs = Math.min(retryAfterSec * 1000, 60_000);
+      await new Promise((r) => setTimeout(r, waitMs));
+      return guestyRequest({ method, path, data, params, retries: retries - 1 });
+    }
+    throw e;
+  }
 }
 
 // ─── Create a reservation in `reserved` status with a 48h auto-expire.
@@ -132,8 +162,78 @@ function isRetryable(err) {
   return false;
 }
 
+// ─── Listings sync ────────────────────────────────────────────────
+//
+// Guesty's `/listings` endpoint paginates with `limit` + `skip`.
+// FR has 26 listings today; we cap at 100/page and follow the cursor
+// to be safe if the account grows. Returns the flat array of raw
+// listing objects.
+async function listListings({ limit = 100, maxPages = 20 } = {}) {
+  const all = [];
+  let skip = 0;
+  for (let page = 0; page < maxPages; page++) {
+    const { data } = await guestyRequest({
+      method: 'GET',
+      path: '/listings',
+      params: { limit, skip },
+    });
+    const results = data?.results || (Array.isArray(data) ? data : []);
+    if (!Array.isArray(results) || results.length === 0) break;
+    all.push(...results);
+    if (results.length < limit) break;
+    skip += limit;
+  }
+  return all;
+}
+
+// ─── Reservations sync ────────────────────────────────────────────
+//
+// Same pagination contract. Default windows the sync to "recent +
+// upcoming" — past 30 days through future 365 — so we don't pull the
+// historical archive on every poll. Caller can widen via opts when
+// doing a full backfill.
+async function listReservations({
+  limit = 100,
+  maxPages = 50,
+  fromDate,   // ISO date — checkInDate >= fromDate
+  toDate,     // ISO date — checkInDate <= toDate
+} = {}) {
+  const all = [];
+  let skip = 0;
+  const filters = [];
+  if (fromDate) filters.push({ field: 'checkInDateLocalized', operator: '$gte', value: fromDate });
+  if (toDate) filters.push({ field: 'checkInDateLocalized', operator: '$lte', value: toDate });
+  for (let page = 0; page < maxPages; page++) {
+    const params = { limit, skip };
+    if (filters.length > 0) params.filters = JSON.stringify(filters);
+    const { data } = await guestyRequest({
+      method: 'GET',
+      path: '/reservations',
+      params,
+    });
+    const results = data?.results || (Array.isArray(data) ? data : []);
+    if (!Array.isArray(results) || results.length === 0) break;
+    all.push(...results);
+    if (results.length < limit) break;
+    skip += limit;
+  }
+  return all;
+}
+
+async function getReservation({ reservationId }) {
+  if (!reservationId) throw new Error('getReservation: reservationId is required');
+  const { data } = await guestyRequest({
+    method: 'GET',
+    path: `/reservations/${encodeURIComponent(reservationId)}`,
+  });
+  return data;
+}
+
 module.exports = {
   createReservation,
   confirmReservation,
   isRetryable,
+  listListings,
+  listReservations,
+  getReservation,
 };
