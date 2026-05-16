@@ -240,9 +240,48 @@ AI usage tracking → recorded: floor_plan_render 5¢ + floor_plan_ai 1¢  ✅
 4. **Stage URL routing**: decide whether to accept both `floor_plan`
    and `floor-plan` or canonicalise one. Worth fixing for deep links.
 
+## Priority 1 — Guesty integration (backend half) — `cccd61d`
+
+`feat(guesty): Reservations + Properties sync — schema, API, worker, webhook`
+
+✅ Backend foundation live.
+
+| Layer | Where |
+|---|---|
+| Schema | `backend/migrations/049_guesty_sync.sql` — `guesty_listings` + `guesty_reservations`, tenant-scoped, `raw` JSONB so we can column-project later |
+| Guesty client | `backend/src/website_inbox/guesty.js` extended with `listListings`, `listReservations`, `getReservation` + Retry-After honouring on 429 (both API and token paths) |
+| Properties API | `backend/src/properties/{sync,index}.js` — `GET /api/properties[?cohort=]`, `GET /api/properties/:guesty_id`, `POST /api/properties/sync` (admin) |
+| Reservations API | `backend/src/reservations/{sync,index}.js` — `GET /api/reservations[?status=&listing=&from=&to=&upcoming=&limit=]`, `GET /api/reservations/:guesty_id`, `POST /api/reservations/sync` (admin) |
+| Poller | `backend/src/reservations/worker.js` — 15-min interval (bumped from brief's 5 because of rate-limit pressure), 5s warmup, re-entrancy-safe |
+| Webhook | `backend/src/reservations/webhook.js` — `POST /api/integrations/guesty/webhook`, HMAC-SHA256 verify, ack-then-upsert |
+
+** Known gating issue — Guesty rate-limit cooldown (same as the
+brief's `7fa99bac` coordination note). **
+
+Every sync attempt today returned 429 — both API path and token
+endpoint. The token retry (30s wait + retry) confirms the cooldown
+is whole-account, not a transient burst. Likely shared with
+friday.mu + friday-gms which were also hammering it on 2026-05-14.
+
+Effect: `guesty_listings` and `guesty_reservations` are empty.
+Infrastructure works; the 15-min poll will populate the cache
+automatically once Guesty clears the cooldown. Mathias can also
+fire `POST /api/properties/sync` and `POST /api/reservations/sync`
+with an FR-admin token manually once it clears.
+
+Deferred to next session:
+- Frontend wiring — `ReservationsModule` + `PropertiesModule` still
+  on fixtures (`_data/reservations.ts`, `_data/properties.ts`).
+- Per-tenant Guesty credential storage (multitenant unblock).
+- Possibly: have the listings sync read from the existing
+  `server.js` `getGuestyListings()` in-memory cache instead of
+  re-fetching `/listings` ourselves — would eliminate the
+  duplicate fetch under rate-limit pressure.
+
 ## Commits this session
 
 ```
+cccd61d feat(guesty): Reservations + Properties sync — schema, API, worker, webhook
 818761d fix(saas): topbar avatar reads real identity from JWT for SaaS tenants
 22b0496 feat(saas): tenant-currency formatter — zero-touch refactor + backend persistence fix
 2f9dec9 fix(saas): scrub FR-internal labels visible to tenant signups
@@ -250,4 +289,5 @@ AI usage tracking → recorded: floor_plan_render 5¢ + floor_plan_ai 1¢  ✅
 e639e3b fix(floor-plan): rasterise SVG → PNG in chat path too + rate-table alias
 ```
 
-All five pushed to `origin/fad-design-os-v01-frontend`. All deployed.
+All six pushed to `origin/fad-design-os-v01-frontend`. All deployed.
+Migration 049 applied (49/49 registered in `fad_schema_migrations`).
