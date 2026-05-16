@@ -278,9 +278,39 @@ Deferred to next session:
   re-fetching `/listings` ourselves — would eliminate the
   duplicate fetch under rate-limit pressure.
 
+## Priority 2 — Tasks module (backend) — `9aee15d`
+
+`feat(tasks): tenant-scoped operational tasks module — schema + CRUD + assignment emails`
+
+✅ Backend live. Separate from `design_tasks` (project-anchored
+blockers / next-actions inside the design workflow) — this covers
+the broader Operations module (maintenance, owner correspondence,
+any to-do not tied to a design engagement).
+
+| Layer | Where |
+|---|---|
+| Schema | `backend/migrations/050_tasks.sql` — tenant-scoped, status enum (todo/in_progress/done/cancelled), priority enum (lowest..urgent), nullable project_id (loose FK to design_projects), nullable assignee, due_date, category, created_by audit |
+| CRUD | `backend/src/tasks/index.js` — `GET /api/tasks` with rich filters (status csv, assignee='me' alias, project, priority, due_before/after, overdue, include=cancelled, limit), `GET /:id`, `POST`, `PATCH`, `DELETE` |
+| Status transitions | PATCH to 'done' sets `completed_at = NOW()`; PATCH out of 'done' clears it |
+| Email | `tplTaskAssigned` added to `backend/src/tenants/email.js`; fires on assignee changes (best-effort, never blocks the response; self-assignment silenced) |
+
+Smoke-tested end-to-end on a fresh US tenant:
+- POST → task with defaults
+- PATCH status=in_progress / done — completed_at handled correctly
+- All filter combos return expected counts
+- Invalid status → HTTP 400 with descriptive error
+- DELETE → 204, then 404 on follow-up GET
+
+Frontend wiring deferred — OperationsModule + CreateTaskDrawer still
+on the in-memory `_data/breezeway.ts` fixture. The fixture's `Task`
+interface is much richer (department, subdepartment, costs, comments,
+AI suggestions, attachment count) than this backend; next session
+decides between narrowing the frontend or extending the schema.
+
 ## Commits this session
 
 ```
+9aee15d feat(tasks): tenant-scoped operational tasks module — schema + CRUD + assignment emails
 cccd61d feat(guesty): Reservations + Properties sync — schema, API, worker, webhook
 818761d fix(saas): topbar avatar reads real identity from JWT for SaaS tenants
 22b0496 feat(saas): tenant-currency formatter — zero-touch refactor + backend persistence fix
@@ -289,5 +319,5 @@ cccd61d feat(guesty): Reservations + Properties sync — schema, API, worker, we
 e639e3b fix(floor-plan): rasterise SVG → PNG in chat path too + rate-table alias
 ```
 
-All six pushed to `origin/fad-design-os-v01-frontend`. All deployed.
-Migration 049 applied (49/49 registered in `fad_schema_migrations`).
+All seven pushed to `origin/fad-design-os-v01-frontend`. All deployed.
+Migrations 049 + 050 applied (50/50 registered in `fad_schema_migrations`).
