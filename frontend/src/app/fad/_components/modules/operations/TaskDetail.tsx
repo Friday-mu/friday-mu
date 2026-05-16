@@ -8,7 +8,7 @@ import {
   type TaskComment,
   type TaskCost,
 } from '../../../_data/tasks';
-import { addComment, updateTask } from '../../../_data/breezeway';
+import { addComment, updateTask } from '../../../_data/tasksClient';
 import { FIN_EXPENSES } from '../../../_data/finance';
 import { useCurrentUserId, useCanAccess, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';

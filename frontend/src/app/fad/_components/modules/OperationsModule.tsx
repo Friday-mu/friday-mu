@@ -6,7 +6,6 @@ import {
   AI_TASK_DRAFTS,
   APPROVAL_REQUESTS,
   REPORTED_ISSUES,
-  TASKS,
   TASK_INSIGHTS,
   TASK_PROPERTIES,
   TASK_USER_BY_ID,
@@ -21,7 +20,8 @@ import {
 } from '../../_data/tasks';
 import { useCanSee, useCurrentUserId, usePermissions } from '../usePermissions';
 import { fireToast } from '../Toaster';
-import { createTask, updateTask } from '../../_data/breezeway';
+import { createTask, updateTask } from '../../_data/tasksClient';
+import { useApiTasks } from '../../_data/useApiTasks';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
@@ -95,6 +95,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const { tasks: TASKS } = useApiTasks();
   const detailTask = detailTaskId ? TASKS.find((t) => t.id === detailTaskId) : null;
 
   const renderSub = () => {
@@ -167,6 +168,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 // ───────────────── Overview ─────────────────
 
 function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+  const { tasks: TASKS } = useApiTasks();
   const kpis = useMemo(() => {
     const openToday = TASKS.filter((t) => t.dueDate === TODAY && t.status !== 'completed' && t.status !== 'cancelled').length;
     const overdue = TASKS.filter((t) => t.dueDate < TODAY && t.status !== 'completed' && t.status !== 'cancelled').length;
@@ -174,7 +176,7 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
     const awaitingApproval = TASKS.filter((t) => t.status === 'awaiting_approval' || t.awaitingHumanApproval).length;
     const reportedToday = REPORTED_ISSUES.filter((i) => i.reportedAt.slice(0, 10) === TODAY && i.status === 'new').length;
     return { openToday, overdue, urgent, awaitingApproval, reportedToday };
-  }, []);
+  }, [TASKS]);
 
   const escalations = TASKS.filter(
     (t) => t.riskFlags.includes('overdue') || t.riskFlags.includes('blocked_access') || t.priority === 'urgent',
@@ -190,7 +192,7 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
     )
       .sort((a, b) => b.entry.ts.localeCompare(a.entry.ts))
       .slice(0, 6);
-  }, []);
+  }, [TASKS]);
 
   const telemetry = useAITelemetry();
   const [briefIndex, setBriefIndex] = useState(() => new Date().getHours() % DAILY_BRIEF_POOL.length);
@@ -390,6 +392,7 @@ function compareTasks(a: Task, b: Task, key: TaskSortKey): number {
 function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => void; onCreate: () => void }) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
+  const { tasks: TASKS } = useApiTasks();
 
   const [filters, setFilters] = useState<AllTasksFilters>({
     department: 'all',
@@ -437,7 +440,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
       tasks.sort((a, b) => sign * compareTasks(a, b, sort.key));
     }
     return tasks;
-  }, [filters, search, role, currentUserId, sort]);
+  }, [TASKS, filters, search, role, currentUserId, sort]);
 
   const activeFilterCount =
     (filters.department !== 'all' ? 1 : 0) +

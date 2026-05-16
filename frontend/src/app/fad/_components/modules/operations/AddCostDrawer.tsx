@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { type Task } from '../../../_data/tasks';
-import { addCost, suggestOwnerCharge } from '../../../_data/breezeway';
+import { suggestOwnerCharge } from '../../../_data/breezeway';
+import { addCost } from '../../../_data/tasksClient';
 import { useCurrentUserId } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconSparkle } from '../../icons';
