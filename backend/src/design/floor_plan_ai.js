@@ -72,7 +72,30 @@ Hard rules:
 - All coordinates are in metres.
 - Apply the interior-design knowledge base when deciding placements, sizes, and rotations.
 - Look at the SVG image to verify your placements won't collide with walls or other items.
-- Output JSON only — no commentary, no markdown fences, no prose outside the JSON object.`;
+- Output JSON only — no commentary, no markdown fences, no prose outside the JSON object.
+
+Style intent (set_style_notes):
+- Whenever the user message contains an aesthetic descriptor — e.g. "modern
+  coastal", "industrial loft", "japandi", "boho", "scandi", "mid-century
+  modern", "minimalist", "warm earthy tones", "brass fixtures", "rattan and
+  linen" — emit a "set_style_notes" op with a concise notes string capturing
+  the cumulative style direction.
+- The styleNotes value persists across versions: if the current model has
+  styleNotes already, MERGE the new descriptor in (e.g. existing
+  "modern coastal" + new "more brass fixtures" → "modern coastal, brass
+  fixtures"). Don't overwrite unless the user explicitly says "change the
+  style to ...".
+- Style cues may appear standalone ("let's go modern coastal") with no
+  furniture op required — in that case the response should be ONLY the
+  set_style_notes op.
+- They may also appear alongside a furniture op ("add a rattan armchair") —
+  emit both the add_furniture op AND a set_style_notes op so the aesthetic
+  is preserved for subsequent renders.
+
+Learning from prior turns:
+- If a previous turn was rejected for a clearance violation, do NOT retry the
+  same placement. Read the rejection reason in the conversation history and
+  choose a different location or smaller item.`;
 
 // Strip optional ```json fences before JSON.parse. Gemini occasionally
 // wraps responses in fences despite "JSON only" instructions; the
@@ -106,6 +129,35 @@ function _shapeResponse(parsed) {
 // SVG, comfortably.
 function _serialiseModelForPrompt(model) {
   return JSON.stringify(model);
+}
+
+// Format recent chat turns for the prompt. `history` is oldest-first.
+// We trim to the last 5 turns, skip `failed` status entirely (those are
+// infra errors, no signal for Gemini), and keep `applied` + `rejected`
+// turns. Rejected turns carry the rejection reason in friday_reply so
+// Gemini learns not to retry the same violation.
+const _MAX_HISTORY_TURNS = 5;
+function _formatHistory(history) {
+  if (!Array.isArray(history) || history.length === 0) return '';
+  const usable = history
+    .filter((h) => h && typeof h === 'object' && h.status !== 'failed')
+    .filter((h) => typeof h.user_message === 'string' && h.user_message.trim());
+  if (usable.length === 0) return '';
+  const trimmed = usable.slice(-_MAX_HISTORY_TURNS);
+  const lines = ['Recent conversation history (oldest first):'];
+  trimmed.forEach((h, i) => {
+    const userText = String(h.user_message).replace(/\s+/g, ' ').trim();
+    const replyText = typeof h.friday_reply === 'string'
+      ? h.friday_reply.replace(/\s+/g, ' ').trim()
+      : '';
+    const status = h.status === 'rejected' ? 'rejected' : 'applied';
+    const replyLine = replyText
+      ? `   Friday: "${replyText}" (status: ${status})`
+      : `   Friday: (no reply) (status: ${status})`;
+    lines.push(`${i + 1}. User: "${userText}"`);
+    lines.push(replyLine);
+  });
+  return lines.join('\n');
 }
 
 // Render the current model as an SVG, then base64-encode it as an
@@ -152,6 +204,14 @@ function buildPromptParts(model, userMessage, opts = {}) {
   if (svgPart) {
     parts.push({ text: 'Current layout (rendered SVG, top-down view, metres):' });
     parts.push(svgPart);
+  }
+
+  // Conversation history — included before the current user turn so
+  // Gemini sees what was already tried and what was rejected. Empty
+  // string when there's no usable history.
+  const historyBlock = _formatHistory(opts.history);
+  if (historyBlock) {
+    parts.push({ text: historyBlock });
   }
 
   const userBlock = JSON.stringify({

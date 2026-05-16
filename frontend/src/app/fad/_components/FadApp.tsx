@@ -41,6 +41,7 @@ import { MODULE_RESOURCE, PermissionsProvider } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
 import { useEnabledModules } from '../_data/useEnabledModules';
+import { useAnnexA } from '../_data/useAnnexA';
 
 type Theme = 'light' | 'dark';
 
@@ -58,6 +59,11 @@ export default function FadApp(props: FadAppProps = {}) {
 
 function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   const { enabledSet } = useEnabledModules();
+  // Side-effect only: hot-patches ANNEX_A_DEFAULT.vatRate (and any future
+  // per-tenant constants) on first fetch. The return value is unused —
+  // helpers like withVAT/vatOf read ANNEX_A_DEFAULT directly. See
+  // _data/useAnnexA.ts for the rationale on the lighter approach.
+  useAnnexA();
   const [active, setActive] = useState('inbox');
   const [subPage, setSubPage] = useState<string | null>(null);
   const [finRole, setFinRole] = useState<FinRole>('admin');

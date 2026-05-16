@@ -898,6 +898,7 @@ app.use('/api/tenants', invoicesRoutes);
       p === '/api/version' ||
       p.startsWith('/api/tenants') ||      // signup + tenant CRUD (own auth)
       p.startsWith('/api/design') ||       // module-gated above
+      p.startsWith('/api/feedback') ||     // tenant-scoped via mig 037 — every tenant can file bugs
       p.startsWith('/api/inbox/website')   // public HMAC-signed webhook
     ) {
       return next();
@@ -930,11 +931,10 @@ const { requireModule, requireFrTenant } = require('./src/tenants/middleware');
 const designRoutes = require('./src/design');
 app.use('/api/design', attachIdentitySoft, requireModule('design'), designRoutes);
 
-// TODO: gate when tenant-scoped — feedback.* tables aren't yet keyed
-// by tenant_id.
 // Feedback inbox — bug reports + feature requests + suggestions.
 // FAD-wide (not design-scoped). POST: any authenticated user.
-// GET / PATCH: admin/director only.
+// GET / PATCH: admin/director only. Tenant-scoped via mig 037 —
+// every tenant's admins see only their own users' reports.
 const feedbackRoutes = require('./src/feedback');
 app.use('/api/feedback', feedbackRoutes);
 

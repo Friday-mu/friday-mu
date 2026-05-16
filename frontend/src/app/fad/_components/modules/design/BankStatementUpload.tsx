@@ -6,11 +6,13 @@
 // statements to CSV easily. The parser is a pure function exported
 // separately for unit testing.
 //
-// MCB CSV peculiarities the parser handles:
-//   - dates as DD/MM/YYYY (Mauritius standard, not ISO)
+// CSV peculiarities the parser handles:
+//   - dates per the tenant's configured date_format (DD/MM/YYYY,
+//     MM/DD/YYYY, or YYYY-MM-DD); falls back to DD/MM/YYYY (Mauritius
+//     standard) when no format is supplied — see parseDateByFormat
 //   - amounts as "1,234.56" (comma thousands, dot decimal)
 //   - debit + credit in SEPARATE columns OR a single signed column
-//   - column order varies between MCB report types; we sniff headers
+//   - column order varies between bank report types; we sniff headers
 //
 // The parser is conservative: rows that don't have a recognisable date
 // or amount are skipped silently. The component surfaces the row-count
@@ -18,6 +20,7 @@
 
 import { useMemo, useState } from 'react';
 import type { BankCode, BankTransactionInput, CreateBankStatementPayload } from '../../../_data/designClient';
+import { useAnnexA } from '../../../_data/useAnnexA';
 
 // ─────────────────────────── Parser ───────────────────────────
 
@@ -30,12 +33,16 @@ export interface ParseResult {
   inferred_period_end?: string;
 }
 
+/** Tenant-configurable date layouts the CSV parser understands. */
+export type DateFormat = 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+
 /**
  * Parse a CSV string into BankTransactionInput rows.
- * MCB CSV-friendly: handles DD/MM/YYYY dates, "1,234.56" amounts,
- * separate debit/credit columns OR signed amount column.
+ * Handles "1,234.56" amounts, separate debit/credit columns OR signed
+ * amount column. Date layout is per the tenant's configured format
+ * (defaults to DD/MM/YYYY — Mauritius / EU standard).
  */
-export function parseMcbCsv(raw: string): ParseResult {
+export function parseMcbCsv(raw: string, dateFormat: DateFormat = 'DD/MM/YYYY'): ParseResult {
   if (!raw || typeof raw !== 'string') {
     return { ok: false, transactions: [], error: 'Empty input' };
   }
@@ -65,7 +72,7 @@ export function parseMcbCsv(raw: string): ParseResult {
     if (cells.length === 0) continue;
 
     const dateRaw = cells[cols.dateIdx] || '';
-    const isoDate = parseMauritiusDate(dateRaw);
+    const isoDate = parseDateByFormat(dateRaw, dateFormat);
     if (!isoDate) continue; // skip malformed rows silently
 
     const descriptor = (cells[cols.descIdx] || '').trim();
@@ -83,7 +90,7 @@ export function parseMcbCsv(raw: string): ParseResult {
     if (amountMinor == null || amountMinor === 0) continue;
 
     const reference = cols.refIdx >= 0 ? (cells[cols.refIdx] || '').trim() || null : null;
-    const valueDate = cols.valueDateIdx >= 0 ? parseMauritiusDate(cells[cols.valueDateIdx] || '') : null;
+    const valueDate = cols.valueDateIdx >= 0 ? parseDateByFormat(cells[cols.valueDateIdx] || '', dateFormat) : null;
     const balanceMinor = cols.balanceIdx >= 0 ? parseAmountToMinor(cells[cols.balanceIdx] || '') : null;
 
     transactions.push({
@@ -165,23 +172,50 @@ function sniffColumns(header: string[]): ColumnIndices {
   };
 }
 
-/** Parse "DD/MM/YYYY" or "YYYY-MM-DD" to "YYYY-MM-DD". Returns null on failure. */
-export function parseMauritiusDate(raw: string): string | null {
+/**
+ * Parse a date string per the tenant's configured `format` and return
+ * ISO ("YYYY-MM-DD"). Returns null on failure.
+ *
+ *   'DD/MM/YYYY' — Mauritius / EU standard (also accepts DD-MM-YYYY)
+ *   'MM/DD/YYYY' — US standard (also accepts MM-DD-YYYY)
+ *   'YYYY-MM-DD' — ISO
+ *
+ * As a convenience, an ISO-shaped input always passes through regardless
+ * of `format` — banks that mix ISO with their locale format in the same
+ * column don't break the parser.
+ */
+export function parseDateByFormat(raw: string, format: DateFormat = 'DD/MM/YYYY'): string | null {
   const s = String(raw || '').trim();
   if (!s) return null;
-  // ISO first — pass through.
+  // ISO first — pass through regardless of `format`.
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  // DD/MM/YYYY or DD-MM-YYYY.
+  if (format === 'YYYY-MM-DD') {
+    // ISO-only tenant: anything that isn't ISO was already rejected above.
+    return null;
+  }
+  // DD/MM/YYYY (or -) and MM/DD/YYYY (or -) share the same regex; the
+  // only difference is which capture group is day vs. month.
   const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
   if (!m) return null;
-  const d = m[1].padStart(2, '0');
-  const mo = m[2].padStart(2, '0');
+  const first = m[1];
+  const second = m[2];
   let y = m[3];
   if (y.length === 2) y = (Number(y) >= 50 ? '19' : '20') + y;
+  const d = (format === 'MM/DD/YYYY' ? second : first).padStart(2, '0');
+  const mo = (format === 'MM/DD/YYYY' ? first : second).padStart(2, '0');
   if (Number(d) < 1 || Number(d) > 31) return null;
   if (Number(mo) < 1 || Number(mo) > 12) return null;
   return `${y}-${mo}-${d}`;
+}
+
+/**
+ * Backward-compat alias — old call sites + the existing test suite
+ * reference `parseMauritiusDate`. New code should call `parseDateByFormat`.
+ * @deprecated Use parseDateByFormat(raw, tenantDateFormat) instead.
+ */
+export function parseMauritiusDate(raw: string): string | null {
+  return parseDateByFormat(raw, 'DD/MM/YYYY');
 }
 
 /**
@@ -228,7 +262,21 @@ export function BankStatementUpload({ projectId: _projectId, onSubmit, onCancel 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const parsed = useMemo(() => (rawCsv.trim() ? parseMcbCsv(rawCsv) : null), [rawCsv]);
+  // Per-tenant date format. The annex_a payload stores it on the JSONB
+  // blob; fall back to DD/MM/YYYY when the row hasn't loaded yet or
+  // when the value isn't a recognised format.
+  const { data: annexAResp } = useAnnexA();
+  const dateFormatRaw = annexAResp?.annex_a?.date_format;
+  const dateFormat: DateFormat = (
+    dateFormatRaw === 'MM/DD/YYYY' || dateFormatRaw === 'YYYY-MM-DD'
+      ? dateFormatRaw
+      : 'DD/MM/YYYY'
+  );
+
+  const parsed = useMemo(
+    () => (rawCsv.trim() ? parseMcbCsv(rawCsv, dateFormat) : null),
+    [rawCsv, dateFormat],
+  );
 
   // Inferred period drives the form when the user hasn't typed dates yet.
   const effectiveStart = periodStart || parsed?.inferred_period_start || '';

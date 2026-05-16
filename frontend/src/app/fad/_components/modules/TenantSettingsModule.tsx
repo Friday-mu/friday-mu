@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { apiFetch } from '../../../../components/types';
 import { useCurrentTenantRole } from '../../_data/useTenantIdentity';
+import { useAnnexA } from '../../_data/useAnnexA';
 
 interface Props {
   subPage: string;
@@ -182,6 +183,9 @@ const DATE_FORMATS = [
 function BrandTab() {
   const role = useCurrentTenantRole();
   const isAdmin = role === 'admin';
+  // Shared annex_a session cache — used here to refetch + re-apply the
+  // ANNEX_A_DEFAULT.vatRate hot-patch after a successful save.
+  const { refetch: refetchAnnexA } = useAnnexA();
 
   const [annexA, setAnnexA] = useState<Record<string, unknown> | null>(null);
   const [companyName, setCompanyName] = useState('');
@@ -233,6 +237,10 @@ function BrandTab() {
         body: JSON.stringify({ annex_a: merged }),
       })) as AnnexA;
       setAnnexA(r.annex_a);
+      // Refresh the session-cached annex_a so the in-memory
+      // ANNEX_A_DEFAULT.vatRate / date_format hot-patch picks up
+      // the new values without a page reload.
+      void refetchAnnexA();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {

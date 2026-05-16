@@ -106,6 +106,361 @@ function catalogDisplayName(category: FurnitureCategory): string {
 
 const FURNITURE_DRAG_MIME = 'application/x-fad-furniture-category';
 
+// ── furniture icons ───────────────────────────────────────────────────
+// Inline tiny SVG glyph per category. Drawn into a 24-unit viewBox.
+// `furnitureIconShapes` returns just the inner shapes so we can reuse
+// the same paths inside a wrapping <svg> (catalog cards) or nested
+// directly inside a rotated <g> (canvas furniture, where the parent
+// already provides x/y/width/height + viewBox). `furnitureIcon` wraps
+// the shapes in a sized <svg> for stand-alone use.
+//
+// All glyphs share a stroke / no-fill style and use `currentColor` so
+// the parent controls light/dark colour without prop drilling.
+function furnitureIconShapes(category: FurnitureCategory, sw: number): React.ReactElement {
+  const stroke = 'currentColor';
+  const fill = 'none';
+  const common = { stroke, strokeWidth: sw, fill } as const;
+  switch (category) {
+    case 'sofa':
+      return (
+        <g>
+          <rect x={3} y={9} width={18} height={9} rx={2} {...common} />
+          <line x1={8} y1={9} x2={8} y2={15} {...common} />
+          <line x1={12} y1={9} x2={12} y2={15} {...common} />
+          <line x1={16} y1={9} x2={16} y2={15} {...common} />
+        </g>
+      );
+    case 'armchair':
+      return (
+        <g>
+          <rect x={6} y={8} width={12} height={11} rx={2} {...common} />
+          <line x1={10} y1={11} x2={10} y2={16} {...common} />
+        </g>
+      );
+    case 'coffee_table':
+      return (
+        <g>
+          <rect x={3} y={11} width={18} height={4} rx={1} {...common} />
+        </g>
+      );
+    case 'side_table':
+      return (
+        <g>
+          <rect x={8} y={9} width={8} height={8} rx={1} {...common} />
+        </g>
+      );
+    case 'tv_unit':
+      return (
+        <g>
+          <rect x={3} y={13} width={18} height={5} rx={1} {...common} />
+          <line x1={8} y1={16} x2={16} y2={16} {...common} />
+        </g>
+      );
+    case 'rug':
+      return (
+        <g>
+          <rect x={3} y={6} width={18} height={12} rx={1} strokeDasharray="2 2" {...common} />
+        </g>
+      );
+    case 'pendant_lamp':
+      return (
+        <g>
+          <line x1={12} y1={3} x2={12} y2={10} {...common} />
+          <path d="M 7 14 Q 12 8 17 14 Z" {...common} />
+        </g>
+      );
+    case 'floor_lamp':
+      return (
+        <g>
+          <path d="M 8 7 L 16 7 L 14 12 L 10 12 Z" {...common} />
+          <line x1={12} y1={12} x2={12} y2={20} {...common} />
+          <line x1={9} y1={20} x2={15} y2={20} {...common} />
+        </g>
+      );
+    case 'table_lamp':
+      return (
+        <g>
+          <path d="M 8 10 L 16 10 L 14 14 L 10 14 Z" {...common} />
+          <line x1={12} y1={14} x2={12} y2={18} {...common} />
+          <line x1={9} y1={18} x2={15} y2={18} {...common} />
+        </g>
+      );
+    case 'bed_single':
+      return (
+        <g>
+          <rect x={5} y={5} width={14} height={14} rx={1} {...common} />
+          <rect x={7} y={7} width={10} height={3} rx={1} {...common} />
+        </g>
+      );
+    case 'bed_double':
+      return (
+        <g>
+          <rect x={3} y={5} width={18} height={14} rx={1} {...common} />
+          <rect x={5} y={7} width={6} height={3} rx={1} {...common} />
+          <rect x={13} y={7} width={6} height={3} rx={1} {...common} />
+        </g>
+      );
+    case 'bed_king':
+      return (
+        <g>
+          <rect x={2} y={5} width={20} height={14} rx={1} {...common} />
+          <rect x={4} y={7} width={7} height={3} rx={1} {...common} />
+          <rect x={13} y={7} width={7} height={3} rx={1} {...common} />
+        </g>
+      );
+    case 'bedside_table':
+      return (
+        <g>
+          <rect x={8} y={8} width={8} height={9} rx={1} {...common} />
+          <circle cx={12} cy={13} r={1} fill={stroke} stroke="none" />
+        </g>
+      );
+    case 'wardrobe':
+      return (
+        <g>
+          <rect x={6} y={3} width={12} height={18} rx={1} {...common} />
+          <line x1={12} y1={3} x2={12} y2={21} {...common} />
+          <circle cx={10.5} cy={12} r={0.6} fill={stroke} stroke="none" />
+          <circle cx={13.5} cy={12} r={0.6} fill={stroke} stroke="none" />
+        </g>
+      );
+    case 'dresser':
+      return (
+        <g>
+          <rect x={4} y={6} width={16} height={12} rx={1} {...common} />
+          <line x1={4} y1={10} x2={20} y2={10} {...common} />
+          <line x1={4} y1={14} x2={20} y2={14} {...common} />
+          <line x1={12} y1={6} x2={12} y2={18} {...common} />
+        </g>
+      );
+    case 'desk':
+      return (
+        <g>
+          <rect x={3} y={9} width={18} height={3} rx={0.5} {...common} />
+          <line x1={5} y1={12} x2={5} y2={17} {...common} />
+          <line x1={19} y1={12} x2={19} y2={17} {...common} />
+        </g>
+      );
+    case 'office_chair':
+      return (
+        <g>
+          <rect x={8} y={5} width={8} height={6} rx={1.5} {...common} />
+          <line x1={12} y1={11} x2={12} y2={17} {...common} />
+          <line x1={8} y1={17} x2={16} y2={17} {...common} />
+          <line x1={9} y1={17} x2={7} y2={20} {...common} />
+          <line x1={15} y1={17} x2={17} y2={20} {...common} />
+        </g>
+      );
+    case 'dining_table':
+      return (
+        <g>
+          <rect x={3} y={8} width={18} height={8} rx={2} {...common} />
+        </g>
+      );
+    case 'dining_chair':
+      return (
+        <g>
+          <rect x={8} y={6} width={8} height={12} rx={1} {...common} />
+          <line x1={8} y1={11} x2={16} y2={11} {...common} />
+        </g>
+      );
+    case 'bar_stool':
+      return (
+        <g>
+          <circle cx={12} cy={9} r={4} {...common} />
+          <line x1={12} y1={13} x2={12} y2={20} {...common} />
+        </g>
+      );
+    case 'kitchen_island':
+      return (
+        <g>
+          <rect x={3} y={7} width={18} height={10} rx={1} {...common} />
+          <line x1={3} y1={12} x2={21} y2={12} {...common} />
+        </g>
+      );
+    case 'kitchen_counter':
+      return (
+        <g>
+          <rect x={3} y={9} width={18} height={6} rx={1} {...common} />
+        </g>
+      );
+    case 'kitchen_sink':
+      return (
+        <g>
+          <rect x={4} y={8} width={16} height={9} rx={1} {...common} />
+          <circle cx={17} cy={11} r={1} {...common} />
+        </g>
+      );
+    case 'fridge':
+      return (
+        <g>
+          <rect x={7} y={3} width={10} height={18} rx={1} {...common} />
+          <line x1={7} y1={10} x2={17} y2={10} {...common} />
+          <circle cx={14.5} cy={7} r={0.6} fill={stroke} stroke="none" />
+          <circle cx={14.5} cy={14} r={0.6} fill={stroke} stroke="none" />
+        </g>
+      );
+    case 'oven':
+      return (
+        <g>
+          <rect x={4} y={5} width={16} height={14} rx={1} {...common} />
+          <line x1={4} y1={9} x2={20} y2={9} {...common} />
+          <circle cx={12} cy={14} r={2.5} {...common} />
+        </g>
+      );
+    case 'cooktop':
+      return (
+        <g>
+          <rect x={4} y={6} width={16} height={12} rx={1} {...common} />
+          <circle cx={9} cy={10} r={1.5} {...common} />
+          <circle cx={15} cy={10} r={1.5} {...common} />
+          <circle cx={9} cy={15} r={1.5} {...common} />
+          <circle cx={15} cy={15} r={1.5} {...common} />
+        </g>
+      );
+    case 'dishwasher':
+      return (
+        <g>
+          <rect x={5} y={4} width={14} height={16} rx={1} {...common} />
+          <line x1={5} y1={8} x2={19} y2={8} {...common} />
+          <rect x={9} y={11} width={6} height={6} rx={0.5} {...common} />
+        </g>
+      );
+    case 'microwave':
+      return (
+        <g>
+          <rect x={3} y={7} width={18} height={10} rx={1} {...common} />
+          <rect x={5} y={9} width={10} height={6} rx={0.5} {...common} />
+          <line x1={17} y1={10} x2={19} y2={10} {...common} />
+          <line x1={17} y1={13} x2={19} y2={13} {...common} />
+        </g>
+      );
+    case 'bath':
+      return (
+        <g>
+          <rect x={3} y={7} width={18} height={10} rx={3} {...common} />
+          <ellipse cx={12} cy={12} rx={6} ry={2.5} {...common} />
+        </g>
+      );
+    case 'shower':
+      return (
+        <g>
+          <rect x={5} y={5} width={14} height={14} rx={1} {...common} />
+          <circle cx={12} cy={12} r={1} fill={stroke} stroke="none" />
+          <line x1={9} y1={9} x2={10} y2={10} {...common} />
+          <line x1={15} y1={9} x2={14} y2={10} {...common} />
+          <line x1={9} y1={15} x2={10} y2={14} {...common} />
+          <line x1={15} y1={15} x2={14} y2={14} {...common} />
+        </g>
+      );
+    case 'toilet':
+      return (
+        <g>
+          <rect x={9} y={3} width={6} height={5} rx={0.5} {...common} />
+          <ellipse cx={12} cy={14} rx={5} ry={6} {...common} />
+        </g>
+      );
+    case 'vanity':
+      return (
+        <g>
+          <rect x={3} y={9} width={18} height={8} rx={1} {...common} />
+          <ellipse cx={12} cy={13} rx={4} ry={2} {...common} />
+        </g>
+      );
+    case 'mirror':
+      return (
+        <g>
+          <ellipse cx={12} cy={12} rx={4} ry={8} {...common} />
+        </g>
+      );
+    case 'washing_machine':
+      return (
+        <g>
+          <rect x={5} y={4} width={14} height={16} rx={1} {...common} />
+          <circle cx={12} cy={13} r={4} {...common} />
+          <circle cx={12} cy={13} r={1.5} {...common} />
+        </g>
+      );
+    case 'dryer':
+      return (
+        <g>
+          <rect x={5} y={4} width={14} height={16} rx={1} {...common} />
+          <circle cx={12} cy={13} r={4} {...common} />
+          <line x1={10} y1={11} x2={14} y2={15} {...common} />
+        </g>
+      );
+    case 'plant':
+      return (
+        <g>
+          <path d="M 12 14 C 7 11 8 5 12 6 C 16 5 17 11 12 14 Z" {...common} />
+          <path d="M 9 19 L 15 19 L 14 14 L 10 14 Z" {...common} />
+        </g>
+      );
+    case 'artwork':
+      return (
+        <g>
+          <rect x={4} y={5} width={16} height={14} rx={0.5} {...common} />
+          <line x1={4} y1={15} x2={10} y2={9} {...common} />
+          <line x1={10} y1={9} x2={14} y2={13} {...common} />
+          <line x1={14} y1={13} x2={20} y2={8} {...common} />
+        </g>
+      );
+    case 'shelves':
+      return (
+        <g>
+          <rect x={5} y={4} width={14} height={16} rx={0.5} {...common} />
+          <line x1={5} y1={9} x2={19} y2={9} {...common} />
+          <line x1={5} y1={14} x2={19} y2={14} {...common} />
+          <line x1={5} y1={19} x2={19} y2={19} {...common} />
+        </g>
+      );
+    case 'cabinet':
+      return (
+        <g>
+          <rect x={5} y={4} width={14} height={16} rx={1} {...common} />
+          <line x1={12} y1={4} x2={12} y2={20} {...common} />
+        </g>
+      );
+    case 'door_swing':
+      return (
+        <g>
+          <line x1={5} y1={19} x2={5} y2={5} {...common} />
+          <path d="M 5 5 A 14 14 0 0 1 19 19" {...common} />
+        </g>
+      );
+    case 'stairs':
+      return (
+        <g>
+          <path d="M 3 21 L 3 17 L 9 17 L 9 13 L 15 13 L 15 9 L 21 9 L 21 5" {...common} />
+        </g>
+      );
+    case 'other':
+    default:
+      return (
+        <g>
+          <rect x={5} y={5} width={14} height={14} rx={2} {...common} />
+        </g>
+      );
+  }
+}
+
+/**
+ * Stand-alone furniture icon — used by the catalog cards. Wraps the
+ * shape group in a sized `<svg>`. For nesting inside a parent SVG (the
+ * canvas furniture render), use `furnitureIconShapes` directly with a
+ * caller-supplied wrapping `<svg x=... y=... width=... height=...>`.
+ */
+function furnitureIcon(category: FurnitureCategory, size: number = 24): React.ReactElement {
+  // Stroke width is computed in viewBox units (24-wide) so visual
+  // weight stays consistent regardless of the rendered pixel size.
+  const sw = Math.max(1, 24 / 18);
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      {furnitureIconShapes(category, sw)}
+    </svg>
+  );
+}
+
 interface Props {
   projectId: string;
   /** Existing model to start from (re-edit), or undefined for blank. */
@@ -133,6 +488,7 @@ type DragOp =
   | { kind: 'door-slide'; doorId: string; wallId: string }
   | { kind: 'window-slide'; windowId: string; wallId: string }
   | { kind: 'furniture-translate'; itemId: string; startM: Point; origCentre: Point }
+  | { kind: 'room-vertex'; roomId: string; vertexIdx: number; origOutline: Point[] }
   | null;
 
 // ── id helpers ────────────────────────────────────────────────────────
@@ -289,6 +645,12 @@ export function FloorPlanTracingEditor({
   // Active pan-drag (middle mouse OR space+left). Captures start.
   const [panning, setPanning] = useState<{ startClientX: number; startClientY: number; origPan: { x: number; y: number } } | null>(null);
 
+  // Shift-held latch — read by the rotation slider to snap to 15°
+  // increments while the user drags. We use a ref (not state) so the
+  // slider's onChange always sees the latest value without forcing a
+  // re-render on every keydown.
+  const shiftHeldRef = useRef<boolean>(false);
+
   // Properties popover anchor — in SVG pixels.
   const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
 
@@ -427,6 +789,28 @@ export function FloorPlanTracingEditor({
     return null;
   }
 
+  /**
+   * Hit-test a vertex of the currently-selected room. Returns the
+   * vertex index, or null if no handle is under the cursor. Only the
+   * selected room exposes handles, so this is intentionally scoped to
+   * `selected` rather than scanning all rooms.
+   */
+  function hitTestRoomVertex(pointM: Point): { roomId: string; vertexIdx: number } | null {
+    if (selected?.kind !== 'room') return null;
+    const room = model.rooms.find((r) => r.id === selected.id);
+    if (!room) return null;
+    const pPx = metresToPx(pointM);
+    let best: { vertexIdx: number; dPx: number } | null = null;
+    for (let i = 0; i < room.outline.length; i++) {
+      const vPx = metresToPx(room.outline[i]);
+      const d = distPx(pPx, vPx);
+      if (d <= ENDPOINT_HIT_PX && (best === null || d < best.dPx)) {
+        best = { vertexIdx: i, dPx: d };
+      }
+    }
+    return best ? { roomId: room.id, vertexIdx: best.vertexIdx } : null;
+  }
+
   /** Hit-test rooms by point-in-polygon (lowest priority). */
   function hitTestRoom(pointM: Point): RoomRegion | null {
     for (let i = model.rooms.length - 1; i >= 0; i--) {
@@ -562,11 +946,28 @@ export function FloorPlanTracingEditor({
 
     if (tool === 'select') {
       // Hit-test priority (highest to lowest):
-      //   1. Wall endpoint handles (only if the selected item is a wall)
-      //   2. Door / window
-      //   3. Furniture
-      //   4. Wall midpoint
-      //   5. Room
+      //   1. Room vertex handles (only if a room is selected)
+      //   2. Wall endpoint handles (only if the selected item is a wall)
+      //   3. Door / window
+      //   4. Furniture
+      //   5. Wall midpoint
+      //   6. Room
+      const vertexHit = hitTestRoomVertex(pM);
+      if (vertexHit) {
+        const room = model.rooms.find((r) => r.id === vertexHit.roomId);
+        if (room) {
+          setDragOp({
+            kind: 'room-vertex',
+            roomId: room.id,
+            vertexIdx: vertexHit.vertexIdx,
+            origOutline: room.outline.map((p) => ({ ...p })),
+          });
+          setSelected({ kind: 'room', id: room.id });
+          setPopover(null);
+          return;
+        }
+      }
+
       const endpointHit = selected?.kind === 'wall' ? hitTestWallEndpoint(pM) : null;
       if (endpointHit) {
         const w = model.walls.find((wl) => wl.id === endpointHit.wallId);
@@ -756,6 +1157,22 @@ export function FloorPlanTracingEditor({
         }));
         return;
       }
+      if (dragOp.kind === 'room-vertex') {
+        setModel((m) => ({
+          ...m,
+          rooms: m.rooms.map((r) =>
+            r.id === dragOp.roomId
+              ? {
+                  ...r,
+                  outline: r.outline.map((v, i) =>
+                    i === dragOp.vertexIdx ? { x: pM.x, y: pM.y } : v,
+                  ),
+                }
+              : r,
+          ),
+        }));
+        return;
+      }
     }
   }
 
@@ -832,6 +1249,14 @@ export function FloorPlanTracingEditor({
         ...current,
         furniture: current.furniture.map((f) =>
           f.id === op.itemId ? { ...f, centre: op.origCentre } : f,
+        ),
+      };
+    }
+    if (op.kind === 'room-vertex') {
+      return {
+        ...current,
+        rooms: current.rooms.map((r) =>
+          r.id === op.roomId ? { ...r, outline: op.origOutline } : r,
         ),
       };
     }
@@ -956,6 +1381,10 @@ export function FloorPlanTracingEditor({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Track Shift globally — the rotation slider reads this via a ref
+      // to snap to 15° increments while dragging. Doing it here keeps
+      // the shortcut working even when the slider has focus.
+      if (e.key === 'Shift') shiftHeldRef.current = true;
       // Don't hijack typing in form fields (the popover has inputs).
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
@@ -1000,6 +1429,7 @@ export function FloorPlanTracingEditor({
       if (e.key === ' ' || e.code === 'Space') {
         setSpaceHeld(false);
       }
+      if (e.key === 'Shift') shiftHeldRef.current = false;
     }
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
@@ -1085,6 +1515,42 @@ export function FloorPlanTracingEditor({
     setModel({
       ...model,
       rooms: model.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    });
+  }
+
+  /**
+   * Insert a new vertex at the midpoint of the polygon's longest edge.
+   * The polygon is treated as closed (last → first counts as an edge).
+   * Vertex is inserted between i and i+1, so existing vertex indices
+   * before the insertion stay stable.
+   */
+  function addVertexAtLongestEdge(roomId: string) {
+    const room = model.rooms.find((r) => r.id === roomId);
+    if (!room || room.outline.length < 2) return;
+    const n = room.outline.length;
+    let bestIdx = 0;
+    let bestLenSq = -1;
+    for (let i = 0; i < n; i++) {
+      const a = room.outline[i];
+      const b = room.outline[(i + 1) % n];
+      const lenSq = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+      if (lenSq > bestLenSq) {
+        bestLenSq = lenSq;
+        bestIdx = i;
+      }
+    }
+    const a = room.outline[bestIdx];
+    const b = room.outline[(bestIdx + 1) % n];
+    const mid: Point = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const newOutline = [
+      ...room.outline.slice(0, bestIdx + 1),
+      mid,
+      ...room.outline.slice(bestIdx + 1),
+    ];
+    pushSnapshot(model);
+    setModel({
+      ...model,
+      rooms: model.rooms.map((r) => (r.id === roomId ? { ...r, outline: newOutline } : r)),
     });
   }
 
@@ -1402,6 +1868,14 @@ export function FloorPlanTracingEditor({
             const cy = f.centre.y * pixelsPerMetre;
             const wPx = f.width * pixelsPerMetre;
             const dPx = f.depth * pixelsPerMetre;
+            // The category icon is drawn in a 24x24 viewBox; nesting it
+            // inside the rotated group with a sized <svg> element scales
+            // the strokes uniformly while still respecting the rotation.
+            // Pad the icon by 4px on each side so the rect outline stays
+            // legible behind the glyph.
+            const iconPad = Math.min(4, Math.min(wPx, dPx) / 6);
+            const iconW = Math.max(0, wPx - iconPad * 2);
+            const iconH = Math.max(0, dPx - iconPad * 2);
             return (
               <g
                 key={f.id}
@@ -1412,7 +1886,7 @@ export function FloorPlanTracingEditor({
                   y={-dPx / 2}
                   width={wPx}
                   height={dPx}
-                  fill={isSel ? '#dbeafe' : '#e5e7eb'}
+                  fill={isSel ? '#dbeafe' : '#f3f4f6'}
                   stroke={isSel ? '#3b82f6' : '#374151'}
                   strokeWidth={isSel ? 2 : 0.5}
                 />
@@ -1425,17 +1899,24 @@ export function FloorPlanTracingEditor({
                   stroke={isSel ? '#1d4ed8' : '#6b7280'}
                   strokeWidth={1.5}
                 />
-                <text
-                  x={0}
-                  y={0}
-                  fontSize={10}
-                  fill="#374151"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  pointerEvents="none"
-                >
-                  {catalogDisplayName(f.category)}
-                </text>
+                {/* Category icon, scaled to fit the rotated bounding box.
+                    `preserveAspectRatio="none"` would stretch — we keep
+                    `xMidYMid meet` so glyphs stay recognisable even on
+                    elongated items like sofas. */}
+                {iconW > 6 && iconH > 6 && (
+                  <svg
+                    x={-iconW / 2}
+                    y={-iconH / 2}
+                    width={iconW}
+                    height={iconH}
+                    viewBox="0 0 24 24"
+                    preserveAspectRatio="xMidYMid meet"
+                    pointerEvents="none"
+                    style={{ color: isSel ? '#1d4ed8' : '#374151' }}
+                  >
+                    {furnitureIconShapes(f.category, 24 / 18)}
+                  </svg>
+                )}
               </g>
             );
           })}
@@ -1576,6 +2057,27 @@ export function FloorPlanTracingEditor({
             );
           })()}
 
+          {/* Selected room: draggable vertex handles */}
+          {selectedRoom && (
+            <g>
+              {selectedRoom.outline.map((v, i) => {
+                const vPx = metresToPx(v);
+                return (
+                  <circle
+                    key={`room-vh-${i}`}
+                    cx={vPx.x}
+                    cy={vPx.y}
+                    r={4}
+                    fill="#3b82f6"
+                    stroke="#fff"
+                    strokeWidth={1.5}
+                    style={{ cursor: 'grab' }}
+                  />
+                );
+              })}
+            </g>
+          )}
+
           {/* Snap hover */}
           {hoverSnap && (
             <circle
@@ -1636,14 +2138,37 @@ export function FloorPlanTracingEditor({
                   />
                 </PropertyRow>
                 <PropertyRow label="Swing">
-                  <select
-                    value={selectedDoor.swing}
-                    onChange={(e) => patchDoor(selectedDoor.id, { swing: e.target.value as 'left' | 'right' })}
-                    style={selectStyle()}
-                  >
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <select
+                      value={selectedDoor.swing}
+                      onChange={(e) => patchDoor(selectedDoor.id, { swing: e.target.value as 'left' | 'right' })}
+                      style={selectStyle()}
+                    >
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patchDoor(selectedDoor.id, {
+                          swing: selectedDoor.swing === 'left' ? 'right' : 'left',
+                        })
+                      }
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: 11,
+                        borderRadius: 'var(--radius-sm)',
+                        border: '0.5px solid var(--color-border-secondary)',
+                        background: 'var(--color-background-primary)',
+                        color: 'var(--color-text-primary)',
+                        cursor: 'pointer',
+                      }}
+                      title="Flip swing direction"
+                      data-testid="door-swing-flip"
+                    >
+                      Flip ↔
+                    </button>
+                  </div>
                 </PropertyRow>
               </>
             )}
@@ -1706,11 +2231,52 @@ export function FloorPlanTracingEditor({
                     step={1}
                     value={selectedFurniture.rotation}
                     onChange={(e) => {
-                      const v = Number(e.target.value);
-                      if (Number.isFinite(v)) patchFurniture(selectedFurniture.id, { rotation: v });
+                      const raw = Number(e.target.value);
+                      if (!Number.isFinite(raw)) return;
+                      // Hold Shift while dragging to snap to 15° steps.
+                      // Range inputs don't reliably carry the modifier
+                      // on their InputEvent across browsers, so we
+                      // consult the keyboard-tracked ref as the source
+                      // of truth and fall back to the native event for
+                      // browsers that do attach it.
+                      const ne = e.nativeEvent as { shiftKey?: boolean };
+                      const shift = shiftHeldRef.current || ne.shiftKey === true;
+                      const snapped = shift ? Math.round(raw / 15) * 15 : raw;
+                      patchFurniture(selectedFurniture.id, { rotation: ((snapped % 360) + 360) % 360 });
                     }}
                     style={{ width: 110 }}
+                    title="Drag to rotate · hold Shift for 15° snap"
                   />
+                </PropertyRow>
+                <PropertyRow label="Snap to">
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[15, 45, 90].map((step) => (
+                      <button
+                        key={step}
+                        type="button"
+                        onClick={() => {
+                          const r = selectedFurniture.rotation;
+                          const snapped = Math.round(r / step) * step;
+                          patchFurniture(selectedFurniture.id, {
+                            rotation: ((snapped % 360) + 360) % 360,
+                          });
+                        }}
+                        style={{
+                          padding: '3px 6px',
+                          fontSize: 10,
+                          borderRadius: 'var(--radius-sm)',
+                          border: '0.5px solid var(--color-border-secondary)',
+                          background: 'var(--color-background-primary)',
+                          color: 'var(--color-text-primary)',
+                          cursor: 'pointer',
+                        }}
+                        title={`Snap rotation to nearest ${step}°`}
+                        data-testid={`rotation-snap-${step}`}
+                      >
+                        {step}°
+                      </button>
+                    ))}
+                  </div>
                 </PropertyRow>
               </>
             )}
@@ -1733,8 +2299,24 @@ export function FloorPlanTracingEditor({
                     }}
                   />
                 </PropertyRow>
-                <PropertyRow label="Vertices">
-                  <span style={readOnlyText()}>{selectedRoom.outline.length}</span>
+                <PropertyRow label={`Vertices (${selectedRoom.outline.length})`}>
+                  <button
+                    type="button"
+                    onClick={() => addVertexAtLongestEdge(selectedRoom.id)}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: 11,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '0.5px solid var(--color-border-secondary)',
+                      background: 'var(--color-background-primary)',
+                      color: 'var(--color-text-primary)',
+                      cursor: 'pointer',
+                    }}
+                    title="Insert a vertex at the midpoint of the polygon's longest edge"
+                    data-testid="room-add-vertex"
+                  >
+                    + Vertex
+                  </button>
                 </PropertyRow>
               </>
             )}
@@ -1871,21 +2453,22 @@ function FurnitureCard({ entry }: { entry: CatalogEntry }) {
     >
       <div
         style={{
-          height: 26,
-          background: '#e5e7eb',
+          height: 30,
+          background: '#f3f4f6',
           border: '0.5px solid #9ca3af',
           borderRadius: 2,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 9,
           color: '#374151',
-          fontWeight: 500,
         }}
       >
+        {furnitureIcon(entry.category, 22)}
+      </div>
+      <div style={{ fontSize: 9, color: 'var(--color-text-primary)', fontWeight: 500, textAlign: 'center' }}>
         {entry.displayName}
       </div>
-      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', textAlign: 'center' }}>
         {entry.defaultWidth}×{entry.defaultDepth} m
       </div>
     </div>

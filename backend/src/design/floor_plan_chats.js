@@ -23,7 +23,7 @@ const { query, pool } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { shapeFloorPlanChat, shapeFloorPlanVersion } = require('./adapters');
 const { appendActivity } = require('./activities');
-const { applyOps } = require('./floor_plan_ops');
+const { applyOps, validateOpsAgainstKB } = require('./floor_plan_ops');
 // Migrated 2026-05-16: Kimi → Gemini for op translation. Same exported
 // signature (translateToOps(model, userMessage[, opts])) so this call
 // site doesn't need to change.
@@ -101,7 +101,23 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     const roomKind = typeof body.room_kind === 'string' && body.room_kind.trim()
       ? body.room_kind.trim()
       : null;
-    const { ops, reply } = await translateToOps(latest.model, userMessage, { roomKind });
+
+    // Fetch the last 5 chat turns for the project so Gemini has memory
+    // of what's been tried and what was rejected. Order ASC so it's
+    // oldest-first (the format the prompt expects). The chat row we
+    // just inserted is `pending` and excluded by status — irrelevant
+    // for context anyway since it's the current turn.
+    const { rows: historyRows } = await query(
+      `SELECT user_message, friday_reply, status
+       FROM design_floor_plan_chats
+       WHERE project_id = $1 AND id <> $2 AND status IN ('applied', 'rejected')
+       ORDER BY created_at DESC
+       LIMIT 5`,
+      [projectId, chatRowId],
+    );
+    const history = historyRows.reverse(); // oldest-first
+
+    const { ops, reply } = await translateToOps(latest.model, userMessage, { roomKind, history });
 
     if (!Array.isArray(ops) || ops.length === 0) {
       const { rows: rejected } = await query(
@@ -130,6 +146,34 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
       return res.json({ chat: shapeFloorPlanChat(rejected[0]), version: null });
     }
 
+    // KB-based validation pass. Runs against the post-applyOps model.
+    // Hard rejections → drop the new version entirely, mark turn
+    // 'rejected', surface violations in friday_reply so Gemini learns
+    // from them in the next turn's history. Warnings → keep going,
+    // append to friday_reply.
+    const { warnings: kbWarnings, rejections: kbRejections } = validateOpsAgainstKB(
+      nextModel,
+      ops,
+    );
+    if (kbRejections.length > 0) {
+      const violationsText = kbRejections.map((r) => `• ${r}`).join('\n');
+      const rejectReply = `${reply}\n\nBut I had to roll it back — clearance violations:\n${violationsText}`;
+      const { rows: rejected } = await query(
+        `UPDATE design_floor_plan_chats
+         SET status = 'rejected',
+             friday_reply = $1,
+             operations = $2::jsonb
+         WHERE id = $3 RETURNING *`,
+        [rejectReply, JSON.stringify(ops), chatRowId],
+      );
+      return res.json({ chat: shapeFloorPlanChat(rejected[0]), version: null });
+    }
+
+    // Compose the final reply once, including any soft warnings.
+    const finalReply = kbWarnings.length > 0
+      ? `${reply}\n\nHeads-up:\n${kbWarnings.map((w) => `• ${w}`).join('\n')}`
+      : reply;
+
     // Persist new floor plan version + update chat row in a single tx.
     const client = await pool.connect();
     let newVersionRow;
@@ -155,7 +199,7 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
              friday_reply = $2,
              operations = $3::jsonb
          WHERE id = $4 RETURNING *`,
-        [newVersionRow.id, reply, JSON.stringify(ops), chatRowId],
+        [newVersionRow.id, finalReply, JSON.stringify(ops), chatRowId],
       );
       appliedChatRow = cRows[0];
       await client.query('COMMIT');

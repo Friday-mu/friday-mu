@@ -249,8 +249,9 @@ router.post('/', attachIdentity, async (req, res) => {
     const { rows } = await query(
       `INSERT INTO feedback (
          type, title, description, severity, route_url, module_label,
-         screenshot_data_url, user_id, user_username, user_display_name
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         screenshot_data_url, user_id, user_username, user_display_name,
+         tenant_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id, type, title, description, severity, route_url, module_label,
                  status, created_at`,
       [
@@ -264,6 +265,7 @@ router.post('/', attachIdentity, async (req, res) => {
         req.identity.userId,
         req.identity.username,
         req.identity.displayName,
+        req.tenantId,
       ],
     );
 
@@ -293,8 +295,10 @@ router.get('/', attachIdentity, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden — admin/director only' });
   }
   try {
-    const filters = [];
-    const params = [];
+    // tenant_id is always the first filter — admins/directors only ever
+    // see feedback from their own tenant (mig 037 added the column).
+    const filters = ['tenant_id = $1'];
+    const params = [req.tenantId];
     if (req.query.type && TYPES.has(req.query.type)) {
       params.push(req.query.type);
       filters.push(`type = $${params.length}`);
@@ -308,7 +312,7 @@ router.get('/', attachIdentity, async (req, res) => {
              user_username, user_display_name, status, resolution_note,
              resolved_at, created_at, updated_at
       FROM feedback
-      ${filters.length ? 'WHERE ' + filters.join(' AND ') : ''}
+      WHERE ${filters.join(' AND ')}
       ORDER BY created_at DESC
       LIMIT 200
     `;
@@ -349,8 +353,14 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
     sets.push(`updated_at = NOW()`);
     params.push(req.params.id);
+    const idParamIdx = params.length;
+    // tenant-scope the UPDATE so an admin can only touch their own
+    // tenant's rows (mig 037). RETURNING is gated by the same WHERE.
+    params.push(req.tenantId);
+    const tenantParamIdx = params.length;
     const { rows } = await query(
-      `UPDATE feedback SET ${sets.join(', ')} WHERE id = $${params.length}
+      `UPDATE feedback SET ${sets.join(', ')}
+       WHERE id = $${idParamIdx} AND tenant_id = $${tenantParamIdx}
        RETURNING id, type, status, resolved_at, updated_at`,
       params,
     );
