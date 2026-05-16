@@ -478,7 +478,7 @@ export function RoughBudgetStage({ project }: Props) {
               <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatMUR(totalExcl)}</span>
               <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{formatMUR(withVAT(totalExcl, cfg))}</span>
               <div style={{ gridColumn: '1 / -1', marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-                On top of the EPC. Annex A is VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.
+                On top of the EPC. Annex A is VAT-exclusive; {vatPct}% VAT added on top.
               </div>
             </div>
           );

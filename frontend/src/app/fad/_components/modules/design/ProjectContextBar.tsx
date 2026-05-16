@@ -10,6 +10,7 @@ import {
 import { toneStyle } from '../../palette';
 import { stageStatusLabel } from './StageTracker';
 import { LifecycleMenu } from './LifecycleMenu';
+import { useCurrentTenantId, FR_TENANT_ID } from '../../../_data/useTenantIdentity';
 
 const PRINT_DOCS: Array<{ slug: string; label: string; group: string }> = [
   { slug: 'project-summary',  label: 'Project summary',           group: 'Reference' },
@@ -63,6 +64,10 @@ const Chip = ({ label, tone }: { label: string; tone: 'info' | 'success' | 'warn
 export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecycleChange, onEditProject, onOpenShareDrawer, onAskFriday }: Props) {
   const counterparty = designClient.counterparties.get(project.counterpartyId);
   const property = designClient.properties.get(project.propertyId);
+  // `entity_id=FD` is FR-internal accounting metadata — only Friday Retreats
+  // staff care which entity a project lives under. Hide for SaaS tenants.
+  const tenantId = useCurrentTenantId();
+  const isFrTenant = tenantId === FR_TENANT_ID;
 
   const tierTone = project.tier === 1 ? 'accent' : project.tier === 2 ? 'info' : project.tier === 3 ? 'neutral' : 'neutral';
   const stageTone =
@@ -161,9 +166,11 @@ export function ProjectContextBar({ project, onOpenOwnerPortal, onBack, onLifecy
               <span>{project.designLeadUserId.replace('u-', '')}{project.designLeadUserId.endsWith('-ext') ? ' (ext)' : ''}</span>
             </span>
           )}
-          <span style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
-            entity_id={project.entityId}
-          </span>
+          {isFrTenant && (
+            <span style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
+              entity_id={project.entityId}
+            </span>
+          )}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

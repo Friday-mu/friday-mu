@@ -324,7 +324,7 @@ export function DesignModule({ subPage, onChangeSubPage, openFriday }: Props) {
     <div className="fad-module-body" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <ModuleHeader
         title="Design"
-        subtitle="Friday Design OS — interior design projects (FD entity)"
+        subtitle="Interior design projects — site visits, moodboards, floor plans, vendor quotes, owner approvals."
         tabs={tabs}
         activeTab={active}
         onTabChange={(id) => { setPidAndUrl(null); onChangeSubPage(id); }}

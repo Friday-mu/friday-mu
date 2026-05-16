@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import type { Action, Resource } from '../_data/permissions';
 import { ROLE_LABEL } from '../_data/permissions';
 import { useCanAccess, usePermissions } from './usePermissions';
+import { useCurrentTenantId, FR_TENANT_ID } from '../_data/useTenantIdentity';
 import type { TaskUser } from '../_data/tasks';
 
 interface GateProps {
@@ -87,9 +88,15 @@ export function RoleSwitcher() {
   const { role, realRole, setRole } = usePermissions();
   const [open, setOpen] = useState(false);
   const current = ROLES.find((r) => r.id === role);
+  // SaaS tenants get the FAD shell pre-wired to the Director persona
+  // (the demo-data default in usePermissions.ts) — so the realRole gate
+  // alone leaks the FR-internal view-as switcher to every signup. Also
+  // require the JWT's tenant_id to match FR's UUID.
+  const tenantId = useCurrentTenantId();
+  const isFrTenant = tenantId === FR_TENANT_ID;
 
   // Only Directors get the View-as switcher.
-  if (realRole !== 'director') return null;
+  if (realRole !== 'director' || !isFrTenant) return null;
 
   const isViewingAsOther = role !== realRole;
 

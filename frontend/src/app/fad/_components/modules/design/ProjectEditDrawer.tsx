@@ -658,7 +658,7 @@ function FeeOverridesSection({
           )}
           <FeeVatRow label="Total fee" minor={effectiveTotal} strong />
           <div style={{ gridColumn: '1 / -1', marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-            Annex A rates are VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.
+            Annex A rates are VAT-exclusive; {vatPct}% VAT added on top.
           </div>
         </div>
       )}

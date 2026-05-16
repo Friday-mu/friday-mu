@@ -524,7 +524,7 @@ function FeeVatBreakdown({
       <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatMUR(total)}</span>
       <span style={{ fontFamily: 'var(--font-mono-fad)', textAlign: 'right', color: 'var(--color-text-secondary)', fontWeight: 600 }}>{formatMUR(withVAT(total, cfg))}</span>
       <div style={{ gridColumn: '1 / -1', marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-        Annex A is VAT-exclusive; {vatPct}% VAT added on top per Mauritius regulations.
+        Annex A is VAT-exclusive; {vatPct}% VAT added on top.
       </div>
     </div>
   );
