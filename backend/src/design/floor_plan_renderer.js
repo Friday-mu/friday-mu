@@ -391,14 +391,33 @@ async function renderModelToStylizedRaster(model, styleNotes, opts = {}) {
     + `- You may paint textures (wood floor, wall colour, furniture material) consistent with the style notes.\n\n`
     + `Style notes: ${styleText}`;
 
-  // ── encode SVG for Gemini ──
-  // SVG-as-inlineData isn't reliably supported by Gemini 2.5 Flash Image
-  // (see ai_images.js ALLOWED_FURNISHING_FETCH_MIME comment). We still
-  // pass it through — generateImage normalises the part and the call
-  // either succeeds or throws into the degrade path below. The SVG body
-  // is short and travels in the prompt text too, so even if the inline
-  // part is dropped, the model has the structure described.
-  const svgBase64 = Buffer.from(svg, 'utf-8').toString('base64');
+  // ── encode SVG → PNG for Gemini ──
+  // 2026-05-16: confirmed via prod logs that Gemini 2.5 Flash Image
+  // rejects image/svg+xml inlineData with "Unsupported MIME type".
+  // We pre-rasterise to PNG via @resvg/resvg-js (pure-Node, no native
+  // compile). Render at 2× the canvas px (so 2000×2000 for the default
+  // 10m × 10m canvas at 100 px/m) — Gemini downsamples internally
+  // and the extra resolution helps furniture labels survive. PNG is
+  // small enough not to bloat the inline data even at that size.
+  let pngBase64;
+  let inlineMime;
+  try {
+    // eslint-disable-next-line global-require
+    const { Resvg } = require('@resvg/resvg-js');
+    const resvg = new Resvg(svg, {
+      fitTo: { mode: 'zoom', value: 2 },
+      background: 'white',
+    });
+    const pngBuffer = resvg.render().asPng();
+    pngBase64 = pngBuffer.toString('base64');
+    inlineMime = 'image/png';
+  } catch (rasteriseErr) {
+    // Fallback to SVG (which Gemini will reject and the catch below
+    // handles) — but log so we know rasterisation broke.
+    console.warn('[floor_plan_renderer] SVG → PNG rasterisation failed:', rasteriseErr.message);
+    pngBase64 = Buffer.from(svg, 'utf-8').toString('base64');
+    inlineMime = 'image/svg+xml';
+  }
 
   // Quota guard — only enforce when the caller passed a real tenant
   // (legacy callers may not). DEFAULT_TENANT_ID is a sentinel for
@@ -422,7 +441,7 @@ async function renderModelToStylizedRaster(model, styleNotes, opts = {}) {
   try {
     result = await generateImage({
       prompt,
-      inlineImages: [{ mimeType: 'image/svg+xml', base64: svgBase64 }],
+      inlineImages: [{ mimeType: inlineMime, base64: pngBase64 }],
     });
   } catch (e) {
     console.warn('[floor_plan_renderer] generateImage failed, returning SVG fallback:', e.message);
