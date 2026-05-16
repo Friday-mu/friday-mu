@@ -101,30 +101,58 @@ ones that crash; subtler issues need a human.
    regulations." Stripped — `vatPct` was already templated from
    `tenants.design_annex_a.vat_rate` (mig 015).
 
-## Polish bugs still deferred — bigger refactor needed
+## Currency refactor (third pass) — `22b0496`
 
-These need real architectural work, not just copy edits. Flagged for
-Mathias triage.
+`feat(saas): tenant-currency formatter — zero-touch refactor + backend persistence fix`
 
-1. **"JF" avatar in topbar** for every logged-in user.
+✅ **"Rs" currency hardcoding** — now resolves from tenant context.
+Approach was zero-touch: shimmed the legacy `formatMUR` to read from
+a module-level cache (`_data/currencyCache.ts`), with a top-level
+React subscriber in FadApp (`useTenantCurrency()`) that fills the
+cache on mount and triggers a re-render so all ~140 existing
+`formatMUR(x)` callsites flip to the tenant's currency without
+edits. `formatMUR` is misnamed now — rename to `formatMoney` is a
+follow-up sweep (JSDoc flags it transitional). MUR / USD / EUR / GBP
+have hand-formatted symbols; anything else falls through to
+`Intl.NumberFormat`.
+
+✅ **Backend: PUT /api/design/annex_a was silently dropping every
+top-level column** — TenantSettingsModule nests
+`{company_name, currency_code, date_format, ...}` inside `body.annex_a`
+(the JSONB), but the reader (`shapeAnnexA`) pulls each from the
+dedicated columns added by mig 035. Save looked green; nothing
+persisted. Extract + UPDATE now wired so the columns track what
+the UI sends.
+
+Verified end-to-end on a fresh US smoke tenant (cleaned up):
+- PUT currency_code='USD' returns 200 + persists
+- Re-read returns USD ✓
+- Design overview Margin exposure: "$0" not "Rs 0" ✓
+- Project Summary block EPC / Design fee / Total fee: "$..." ✓
+- Page-wide /Rs\s+\d/ scan: zero matches ✓
+- FR cache stays MUR; FR output unchanged ✓
+
+## Polish bugs still deferred
+
+1. **Signup defaults `annex_a.currency_code='MUR'`** for every new
+   tenant. US tenants see "Rs" until they Save in Settings. Should
+   pick currency from `tenant.country` at seed time (US→USD, EU→EUR,
+   MU→MUR, etc.). Backend tweak; not in scope here.
+
+2. **"JF" avatar in topbar** for every logged-in user.
    `Header.tsx:155` reads `currentUser` from `TASK_USERS` (FR-staff
    fixture in `_data/tasks.ts`) keyed by `currentUserId` which
    defaults to `'u-ishant'` in `usePermissions.ts:50`. The first
    matching director in the fixture is Judith Friday → "JF" initials
    show for everyone. Proper fix wires the JWT's `user_id` /
    `display_name` from `/api/tenants/me` through to the topbar
-   instead of reading a hardcoded fixture.
+   instead of reading a hardcoded fixture. Next session per Ishant.
 
-2. **"Rs" currency hardcoding** in Design + Finance modules.
-   `formatMUR` from `_data/finance.ts:801` literally prepends `'Rs '`
-   to every value and is called 100+ times across `DesignModule.tsx`,
-   `FinanceModule.tsx`, multiple design stages, change-orders, etc.
-   Project detail summary, dashboard stat row, rough-budget tables —
-   all show `Rs 0` to the US smoke tenant. Proper fix introduces
-   `formatMoney(minor, currencyCode)` (or pulls `currency_code` from
-   tenant context via a hook) and migrates callsites en masse.
+3. **`formatMUR` rename sweep** — the shim works but the variable
+   name lies. Follow-up: rename to `formatMoney` everywhere, drop
+   the shim, and any non-React caller passes currency explicitly.
 
-3. **Stage URL routing**: `?stage=floor_plan` (underscore) silently
+4. **Stage URL routing**: `?stage=floor_plan` (underscore) silently
    falls through to the default; the actual case is `'floor-plan'`
    (hyphen). Affects only hand-typed / external deep links, not the
    stepper buttons. Accept both, or canonicalise.
@@ -201,9 +229,10 @@ AI usage tracking → recorded: floor_plan_render 5¢ + floor_plan_ai 1¢  ✅
 ## Commits this session
 
 ```
+22b0496 feat(saas): tenant-currency formatter — zero-touch refactor + backend persistence fix
 2f9dec9 fix(saas): scrub FR-internal labels visible to tenant signups
 0a98f32 fix(saas): BillingModule invoice-shape mismatch + CommandPalette tenant gate
 e639e3b fix(floor-plan): rasterise SVG → PNG in chat path too + rate-table alias
 ```
 
-All three pushed to `origin/fad-design-os-v01-frontend`. All deployed.
+All four pushed to `origin/fad-design-os-v01-frontend`. All deployed.
