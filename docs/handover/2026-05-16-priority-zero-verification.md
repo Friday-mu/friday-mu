@@ -278,38 +278,52 @@ Deferred to next session:
   re-fetching `/listings` ourselves — would eliminate the
   duplicate fetch under rate-limit pressure.
 
-## Priority 2 — Tasks module (backend) — `9aee15d`
+## Priority 2 — Operations module (Tasks + Comments + Costs) — `9aee15d` + `8e76b5f`
 
-`feat(tasks): tenant-scoped operational tasks module — schema + CRUD + assignment emails`
-
-✅ Backend live. Separate from `design_tasks` (project-anchored
-blockers / next-actions inside the design workflow) — this covers
-the broader Operations module (maintenance, owner correspondence,
-any to-do not tied to a design engagement).
+Two-pass build. The narrow mig-050 task table was extended in
+mig-051 once Ishant clarified "tasks IS the Operations module" —
+multi-assignee, paused / reported / awaiting_approval statuses,
+property + reservation cross-links, source provenance, comments,
+cost lines (expense capture). Full frontend rewire of
+OperationsModule + drawers, with an adapter layer
+(`tasksClient.ts`) so existing JSX + 1700 lines of consumer code
+stay unchanged.
 
 | Layer | Where |
 |---|---|
-| Schema | `backend/migrations/050_tasks.sql` — tenant-scoped, status enum (todo/in_progress/done/cancelled), priority enum (lowest..urgent), nullable project_id (loose FK to design_projects), nullable assignee, due_date, category, created_by audit |
-| CRUD | `backend/src/tasks/index.js` — `GET /api/tasks` with rich filters (status csv, assignee='me' alias, project, priority, due_before/after, overdue, include=cancelled, limit), `GET /:id`, `POST`, `PATCH`, `DELETE` |
-| Status transitions | PATCH to 'done' sets `completed_at = NOW()`; PATCH out of 'done' clears it |
-| Email | `tplTaskAssigned` added to `backend/src/tenants/email.js`; fires on assignee changes (best-effort, never blocks the response; self-assignment silenced) |
+| Schema (narrow) | `backend/migrations/050_tasks.sql` — initial tenant-scoped `tasks` table |
+| Schema (full) | `backend/migrations/051_tasks_full.sql` — extends tasks with source, visibility, department, subdepartment, property_code, reservation_guesty_id, due_time, estimated/spent minutes, assignee_user_ids (UUID[]), ai_suggestions + activity_log JSONB, tags. Adds `task_comments` + `task_costs` tables. Full status set (todo/in_progress/paused/reported/awaiting_approval/completed/cancelled). |
+| CRUD + sub-resources | `backend/src/tasks/index.js` — filters: status csv, assignee='me', project, property, reservation, source, department, priority, due-date, overdue, include=cancelled. `POST/PATCH/DELETE /api/tasks/:id` + sub-resources `POST :id/comments`, `POST :id/costs`, `DELETE :taskId/costs/:costId` |
+| Status transitions | PATCH to 'completed' sets `completed_at = NOW()`; PATCH out clears it. 'done' normalised to 'completed' on write. |
+| Activity log | Auto-appended on create / status change / comment-added / cost-added (JSONB column) |
+| Email | `tplTaskAssigned` in `backend/src/tenants/email.js`; each newly-added assignee gets one email per change. Self-assignment silenced. |
+| Frontend adapter | `frontend/src/app/fad/_data/tasksClient.ts` — mirrors `breezeway.ts`'s signatures, owns snake↔camel mapping, filters non-UUID values at the wire boundary so fixture user-ids like 'u-judith' don't blow up the backend. |
+| Frontend cache+hook | `frontend/src/app/fad/_data/useApiTasks.ts` — module-level cache + subscriber pattern. Mutations push to cache → all consumers re-render. |
+| Component swaps | OperationsModule, CreateTaskDrawer, TaskDetail, AddCostDrawer all moved from breezeway → tasksClient. |
 
-Smoke-tested end-to-end on a fresh US tenant:
-- POST → task with defaults
-- PATCH status=in_progress / done — completed_at handled correctly
+Verified end-to-end on a fresh US tenant on prod (both curl + Playwright):
+- POST rich task with property_code + reservation + multi-assignee → persisted
+- POST comment + cost — display_name joined, owner_charge stored
+- PATCH status awaiting_approval / done (alias) — all enums accepted
 - All filter combos return expected counts
-- Invalid status → HTTP 400 with descriptive error
-- DELETE → 204, then 404 on follow-up GET
+- Browser: OperationsModule loads with all-zero KPIs (empty cache), "New task" drawer creates, "All tasks" tab shows "1 of 1 tasks"
+- UUID-safety filter strips fixture 'u-judith' from requesterId silently — create flow works without picking an assignee
 
-Frontend wiring deferred — OperationsModule + CreateTaskDrawer still
-on the in-memory `_data/breezeway.ts` fixture. The fixture's `Task`
-interface is much richer (department, subdepartment, costs, comments,
-AI suggestions, attachment count) than this backend; next session
-decides between narrowing the frontend or extending the schema.
+What's still on fixtures (deferred follow-ups):
+- TASK_USERS assignee picker pulls from FR-staff demo fixture, not
+  tenant's actual users. Same refactor as the JF-avatar leak; needs
+  `/api/tenants/me/users` swap throughout.
+- REPORTED_ISSUES, APPROVAL_REQUESTS, TASK_INSIGHTS,
+  AI_TASK_DRAFTS — power the other Operations tabs, still fixtures.
+- Roster + staff mutations stay in breezeway.ts (HR-adjacent).
+- Owner-charge → Finance expense flow stays in breezeway.ts. When
+  `finance_expenses` lands, `task_costs.flowed_to_finance_expense_id`
+  gets an FK + the integration moves to backend.
 
 ## Commits this session
 
 ```
+8e76b5f feat(operations): wire Tasks module backend + frontend — multi-assignee, cross-module links, comments, costs
 9aee15d feat(tasks): tenant-scoped operational tasks module — schema + CRUD + assignment emails
 cccd61d feat(guesty): Reservations + Properties sync — schema, API, worker, webhook
 818761d fix(saas): topbar avatar reads real identity from JWT for SaaS tenants
@@ -319,5 +333,6 @@ cccd61d feat(guesty): Reservations + Properties sync — schema, API, worker, we
 e639e3b fix(floor-plan): rasterise SVG → PNG in chat path too + rate-table alias
 ```
 
-All seven pushed to `origin/fad-design-os-v01-frontend`. All deployed.
-Migrations 049 + 050 applied (50/50 registered in `fad_schema_migrations`).
+All eight pushed to `origin/fad-design-os-v01-frontend`. All deployed.
+Migrations 049 + 050 + 051 applied (51/51 registered in
+`fad_schema_migrations`).
