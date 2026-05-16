@@ -21,14 +21,25 @@ interface TenantIdentity {
   /** GMS-side role from JWT — 'admin', 'manager', 'staff', etc. */
   role: string | null;
   userId: string | null;
+  /** Display name from JWT — e.g. "Mathias Sercu" or the email if unset. */
+  displayName: string | null;
+  /** Username from JWT — the email the user signed up / logs in with. */
+  username: string | null;
 }
 
+const EMPTY_IDENTITY: TenantIdentity = {
+  tenantId: null,
+  role: null,
+  userId: null,
+  displayName: null,
+  username: null,
+};
+
 function decodeJwt(token: string | null): TenantIdentity {
-  const empty: TenantIdentity = { tenantId: null, role: null, userId: null };
-  if (!token) return empty;
+  if (!token) return EMPTY_IDENTITY;
   try {
     const parts = token.split('.');
-    if (parts.length !== 3) return empty;
+    if (parts.length !== 3) return EMPTY_IDENTITY;
     // Base64url decode the payload
     const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
@@ -40,9 +51,11 @@ function decodeJwt(token: string | null): TenantIdentity {
       tenantId: payload.tenant_id || payload.tenantId || null,
       role: payload.role || null,
       userId: payload.user_id || payload.userId || null,
+      displayName: payload.display_name || payload.displayName || null,
+      username: payload.username || null,
     };
   } catch {
-    return empty;
+    return EMPTY_IDENTITY;
   }
 }
 
@@ -59,7 +72,7 @@ export function _resetTenantIdentityCacheForTests() {
 }
 
 export function useTenantIdentity(): TenantIdentity {
-  const [id, setId] = useState<TenantIdentity>(() => ({ tenantId: null, role: null, userId: null }));
+  const [id, setId] = useState<TenantIdentity>(() => EMPTY_IDENTITY);
   useEffect(() => {
     cached = decodeJwt(getToken());
     setId(cached);

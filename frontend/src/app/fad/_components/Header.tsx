@@ -17,8 +17,8 @@ import {
 } from './icons';
 import { RoleSwitcher } from './PermissionGate';
 import { usePermissions, useCurrentUserId } from './usePermissions';
-import { TASK_USER_BY_ID } from '../_data/tasks';
 import { ROLE_LABEL } from '../_data/permissions';
+import { useDisplayedUser } from '../_data/useDisplayedUser';
 import {
   topNotifications,
   unreadCount,
@@ -62,7 +62,9 @@ export function Header({
   avatarOpen,
 }: Props) {
   const { currentUserId, role } = usePermissions();
-  const currentUser = TASK_USER_BY_ID[currentUserId];
+  // Branches on tenant: FR keeps the role-switcher-driven fixture
+  // identity, SaaS tenants read display_name + username from the JWT.
+  const currentUser = useDisplayedUser();
 
   // Subscribe to notifications-rev so the bell dot updates reactively
   const [, setNotifRev] = useState(0);
@@ -150,9 +152,9 @@ export function Header({
             onClick={onOpenAvatar}
             className="fad-avatar"
             title="Account"
-            style={currentUser ? { background: currentUser.avatarColor } : undefined}
+            style={{ background: currentUser.avatarColor }}
           >
-            {currentUser?.initials ?? 'IS'}
+            {currentUser.initials}
           </button>
           {avatarOpen && <AvatarDropdown />}
         </div>
@@ -318,20 +320,30 @@ function HelpDropdown() {
 }
 
 function AvatarDropdown() {
-  const { currentUserId, role } = usePermissions();
-  const user = TASK_USER_BY_ID[currentUserId];
+  const { role } = usePermissions();
+  const user = useDisplayedUser();
+  // Email domain ("friday.mu") in the subtitle was hardcoded — derive
+  // from the live email if present so SaaS tenants see their own
+  // domain. Falls back to friday.mu only when we genuinely have no
+  // email (FR fixture users have user.email populated).
+  const domain = user.email && user.email.includes('@')
+    ? user.email.split('@')[1]
+    : 'friday.mu';
 
   // @demo:auth — Tag: PROD-AUTH-2 — see frontend/DEMO_CRUFT.md
   // Replace with: POST /api/auth/logout to invalidate session server-side.
   // Keep the localStorage cleanup for client-side hygiene.
   const handleLogout = () => {
     try {
-      // Clear FAD identity state. Keeps preferences (theme, sidebar collapsed)
-      // so the user lands back at /login with their visual settings intact.
+      // Clear FAD + GMS identity state. Keeps preferences (theme,
+      // sidebar collapsed) so the user lands back at /login with their
+      // visual settings intact.
       localStorage.removeItem('fad:dev-role');
       localStorage.removeItem('fad:dev-user');
       localStorage.removeItem('fad:real-role');
       localStorage.removeItem('fad:last-email');
+      localStorage.removeItem('gms_token');
+      localStorage.removeItem('gms_role');
     } catch {
       /* localStorage unavailable — proceed to navigate anyway */
     }
@@ -341,9 +353,9 @@ function AvatarDropdown() {
   return (
     <div className="fad-dropdown" style={{ width: 220 }}>
       <div style={{ padding: '10px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-        <div style={{ fontWeight: 500, fontSize: 13 }}>{user?.name ?? 'Unknown user'}</div>
+        <div style={{ fontWeight: 500, fontSize: 13 }}>{user.name}</div>
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          {ROLE_LABEL[role]} · friday.mu
+          {ROLE_LABEL[role]} · {domain}
         </div>
       </div>
       <button className="fad-dropdown-item">Profile</button>
