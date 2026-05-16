@@ -6,6 +6,7 @@ import { iconFor, IconExpand, IconSparkle } from './icons';
 import { canSeeModule, useCurrentRole, useCurrentUserId } from './usePermissions';
 import { pendingCountFor, pendingCountForSubpage, subscribePendingRev, type PendingCount } from '../_data/pendingCounts';
 import { useEnabledModules } from '../_data/useEnabledModules';
+import { useCurrentTenantId, FR_TENANT_ID } from '../_data/useTenantIdentity';
 
 interface Props {
   active: string;
@@ -36,6 +37,8 @@ export function Sidebar({
   const role = useCurrentRole();
   const userId = useCurrentUserId();
   const { enabledSet } = useEnabledModules();
+  const tenantId = useCurrentTenantId();
+  const isFrTenant = tenantId === FR_TENANT_ID;
 
   // Subscribe to fixture-mutation bumps so badges re-compute reactively
   const [pendingRev, setPendingRev] = useState(0);
@@ -49,10 +52,13 @@ export function Sidebar({
       // tenant has enabled. Before it loads (null), show everything to avoid
       // a flash of empty sidebar.
       if (enabledSet && !enabledSet.has(mod.id)) return;
+      // FR-only modules — hide for non-FR tenants regardless of role/enabledSet.
+      // Backend endpoints behind these modules also gate on _isFrAdmin().
+      if (mod.id === 'admin-analytics' && !isFrTenant) return;
       (m[mod.group] = m[mod.group] || []).push(mod);
     });
     return m;
-  }, [role, enabledSet]);
+  }, [role, enabledSet, isFrTenant]);
 
   // Allow re-clicking the active module to collapse its sub-pages.
   // Resets when the user navigates to a different module.

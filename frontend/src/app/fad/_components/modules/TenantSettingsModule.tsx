@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
-import { apiFetch } from '../../../../components/types';
+import { apiFetch, clearToken, API_BASE, getToken } from '../../../../components/types';
 import { useCurrentTenantRole } from '../../_data/useTenantIdentity';
 import { useAnnexA } from '../../_data/useAnnexA';
 
@@ -121,6 +121,7 @@ function GeneralTab() {
   if (!tenant) return <ErrorBlock message={error || 'Failed to load tenant.'} />;
 
   return (
+    <>
     <Card>
       <SectionHeader title="General" description="Tenant profile and subscription overview." />
 
@@ -165,6 +166,212 @@ function GeneralTab() {
         </p>
       )}
     </Card>
+    {isAdmin && <DangerZone tenant={tenant} />}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Danger zone — data export + soft delete
+// ─────────────────────────────────────────────────────────────
+//
+// "Download your data" hits GET /me/data-export, which streams a zip
+// of CSVs. We deliberately use a plain <a> with the bearer token in a
+// query-less header by way of fetch + blob; static-export deployments
+// can't bake the token into the link.
+//
+// "Delete this account" opens a typed-confirmation dialog. On submit,
+// POST /me/delete-request → on success, clear the JWT and redirect to
+// /signup with a banner message.
+
+function DangerZone({ tenant }: { tenant: TenantRow }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [typedSlug, setTypedSlug] = useState('');
+  const [reason, setReason] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const downloadExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/api/tenants/me/data-export`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${tenant.slug}-data-export.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const submitDelete = async () => {
+    setDeleteError(null);
+    if (typedSlug !== tenant.slug) {
+      setDeleteError(`Type "${tenant.slug}" to confirm.`);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await apiFetch('/api/tenants/me/delete-request', {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() || null }),
+      });
+      // Tenant is now soft-cancelled. Clear token + bounce to signup
+      // with a query flag so /signup can show a confirmation message.
+      clearToken();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/signup?deleted=1';
+      }
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <div style={{ height: 16 }} />
+      <Card>
+        <SectionHeader
+          title="Danger zone"
+          description="Export your workspace data, or close this account. These actions affect every user in your workspace."
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <DangerRow
+            title="Download your data"
+            body="Get a zip of CSVs covering tenant settings, users, invoices, design projects, floor plans, chats, AI usage, and payment instructions."
+            action={
+              <button type="button" onClick={() => void downloadExport()} disabled={exporting} style={ghostBtn()}>
+                {exporting ? 'Preparing…' : 'Download zip'}
+              </button>
+            }
+            error={exportError}
+          />
+          <DangerRow
+            title="Delete this account"
+            body="Cancels your subscription, deactivates this workspace, and locks all users out within 60 seconds. Friday Retreats staff can restore the account for a short period; data is permanently expunged on hard delete."
+            action={
+              <button
+                type="button"
+                onClick={() => setShowConfirm(true)}
+                style={{ ...ghostBtn(), borderColor: 'var(--color-text-danger, #991b1b)', color: 'var(--color-text-danger, #991b1b)' }}
+              >
+                Delete account…
+              </button>
+            }
+          />
+        </div>
+      </Card>
+      {showConfirm && (
+        <ConfirmDialog
+          title="Delete this account"
+          onClose={() => { if (!deleting) setShowConfirm(false); }}
+        >
+          <p style={{ margin: '0 0 12px', fontSize: 13 }}>
+            This will cancel your subscription and lock all users out of this workspace
+            within 60 seconds. You will be signed out after submission.
+          </p>
+          <p style={{ margin: '0 0 16px', fontSize: 13 }}>
+            Type <code style={{ fontFamily: 'var(--font-mono-fad, monospace)' }}>{tenant.slug}</code> to confirm.
+          </p>
+          <Field label="Workspace slug">
+            <input
+              type="text"
+              value={typedSlug}
+              onChange={(e) => setTypedSlug(e.target.value)}
+              placeholder={tenant.slug}
+              autoFocus
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="Reason (optional)" hint="Help us understand why you're leaving.">
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+          </Field>
+          {deleteError && <ErrorMsg message={deleteError} />}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+            <button type="button" onClick={() => setShowConfirm(false)} disabled={deleting} style={ghostBtn()}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitDelete()}
+              disabled={deleting || typedSlug !== tenant.slug}
+              style={{ ...primaryBtn(), background: 'var(--color-text-danger, #991b1b)' }}
+            >
+              {deleting ? 'Deleting…' : 'Delete account'}
+            </button>
+          </div>
+        </ConfirmDialog>
+      )}
+    </>
+  );
+}
+
+function DangerRow({ title, body, action, error }: { title: string; body: string; action: React.ReactNode; error?: string | null }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 16,
+      padding: '12px 0',
+      borderTop: '0.5px solid var(--color-border-tertiary)',
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{title}</div>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>{body}</p>
+        {error && <ErrorMsg message={error} />}
+      </div>
+      <div style={{ flexShrink: 0 }}>{action}</div>
+    </div>
+  );
+}
+
+function ConfirmDialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.4)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 9999,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-background-primary, #fff)',
+          borderRadius: 8,
+          padding: 24,
+          maxWidth: 480,
+          width: '90%',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+        }}
+      >
+        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>{title}</h3>
+        {children}
+      </div>
+    </div>
   );
 }
 

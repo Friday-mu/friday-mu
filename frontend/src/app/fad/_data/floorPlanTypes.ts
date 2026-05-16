@@ -165,6 +165,10 @@ export interface ApiFloorPlanVersion {
   id: string;
   project_id: string;
   version: number;
+  /** Zero-indexed floor. 0 = ground / 1st in the property's vocabulary. */
+  floor_index: number;
+  /** Free-text label for the floor ("Ground floor", "Loft"). */
+  floor_label: string | null;
   source_image_url: string | null;
   model: FloorPlanModel;
   rendered_image_url: string | null;
@@ -172,6 +176,14 @@ export interface ApiFloorPlanVersion {
   is_final: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** Returned shape from GET /api/design/floor-plans/floors. */
+export interface ApiFloorPlanFloor {
+  floor_index: number;
+  floor_label: string | null;
+  version_count: number;
+  latest_version: number | null;
 }
 
 /**

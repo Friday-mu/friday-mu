@@ -22,11 +22,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   listFloorPlans,
+  listFloors,
   listFloorPlanChats,
   loadFloorPlanRender,
   finalizeFloorPlan,
 } from '../../../_data/designClient';
-import type { ApiFloorPlanChat, ApiFloorPlanVersion } from '../../../_data/floorPlanTypes';
+import type {
+  ApiFloorPlanChat,
+  ApiFloorPlanFloor,
+  ApiFloorPlanVersion,
+} from '../../../_data/floorPlanTypes';
 import { FloorPlanTracingEditor } from './FloorPlanTracingEditor';
 import { FloorPlanChatPanel } from './FloorPlanChatPanel';
 
@@ -39,6 +44,22 @@ interface Props {
 
 type Stage = 'loading' | 'trace' | 'chat';
 
+// v1 cap — per the multi-floor spec we keep the floors set small until
+// we see real usage. Mathias can revisit if a property needs more.
+const MAX_FLOORS_PER_PROJECT = 5;
+
+/**
+ * Default label for a floor index when the row didn't carry one — e.g.
+ * legacy single-floor projects backfilled to floor_index = 0. Free text
+ * still wins; this is only a fallback for display.
+ */
+function defaultFloorLabel(idx: number): string {
+  if (idx === 0) return 'Ground floor';
+  if (idx === 1) return '1st floor';
+  if (idx === 2) return '2nd floor';
+  return `Floor ${idx + 1}`;
+}
+
 interface RenderState {
   url: string;
   stub: boolean;
@@ -46,6 +67,16 @@ interface RenderState {
 
 export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Props) {
   const [stage, setStage] = useState<Stage>('loading');
+  // Floors the project knows about (post-migration 045). Each floor has
+  // an independent version history. Empty array = no floors traced yet.
+  const [floors, setFloors] = useState<ApiFloorPlanFloor[]>([]);
+  // Active floor tab. null = no floor selected (used during the very
+  // first trace when no floors exist yet).
+  const [activeFloorIndex, setActiveFloorIndex] = useState<number | null>(null);
+  // Pending floor label for the "+ add floor" flow — set when the user
+  // prompts a label and we drop into the tracing editor with no versions
+  // yet on the new floor.
+  const [pendingFloorLabel, setPendingFloorLabel] = useState<string | null>(null);
   const [versions, setVersions] = useState<ApiFloorPlanVersion[]>([]);
   const [chats, setChats] = useState<ApiFloorPlanChat[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
@@ -57,36 +88,61 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
   const [finalizing, setFinalizing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // ── load existing versions + chats ───────────────────────────────
-  const reload = useCallback(async () => {
+  // ── load existing floors + versions + chats ──────────────────────
+  // Reload pulls the project's floor list, picks an active floor if
+  // none is set, then fetches the versions for that floor. Chats are
+  // not floor-scoped today (we'd revisit when chat operations move per-
+  // floor — out of scope for v1).
+  const reload = useCallback(async (preferredFloor?: number) => {
     try {
-      const [vs, cs] = await Promise.all([listFloorPlans(projectId), listFloorPlanChats(projectId)]);
-      setVersions(vs);
+      const [fl, cs] = await Promise.all([listFloors(projectId), listFloorPlanChats(projectId)]);
+      setFloors(fl);
       setChats(cs);
       setLoadError(null);
-      return { versions: vs, chats: cs };
+      const targetFloor = preferredFloor != null
+        ? preferredFloor
+        : (activeFloorIndex != null && fl.some((f) => f.floor_index === activeFloorIndex)
+            ? activeFloorIndex
+            : (fl[0]?.floor_index ?? null));
+      let vs: ApiFloorPlanVersion[] = [];
+      if (targetFloor != null) {
+        vs = await listFloorPlans(projectId, targetFloor);
+      }
+      setVersions(vs);
+      if (targetFloor != null) setActiveFloorIndex(targetFloor);
+      return { floors: fl, versions: vs, chats: cs };
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
-      return { versions: [], chats: [] };
+      return { floors: [], versions: [], chats: [] };
     }
-  }, [projectId]);
+  }, [projectId, activeFloorIndex]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [vs, cs] = await Promise.all([listFloorPlans(projectId), listFloorPlanChats(projectId)]);
+        const [fl, cs] = await Promise.all([listFloors(projectId), listFloorPlanChats(projectId)]);
+        if (!alive) return;
+        setFloors(fl);
+        setChats(cs);
+        if (fl.length === 0) {
+          // No floors traced yet — drop straight into tracing editor for floor 0.
+          if (!startInChat) {
+            setActiveFloorIndex(0);
+            setStage('trace');
+          } else {
+            setStage('chat');
+          }
+          return;
+        }
+        const firstFloor = fl[0].floor_index;
+        setActiveFloorIndex(firstFloor);
+        const vs = await listFloorPlans(projectId, firstFloor);
         if (!alive) return;
         setVersions(vs);
-        setChats(cs);
-        if (vs.length === 0 && !startInChat) {
-          setStage('trace');
-        } else {
-          // Latest version selected by default.
-          const latest = vs[vs.length - 1];
-          if (latest) setSelectedVersionId(latest.id);
-          setStage('chat');
-        }
+        const latest = vs[vs.length - 1];
+        if (latest) setSelectedVersionId(latest.id);
+        setStage('chat');
       } catch (e) {
         if (!alive) return;
         setLoadError(e instanceof Error ? e.message : String(e));
@@ -97,6 +153,44 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
       alive = false;
     };
   }, [projectId, startInChat]);
+
+  // ── floor switch ────────────────────────────────────────────────
+  // Click a floor tab → reload its versions, reset render cache so the
+  // first version of the new floor lazy-renders fresh.
+  const switchFloor = useCallback(async (floorIdx: number) => {
+    if (floorIdx === activeFloorIndex) return;
+    setActiveFloorIndex(floorIdx);
+    setSelectedVersionId(null);
+    try {
+      const vs = await listFloorPlans(projectId, floorIdx);
+      setVersions(vs);
+      const latest = vs[vs.length - 1];
+      if (latest) setSelectedVersionId(latest.id);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
+  }, [activeFloorIndex, projectId]);
+
+  // "+" tab — prompts for a label and drops into the tracing editor
+  // with the new floor index pre-set. The actual row is created when
+  // the user saves their first trace on that floor.
+  function handleAddFloor() {
+    if (floors.length >= MAX_FLOORS_PER_PROJECT) {
+      showToast(`Maximum ${MAX_FLOORS_PER_PROJECT} floors per project.`);
+      return;
+    }
+    const nextIdx = floors.length === 0
+      ? 0
+      : Math.max(...floors.map((f) => f.floor_index)) + 1;
+    const raw = typeof window !== 'undefined'
+      ? window.prompt('Floor label (e.g. "1st floor", "Loft")', defaultFloorLabel(nextIdx))
+      : defaultFloorLabel(nextIdx);
+    if (raw === null) return; // cancelled
+    const label = raw.trim() || defaultFloorLabel(nextIdx);
+    setActiveFloorIndex(nextIdx);
+    setPendingFloorLabel(label);
+    setStage('trace');
+  }
 
   // ── lazy raster render ───────────────────────────────────────────
   // Trigger a render fetch for whichever version is currently selected
@@ -140,13 +234,15 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
   // ── handlers ─────────────────────────────────────────────────────
 
   function handleTracingSaved(versionId: string) {
-    // Tracing editor created v1. Fire the toast immediately so the
-    // designer gets confirmation even if reload() is slow, then await
-    // the version-list refresh before dropping into chat. The editor
-    // itself has already reset its own saving/dirty state before
-    // calling us, so the user is not stuck in a "Saving…" button.
+    // Tracing editor created v1 of the active floor. Fire the toast
+    // immediately so the designer gets confirmation even if reload() is
+    // slow, then await the version-list + floor-list refresh before
+    // dropping into chat. The editor itself has already reset its own
+    // saving/dirty state before calling us, so the user is not stuck
+    // in a "Saving…" button.
     showToast('Floor plan saved');
-    void reload().then(({ versions: vs }) => {
+    setPendingFloorLabel(null);
+    void reload(activeFloorIndex ?? undefined).then(({ versions: vs }) => {
       const created = vs.find((v) => v.id === versionId) || vs[vs.length - 1];
       if (created) setSelectedVersionId(created.id);
       setStage('chat');
@@ -160,10 +256,11 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
   }
 
   function handleEditWallsSaved(versionId: string) {
-    // Wall-edit creates a NEW version (we call createFloorPlan again).
+    // Wall-edit creates a NEW version on the SAME floor (we call
+    // createFloorPlan again with the version's floor_index).
     showToast('Floor plan saved');
     setEditingWalls(false);
-    void reload().then(({ versions: vs }) => {
+    void reload(activeFloorIndex ?? undefined).then(({ versions: vs }) => {
       const created = vs.find((v) => v.id === versionId) || vs[vs.length - 1];
       if (created) setSelectedVersionId(created.id);
     });
@@ -221,14 +318,25 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
 
   // ── stage 1: tracing editor (blank plan) ─────────────────────────
   if (stage === 'trace') {
+    // Use pendingFloorLabel if the user came in via the "+" add-floor
+    // flow; otherwise fall back to the active floor's label from the
+    // floors list (re-trace from scratch path); else the default.
+    const idx = activeFloorIndex ?? 0;
+    const labelFromList = floors.find((f) => f.floor_index === idx)?.floor_label;
+    const traceLabel = pendingFloorLabel
+      ?? labelFromList
+      ?? defaultFloorLabel(idx);
     return (
       <FloorPlanTracingEditor
         projectId={projectId}
+        floorIndex={idx}
+        floorLabel={traceLabel}
         onSaved={handleTracingSaved}
         onClose={() => {
+          setPendingFloorLabel(null);
           // If they close the tracing editor without saving and there
-          // are no versions at all, we close the whole studio.
-          if (versions.length === 0) {
+          // are no floors yet, we close the whole studio.
+          if (floors.length === 0) {
             onClose?.();
           } else {
             setStage('chat');
@@ -245,6 +353,8 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
         projectId={projectId}
         initialModel={selectedVersion.model}
         initialSourceImageUrl={selectedVersion.source_image_url ?? undefined}
+        floorIndex={selectedVersion.floor_index}
+        floorLabel={selectedVersion.floor_label}
         onSaved={handleEditWallsSaved}
         onClose={() => setEditingWalls(false)}
       />
@@ -293,6 +403,37 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
         {/* ── canvas + version chips ── */}
         <div style={canvasColStyle()}>
           {loadError && <div style={errorChipStyle()}>{loadError}</div>}
+
+          {/* Floor tabs — one per traced floor + "+" to add. We render
+              this even when there are no versions for the current floor
+              so the user can still switch / add floors. */}
+          <div style={floorTabsRowStyle()}>
+            {floors.map((f) => (
+              <button
+                key={f.floor_index}
+                type="button"
+                onClick={() => void switchFloor(f.floor_index)}
+                style={floorTabStyle(f.floor_index === activeFloorIndex)}
+                title={
+                  f.floor_label
+                    ?? `${defaultFloorLabel(f.floor_index)} — ${f.version_count} version${f.version_count === 1 ? '' : 's'}`
+                }
+              >
+                {f.floor_label ?? defaultFloorLabel(f.floor_index)}
+              </button>
+            ))}
+            {floors.length < MAX_FLOORS_PER_PROJECT && (
+              <button
+                type="button"
+                onClick={handleAddFloor}
+                style={floorAddTabStyle()}
+                title="Add another floor"
+                aria-label="Add floor"
+              >
+                +
+              </button>
+            )}
+          </div>
 
           {versions.length === 0 ? (
             <div style={emptyCanvasStyle()}>
@@ -611,6 +752,45 @@ function closeBtnStyle(): React.CSSProperties {
     border: 'none',
     fontSize: 14,
     cursor: 'pointer',
+  };
+}
+
+function floorTabsRowStyle(): React.CSSProperties {
+  return {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 4,
+    paddingBottom: 4,
+    borderBottom: '0.5px solid var(--color-border-tertiary)',
+  };
+}
+
+function floorTabStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: active ? 600 : 500,
+    borderRadius: 'var(--radius-sm) var(--radius-sm) 0 0',
+    background: active ? 'var(--color-background-primary)' : 'transparent',
+    color: active ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+    border: '0.5px solid ' + (active ? 'var(--color-border-secondary)' : 'transparent'),
+    borderBottom: active ? '0.5px solid var(--color-background-primary)' : 'transparent',
+    marginBottom: -1,
+    cursor: 'pointer',
+  };
+}
+
+function floorAddTabStyle(): React.CSSProperties {
+  return {
+    padding: '6px 10px',
+    fontSize: 14,
+    fontWeight: 600,
+    borderRadius: 'var(--radius-sm)',
+    background: 'transparent',
+    color: 'var(--color-text-tertiary)',
+    border: '0.5px dashed var(--color-border-secondary)',
+    cursor: 'pointer',
+    lineHeight: 1,
   };
 }
 

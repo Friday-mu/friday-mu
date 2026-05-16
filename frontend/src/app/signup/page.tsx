@@ -3,8 +3,9 @@
 // Public signup → FridayOS Design trial. Single-page form, no card required.
 // Mirrors the visual minimalism of /reset-password (LoginScreen card layout)
 // but stripped to a single-column form. On success: stashes the JWT under
-// `gms_token` and redirects to /fad?m=design (the first paid module the
-// signup flow enables).
+// `gms_token` and redirects to /onboarding (a 3-step wizard that primes
+// the tenant with their first property + project + team before they hit
+// the empty design module).
 
 import { useEffect, useMemo, useState } from 'react';
 import { setToken, API_BASE } from '../../components/types';
@@ -95,7 +96,10 @@ export default function SignupPage() {
       if (data.user?.role) {
         try { localStorage.setItem('gms_role', data.user.role); } catch {}
       }
-      window.location.href = '/fad?m=design';
+      // Stash the country we just picked so the onboarding wizard can
+      // pre-fill the first-property form with it.
+      try { localStorage.setItem('onboarding_country', country); } catch {}
+      window.location.href = '/onboarding';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Signup failed');
       setSubmitting(false);

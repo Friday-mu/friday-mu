@@ -40,7 +40,11 @@ async function _ownsProject(tenantId, projectId) {
   return rows.length > 0;
 }
 
-// ── GET / (list versions for a project) ────────────────────────────
+// ── GET / (list versions for a project, scoped to a floor) ─────────
+//
+// Migration 045 introduced floor_index. We default to 0 (ground floor)
+// when the caller doesn't specify one so existing single-floor projects
+// keep working without a client change.
 
 router.get('/', requireDesignPerm('design:read'), async (req, res) => {
   try {
@@ -51,13 +55,62 @@ router.get('/', requireDesignPerm('design:read'), async (req, res) => {
     if (!(await _ownsProject(req.tenantId, projectId))) {
       return res.status(404).json({ error: 'Project not found' });
     }
+    const floorIndex = req.query.floor_index != null
+      ? Number(req.query.floor_index)
+      : 0;
+    if (!Number.isFinite(floorIndex) || floorIndex < 0) {
+      return res.status(400).json({ error: 'floor_index must be a non-negative integer' });
+    }
     const { rows } = await query(
-      `SELECT * FROM design_floor_plans WHERE project_id = $1 ORDER BY version DESC`,
-      [projectId],
+      `SELECT * FROM design_floor_plans
+       WHERE project_id = $1 AND floor_index = $2
+       ORDER BY version DESC`,
+      [projectId, floorIndex],
     );
     res.json({ results: rows.map(shapeFloorPlanVersion) });
   } catch (e) {
     console.error('[design/floor_plans] list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── GET /floors (distinct floors for a project) ────────────────────
+//
+// Returns the floors the project knows about — used by the floor-tab
+// bar in the studio. Each entry has a label (falls back to a sensible
+// default if the row didn't store one), version count, and the most
+// recent version number on that floor.
+
+router.get('/floors', requireDesignPerm('design:read'), async (req, res) => {
+  try {
+    const projectId = req.query.project_id;
+    if (typeof projectId !== 'string') {
+      return res.status(400).json({ error: 'project_id query param is required' });
+    }
+    if (!(await _ownsProject(req.tenantId, projectId))) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    const { rows } = await query(
+      `SELECT
+         floor_index,
+         MAX(floor_label) AS floor_label,
+         COUNT(*)::int AS version_count,
+         MAX(version)::int AS latest_version
+       FROM design_floor_plans
+       WHERE project_id = $1
+       GROUP BY floor_index
+       ORDER BY floor_index ASC`,
+      [projectId],
+    );
+    const floors = rows.map((r) => ({
+      floor_index: Number(r.floor_index),
+      floor_label: r.floor_label ?? null,
+      version_count: Number(r.version_count),
+      latest_version: r.latest_version != null ? Number(r.latest_version) : null,
+    }));
+    res.json({ floors });
+  } catch (e) {
+    console.error('[design/floor_plans] floors error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -156,6 +209,13 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     } catch (validationErr) {
       return res.status(400).json({ error: `Invalid model: ${validationErr.message}` });
     }
+    const floorIndex = body.floor_index != null ? Number(body.floor_index) : 0;
+    if (!Number.isFinite(floorIndex) || floorIndex < 0) {
+      return res.status(400).json({ error: 'floor_index must be a non-negative integer' });
+    }
+    const floorLabel = typeof body.floor_label === 'string' && body.floor_label.trim().length > 0
+      ? body.floor_label.trim()
+      : null;
     await client.query('BEGIN');
     const ownerCheck = await client.query(
       `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
@@ -165,17 +225,23 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Project not found' });
     }
+    // Auto-bump per floor — each floor has its own v1, v2, … sequence.
     const { rows: maxRows } = await client.query(
-      `SELECT COALESCE(MAX(version), 0) + 1 AS next FROM design_floor_plans WHERE project_id = $1`,
-      [body.project_id],
+      `SELECT COALESCE(MAX(version), 0) + 1 AS next
+       FROM design_floor_plans
+       WHERE project_id = $1 AND floor_index = $2`,
+      [body.project_id, floorIndex],
     );
     const nextVersion = Number(maxRows[0].next);
     const { rows } = await client.query(
-      `INSERT INTO design_floor_plans (project_id, version, source_image_url, model, label)
-       VALUES ($1, $2, $3, $4::jsonb, $5) RETURNING *`,
+      `INSERT INTO design_floor_plans
+         (project_id, version, floor_index, floor_label, source_image_url, model, label)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING *`,
       [
         body.project_id,
         nextVersion,
+        floorIndex,
+        floorLabel,
         body.source_image_url || null,
         JSON.stringify(body.model),
         body.label || null,
@@ -187,7 +253,13 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
       actorUserId: req.identity?.userId,
       actorName: req.identity?.displayName || req.identity?.username,
       action: 'floor_plan.created',
-      payload: { floor_plan_id: rows[0].id, version: nextVersion, label: rows[0].label || null },
+      payload: {
+        floor_plan_id: rows[0].id,
+        version: nextVersion,
+        floor_index: floorIndex,
+        floor_label: floorLabel,
+        label: rows[0].label || null,
+      },
       visibility: 'internal',
     }).catch(() => {});
     res.status(201).json(shapeFloorPlanVersion(rows[0]));
@@ -224,10 +296,11 @@ router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
     );
     if (cur.length === 0) return res.status(404).json({ error: 'Floor plan version not found' });
     const row = cur[0];
-    // Is there a newer version on the same project?
+    // Is there a newer version on the same floor of this project?
     const { rows: newer } = await query(
-      `SELECT 1 FROM design_floor_plans WHERE project_id = $1 AND version > $2 LIMIT 1`,
-      [row.project_id, row.version],
+      `SELECT 1 FROM design_floor_plans
+       WHERE project_id = $1 AND floor_index = $2 AND version > $3 LIMIT 1`,
+      [row.project_id, row.floor_index, row.version],
     );
     if (newer.length > 0 && row.is_final) {
       return res.status(409).json({ error: 'Cannot patch — a newer version exists and this one is finalised' });
@@ -277,10 +350,12 @@ router.post('/:id/finalize', requireDesignPerm('design:write'), async (req, res)
       return res.status(404).json({ error: 'Floor plan version not found' });
     }
     const row = cur[0];
+    // Scope the "flip the previous final off" to THIS floor only —
+    // each floor has its own final plan in the multi-floor model.
     await client.query(
       `UPDATE design_floor_plans SET is_final = FALSE, updated_at = NOW()
-       WHERE project_id = $1 AND id <> $2 AND is_final = TRUE`,
-      [row.project_id, row.id],
+       WHERE project_id = $1 AND floor_index = $2 AND id <> $3 AND is_final = TRUE`,
+      [row.project_id, row.floor_index, row.id],
     );
     const { rows: updated } = await client.query(
       `UPDATE design_floor_plans SET is_final = TRUE, updated_at = NOW()
@@ -327,16 +402,29 @@ router.post('/:id/revert', requireDesignPerm('design:write'), async (req, res) =
       return res.status(404).json({ error: 'Floor plan version not found' });
     }
     const row = cur[0];
+    // Bump within the same floor — the new version inherits the
+    // source's floor_index/floor_label.
     const { rows: maxRows } = await client.query(
-      `SELECT COALESCE(MAX(version), 0) + 1 AS next FROM design_floor_plans WHERE project_id = $1`,
-      [row.project_id],
+      `SELECT COALESCE(MAX(version), 0) + 1 AS next
+       FROM design_floor_plans
+       WHERE project_id = $1 AND floor_index = $2`,
+      [row.project_id, row.floor_index],
     );
     const nextVersion = Number(maxRows[0].next);
     const label = `Revert of v${row.version}${row.label ? ` (${row.label})` : ''}`;
     const { rows } = await client.query(
-      `INSERT INTO design_floor_plans (project_id, version, source_image_url, model, label)
-       VALUES ($1, $2, $3, $4::jsonb, $5) RETURNING *`,
-      [row.project_id, nextVersion, row.source_image_url, JSON.stringify(row.model), label],
+      `INSERT INTO design_floor_plans
+         (project_id, version, floor_index, floor_label, source_image_url, model, label)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING *`,
+      [
+        row.project_id,
+        nextVersion,
+        row.floor_index,
+        row.floor_label,
+        row.source_image_url,
+        JSON.stringify(row.model),
+        label,
+      ],
     );
     await client.query('COMMIT');
     appendActivity({

@@ -505,6 +505,17 @@ interface Props {
   initialModel?: FloorPlanModel;
   /** Existing source raster URL — skip the upload step if provided. */
   initialSourceImageUrl?: string;
+  /**
+   * Which floor of the project this trace belongs to. 0 = ground.
+   * Defaults to 0 when omitted so existing single-floor callers keep
+   * working unchanged.
+   */
+  floorIndex?: number;
+  /**
+   * Free-text label for the floor ("Loft", "1st floor"). Persisted on
+   * the new version so the studio can render correct tab names.
+   */
+  floorLabel?: string | null;
   onSaved: (versionId: string) => void;
   onClose: () => void;
 }
@@ -663,6 +674,8 @@ export function FloorPlanTracingEditor({
   projectId,
   initialModel,
   initialSourceImageUrl,
+  floorIndex,
+  floorLabel,
   onSaved,
   onClose,
 }: Props) {
@@ -1309,6 +1322,157 @@ export function FloorPlanTracingEditor({
     dragMovedRef.current = false;
   }
 
+  // ── touch handlers ──────────────────────────────────────────────────
+  //
+  // Mathias does site visits on a phone, so the editor needs to work
+  // without a mouse. Strategy:
+  //
+  //   • 1 touch  → adapt the touch into a mouse-event-shaped object and
+  //                dispatch to the existing mouse handlers. This is what
+  //                gets us wall-drag, door/window placement, room-vertex
+  //                drag etc. for free.
+  //   • 2 touches → start a pinch gesture. We track the initial distance
+  //                + midpoint between the two touches. onTouchMove
+  //                handles BOTH pinch-zoom (distance ratio scales
+  //                pixelsPerMetre, anchored on midpoint) AND two-finger
+  //                pan (midpoint translation moves the pan vector — UX
+  //                parity with space+drag on desktop).
+  //
+  // All touch events call preventDefault() so the browser's default
+  // double-tap-zoom / page-pan don't trample us. We also set
+  // touch-action: none on the SVG wrapper for the same reason.
+
+  // Pinch gesture state — null when fewer than 2 active touches.
+  const pinchRef = useRef<{
+    startDistPx: number;
+    startPixelsPerMetre: number;
+    lastMidClient: { x: number; y: number };
+    startPan: { x: number; y: number };
+  } | null>(null);
+
+  /**
+   * Convert a Touch into a synthetic mouse-event-shaped object that the
+   * existing onMouseDown/Move/Up handlers can consume. Only the fields
+   * those handlers actually read are populated.
+   */
+  function synthesizeMouseEvent(touch: Touch): React.MouseEvent<SVGSVGElement> {
+    return {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      button: 0,
+      buttons: 1,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      preventDefault: () => {},
+      stopPropagation: () => {},
+    } as unknown as React.MouseEvent<SVGSVGElement>;
+  }
+
+  function touchDistPx(t1: Touch, t2: Touch): number {
+    return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+  }
+
+  function touchMidpoint(t1: Touch, t2: Touch): { x: number; y: number } {
+    return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+  }
+
+  function onTouchStart(e: React.TouchEvent<SVGSVGElement>) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      // Single touch — treat as left-mouse-down at the touch point.
+      onMouseDown(synthesizeMouseEvent(e.touches[0]));
+      return;
+    }
+    if (e.touches.length === 2) {
+      // Cancel any in-flight single-touch drag so we don't keep
+      // drawing while pinching.
+      setDrawingWall(null);
+      setHoverSnap(null);
+      setDragOp(null);
+      dragStartRef.current = null;
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      pinchRef.current = {
+        startDistPx: touchDistPx(t1, t2),
+        startPixelsPerMetre: pixelsPerMetre,
+        lastMidClient: touchMidpoint(t1, t2),
+        startPan: { ...pan },
+      };
+    }
+  }
+
+  function onTouchMove(e: React.TouchEvent<SVGSVGElement>) {
+    e.preventDefault();
+    if (e.touches.length === 2 && pinchRef.current) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const newDist = touchDistPx(t1, t2);
+      const newMid = touchMidpoint(t1, t2);
+      const p = pinchRef.current;
+
+      // Scale pixelsPerMetre by the distance ratio, anchored on the
+      // pinch midpoint (in SVG-local coordinates) — same anchored-zoom
+      // math as the wheel handler.
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const anchorPxX = newMid.x - rect.left;
+      const anchorPxY = newMid.y - rect.top;
+      const anchorM = {
+        x: anchorPxX / pixelsPerMetre,
+        y: anchorPxY / pixelsPerMetre,
+      };
+      const ratio = p.startDistPx > 0 ? newDist / p.startDistPx : 1;
+      const targetPpm = p.startPixelsPerMetre * ratio;
+      const nextPpm = Math.max(
+        MIN_PIXELS_PER_METRE,
+        Math.min(MAX_PIXELS_PER_METRE, targetPpm),
+      );
+      if (nextPpm !== pixelsPerMetre) {
+        setPixelsPerMetre(nextPpm);
+        setPan((pp) => ({
+          x: pp.x + (anchorPxX - anchorM.x * nextPpm),
+          y: pp.y + (anchorPxY - anchorM.y * nextPpm),
+        }));
+      }
+
+      // Two-finger pan: translate by midpoint delta since last frame.
+      // Same UX as Space+drag — works alongside pinch (typical when
+      // the user is reframing while zooming).
+      const dx = newMid.x - p.lastMidClient.x;
+      const dy = newMid.y - p.lastMidClient.y;
+      if (dx !== 0 || dy !== 0) {
+        setPan((pp) => ({ x: pp.x + dx, y: pp.y + dy }));
+      }
+      pinchRef.current = {
+        ...p,
+        lastMidClient: newMid,
+      };
+      return;
+    }
+    if (e.touches.length === 1 && !pinchRef.current) {
+      onMouseMove(synthesizeMouseEvent(e.touches[0]));
+    }
+  }
+
+  function onTouchEnd(e: React.TouchEvent<SVGSVGElement>) {
+    e.preventDefault();
+    if (pinchRef.current && e.touches.length < 2) {
+      pinchRef.current = null;
+      // Don't fall through to mouseUp — pinch isn't a click.
+      // If a single finger is still down, the next touchmove will
+      // start tracking as a 1-touch drag. We don't try to convert it
+      // to a fresh mousedown mid-gesture because the user is likely
+      // lifting their hand, not starting to draw.
+      return;
+    }
+    if (e.touches.length === 0) {
+      onMouseUp();
+    }
+  }
+
   /**
    * Reconstruct the "before" snapshot for a drag op, so undo restores
    * the exact pre-drag state. Returns null for ops we don't reconstruct
@@ -1760,6 +1924,8 @@ export function FloorPlanTracingEditor({
         source_image_url: sourceImageUrl ?? undefined,
         model,
         label: 'Initial trace',
+        floor_index: floorIndex ?? 0,
+        floor_label: floorLabel ?? undefined,
       });
       // Reset saving + dirty BEFORE handing control to the parent. If
       // the parent re-renders this editor (eg. edit-walls flow keeps
@@ -1982,6 +2148,9 @@ export function FloorPlanTracingEditor({
           border: '0.5px solid var(--color-border-tertiary)',
           borderRadius: 'var(--radius-sm)',
           background: '#fafafa',
+          // Suppress browser pinch-zoom / double-tap-zoom on the canvas
+          // — we own gesture handling for touch devices.
+          touchAction: 'none',
         }}
         onWheel={onCanvasWheel}
       >
@@ -1993,6 +2162,10 @@ export function FloorPlanTracingEditor({
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={() => { setHoverSnap(null); if (panning) setPanning(null); }}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          onTouchCancel={onTouchEnd}
           onDoubleClick={onCanvasDoubleClick}
           onDragOver={onCanvasDragOver}
           onDrop={onCanvasDrop}
@@ -2001,6 +2174,7 @@ export function FloorPlanTracingEditor({
             cursor: cursorForTool(tool, !!drawingWall, spaceHeld, !!panning),
             transform: `translate(${pan.x}px, ${pan.y}px)`,
             transformOrigin: '0 0',
+            touchAction: 'none',
           }}
         >
           {/* Background raster — supply both `href` (SVG 2) and

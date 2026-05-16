@@ -40,6 +40,11 @@ app.use(cors());
 // get the default JSON parsing.
 app.use((req, res, next) => {
   if (req.path === '/api/inbox/website/friday-website') return next();
+  // Stripe webhook needs the RAW body to verify the Stripe-Signature
+  // header (HMAC-SHA256 over `${timestamp}.${rawBody}`). Letting
+  // express.json() consume the bytes first would re-serialise the
+  // payload and break the signature check.
+  if (req.path === '/api/tenants/stripe/webhook') return next();
   return express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(limiter);
@@ -876,13 +881,26 @@ const { translateText } = require('./src/ai/translate');
 const tenantsRoutes = require('./src/tenants');
 const invoicesRoutes = require('./src/tenants/invoices');
 const tenantUsersRoutes = require('./src/tenants/users');
+const tenantDeletionExportRoutes = require('./src/tenants/deletion_export');
+// Stripe scaffolding — POST /stripe/webhook (public, signature-verified),
+// POST /me/stripe/checkout-session, POST /me/stripe/portal-session.
+// The webhook path is excluded from express.json() above; its handler
+// mounts its own express.raw() locally so the signature check sees the
+// untouched bytes.
+const stripeRoutes = require('./src/tenants/stripe_routes');
 app.use('/api/tenants', tenantsRoutes);
 app.use('/api/tenants', invoicesRoutes);
+app.use('/api/tenants', stripeRoutes);
 // Tenant user-management + invitation accept routes. Paths are scoped
 // to /me/users, /me/invitations, and /invitations/:token so they don't
 // collide with the existing /me/invoices etc. The /invitations/:token
 // routes are intentionally public (no auth) — token IS the credential.
 app.use('/api/tenants', tenantUsersRoutes);
+// Soft tenant deletion + GDPR-style CSV data export. Mounts the
+// /me/delete-request, /me/data-export, /admin/:id/restore, and
+// /admin/:id/hard-delete routes. Each enforces its own auth check
+// (tenant admin vs. FR admin) inside the handler.
+app.use('/api/tenants', tenantDeletionExportRoutes);
 
 // Public password-reset endpoints — mounted before the FR lockdown
 // because they're explicitly cross-tenant (the email→user lookup
@@ -908,7 +926,7 @@ app.use('/api/auth', passwordResetRoutes);
     if (
       p === '/api/health' ||
       p === '/api/version' ||
-      p.startsWith('/api/tenants') ||      // signup + tenant CRUD (own auth)
+      p.startsWith('/api/tenants') ||      // signup + tenant CRUD (own auth); also covers /api/tenants/stripe/webhook (public, Stripe-signed)
       p.startsWith('/api/auth') ||         // public password-reset (own validation)
       p.startsWith('/api/design') ||       // module-gated above
       p.startsWith('/api/feedback') ||     // tenant-scoped via mig 037 — every tenant can file bugs

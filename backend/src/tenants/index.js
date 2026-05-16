@@ -289,12 +289,13 @@ function _sanitisePaymentInstructions(value) {
 
 // PATCH /api/tenants/me — admin-only self-service tenant edits. The
 // fields you can NOT edit yourself: slug (URL-stable), subscription_*
-// (lifecycle, owned by billing flow), payment_method (admin action).
+// (lifecycle, owned by billing flow). payment_method is editable IFF
+// it's the bank_transfer ↔ stripe toggle — anything else 400s.
 router.patch('/me', attachIdentity, async (req, res) => {
   if (req.identity?.userRole !== 'admin') {
     return res.status(403).json({ error: 'Forbidden — admin role required' });
   }
-  const { name, country, locale, billing_email, notes, payment_instructions } = req.body || {};
+  const { name, country, locale, billing_email, notes, payment_instructions, payment_method } = req.body || {};
   const sets = [];
   const vals = [];
   let i = 1;
@@ -309,6 +310,16 @@ router.patch('/me', attachIdentity, async (req, res) => {
     catch (e) { return res.status(400).json({ error: e.message }); }
     sets.push(`payment_instructions = $${i++}::jsonb`);
     vals.push(JSON.stringify(sanitised));
+  }
+  if (payment_method !== undefined) {
+    // Whitelist enforced both here AND by the tenants_payment_method_check
+    // constraint (mig 036). Belt-and-braces — returning 400 here gives a
+    // cleaner error than the Postgres constraint violation.
+    if (payment_method !== 'bank_transfer' && payment_method !== 'stripe') {
+      return res.status(400).json({ error: "payment_method must be 'bank_transfer' or 'stripe'" });
+    }
+    sets.push(`payment_method = $${i++}`);
+    vals.push(payment_method);
   }
   if (sets.length === 0) return res.status(400).json({ error: 'no editable fields supplied' });
   sets.push(`updated_at = NOW()`);
@@ -471,6 +482,130 @@ router.get('/admin/ai-usage', attachIdentity, async (req, res) => {
     res.json({ tenants: enriched, currency: 'USD' });
   } catch (e) {
     console.error('[tenants/admin/ai-usage] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/tenants/admin/dashboard — FR-only — platform-wide KPIs for
+// the Admin Analytics module. Single multi-CTE query against tenants +
+// invoices + ai_usage; computes MRR by joining tenant_modules against
+// the in-process MODULES registry's monthly_price_usd. Scale is single-
+// digit tenants today, so performance is non-issue.
+//
+// MRR semantics: sum of monthly_price_usd × 100 (minor units) across
+// saleable modules enabled for tenants in status active OR past_due.
+// Trial tenants don't count toward MRR — they're not paying yet.
+router.get('/admin/dashboard', attachIdentity, async (req, res) => {
+  if (!_isFrAdmin(req)) {
+    return res.status(403).json({ error: 'Forbidden — FR admin only' });
+  }
+  try {
+    // Build the saleable-module price map from the in-process registry
+    // so the SQL doesn't need to hardcode prices.
+    const saleablePrices = Object.entries(MODULES)
+      .filter(([, m]) => m.saleable && m.monthly_price_usd != null)
+      .map(([key, m]) => ({ key, price_minor: Math.round(m.monthly_price_usd * 100) }));
+
+    // VALUES rows for the price lookup; injected as a CTE so it can be
+    // joined against tenant_modules.
+    const priceValues = saleablePrices.length > 0
+      ? saleablePrices.map((p) => `('${p.key.replace(/'/g, "''")}', ${p.price_minor})`).join(',')
+      : `('__none__', 0)`;
+
+    const sql = `
+      WITH tenant_counts AS (
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE subscription_status = 'active')::int AS active,
+          COUNT(*) FILTER (WHERE subscription_status = 'trial')::int AS trial,
+          COUNT(*) FILTER (WHERE subscription_status = 'past_due')::int AS past_due,
+          COUNT(*) FILTER (WHERE subscription_status = 'cancelled')::int AS cancelled,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::int AS new_signups_30d,
+          COUNT(*) FILTER (
+            WHERE subscription_status = 'active'
+              AND subscription_started_at >= NOW() - INTERVAL '30 days'
+          )::int AS trial_conversions_30d,
+          COUNT(*) FILTER (
+            WHERE subscription_status = 'cancelled'
+              AND updated_at >= NOW() - INTERVAL '30 days'
+          )::int AS churn_30d
+        FROM tenants
+      ),
+      module_prices(module_key, price_minor) AS (VALUES ${priceValues}),
+      mrr_calc AS (
+        SELECT COALESCE(SUM(mp.price_minor), 0)::bigint AS mrr_minor
+        FROM tenant_modules tm
+        JOIN tenants t ON t.id = tm.tenant_id
+        JOIN module_prices mp ON mp.module_key = tm.module_key
+        WHERE tm.enabled = true
+          AND t.subscription_status IN ('active', 'past_due')
+      ),
+      ai_30d AS (
+        SELECT COALESCE(SUM(cost_minor_usd), 0)::bigint AS total_minor
+        FROM ai_usage
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+      ),
+      ai_top10 AS (
+        SELECT au.tenant_id, t.name AS tenant_name, SUM(au.cost_minor_usd)::bigint AS cost_minor
+        FROM ai_usage au
+        JOIN tenants t ON t.id = au.tenant_id
+        WHERE au.created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY au.tenant_id, t.name
+        ORDER BY cost_minor DESC
+        LIMIT 10
+      ),
+      outstanding AS (
+        SELECT
+          COUNT(*)::int AS count,
+          COALESCE(SUM(amount_minor), 0)::bigint AS amount_minor
+        FROM invoices
+        WHERE status IN ('pending', 'paid_pending_confirmation', 'overdue')
+      ),
+      recent AS (
+        SELECT id, name, created_at, subscription_status
+        FROM tenants
+        ORDER BY created_at DESC
+        LIMIT 10
+      )
+      SELECT
+        (SELECT row_to_json(tc) FROM tenant_counts tc) AS counts,
+        (SELECT mrr_minor FROM mrr_calc) AS mrr_minor,
+        (SELECT total_minor FROM ai_30d) AS ai_cost_30d_minor,
+        (SELECT COALESCE(json_agg(ai_top10), '[]'::json) FROM ai_top10) AS ai_top10,
+        (SELECT row_to_json(o) FROM outstanding o) AS outstanding,
+        (SELECT COALESCE(json_agg(recent), '[]'::json) FROM recent) AS recent
+    `;
+    const { rows } = await query(sql);
+    const row = rows[0] || {};
+    const counts = row.counts || {};
+    const outstanding = row.outstanding || { count: 0, amount_minor: 0 };
+    res.json({
+      tenants_total: counts.total || 0,
+      tenants_active: counts.active || 0,
+      tenants_trial: counts.trial || 0,
+      tenants_past_due: counts.past_due || 0,
+      tenants_cancelled: counts.cancelled || 0,
+      mrr_usd_minor: Number(row.mrr_minor || 0),
+      new_signups_30d: counts.new_signups_30d || 0,
+      trial_conversions_30d: counts.trial_conversions_30d || 0,
+      churn_30d: counts.churn_30d || 0,
+      ai_cost_30d_usd_minor: Number(row.ai_cost_30d_minor || 0),
+      ai_cost_by_tenant_top10: (row.ai_top10 || []).map((r) => ({
+        tenant_id: r.tenant_id,
+        tenant_name: r.tenant_name,
+        cost_minor_usd: Number(r.cost_minor),
+      })),
+      invoices_outstanding_count: outstanding.count || 0,
+      invoices_outstanding_amount_minor: Number(outstanding.amount_minor || 0),
+      recent_signups: (row.recent || []).map((r) => ({
+        tenant_id: r.id,
+        name: r.name,
+        created_at: r.created_at,
+        subscription_status: r.subscription_status,
+      })),
+    });
+  } catch (e) {
+    console.error('[tenants/admin/dashboard] error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

@@ -65,7 +65,16 @@ function isPaymentInstructionsConfigured(p: PaymentInstructions | null | undefin
   );
 }
 
-type InvoiceStatus = 'pending' | 'paid_pending_confirmation' | 'paid' | 'void';
+type InvoiceStatus = 'pending' | 'paid_pending_confirmation' | 'paid' | 'void' | 'overdue';
+
+// Minimal subset of the tenant row used by the Stripe section + bank-
+// details fallback. Mirrors the shapeTenant() server adapter.
+interface TenantRow {
+  id: string;
+  payment_method: 'bank_transfer' | 'stripe' | string;
+  stripe_customer_id?: string | null;
+  payment_instructions?: PaymentInstructions | null;
+}
 
 interface Invoice {
   id: string;
@@ -128,7 +137,7 @@ export function BillingModule() {
 
 function TenantInvoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [paymentInstructions, setPaymentInstructions] = useState<PaymentInstructions | null>(null);
+  const [tenant, setTenant] = useState<TenantRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,21 +145,24 @@ function TenantInvoices() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch invoices + tenant row (for payment_instructions) in parallel.
-      // Tenant-row failure shouldn't block the invoice list — we degrade
-      // to the "not configured" empty state on the bank-details block.
+      // Fetch invoices + tenant row (for payment_instructions +
+      // payment_method) in parallel. Tenant-row failure shouldn't block
+      // the invoice list — we degrade to the "not configured" empty
+      // state on the bank-details block.
       const [invRes, tenantRes] = await Promise.all([
         apiFetch('/api/tenants/me/invoices') as Promise<{ results: Invoice[] } | Invoice[]>,
-        apiFetch('/api/tenants/me').catch(() => null) as Promise<{ payment_instructions?: PaymentInstructions } | null>,
+        apiFetch('/api/tenants/me').catch(() => null) as Promise<TenantRow | null>,
       ]);
       setInvoices(Array.isArray(invRes) ? invRes : invRes.results || []);
-      setPaymentInstructions(tenantRes?.payment_instructions || null);
+      setTenant(tenantRes || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   };
+
+  const paymentInstructions = tenant?.payment_instructions || null;
 
   useEffect(() => { void load(); }, []);
 
@@ -159,17 +171,21 @@ function TenantInvoices() {
 
   if (invoices.length === 0) {
     return (
-      <div className="card" style={{ padding: 24, textAlign: 'center' }}>
-        <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 500 }}>No invoices yet</h3>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-          Invoices will appear here once Friday Retreats issues your first bill.
-        </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {tenant && <StripeSection tenant={tenant} onChange={load} />}
+        <div className="card" style={{ padding: 24, textAlign: 'center' }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 500 }}>No invoices yet</h3>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+            Invoices will appear here once Friday Retreats issues your first bill.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {tenant && <StripeSection tenant={tenant} onChange={load} />}
       {invoices.map((inv) => (
         <TenantInvoiceCard
           key={inv.id}
@@ -178,6 +194,130 @@ function TenantInvoices() {
           onRefresh={load}
         />
       ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Stripe section — switch payment method + launch Stripe checkout
+// ─────────────────────────────────────────────────────────────
+//
+// v0 scaffolding: the backend routes return 503 until STRIPE_SECRET_KEY
+// is set on the server. The UI is wired so flipping the env + Stripe
+// price ID makes the buttons live without a frontend deploy.
+//
+// Two affordances:
+//   • Payment method radio — bank_transfer ↔ stripe. PATCHes /me with
+//     the new value; backend currently allows the toggle but doesn't
+//     enforce flow (a tenant could flip to stripe without completing
+//     checkout — the next webhook event reconciles state).
+//   • "Send to Stripe checkout" — POSTs /me/stripe/checkout-session,
+//     opens the returned URL in a new tab.
+function StripeSection({ tenant, onChange }: { tenant: TenantRow; onChange: () => void }) {
+  const [busy, setBusy] = useState<'checkout' | 'portal' | 'toggle' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const method = tenant.payment_method || 'bank_transfer';
+
+  const flipMethod = async (next: 'bank_transfer' | 'stripe') => {
+    if (next === method) return;
+    setBusy('toggle');
+    setError(null);
+    try {
+      await apiFetch('/api/tenants/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ payment_method: next }),
+      });
+      onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const launchCheckout = async () => {
+    setBusy('checkout');
+    setError(null);
+    try {
+      const res = await apiFetch('/api/tenants/me/stripe/checkout-session', { method: 'POST' }) as { checkout_url?: string };
+      if (res?.checkout_url) {
+        window.open(res.checkout_url, '_blank', 'noopener,noreferrer');
+      } else {
+        setError('No checkout URL returned.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const launchPortal = async () => {
+    setBusy('portal');
+    setError(null);
+    try {
+      const res = await apiFetch('/api/tenants/me/stripe/portal-session', { method: 'POST' }) as { portal_url?: string };
+      if (res?.portal_url) {
+        window.open(res.portal_url, '_blank', 'noopener,noreferrer');
+      } else {
+        setError('No portal URL returned.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 500 }}>Payment method</h3>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            Currently: <strong>{method === 'stripe' ? 'Stripe' : 'Bank transfer'}</strong>
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="radio"
+              name="payment_method"
+              value="bank_transfer"
+              checked={method === 'bank_transfer'}
+              disabled={busy !== null}
+              onChange={() => void flipMethod('bank_transfer')}
+            />
+            Bank transfer
+          </label>
+          <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="radio"
+              name="payment_method"
+              value="stripe"
+              checked={method === 'stripe'}
+              disabled={busy !== null}
+              onChange={() => void flipMethod('stripe')}
+            />
+            Stripe
+          </label>
+        </div>
+      </div>
+
+      {method === 'stripe' && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--color-border-tertiary)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={launchCheckout} disabled={busy !== null} style={primaryBtn()}>
+            {busy === 'checkout' ? 'Opening…' : 'Send to Stripe checkout'}
+          </button>
+          {tenant.stripe_customer_id && (
+            <button type="button" onClick={launchPortal} disabled={busy !== null} style={secondaryBtn()}>
+              {busy === 'portal' ? 'Opening…' : 'Manage billing in Stripe'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {error && <ErrorMsg message={error} />}
     </div>
   );
 }
@@ -362,6 +502,8 @@ interface TenantSummary {
   id: string;
   slug: string;
   name: string;
+  active?: boolean;
+  subscription_status?: string | null;
 }
 
 function AdminAllInvoices() {
@@ -412,6 +554,9 @@ function AdminAllInvoices() {
 
   return (
     <div>
+      {/* Manage tenants — restore / hard-delete */}
+      <AdminTenantList tenants={tenants} onChanged={() => void load()} />
+
       {/* Issue invoice */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -580,6 +725,201 @@ function FieldInline({ label, hint, children }: { label: string; hint?: string; 
 }
 
 // ─────────────────────────────────────────────────────────────
+// FR-admin tenant list — restore inactive tenants + hard-delete
+// ─────────────────────────────────────────────────────────────
+//
+// Sits above the invoice list in the FR-admin view. Shows every
+// tenant with its active/subscription_status, plus a Restore button
+// for inactive (active=false) tenants and a Hard delete button (red,
+// typed-slug confirmation) for permanent expunge.
+
+function AdminTenantList({ tenants, onChanged }: { tenants: TenantSummary[]; onChanged: () => void }) {
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<TenantSummary | null>(null);
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const restore = async (id: string) => {
+    setBusy((b) => ({ ...b, [id]: true }));
+    setError(null);
+    try {
+      await apiFetch(`/api/tenants/admin/${id}/restore`, { method: 'POST' });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+
+  if (!tenants.length) return null;
+
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+      <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 500 }}>Tenants</h3>
+      <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+        Manage tenant lifecycle. Inactive tenants can be restored within a short window. Hard delete is permanent.
+      </p>
+      {error && <ErrorMsg message={error} />}
+      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', color: 'var(--color-text-tertiary)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <th style={{ padding: '6px 8px' }}>Name</th>
+            <th style={{ padding: '6px 8px' }}>Slug</th>
+            <th style={{ padding: '6px 8px' }}>Status</th>
+            <th style={{ padding: '6px 8px', textAlign: 'right' }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {tenants.map((t) => {
+            const inactive = t.active === false;
+            return (
+              <tr key={t.id} style={{ borderTop: '0.5px solid var(--color-border-tertiary)', opacity: inactive ? 0.65 : 1 }}>
+                <td style={{ padding: '8px' }}>{t.name}</td>
+                <td style={{ padding: '8px', fontFamily: 'var(--font-mono-fad, monospace)' }}>{t.slug}</td>
+                <td style={{ padding: '8px' }}>
+                  <span className="chip" style={{ fontSize: 11 }}>
+                    {inactive ? 'Inactive' : 'Active'} · {t.subscription_status || '—'}
+                  </span>
+                </td>
+                <td style={{ padding: '8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {inactive && (
+                    <button
+                      type="button"
+                      onClick={() => void restore(t.id)}
+                      disabled={!!busy[t.id]}
+                      style={{ ...secondaryBtn(), marginRight: 6 }}
+                    >
+                      Restore
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setHardDeleteTarget(t)}
+                    disabled={!!busy[t.id]}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 4,
+                      background: 'transparent',
+                      color: 'var(--color-text-danger, #991b1b)',
+                      fontSize: 12,
+                      border: '0.5px solid var(--color-text-danger, #991b1b)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Hard delete
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {hardDeleteTarget && (
+        <HardDeleteDialog
+          target={hardDeleteTarget}
+          onClose={() => setHardDeleteTarget(null)}
+          onDone={() => { setHardDeleteTarget(null); onChanged(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function HardDeleteDialog({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: TenantSummary;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [typedSlug, setTypedSlug] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setError(null);
+    if (typedSlug !== target.slug) {
+      setError(`Type "${target.slug}" to confirm.`);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/tenants/admin/${target.id}/hard-delete`, {
+        method: 'POST',
+        headers: { 'X-Confirm-Hard-Delete': target.slug },
+      });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.4)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 9999,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-background-primary, #fff)',
+          borderRadius: 8,
+          padding: 24,
+          maxWidth: 480,
+          width: '90%',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+        }}
+      >
+        <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600 }}>
+          Hard delete {target.name}
+        </h3>
+        <p style={{ margin: '0 0 16px', fontSize: 13 }}>
+          This permanently deletes the tenant and every owned row across users,
+          invoices, design projects, floor plans, chats, AI usage, modules,
+          invitations, and assets. There is no recovery.
+        </p>
+        <p style={{ margin: '0 0 16px', fontSize: 13 }}>
+          Type <code style={{ fontFamily: 'var(--font-mono-fad, monospace)' }}>{target.slug}</code> to confirm.
+        </p>
+        <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Tenant slug</label>
+        <input
+          type="text"
+          value={typedSlug}
+          onChange={(e) => setTypedSlug(e.target.value)}
+          placeholder={target.slug}
+          autoFocus
+          style={{ ...inputStyle, marginBottom: 12 }}
+        />
+        {error && <ErrorMsg message={error} />}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtn()}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={submitting || typedSlug !== target.slug}
+            style={{ ...primaryBtn(), background: 'var(--color-text-danger, #991b1b)' }}
+          >
+            {submitting ? 'Deleting…' : 'Hard delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Shared helpers
 // ─────────────────────────────────────────────────────────────
 
@@ -589,6 +929,7 @@ function StatusChip({ status }: { status: InvoiceStatus }) {
     paid_pending_confirmation: { label: 'Payment submitted', tone: 'info' },
     paid: { label: 'Paid', tone: 'info' },
     void: { label: 'Void', tone: '' },
+    overdue: { label: 'Overdue', tone: 'warn' },
   };
   const entry = map[status] || { label: status, tone: '' };
   return <span className={'chip ' + entry.tone}>{entry.label}</span>;

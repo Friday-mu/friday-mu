@@ -116,6 +116,17 @@ const MODULES = {
     enabled_by_default_in_signup: true,
     always_on: true,
   },
+  // FR-only platform admin module — MRR, AI cost, conversion, churn.
+  // Not always_on / not enabled_by_default_in_signup so new tenants
+  // don't get it; FR row is backfilled in migration 047.
+  'admin-analytics': {
+    name: 'Admin Analytics',
+    description: 'FR platform overview — MRR, AI cost, tenant signups, churn.',
+    saleable: false,
+    monthly_price_usd: null,
+    enabled_by_default_in_signup: false,
+    always_on: false,
+  },
 };
 
 function isKnownModule(moduleKey) {

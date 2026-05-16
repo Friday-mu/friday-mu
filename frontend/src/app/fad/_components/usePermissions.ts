@@ -241,6 +241,10 @@ export const MODULE_RESOURCE: Record<string, Resource[]> = {
   // so Field roles don't see them. Tenant module-enable gate runs on top.
   'tenant-settings': ['settings'],
   billing: ['settings'],
+  // FR-only platform admin view. Tenant-id gate runs in Sidebar.tsx on
+  // top of this resource check (FR admin = settings-resource holder AND
+  // tenant_id === FR_TENANT_ID).
+  'admin-analytics': ['settings'],
   hr: ['hr_staff'],
 };
 

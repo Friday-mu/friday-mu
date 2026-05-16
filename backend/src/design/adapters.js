@@ -678,6 +678,8 @@ function shapeFloorPlanVersion(row) {
     id: row.id,
     project_id: row.project_id,
     version: row.version != null ? Number(row.version) : null,
+    floor_index: row.floor_index != null ? Number(row.floor_index) : 0,
+    floor_label: row.floor_label ?? null,
     source_image_url: row.source_image_url ?? null,
     model: row.model || {},
     rendered_image_url: row.rendered_image_url ?? null,

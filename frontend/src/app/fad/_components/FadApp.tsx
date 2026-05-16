@@ -37,6 +37,7 @@ import { HRModule } from './modules/HRModule';
 import { DesignModule } from './modules/DesignModule';
 import { TenantSettingsModule } from './modules/TenantSettingsModule';
 import { BillingModule } from './modules/BillingModule';
+import { AdminAnalyticsModule } from './modules/AdminAnalyticsModule';
 import { MODULE_RESOURCE, PermissionsProvider } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
@@ -414,6 +415,8 @@ function renderModuleInner(
       return <TenantSettingsModule subPage={subPage || 'general'} onChangeSubPage={ctx.setSubPage} />;
     case 'billing':
       return <BillingModule />;
+    case 'admin-analytics':
+      return <AdminAnalyticsModule />;
     case 'syndic':
     case 'agency':
       return <TeaseModule mod={mod} />;

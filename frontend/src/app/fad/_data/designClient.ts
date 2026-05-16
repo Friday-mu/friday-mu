@@ -1387,23 +1387,42 @@ export type {
   FloorPlanOperation,
 } from './floorPlanTypes';
 
-import type { FloorPlanModel, ApiFloorPlanVersion, ApiFloorPlanChat } from './floorPlanTypes';
+import type { FloorPlanModel, ApiFloorPlanVersion, ApiFloorPlanChat, ApiFloorPlanFloor } from './floorPlanTypes';
 
 export const createFloorPlan = (payload: {
   project_id: string;
   source_image_url?: string;
   model: FloorPlanModel;
   label?: string;
+  /** Zero-indexed floor — defaults to 0 (ground) server-side. */
+  floor_index?: number;
+  /** Free-text floor label, persisted on the row. */
+  floor_label?: string;
 }) =>
   apiFetch('/api/design/floor-plans', {
     method: 'POST',
     body: JSON.stringify(payload),
   }) as Promise<ApiFloorPlanVersion>;
 
-export const listFloorPlans = async (projectId: string) =>
-  unwrap(
-    await apiFetch(`/api/design/floor-plans?project_id=${encodeURIComponent(projectId)}`) as { results: ApiFloorPlanVersion[] },
+export const listFloorPlans = async (projectId: string, floorIndex?: number) => {
+  const params = new URLSearchParams({ project_id: projectId });
+  if (floorIndex != null) params.set('floor_index', String(floorIndex));
+  return unwrap(
+    await apiFetch(`/api/design/floor-plans?${params.toString()}`) as { results: ApiFloorPlanVersion[] },
   );
+};
+
+/**
+ * Distinct floors for a project — used by the floor-tab bar in the
+ * studio. Each entry has the version count + latest version so the tab
+ * can show "Ground floor (v3)" without a second round-trip.
+ */
+export const listFloors = async (projectId: string): Promise<ApiFloorPlanFloor[]> => {
+  const r = await apiFetch(
+    `/api/design/floor-plans/floors?project_id=${encodeURIComponent(projectId)}`,
+  ) as { floors: ApiFloorPlanFloor[] };
+  return r.floors || [];
+};
 
 export const updateFloorPlan = (id: string, patch: { model?: FloorPlanModel; label?: string }) =>
   apiFetch(`/api/design/floor-plans/${encodeURIComponent(id)}`, {
