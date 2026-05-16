@@ -28,6 +28,7 @@ const { applyOps, validateOpsAgainstKB } = require('./floor_plan_ops');
 // signature (translateToOps(model, userMessage[, opts])) so this call
 // site doesn't need to change.
 const { translateToOps } = require('./floor_plan_ai');
+const { QuotaExceededError } = require('../tenants/ai_usage');
 
 const router = express.Router();
 
@@ -117,7 +118,37 @@ router.post('/', requireDesignPerm('design:write'), async (req, res) => {
     );
     const history = historyRows.reverse(); // oldest-first
 
-    const { ops, reply } = await translateToOps(latest.model, userMessage, { roomKind, history });
+    let ops;
+    let reply;
+    try {
+      const out = await translateToOps(latest.model, userMessage, {
+        roomKind,
+        history,
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+      });
+      ops = out.ops;
+      reply = out.reply;
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        // 402 Payment Required — the universal "you ran out of budget"
+        // status. Mark the chat row as rejected so the history reads
+        // cleanly, then return the structured error.
+        await query(
+          `UPDATE design_floor_plan_chats
+           SET status = 'rejected', friday_reply = $1
+           WHERE id = $2`,
+          [e.message, chatRowId],
+        );
+        return res.status(402).json({
+          error: e.message,
+          code: 'QUOTA_EXCEEDED',
+          totalCostMinorUsd: e.totalCostMinorUsd,
+          capMinorUsd: e.capMinorUsd,
+        });
+      }
+      throw e;
+    }
 
     if (!Array.isArray(ops) || ops.length === 0) {
       const { rows: rejected } = await query(

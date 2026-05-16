@@ -340,9 +340,13 @@ export function FloorPlanStudio({ projectId, startInChat = false, onClose }: Pro
           projectId={projectId}
           versions={versions}
           chats={chats}
+          selectedVersion={selectedVersion}
           onTurnComplete={handleTurnComplete}
           onRevert={handleRevert}
           onSelectVersion={(id) => setSelectedVersionId(id)}
+          onStyleNotesChanged={() => {
+            void reload();
+          }}
         />
       </div>
 

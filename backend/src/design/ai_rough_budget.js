@@ -22,6 +22,12 @@ const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { loadTenantConfig } = require('./adapters');
+const {
+  enforceQuota,
+  recordUsage,
+  parseKimiUsage,
+  QuotaExceededError,
+} = require('../tenants/ai_usage');
 
 const router = express.Router();
 
@@ -135,8 +141,8 @@ async function callKimi(systemPrompt, userContent) {
     );
     const raw = data?.choices?.[0]?.message?.content;
     const parsed = parseModelJson(raw);
-    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start, raw };
-    return { ok: true, parsed, durationMs: Date.now() - start };
+    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start, raw, data };
+    return { ok: true, parsed, durationMs: Date.now() - start, data };
   } catch (e) {
     return { ok: false, error: e.response?.data?.error?.message || e.message, durationMs: Date.now() - start, err: e };
   }
@@ -243,6 +249,21 @@ router.post('/rough-budget-estimate', requireDesignPerm('design:write'), async (
       return res.json({ ...fb, source: 'template-fallback', durationMs: Date.now() - start });
     }
 
+    // Quota guard — runs BEFORE the upstream call.
+    try {
+      await enforceQuota(req.tenantId);
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        return res.status(402).json({
+          error: e.message,
+          code: 'QUOTA_EXCEEDED',
+          totalCostMinorUsd: e.totalCostMinorUsd,
+          capMinorUsd: e.capMinorUsd,
+        });
+      }
+      throw e;
+    }
+
     const userContent = buildUserContent({
       brief,
       projectContext: project_context,
@@ -278,6 +299,21 @@ router.post('/rough-budget-estimate', requireDesignPerm('design:write'), async (
         const mid = Number.isFinite(parsed.midMinor) ? Math.round(parsed.midMinor) : lineSum;
         const low = Number.isFinite(parsed.lowMinor) ? Math.round(parsed.lowMinor) : Math.round(mid * 0.85);
         const high = Number.isFinite(parsed.highMinor) ? Math.round(parsed.highMinor) : Math.round(mid * 1.2);
+        // Log usage on success.
+        const usage = parseKimiUsage(result.data);
+        recordUsage({
+          tenantId: req.tenantId,
+          userId: req.identity?.userId,
+          feature: 'ai_rough_budget',
+          provider: 'kimi',
+          model: KIMI_MODEL,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          durationMs: result.durationMs,
+          success: true,
+          requestContext: { project_id, target_tier: target_tier || null, classification: classification || null },
+        }).catch(() => {});
         return res.json({
           lines,
           lowMinor: low,
@@ -297,7 +333,20 @@ router.post('/rough-budget-estimate', requireDesignPerm('design:write'), async (
       await sleep(delay);
     }
 
-    // Kimi unrecoverable — fallback.
+    // Kimi unrecoverable — fallback. Still log the failed call so
+    // the cap reflects what we actually spent retrying.
+    recordUsage({
+      tenantId: req.tenantId,
+      userId: req.identity?.userId,
+      feature: 'ai_rough_budget',
+      provider: 'kimi',
+      model: KIMI_MODEL,
+      durationMs: Date.now() - start,
+      success: false,
+      errorCode: String(lastErr?.err?.response?.status || lastErr?.error || 'unknown_error').slice(0, 64),
+      requestContext: { project_id, target_tier: target_tier || null, classification: classification || null },
+    }).catch(() => {});
+
     console.warn('[ai/rough-budget] Kimi unavailable, using template fallback:', lastErr?.error);
     const fb = fallbackBudget({ brief, catalogSample: catalog_sample, styleGuide: style_guide, tier: target_tier, classification });
     return res.json({

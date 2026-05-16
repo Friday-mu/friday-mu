@@ -28,6 +28,10 @@ function shapeTenant(row) {
     locale: row.locale,
     billing_email: row.billing_email,
     notes: row.notes,
+    // JSONB — per-tenant bank/transfer details shown in BillingModule.
+    // Empty object '{}' is the "not yet configured" sentinel; pg-node
+    // returns JSONB pre-parsed so no JSON.parse needed here.
+    payment_instructions: row.payment_instructions || {},
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

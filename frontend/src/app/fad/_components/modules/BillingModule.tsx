@@ -11,18 +11,59 @@
 
 import { useEffect, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
-import { apiFetch } from '../../../../components/types';
+import { apiFetch, API_BASE, getToken } from '../../../../components/types';
 import { useCurrentTenantRole, useIsFrAdmin } from '../../_data/useTenantIdentity';
 
-// Hardcoded bank details for v0. When the FR tenant configures a
-// different account this should move to a tenant setting; for now this
-// is the only set of receiving credentials.
-const FR_BANK_DETAILS = {
-  bank: 'Banque des Mascareignes',
-  account: '60000000XXXXX',
-  accountName: 'Friday Retreats Ltd',
-  iban: 'MU17BOMM0101101030300200000MUR',
-};
+// Fetch the PDF as a blob (JWT goes in a header — can't use a plain
+// <a href>) and open it in a new tab. We revoke the object URL after
+// the new tab has had a chance to load it; if the user blocks popups
+// the link in the catch path is a no-op (the parent caller surfaces
+// the error message).
+async function downloadInvoicePdf(path: string, filename: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  // Open in a new tab so the user keeps their place in the dashboard.
+  // Fall back to a hidden-anchor download if popups are blocked.
+  const win = window.open(url, '_blank');
+  if (!win) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  // Give the new tab a beat to consume the URL, then revoke.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+// Per-tenant bank/transfer details — see migration 039_payment_instructions.sql
+// for the JSONB shape. Sourced from /api/tenants/me; rendered by
+// <BankDetails/> with a sensible empty-state fallback when unconfigured.
+interface PaymentInstructions {
+  bank_name?: string | null;
+  account_name?: string | null;
+  account_number?: string | null;
+  iban?: string | null;
+  swift?: string | null;
+  currency?: string | null;
+  instructions?: string | null;
+}
+
+function isPaymentInstructionsConfigured(p: PaymentInstructions | null | undefined): boolean {
+  if (!p) return false;
+  return Boolean(
+    p.bank_name || p.account_name || p.account_number || p.iban || p.swift || p.instructions
+  );
+}
 
 type InvoiceStatus = 'pending' | 'paid_pending_confirmation' | 'paid' | 'void';
 
@@ -87,6 +128,7 @@ export function BillingModule() {
 
 function TenantInvoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [paymentInstructions, setPaymentInstructions] = useState<PaymentInstructions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,8 +136,15 @@ function TenantInvoices() {
     setLoading(true);
     setError(null);
     try {
-      const res = (await apiFetch('/api/tenants/me/invoices')) as { results: Invoice[] } | Invoice[];
-      setInvoices(Array.isArray(res) ? res : res.results || []);
+      // Fetch invoices + tenant row (for payment_instructions) in parallel.
+      // Tenant-row failure shouldn't block the invoice list — we degrade
+      // to the "not configured" empty state on the bank-details block.
+      const [invRes, tenantRes] = await Promise.all([
+        apiFetch('/api/tenants/me/invoices') as Promise<{ results: Invoice[] } | Invoice[]>,
+        apiFetch('/api/tenants/me').catch(() => null) as Promise<{ payment_instructions?: PaymentInstructions } | null>,
+      ]);
+      setInvoices(Array.isArray(invRes) ? invRes : invRes.results || []);
+      setPaymentInstructions(tenantRes?.payment_instructions || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -122,16 +171,30 @@ function TenantInvoices() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {invoices.map((inv) => (
-        <TenantInvoiceCard key={inv.id} invoice={inv} onRefresh={load} />
+        <TenantInvoiceCard
+          key={inv.id}
+          invoice={inv}
+          paymentInstructions={paymentInstructions}
+          onRefresh={load}
+        />
       ))}
     </div>
   );
 }
 
-function TenantInvoiceCard({ invoice, onRefresh }: { invoice: Invoice; onRefresh: () => void }) {
+function TenantInvoiceCard({
+  invoice,
+  paymentInstructions,
+  onRefresh,
+}: {
+  invoice: Invoice;
+  paymentInstructions: PaymentInstructions | null;
+  onRefresh: () => void;
+}) {
   const [bankRef, setBankRef] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const markPaid = async () => {
     setSubmitting(true);
@@ -149,6 +212,21 @@ function TenantInvoiceCard({ invoice, onRefresh }: { invoice: Invoice; onRefresh
     }
   };
 
+  const downloadPdf = async () => {
+    setPdfBusy(true);
+    setError(null);
+    try {
+      await downloadInvoicePdf(
+        `/api/tenants/me/invoices/${invoice.id}/pdf`,
+        `invoice-${invoice.invoice_number}.pdf`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   return (
     <div className="card" style={{ padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
@@ -161,13 +239,25 @@ function TenantInvoiceCard({ invoice, onRefresh }: { invoice: Invoice; onRefresh
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>{invoice.amount_display}</div>
           <StatusChip status={invoice.status} />
+          <div style={{ marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={downloadPdf}
+              disabled={pdfBusy}
+              style={linkBtn()}
+            >
+              {pdfBusy ? 'Downloading…' : 'Download PDF'}
+            </button>
+          </div>
         </div>
       </div>
 
       {invoice.status === 'pending' && (
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8, fontWeight: 500 }}>Pay by bank transfer</div>
-          <BankDetails reference={invoice.invoice_number} />
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8, fontWeight: 500 }}>
+            Where to send payment for your FridayOS Design subscription
+          </div>
+          <BankDetails reference={invoice.invoice_number} instructions={paymentInstructions} />
           <div style={{ marginTop: 12 }}>
             <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
               Bank transfer reference (optional — helps us match your payment)
@@ -205,14 +295,48 @@ function TenantInvoiceCard({ invoice, onRefresh }: { invoice: Invoice; onRefresh
   );
 }
 
-function BankDetails({ reference }: { reference: string }) {
+function BankDetails({
+  reference,
+  instructions,
+}: {
+  reference: string;
+  instructions: PaymentInstructions | null;
+}) {
+  // Empty / unconfigured payment_instructions → support-contact fallback.
+  // Treat any non-empty user-facing field as "configured"; currency alone
+  // is not enough — without bank info there's nowhere to send money.
+  if (!isPaymentInstructionsConfigured(instructions)) {
+    return (
+      <div
+        style={{
+          background: 'var(--color-background-tertiary)',
+          borderRadius: 6,
+          padding: 12,
+          fontSize: 12,
+          lineHeight: 1.6,
+          color: 'var(--color-text-tertiary)',
+        }}
+      >
+        Bank transfer details not yet configured — contact support.
+      </div>
+    );
+  }
+
+  // Reference always rendered (it's per-invoice, not per-tenant).
   return (
     <div style={{ background: 'var(--color-background-tertiary)', borderRadius: 6, padding: 12, fontSize: 12, lineHeight: 1.7 }}>
-      <BankRow label="Bank" value={FR_BANK_DETAILS.bank} />
-      <BankRow label="Account" value={FR_BANK_DETAILS.account} mono />
-      <BankRow label="Account name" value={FR_BANK_DETAILS.accountName} />
-      <BankRow label="IBAN" value={FR_BANK_DETAILS.iban} mono />
+      {instructions!.bank_name && <BankRow label="Bank" value={instructions!.bank_name} />}
+      {instructions!.account_number && <BankRow label="Account" value={instructions!.account_number} mono />}
+      {instructions!.account_name && <BankRow label="Account name" value={instructions!.account_name} />}
+      {instructions!.iban && <BankRow label="IBAN" value={instructions!.iban} mono />}
+      {instructions!.swift && <BankRow label="SWIFT/BIC" value={instructions!.swift} mono />}
+      {instructions!.currency && <BankRow label="Currency" value={instructions!.currency} />}
       <BankRow label="Reference" value={reference} mono highlight />
+      {instructions!.instructions && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--color-border-tertiary)', color: 'var(--color-text-tertiary)' }}>
+          {instructions!.instructions}
+        </div>
+      )}
     </div>
   );
 }
@@ -337,11 +461,24 @@ function AdminAllInvoices() {
                     <td style={{ padding: '8px' }}>{formatDate(inv.due_date)}</td>
                     <td style={{ padding: '8px' }}><StatusChip status={inv.status} /></td>
                     <td style={{ padding: '8px', textAlign: 'right' }}>
-                      {inv.status === 'paid_pending_confirmation' && (
-                        <button type="button" onClick={() => confirmPayment(inv.id)} style={primaryBtnXs()}>
-                          Confirm payment
+                      <div style={{ display: 'inline-flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => void downloadInvoicePdf(
+                            `/api/tenants/admin/invoices/${inv.id}/pdf`,
+                            `invoice-${inv.invoice_number}.pdf`,
+                          ).catch((e) => setError(e instanceof Error ? e.message : String(e)))}
+                          style={linkBtn()}
+                          title="Download invoice PDF"
+                        >
+                          PDF
                         </button>
-                      )}
+                        {inv.status === 'paid_pending_confirmation' && (
+                          <button type="button" onClick={() => confirmPayment(inv.id)} style={primaryBtnXs()}>
+                            Confirm payment
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -527,6 +664,21 @@ function secondaryBtn(): React.CSSProperties {
     color: 'var(--color-text-primary)',
     fontSize: 12,
     border: '0.5px solid var(--color-border-secondary)',
+    cursor: 'pointer',
+  };
+}
+
+// Plain text-link style — used for the "Download PDF" affordances so
+// they don't compete visually with the primary action buttons.
+function linkBtn(): React.CSSProperties {
+  return {
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--color-brand-accent)',
+    fontSize: 11,
+    fontWeight: 500,
+    textDecoration: 'underline',
     cursor: 'pointer',
   };
 }

@@ -26,6 +26,8 @@ const {
   shapeTenant,
   shapeTenantModule,
 } = require('./adapters');
+const { getMonthlyUsage } = require('./ai_usage');
+const { sendEmail, tplWelcome } = require('./email');
 
 const router = express.Router();
 
@@ -170,6 +172,18 @@ router.post('/signup', async (req, res) => {
       { algorithm: 'HS256', expiresIn: '7d' },
     );
 
+    // Fire-and-forget welcome email. Never block the signup response on
+    // SMTP — if RESEND_API_KEY is unset (dev), sendEmail no-ops.
+    const welcomeRecipient = tenant.billing_email || user.email;
+    if (welcomeRecipient) {
+      const tpl = tplWelcome({
+        tenant,
+        adminUser: user,
+        trialEndsAt: tenant.trial_ends_at,
+      });
+      sendEmail({ to: welcomeRecipient, ...tpl }).catch(() => {});
+    }
+
     res.status(201).json({
       tenant: shapeTenant(tenant),
       user: _shapeUser(user),
@@ -242,6 +256,37 @@ router.get('/me/modules', attachIdentity, async (req, res) => {
   }
 });
 
+// Whitelist of payment_instructions JSONB keys we accept on write. We
+// intentionally don't accept arbitrary keys — keeps the shape stable
+// for the renderer in BillingModule and prevents accidental footguns.
+const PAYMENT_INSTRUCTION_KEYS = [
+  'bank_name',
+  'account_name',
+  'account_number',
+  'iban',
+  'swift',
+  'currency',
+  'instructions',
+];
+
+function _sanitisePaymentInstructions(value) {
+  // Accept null/undefined as "clear it" → empty object.
+  if (value == null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('payment_instructions must be an object');
+  }
+  const out = {};
+  for (const key of PAYMENT_INSTRUCTION_KEYS) {
+    if (value[key] === undefined) continue;
+    if (value[key] === null) { out[key] = null; continue; }
+    if (typeof value[key] !== 'string') {
+      throw new Error(`payment_instructions.${key} must be a string or null`);
+    }
+    out[key] = value[key];
+  }
+  return out;
+}
+
 // PATCH /api/tenants/me — admin-only self-service tenant edits. The
 // fields you can NOT edit yourself: slug (URL-stable), subscription_*
 // (lifecycle, owned by billing flow), payment_method (admin action).
@@ -249,7 +294,7 @@ router.patch('/me', attachIdentity, async (req, res) => {
   if (req.identity?.userRole !== 'admin') {
     return res.status(403).json({ error: 'Forbidden — admin role required' });
   }
-  const { name, country, locale, billing_email, notes } = req.body || {};
+  const { name, country, locale, billing_email, notes, payment_instructions } = req.body || {};
   const sets = [];
   const vals = [];
   let i = 1;
@@ -258,6 +303,13 @@ router.patch('/me', attachIdentity, async (req, res) => {
   if (locale !== undefined) { sets.push(`locale = $${i++}`); vals.push(locale); }
   if (billing_email !== undefined) { sets.push(`billing_email = $${i++}`); vals.push(billing_email); }
   if (notes !== undefined) { sets.push(`notes = $${i++}`); vals.push(notes); }
+  if (payment_instructions !== undefined) {
+    let sanitised;
+    try { sanitised = _sanitisePaymentInstructions(payment_instructions); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    sets.push(`payment_instructions = $${i++}::jsonb`);
+    vals.push(JSON.stringify(sanitised));
+  }
   if (sets.length === 0) return res.status(400).json({ error: 'no editable fields supplied' });
   sets.push(`updated_at = NOW()`);
   vals.push(req.tenantId);
@@ -270,6 +322,47 @@ router.patch('/me', attachIdentity, async (req, res) => {
     res.json(shapeTenant(rows[0]));
   } catch (e) {
     console.error('[tenants/me] patch error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PATCH /api/tenants/:tenant_id — FR-admin-only. Set the same editable
+// fields as PATCH /me, but for any tenant. v0 use case: FR admin
+// configures a new tenant's payment_instructions (e.g. a Wise account
+// for a US tenant) before sending the first invoice.
+router.patch('/:tenant_id', attachIdentity, async (req, res) => {
+  if (!_isFrAdmin(req)) {
+    return res.status(403).json({ error: 'Forbidden — FR admin only' });
+  }
+  const { tenant_id } = req.params;
+  const { name, country, locale, billing_email, notes, payment_instructions } = req.body || {};
+  const sets = [];
+  const vals = [];
+  let i = 1;
+  if (name !== undefined) { sets.push(`name = $${i++}`); vals.push(name); }
+  if (country !== undefined) { sets.push(`country = $${i++}`); vals.push(country); }
+  if (locale !== undefined) { sets.push(`locale = $${i++}`); vals.push(locale); }
+  if (billing_email !== undefined) { sets.push(`billing_email = $${i++}`); vals.push(billing_email); }
+  if (notes !== undefined) { sets.push(`notes = $${i++}`); vals.push(notes); }
+  if (payment_instructions !== undefined) {
+    let sanitised;
+    try { sanitised = _sanitisePaymentInstructions(payment_instructions); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    sets.push(`payment_instructions = $${i++}::jsonb`);
+    vals.push(JSON.stringify(sanitised));
+  }
+  if (sets.length === 0) return res.status(400).json({ error: 'no editable fields supplied' });
+  sets.push(`updated_at = NOW()`);
+  vals.push(tenant_id);
+  try {
+    const { rows } = await query(
+      `UPDATE tenants SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`,
+      vals,
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Tenant not found' });
+    res.json(shapeTenant(rows[0]));
+  } catch (e) {
+    console.error('[tenants/:tenant_id] patch error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -306,6 +399,78 @@ router.patch('/:tenant_id/modules/:module_key', attachIdentity, async (req, res)
     res.json(shapeTenantModule(rows[0]));
   } catch (e) {
     console.error('[tenants/modules] patch error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/tenants/me/ai-usage — current tenant's monthly AI spend +
+// remaining quota. Cheap aggregation against ai_usage (mig 038).
+// Anyone authenticated for the tenant can read; the frontend uses
+// this to render a usage card in tenant settings.
+router.get('/me/ai-usage', attachIdentity, async (req, res) => {
+  try {
+    const usage = await getMonthlyUsage(req.tenantId);
+    const { rows } = await query(
+      `SELECT monthly_ai_cost_cap_minor_usd FROM tenants WHERE id = $1`,
+      [req.tenantId],
+    );
+    const cap = rows[0]?.monthly_ai_cost_cap_minor_usd != null
+      ? Number(rows[0].monthly_ai_cost_cap_minor_usd)
+      : 1000;
+    const remaining = Math.max(0, cap - usage.total_cost_minor_usd);
+    res.json({
+      ...usage,
+      cap_minor_usd: cap,
+      remaining_minor_usd: remaining,
+      currency: 'USD',
+    });
+  } catch (e) {
+    console.error('[tenants/me/ai-usage] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/tenants/admin/ai-usage — FR-only — current-month AI spend
+// across all tenants. Used by the platform-admin overview view.
+// Returns one row per tenant with totals + by-feature breakdown.
+router.get('/admin/ai-usage', attachIdentity, async (req, res) => {
+  if (!_isFrAdmin(req)) {
+    return res.status(403).json({ error: 'Forbidden — FR admin only' });
+  }
+  try {
+    // List all tenants. For each we fetch monthly usage; cap parallelism
+    // implicitly via Promise.all because the count is small (single
+    // digits to tens, in v0). If tenant count grows, swap for a single
+    // aggregate query keyed on COALESCE(ai_quota_period_start, …).
+    const { rows: tenants } = await query(
+      `SELECT id, name, slug, monthly_ai_cost_cap_minor_usd,
+              ai_quota_period_start
+       FROM tenants
+       WHERE active = true
+       ORDER BY created_at DESC`,
+    );
+    const enriched = await Promise.all(
+      tenants.map(async (t) => {
+        const usage = await getMonthlyUsage(t.id);
+        const cap = t.monthly_ai_cost_cap_minor_usd != null
+          ? Number(t.monthly_ai_cost_cap_minor_usd)
+          : 1000;
+        return {
+          tenant_id: t.id,
+          tenant_name: t.name,
+          tenant_slug: t.slug,
+          cap_minor_usd: cap,
+          total_cost_minor_usd: usage.total_cost_minor_usd,
+          total_calls: usage.total_calls,
+          remaining_minor_usd: Math.max(0, cap - usage.total_cost_minor_usd),
+          period_start: usage.period_start,
+          by_feature: usage.by_feature,
+        };
+      }),
+    );
+    res.json({ tenants: enriched, currency: 'USD' });
+  } catch (e) {
+    console.error('[tenants/admin/ai-usage] error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

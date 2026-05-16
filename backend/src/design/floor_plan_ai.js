@@ -26,6 +26,12 @@ const axios = require('axios');
 const { MODEL_SUMMARY_FOR_KIMI } = require('./floor_plan_catalog');
 const { INTERIOR_DESIGN_KB, kbForRoom } = require('./floor_plan_design_kb');
 const { renderModelToSvg } = require('./floor_plan_renderer');
+const {
+  enforceQuota,
+  recordUsage,
+  parseGeminiUsage,
+  QuotaExceededError,
+} = require('../tenants/ai_usage');
 
 // Same env-var family as ai_images.js — Gemini lives on Google AI
 // Studio's generativelanguage API and the FR codename is Nanobanana.
@@ -227,6 +233,23 @@ async function translateToOps(model, userMessage, opts = {}) {
   if (!process.env.NANOBANANA_API_KEY) {
     return { ops: [], reply: FALLBACK_REPLY };
   }
+  // Quota guard — runs BEFORE the API call so we never charge the
+  // monthly cap for work the user wasn't allowed to do. tenantId
+  // is optional (legacy callers); skip the check when absent.
+  const tenantId = opts.tenantId || null;
+  const userId = opts.userId || null;
+  if (tenantId) {
+    try {
+      await enforceQuota(tenantId);
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        // Rethrow so floor_plan_chats.js can return HTTP 402.
+        throw e;
+      }
+      throw e;
+    }
+  }
+
   const parts = buildPromptParts(model, userMessage, opts);
   const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent`;
   const body = {
@@ -239,6 +262,7 @@ async function translateToOps(model, userMessage, opts = {}) {
       responseMimeType: 'application/json',
     },
   };
+  const startedAt = Date.now();
   try {
     const { data } = await axios.post(url, body, {
       headers: {
@@ -253,6 +277,29 @@ async function translateToOps(model, userMessage, opts = {}) {
     // case future SDKs change the shape.
     const raw = respParts.map((p) => p?.text).filter(Boolean).join('') || '';
     const parsed = _parseModelJson(raw);
+    const durationMs = Date.now() - startedAt;
+    // Log usage regardless of parse success — the API call landed
+    // and consumed tokens either way.
+    if (tenantId) {
+      const usage = parseGeminiUsage(data);
+      recordUsage({
+        tenantId,
+        userId,
+        feature: 'floor_plan_ai',
+        provider: 'gemini',
+        model: GEMINI_MODEL,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        durationMs,
+        success: !!parsed,
+        errorCode: parsed ? null : 'unparseable_json',
+        requestContext: {
+          room_kind: opts.roomKind || null,
+          had_history: !!(opts.history && opts.history.length > 0),
+        },
+      }).catch(() => {});
+    }
     if (!parsed) {
       console.warn('[floor_plan_ai] Gemini returned unparseable JSON:', raw.slice(0, 200));
       return { ops: [], reply: UNCLEAR_REPLY };
@@ -263,6 +310,22 @@ async function translateToOps(model, userMessage, opts = {}) {
       '[floor_plan_ai] Gemini call failed:',
       e.response?.data?.error?.message || e.message,
     );
+    // Failure path still costs us — record so the cap reflects
+    // reality. No usage metadata (response wasn't returned), so
+    // record a zero-token failure; cost will compute to ~0.
+    if (tenantId) {
+      recordUsage({
+        tenantId,
+        userId,
+        feature: 'floor_plan_ai',
+        provider: 'gemini',
+        model: GEMINI_MODEL,
+        durationMs: Date.now() - startedAt,
+        success: false,
+        errorCode: String(e.response?.status || e.code || 'unknown_error'),
+        requestContext: { room_kind: opts.roomKind || null },
+      }).catch(() => {});
+    }
     return { ops: [], reply: FALLBACK_REPLY };
   }
 }

@@ -25,6 +25,28 @@ const { shapeAsset } = require('./adapters');
 const { generateImage } = require('../ai/imagegen');
 const { buildMoodboardPrompt, buildFurnishingPrompt } = require('../ai/promptbuilder');
 const { appendActivity } = require('./activities');
+const {
+  enforceQuota,
+  recordUsage,
+  parseNanobananaUsage,
+  QuotaExceededError,
+} = require('../tenants/ai_usage');
+
+// Helper: surface a QuotaExceededError as HTTP 402. The /generate*
+// handlers all need the same shape, so centralise it.
+function _send402(res, err) {
+  return res.status(402).json({
+    error: err.message,
+    code: 'QUOTA_EXCEEDED',
+    totalCostMinorUsd: err.totalCostMinorUsd,
+    capMinorUsd: err.capMinorUsd,
+  });
+}
+
+// Model name used by imagegen — same env var hierarchy as
+// imagegen.js itself; we duplicate the default to avoid a circular
+// require if the value isn't exported. Keep in sync.
+const NANOBANANA_MODEL_NAME = process.env.NANOBANANA_MODEL || 'gemini-2.5-flash-image-preview';
 
 const router = express.Router();
 
@@ -127,12 +149,49 @@ router.post('/generate', requireDesignPerm('design:write'), async (req, res) => 
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
 
+    // Quota guard.
+    try { await enforceQuota(req.tenantId); }
+    catch (e) {
+      if (e instanceof QuotaExceededError) return _send402(res, e);
+      throw e;
+    }
+
     let result;
     try {
       result = await generateImage({ prompt, referenceImageUrl, style, size });
     } catch (e) {
       console.error('[design/ai_images] generation error:', e.message);
+      // Log the failed (billable-ish) attempt — provider may have
+      // accepted bytes before timing out. Cost computed as flat-per-
+      // image fallback so we record something.
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'moodboard_image',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        success: false,
+        errorCode: String(e.code || 'generation_failed').slice(0, 64),
+        requestContext: { project_id: projectId, kind },
+      }).catch(() => {});
       return res.status(502).json({ error: `Image generation failed: ${e.message}` });
+    }
+
+    // Success — record an image-priced row. Stub + cached generations
+    // are not charged (no bytes spent at provider).
+    if (!result.stub && !result.cached) {
+      const usage = parseNanobananaUsage(result);
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'moodboard_image',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        durationMs: result.durationMs || null,
+        success: true,
+        requestContext: { project_id: projectId, kind, byte_size: usage.byteSize },
+        kind: 'image',
+      }).catch(() => {});
     }
 
     const storedPrompt = encodeKindIntoPrompt(kind, result.generatorPrompt);
@@ -255,6 +314,14 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
 
     if (projectRes.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const project = projectRes.rows[0];
+
+    // Quota guard — runs after ownership check (don't burn quota on a
+    // 404), before Kimi prompt-synth + Nanobanana generation.
+    try { await enforceQuota(req.tenantId); }
+    catch (e) {
+      if (e instanceof QuotaExceededError) return _send402(res, e);
+      throw e;
+    }
 
     // Property is optional — projects without a linked property still
     // generate, just without the location/sqft signal.
@@ -389,6 +456,23 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
     // ── size hint from suggested aspect ratio (only when not overridden) ──
     const sizeHint = ASPECT_TO_SIZE[suggestedAspectRatio] || undefined;
 
+    // promptSource === 'kimi' means the synth path actually called Kimi
+    // (vs the deterministic template fallback). We log it as a small
+    // text-priced row — tokens unknown here because promptbuilder
+    // doesn't return them, so cost falls back to the unknown-model
+    // estimate which is conservative-but-cheap.
+    if (promptSource === 'kimi') {
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'moodboard_prompt',
+        provider: 'kimi',
+        model: process.env.KIMI_MODEL || 'moonshot-v1-8k',
+        success: true,
+        requestContext: { project_id: projectId, kind },
+      }).catch(() => {});
+    }
+
     let result;
     try {
       result = await generateImage({
@@ -398,7 +482,32 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
       });
     } catch (e) {
       console.error('[design/ai_images] generation error:', e.message);
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'moodboard_image',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        success: false,
+        errorCode: String(e.code || 'generation_failed').slice(0, 64),
+        requestContext: { project_id: projectId, kind },
+      }).catch(() => {});
       return res.status(502).json({ error: `Image generation failed: ${e.message}` });
+    }
+
+    if (!result.stub && !result.cached) {
+      const usage = parseNanobananaUsage(result);
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'moodboard_image',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        durationMs: result.durationMs || null,
+        success: true,
+        requestContext: { project_id: projectId, kind, byte_size: usage.byteSize, prompt_source: promptSource, inline_image_count: inlineImages.length },
+        kind: 'image',
+      }).catch(() => {});
     }
 
     const storedPrompt = encodeKindIntoPrompt(kind, result.generatorPrompt);
@@ -550,6 +659,13 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
     );
     if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
 
+    // Quota guard.
+    try { await enforceQuota(req.tenantId); }
+    catch (e) {
+      if (e instanceof QuotaExceededError) return _send402(res, e);
+      throw e;
+    }
+
     const hintTrimmed = typeof promptHint === 'string' ? promptHint.trim() : '';
     const prompt = hintTrimmed
       ? `${FLOOR_PLAN_SYSTEM_PROMPT} ${hintTrimmed}`
@@ -566,7 +682,32 @@ router.post('/generate-floor-plan', requireDesignPerm('design:write'), async (re
       });
     } catch (e) {
       console.error('[design/ai_images] floor-plan generation error:', e.message);
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'floor_plan_cleanup',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        success: false,
+        errorCode: String(e.code || 'generation_failed').slice(0, 64),
+        requestContext: { project_id: projectId },
+      }).catch(() => {});
       return res.status(502).json({ error: `Image generation failed: ${e.message}` });
+    }
+
+    if (!result.stub && !result.cached) {
+      const usage = parseNanobananaUsage(result);
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'floor_plan_cleanup',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        durationMs: result.durationMs || null,
+        success: true,
+        requestContext: { project_id: projectId, source_mime: mimeType, byte_size: usage.byteSize },
+        kind: 'image',
+      }).catch(() => {});
     }
 
     const storedPrompt = `[kind:floor_plan] ${result.generatorPrompt}`;
@@ -769,6 +910,13 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
     if (projectRes.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
     const project = projectRes.rows[0];
 
+    // Quota guard — after ownership check.
+    try { await enforceQuota(req.tenantId); }
+    catch (e) {
+      if (e instanceof QuotaExceededError) return _send402(res, e);
+      throw e;
+    }
+
     // ── resolve floor plan sha256 ──
     const floorPlanSha = (typeof bodyFloorPlanSha === 'string' && bodyFloorPlanSha.trim())
       ? bodyFloorPlanSha.trim()
@@ -917,6 +1065,18 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
     const suggestedAspectRatio = synth.suggestedAspectRatio || null;
     const sizeHint = ASPECT_TO_SIZE[suggestedAspectRatio] || undefined;
 
+    if (promptSource === 'kimi') {
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'furnished_plan_prompt',
+        provider: 'kimi',
+        model: process.env.KIMI_MODEL || 'moonshot-v1-8k',
+        success: true,
+        requestContext: { project_id: projectId, moodboard_id: moodboardRow.id },
+      }).catch(() => {});
+    }
+
     // ── generate ──
     let result;
     try {
@@ -930,7 +1090,32 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
       });
     } catch (e) {
       console.error('[design/ai_images] furnished-floor-plan generation error:', e.message);
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'floor_plan_furnished',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        success: false,
+        errorCode: String(e.code || 'generation_failed').slice(0, 64),
+        requestContext: { project_id: projectId, moodboard_id: moodboardRow.id },
+      }).catch(() => {});
       return res.status(502).json({ error: `Image generation failed: ${e.message}` });
+    }
+
+    if (!result.stub && !result.cached) {
+      const usage = parseNanobananaUsage(result);
+      recordUsage({
+        tenantId: req.tenantId,
+        userId: req.identity?.userId,
+        feature: 'floor_plan_furnished',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        durationMs: result.durationMs || null,
+        success: true,
+        requestContext: { project_id: projectId, moodboard_id: moodboardRow.id, prompt_source: promptSource, byte_size: usage.byteSize },
+        kind: 'image',
+      }).catch(() => {});
     }
 
     const storedPrompt = trimPromptToCap(`[kind:floor_plan_furnished] ${result.generatorPrompt}`);

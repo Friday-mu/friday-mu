@@ -28,6 +28,12 @@ const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { loadTenantConfig } = require('./adapters');
+const {
+  enforceQuota,
+  recordUsage,
+  parseKimiUsage,
+  QuotaExceededError,
+} = require('../tenants/ai_usage');
 
 const router = express.Router();
 
@@ -123,8 +129,8 @@ async function callKimi(systemPrompt, userContent) {
     );
     const raw = data?.choices?.[0]?.message?.content;
     const parsed = parseModelJson(raw);
-    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start };
-    return { ok: true, parsed, durationMs: Date.now() - start };
+    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start, data };
+    return { ok: true, parsed, durationMs: Date.now() - start, data };
   } catch (e) {
     return { ok: false, error: e.response?.data?.error?.message || e.message, durationMs: Date.now() - start, err: e };
   }
@@ -188,6 +194,21 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
       });
     }
 
+    // Quota guard — runs BEFORE the upstream call.
+    try {
+      await enforceQuota(req.tenantId);
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        return res.status(402).json({
+          error: e.message,
+          code: 'QUOTA_EXCEEDED',
+          totalCostMinorUsd: e.totalCostMinorUsd,
+          capMinorUsd: e.capMinorUsd,
+        });
+      }
+      throw e;
+    }
+
     const userContent = JSON.stringify({
       instruction: instruction.trim(),
       current_annex_b,
@@ -205,6 +226,21 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
         const proposed = shapeProposed(parsed.proposed);
         const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
         const confidence = ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'medium';
+        // Log usage on success.
+        const usage = parseKimiUsage(result.data);
+        recordUsage({
+          tenantId: req.tenantId,
+          userId: req.identity?.userId,
+          feature: 'ai_annex_b_edit',
+          provider: 'kimi',
+          model: KIMI_MODEL,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          durationMs: result.durationMs,
+          success: true,
+          requestContext: { project_id, confidence },
+        }).catch(() => {});
         return res.json({
           proposed,
           reasoning,
@@ -217,6 +253,19 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
       if (!isRetryable(result.err)) break;
       await sleep(400 * (attempt + 1));
     }
+
+    // Failure — log so the cap reflects retries.
+    recordUsage({
+      tenantId: req.tenantId,
+      userId: req.identity?.userId,
+      feature: 'ai_annex_b_edit',
+      provider: 'kimi',
+      model: KIMI_MODEL,
+      durationMs: Date.now() - start,
+      success: false,
+      errorCode: String(lastErr?.err?.response?.status || lastErr?.error || 'unknown_error').slice(0, 64),
+      requestContext: { project_id },
+    }).catch(() => {});
 
     return res.status(502).json({
       error: lastErr?.error || 'Kimi call failed',

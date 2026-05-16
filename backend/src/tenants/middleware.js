@@ -26,6 +26,37 @@ const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const CACHE_TTL_MS = 60 * 1000;
 const cache = new Map(); // key: `${tenantId}:${moduleKey}` → { enabled, expires }
 
+// Separate per-tenant subscription-status cache. Same 60s TTL as the
+// module cache — short enough that a worker flip (trial → past_due,
+// past_due → cancelled) is visible within a minute without forcing a
+// DB roundtrip on every request.
+const subscriptionCache = new Map(); // key: tenantId → { status, expires }
+
+async function _getSubscriptionStatus(tenantId) {
+  if (!tenantId) return null;
+  const cached = subscriptionCache.get(tenantId);
+  if (cached && cached.expires > Date.now()) return cached.status;
+  try {
+    const { rows } = await query(
+      `SELECT subscription_status FROM tenants WHERE id = $1 LIMIT 1`,
+      [tenantId],
+    );
+    const status = rows.length > 0 ? rows[0].subscription_status : null;
+    subscriptionCache.set(tenantId, { status, expires: Date.now() + CACHE_TTL_MS });
+    return status;
+  } catch (e) {
+    // Fail closed-ish: treat unknown as null and let the caller decide.
+    // We don't want a DB blip to lock every tenant out, but we also
+    // don't want to silently grant access — log loudly so it's visible.
+    console.error(`[tenants/middleware] subscription status query failed for ${tenantId}:`, e.message);
+    return null;
+  }
+}
+
+function invalidateSubscriptionCache(tenantId) {
+  if (tenantId) subscriptionCache.delete(tenantId);
+}
+
 function _cacheKey(tenantId, moduleKey) {
   return `${tenantId}:${moduleKey}`;
 }
@@ -83,6 +114,37 @@ function requireModule(moduleKey) {
         module: moduleKey,
       });
     }
+
+    // Subscription lifecycle gate. The module-enabled check above answers
+    // "did this tenant pay for this feature"; the status check below
+    // answers "is this tenant's billing in good standing today". Order
+    // matters — we still leak "module exists for you" to past_due tenants
+    // because they get to keep working, just with a banner.
+    //
+    //   cancelled / suspended → 402 Payment Required, hard-block
+    //   past_due              → allow, but flag via X-Subscription-Past-Due
+    //                           header so the frontend can render a banner
+    //   trial / active / null → allow silently
+    //
+    // FR is the platform-admin tenant — never gate it. Avoids the chicken-
+    // and-egg case where FR's own row gets flipped to past_due and locks
+    // the support team out of the dashboard they'd use to fix it.
+    if (tenantId !== FR_TENANT_ID) {
+      const status = await _getSubscriptionStatus(tenantId);
+      if (status === 'cancelled' || status === 'suspended') {
+        return res.status(402).json({
+          error: 'subscription_inactive',
+          reason: status,
+        });
+      }
+      if (status === 'past_due') {
+        // TODO(frontend): read X-Subscription-Past-Due response header and
+        // render a banner prompting the admin to pay the outstanding
+        // invoice. Out of scope for this subagent.
+        res.setHeader('X-Subscription-Past-Due', '1');
+      }
+    }
+
     next();
   };
 }
@@ -120,6 +182,7 @@ module.exports = {
   FR_TENANT_ID,
   isModuleEnabled,
   invalidateModuleCache,
+  invalidateSubscriptionCache,
   requireModule,
   requireFrTenant,
 };

@@ -128,6 +128,12 @@ export interface Surface {
   kind: 'wall_face' | 'floor' | 'ceiling';
   /** Optional reference to a room region for floor / ceiling surfaces. */
   roomId?: string;
+  /**
+   * Human-readable label ("Living-room north wall", "Master floor") —
+   * shown on the chip overlay and used by the texture-pass prompt so
+   * Gemini knows what each surface represents.
+   */
+  label?: string;
   /** Hex colour for the renderer's base layer. */
   baseColor?: string;
   /** Texture key (matches a texture name in the renderer's catalog). */

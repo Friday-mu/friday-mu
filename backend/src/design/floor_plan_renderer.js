@@ -28,6 +28,14 @@ const crypto = require('crypto');
 const { query } = require('../database/client');
 const { generateImage } = require('../ai/imagegen');
 const { getCatalogEntry } = require('./floor_plan_catalog');
+const {
+  enforceQuota,
+  recordUsage,
+  parseNanobananaUsage,
+  QuotaExceededError,
+} = require('../tenants/ai_usage');
+
+const NANOBANANA_MODEL_NAME = process.env.NANOBANANA_MODEL || 'gemini-2.5-flash-image-preview';
 
 // ─────────────────────────── constants ──────────────────────────────
 
@@ -392,6 +400,23 @@ async function renderModelToStylizedRaster(model, styleNotes, opts = {}) {
   // part is dropped, the model has the structure described.
   const svgBase64 = Buffer.from(svg, 'utf-8').toString('base64');
 
+  // Quota guard — only enforce when the caller passed a real tenant
+  // (legacy callers may not). DEFAULT_TENANT_ID is a sentinel for
+  // "FR" so it's safe to enforce against that too.
+  if (tenantId) {
+    try {
+      await enforceQuota(tenantId);
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        // Re-throw so the caller (a chat-pipeline handler) can convert
+        // to 402. Don't degrade to SVG-only here — that would hide
+        // billing state behind a stub.
+        throw e;
+      }
+      throw e;
+    }
+  }
+
   let result;
   let degraded = false;
   try {
@@ -402,6 +427,33 @@ async function renderModelToStylizedRaster(model, styleNotes, opts = {}) {
   } catch (e) {
     console.warn('[floor_plan_renderer] generateImage failed, returning SVG fallback:', e.message);
     degraded = true;
+    if (tenantId) {
+      recordUsage({
+        tenantId,
+        userId: createdByUserId,
+        feature: 'floor_plan_render',
+        provider: 'nanobanana',
+        model: NANOBANANA_MODEL_NAME,
+        success: false,
+        errorCode: String(e.code || 'generation_failed').slice(0, 64),
+        requestContext: { model_hash: modelHash, kind: RENDER_KIND },
+      }).catch(() => {});
+    }
+  }
+
+  if (!degraded && result && !result.stub && !result.cached && tenantId) {
+    const usage = parseNanobananaUsage(result);
+    recordUsage({
+      tenantId,
+      userId: createdByUserId,
+      feature: 'floor_plan_render',
+      provider: 'nanobanana',
+      model: NANOBANANA_MODEL_NAME,
+      durationMs: result.durationMs || null,
+      success: true,
+      requestContext: { model_hash: modelHash, kind: RENDER_KIND, byte_size: usage.byteSize },
+      kind: 'image',
+    }).catch(() => {});
   }
 
   if (degraded || !result || result.stub === true) {

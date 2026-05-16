@@ -18,21 +18,34 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ApiFloorPlanChat, ApiFloorPlanVersion, FloorPlanOperation } from '../../../_data/floorPlanTypes';
-import { sendFloorPlanChat, revertFloorPlan } from '../../../_data/designClient';
+import { sendFloorPlanChat, revertFloorPlan, updateFloorPlan } from '../../../_data/designClient';
 
 interface Props {
   projectId: string;
   versions: ApiFloorPlanVersion[];
   chats: ApiFloorPlanChat[];
+  /** Currently-selected version — used for the style-notes strip. */
+  selectedVersion?: ApiFloorPlanVersion | null;
   /** Called whenever a turn completes (applied, rejected, or failed). */
   onTurnComplete: (next: { chat: ApiFloorPlanChat; version: ApiFloorPlanVersion | null }) => void;
   /** Optional — when a revert succeeds parent should refetch. */
   onRevert?: (newVersionId: string) => void;
   /** Optional — clicking a "vN" chip selects that version in the studio. */
   onSelectVersion?: (versionId: string) => void;
+  /** Optional — called after a successful styleNotes patch so the parent refetches. */
+  onStyleNotesChanged?: () => void;
 }
 
-export function FloorPlanChatPanel({ projectId, versions, chats, onTurnComplete, onRevert, onSelectVersion }: Props) {
+export function FloorPlanChatPanel({
+  projectId,
+  versions,
+  chats,
+  selectedVersion,
+  onTurnComplete,
+  onRevert,
+  onSelectVersion,
+  onStyleNotesChanged,
+}: Props) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +105,13 @@ export function FloorPlanChatPanel({ projectId, versions, chats, onTurnComplete,
         </span>
       </div>
 
+      {selectedVersion && (
+        <StyleNotesStrip
+          version={selectedVersion}
+          onChanged={onStyleNotesChanged}
+        />
+      )}
+
       <div ref={scrollerRef} style={scrollerStyle()}>
         {chats.length === 0 ? (
           <div style={emptyStyle()}>
@@ -144,6 +164,120 @@ export function FloorPlanChatPanel({ projectId, versions, chats, onTurnComplete,
 }
 
 // ── pieces ─────────────────────────────────────────────────────────
+
+function StyleNotesStrip({
+  version,
+  onChanged,
+}: {
+  version: ApiFloorPlanVersion;
+  onChanged?: () => void;
+}) {
+  const current = version.model.styleNotes ?? '';
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(current);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // If the underlying version changes (e.g. Gemini emitted a new
+  // set_style_notes), refresh the local draft state when not actively
+  // editing.
+  useEffect(() => {
+    if (!editing) setDraft(current);
+  }, [current, editing]);
+
+  async function persist(nextValue: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      await updateFloorPlan(version.id, {
+        model: { ...version.model, styleNotes: nextValue || undefined },
+      });
+      onChanged?.();
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleSave() {
+    const trimmed = draft.trim();
+    if (trimmed === current.trim()) {
+      setEditing(false);
+      return;
+    }
+    void persist(trimmed);
+  }
+
+  function handleClear() {
+    if (typeof window !== 'undefined' && !window.confirm('Clear style notes for this version?')) return;
+    void persist('');
+  }
+
+  if (editing) {
+    return (
+      <div style={styleStripStyle()}>
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={2}
+          placeholder="e.g. modern coastal · light beige walls · brass fixtures"
+          disabled={saving}
+          style={styleTextareaStyle()}
+          autoFocus
+        />
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(current);
+              setEditing(false);
+              setError(null);
+            }}
+            disabled={saving}
+            style={styleGhostBtnStyle(saving)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            style={stylePrimaryBtnStyle(saving)}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {error && <div style={styleErrorStyle()}>{error}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={styleStripStyle()}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span style={styleLabelStyle()}>Style</span>
+        {current ? (
+          <span style={styleChipStyle()} title={current}>{current}</span>
+        ) : (
+          <span style={styleEmptyStyle()}>
+            No style notes yet — type <em>&ldquo;go modern coastal&rdquo;</em> to start
+          </span>
+        )}
+        <div style={{ flex: 1 }} />
+        <button type="button" onClick={() => setEditing(true)} style={styleGhostBtnStyle(false)}>
+          Edit
+        </button>
+        {current && (
+          <button type="button" onClick={handleClear} style={styleGhostBtnStyle(false)}>
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ChatTurn({
   chat,
@@ -415,5 +549,104 @@ function errorChipStyle(): React.CSSProperties {
     borderRadius: 'var(--radius-sm)',
     background: 'var(--color-bg-danger)',
     color: 'var(--color-text-danger)',
+  };
+}
+
+// ── style-notes strip ──────────────────────────────────────────────
+
+function styleStripStyle(): React.CSSProperties {
+  return {
+    padding: '8px 12px',
+    borderBottom: '0.5px solid var(--color-border-tertiary)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    flexShrink: 0,
+    background: 'var(--color-background-secondary)',
+  };
+}
+
+function styleLabelStyle(): React.CSSProperties {
+  return {
+    fontSize: 10,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    color: 'var(--color-text-tertiary)',
+    flexShrink: 0,
+  };
+}
+
+function styleChipStyle(): React.CSSProperties {
+  return {
+    padding: '3px 8px',
+    fontSize: 11,
+    borderRadius: 999,
+    background: 'var(--color-background-tertiary)',
+    color: 'var(--color-text-primary)',
+    border: '0.5px solid var(--color-border-secondary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: 260,
+  };
+}
+
+function styleEmptyStyle(): React.CSSProperties {
+  return {
+    fontSize: 11,
+    color: 'var(--color-text-tertiary)',
+    fontStyle: 'normal',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  };
+}
+
+function styleTextareaStyle(): React.CSSProperties {
+  return {
+    width: '100%',
+    padding: 6,
+    fontSize: 11,
+    borderRadius: 'var(--radius-sm)',
+    border: '0.5px solid var(--color-border-secondary)',
+    background: 'var(--color-background-primary)',
+    color: 'var(--color-text-primary)',
+    fontFamily: 'inherit',
+    resize: 'vertical',
+    minHeight: 44,
+  };
+}
+
+function stylePrimaryBtnStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '3px 10px',
+    fontSize: 11,
+    fontWeight: 500,
+    borderRadius: 'var(--radius-sm)',
+    background: disabled ? 'var(--color-background-tertiary)' : 'var(--color-brand-accent)',
+    color: disabled ? 'var(--color-text-tertiary)' : '#fff',
+    border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function styleGhostBtnStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '3px 8px',
+    fontSize: 11,
+    borderRadius: 'var(--radius-sm)',
+    background: 'transparent',
+    color: disabled ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+    border: '0.5px solid var(--color-border-secondary)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function styleErrorStyle(): React.CSSProperties {
+  return {
+    fontSize: 11,
+    color: 'var(--color-text-danger)',
+    padding: '4px 0 0',
   };
 }

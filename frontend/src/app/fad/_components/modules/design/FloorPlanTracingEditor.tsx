@@ -37,6 +37,7 @@ import type {
   FurnitureItem,
   Point,
   RoomRegion,
+  Surface,
   Wall,
   Window as PlanWindow,
 } from '../../../_data/floorPlanTypes';
@@ -61,8 +62,45 @@ const DEFAULT_WINDOW_SILL_M = 0.9;
 const DEFAULT_WINDOW_HEIGHT_M = 1.2;
 const DRAG_THRESHOLD_PX = 3;
 
-type Tool = 'wall' | 'door' | 'window' | 'room' | 'select';
+type Tool = 'wall' | 'door' | 'window' | 'room' | 'surface' | 'select';
 type Stage = 'upload' | 'trace';
+
+// ── surface texture catalog ───────────────────────────────────────────
+// Hardcoded list of texture keys the renderer / Gemini texture-pass
+// understands. Exported so the design KB and prompt-builder can
+// reference the same canonical strings without drifting from the UI.
+// Keep entries lowercase + underscore-separated so they round-trip
+// cleanly through the LLM grammar.
+export const SURFACE_TEXTURE_CATALOG: Array<{
+  key: string;
+  label: string;
+  kind: 'wall_face' | 'floor' | 'ceiling';
+}> = [
+  // Floors
+  { key: 'wood_floor_oak',      label: 'Oak wood floor',       kind: 'floor' },
+  { key: 'wood_floor_walnut',   label: 'Walnut wood floor',    kind: 'floor' },
+  { key: 'wood_floor_teak',     label: 'Teak wood floor',      kind: 'floor' },
+  { key: 'tile_white',          label: 'White ceramic tile',   kind: 'floor' },
+  { key: 'tile_terrazzo',       label: 'Terrazzo tile',        kind: 'floor' },
+  { key: 'marble_carrara',      label: 'Carrara marble',       kind: 'floor' },
+  { key: 'concrete_polished',   label: 'Polished concrete',    kind: 'floor' },
+  // Walls
+  { key: 'paint_smooth',        label: 'Smooth painted',       kind: 'wall_face' },
+  { key: 'paint_limewash',      label: 'Limewash paint',       kind: 'wall_face' },
+  { key: 'wallpaper_floral',    label: 'Floral wallpaper',     kind: 'wall_face' },
+  { key: 'wood_panel_vertical', label: 'Vertical wood panel',  kind: 'wall_face' },
+  { key: 'stone_natural',       label: 'Natural stone',        kind: 'wall_face' },
+  { key: 'tile_subway',         label: 'Subway tile',          kind: 'wall_face' },
+  // Ceilings
+  { key: 'ceiling_smooth_white', label: 'Smooth white ceiling', kind: 'ceiling' },
+  { key: 'ceiling_wood_beams',   label: 'Exposed wood beams',   kind: 'ceiling' },
+];
+
+/** Lookup helper — returns the label for a texture key, or the key itself. */
+function textureLabel(key: string | undefined): string {
+  if (!key) return '';
+  return SURFACE_TEXTURE_CATALOG.find((t) => t.key === key)?.label ?? key;
+}
 
 // ── furniture catalog (mirrored subset of backend/src/design/floor_plan_catalog.js)
 // 18 most-common categories Mathias will reach for. Revisit as we see
@@ -477,6 +515,7 @@ type SelectedItem =
   | { kind: 'window'; id: string }
   | { kind: 'furniture'; id: string }
   | { kind: 'room'; id: string }
+  | { kind: 'surface'; id: string }
   | null;
 
 // Active drag-to-move (Select tool). Captured on mouseDown when the
@@ -562,6 +601,23 @@ function pointInPolygon(p: { x: number; y: number }, polygon: { x: number; y: nu
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * Convert a #rrggbb hex string into an rgba() with the given alpha.
+ * Used to render surface fills at ~40% opacity over rooms without
+ * needing a separate fill prop on the SVG element. Falls back to a
+ * neutral grey if the input doesn't parse — never throws so a typo in
+ * the color picker can't break rendering.
+ */
+function withAlpha(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return `rgba(156,163,175,${alpha})`;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 /** Simple centroid of polygon points (not weighted — fine for label placement). */
@@ -944,6 +1000,29 @@ export function FloorPlanTracingEditor({
       return;
     }
 
+    if (tool === 'surface') {
+      // Surface assignment — three target kinds resolved by hit-test +
+      // modifier:
+      //   • wall hit (no modifier)            → wall_face
+      //   • room polygon hit, no modifier     → floor
+      //   • room polygon hit, cmd/ctrl/meta   → ceiling
+      // We resolve walls before rooms because walls are drawn on top of
+      // floor zones and the user's intent is clearer at the line.
+      const wallHit = hitTestWall(pM);
+      if (wallHit) {
+        handleSurfaceAssignWall(wallHit.wall, pM);
+        return;
+      }
+      const roomHit = hitTestRoom(pM);
+      if (roomHit) {
+        const kind: Surface['kind'] = (e.metaKey || e.ctrlKey) ? 'ceiling' : 'floor';
+        handleSurfaceAssignFloorOrCeiling(roomHit, kind, pM);
+        return;
+      }
+      setError('Click on a wall, inside a room (floor), or cmd-click inside a room (ceiling).');
+      return;
+    }
+
     if (tool === 'select') {
       // Hit-test priority (highest to lowest):
       //   1. Room vertex handles (only if a room is selected)
@@ -1302,6 +1381,107 @@ export function FloorPlanTracingEditor({
     }
   }
 
+  // ── surface assignment helpers ──────────────────────────────────────
+  // These are invoked from the Surface tool's click handler. They
+  // either create a new Surface entry (and link it to the wall / room)
+  // or select the existing one so the popover can edit it.
+
+  /**
+   * Click on a wall in Surface tool: create or open a wall_face
+   * surface for that wall. The wall's surfaceId becomes the link.
+   */
+  function handleSurfaceAssignWall(wall: Wall, clickM: Point) {
+    setError(null);
+    const existing = wall.surfaceId
+      ? model.surfaces.find((s) => s.id === wall.surfaceId) ?? null
+      : null;
+    if (existing) {
+      setSelected({ kind: 'surface', id: existing.id });
+      const pPx = metresToPx(clickM);
+      setPopover({ x: pPx.x, y: pPx.y });
+      return;
+    }
+    // First-time assignment: prompt for label so the chip + Gemini
+    // prompt have something meaningful. `window.prompt` is fine here —
+    // matches the existing door/window/room flow in this editor.
+    const defaultLabel = `Wall face ${model.surfaces.filter((s) => s.kind === 'wall_face').length + 1}`;
+    const raw = typeof window !== 'undefined'
+      ? window.prompt('Surface label (e.g. "Living-room north wall")', defaultLabel)
+      : defaultLabel;
+    if (raw === null) return;
+    const label = raw.trim() || defaultLabel;
+    const surface: Surface = {
+      id: shortId('surf'),
+      kind: 'wall_face',
+      label,
+    };
+    pushSnapshot(model);
+    setModel({
+      ...model,
+      surfaces: [...model.surfaces, surface],
+      walls: model.walls.map((w) => (w.id === wall.id ? { ...w, surfaceId: surface.id } : w)),
+    });
+    setSelected({ kind: 'surface', id: surface.id });
+    const pPx = metresToPx(clickM);
+    setPopover({ x: pPx.x, y: pPx.y });
+  }
+
+  /**
+   * Click inside a room polygon in Surface tool: create or open the
+   * room's floor- or ceiling- surface (one per room+kind). We don't
+   * support multiple floors per room in v1 — that's what room
+   * subdivision is for.
+   */
+  function handleSurfaceAssignFloorOrCeiling(
+    room: RoomRegion,
+    kind: 'floor' | 'ceiling',
+    clickM: Point,
+  ) {
+    setError(null);
+    const existing = model.surfaces.find((s) => s.roomId === room.id && s.kind === kind) ?? null;
+    if (existing) {
+      setSelected({ kind: 'surface', id: existing.id });
+      const pPx = metresToPx(clickM);
+      setPopover({ x: pPx.x, y: pPx.y });
+      return;
+    }
+    const defaultLabel = `${room.label} ${kind}`;
+    const raw = typeof window !== 'undefined'
+      ? window.prompt(`${kind === 'floor' ? 'Floor' : 'Ceiling'} label`, defaultLabel)
+      : defaultLabel;
+    if (raw === null) return;
+    const label = raw.trim() || defaultLabel;
+    const surface: Surface = {
+      id: shortId('surf'),
+      kind,
+      roomId: room.id,
+      label,
+    };
+    pushSnapshot(model);
+    setModel({ ...model, surfaces: [...model.surfaces, surface] });
+    setSelected({ kind: 'surface', id: surface.id });
+    const pPx = metresToPx(clickM);
+    setPopover({ x: pPx.x, y: pPx.y });
+  }
+
+  function patchSurface(id: string, patch: Partial<Surface>) {
+    pushSnapshot(model);
+    setModel({
+      ...model,
+      surfaces: model.surfaces.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    });
+  }
+
+  /**
+   * Find the walls that link to a given surface (wall_face only).
+   * Surface-on-wall is 1:N in principle — one Surface entry can be
+   * the assignment for several walls, even though the current UI
+   * creates one surface per wall.
+   */
+  function wallsForSurface(surfaceId: string): Wall[] {
+    return model.walls.filter((w) => w.surfaceId === surfaceId);
+  }
+
   // ── furniture drop handler ──────────────────────────────────────────
 
   function onCanvasDragOver(e: React.DragEvent<SVGSVGElement>) {
@@ -1460,7 +1640,22 @@ export function FloorPlanTracingEditor({
     } else if (selected.kind === 'furniture') {
       setModel({ ...model, furniture: model.furniture.filter((f) => f.id !== selected.id) });
     } else if (selected.kind === 'room') {
-      setModel({ ...model, rooms: model.rooms.filter((r) => r.id !== selected.id) });
+      // Cascade: drop any surfaces anchored on this room (floor /
+      // ceiling) so we don't leak orphaned surface rows.
+      setModel({
+        ...model,
+        rooms: model.rooms.filter((r) => r.id !== selected.id),
+        surfaces: model.surfaces.filter((s) => s.roomId !== selected.id),
+      });
+    } else if (selected.kind === 'surface') {
+      // Cascade: clear surfaceId on any wall that linked to this
+      // surface so we don't leave dangling references.
+      const surfId = selected.id;
+      setModel({
+        ...model,
+        surfaces: model.surfaces.filter((s) => s.id !== surfId),
+        walls: model.walls.map((w) => (w.surfaceId === surfId ? { ...w, surfaceId: undefined } : w)),
+      });
     }
     setSelected(null);
     setPopover(null);
@@ -1620,6 +1815,18 @@ export function FloorPlanTracingEditor({
     () => (selected?.kind === 'room' ? model.rooms.find((r) => r.id === selected.id) ?? null : null),
     [selected, model.rooms],
   );
+  const selectedSurface = useMemo<Surface | null>(
+    () => (selected?.kind === 'surface' ? model.surfaces.find((s) => s.id === selected.id) ?? null : null),
+    [selected, model.surfaces],
+  );
+  // Surface attached to the selected wall (for the read-only summary
+  // inside the wall popover and the "Edit surface" link).
+  const surfaceForSelectedWall = useMemo<Surface | null>(() => {
+    if (selectedWall?.surfaceId) {
+      return model.surfaces.find((s) => s.id === selectedWall.surfaceId) ?? null;
+    }
+    return null;
+  }, [selectedWall, model.surfaces]);
 
   // ── rendering ───────────────────────────────────────────────────────
 
@@ -1679,7 +1886,7 @@ export function FloorPlanTracingEditor({
     <ModalShell onClose={requestClose} wide>
       <Header
         title="Trace floor plan"
-        subtitle="Click + drag to draw walls. Switch tool to add doors and windows. Cmd/Ctrl+Z undoes."
+        subtitle="Click + drag to draw walls. Switch tool to add doors, windows, rooms, or surfaces. Cmd/Ctrl+Z undoes."
         onClose={requestClose}
       />
 
@@ -1697,7 +1904,7 @@ export function FloorPlanTracingEditor({
         }}
       >
         <div style={{ display: 'flex', gap: 4 }} role="tablist">
-          {(['wall', 'door', 'window', 'room', 'select'] as Tool[]).map((t) => (
+          {(['wall', 'door', 'window', 'room', 'surface', 'select'] as Tool[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -1711,7 +1918,12 @@ export function FloorPlanTracingEditor({
               style={toolBtn(tool === t)}
               data-testid={`tool-${t}`}
             >
-              {t === 'wall' ? 'Wall' : t === 'door' ? 'Door' : t === 'window' ? 'Window' : t === 'room' ? 'Room' : 'Select'}
+              {t === 'wall' ? 'Wall'
+                : t === 'door' ? 'Door'
+                : t === 'window' ? 'Window'
+                : t === 'room' ? 'Room'
+                : t === 'surface' ? 'Surface'
+                : 'Select'}
             </button>
           ))}
         </div>
@@ -1812,6 +2024,41 @@ export function FloorPlanTracingEditor({
             {gridLines(canvasW, canvasH, pixelsPerMetre)}
           </g>
 
+          {/* Surface paint layer — floor + ceiling fills beneath
+              walls / furniture. Only painted when the Surface tool is
+              active or a surface is selected, so designers can still
+              read a plain trace without coloured overlays. Ceilings
+              are rendered with a stronger dash so they don't blend
+              into floors when both exist for the same room. */}
+          {(tool === 'surface' || selected?.kind === 'surface') && model.surfaces.map((s) => {
+            if (s.kind !== 'floor' && s.kind !== 'ceiling') return null;
+            const room = s.roomId ? model.rooms.find((r) => r.id === s.roomId) : null;
+            if (!room || room.outline.length < 3) return null;
+            const isSel = selected?.kind === 'surface' && selected.id === s.id;
+            const pts = room.outline.map((p) => `${p.x * pixelsPerMetre},${p.y * pixelsPerMetre}`).join(' ');
+            const fill = s.baseColor ? withAlpha(s.baseColor, 0.4) : (s.kind === 'floor' ? 'rgba(34,197,94,0.18)' : 'rgba(168,85,247,0.18)');
+            const stroke = s.baseColor ?? (s.kind === 'floor' ? '#22c55e' : '#a855f7');
+            return (
+              <polygon
+                key={`surf-fill-${s.id}`}
+                points={pts}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={isSel ? 1.5 : 0.5}
+                strokeDasharray={s.kind === 'ceiling' ? '2 3' : 'none'}
+                pointerEvents={tool === 'surface' ? 'auto' : 'none'}
+                onClick={(e) => {
+                  if (tool !== 'surface') return;
+                  e.stopPropagation();
+                  const pM = mouseToMetres(e);
+                  setSelected({ kind: 'surface', id: s.id });
+                  const pPx = metresToPx(pM);
+                  setPopover({ x: pPx.x, y: pPx.y });
+                }}
+              />
+            );
+          })}
+
           {/* Rooms — dashed outlines beneath everything else */}
           {model.rooms.map((r) => {
             const isSel = selected?.kind === 'room' && selected.id === r.id;
@@ -1847,17 +2094,112 @@ export function FloorPlanTracingEditor({
             const aPx = metresToPx(w.a);
             const bPx = metresToPx(w.b);
             const isSel = selected?.kind === 'wall' && selected.id === w.id;
+            // Surface paint for wall_face: drawn as a thicker, lower-
+            // opacity stroke underneath the main line so the trace
+            // stays legible. Only painted in Surface tool or when the
+            // attached surface is selected — same gate as floor /
+            // ceiling fills.
+            const surface = w.surfaceId
+              ? model.surfaces.find((s) => s.id === w.surfaceId) ?? null
+              : null;
+            const showSurfacePaint = surface && (
+              tool === 'surface'
+              || (selected?.kind === 'surface' && selected.id === surface.id)
+            );
+            const surfaceStroke = surface?.baseColor ?? '#f97316';
             return (
-              <line
-                key={w.id}
-                x1={aPx.x}
-                y1={aPx.y}
-                x2={bPx.x}
-                y2={bPx.y}
-                stroke={isSel ? '#3b82f6' : '#111'}
-                strokeWidth={isSel ? 3 : 2}
-                strokeLinecap="round"
-              />
+              <g key={w.id}>
+                {showSurfacePaint && (
+                  <line
+                    x1={aPx.x}
+                    y1={aPx.y}
+                    x2={bPx.x}
+                    y2={bPx.y}
+                    stroke={surfaceStroke}
+                    strokeWidth={8}
+                    strokeLinecap="round"
+                    opacity={0.4}
+                    pointerEvents={tool === 'surface' ? 'auto' : 'none'}
+                    onClick={(e) => {
+                      if (tool !== 'surface' || !surface) return;
+                      e.stopPropagation();
+                      const pM = mouseToMetres(e);
+                      setSelected({ kind: 'surface', id: surface.id });
+                      const pPx = metresToPx(pM);
+                      setPopover({ x: pPx.x, y: pPx.y });
+                    }}
+                  />
+                )}
+                <line
+                  x1={aPx.x}
+                  y1={aPx.y}
+                  x2={bPx.x}
+                  y2={bPx.y}
+                  stroke={isSel ? '#3b82f6' : '#111'}
+                  strokeWidth={isSel ? 3 : 2}
+                  strokeLinecap="round"
+                />
+              </g>
+            );
+          })}
+
+          {/* Surface chips — small labels near each surface so the
+              designer can see at-a-glance which wall / floor / ceiling
+              has been assigned. Shown alongside the paint layer (same
+              gate). */}
+          {(tool === 'surface' || selected?.kind === 'surface') && model.surfaces.map((s) => {
+            const isSel = selected?.kind === 'surface' && selected.id === s.id;
+            // Anchor: centroid of the linked geometry. Wall_face uses
+            // the midpoint of the first wall linking to it; floor /
+            // ceiling use the room polygon centroid.
+            let anchor: Point | null = null;
+            if (s.kind === 'wall_face') {
+              const wall = model.walls.find((w) => w.surfaceId === s.id);
+              if (wall) anchor = pointAlongWall(wall, 0.5);
+            } else if (s.roomId) {
+              const room = model.rooms.find((r) => r.id === s.roomId);
+              if (room && room.outline.length > 0) anchor = polygonCentroid(room.outline);
+            }
+            if (!anchor) return null;
+            const px = metresToPx(anchor);
+            const label = s.label ?? `${s.kind} ${s.id.slice(-4)}`;
+            const yOffset = s.kind === 'ceiling' ? -14 : (s.kind === 'wall_face' ? 0 : 14);
+            const chipW = label.length * 6 + 18;
+            const chipH = 14;
+            return (
+              <g
+                key={`surf-chip-${s.id}`}
+                pointerEvents={tool === 'surface' ? 'auto' : 'none'}
+                style={{ cursor: tool === 'surface' ? 'pointer' : 'default' }}
+                onClick={(e) => {
+                  if (tool !== 'surface') return;
+                  e.stopPropagation();
+                  setSelected({ kind: 'surface', id: s.id });
+                  setPopover({ x: px.x, y: px.y + yOffset });
+                }}
+              >
+                <rect
+                  x={px.x - chipW / 2}
+                  y={px.y + yOffset - chipH / 2}
+                  width={chipW}
+                  height={chipH}
+                  rx={3}
+                  fill="#fff"
+                  stroke={isSel ? '#3b82f6' : (s.baseColor ?? '#9ca3af')}
+                  strokeWidth={isSel ? 1.5 : 0.5}
+                />
+                <text
+                  x={px.x}
+                  y={px.y + yOffset + 0.5}
+                  fontSize={9}
+                  fill={isSel ? '#1d4ed8' : '#374151'}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  style={{ fontWeight: 500 }}
+                >
+                  {label}
+                </text>
+              </g>
             );
           })}
 
@@ -2124,6 +2466,84 @@ export function FloorPlanTracingEditor({
                 <PropertyRow label="Length (m)">
                   <span style={readOnlyText()}>{wallLengthM(selectedWall).toFixed(2)}</span>
                 </PropertyRow>
+                {/* Surface summary — read-only fields with a link to
+                    switch into Surface tool for editing. The Surface
+                    tool then re-selects this surface so the popover
+                    flips to its full editor. */}
+                {surfaceForSelectedWall ? (
+                  <>
+                    <PropertyRow label="Surface">
+                      <span style={readOnlyText()}>{surfaceForSelectedWall.label ?? surfaceForSelectedWall.id}</span>
+                    </PropertyRow>
+                    <PropertyRow label="Color">
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 11,
+                        color: 'var(--color-text-tertiary)',
+                      }}>
+                        {surfaceForSelectedWall.baseColor && (
+                          <span style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 2,
+                            background: surfaceForSelectedWall.baseColor,
+                            border: '0.5px solid var(--color-border-secondary)',
+                          }} />
+                        )}
+                        {surfaceForSelectedWall.baseColor ?? '—'}
+                      </span>
+                    </PropertyRow>
+                    <PropertyRow label="Texture">
+                      <span style={readOnlyText()}>{textureLabel(surfaceForSelectedWall.texture) || '—'}</span>
+                    </PropertyRow>
+                    <PropertyRow label="">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTool('surface');
+                          setSelected({ kind: 'surface', id: surfaceForSelectedWall.id });
+                        }}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: 11,
+                          borderRadius: 'var(--radius-sm)',
+                          border: '0.5px solid var(--color-border-secondary)',
+                          background: 'var(--color-background-primary)',
+                          color: 'var(--color-text-info)',
+                          cursor: 'pointer',
+                        }}
+                        data-testid="wall-edit-surface"
+                      >
+                        Edit surface
+                      </button>
+                    </PropertyRow>
+                  </>
+                ) : (
+                  <PropertyRow label="Surface">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTool('surface');
+                        setSelected(null);
+                        setPopover(null);
+                      }}
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: 11,
+                        borderRadius: 'var(--radius-sm)',
+                        border: '0.5px solid var(--color-border-secondary)',
+                        background: 'var(--color-background-primary)',
+                        color: 'var(--color-text-info)',
+                        cursor: 'pointer',
+                      }}
+                      data-testid="wall-assign-surface"
+                    >
+                      Assign…
+                    </button>
+                  </PropertyRow>
+                )}
               </>
             )}
             {selectedDoor && (
@@ -2320,6 +2740,103 @@ export function FloorPlanTracingEditor({
                 </PropertyRow>
               </>
             )}
+            {selectedSurface && (
+              <>
+                <div style={popoverHeader()}>
+                  {selectedSurface.kind === 'wall_face' ? 'Wall surface'
+                    : selectedSurface.kind === 'floor' ? 'Floor surface'
+                    : 'Ceiling surface'}
+                  {' · '}{selectedSurface.id}
+                </div>
+                <PropertyRow label="Label">
+                  <input
+                    type="text"
+                    value={selectedSurface.label ?? ''}
+                    onChange={(e) => patchSurface(selectedSurface.id, { label: e.target.value })}
+                    placeholder="e.g. Living-room north wall"
+                    style={{
+                      width: 140,
+                      padding: '4px 6px',
+                      fontSize: 11,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '0.5px solid var(--color-border-secondary)',
+                      background: 'var(--color-background-primary)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                    data-testid="surface-label-input"
+                  />
+                </PropertyRow>
+                <PropertyRow label="Kind">
+                  <span style={readOnlyText()}>{selectedSurface.kind}</span>
+                </PropertyRow>
+                <PropertyRow label="Base color">
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <input
+                      type="color"
+                      value={selectedSurface.baseColor ?? '#cccccc'}
+                      onChange={(e) => patchSurface(selectedSurface.id, { baseColor: e.target.value })}
+                      style={{ width: 32, height: 22, padding: 0, border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)', background: 'transparent' }}
+                      data-testid="surface-color-input"
+                    />
+                    {selectedSurface.baseColor && (
+                      <button
+                        type="button"
+                        onClick={() => patchSurface(selectedSurface.id, { baseColor: undefined })}
+                        style={{
+                          padding: '2px 6px',
+                          fontSize: 10,
+                          borderRadius: 'var(--radius-sm)',
+                          border: '0.5px solid var(--color-border-secondary)',
+                          background: 'var(--color-background-primary)',
+                          color: 'var(--color-text-tertiary)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </PropertyRow>
+                <PropertyRow label="Texture">
+                  <input
+                    type="text"
+                    list={`surface-textures-${selectedSurface.kind}`}
+                    value={selectedSurface.texture ?? ''}
+                    placeholder={selectedSurface.kind === 'floor' ? 'wood_floor_oak' : selectedSurface.kind === 'wall_face' ? 'paint_smooth' : 'ceiling_smooth_white'}
+                    onChange={(e) => patchSurface(selectedSurface.id, { texture: e.target.value.trim() || undefined })}
+                    style={{
+                      width: 140,
+                      padding: '4px 6px',
+                      fontSize: 11,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '0.5px solid var(--color-border-secondary)',
+                      background: 'var(--color-background-primary)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                    data-testid="surface-texture-input"
+                  />
+                  {/* One datalist per kind so the autocomplete only
+                      offers textures of the matching surface kind. The
+                      browser still accepts free-text — that's
+                      intentional, the Gemini KB can pick up new keys
+                      from real plans. */}
+                  <datalist id={`surface-textures-${selectedSurface.kind}`}>
+                    {SURFACE_TEXTURE_CATALOG
+                      .filter((t) => t.kind === selectedSurface.kind)
+                      .map((t) => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      ))}
+                  </datalist>
+                </PropertyRow>
+                {selectedSurface.kind === 'wall_face' && (
+                  <PropertyRow label="Walls">
+                    <span style={readOnlyText()}>
+                      {wallsForSurface(selectedSurface.id).length} linked
+                    </span>
+                  </PropertyRow>
+                )}
+              </>
+            )}
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
               <button type="button" onClick={() => { setSelected(null); setPopover(null); }} style={secondaryBtn()}>
                 Close
@@ -2356,7 +2873,8 @@ export function FloorPlanTracingEditor({
           {model.doors.length} door{model.doors.length === 1 ? '' : 's'} ·{' '}
           {model.windows.length} window{model.windows.length === 1 ? '' : 's'} ·{' '}
           {model.furniture.length} furniture ·{' '}
-          {model.rooms.length} room{model.rooms.length === 1 ? '' : 's'}
+          {model.rooms.length} room{model.rooms.length === 1 ? '' : 's'} ·{' '}
+          {model.surfaces.length} surface{model.surfaces.length === 1 ? '' : 's'}
         </span>
         <span>
           {Math.round(pixelsPerMetre)} px/m · Cmd+wheel to zoom · space-drag to pan
@@ -2628,6 +3146,7 @@ function cursorForTool(tool: Tool, drawing: boolean, spaceHeld: boolean, panning
   if (panning) return 'grabbing';
   if (spaceHeld) return 'grab';
   if (tool === 'select') return 'default';
+  if (tool === 'surface') return 'pointer';
   if (drawing) return 'crosshair';
   return 'crosshair';
 }

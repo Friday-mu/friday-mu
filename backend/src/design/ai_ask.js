@@ -19,6 +19,12 @@ const axios = require('axios');
 const { query } = require('../database/client');
 const { requireDesignPerm } = require('./auth');
 const { loadTenantConfig } = require('./adapters');
+const {
+  enforceQuota,
+  recordUsage,
+  parseKimiUsage,
+  QuotaExceededError,
+} = require('../tenants/ai_usage');
 
 const router = express.Router();
 
@@ -96,8 +102,8 @@ async function callKimi(systemPrompt, userContent) {
     );
     const raw = data?.choices?.[0]?.message?.content;
     const parsed = parseModelJson(raw);
-    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start, raw };
-    return { ok: true, parsed, durationMs: Date.now() - start };
+    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start, raw, data };
+    return { ok: true, parsed, durationMs: Date.now() - start, data };
   } catch (e) {
     return { ok: false, error: e.response?.data?.error?.message || e.message, durationMs: Date.now() - start, err: e };
   }
@@ -249,6 +255,21 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
       context,
     }, null, 2);
 
+    // Quota guard — runs BEFORE the upstream call.
+    try {
+      await enforceQuota(req.tenantId);
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        return res.status(402).json({
+          error: e.message,
+          code: 'QUOTA_EXCEEDED',
+          totalCostMinorUsd: e.totalCostMinorUsd,
+          capMinorUsd: e.capMinorUsd,
+        });
+      }
+      throw e;
+    }
+
     const tenantConfig = await loadTenantConfig(req.tenantId);
     const systemPrompt = buildSystemPrompt(tenantConfig);
 
@@ -267,6 +288,21 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
                 label: typeof c.label === 'string' ? c.label : c.refId,
               }))
           : [];
+        // Log usage on success — tokens come from Kimi's `usage` block.
+        const usage = parseKimiUsage(result.data);
+        recordUsage({
+          tenantId: req.tenantId,
+          userId: req.identity?.userId,
+          feature: 'ai_ask',
+          provider: 'kimi',
+          model: KIMI_MODEL,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          durationMs: result.durationMs,
+          success: true,
+          requestContext: { project_id: project_id || null },
+        }).catch(() => {});
         return res.json({
           answer,
           citations,
@@ -281,6 +317,20 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
       console.warn(`[ai/ask] attempt ${attempt + 1}/${MAX_RETRIES} failed (${result.error}); retrying in ${delay}ms`);
       await sleep(delay);
     }
+
+    // Failure path — record so the cap reflects reality even when the
+    // call didn't produce useful output.
+    recordUsage({
+      tenantId: req.tenantId,
+      userId: req.identity?.userId,
+      feature: 'ai_ask',
+      provider: 'kimi',
+      model: KIMI_MODEL,
+      durationMs: Date.now() - start,
+      success: false,
+      errorCode: String(lastErr?.err?.response?.status || lastErr?.error || 'unknown_error').slice(0, 64),
+      requestContext: { project_id: project_id || null },
+    }).catch(() => {});
 
     return res.status(502).json({
       error: lastErr?.error || 'Kimi unavailable',

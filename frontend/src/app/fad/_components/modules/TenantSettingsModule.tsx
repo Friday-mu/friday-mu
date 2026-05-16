@@ -21,6 +21,7 @@ const TABS = [
   { id: 'general', label: 'General' },
   { id: 'brand', label: 'Brand' },
   { id: 'vendors', label: 'Vendor defaults' },
+  { id: 'billing', label: 'Payment instructions' },
 ];
 
 export function TenantSettingsModule({ subPage, onChangeSubPage }: Props) {
@@ -38,6 +39,7 @@ export function TenantSettingsModule({ subPage, onChangeSubPage }: Props) {
         {active === 'general' && <GeneralTab />}
         {active === 'brand' && <BrandTab />}
         {active === 'vendors' && <VendorsTab />}
+        {active === 'billing' && <PaymentInstructionsTab />}
       </div>
     </div>
   );
@@ -398,6 +400,139 @@ function VendorsTab() {
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
+      )}
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Payment instructions tab
+// ─────────────────────────────────────────────────────────────
+
+// Mirror of the JSONB shape on tenants.payment_instructions —
+// see backend/migrations/039_payment_instructions.sql.
+interface PaymentInstructions {
+  bank_name?: string | null;
+  account_name?: string | null;
+  account_number?: string | null;
+  iban?: string | null;
+  swift?: string | null;
+  currency?: string | null;
+  instructions?: string | null;
+}
+
+function PaymentInstructionsTab() {
+  const role = useCurrentTenantRole();
+  const isAdmin = role === 'admin';
+
+  const [bankName, setBankName] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [iban, setIban] = useState('');
+  const [swift, setSwift] = useState('');
+  const [currency, setCurrency] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const t = (await apiFetch('/api/tenants/me')) as { payment_instructions?: PaymentInstructions };
+        const p = t.payment_instructions || {};
+        setBankName(p.bank_name || '');
+        setAccountName(p.account_name || '');
+        setAccountNumber(p.account_number || '');
+        setIban(p.iban || '');
+        setSwift(p.swift || '');
+        setCurrency(p.currency || '');
+        setInstructions(p.instructions || '');
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      // Send empty strings as null so the backend doesn't persist
+      // whitespace-y placeholders. Currency is stored as the literal
+      // string the user enters (ISO 4217 — uppercased for sanity).
+      const payload: PaymentInstructions = {
+        bank_name: bankName.trim() || null,
+        account_name: accountName.trim() || null,
+        account_number: accountNumber.trim() || null,
+        iban: iban.trim() || null,
+        swift: swift.trim() || null,
+        currency: currency.trim().toUpperCase() || null,
+        instructions: instructions.trim() || null,
+      };
+      await apiFetch('/api/tenants/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ payment_instructions: payload }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <Loading />;
+
+  return (
+    <Card>
+      <SectionHeader
+        title="Payment instructions"
+        description="Where to send payment for your FridayOS Design subscription. These details are shown to your team on every pending invoice."
+      />
+      <Subsection label="Bank details">
+        <Field label="Bank name">
+          <input type="text" value={bankName} onChange={(e) => setBankName(e.target.value)} disabled={!isAdmin} style={inputStyle} />
+        </Field>
+        <Field label="Account name">
+          <input type="text" value={accountName} onChange={(e) => setAccountName(e.target.value)} disabled={!isAdmin} style={inputStyle} />
+        </Field>
+        <Field label="Account number">
+          <input type="text" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} disabled={!isAdmin} style={inputStyle} />
+        </Field>
+        <Field label="IBAN">
+          <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} disabled={!isAdmin} style={inputStyle} />
+        </Field>
+        <Field label="SWIFT / BIC" hint="Optional — required for most international wires.">
+          <input type="text" value={swift} onChange={(e) => setSwift(e.target.value)} disabled={!isAdmin} style={inputStyle} />
+        </Field>
+        <Field label="Currency" hint="ISO 4217 (e.g. USD, EUR, MUR).">
+          <input type="text" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} disabled={!isAdmin} style={{ ...inputStyle, maxWidth: 120 }} />
+        </Field>
+      </Subsection>
+      <Subsection label="Notes">
+        <Field label="Additional instructions" hint="Shown below the bank details (e.g. transfer reference format, intermediary bank).">
+          <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3} disabled={!isAdmin} style={{ ...inputStyle, resize: 'vertical' }} />
+        </Field>
+      </Subsection>
+      {error && <ErrorMsg message={error} />}
+      {isAdmin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          {saved && <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>Saved.</span>}
+          <button type="button" onClick={save} disabled={saving} style={primaryBtn()}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
+      {!isAdmin && (
+        <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 16 }}>
+          You need admin role to edit these fields.
+        </p>
       )}
     </Card>
   );

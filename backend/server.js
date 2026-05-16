@@ -956,6 +956,12 @@ app.use('/api/inbox/website', websiteInbox.router);
 // poll (every 15s), runs in-process. See src/website_inbox/jobs.js.
 websiteInbox.startWorker();
 
+// Trial-expiry worker — hourly tick that flips trial → past_due once
+// trial_ends_at passes, sends 3-day "trial ending soon" reminders, and
+// cancels stale past_due tenants after 30d. See src/tenants/trial_jobs.js.
+const trialJobs = require('./src/tenants/trial_jobs');
+trialJobs.startTrialExpiryWorker();
+
 // Guesty listings cache — 5min TTL in memory, 1h on disk. Listings change
 // rarely; the index lets us resolve raw channel listing IDs to friendly
 // nicknames (MV-7, GBH-C8) in the reviews response without a per-review API
