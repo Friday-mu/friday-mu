@@ -132,6 +132,29 @@ Verified end-to-end on a fresh US smoke tenant (cleaned up):
 - Page-wide /Rs\s+\d/ scan: zero matches ✓
 - FR cache stays MUR; FR output unchanged ✓
 
+## Avatar / identity refactor (fourth pass) — `818761d`
+
+`fix(saas): topbar avatar reads real identity from JWT for SaaS tenants`
+
+✅ **"JF" avatar leak** — replaced. Extended `useTenantIdentity` to
+expose `displayName` + `username` from the JWT (both already minted
+by signup; no backend change). New `useDisplayedUser()` hook
+branches on `FR_TENANT_ID`: FR keeps the dev role-switcher fixture
+behaviour; non-FR derives identity from the JWT. Initials computed
+from display name; background colour hashed deterministically across
+an 8-colour palette so each user keeps a stable look.
+
+Also fixed in-flight: AvatarDropdown's hardcoded "friday.mu" domain,
+and the logout handler that was leaving `gms_token` / `gms_role`
+behind in localStorage on signout (the redirect prevented
+exploitation but next-login flow now starts clean).
+
+Verified on a fresh US smoke tenant
+(`mathias.test+...@example.com`, cleaned up):
+- Avatar: "MT" + emerald (was "JF" + violet)
+- Dropdown: full email + "Director · example.com" (was "Judith
+  Friday · friday.mu")
+
 ## Polish bugs still deferred
 
 1. **Signup defaults `annex_a.currency_code='MUR'`** for every new
@@ -139,20 +162,11 @@ Verified end-to-end on a fresh US smoke tenant (cleaned up):
    pick currency from `tenant.country` at seed time (US→USD, EU→EUR,
    MU→MUR, etc.). Backend tweak; not in scope here.
 
-2. **"JF" avatar in topbar** for every logged-in user.
-   `Header.tsx:155` reads `currentUser` from `TASK_USERS` (FR-staff
-   fixture in `_data/tasks.ts`) keyed by `currentUserId` which
-   defaults to `'u-ishant'` in `usePermissions.ts:50`. The first
-   matching director in the fixture is Judith Friday → "JF" initials
-   show for everyone. Proper fix wires the JWT's `user_id` /
-   `display_name` from `/api/tenants/me` through to the topbar
-   instead of reading a hardcoded fixture. Next session per Ishant.
-
-3. **`formatMUR` rename sweep** — the shim works but the variable
+2. **`formatMUR` rename sweep** — the shim works but the variable
    name lies. Follow-up: rename to `formatMoney` everywhere, drop
    the shim, and any non-React caller passes currency explicitly.
 
-4. **Stage URL routing**: `?stage=floor_plan` (underscore) silently
+3. **Stage URL routing**: `?stage=floor_plan` (underscore) silently
    falls through to the default; the actual case is `'floor-plan'`
    (hyphen). Affects only hand-typed / external deep links, not the
    stepper buttons. Accept both, or canonicalise.
@@ -229,10 +243,11 @@ AI usage tracking → recorded: floor_plan_render 5¢ + floor_plan_ai 1¢  ✅
 ## Commits this session
 
 ```
+818761d fix(saas): topbar avatar reads real identity from JWT for SaaS tenants
 22b0496 feat(saas): tenant-currency formatter — zero-touch refactor + backend persistence fix
 2f9dec9 fix(saas): scrub FR-internal labels visible to tenant signups
 0a98f32 fix(saas): BillingModule invoice-shape mismatch + CommandPalette tenant gate
 e639e3b fix(floor-plan): rasterise SVG → PNG in chat path too + rate-table alias
 ```
 
-All four pushed to `origin/fad-design-os-v01-frontend`. All deployed.
+All five pushed to `origin/fad-design-os-v01-frontend`. All deployed.
