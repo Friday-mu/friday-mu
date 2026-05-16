@@ -36,6 +36,13 @@ const MODULES = {
     monthly_price_usd: null,
     enabled_by_default_in_signup: false,
   },
+  properties: {
+    name: 'Properties',
+    description: 'Unification layer between Guesty (commercial) and Breezeway (operational). Onboarding checklists, listing status, channel sync.',
+    saleable: false,
+    monthly_price_usd: null,
+    enabled_by_default_in_signup: false,
+  },
   calendar: {
     name: 'Calendar',
     description: 'Multi-property availability + booking calendar.',
