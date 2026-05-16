@@ -43,6 +43,7 @@ import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
 import { useEnabledModules } from '../_data/useEnabledModules';
 import { useAnnexA } from '../_data/useAnnexA';
+import { useTenantCurrency } from '../_data/useTenantCurrency';
 
 type Theme = 'light' | 'dark';
 
@@ -65,6 +66,12 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   // helpers like withVAT/vatOf read ANNEX_A_DEFAULT directly. See
   // _data/useAnnexA.ts for the rationale on the lighter approach.
   useAnnexA();
+  // Same shape — populates the tenant currency cache so the legacy
+  // `formatMUR` shim (now backed by `currencyCache.ts`) flips from
+  // "Rs" to the tenant's currency on the first re-render. Return
+  // value unused — call sites read from the cache, not from this hook
+  // directly. See _data/useTenantCurrency.ts.
+  useTenantCurrency();
   const [active, setActive] = useState('inbox');
   const [subPage, setSubPage] = useState<string | null>(null);
   const [finRole, setFinRole] = useState<FinRole>('admin');

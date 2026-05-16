@@ -1011,12 +1011,15 @@ export function isVarianceFlagged(approvedMinor: number, paidMinor: number): boo
   return Math.abs(pct) > VARIANCE_FLAG_THRESHOLD_PCT;
 }
 
-// ─────────────────────────── FORMATTING (MUR re-export) ───────────────────────────
+// ─────────────────────────── FORMATTING ───────────────────────────
+//
+// Re-exports the finance.ts `formatMUR` shim — which despite its name
+// now reads from `getCachedTenantCurrency()` so SaaS tenants see
+// their own currency instead of FR's MUR. For FR the cache stays on
+// MUR, output unchanged. Removed the old per-file definition so we
+// have a single source of truth.
 
-export const formatMUR = (minor: number | null): string => {
-  if (minor === null || Number.isNaN(minor)) return '—';
-  return 'Rs ' + (minor / 100).toLocaleString('en-MU', { maximumFractionDigits: 0 });
-};
+export { formatMUR } from './finance';
 
 export const formatTier = (tier: DesignTier | null): string => (tier ? `Tier ${tier}` : 'Tier —');
 
