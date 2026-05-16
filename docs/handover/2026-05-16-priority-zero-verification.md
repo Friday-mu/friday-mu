@@ -83,35 +83,51 @@ ones that crash; subtler issues need a human.
   already uses. Confirmed: palette now shows only Design / Settings
   / Billing for a smoke tenant.
 
-## Polish bugs flagged (NOT fixed) — Mathias to triage
+## Polish bugs (fixed second pass) — `2f9dec9`
 
-None of these block workflow; flagging so the morning walkthrough
-isn't surprised by them.
+`fix(saas): scrub FR-internal labels visible to tenant signups`
 
-1. **Page heading on Design overview says "Friday Design OS — (FD entity)"**
-   to non-FR tenants. `FD` is the FR-internal entity code for Friday
-   Design. The smoke tenant sees this verbatim. Look at the
-   `DesignModule.tsx` overview header / subtitle wiring.
+1. ✅ **DesignModule subtitle** "Friday Design OS — interior design
+   projects (FD entity)" → generic "Interior design projects — site
+   visits, moodboards, floor plans, vendor quotes, owner approvals."
+2. ✅ **ProjectContextBar "entity_id=FD"** label gated to FR tenant
+   only via `useCurrentTenantId` + `FR_TENANT_ID`. FR staff keep it
+   for cost-center reconciliation; tenants don't see it.
+3. ✅ **"View as · Director"** dev role-switcher gated to FR tenant.
+   Was leaking to every signup because FAD's `DEFAULT_ROLE='director'`
+   makes `realRole === 'director'` true for fresh signups too.
+4. ✅ **VAT-note copy** — three callsites (ProjectEditDrawer,
+   AgreementStage, RoughBudgetStage) said "...per Mauritius
+   regulations." Stripped — `vatPct` was already templated from
+   `tenants.design_annex_a.vat_rate` (mig 015).
 
-2. **Top-right avatar shows "JF" (Judith Friday's initials)** for any
-   logged-in user — confirmed the smoke tenant `browser-smoke@example.com`
-   sees `JF`. The avatar initial code likely uses a hardcoded fallback
-   instead of reading the current user's display name.
+## Polish bugs still deferred — bigger refactor needed
 
-3. **Project detail summary uses `Rs` (MUR)** hardcoded — fee/budget
-   totals, EPC, VAT note. The smoke tenant chose `country=US`, so the
-   `tenants.locale` is `en-US`. Should follow `tenants.currency_code`
-   /`country` instead of hardcoded `Rs`. Same issue surfaces on the
-   Design overview dashboard stat row (`Margin exposure Rs 0`).
+These need real architectural work, not just copy edits. Flagged for
+Mathias triage.
 
-4. **"View as · Director"** button in the topbar is shown to non-FR
-   tenants. FR-internal role-switching feature; shouldn't be visible
-   to a fresh smoke tenant. Hide for non-FR.
+1. **"JF" avatar in topbar** for every logged-in user.
+   `Header.tsx:155` reads `currentUser` from `TASK_USERS` (FR-staff
+   fixture in `_data/tasks.ts`) keyed by `currentUserId` which
+   defaults to `'u-ishant'` in `usePermissions.ts:50`. The first
+   matching director in the fixture is Judith Friday → "JF" initials
+   show for everyone. Proper fix wires the JWT's `user_id` /
+   `display_name` from `/api/tenants/me` through to the topbar
+   instead of reading a hardcoded fixture.
 
-5. **Project workflow body still references VAT 15%** ("Annex A is
-   VAT-exclusive; 15% VAT added on top.") — the rate should come
-   from `design_annex_a.vat_rate` (already a column per mig 015) so
-   non-MU tenants don't see Mauritius-specific copy.
+2. **"Rs" currency hardcoding** in Design + Finance modules.
+   `formatMUR` from `_data/finance.ts:801` literally prepends `'Rs '`
+   to every value and is called 100+ times across `DesignModule.tsx`,
+   `FinanceModule.tsx`, multiple design stages, change-orders, etc.
+   Project detail summary, dashboard stat row, rough-budget tables —
+   all show `Rs 0` to the US smoke tenant. Proper fix introduces
+   `formatMoney(minor, currencyCode)` (or pulls `currency_code` from
+   tenant context via a hook) and migrates callsites en masse.
+
+3. **Stage URL routing**: `?stage=floor_plan` (underscore) silently
+   falls through to the default; the actual case is `'floor-plan'`
+   (hyphen). Affects only hand-typed / external deep links, not the
+   stepper buttons. Accept both, or canonicalise.
 
 ## Stage-routing oddity worth noting
 
@@ -185,8 +201,9 @@ AI usage tracking → recorded: floor_plan_render 5¢ + floor_plan_ai 1¢  ✅
 ## Commits this session
 
 ```
+2f9dec9 fix(saas): scrub FR-internal labels visible to tenant signups
 0a98f32 fix(saas): BillingModule invoice-shape mismatch + CommandPalette tenant gate
 e639e3b fix(floor-plan): rasterise SVG → PNG in chat path too + rate-table alias
 ```
 
-Both pushed to `origin/fad-design-os-v01-frontend`. Both deployed.
+All three pushed to `origin/fad-design-os-v01-frontend`. All deployed.
