@@ -406,6 +406,52 @@ function tplInvitation({ tenant, inviter, role, acceptUrl }) {
   return { subject, html, text };
 }
 
+// Sent when someone is assigned to a task (including the case where
+// the assignee changes from one user to another — only the new
+// assignee gets the email). `assigner` is the user who made the
+// change; both names default to email-localpart when display_name is
+// unset.
+function tplTaskAssigned({ tenant, task, assigner, taskUrl }) {
+  const company = tenant?.name || 'your workspace';
+  const assignerName = assigner?.display_name || assigner?.email || 'A teammate';
+  const dueLine = task?.due_date
+    ? `Due ${_date(task.due_date)}.`
+    : 'No due date set.';
+  const priority = task?.priority || 'medium';
+  const priorityLabel = priority === 'urgent' || priority === 'high'
+    ? ` (priority: ${priority})`
+    : '';
+  const subject = `${assignerName} assigned you a task: ${task?.title || 'Untitled'}${priorityLabel}`;
+
+  const html = _wrap(`
+    <h1 style="font-size: 18px; margin: 0 0 16px; font-weight: 500;">New task assigned</h1>
+    <p>${_esc(assignerName)} assigned you a task in <strong>${_esc(company)}</strong>:</p>
+    <p style="margin: 16px 0; padding: 12px 16px; border-left: 3px solid #2B4A93; background: #f7f9fc;">
+      <strong>${_esc(task?.title || 'Untitled')}</strong><br>
+      <span style="color: #5b6776; font-size: 13px;">${_esc(dueLine)} Priority: ${_esc(priority)}.</span>
+    </p>
+    ${task?.description ? `<p>${_esc(task.description)}</p>` : ''}
+    ${taskUrl ? `<p style="margin: 20px 0;"><a href="${_esc(taskUrl)}" style="display: inline-block; background: #2B4A93; color: white; padding: 10px 18px; border-radius: 6px; text-decoration: none;">View task</a></p>` : ''}
+    <p style="margin-top: 24px;">— The Friday team</p>
+  `);
+
+  const text = [
+    `New task assigned`,
+    '',
+    `${assignerName} assigned you a task in ${company}:`,
+    '',
+    `  ${task?.title || 'Untitled'}`,
+    `  ${dueLine} Priority: ${priority}.`,
+    '',
+    task?.description ? task.description : '',
+    taskUrl ? `\nView task: ${taskUrl}` : '',
+    '',
+    '— The Friday team',
+  ].filter(Boolean).join('\n');
+
+  return { subject, html, text };
+}
+
 module.exports = {
   sendEmail,
   tplInvoiceIssued,
@@ -414,4 +460,5 @@ module.exports = {
   tplTrialEndingSoon,
   tplPasswordReset,
   tplInvitation,
+  tplTaskAssigned,
 };

@@ -930,7 +930,15 @@ app.use('/api/auth', passwordResetRoutes);
       p.startsWith('/api/auth') ||         // public password-reset (own validation)
       p.startsWith('/api/design') ||       // module-gated above
       p.startsWith('/api/feedback') ||     // tenant-scoped via mig 037 — every tenant can file bugs
-      p.startsWith('/api/inbox/website')   // public HMAC-signed webhook
+      p.startsWith('/api/inbox/website') ||// public HMAC-signed webhook
+      // Newly tenant-scoped modules (mig 049 + 050). Each writes its
+      // own queries against `req.tenantId` from attachIdentity, so it's
+      // safe to expose to all tenants — non-FR tenants without Guesty
+      // creds just see empty lists.
+      p.startsWith('/api/properties') ||
+      p.startsWith('/api/reservations') ||
+      p.startsWith('/api/tasks') ||
+      p.startsWith('/api/integrations/guesty/webhook') // HMAC-signed
     ) {
       return next();
     }
@@ -1000,6 +1008,7 @@ websiteInbox.startWorker();
 // ────────────────────────────────────────────────────────────────────
 app.use('/api/properties', require('./src/properties'));
 app.use('/api/reservations', require('./src/reservations'));
+app.use('/api/tasks', require('./src/tasks'));
 // Webhook needs the RAW body (Buffer) for HMAC verification — Guesty
 // signs the exact bytes they send, and express.json() restringifies.
 const guestyWebhook = require('./src/reservations/webhook');
