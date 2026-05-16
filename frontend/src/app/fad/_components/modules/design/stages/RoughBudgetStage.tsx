@@ -1123,7 +1123,7 @@ function VersionInspectModal({ version, onClose }: { version: RoughBudget; onClo
             <Stat label="High" value={formatMUR(version.highMinor)} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
-            <Stat label="Tier" value={version.tier ?? '—'} />
+            <Stat label="Tier" value={(version.tier as string | null | undefined) ?? '—'} />
             <Stat label="Design fee" value={version.designFeeMinor != null ? formatMUR(version.designFeeMinor) : '—'} />
             <Stat label="Procurement fee" value={version.procurementFeeMinor != null ? formatMUR(version.procurementFeeMinor) : '—'} />
           </div>
