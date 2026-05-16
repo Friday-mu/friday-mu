@@ -150,10 +150,10 @@ function TenantInvoices() {
       // the invoice list — we degrade to the "not configured" empty
       // state on the bank-details block.
       const [invRes, tenantRes] = await Promise.all([
-        apiFetch('/api/tenants/me/invoices') as Promise<{ results: Invoice[] } | Invoice[]>,
+        apiFetch('/api/tenants/me/invoices') as Promise<{ invoices: Invoice[] } | Invoice[]>,
         apiFetch('/api/tenants/me').catch(() => null) as Promise<TenantRow | null>,
       ]);
-      setInvoices(Array.isArray(invRes) ? invRes : invRes.results || []);
+      setInvoices(Array.isArray(invRes) ? invRes : invRes.invoices || []);
       setTenant(tenantRes || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MODULES } from '../_data/modules';
 import { iconFor, IconSearch } from './icons';
 import { canSeeModule, useCurrentRole } from './usePermissions';
+import { useEnabledModules } from '../_data/useEnabledModules';
 
 interface ResultItem {
   type: 'module' | 'cmd';
@@ -35,9 +36,16 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
   }, [open]);
 
   const role = useCurrentRole();
+  // Also gate by tenant module subscription so non-FR tenants can't
+  // see (and 403 themselves into) modules they haven't bought.
+  // While the fetch is in flight (`enabledSet === null`) we don't
+  // filter — same pattern as Sidebar, lets the palette render
+  // immediately without flashing empty.
+  const { enabledSet } = useEnabledModules();
   const results: ResultItem[] = useMemo(() => {
     const modItems: ResultItem[] = MODULES
       .filter((m) => canSeeModule(role, m.id))
+      .filter((m) => enabledSet === null || enabledSet.has(m.id))
       .map((m) => ({
         type: 'module',
         id: m.id,
@@ -57,7 +65,7 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
     return all.filter(
       (x) => x.label.toLowerCase().includes(lc) || x.hint.toLowerCase().includes(lc)
     );
-  }, [q, role]);
+  }, [q, role, enabledSet]);
 
   useEffect(() => {
     if (idx >= results.length) setIdx(0);
