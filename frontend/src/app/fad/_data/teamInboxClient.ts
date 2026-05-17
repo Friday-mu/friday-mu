@@ -150,11 +150,23 @@ export async function sendChannelMessage(channelId: string, body: {
   parentMessageId?: string;
   attachmentIds?: string[];
 }): Promise<LiveTeamMessage> {
-  const data = await apiFetch(`/api/team/channels/${channelId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }) as { message: LiveTeamMessage };
-  return data.message;
+  // Routes through /api/outbound/send (locked decision §2,
+  // 2026-05-17). Backend's team branch loops back to
+  // /api/team/channels/:id/messages — same downstream as legacy.
+  const { outboundSend } = await import('./outboundClient');
+  const meta: Record<string, unknown> = {};
+  if (body.mentions) meta.mentions = body.mentions;
+  if (body.parentMessageId) meta.parentMessageId = body.parentMessageId;
+  if (body.attachmentIds) meta.attachmentIds = body.attachmentIds;
+  if (body.kind) meta.kind = body.kind;
+  const r = await outboundSend({
+    audience: 'team',
+    channel: 'team-channel',
+    contextId: channelId,
+    body: body.text,
+    meta,
+  });
+  return (r.upstream as { message: LiveTeamMessage })?.message;
 }
 
 export async function markChannelRead(channelId: string): Promise<void> {
@@ -212,11 +224,23 @@ export async function sendDmMessage(dmId: string, body: {
   parentMessageId?: string;
   attachmentIds?: string[];
 }): Promise<LiveTeamMessage> {
-  const data = await apiFetch(`/api/team/dms/${dmId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }) as { message: LiveTeamMessage };
-  return data.message;
+  // Routes through /api/outbound/send (locked decision §2,
+  // 2026-05-17). Backend's team branch loops back to
+  // /api/team/dms/:id/messages — same downstream as legacy.
+  const { outboundSend } = await import('./outboundClient');
+  const meta: Record<string, unknown> = {};
+  if (body.mentions) meta.mentions = body.mentions;
+  if (body.parentMessageId) meta.parentMessageId = body.parentMessageId;
+  if (body.attachmentIds) meta.attachmentIds = body.attachmentIds;
+  if (body.kind) meta.kind = body.kind;
+  const r = await outboundSend({
+    audience: 'team',
+    channel: 'team-dm',
+    contextId: dmId,
+    body: body.text,
+    meta,
+  });
+  return (r.upstream as { message: LiveTeamMessage })?.message;
 }
 
 export async function markDmRead(dmId: string): Promise<void> {

@@ -151,14 +151,24 @@ export interface ComposeResp {
 }
 
 export async function sendCompose(conversationId: string, opts: ComposeOpts): Promise<ComposeResp> {
-  const body: Record<string, unknown> = { mode: opts.mode };
-  if (opts.body !== undefined) body.body = opts.body;
-  if (opts.instruction !== undefined) body.instruction = opts.instruction;
-  if (opts.channel) body.channel = opts.channel;
-  return apiFetch(`/api/inbox/conversations/${conversationId}/compose`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }) as Promise<ComposeResp>;
+  // Routes through the unified /api/outbound/send abstraction per
+  // locked decision §2 (2026-05-17). Backend's guest branch hits GMS
+  // /api/conversations/:id/compose — same downstream as legacy.
+  const { outboundSend } = await import('./outboundClient');
+  const meta: Record<string, unknown> = { mode: opts.mode };
+  if (opts.instruction !== undefined) meta.instruction = opts.instruction;
+  const r = await outboundSend({
+    audience: 'guest',
+    channel: opts.channel || 'whatsapp',
+    contextId: conversationId,
+    body: opts.body ?? '',
+    meta,
+  });
+  return {
+    ok: r.ok,
+    message_id: r.messageId ?? undefined,
+    draft_id: r.draftId ?? undefined,
+  };
 }
 
 // ── Conversation mutations (used by other UI surfaces, parked here for
