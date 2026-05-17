@@ -146,24 +146,34 @@ function signPayload(rawBody) {
 }
 
 async function postMessage({ guestyConversationId, guestyMessageId, direction, body, senderName, createdAt, channel, guestName }) {
-  const eventName = direction === 'outbound' ? 'conversation.message.sent' : 'conversation.message.received';
+  // Synthesise a Guesty-shaped event matching the real Svix-delivered
+  // payload envelope (flat, with sibling `message` + `conversation`
+  // objects, camelCase event names). The receiver's field extractors
+  // are keyed off this shape — keeping us aligned with real webhooks
+  // means a single ingestion path serves both sources.
+  const eventName = direction === 'outbound'
+    ? 'reservation.messageSent'
+    : 'reservation.messageReceived';
+  const messageType = direction === 'outbound' ? 'fromHost' : 'fromGuest';
   const event = {
     event: eventName,
     source: 'guesty-scraper-l3',
-    data: {
-      message: {
-        _id: guestyMessageId,
-        conversationId: guestyConversationId,
-        direction,
-        body,
-        senderName,
-        createdAt,
-      },
-      conversation: {
-        _id: guestyConversationId,
-        channel,
-        guest: { fullName: guestName },
-      },
+    reservationId: null,
+    message: {
+      postId: guestyMessageId,
+      id: guestyMessageId,
+      type: messageType,
+      body,
+      from: senderName,
+      module: channel,
+      createdAt,
+      sentAt: createdAt,
+    },
+    conversation: {
+      _id: guestyConversationId,
+      id: guestyConversationId,
+      meta: { guestName },
+      integration: { platform: channel },
     },
   };
   const raw = JSON.stringify(event);
@@ -174,6 +184,9 @@ async function postMessage({ guestyConversationId, guestyMessageId, direction, b
     return { dryRun: true };
   }
 
+  // We sign with the legacy HMAC-hex scheme over our own
+  // FAD_WEBHOOK_SECRET (real Guesty uses Svix, but the receiver
+  // accepts both schemes — Svix for live deliveries, this one for us).
   const res = await fetch(FAD_WEBHOOK_URL, {
     method: 'POST',
     headers: {

@@ -2,72 +2,125 @@
 
 // Guesty webhook receiver.
 //
-// Guesty signs each webhook with HMAC-SHA256 over the raw body using
-// the secret configured in their dashboard (GUESTY_WEBHOOK_SECRET on
-// our side). Signature lives in the `x-guesty-signature` header.
+// Guesty delivers webhooks via Svix. The signature scheme is:
+//   - Headers: svix-id, svix-timestamp, svix-signature
+//   - Algorithm: HMAC-SHA256 over `${svix-id}.${svix-timestamp}.${rawBody}`
+//   - Encoded base64; svix-signature value is `v1,<base64>` (multiple
+//     space-separated versions tolerated during secret rotation).
+//   - Secret format: `whsec_<base64>` — fetched from Guesty's
+//     /webhooks/secret endpoint after registering the subscription.
 //
-// Mounted at POST /api/integrations/guesty/webhook in server.js. The
-// route uses express.raw() so we can re-hash the exact bytes Guesty
-// signed — express.json() would have parsed-and-restringified, which
-// changes whitespace and breaks the HMAC.
+// We ALSO support a legacy HMAC-hex scheme so the Layer-3 Mac scraper
+// (scripts/guesty-scraper) can post synthesised events through the
+// same ingestion path without faking Svix headers. The scraper sends
+// `x-guesty-signature: <hex>` over its own secret.
 //
-// We respond fast (200 + ack), then UPSERT the reservation in the
-// background. Guesty retries on non-2xx, and we don't want them
-// stacking up because a single sync was slow.
+// Body parsing: this route uses express.raw() (mounted in server.js)
+// so we re-hash the EXACT bytes that were signed. The global
+// express.json() bodyparser is skipped for this path — see the path
+// allowlist near the top of server.js.
+//
+// Mount: POST /api/integrations/guesty/webhook. See server.js.
 
 const crypto = require('crypto');
 const { upsertReservationById } = require('./sync');
 const { FR_TENANT_ID } = require('./worker');
 const { isMessageEvent, handleMessageEvent } = require('../inbox/guesty_message_webhook');
 
-const WEBHOOK_SECRET = process.env.GUESTY_WEBHOOK_SECRET;
+const SVIX_SECRET = process.env.GUESTY_SVIX_SECRET;        // whsec_…
+const LEGACY_SECRET = process.env.GUESTY_WEBHOOK_SECRET;   // for scraper
 
-function verifySignature(rawBody, signature) {
-  if (!WEBHOOK_SECRET) return false;
-  if (typeof signature !== 'string' || signature.length === 0) return false;
-  const expected = crypto.createHmac('sha256', WEBHOOK_SECRET).update(rawBody).digest('hex');
+function tryTimingSafeEqual(a, b) {
   try {
-    return crypto.timingSafeEqual(
-      Buffer.from(expected, 'hex'),
-      Buffer.from(signature, 'hex'),
-    );
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
   } catch {
     return false;
   }
 }
 
-// Reservation-shaped event types we care about. Listings rely on the
-// 5-min poll since edits are rare.
+function verifySvix(rawBody, headers) {
+  const svixId = headers['svix-id'];
+  const svixTs = headers['svix-timestamp'];
+  const svixSig = headers['svix-signature'];
+  if (!svixId || !svixTs || !svixSig) return false;
+  if (!SVIX_SECRET) return false;
+
+  // Decode the secret. Svix-style secrets are `whsec_<base64>`; the
+  // base64-decoded value is what we HMAC with.
+  const secretBytes = SVIX_SECRET.startsWith('whsec_')
+    ? Buffer.from(SVIX_SECRET.slice(6), 'base64')
+    : Buffer.from(SVIX_SECRET, 'utf-8');
+
+  const signedPayload = `${svixId}.${svixTs}.${rawBody.toString('utf-8')}`;
+  const expected = crypto.createHmac('sha256', secretBytes).update(signedPayload).digest();
+
+  // svix-signature may carry multiple `v1,<sig>` entries, space-separated.
+  const candidates = svixSig.split(' ').map((entry) => {
+    const [version, encoded] = entry.split(',');
+    return version === 'v1' && encoded ? Buffer.from(encoded, 'base64') : null;
+  }).filter(Boolean);
+
+  for (const sig of candidates) {
+    if (tryTimingSafeEqual(expected, sig)) return true;
+  }
+  return false;
+}
+
+function verifyLegacyHmac(rawBody, headers) {
+  const sig = headers['x-guesty-signature'];
+  if (!sig || !LEGACY_SECRET) return false;
+  const expected = crypto.createHmac('sha256', LEGACY_SECRET).update(rawBody).digest('hex');
+  return tryTimingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(sig, 'hex'));
+}
+
+function verifySignature(rawBody, headers) {
+  // Try Svix first (real Guesty deliveries). Fall back to legacy HMAC
+  // (our scraper). Either one is sufficient.
+  if (verifySvix(rawBody, headers)) return 'svix';
+  if (verifyLegacyHmac(rawBody, headers)) return 'legacy';
+  return null;
+}
+
+// Guesty's actual reservation event names (camelCase per Svix-era docs).
 const RESERVATION_EVENTS = new Set([
   'reservation.created',
   'reservation.updated',
   'reservation.canceled',
   'reservation.confirmed',
+  // Some older payloads use these — keep for compatibility.
+  'reservation.new',
+  'reservation.modified',
 ]);
 
 async function handleWebhook(req, res) {
-  const sig = req.get('x-guesty-signature') || req.get('X-Guesty-Signature');
   const rawBody = req.body; // Buffer — see express.raw() mount
   if (!Buffer.isBuffer(rawBody)) {
     return res.status(400).json({ error: 'expected raw body' });
   }
-  if (!verifySignature(rawBody, sig)) {
+  // Normalise headers to lowercase for cross-source compatibility.
+  const headers = {};
+  for (const [k, v] of Object.entries(req.headers)) headers[k.toLowerCase()] = v;
+
+  const verifiedAs = verifySignature(rawBody, headers);
+  if (!verifiedAs) {
     console.warn('[guesty/webhook] signature mismatch — rejecting');
     return res.status(401).json({ error: 'invalid signature' });
   }
+
   let event;
   try {
     event = JSON.parse(rawBody.toString('utf-8'));
   } catch {
     return res.status(400).json({ error: 'invalid JSON' });
   }
-  const type = event?.event || event?.type;
+  const type = event?.event;
 
   // Message events: handle inline (no Guesty API refetch needed —
   // payload contains the whole message). This is the rate-limit
   // escape valve, so we want it on the fast path.
   if (isMessageEvent(type)) {
-    res.json({ ok: true, queued: 'message' });
+    res.json({ ok: true, queued: 'message', via: verifiedAs });
     handleMessageEvent(event).catch((e) => {
       console.error(`[guesty/webhook/msg] handler failed:`, e.message);
     });
@@ -75,20 +128,14 @@ async function handleWebhook(req, res) {
   }
 
   if (!RESERVATION_EVENTS.has(type)) {
-    // Not interested — but ack so Guesty doesn't retry.
-    return res.json({ ok: true, ignored: type });
+    return res.json({ ok: true, ignored: type, via: verifiedAs });
   }
-  const reservationId = event?.reservation?._id || event?.data?._id || event?.reservationId;
+  // Guesty flattens the reservation id to the top of the payload.
+  const reservationId = event?.reservationId || event?.reservation?._id || event?.data?._id;
   if (!reservationId) {
     return res.json({ ok: true, ignored: 'no reservation id in payload' });
   }
-  // Ack immediately, sync in the background. Guesty's docs: timeout
-  // 10s. Our refetch + UPSERT is usually <2s but bursty traffic
-  // could stack — fire-and-forget here keeps the receiver snappy.
-  res.json({ ok: true, queued: reservationId });
-  // v1: only FR has a Guesty integration, so the tenant is implied.
-  // When per-tenant integrations land, the webhook URL gains a
-  // tenant slug or signs include a tenant id.
+  res.json({ ok: true, queued: reservationId, via: verifiedAs });
   upsertReservationById(FR_TENANT_ID, reservationId).catch((e) => {
     console.error(`[guesty/webhook] upsert ${reservationId} failed:`, e.message);
   });
