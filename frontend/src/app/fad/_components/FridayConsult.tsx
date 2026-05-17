@@ -217,11 +217,13 @@ export function FridayConsult({
   // parent's key={selected} remounts FC).
   const [useFullThread, setUseFullThread] = useState(false);
 
-  // Auto-scroll on new messages / thinking state.
+  // Auto-scroll on new messages / thinking / a draft appearing or
+  // changing — so the Approve & send button is in view when Friday
+  // produces a draft, not below the fold.
   useEffect(() => {
     const el = transcriptRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [msgs, thinking]);
+  }, [msgs, thinking, currentDraft?.id, currentDraft?.body, workingBody]);
 
   // ─── Quick chips ─────────────────────────────────────────────────────
   // Context-aware quick replies. draft_review gets the OLD-UI set
@@ -597,14 +599,20 @@ export function FridayConsult({
           )}
         </div>
       )}
-      {/* Transcript — internally scrolling, capped height. Keeps the
-          send button + Ask input pinned at the bottom of the panel
-          regardless of chat length. Per Mary 2026-05-17. */}
-      {(msgs.length > 0 || thinking || error) && (
+      {/* Transcript — chat bubbles + thinking + error + draft card,
+          all in one scrolling region. Drafts render INLINE in the chat
+          so they're part of the flow (per Ishant 2026-05-17 — Friday's
+          drafts should look like Friday's other messages, not a sticky
+          panel). Transcript caps at 30vh; auto-scroll keeps the most
+          recent item (draft or message) in view, so the Approve & send
+          button stays visible without going below the fold. Capacity:
+          long chats scroll; the Ask Friday input below the transcript
+          is always visible because it lives outside this scroller. */}
+      {(msgs.length > 0 || thinking || error || currentDraft || workingBody.trim().length > 0) && (
         <div
           className="friday-consult-body"
           ref={transcriptRef}
-          style={{ maxHeight: '30vh' }}
+          style={{ maxHeight: '40vh' }}
         >
           {msgs.map((m, i) => (
             <MessageRow
@@ -631,30 +639,25 @@ export function FridayConsult({
               {error}
             </div>
           )}
+          {(currentDraft || workingBody.trim().length > 0) && (
+            <EmbeddedDraftCard
+              workingBody={workingBody}
+              setWorkingBody={setWorkingBody}
+              currentDraft={currentDraft || null}
+              liveConfidence={latestConfidence}
+              channelLabel={channelLabel}
+              whatsappWindow={whatsappWindow}
+              sendBusy={sendBusy}
+              rejecting={rejecting}
+              rejectReason={rejectReason}
+              setRejectReason={setRejectReason}
+              onApprove={submitApprove}
+              onStartReject={() => setRejecting(true)}
+              onConfirmReject={submitReject}
+              onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+            />
+          )}
         </div>
-      )}
-      {/* Reply surface — lives OUTSIDE the scrolling transcript so the
-          Approve & Send button is always visible at the bottom of the
-          panel. Only renders when there's a GMS draft OR Friday has
-          produced one via chat (workingBody populated). Per Mary
-          2026-05-17. */}
-      {(currentDraft || workingBody.trim().length > 0) && (
-        <EmbeddedDraftCard
-          workingBody={workingBody}
-          setWorkingBody={setWorkingBody}
-          currentDraft={currentDraft || null}
-          liveConfidence={latestConfidence}
-          channelLabel={channelLabel}
-          whatsappWindow={whatsappWindow}
-          sendBusy={sendBusy}
-          rejecting={rejecting}
-          rejectReason={rejectReason}
-          setRejectReason={setRejectReason}
-          onApprove={submitApprove}
-          onStartReject={() => setRejecting(true)}
-          onConfirmReject={submitReject}
-          onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-        />
       )}
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
