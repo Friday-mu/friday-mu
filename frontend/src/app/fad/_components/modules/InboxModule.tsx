@@ -552,13 +552,9 @@ export function InboxModule({ onAskFriday }: Props) {
         setOpen={setFilterOpen}
         activeCount={activeFilterCount}
       />
-      <button
-        className="btn primary sm"
-        onClick={() => fireToast('New-conversation compose lands in a follow-up sprint — for now, reply within an existing thread')}
-        title="Coming soon"
-      >
-        <IconPlus size={12} /> Compose
-      </button>
+      {/* + Compose removed 2026-05-17: new conversations flow through
+          FridayConsult ("Friday, compose a message to <guest> about X").
+          No dedicated button needed. */}
     </>
   );
 

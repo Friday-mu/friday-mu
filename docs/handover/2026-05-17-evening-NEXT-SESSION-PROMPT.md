@@ -102,7 +102,7 @@ Newest-first. Every commit pushed + deployed to prod.
 | **R** | Reservations → live Guesty | 2-3h | Quota recovery for first sync, then live | Data already in `guesty_reservations` from poller |
 | **P** | Properties → live Guesty | 2-3h | Same | Data in `guesty_listings` |
 | **C** | Calendar → live booking data | 3-4h | After R+P | Render and filter over the live tables |
-| **+** | + Compose new-conversation flow | 1 day | Contact-source decision | Priority #4 from morning brief |
+| **+** | ~~+ Compose new-conversation flow~~ | — | KILLED 2026-05-17 evening — new conversations now flow through FC ("Friday, compose a message to <guest> about X"). The +Compose button is removed from the inbox UI. |
 | **K** | TeamInbox per-message read-receipt popover | 1h | None | Handover queue item K |
 | **I** | Cleanup job for orphaned attachments | 1h | None | Handover queue item I |
 | **F** | Finance Phase 3 — GL + QuickBooks | days | May-Jun schedule | Big project, on roadmap |

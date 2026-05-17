@@ -525,38 +525,11 @@ export function FridayConsult({
         boxShadow: '0 -8px 16px -8px rgba(0, 0, 0, 0.08)',
       }}
     >
-      <div className="friday-consult-header">
-        <IconSparkle size={12} />
-        <span style={{ fontSize: 12, fontWeight: 500 }}>Friday Consult</span>
-        <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>
-          scope · {threadScope}
-        </span>
-        {missingKnowledge && (
-          <span
-            className="chip"
-            style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-text-warning)' }}
-            title="No property knowledge file loaded for this property"
-          >
-            ⚠ no KB
-          </span>
-        )}
-        <button
-          className="fad-util-btn"
-          onClick={loadHistory}
-          style={{ marginLeft: 'auto', width: 'auto', height: 24, padding: '0 8px', fontSize: 11 }}
-          title="Past Ask Friday sessions on this conversation"
-        >
-          <IconRefresh size={12} /> History
-        </button>
-        <button
-          className="fad-util-btn"
-          onClick={onClose}
-          style={{ width: 24, height: 24, marginLeft: 4 }}
-          title="Close"
-        >
-          <IconClose size={12} />
-        </button>
-      </div>
+      {/* Header removed 2026-05-17 per Ishant — 'Friday Consult' is
+          a developer concept, not something operators need to see.
+          History + missing-KB warning move inline into the chips row
+          below. Close button removed entirely (it was a noop since FC
+          is always-open). */}
       {historyOpen && (
         <div
           style={{
@@ -666,37 +639,70 @@ export function FridayConsult({
           )}
         </div>
       )}
-      {/* Quick-reply chips: context-aware presets */}
-      {msgs.length === 0 && (
-        <div
+      {/* Quick-reply chips + History + KB-warning, on one compact row.
+          History and ⚠ no-KB used to live in a separate header; folded
+          here to save a line per Ishant 2026-05-17. Chips only render
+          when there's no chat yet; History stays visible at all times. */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 4,
+          padding: '6px 12px 6px',
+        }}
+      >
+        {msgs.length === 0 && chips.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => submit(c)}
+            disabled={thinking}
+            style={{
+              padding: '4px 8px',
+              fontSize: 11,
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-background-secondary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+            }}
+          >
+            {c}
+          </button>
+        ))}
+        <span style={{ flex: 1 }} />
+        {missingKnowledge && (
+          <span
+            style={{
+              padding: '2px 6px',
+              fontSize: 10,
+              color: 'var(--color-text-warning)',
+              background: 'var(--color-background-warning-soft, rgba(245, 158, 11, 0.08))',
+              borderRadius: 'var(--radius-sm)',
+            }}
+            title="No property knowledge file loaded for this property"
+          >
+            ⚠ no KB
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={loadHistory}
+          title="Past sessions on this conversation"
           style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 4,
-            padding: '0 12px 8px',
+            padding: '4px 8px',
+            fontSize: 11,
+            color: 'var(--color-text-secondary)',
+            background: 'transparent',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer',
           }}
         >
-          {chips.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => submit(c)}
-              disabled={thinking}
-              style={{
-                padding: '4px 8px',
-                fontSize: 11,
-                color: 'var(--color-text-secondary)',
-                background: 'var(--color-background-secondary)',
-                border: '0.5px solid var(--color-border-tertiary)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-      )}
+          <IconRefresh size={10} /> History
+        </button>
+      </div>
       {/* Ask Friday input — restored 2026-05-17 per Ishant: FridayConsult
           is the single compose surface. The reply body lives in the
           EmbeddedDraftCard above; THIS input is for chatting with Friday
