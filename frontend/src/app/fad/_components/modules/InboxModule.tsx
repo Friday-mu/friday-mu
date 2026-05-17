@@ -1873,7 +1873,7 @@ function InternalNoteCompose({
         <span style={{ fontSize: 11, color: 'var(--color-text-warning)', fontWeight: 500 }}>
           🔒 Internal note · only your team can see this
         </span>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
           <button
             type="button"
             className="btn ghost sm"
@@ -1881,6 +1881,28 @@ function InternalNoteCompose({
             title="Tag a teammate"
           >
             @ Mention
+          </button>
+          {/* Explicit X close — discoverable affordance to drop the note
+              and go back to replying to the guest. The "← Switch to reply"
+              link at the bottom row does the same but isn't obviously a
+              close. */}
+          <button
+            type="button"
+            onClick={onSwitchToReply}
+            title="Close internal note and go back to reply"
+            aria-label="Close internal note"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              fontSize: 16,
+              lineHeight: 1,
+              color: 'var(--color-text-warning)',
+              marginLeft: 4,
+            }}
+          >
+            ×
           </button>
         </span>
         {mentionPickerOpen && (
