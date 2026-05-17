@@ -14,6 +14,7 @@ import {
   type ReservationNote,
 } from '../../_data/reservations';
 import { TASKS, TASK_USERS, TASK_USER_BY_ID, type Task } from '../../_data/tasks';
+import { useLiveReservations } from '../../_data/reservationsClient';
 import { addReservationNote, updateReservationTimes } from '../../_data/breezeway';
 import { useCurrentUserId } from '../usePermissions';
 import { fireToast } from '../Toaster';
@@ -176,11 +177,11 @@ interface Stay {
   endsThisWeek: boolean;
 }
 
-function computeStaysInWindow(days: ViewDay[]): Stay[] {
+function computeStaysInWindow(days: ViewDay[], reservations: Reservation[]): Stay[] {
   if (days.length === 0) return [];
   const firstISO = days[0].isoDate;
   const lastISO = days[days.length - 1].isoDate;
-  return RESERVATIONS
+  return reservations
     .filter((r) => {
       if (r.status === 'cancelled') return false;
       const inISO = r.checkIn.slice(0, 10);
@@ -232,6 +233,12 @@ type FilterChipId = 'reservation' | 'task' | 'maint' | 'meeting';
 
 export function CalendarModule() {
   const currentUserId = useCurrentUserId();
+  // Live reservations from /api/reservations — falls back to the
+  // RESERVATIONS fixture when the API is unreachable so the calendar
+  // still renders something useful during outages. Same pattern as
+  // OverviewPage / AllReservationsPage (commit 1d70cc4).
+  const { reservations: liveReservations } = useLiveReservations();
+  const sourceReservations = liveReservations ?? RESERVATIONS;
   const [tab, setTab] = useState<CalView>('week');
   const [viewDate, setViewDate] = useState<Date>(() => new Date(`${TODAY_ISO}T12:00:00`));
   const [typeFilter, setTypeFilter] = useState<Set<FilterChipId>>(
@@ -261,16 +268,16 @@ export function CalendarModule() {
   const days = useMemo(() => computeViewDays(viewDate, tab), [viewDate, tab]);
 
   const allEvents = useMemo<CalEvent[]>(() => {
-    const reservationEvents = RESERVATIONS.flatMap((r) => reservationToEvents(r, days));
+    const reservationEvents = sourceReservations.flatMap((r) => reservationToEvents(r, days));
     const filteredTasks = mineOnly
       ? TASKS.filter((t) => t.assigneeIds.includes(currentUserId))
       : TASKS;
     const taskEvents = filteredTasks.map((t) => taskToEvent(t, days)).filter((e): e is CalEvent => Boolean(e));
     const fixedEvents = CAL_EVENTS.map((e) => fixedToEvent(e, days)).filter((e): e is CalEvent => Boolean(e));
     return [...fixedEvents, ...reservationEvents, ...taskEvents];
-  }, [days, mineOnly, currentUserId, rev]);
+  }, [days, mineOnly, currentUserId, rev, sourceReservations]);
 
-  const stays = useMemo(() => packStays(computeStaysInWindow(days)), [days, rev]);
+  const stays = useMemo(() => packStays(computeStaysInWindow(days, sourceReservations)), [days, rev, sourceReservations]);
   const staysVisible = typeFilter.has('reservation');
 
   // Map "reservation" chip to checkin/checkout event types so the existing per-type filter
