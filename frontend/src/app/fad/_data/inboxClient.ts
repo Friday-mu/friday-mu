@@ -266,6 +266,53 @@ export async function loadConversations(): Promise<InboxThread[]> {
 }
 
 export async function loadThreadDetail(id: string): Promise<InboxThread> {
+  // Website-inbox threads carry a 'web-' prefix (see websiteInboxClient).
+  // Route them to the website detail endpoint; everything else goes to
+  // GMS's conversation bundle.
+  if (id.startsWith('web-')) {
+    const webId = id.slice(4);
+    const data = await apiFetch(`/api/inbox/website/threads/${webId}`) as {
+      thread?: {
+        id: string;
+        guest_email?: string | null;
+        guest_email_raw?: string | null;
+        guest_name?: string | null;
+        guest_phone?: string | null;
+        status: string;
+        notes?: string | null;
+        last_event_at?: string | null;
+      };
+      events?: Array<{ id: string; type: string; ts: string; payload?: Record<string, unknown> }>;
+    };
+    const t = data?.thread;
+    const events = data?.events || [];
+    const guest = t?.guest_name || t?.guest_email_raw || t?.guest_email || 'Anonymous';
+    const messages: InboxMessage[] = events.map((e) => ({
+      from: 'them' as const,
+      name: guest,
+      time: e.ts,
+      body: `${e.type}${e.payload ? `\n${JSON.stringify(e.payload, null, 2).slice(0, 400)}` : ''}`,
+    }));
+    return {
+      id,
+      unread: t?.status === 'open',
+      guest,
+      subject: t?.notes ? String(t.notes).slice(0, 100) : 'Website inquiry',
+      preview: events[events.length - 1]?.type || 'inquiry',
+      channel: 'Website',
+      entity: 'unclassified',
+      channelKey: 'website',
+      property: '',
+      time: t?.last_event_at || new Date().toISOString(),
+      triageStatus: t?.status === 'closed' ? 'done' : 'open',
+      mentionsMe: false,
+      messages,
+      summary: t?.notes || undefined,
+      sentiment: 'neutral',
+      language: 'EN',
+    };
+  }
+
   // GMS /:id bundles conversation + messages + drafts + reservation +
   // whatsapp window state + channel options in one response.
   const data = await apiFetch(`/api/inbox/conversations/${id}`) as ConvDetailResp;
