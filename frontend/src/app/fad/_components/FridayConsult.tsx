@@ -220,10 +220,27 @@ export function FridayConsult({
       if (workingBody) body.draftBody = workingBody;
       if (sessionId) body.sessionId = sessionId;
 
+      const t0 = Date.now();
       const data = await apiFetch('/api/inbox/consult', {
         method: 'POST',
         body: JSON.stringify(body),
       }) as ConsultResponse;
+
+      // Adoption tracking — every consult query, with response signals:
+      // missing-knowledge, has-teach, has-draft-update. Lets us see what
+      // operators actually ask Friday for + which queries Friday handles
+      // confidently vs admits ignorance.
+      try {
+        const { trackEvent } = await import('../../../lib/analytics');
+        trackEvent('friday_consult_query', {
+          context: body.context,
+          duration_ms: Date.now() - t0,
+          missing_knowledge: !!data?.missingKnowledge,
+          has_teach_blocks: Array.isArray(data?.teaching_actions) && data.teaching_actions.length > 0,
+          has_draft_update: !!data?.draft_update,
+          model: data?.model,
+        });
+      } catch { /* ignore */ }
 
       if (data?.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
       if (data?.missingKnowledge) setMissingKnowledge(true);

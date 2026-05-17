@@ -23,11 +23,12 @@ import {
   type LiveAttachment,
 } from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
-import { useCurrentUserId, usePermissions } from '../../usePermissions';
+import { useJwtUserId, usePermissions } from '../../usePermissions';
 import { IconCal, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
 import { ScheduleCallDrawer } from './ScheduleCallDrawer';
 import { ChannelMembersDrawer } from './ChannelMembersDrawer';
 import { fireToast } from '../../Toaster';
+import { trackEvent } from '../../../../../lib/analytics';
 
 type Selection =
   | { kind: 'channel'; channelKey: ChannelKey }
@@ -50,7 +51,11 @@ export function TeamInbox({
   // them in follow-ups.
   const _perms = usePermissions();
   void _perms;
-  const currentUserId = useCurrentUserId();
+  // Real DB user ID from JWT — used for matching against backend data
+  // (DM participants, reaction "I reacted", message author "is this me?").
+  // The role-switcher fixture id from useCurrentUserId() never matches
+  // real UUIDs the team_inbox API returns.
+  const currentUserId = useJwtUserId() ?? '';
 
   // Live data from /api/team/* (polled every 30s for unread badges).
   const { channels: liveChannels, refetch: refetchChannels } = useChannels();
@@ -118,8 +123,17 @@ export function TeamInbox({
           ? await uploadChannelAttachment(messagesTarget.id, f)
           : await uploadDmAttachment(messagesTarget.id, f);
         setPendingAttachments((prev) => [...prev, attachment]);
+        trackEvent('team_attachment_upload', {
+          kind: messagesTarget.kind,
+          size_bytes: f.size,
+          mime_type: f.type || null,
+        });
       } catch (e) {
         fireToast(e instanceof Error ? `${f.name}: ${e.message}` : 'Upload failed');
+        trackEvent('team_attachment_upload_failed', {
+          kind: messagesTarget.kind,
+          reason: e instanceof Error ? e.message : 'unknown',
+        });
       } finally {
         setUploadingCount((c) => c - 1);
       }
@@ -150,6 +164,7 @@ export function TeamInbox({
       channelKey: m.channelKey,
       dmId: m.dmId,
       authorId: m.authorId || '',
+      authorName: m.authorName,
       text: m.text,
       ts: m.ts,
       mentions: m.mentions,
@@ -182,6 +197,7 @@ export function TeamInbox({
   const messageKind: 'channel' | 'dm' = selection?.kind === 'dm' ? 'dm' : 'channel';
 
   const handleAddReaction = async (messageId: string, emoji: string) => {
+    trackEvent('team_reaction_add', { emoji, kind: messageKind });
     // Optimistic: add current user to the emoji list immediately.
     setReactionOverride((prev) => {
       const cur = prev[messageId] ?? reactionsByMessageId[messageId] ?? {};
@@ -226,6 +242,12 @@ export function TeamInbox({
     if (!text && pendingAttachments.length === 0) return;
     // Fire and forget — the hook does optimistic append + refetch.
     sendLive(text, { attachmentIds: pendingAttachments.map((a) => a.id) });
+    trackEvent('team_message_send', {
+      kind: selection.kind,
+      channel_key: selection.kind === 'channel' ? selection.channelKey : undefined,
+      has_text: !!text,
+      attachment_count: pendingAttachments.length,
+    });
     setDraft('');
     setPendingAttachments([]);
   };
@@ -322,7 +344,7 @@ export function TeamInbox({
           >
             Channels
           </div>
-          {visibleChannels.map((c) => {
+          {visibleChannels.filter((c) => c.isMember).map((c) => {
             const isSel = selection.kind === 'channel' && selection.channelKey === c.key;
             return (
               <button
@@ -356,6 +378,52 @@ export function TeamInbox({
               </button>
             );
           })}
+
+          {/* Non-member private channels — system admins only. Click
+              opens the members drawer so they can join themselves. */}
+          {visibleChannels.some((c) => !c.isMember) && (
+            <>
+              <div
+                style={{
+                  padding: '14px 14px 6px',
+                  fontSize: 11,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-tertiary)',
+                  fontWeight: 500,
+                }}
+                title="Private channels you can join (visible because you're a system admin)"
+              >
+                Private · join to participate
+              </div>
+              {visibleChannels.filter((c) => !c.isMember).map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => {
+                    openSelection({ kind: 'channel', channelKey: c.key });
+                    setMembersOpen(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 14px',
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 0,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    color: 'var(--color-text-tertiary)',
+                    fontStyle: 'italic',
+                  }}
+                  title="Open members panel to add yourself"
+                >
+                  <span style={{ flex: 1 }}>🔒 {c.name}</span>
+                </button>
+              ))}
+            </>
+          )}
 
           <div
             style={{
@@ -442,7 +510,10 @@ export function TeamInbox({
                   <span className="sep">·</span>
                   <button
                     type="button"
-                    onClick={() => setMembersOpen(true)}
+                    onClick={() => {
+                      trackEvent('team_members_drawer_open', { channel_id: selectedChannel.id });
+                      setMembersOpen(true);
+                    }}
                     title="View / manage members"
                     style={{
                       display: 'inline-flex',
@@ -508,6 +579,10 @@ export function TeamInbox({
                       onSend={async (text) => {
                         const msg = await sendThreadReply(text);
                         if (msg) {
+                          trackEvent('team_thread_reply', {
+                            kind: messageKind,
+                            parent_id: m.id,
+                          });
                           // Bump the parent's threadCount badge without
                           // waiting for the 15s poll cycle.
                           refetchMessages();
@@ -677,6 +752,33 @@ export function TeamInbox({
       )}
     </>
   );
+}
+
+// ───────────────── Display helpers ─────────────────
+
+/** First letter of first two whitespace-separated words, uppercased. */
+function deriveInitials(name: string | undefined | null): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+/** Deterministic palette pick from name — same name always lands on the
+ *  same colour. 12-colour palette tuned for FAD's brand neutrals. */
+const AVATAR_PALETTE = [
+  '#2B4A93', '#6B8E5F', '#B8744F', '#7C4D8F', '#3F7B8C',
+  '#A0613A', '#5E7C6B', '#8B5E83', '#3D6B5E', '#A37B4F',
+  '#4F6B8E', '#7C5E4F',
+];
+function deriveColor(name: string | undefined | null): string {
+  if (!name) return '#94a3b8'; // slate-400 fallback
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  }
+  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length]!;
 }
 
 // ───────────────── Attachment helpers ─────────────────
@@ -867,25 +969,36 @@ function TextMessage({
       onMouseLeave={() => setHovering(false)}
     >
       <div className="msg-meta" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {author && (
-          <span
-            style={{
-              display: 'inline-block',
-              width: 18,
-              height: 18,
-              borderRadius: 9,
-              background: author.avatarColor,
-              color: 'white',
-              fontSize: 10,
-              textAlign: 'center',
-              lineHeight: '18px',
-              fontWeight: 500,
-            }}
-          >
-            {author.initials}
-          </span>
-        )}
-        <span style={{ fontWeight: 500 }}>{author?.name ?? 'Unknown'}</span>
+        {(() => {
+          // Prefer the fixture (deterministic colour + initials for FR
+          // team members). Fall back to the backend-captured author_display_name
+          // for any user not in the fixture (real DB users created post-seed,
+          // SaaS tenants, etc.).
+          const displayName = author?.name ?? message.authorName ?? 'Unknown';
+          const initials = author?.initials ?? deriveInitials(displayName);
+          const color = author?.avatarColor ?? deriveColor(displayName);
+          return (
+            <>
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  background: color,
+                  color: 'white',
+                  fontSize: 10,
+                  textAlign: 'center',
+                  lineHeight: '18px',
+                  fontWeight: 500,
+                }}
+              >
+                {initials}
+              </span>
+              <span style={{ fontWeight: 500 }}>{displayName}</span>
+            </>
+          );
+        })()}
         <span style={{ color: 'var(--color-text-tertiary)' }}>· {formatTs(message.ts)}</span>
       </div>
       <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>
@@ -1098,6 +1211,7 @@ function ThreadSurface({
           channelKey: r.channelKey,
           dmId: r.dmId,
           authorId: r.authorId || '',
+          authorName: r.authorName,
           text: r.text,
           ts: r.ts,
           mentions: r.mentions,

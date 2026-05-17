@@ -235,6 +235,7 @@ export function InboxModule({ onAskFriday }: Props) {
       setDraftError(null);
       approveDraft(draftId, { draftBody, sentVia })
         .then(() => {
+          import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_approve', { sent_via: sentVia })).catch(() => {});
           fireToast('Sent ✓');
           refetchDetail();
           refetchConversations();
@@ -341,6 +342,7 @@ export function InboxModule({ onAskFriday }: Props) {
     setDraftError(null);
     reviseDraft(activeDraft.id, instruction, { mode })
       .then(() => {
+        import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_revise', { mode })).catch(() => {});
         setDraftRevising(true);
         refetchDetail();
       })
@@ -358,6 +360,7 @@ export function InboxModule({ onAskFriday }: Props) {
     setDraftError(null);
     rejectDraft(activeDraft.id, reason)
       .then(() => {
+        import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_reject', { has_reason: !!reason })).catch(() => {});
         fireToast(reason ? 'Draft rejected — Friday will learn from this' : 'Draft dismissed');
         refetchDetail();
         refetchConversations();

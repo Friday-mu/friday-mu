@@ -30,6 +30,7 @@ import { ReviewsModule } from './modules/ReviewsModule';
 import { BugReportFab } from './BugReport';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { UpdateBanner } from './UpdateBanner';
+import { trackEvent } from '../../../lib/analytics';
 import { AnalyticsModule } from './modules/AnalyticsModule';
 import { ReservationsModule } from './modules/ReservationsModule';
 import { TrainingModule } from './modules/TrainingModule';
@@ -95,6 +96,18 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   // when the user's must_change_password column is TRUE; cleared on
   // successful change-password POST.
   const [mustChangePassword, setMustChangePassword] = useState(false);
+
+  // Usage analytics — fires on every module change (sidebar nav, URL
+  // deep-link, command palette). The batched buffer in lib/analytics.ts
+  // flushes every 30s or when buffer hits 20; no per-event network cost.
+  useEffect(() => {
+    if (!hydrated) return; // skip the initial mount echo
+    trackEvent('fad_module_open', { module: active, sub_page: subPage });
+  }, [active, subPage, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (fridayFs) trackEvent('fad_friday_fullscreen_open');
+  }, [fridayFs, hydrated]);
 
   // Auth guard — the shell is post-login. Missing token → back to /.
   // Token is set by LoginScreen on successful /api/auth/login; cleared by

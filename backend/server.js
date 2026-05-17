@@ -1321,6 +1321,41 @@ app.get('/api/version', asyncHandler((req, res) =>
   gmsProxy(req, res, '/api/version')
 ));
 
+// /api/auth/login-roster — public. Drives the LoginScreen chip selector so
+// it reflects who actually has an account (vs the hardcoded TEAM array it
+// used to read). Source of truth: users.is_active = TRUE in the canonical
+// Friday Retreats tenant. When HR deactivates someone they fall off the
+// chip; when HR adds a new staff with an account they appear.
+//
+// Trade-off: exposes employee emails to anonymous viewers. Already public
+// knowledge for FR (people are listed on the website / Slack), so the
+// chip selector was already public information. Locked to one tenant for
+// safety — other tenants get an empty array.
+const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+app.get('/api/auth/login-roster', asyncHandler(async (req, res) => {
+  try {
+    const { query } = require('./src/database/client');
+    const { rows } = await query(
+      `SELECT email, display_name
+       FROM users
+       WHERE tenant_id = $1 AND is_active = TRUE
+         AND email LIKE '%@friday.mu'
+       ORDER BY created_at`,
+      [FR_TENANT_ID],
+    );
+    // First name only — chip label uses it directly.
+    res.json({
+      users: rows.map((r) => ({
+        firstName: (r.display_name || r.email.split('@')[0]).split(/\s+/)[0],
+        email: r.email,
+      })),
+    });
+  } catch (e) {
+    console.error('[auth/login-roster] error:', e.message);
+    res.status(500).json({ users: [], error: e.message });
+  }
+}));
+
 app.get('/api/inbox/conversations', requireAuth, asyncHandler((req, res) =>
   gmsProxy(req, res, '/api/conversations')
 ));

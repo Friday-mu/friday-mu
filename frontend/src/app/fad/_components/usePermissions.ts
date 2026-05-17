@@ -212,6 +212,20 @@ export function useCurrentUserId(): string {
   return ctx().currentUserId;
 }
 
+/**
+ * Real DB user ID resolved from the JWT — used wherever the frontend
+ * has to match against backend data (message authors, DM participants,
+ * reaction "is this mine?" checks, etc.). Distinct from useCurrentUserId
+ * which returns the fixture role-switcher id ('u-ishant') used by the
+ * permissions matrix.
+ *
+ * Stable for the session — JWT doesn't change without a re-login.
+ * Returns null when no token (shouldn't happen post-login but safe).
+ */
+export function useJwtUserId(): string | null {
+  return useMemo(() => readJwtClaims().userId, []);
+}
+
 /** Hook: imperative permission checks. */
 export function usePermissions() {
   const { role, currentUserId, realRole, setRole, isDirector } = ctx();

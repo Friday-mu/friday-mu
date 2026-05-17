@@ -9,6 +9,7 @@
 
 import { useState } from 'react';
 import { apiFetch } from '../../../components/types';
+import { trackEvent } from '../../../lib/analytics';
 
 interface Props {
   onChanged: () => void;
@@ -33,8 +34,12 @@ export function ChangePasswordModal({ onChanged }: Props) {
         method: 'POST',
         body: JSON.stringify({ current_password: current, new_password: next }),
       });
+      trackEvent('password_change_success');
       onChanged();
     } catch (e: unknown) {
+      trackEvent('password_change_failure', {
+        reason: e instanceof Error ? e.message : 'unknown',
+      });
       setError(e instanceof Error ? e.message : 'Change failed');
     } finally {
       setSubmitting(false);

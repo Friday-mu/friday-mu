@@ -11,8 +11,10 @@ import { setToken } from './types'
 type Theme = 'light' | 'dark'
 
 // ─────────────────────────────── Team roster ───────────────────────────────
-// Drives the chip selector. Edit when team membership changes.
-const TEAM = [
+// Fallback roster — used only when /api/auth/login-roster is
+// unreachable (offline, backend down). The live chip selector below
+// fetches the canonical list from the users table at mount.
+const TEAM_FALLBACK = [
   { firstName: 'Ishant',    email: 'ishant@friday.mu' },
   { firstName: 'Mathias',   email: 'mathias@friday.mu' },
   { firstName: 'Franny',    email: 'franny@friday.mu' },
@@ -20,6 +22,7 @@ const TEAM = [
   { firstName: 'Bryan',     email: 'bryan@friday.mu' },
   { firstName: 'Catherine', email: 'catherine@friday.mu' },
 ] as const
+type Member = { firstName: string; email: string }
 
 // ─────────────────────────────── Greetings ─────────────────────────────────
 // One pulled at random per page load. Friday's voice trends curious + dry.
@@ -138,6 +141,23 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Live roster from /api/auth/login-roster — falls back to a static
+  // list only if the fetch fails (backend down / offline). Reflects
+  // users.is_active in the FR tenant, so HR additions/removals show
+  // here without code changes.
+  const [team, setTeam] = useState<readonly Member[]>(TEAM_FALLBACK);
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/auth/login-roster')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (cancelled) return
+        if (Array.isArray(d?.users) && d.users.length > 0) setTeam(d.users)
+      })
+      .catch(() => { /* keep fallback */ })
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => {
     setLastEmail(localStorage.getItem('fad:last-email'))
   }, [])
@@ -146,7 +166,7 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
   // user.name; falls back to TEAM-by-email or email-prefix.
   const resolveDisplayName = (apiName: string | undefined, emailUsed: string): string => {
     if (apiName && apiName.trim()) return apiName.trim().split(/\s+/)[0]
-    const matched = TEAM.find((m) => m.email === emailUsed)
+    const matched = team.find((m) => m.email === emailUsed)
     if (matched) return matched.firstName
     const stub = emailUsed.includes('@') ? emailUsed.split('@')[0] : emailUsed
     return stub ? stub.charAt(0).toUpperCase() + stub.slice(1) : 'There'
@@ -161,7 +181,7 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
   }
 
   // Click a chip → fill email, focus password (matches OS-password-manager UX).
-  const pickMember = (m: typeof TEAM[number]) => {
+  const pickMember = (m: Member) => {
     setEmail(m.email)
     setTimeout(() => {
       const pw = document.querySelector('input[name="password"]') as HTMLInputElement | null
@@ -339,7 +359,7 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
         <p style={subtitleStyle}>{greeting}</p>
 
         <div style={chipsRowStyle}>
-          {TEAM.map((m) => {
+          {team.map((m) => {
             // Prefer "picked now" over "last-used"; only fall back to last-used
             // when no email is currently set.
             const isPicked = m.email === email

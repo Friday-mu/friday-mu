@@ -75,6 +75,10 @@ export interface TeamMessage {
   channelKey?: ChannelKey;     // present for channel posts
   dmId?: string;               // present for DMs
   authorId: string;
+  /** Backend-captured display name (users.display_name at write time).
+   *  Used when TASK_USER_BY_ID lookup misses — real DB users aren't in
+   *  the fixture, so the author chip falls back to this value. */
+  authorName?: string;
   text: string;
   ts: string;
   mentions?: string[];         // user ids

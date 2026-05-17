@@ -44,6 +44,10 @@ export interface LiveChannel {
   archivedAt: string | null;
   createdAt: string;
   unread: number;
+  /** False only for system admins viewing a private channel they
+   *  haven't joined. UI renders these in a "join to participate"
+   *  group so admins can bootstrap membership from the drawer. */
+  isMember: boolean;
 }
 
 export interface LiveDm {

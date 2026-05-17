@@ -1692,9 +1692,13 @@ html.fad-dark .fad-palette-overlay { background: rgba(0,0,0,0.6); }
 
 /* Floating bug report FAB */
 .bug-fab {
+  /* Bottom-left, not bottom-right — Right is owned by module Send
+     buttons (TeamInbox compose, AI consult drawer) which would
+     otherwise be intercepted by this FAB. Left is unused by any
+     other floating UI; toaster lives top-right. */
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  left: 24px;
   width: 44px;
   height: 44px;
   border-radius: var(--radius-full);

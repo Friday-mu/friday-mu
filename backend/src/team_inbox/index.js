@@ -182,6 +182,10 @@ function shapeChannel(row, unreadCount = 0) {
     archivedAt: row.archived_at,
     createdAt: row.created_at,
     unread: Number(unreadCount) || 0,
+    // isMember = false only happens for system admins viewing a private
+    // channel they haven't joined. Frontend uses this to bucket them
+    // into "Private channels (join to participate)".
+    isMember: row.is_member !== undefined ? !!row.is_member : true,
   };
 }
 
@@ -282,19 +286,25 @@ function shapeUser(row) {
 
 // ─── Channels ───────────────────────────────────────────────────────
 
-// List channels visible to caller (every public channel in the tenant +
-// every private channel the caller is a member of). Unread count per
-// channel computed in the same query against team_message_reads.
+// List channels visible to caller:
+//   - Every public channel in the tenant (caller auto-joins on first request)
+//   - Every private channel the caller is a member of
+//   - System admins (users.role = 'admin') ALSO see all private channels they're
+//     not a member of, with isMember=false — lets them bootstrap private-channel
+//     membership from the admin UI without psql.
+// Unread count per channel computed in the same query against team_message_reads.
 router.get('/channels', attachIdentity, async (req, res) => {
   const userId = req.identity?.userId;
   if (!userId) return res.status(401).json({ error: 'No user context' });
   await autojoinPublicChannels(req.tenantId, userId);
+  const isSystemAdmin = req.identity?.userRole === 'admin';
   try {
     const { rows } = await query(
       `SELECT c.*,
-              COALESCE(unread.cnt, 0) AS unread_cnt
+              (m.user_id IS NOT NULL)        AS is_member,
+              COALESCE(unread.cnt, 0)        AS unread_cnt
        FROM team_channels c
-       JOIN team_channel_members m
+       LEFT JOIN team_channel_members m
          ON m.channel_id = c.id AND m.user_id = $2
        LEFT JOIN LATERAL (
          SELECT COUNT(*)::int AS cnt
@@ -309,8 +319,13 @@ router.get('/channels', attachIdentity, async (req, res) => {
            )
        ) unread ON TRUE
        WHERE c.tenant_id = $1 AND c.archived_at IS NULL
+         AND (
+           c.visibility = 'public'    -- everyone sees public
+           OR m.user_id IS NOT NULL   -- private + caller is a member
+           OR $3::boolean             -- system admin sees private even when not a member
+         )
        ORDER BY c.created_at`,
-      [req.tenantId, userId],
+      [req.tenantId, userId, isSystemAdmin],
     );
     res.json({ channels: rows.map((r) => shapeChannel(r, r.unread_cnt)) });
   } catch (e) {
