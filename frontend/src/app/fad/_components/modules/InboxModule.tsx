@@ -11,6 +11,15 @@ import {
   type StayStatus,
 } from '../../_data/fixtures';
 import { useLiveConversations, useThreadDetail } from '../../_data/inboxClient';
+import {
+  approveDraft,
+  rejectDraft,
+  reviseDraft,
+  sendCompose,
+  isReviewReady,
+} from '../../_data/draftsClient';
+import { DraftPanel } from './inbox/DraftPanel';
+import { apiFetch } from '../../../../components/types';
 
 // Human-readable relative time. Used in list rows + message bubbles.
 // Returns "now", "5m", "2h", "yesterday", "Mar 14" depending on age.
@@ -139,7 +148,7 @@ export function InboxModule({ onAskFriday }: Props) {
 
   // Live GMS data via FAD backend proxy; falls back to fixture INBOX_THREADS
   // during initial load or on backend failure so the inbox never blanks out.
-  const { threads: liveThreads, loading: inboxLoading, error: inboxError } = useLiveConversations();
+  const { threads: liveThreads, loading: inboxLoading, error: inboxError, refetch: refetchConversations } = useLiveConversations();
   const sourceThreads = liveThreads ?? INBOX_THREADS;
 
   const counts = useMemo(() => {
@@ -166,8 +175,215 @@ export function InboxModule({ onAskFriday }: Props) {
   // changes. Falls back to the list-version while detail loads so the pane
   // doesn't blank between selections.
   const listThread = filtered.find((t) => t.id === selected) || filtered[0] || sourceThreads[0];
-  const { thread: detailThread } = useThreadDetail(listThread?.id ?? null);
+  const { thread: detailThread, refetch: refetchDetail } = useThreadDetail(listThread?.id ?? null);
   const thread = detailThread || listThread;
+
+  // ─── Draft review state ────────────────────────────────────────────────
+  // The active draft is the most-recent one in a review-ready state. GMS
+  // returns drafts newest-first in the detail bundle; we just take the
+  // first one whose state is draft_ready / under_review. send_queued and
+  // send_failed surface differently (queued-draft retry cards inline in
+  // the thread, not in DraftPanel) — out of scope for v1.
+  const activeDraft = thread?.drafts?.find((d) => isReviewReady(d.state));
+  const prevDraftRevRef = useRef<number | undefined>(undefined);
+
+  // Action wiring. The parent owns the API calls + the 5s undo; DraftPanel
+  // is a controlled view.
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftRevising, setDraftRevising] = useState(false);
+
+  // Pending-send state for the 5s undo. When non-null, a "Sending in Xs"
+  // banner renders at the bottom; cancel restores the draft.
+  type PendingSend = {
+    draftId: string;
+    draftBody?: string;   // edited body if operator edited inline
+    sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email';
+    countdown: number;
+  };
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+
+  // Countdown ticker for pending send. Decrements every second; at 0,
+  // fires the actual approveDraft call.
+  useEffect(() => {
+    if (!pendingSend) return;
+    if (pendingSend.countdown <= 0) {
+      // Fire the send.
+      const { draftId, draftBody, sentVia } = pendingSend;
+      setPendingSend(null);
+      setDraftBusy(true);
+      setDraftError(null);
+      approveDraft(draftId, { draftBody, sentVia })
+        .then(() => {
+          fireToast('Sent ✓');
+          refetchDetail();
+          refetchConversations();
+        })
+        .catch((e: Error) => {
+          const msg = e?.message || 'Send failed';
+          // WhatsApp 24h window expired — surface the special toast.
+          if (msg.includes('whatsapp_window_expired')) {
+            fireToast('WhatsApp 24h window expired — use a template');
+          } else {
+            setDraftError(msg);
+            fireToast(msg);
+          }
+        })
+        .finally(() => setDraftBusy(false));
+      return;
+    }
+    const t = setTimeout(() => {
+      setPendingSend((p) => p ? { ...p, countdown: p.countdown - 1 } : null);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [pendingSend, refetchDetail]);
+
+  // Detect a new draft after a revise. When activeDraft.revisionNumber
+  // increases past prevDraftRevRef, clear the revising spinner.
+  useEffect(() => {
+    if (!activeDraft) return;
+    if (draftRevising && typeof activeDraft.revisionNumber === 'number') {
+      const prev = prevDraftRevRef.current;
+      if (prev === undefined || activeDraft.revisionNumber > prev) {
+        setDraftRevising(false);
+      }
+    }
+    prevDraftRevRef.current = activeDraft.revisionNumber;
+  }, [activeDraft, draftRevising]);
+
+  // While a revise is pending, poll the detail every 3s. friday-gms
+  // generates drafts async — we'd see the new one via SSE in OLD UI, but
+  // FAD doesn't have an SSE consumer yet. Polling is the MVP path.
+  useEffect(() => {
+    if (!draftRevising) return;
+    const interval = setInterval(refetchDetail, 3000);
+    const safety = setTimeout(() => setDraftRevising(false), 30_000);
+    return () => { clearInterval(interval); clearTimeout(safety); };
+  }, [draftRevising, refetchDetail]);
+
+  // ── Action handlers ──────────────────────────────────────────────────
+
+  const handleApprove = (opts: { draftBody?: string; learnMode?: 'learn' }) => {
+    if (!activeDraft) return;
+    setDraftError(null);
+    // Stage the send behind a 5s undo banner. If the operator doesn't
+    // cancel, the countdown effect above fires approveDraft.
+    setPendingSend({
+      draftId: activeDraft.id,
+      draftBody: opts.draftBody,
+      sentVia: (thread?.recommendedChannel || thread?.channelKey || 'whatsapp') as PendingSend['sentVia'],
+      countdown: 5,
+    });
+  };
+
+  const handleRevise = (instruction: string, mode: 'standard' | 'teach') => {
+    if (!activeDraft) return;
+    setDraftBusy(true);
+    setDraftError(null);
+    reviseDraft(activeDraft.id, instruction, { mode })
+      .then(() => {
+        setDraftRevising(true);
+        refetchDetail();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Revise failed';
+        setDraftError(msg);
+        fireToast(msg);
+      })
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleReject = (reason?: string) => {
+    if (!activeDraft) return;
+    setDraftBusy(true);
+    setDraftError(null);
+    rejectDraft(activeDraft.id, reason)
+      .then(() => {
+        fireToast(reason ? 'Draft rejected — Friday will learn from this' : 'Draft dismissed');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Reject failed';
+        setDraftError(msg);
+        fireToast(msg);
+      })
+      .finally(() => setDraftBusy(false));
+  };
+
+  const cancelPendingSend = () => setPendingSend(null);
+
+  // Friday Consult may emit a draft rewrite via the [DRAFT_UPDATE] protocol.
+  // We stash it here and pass to DraftPanel on the next render — DraftPanel
+  // jumps into edit mode pre-filled with this body, then calls back to
+  // clear it so we don't re-trigger on subsequent renders.
+  const [pendingRewrite, setPendingRewrite] = useState<string | null>(null);
+
+  // ─── Compose state ─────────────────────────────────────────────────────
+  // Operator-initiated manual reply (vs. draft-review path which goes
+  // through DraftPanel). Posts to /api/inbox/conversations/:id/compose
+  // mode=manual. "Polish with Friday" hits /api/inbox/consult to rewrite
+  // the current body. Reset when the active thread changes.
+  const [replyBody, setReplyBody] = useState('');
+  const [composeBusy, setComposeBusy] = useState(false);
+  const [polishBusy, setPolishBusy] = useState(false);
+
+  useEffect(() => {
+    setReplyBody('');
+  }, [selected]);
+
+  const handleComposeSend = () => {
+    if (!thread || !replyBody.trim() || composeBusy) return;
+    setComposeBusy(true);
+    const channel = (thread.recommendedChannel || thread.channelKey) as
+      | 'whatsapp' | 'airbnb' | 'booking' | 'email' | undefined;
+    sendCompose(thread.id, {
+      mode: 'manual',
+      body: replyBody.trim(),
+      channel,
+    })
+      .then(() => {
+        fireToast('Sent ✓');
+        setReplyBody('');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Send failed';
+        if (msg.includes('whatsapp_window_expired')) {
+          fireToast('WhatsApp 24h window expired — use a template');
+        } else {
+          fireToast(msg);
+        }
+      })
+      .finally(() => setComposeBusy(false));
+  };
+
+  const handlePolishCompose = async () => {
+    if (!thread || !replyBody.trim() || polishBusy) return;
+    setPolishBusy(true);
+    try {
+      const data = await apiFetch('/api/inbox/consult', {
+        method: 'POST',
+        body: JSON.stringify({
+          text: `Polish this reply: ${replyBody.trim()}`,
+          context: 'compose',
+          conversationId: thread.id,
+          draftBody: replyBody.trim(),
+        }),
+      }) as { response?: string; draft_update?: string };
+      const rewritten = (data.draft_update || data.response || '').trim();
+      if (rewritten) {
+        setReplyBody(rewritten);
+      } else {
+        fireToast('Friday had nothing to polish — try editing manually');
+      }
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Polish failed');
+    } finally {
+      setPolishBusy(false);
+    }
+  };
 
   // Auto-scroll to the latest message when the thread changes or its messages
   // load. Otherwise the pane lands at the top of long threads and the user
@@ -554,8 +770,79 @@ export function InboxModule({ onAskFriday }: Props) {
             <FridayConsult
               key={selected}
               threadScope={thread.guest}
+              conversationId={thread.id}
+              draftId={activeDraft?.id}
+              draftBody={activeDraft?.body}
+              context={activeDraft ? 'draft_review' : 'compose'}
+              onDraftUpdate={(body) => {
+                setPendingRewrite(body);
+                setConsultOpen(false);
+              }}
               onClose={() => setConsultOpen(false)}
             />
+          )}
+          {/* AI draft review panel — shown when GMS has an active draft
+              for this conversation. Approve / Revise / Edit / Reject
+              with a 5-second undo on send (banner below the panel). */}
+          {activeDraft && (
+            <div style={{ padding: '0 12px' }}>
+              <DraftPanel
+                draft={activeDraft}
+                busy={draftBusy || !!pendingSend}
+                revising={draftRevising}
+                error={draftError}
+                onApprove={handleApprove}
+                onRevise={handleRevise}
+                onReject={handleReject}
+                onOpenConsult={() => setConsultOpen(true)}
+                pendingRewrite={pendingRewrite}
+                onPendingRewriteConsumed={() => setPendingRewrite(null)}
+              />
+            </div>
+          )}
+          {/* 5-second undo banner — visible during the countdown after
+              Approve & Send. Cancel restores the DraftPanel without
+              actually firing the send to GMS. */}
+          {pendingSend && (
+            <div
+              style={{
+                margin: '0 12px 8px',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.1))',
+                border: '0.5px solid var(--color-brand-accent)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: 12,
+                color: 'var(--color-text-primary)',
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <IconSend size={12} />
+              <span style={{ flex: 1 }}>
+                Sending in <strong>{pendingSend.countdown}s</strong>
+                {pendingSend.sentVia ? ` via ${pendingSend.sentVia}` : ''}
+                {pendingSend.draftBody ? ' (edited)' : ''}…
+              </span>
+              <button
+                type="button"
+                onClick={cancelPendingSend}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--color-brand-accent)',
+                  background: 'transparent',
+                  border: '0.5px solid var(--color-brand-accent)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
           )}
           <div
             className={
@@ -597,23 +884,43 @@ export function InboxModule({ onAskFriday }: Props) {
                 </div>
                 <textarea
                   className="inbox-compose-textarea"
-                  placeholder="Write a reply…"
-                  defaultValue={
-                    // Empty by default — fixture-era seeded a French reply for
-                    // the demo 't1' thread; not relevant on live data.
-                    ''
+                  placeholder={
+                    activeDraft
+                      ? 'Write an additional reply… (the AI draft is above)'
+                      : `Write a reply to ${thread.guest}…`
                   }
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Cmd/Ctrl+Enter sends. Plain Enter allows newlines.
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleComposeSend();
+                    }
+                  }}
+                  disabled={composeBusy}
                 />
                 <div
                   className="inbox-compose-actions"
                   style={{ position: 'relative', justifyContent: 'space-between' }}
                 >
-                  <button className="btn ghost">
-                    <IconAI size={12} /> Polish with Friday
+                  <button
+                    className="btn ghost"
+                    onClick={handlePolishCompose}
+                    disabled={polishBusy || composeBusy || !replyBody.trim()}
+                    type="button"
+                    title="Have Friday rewrite for tone and clarity"
+                  >
+                    <IconAI size={12} /> {polishBusy ? 'Polishing…' : 'Polish with Friday'}
                   </button>
                   <div className="send-split">
-                    <button className="send-split-main" onClick={() => setSendMenuOpen(false)}>
-                      <IconSend size={12} /> Send
+                    <button
+                      className="send-split-main"
+                      onClick={() => { setSendMenuOpen(false); handleComposeSend(); }}
+                      disabled={composeBusy || !replyBody.trim()}
+                      type="button"
+                    >
+                      <IconSend size={12} /> {composeBusy ? 'Sending…' : 'Send'}
                     </button>
                     <button
                       className="send-split-caret"
