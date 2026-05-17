@@ -47,6 +47,45 @@ export interface InternalNote {
   createdAt: string;
 }
 
+export type DraftState =
+  | 'friday_drafting'
+  | 'draft_ready'
+  | 'under_review'
+  | 'approved'
+  | 'sending'
+  | 'sent'
+  | 'rejected'
+  | 'revision_requested'
+  | 'superseded'
+  | 'send_queued'
+  | 'send_failed'
+  | 'dismissed';
+
+/** AI-generated draft from GMS, bundled in the thread-detail response. */
+export interface InboxDraft {
+  id: string;
+  state: DraftState;
+  /** English-language draft body (the canonical version GMS authored). */
+  body: string;
+  /** Translated body when guest's original language is not English.
+   *  Translation happens at send-time in GMS; this is the version that
+   *  will go on the wire if approved. */
+  bodyTranslated?: string;
+  /** 0..1; UI thresholds: ≥0.8 green, ≥0.6 amber, else red. */
+  confidence?: number;
+  /** 1 for the original draft; ++1 each time the operator revises. */
+  revisionNumber?: number;
+  /** Last revision request (for revision_requested state). */
+  revisionInstruction?: string;
+  modelUsed?: string;
+  createdAt: string;
+  /** Send-queue retry metadata for send_queued / send_failed states. */
+  retryCount?: number;
+  nextRetryAt?: string;
+  /** Why this draft was rejected (for rejected state). */
+  rejectionReason?: string;
+}
+
 export interface InboxThread {
   id: string;
   unread: boolean;
@@ -75,6 +114,23 @@ export interface InboxThread {
   /** Reservation context bundled in the thread-detail response. Optional —
    *  list view doesn't carry it, only the detail fetch does. */
   reservation?: InboxReservation;
+  /** AI drafts from GMS. Detail view only (list doesn't carry them).
+   *  Most-recent-first; DraftPanel renders the first one with state in
+   *  {draft_ready, under_review}. */
+  drafts?: InboxDraft[];
+  /** Channel options for outbound send, from the detail bundle. Used by
+   *  the send confirmation modal's channel selector. */
+  availableChannels?: string[];
+  /** Recommended channel for the next outbound message — usually matches
+   *  the inbound channel unless the WA window is closed. */
+  recommendedChannel?: string;
+  /** Latest draft state — convenience field also surfaced on list rows
+   *  (the list response returns this without bundling the full drafts
+   *  array). Powers the Review tab filter. */
+  latestDraftState?: DraftState;
+  /** Latest draft confidence (0..1) — surfaced on list rows for the
+   *  confidence pill in the list item. */
+  latestDraftConfidence?: number;
 }
 
 /** Reservation detail flattened from GMS's bundled response. Only the fields

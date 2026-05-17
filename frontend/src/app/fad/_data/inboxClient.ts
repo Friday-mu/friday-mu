@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../../../components/types';
-import type { InboxThread, InboxMessage, InboxChannel, InboxReservation } from './fixtures';
+import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState } from './fixtures';
 
 // ───────── enum mappers ─────────
 
@@ -143,11 +143,33 @@ function transformGmsReservation(raw: Record<string, unknown>): InboxReservation
   };
 }
 
+function transformGmsDraft(raw: Record<string, unknown>): InboxDraft {
+  const num = (v: unknown): number | undefined =>
+    v == null ? undefined : (Number.isFinite(Number(v)) ? Number(v) : undefined);
+  return {
+    id: String(raw.id || ''),
+    state: (raw.state ? String(raw.state) : 'draft_ready') as DraftState,
+    body: String(raw.draft_body || raw.body || ''),
+    bodyTranslated: raw.draft_translated ? String(raw.draft_translated) : undefined,
+    confidence: num(raw.confidence),
+    revisionNumber: num(raw.revision_number),
+    revisionInstruction: raw.revision_instruction ? String(raw.revision_instruction) : undefined,
+    modelUsed: raw.model_used ? String(raw.model_used) : undefined,
+    createdAt: String(raw.created_at || raw.updated_at || new Date().toISOString()),
+    retryCount: num(raw.retry_count),
+    nextRetryAt: raw.next_retry_at ? String(raw.next_retry_at) : undefined,
+    rejectionReason: raw.rejection_reason ? String(raw.rejection_reason) : undefined,
+  };
+}
+
 export function transformGmsConversation(
   raw: Record<string, unknown>,
   messagesRaw?: Record<string, unknown>[],
   waWindow?: WhatsAppWindowInfo,
   reservationRaw?: Record<string, unknown>,
+  draftsRaw?: Record<string, unknown>[],
+  availableChannels?: string[],
+  recommendedChannel?: string,
 ): InboxThread {
   const channelKey = mapChannelKey(raw.channel ?? raw.communication_channel);
   const status = raw.status;
@@ -184,6 +206,10 @@ export function transformGmsConversation(
     whatsappWindow = { open: waWindow.open, expiresInMinutes };
   }
 
+  const drafts: InboxDraft[] | undefined = draftsRaw
+    ? draftsRaw.map(transformGmsDraft)
+    : undefined;
+
   return {
     id: String(raw.id || `conv-${Math.random().toString(36).slice(2, 9)}`),
     unread: Boolean(raw.is_unread),
@@ -206,6 +232,11 @@ export function transformGmsConversation(
     language: mapLanguage(raw.last_detected_language),
     whatsappWindow,
     reservation: reservationRaw ? transformGmsReservation(reservationRaw) : undefined,
+    drafts,
+    availableChannels,
+    recommendedChannel,
+    latestDraftState: raw.latest_draft_state ? (String(raw.latest_draft_state) as DraftState) : undefined,
+    latestDraftConfidence: typeof raw.latest_draft_confidence === 'number' ? raw.latest_draft_confidence : undefined,
   };
 }
 
@@ -223,6 +254,8 @@ interface ConvDetailResp {
   reservation?: Record<string, unknown>;
   whatsapp_window_open?: boolean;
   whatsapp_window_expires_at?: string;
+  available_channels?: string[];
+  recommended_channel?: string;
 }
 
 export async function loadConversations(): Promise<InboxThread[]> {
@@ -233,7 +266,7 @@ export async function loadConversations(): Promise<InboxThread[]> {
 
 export async function loadThreadDetail(id: string): Promise<InboxThread> {
   // GMS /:id bundles conversation + messages + drafts + reservation +
-  // whatsapp window state in one response. No separate fetch needed.
+  // whatsapp window state + channel options in one response.
   const data = await apiFetch(`/api/inbox/conversations/${id}`) as ConvDetailResp;
   const conv = data.conversation || {};
   const messages = data.messages || [];
@@ -241,7 +274,15 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
     open: !!data.whatsapp_window_open,
     expiresAt: data.whatsapp_window_expires_at,
   };
-  return transformGmsConversation(conv, messages, waWindow, data.reservation);
+  return transformGmsConversation(
+    conv,
+    messages,
+    waWindow,
+    data.reservation,
+    data.drafts,
+    data.available_channels,
+    data.recommended_channel,
+  );
 }
 
 // ───────── hooks ─────────
