@@ -13,6 +13,8 @@ import {
   useDms,
   useTeamMessages,
   useMessageReplies,
+  useTenantTeamUsers,
+  openDm,
   uploadChannelAttachment,
   uploadDmAttachment,
   addReaction,
@@ -21,6 +23,7 @@ import {
   type LiveDm,
   type LiveTeamMessage,
   type LiveAttachment,
+  type LiveUser,
 } from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
 import { useJwtUserId, usePermissions } from '../../usePermissions';
@@ -59,7 +62,11 @@ export function TeamInbox({
 
   // Live data from /api/team/* (polled every 30s for unread badges).
   const { channels: liveChannels, refetch: refetchChannels } = useChannels();
-  const { dms: liveDms } = useDms();
+  const { dms: liveDms, refetch: refetchDms } = useDms();
+  // Tenant roster — used to (a) auto-populate the DM list with one
+  // virtual row per non-self team member, (b) render real display
+  // names instead of raw UUIDs in DM titles + avatars.
+  const { users: tenantUsers, byId: tenantUserById } = useTenantTeamUsers();
 
   const visibleChannels: LiveChannel[] = useMemo(
     () => liveChannels ?? [],
@@ -72,6 +79,33 @@ export function TeamInbox({
       .map((d: LiveDm) => ({ id: d.id, participantIds: d.participantIds, unread: d.unread })),
     [liveDms, currentUserId],
   );
+
+  // Pre-populated DM list: every non-self team member gets a row,
+  // whether a real DM exists yet or not. Virtual rows have id
+  // 'virtual-<peerId>' and don't hit /api/team/dms/:id/messages until
+  // the operator clicks; clicking calls openDm() to create-or-fetch
+  // the real DM and switches selection.
+  //
+  // Group DMs (3+ participants) only appear here if they actually
+  // exist in liveDms — we don't fabricate group DMs.
+  type DmRow =
+    | { kind: 'real'; dm: TeamDM }
+    | { kind: 'virtual'; peer: LiveUser };
+  const dmRows: DmRow[] = useMemo(() => {
+    const real: DmRow[] = visibleDms.map((d) => ({ kind: 'real' as const, dm: d }));
+    if (!currentUserId || !tenantUsers) return real;
+    // Set of peer IDs that already have a 1:1 real DM with the caller.
+    const realOneToOnePeers = new Set(
+      visibleDms
+        .filter((d) => d.participantIds.length === 2)
+        .map((d) => d.participantIds.find((p) => p !== currentUserId)!)
+        .filter(Boolean),
+    );
+    const virtual: DmRow[] = tenantUsers
+      .filter((u) => u.id !== currentUserId && !realOneToOnePeers.has(u.id))
+      .map((u) => ({ kind: 'virtual' as const, peer: u }));
+    return [...real, ...virtual];
+  }, [visibleDms, tenantUsers, currentUserId]);
 
   const [selection, setSelection] = useState<Selection | null>(null);
   // Auto-select the first available channel once data lands. Switches
@@ -254,7 +288,7 @@ export function TeamInbox({
 
   const targetTitle = selection?.kind === 'channel'
     ? selectedChannel?.name ?? '#unknown'
-    : selection?.kind === 'dm' ? dmTitle(selection.dm, currentUserId) : '';
+    : selection?.kind === 'dm' ? dmTitleFromUsers(selection.dm, currentUserId, tenantUserById) : '';
 
   const targetSubtitle = selection?.kind === 'channel'
     ? selectedChannel?.purpose ?? ''
@@ -433,33 +467,53 @@ export function TeamInbox({
               letterSpacing: '0.06em',
               color: 'var(--color-text-tertiary)',
               fontWeight: 500,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
             }}
           >
-            <span style={{ flex: 1 }}>Direct messages</span>
-            <button
-              className="fad-util-btn"
-              style={{ width: 22, height: 22 }}
-              title="New DM"
-              onClick={() => fireToast('New DM creation lands in T6 polish')}
-            >
-              <IconPlus size={10} />
-            </button>
+            Direct messages
           </div>
-          {visibleDms.length === 0 && (
+          {dmRows.length === 0 && (
             <div style={{ padding: '6px 14px', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-              No DMs yet
+              No teammates yet
             </div>
           )}
-          {visibleDms.map((dm) => {
-            const isSel = selection.kind === 'dm' && selection.dm.id === dm.id;
+          {dmRows.map((row) => {
+            // Resolve display label + selection state for both real
+            // and virtual rows. Virtual rows lazily create on click.
+            const isReal = row.kind === 'real';
+            const peer = isReal
+              ? row.dm.participantIds
+                  .filter((p) => p !== currentUserId)
+                  .map((p) => tenantUserById.get(p))
+                  .filter(Boolean)
+              : [row.peer];
+            const isSel = isReal
+              ? (selection.kind === 'dm' && selection.dm.id === row.dm.id)
+              : false;
+            const label = peer.length > 0
+              ? peer.map((u) => u!.displayName.split(' ')[0]).join(', ')
+              : (isReal ? '(empty DM)' : 'Unknown');
+            const unread = isReal ? (row.dm.unread ?? 0) : 0;
             return (
               <button
-                key={dm.id}
+                key={isReal ? row.dm.id : `virtual-${row.peer.id}`}
                 className={'row' + (isSel ? ' selected' : '')}
-                onClick={() => openSelection({ kind: 'dm', dm })}
+                onClick={async () => {
+                  if (isReal) {
+                    openSelection({ kind: 'dm', dm: row.dm });
+                    return;
+                  }
+                  // Virtual: lazy-create the DM, then switch.
+                  try {
+                    const newDm = await openDm([row.peer.id]);
+                    openSelection({
+                      kind: 'dm',
+                      dm: { id: newDm.id, participantIds: newDm.participantIds, unread: 0 },
+                    });
+                    refetchDms();
+                  } catch (e) {
+                    fireToast(e instanceof Error ? e.message : 'Failed to open DM');
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -471,18 +525,19 @@ export function TeamInbox({
                   border: 0,
                   cursor: 'pointer',
                   fontSize: 13,
+                  color: 'var(--color-text-primary)',
                 }}
               >
-                <DmAvatars dm={dm} currentUserId={currentUserId} />
+                <DmPeerAvatars peers={peer.filter(Boolean) as LiveUser[]} />
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {dmTitle(dm, currentUserId)}
+                  {label}
                 </span>
-                {(dm.unread ?? 0) > 0 && (
+                {unread > 0 && (
                   <span
                     className="chip"
                     style={{ fontSize: 10, padding: '1px 6px', background: 'var(--color-brand-accent)', color: 'white' }}
                   >
-                    {dm.unread}
+                    {unread}
                   </span>
                 )}
               </button>
@@ -1358,41 +1413,56 @@ function SystemMessage({
 
 // ───────────────── Helpers ─────────────────
 
-function dmTitle(dm: TeamDM, currentUserId: string): string {
+function dmTitleFromUsers(dm: TeamDM, currentUserId: string, byId: Map<string, LiveUser>): string {
   const others = dm.participantIds.filter((id) => id !== currentUserId);
   return others
-    .map((id) => TASK_USER_BY_ID[id]?.name.split(' ')[0] ?? id)
+    .map((id) => byId.get(id)?.displayName.split(' ')[0] ?? id.slice(0, 8))
     .join(', ');
 }
 
-function DmAvatars({ dm, currentUserId }: { dm: TeamDM; currentUserId: string }) {
-  const others = dm.participantIds.filter((id) => id !== currentUserId).slice(0, 2);
+function DmPeerAvatars({ peers }: { peers: LiveUser[] }) {
+  const slice = peers.slice(0, 2);
   return (
     <div style={{ display: 'flex' }}>
-      {others.map((id, i) => {
-        const u = TASK_USER_BY_ID[id];
-        return (
-          <span
-            key={id}
-            style={{
-              display: 'inline-block',
-              width: 22,
-              height: 22,
-              borderRadius: 11,
-              background: u?.avatarColor ?? '#94a3b8',
-              color: 'white',
-              fontSize: 10,
-              textAlign: 'center',
-              lineHeight: '22px',
-              fontWeight: 500,
-              marginLeft: i === 0 ? 0 : -8,
-              border: '1.5px solid var(--color-background-primary)',
-            }}
-          >
-            {u?.initials ?? '??'}
-          </span>
-        );
-      })}
+      {slice.map((u, i) => (
+        <span
+          key={u.id}
+          style={{
+            display: 'inline-block',
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            background: deriveColor(u.displayName),
+            color: 'white',
+            fontSize: 10,
+            textAlign: 'center',
+            lineHeight: '22px',
+            fontWeight: 500,
+            marginLeft: i === 0 ? 0 : -8,
+            border: '1.5px solid var(--color-background-primary)',
+          }}
+        >
+          {deriveInitials(u.displayName)}
+        </span>
+      ))}
+      {slice.length === 0 && (
+        <span
+          style={{
+            display: 'inline-block',
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            background: '#94a3b8',
+            color: 'white',
+            fontSize: 10,
+            textAlign: 'center',
+            lineHeight: '22px',
+            border: '1.5px solid var(--color-background-primary)',
+          }}
+        >
+          ?
+        </span>
+      )}
     </div>
   );
 }

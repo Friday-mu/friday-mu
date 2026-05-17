@@ -474,27 +474,31 @@ export function FridayConsult({
             {error}
           </div>
         )}
+        {/* Active draft renders inline at the end of the consult thread
+            (not pinned below). When Friday revises, the new draft body
+            replaces this card's contents — older revisions stay visible
+            as part of the conversation messages above. Only renders
+            when there's something to edit/approve so the empty
+            "Your reply will be…" placeholder no longer takes a row. */}
+        {(currentDraft || workingBody.trim().length > 0) && (
+          <EmbeddedDraftCard
+            workingBody={workingBody}
+            setWorkingBody={setWorkingBody}
+            currentDraft={currentDraft || null}
+            liveConfidence={latestConfidence}
+            channelLabel={channelLabel}
+            whatsappWindow={whatsappWindow}
+            sendBusy={sendBusy}
+            rejecting={rejecting}
+            rejectReason={rejectReason}
+            setRejectReason={setRejectReason}
+            onApprove={submitApprove}
+            onStartReject={() => setRejecting(true)}
+            onConfirmReject={submitReject}
+            onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+          />
+        )}
       </div>
-      {/* Embedded DraftCard — always rendered so the operator has a
-          consistent "type here OR ask Friday" surface. Empty state shows
-          an empty textarea with a hint; chatting with Friday fills it
-          via [DRAFT_UPDATE]; operator can type directly any time. */}
-      <EmbeddedDraftCard
-        workingBody={workingBody}
-        setWorkingBody={setWorkingBody}
-        currentDraft={currentDraft || null}
-        liveConfidence={latestConfidence}
-        channelLabel={channelLabel}
-        whatsappWindow={whatsappWindow}
-        sendBusy={sendBusy}
-        rejecting={rejecting}
-        rejectReason={rejectReason}
-        setRejectReason={setRejectReason}
-        onApprove={submitApprove}
-        onStartReject={() => setRejecting(true)}
-        onConfirmReject={submitReject}
-        onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-      />
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
         <div
@@ -526,36 +530,6 @@ export function FridayConsult({
           ))}
         </div>
       )}
-      {/* Internal note escape hatch — different audience (team, not guest)
-          so notes don't flow through Friday's draft pipeline. Switches the
-          parent's composeMode to 'note' and closes consult. */}
-      {onSwitchToNote && (
-        <div
-          style={{
-            padding: '4px 12px 6px',
-            display: 'flex',
-            justifyContent: 'flex-end',
-          }}
-        >
-          <button
-            type="button"
-            onClick={onSwitchToNote}
-            style={{
-              padding: '3px 6px',
-              fontSize: 11,
-              color: 'var(--color-text-tertiary)',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              textUnderlineOffset: 2,
-            }}
-            title="Write an internal team note (not visible to the guest)"
-          >
-            Add internal note instead
-          </button>
-        </div>
-      )}
       <form className="friday-consult-input" onSubmit={onSubmit}>
         <input
           placeholder={
@@ -570,6 +544,10 @@ export function FridayConsult({
         <button type="submit" className="btn primary sm" disabled={thinking || !input.trim()}>
           <IconSend size={12} />
         </button>
+        <ComposeMenu
+          onSwitchToNote={onSwitchToNote}
+          disabled={thinking}
+        />
       </form>
     </div>
   );
@@ -1086,6 +1064,118 @@ function TeachingCard({
         </div>
       )}
     </div>
+  );
+}
+
+// Dropdown menu next to the Send button for extra compose actions.
+// Replaces the old "Add internal note instead" link with a compact
+// chevron that opens a menu. Schedule send + WhatsApp templates are
+// stubbed for now (toast hint) — placeholders so the menu shape is
+// ready for the real flows.
+function ComposeMenu({ onSwitchToNote, disabled }: { onSwitchToNote?: () => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  // Click-outside to close.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('[data-compose-menu]')) setOpen(false);
+    };
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [open]);
+
+  return (
+    <div data-compose-menu style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        disabled={disabled}
+        className="btn primary sm"
+        title="More send options"
+        aria-label="More send options"
+        style={{ padding: '4px 6px', minWidth: 0 }}
+      >
+        ▾
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 4px)',
+            right: 0,
+            minWidth: 220,
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 8px 24px rgba(15, 24, 54, 0.12)',
+            padding: 4,
+            zIndex: 50,
+          }}
+          role="menu"
+        >
+          <ComposeMenuItem
+            icon="📝"
+            label="Add internal note"
+            sub="Visible to team only — not to the guest"
+            onClick={() => { setOpen(false); onSwitchToNote?.(); }}
+            disabled={!onSwitchToNote}
+          />
+          <ComposeMenuItem
+            icon="⏰"
+            label="Schedule send"
+            sub="Coming soon"
+            onClick={() => { setOpen(false); fireToast('Schedule-send lands in a follow-up sprint'); }}
+            disabled
+          />
+          <ComposeMenuItem
+            icon="💬"
+            label="Send WhatsApp template"
+            sub="Coming soon"
+            onClick={() => { setOpen(false); fireToast('Template picker lands in a follow-up sprint'); }}
+            disabled
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComposeMenuItem({
+  icon,
+  label,
+  sub,
+  onClick,
+  disabled,
+}: { icon: string; label: string; sub: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      role="menuitem"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        width: '100%',
+        padding: '8px 10px',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 'var(--radius-sm)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        textAlign: 'left',
+      }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = 'var(--color-background-secondary)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+    >
+      <span style={{ fontSize: 14, lineHeight: 1.2 }}>{icon}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>{label}</div>
+        <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 1 }}>{sub}</div>
+      </span>
+    </button>
   );
 }
 
