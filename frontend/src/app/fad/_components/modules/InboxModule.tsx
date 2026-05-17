@@ -105,12 +105,21 @@ export function InboxModule({ onAskFriday }: Props) {
   const [, setNotesRev] = useState(0);
   const currentUserId = useCurrentUserId();
   // Friday Consult is now the default reply surface — every inbound
-   // reply flows through it so the learning loop captures every
-   // approval/edit signal. The compose textarea is collapsed; the
-   // working draft is editable inline inside Friday Consult.
-   // Operators who want to bypass Friday for a manual reply: type
-   // directly into the DraftCard textarea and hit Approve & Send.
-  const [consultOpen, setConsultOpen] = useState(true);
+   // Default-COLLAPSED per Ishant 2026-05-18 ("space for the actual
+   // text conversation"). Auto-opens when an AI draft lands so the
+   // operator immediately sees the draft to review. The unified
+   // compose at the bottom stays visible regardless — no duplicate
+   // "Write a reply" surface flickers in/out when consult toggles.
+  const [consultOpen, setConsultOpen] = useState(false);
+  // Track which draft id we've auto-opened consult for, so we don't
+  // fight the operator after they explicitly close — only auto-opens
+  // again when a NEW draft replaces the current one (revision).
+  const autoOpenedDraftRef = useRef<string | null>(null);
+  // "Ask Friday" from the SendByMenu drops the typed text here, which
+  // FridayConsult reads via its pendingQuery prop, submits, then calls
+  // onPendingQueryConsumed to clear. Survives a brief gap when consult
+  // wasn't mounted yet (we setConsultOpen(true) at the same time).
+  const [pendingConsultQuery, setPendingConsultQuery] = useState<string | null>(null);
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
   const [listCollapsed, setListCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -281,6 +290,23 @@ export function InboxModule({ onAskFriday }: Props) {
     const safety = setTimeout(() => setDraftRevising(false), 30_000);
     return () => { clearInterval(interval); clearTimeout(safety); };
   }, [draftRevising, refetchDetail]);
+
+  // Auto-open Friday Consult when a NEW AI draft lands so the operator
+  // sees it without an extra click. Tracks the most recent draft id we
+  // opened for; the operator can manually close after that, and we
+  // won't re-open until a different draft replaces it.
+  useEffect(() => {
+    if (!activeDraft) return;
+    if (autoOpenedDraftRef.current === activeDraft.id) return;
+    setConsultOpen(true);
+    autoOpenedDraftRef.current = activeDraft.id;
+  }, [activeDraft]);
+
+  // Reset the auto-open memory when the operator switches conversations
+  // so the next conversation's draft gets the same first-time treatment.
+  useEffect(() => {
+    autoOpenedDraftRef.current = null;
+  }, [selected]);
 
   // ── Action handlers ──────────────────────────────────────────────────
 
@@ -857,6 +883,8 @@ export function InboxModule({ onAskFriday }: Props) {
           {consultOpen && (
             <FridayConsult
               key={selected}
+              pendingQuery={pendingConsultQuery}
+              onPendingQueryConsumed={() => setPendingConsultQuery(null)}
               threadScope={thread.guest}
               conversationId={thread.id}
               currentDraft={activeDraft ?? null}
@@ -987,7 +1015,6 @@ export function InboxModule({ onAskFriday }: Props) {
             className={
               'inbox-compose' + (isMobile && composeCollapsed ? ' mobile-collapsed' : '')
             }
-            style={consultOpen ? { display: 'none' } : undefined}
           >
             {isMobile && composeCollapsed && (
               <div
@@ -1077,6 +1104,19 @@ export function InboxModule({ onAskFriday }: Props) {
                       <SendByMenu
                         channel={thread.channel}
                         entity={thread.entity}
+                        canAskFriday={!!replyBody.trim()}
+                        onAskFriday={() => {
+                          // Route the typed text into Friday Consult and
+                          // expand the panel if collapsed. The textarea
+                          // clears since the message is now a consult
+                          // query, not a guest reply.
+                          const q = replyBody.trim();
+                          if (!q) return;
+                          setConsultOpen(true);
+                          setPendingConsultQuery(q);
+                          setReplyBody('');
+                          setSendMenuOpen(false);
+                        }}
                         onSwitchToNote={() => {
                           setComposeMode('note');
                           setSendMenuOpen(false);
@@ -1977,11 +2017,15 @@ function formatNoteTime(iso: string): string {
 function SendByMenu({
   channel,
   entity,
+  canAskFriday,
+  onAskFriday,
   onSwitchToNote,
   onClose,
 }: {
   channel: string;
   entity: InboxEntity;
+  canAskFriday: boolean;
+  onAskFriday: () => void;
   onSwitchToNote: () => void;
   onClose: () => void;
 }) {
@@ -1993,18 +2037,42 @@ function SendByMenu({
         onClick={onClose}
       />
       <div className="send-split-menu" onClick={(e) => e.stopPropagation()}>
+        {/* Ask Friday — typed text goes to consult instead of the guest.
+            Disabled when the textarea is empty; we need something to
+            ask. Top of the menu because it's the most common
+            non-default action. */}
+        <button
+          className="send-split-item"
+          onClick={canAskFriday ? onAskFriday : undefined}
+          disabled={!canAskFriday}
+          style={canAskFriday ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+        >
+          <IconSparkle size={14} />
+          <div className="lab">
+            Ask Friday
+            <div className="desc">{canAskFriday ? 'Open Friday Consult with this text' : 'Type something first'}</div>
+          </div>
+        </button>
+        <div className="send-split-divider" />
         <button className="send-split-item" onClick={onClose}>
           <IconClock size={14} />
           <div className="lab">
             Schedule send
-            <div className="desc">Pick a date + time</div>
+            <div className="desc">Pick a date + time · coming soon</div>
+          </div>
+        </button>
+        <button className="send-split-item" onClick={onClose}>
+          <span style={{ width: 14, textAlign: 'center', fontSize: 12 }}>💬</span>
+          <div className="lab">
+            Send WhatsApp template
+            <div className="desc">Pre-approved templates · coming soon</div>
           </div>
         </button>
         <button className="send-split-item" onClick={onClose}>
           <IconSparkle size={14} />
           <div className="lab">
             Send when {entity} is awake
-            <div className="desc">8am–10pm local time</div>
+            <div className="desc">8am–10pm local time · coming soon</div>
           </div>
         </button>
         <div className="send-split-divider" />

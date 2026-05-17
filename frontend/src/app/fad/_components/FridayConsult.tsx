@@ -126,6 +126,13 @@ interface Props {
    *  team, not guest). Parent switches composeMode + closes consult. */
   onSwitchToNote?: () => void;
 
+  /** Text to submit as a consult query. Set by the parent's unified
+   *  inbox-compose when the operator picks "Ask Friday" from the
+   *  dropdown. FridayConsult fires submit() on prop change, then calls
+   *  onPendingQueryConsumed so the parent can null it out. */
+  pendingQuery?: string | null;
+  onPendingQueryConsumed?: () => void;
+
   onClose: () => void;
 }
 
@@ -143,6 +150,8 @@ export function FridayConsult({
   sendBusy = false,
   onBodyChanged,
   onSwitchToNote,
+  pendingQuery,
+  onPendingQueryConsumed,
   onClose,
 }: Props) {
   // The "working draft body" is what the operator will eventually send.
@@ -179,7 +188,10 @@ export function FridayConsult({
     }
   }, [currentDraft?.id, currentDraft?.confidence]);
   const [msgs, setMsgs] = useState<ConsultMessage[]>([]);
-  const [input, setInput] = useState('');
+  // Dead state: the internal compose form was removed; pendingQuery
+  // from the parent's unified compose is the entry point now. Left as
+  // a marker so future readers know where the input lived. The chips
+  // call submit() directly.
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
@@ -199,6 +211,17 @@ export function FridayConsult({
   const chips = context === 'draft_review'
     ? ['Polish', 'Shorter', 'More formal', 'More casual', 'STR KB']
     : ['Summarise this thread', 'What does the guest want?', 'STR KB'];
+
+  // When the parent's inbox-compose dropdown picks "Ask Friday", it
+  // sets pendingQuery to the typed text. We submit it once + call back
+  // so the parent can null it out (avoids a re-fire loop).
+  useEffect(() => {
+    if (!pendingQuery) return;
+    const q = pendingQuery;
+    onPendingQueryConsumed?.();
+    void submit(q);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuery]);
 
   const submit = async (text: string) => {
     const q = text.trim();
@@ -289,13 +312,6 @@ export function FridayConsult({
     setRejectReason('');
   };
 
-  const onSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (input.trim()) {
-      submit(input.trim());
-      setInput('');
-    }
-  };
 
   // Update one teaching's local state without rebuilding the whole list.
   const setTeachingState = (
@@ -530,25 +546,11 @@ export function FridayConsult({
           ))}
         </div>
       )}
-      <form className="friday-consult-input" onSubmit={onSubmit}>
-        <input
-          placeholder={
-            workingBody.length > 0
-              ? 'Ask Friday to refine the draft…'
-              : 'Ask Friday — or paste a draft to refine…'
-          }
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={thinking}
-        />
-        <button type="submit" className="btn primary sm" disabled={thinking || !input.trim()}>
-          <IconSend size={12} />
-        </button>
-        <ComposeMenu
-          onSwitchToNote={onSwitchToNote}
-          disabled={thinking}
-        />
-      </form>
+      {/* Consult no longer owns a compose input. The unified inbox-compose
+          at the bottom of the inbox view is the single typing surface;
+          parent invokes submitQuery() via ref when the operator picks
+          "Ask Friday" from the dropdown. Removes the "two compose
+          tension" that Ishant called out on 2026-05-18. */}
     </div>
   );
 }
