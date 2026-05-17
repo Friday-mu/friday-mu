@@ -511,31 +511,10 @@ export function InboxModule({ onAskFriday }: Props) {
       .finally(() => setComposeBusy(false));
   };
 
-  const handlePolishCompose = async () => {
-    if (!thread || !replyBody.trim() || polishBusy) return;
-    setPolishBusy(true);
-    try {
-      const data = await apiFetch('/api/inbox/consult', {
-        method: 'POST',
-        body: JSON.stringify({
-          text: `Polish this reply: ${replyBody.trim()}`,
-          context: 'compose',
-          conversationId: thread.id,
-          draftBody: replyBody.trim(),
-        }),
-      }) as { response?: string; draft_update?: string };
-      const rewritten = (data.draft_update || data.response || '').trim();
-      if (rewritten) {
-        setReplyBody(rewritten);
-      } else {
-        fireToast('Friday had nothing to polish — try editing manually');
-      }
-    } catch (e) {
-      fireToast(e instanceof Error ? e.message : 'Polish failed');
-    } finally {
-      setPolishBusy(false);
-    }
-  };
+  // 'Polish with Friday' removed from this module 2026-05-17 — FC is
+  // the polish surface now (operator types 'polish this' in FC chat).
+  // The button remains in TeamInbox + AllReviewsPage, where FC isn't
+  // available.
 
   // Auto-scroll to the latest message when the thread changes or its messages
   // load. Otherwise the pane lands at the top of long threads and the user
@@ -838,34 +817,15 @@ export function InboxModule({ onAskFriday }: Props) {
               )}
             </div>
             {thread.whatsappWindow && <WhatsAppTimer window={thread.whatsappWindow} />}
-            <div
-              className={
-                'inbox-ai-toolbar' +
-                (isMobile && !aiToolbarExpanded ? ' mobile-collapsed' : '')
-              }
-            >
-              <span className="inbox-ai-toolbar-label">Friday</span>
-              {isMobile && (
-                <button
-                  className="inbox-ai-chip ai-toggle"
-                  onClick={() => setAiToolbarExpanded((v) => !v)}
-                >
-                  <IconSparkle size={10} />
-                  {aiToolbarExpanded ? 'Hide AI' : 'AI tools'}
-                </button>
-              )}
-              {/* Single chip is the summary's ONLY surface — clicking
-                  expands/collapses the panel below. When collapsed,
-                  no panel renders (no second line). Per Ishant
-                  2026-05-17. */}
-              <button
-                className={'inbox-ai-chip' + (!summaryCollapsed ? ' on' : '')}
-                onClick={() => setSummaryCollapsed((v) => !v)}
-                title={summaryCollapsed ? 'Show summary' : 'Hide summary'}
-              >
-                <IconSparkle size={10} /> Summary {summaryCollapsed ? '▸' : '▾'}
-              </button>
-              {thread.sentiment === 'urgent' && (
+            {/* AI toolbar + Summary chip + auto-summary panel removed
+                2026-05-17 per Ishant — the GMS-side auto-summary was
+                wasted AI compute (most operators didn't read it) AND
+                duplicated work that Friday Consult does on demand.
+                Operators now click 'Summarise this thread' in the FC
+                chips (or just ask Friday) when they want a summary.
+                Urgent badge folded into the meta strip below if needed. */}
+            {thread.sentiment === 'urgent' && (
+              <div style={{ marginTop: 4 }}>
                 <span
                   className="inbox-ai-chip"
                   style={{
@@ -875,11 +835,6 @@ export function InboxModule({ onAskFriday }: Props) {
                 >
                   <IconBell size={10} /> Urgent
                 </span>
-              )}
-            </div>
-            {thread.summary && !summaryCollapsed && (
-              <div className="inbox-ai-summary">
-                {thread.summary}
               </div>
             )}
             {summaryOn && thread.summary && false && summaryCollapsed && (

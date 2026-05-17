@@ -125,6 +125,7 @@ the UI surfaces what's in the DB.
 | Draft-generator + consult merge | Sprint 10 (post 2026-05-26). FAD stays clear of KB/prompt work until then. |
 | consult.ts cap 10→20 | DONE in prod. |
 | GBH-C6 + multi-stay summarizer regression | Sprint 9 lead is filing both. Not a FAD-side fix. |
+| **Stop auto-summary generation in GMS** | FAD removed the auto-summary display surface (no chip + no panel, no UI consumer). GMS should stop generating `conversation_summary` on every message — pure compute waste now. Operators request summary on demand via FC chat ('Summarise this thread'). Flag for Sprint 10 cleanup or hotfix. |
 
 ## Test credentials (unchanged)
 
