@@ -18,8 +18,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../components/types';
+import type { InboxDraft } from '../_data/fixtures';
+import { confidenceTier } from '../_data/draftsClient';
 import { fireToast } from './Toaster';
-import { IconCheck, IconClose, IconSend, IconSparkle } from './icons';
+import { IconCheck, IconClose, IconRefresh, IconSend, IconSparkle } from './icons';
 
 /** Structured teaching proposal emitted by friday-gms's [TEACH] tag
  *  parser (consult.ts:865-893). One per assistant turn at most. */
@@ -81,29 +83,79 @@ interface Props {
    *  null/undefined, the panel renders in degraded mode (chat works
    *  but Friday has no per-property knowledge). */
   conversationId?: string;
-  /** When opened from DraftPanel, the active draft's id + body. Lets
-   *  Friday rewrite-in-place via the [DRAFT_UPDATE] protocol. */
-  draftId?: string;
-  draftBody?: string;
-  /** Conversation context — drives prompt assembly and model selection
+  /** The active GMS draft (if any) for this conversation. When present,
+   *  its body seeds the embedded DraftCard. Friday can revise/replace
+   *  it via [DRAFT_UPDATE]; operator can edit inline + Approve/Reject
+   *  without leaving the panel. */
+  currentDraft?: InboxDraft | null;
+  /** Operator's in-progress compose text. Lets Friday refine work that
+   *  hasn't been GMS-drafted yet. If both are present, currentDraft
+   *  wins (because it's the GMS-authored version with state machine). */
+  initialBody?: string;
+  /** Conversation context — drives prompt assembly + model selection
    *  in friday-gms's consult.ts. Defaults to 'compose'. */
   context?: ConsultContext;
-  /** When the assistant returns a `draft_update` (Friday rewrote the
-   *  draft), the parent should pick it up + switch DraftPanel into
-   *  edit mode with this body. */
-  onDraftUpdate?: (body: string) => void;
+  /** WhatsApp channel + window state for the inline timer in DraftCard. */
+  channelLabel?: string;
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+
+  // ── Action callbacks ── parent owns the network calls + 5s undo state.
+  /** Approve the active GMS draft (with optional inline edits). When
+   *  there's no currentDraft, this should send the body as a manual
+   *  compose (mode=manual). */
+  onApproveDraft?: (body: string) => void;
+  /** Reject the active GMS draft with optional learning feedback. */
+  onRejectDraft?: (reason?: string) => void;
+  /** Send as a manual compose (when no currentDraft). Identical to
+   *  approve from the operator's POV — Approve & Send always works. */
+  onSendManual?: (body: string) => void;
+  /** Set true while the parent is staging the send (5s undo countdown
+   *  active or POST in flight). Disables DraftCard actions. */
+  sendBusy?: boolean;
+
+  /** Optional: when the user just types in compose and opens consult,
+   *  whatever they had drafted comes through here so we don't drop it. */
+  onBodyChanged?: (body: string) => void;
+
   onClose: () => void;
 }
 
 export function FridayConsult({
   threadScope,
   conversationId,
-  draftId,
-  draftBody,
+  currentDraft,
+  initialBody,
   context = 'compose',
-  onDraftUpdate,
+  channelLabel,
+  whatsappWindow,
+  onApproveDraft,
+  onRejectDraft,
+  onSendManual,
+  sendBusy = false,
+  onBodyChanged,
   onClose,
 }: Props) {
+  // The "working draft body" is what the operator will eventually send.
+  // Seeded from the active GMS draft if any, else the in-progress
+  // compose text. Mutated by inline edits, by [DRAFT_UPDATE] from Friday,
+  // and by quick-chip rewrites. Tracks the source of truth across the
+  // whole chat session.
+  const seed = currentDraft?.body ?? initialBody ?? '';
+  const [workingBody, setWorkingBody] = useState<string>(seed);
+  // Reset when the active draft swaps (next conversation, or revise
+  // landed a new draft id).
+  useEffect(() => {
+    setWorkingBody(currentDraft?.body ?? initialBody ?? '');
+  }, [currentDraft?.id, currentDraft?.body, initialBody]);
+
+  // Push body changes up to the parent so it stays in sync with the
+  // compose box when the user closes consult.
+  useEffect(() => {
+    onBodyChanged?.(workingBody);
+  }, [workingBody, onBodyChanged]);
+
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const [msgs, setMsgs] = useState<ConsultMessage[]>([]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
@@ -140,8 +192,10 @@ export function FridayConsult({
         context,
       };
       if (conversationId) body.conversationId = conversationId;
-      if (draftId) body.draftId = draftId;
-      if (draftBody) body.draftBody = draftBody;
+      if (currentDraft?.id) body.draftId = currentDraft.id;
+      // Always send the CURRENT working body so Friday operates on the
+      // operator's latest edits, not the stale GMS-original.
+      if (workingBody) body.draftBody = workingBody;
       if (sessionId) body.sessionId = sessionId;
 
       const data = await apiFetch('/api/inbox/consult', {
@@ -151,6 +205,12 @@ export function FridayConsult({
 
       if (data?.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
       if (data?.missingKnowledge) setMissingKnowledge(true);
+
+      // Friday rewrote the draft — surface inline in the embedded
+      // DraftCard. The chat bubble itself just confirms the action.
+      if (data?.draft_update && data.draft_update.trim().length > 0) {
+        setWorkingBody(data.draft_update.trim());
+      }
 
       const teachings = Array.isArray(data?.teaching_actions) ? data!.teaching_actions! : [];
       const aiMsg: ConsultMessage = {
@@ -172,6 +232,21 @@ export function FridayConsult({
     } finally {
       setThinking(false);
     }
+  };
+
+  // ─── Draft actions (inline within the consult panel) ─────────────────
+
+  const submitApprove = () => {
+    if (!workingBody.trim() || sendBusy) return;
+    if (currentDraft && onApproveDraft) onApproveDraft(workingBody.trim());
+    else if (onSendManual) onSendManual(workingBody.trim());
+  };
+
+  const submitReject = () => {
+    if (!onRejectDraft || !currentDraft) return;
+    onRejectDraft(rejectReason.trim() || undefined);
+    setRejecting(false);
+    setRejectReason('');
   };
 
   const onSubmit = (e?: React.FormEvent) => {
@@ -257,7 +332,17 @@ export function FridayConsult({
   };
 
   return (
-    <div className="friday-consult">
+    <div
+      className="friday-consult"
+      style={{
+        // When consult is the primary surface (no compose below), allow
+        // it to grow tall instead of being capped at the legacy 360px.
+        // 65vh gives plenty of room for chat + DraftCard + input without
+        // pushing the rest off-screen.
+        maxHeight: '65vh',
+        flex: '1 1 auto',
+      }}
+    >
       <div className="friday-consult-header">
         <IconSparkle size={12} />
         <span style={{ fontSize: 12, fontWeight: 500 }}>Friday Consult</span>
@@ -325,6 +410,28 @@ export function FridayConsult({
           </div>
         )}
       </div>
+      {/* Embedded DraftCard — the operator's working draft lives here.
+          Visible whenever there's a body to act on (either a GMS-generated
+          draft, in-progress compose text, or a Friday rewrite from this
+          session). Edit inline, then Approve & Send / Reject directly
+          without leaving the panel. */}
+      {(workingBody.length > 0 || currentDraft) && (
+        <EmbeddedDraftCard
+          workingBody={workingBody}
+          setWorkingBody={setWorkingBody}
+          currentDraft={currentDraft || null}
+          channelLabel={channelLabel}
+          whatsappWindow={whatsappWindow}
+          sendBusy={sendBusy}
+          rejecting={rejecting}
+          rejectReason={rejectReason}
+          setRejectReason={setRejectReason}
+          onApprove={submitApprove}
+          onStartReject={() => setRejecting(true)}
+          onConfirmReject={submitReject}
+          onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+        />
+      )}
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
         <div
@@ -359,9 +466,9 @@ export function FridayConsult({
       <form className="friday-consult-input" onSubmit={onSubmit}>
         <input
           placeholder={
-            context === 'draft_review'
-              ? 'How should Friday rewrite this draft?'
-              : 'Ask Friday about this thread…'
+            workingBody.length > 0
+              ? 'Ask Friday to refine the draft…'
+              : 'Ask Friday — or paste a draft to refine…'
           }
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -380,14 +487,12 @@ export function FridayConsult({
 function MessageRow({
   m,
   msgIndex,
-  onApplyDraftUpdate,
   onChipClick: _onChipClick,
   onConfirmTeaching,
   onDismissTeaching,
 }: {
   m: ConsultMessage;
   msgIndex: number;
-  onApplyDraftUpdate?: (body: string) => void;
   onChipClick: (text: string) => void;
   onConfirmTeaching: (msgIndex: number, actionIndex: number, ta: TeachingAction) => void;
   onDismissTeaching: (msgIndex: number, actionIndex: number) => void;
@@ -417,25 +522,21 @@ function MessageRow({
           }}
         >
           {m.text}
-          {m.draftUpdate && onApplyDraftUpdate && (
-            <button
-              type="button"
-              onClick={() => onApplyDraftUpdate(m.draftUpdate!)}
+          {/* If [DRAFT_UPDATE] arrived, the working draft below already
+              picked it up. Show a small affordance so it's obvious the
+              chat caused the change, not a UI bug. */}
+          {m.draftUpdate && (
+            <div
               style={{
-                display: 'block',
-                marginTop: 8,
-                padding: '4px 10px',
+                marginTop: 6,
                 fontSize: 11,
-                fontWeight: 600,
-                color: 'var(--color-brand-accent)',
-                background: 'var(--color-background-primary)',
-                border: '0.5px solid var(--color-brand-accent)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
+                fontWeight: 500,
+                color: isUser ? 'rgba(255,255,255,0.85)' : 'var(--color-brand-accent)',
+                fontStyle: 'italic',
               }}
             >
-              ✎ Apply rewrite to draft
-            </button>
+              ↓ Draft updated below
+            </div>
           )}
         </div>
       </div>
@@ -451,6 +552,244 @@ function MessageRow({
           onDismiss={() => onDismissTeaching(msgIndex, ai)}
         />
       ))}
+    </div>
+  );
+}
+
+// ─── Embedded DraftCard ─────────────────────────────────────────────────
+// The operator's working draft body, editable inline. Lives inside the
+// FridayConsult panel so the operator never has to leave to act on it.
+// Approve & Reject buttons fire callbacks the parent (InboxModule) wires
+// to the same handlers DraftPanel used before — same 5s undo banner, same
+// backend pipeline.
+
+function EmbeddedDraftCard({
+  workingBody,
+  setWorkingBody,
+  currentDraft,
+  channelLabel,
+  whatsappWindow,
+  sendBusy,
+  rejecting,
+  rejectReason,
+  setRejectReason,
+  onApprove,
+  onStartReject,
+  onConfirmReject,
+  onCancelReject,
+}: {
+  workingBody: string;
+  setWorkingBody: (s: string) => void;
+  currentDraft: InboxDraft | null;
+  channelLabel?: string;
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  sendBusy: boolean;
+  rejecting: boolean;
+  rejectReason: string;
+  setRejectReason: (s: string) => void;
+  onApprove: () => void;
+  onStartReject: () => void;
+  onConfirmReject: () => void;
+  onCancelReject: () => void;
+}) {
+  const tier = currentDraft ? confidenceTier(currentDraft.confidence) : 'high';
+  const confLabel = currentDraft && typeof currentDraft.confidence === 'number'
+    ? `${Math.round(currentDraft.confidence * 100)}%`
+    : null;
+  const confColor: Record<'high' | 'mid' | 'low', string> = {
+    high: 'var(--color-text-success)',
+    mid: 'var(--color-text-warning)',
+    low: 'var(--color-text-danger)',
+  };
+  const headerLabel = currentDraft ? 'AI Draft' : 'Your reply';
+  const sendDisabled = sendBusy || !workingBody.trim();
+
+  // WhatsApp window pill (compact). Shown when channel is WhatsApp.
+  const showWaPill = channelLabel?.toLowerCase().includes('whatsapp') && whatsappWindow;
+  const waOpen = whatsappWindow?.open;
+  const waLeft = whatsappWindow?.expiresInMinutes;
+
+  return (
+    <div
+      style={{
+        margin: '4px 12px 8px',
+        padding: 10,
+        background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.06))',
+        border: '0.5px solid var(--color-border-accent, rgba(56, 132, 255, 0.3))',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      {/* Header: source label + confidence + revision number + WA timer */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          textTransform: 'uppercase',
+          color: 'var(--color-text-tertiary)',
+        }}>
+          {headerLabel}
+        </span>
+        {confLabel && (
+          <span style={{
+            fontSize: 10,
+            fontWeight: 700,
+            padding: '1px 6px',
+            borderRadius: 'var(--radius-sm)',
+            background: confColor[tier],
+            color: '#fff',
+          }}>
+            {confLabel}
+          </span>
+        )}
+        {currentDraft && typeof currentDraft.revisionNumber === 'number' && currentDraft.revisionNumber > 1 && (
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+            rev {currentDraft.revisionNumber}
+          </span>
+        )}
+        {showWaPill && (
+          <span style={{
+            fontSize: 10,
+            padding: '1px 6px',
+            borderRadius: 'var(--radius-sm)',
+            background: waOpen ? 'rgba(16, 185, 129, 0.12)' : 'rgba(220, 38, 38, 0.12)',
+            color: waOpen ? 'var(--color-text-success)' : 'var(--color-text-danger)',
+            fontWeight: 600,
+          }}
+          title="WhatsApp 24-hour reply window">
+            {waOpen
+              ? `WA · ${typeof waLeft === 'number' ? `${Math.floor(waLeft / 60)}h ${waLeft % 60}m left` : 'open'}`
+              : 'WA window closed — use template'}
+          </span>
+        )}
+      </div>
+
+      {/* Editable body — operator can tweak before sending. */}
+      <textarea
+        value={workingBody}
+        onChange={(e) => setWorkingBody(e.target.value)}
+        placeholder="Draft will appear here when Friday writes one, or type your own…"
+        rows={6}
+        style={{
+          width: '100%',
+          minHeight: 100,
+          maxHeight: 280,
+          padding: 8,
+          fontSize: 13,
+          lineHeight: 1.45,
+          fontFamily: 'inherit',
+          color: 'var(--color-text-primary)',
+          background: 'var(--color-background-primary)',
+          border: '0.5px solid var(--color-border-tertiary)',
+          borderRadius: 'var(--radius-sm)',
+          resize: 'vertical',
+          boxSizing: 'border-box',
+        }}
+        disabled={sendBusy || rejecting}
+      />
+
+      {rejecting ? (
+        <div style={{ marginTop: 8 }}>
+          <input
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Why is this draft wrong? (Friday learns — leave empty to dismiss silently)"
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              fontSize: 12,
+              color: 'var(--color-text-primary)',
+              background: 'var(--color-background-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              boxSizing: 'border-box',
+            }}
+            autoFocus
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={onConfirmReject}
+              style={{
+                padding: '6px 10px',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#fff',
+                background: 'var(--color-text-danger)',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              <IconClose size={11} /> {rejectReason.trim() ? 'Reject with feedback' : 'Dismiss'}
+            </button>
+            <button
+              type="button"
+              onClick={onCancelReject}
+              style={{
+                padding: '6px 10px',
+                fontSize: 12,
+                color: 'var(--color-text-secondary)',
+                background: 'transparent',
+                border: '0.5px solid var(--color-border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={onApprove}
+            disabled={sendDisabled}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '6px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#fff',
+              background: 'var(--color-brand-accent)',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              cursor: sendDisabled ? 'not-allowed' : 'pointer',
+              opacity: sendDisabled ? 0.5 : 1,
+            }}
+          >
+            <IconSend size={12} /> Approve &amp; send
+          </button>
+          {currentDraft && (
+            <button
+              type="button"
+              onClick={onStartReject}
+              disabled={sendBusy}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '6px 10px',
+                fontSize: 12,
+                color: 'var(--color-text-secondary)',
+                background: 'transparent',
+                border: '0.5px solid var(--color-border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              <IconClose size={11} /> Reject
+            </button>
+          )}
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>
+            <IconRefresh size={10} /> Keep chatting to refine
+          </span>
+        </div>
+      )}
     </div>
   );
 }

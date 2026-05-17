@@ -766,25 +766,65 @@ export function InboxModule({ onAskFriday }: Props) {
                 user was actually drafting; the compose textarea below
                 already exposes the draft surface. */}
           </div>
+          {/* Friday Consult — when open, this becomes the primary surface
+              for both reviewing AI drafts AND composing manual replies.
+              The DraftPanel + compose box collapse so the operator has
+              one unified place to draft + iterate + send. The 5-second
+              undo banner stays visible below regardless. */}
           {consultOpen && (
             <FridayConsult
               key={selected}
               threadScope={thread.guest}
               conversationId={thread.id}
-              draftId={activeDraft?.id}
-              draftBody={activeDraft?.body}
+              currentDraft={activeDraft ?? null}
+              initialBody={activeDraft ? undefined : replyBody}
               context={activeDraft ? 'draft_review' : 'compose'}
-              onDraftUpdate={(body) => {
-                setPendingRewrite(body);
-                setConsultOpen(false);
+              channelLabel={thread.channel}
+              whatsappWindow={thread.whatsappWindow}
+              sendBusy={draftBusy || composeBusy || !!pendingSend}
+              onApproveDraft={(body) => handleApprove({ draftBody: body })}
+              onRejectDraft={handleReject}
+              onSendManual={(body) => {
+                // No active draft — the operator's working body is a
+                // manual compose. Stage the 5s undo via the same code
+                // path the DraftPanel approve uses; we just don't have
+                // a draftId, so we go through the compose mode=manual
+                // endpoint instead.
+                if (!thread || !body.trim() || composeBusy) return;
+                setComposeBusy(true);
+                const channel = (thread.recommendedChannel || thread.channelKey) as
+                  | 'whatsapp' | 'airbnb' | 'booking' | 'email' | undefined;
+                sendCompose(thread.id, { mode: 'manual', body: body.trim(), channel })
+                  .then(() => {
+                    fireToast('Sent ✓');
+                    setReplyBody('');
+                    setConsultOpen(false);
+                    refetchDetail();
+                    refetchConversations();
+                  })
+                  .catch((e: Error) => {
+                    const msg = e?.message || 'Send failed';
+                    if (msg.includes('whatsapp_window_expired')) {
+                      fireToast('WhatsApp 24h window expired — use a template');
+                    } else {
+                      fireToast(msg);
+                    }
+                  })
+                  .finally(() => setComposeBusy(false));
+              }}
+              onBodyChanged={(body) => {
+                // Mirror Friday Consult's working body into the compose
+                // textarea so the operator's edits persist when they
+                // close the panel without sending.
+                if (!activeDraft) setReplyBody(body);
               }}
               onClose={() => setConsultOpen(false)}
             />
           )}
-          {/* AI draft review panel — shown when GMS has an active draft
-              for this conversation. Approve / Revise / Edit / Reject
-              with a 5-second undo on send (banner below the panel). */}
-          {activeDraft && (
+          {/* AI draft review panel — shown when consult is CLOSED and GMS
+              has an active draft. When consult is open, the draft is
+              embedded inside the consult panel instead. */}
+          {!consultOpen && activeDraft && (
             <div style={{ padding: '0 12px' }}>
               <DraftPanel
                 draft={activeDraft}
@@ -848,6 +888,7 @@ export function InboxModule({ onAskFriday }: Props) {
             className={
               'inbox-compose' + (isMobile && composeCollapsed ? ' mobile-collapsed' : '')
             }
+            style={consultOpen ? { display: 'none' } : undefined}
           >
             {isMobile && composeCollapsed && (
               <div
