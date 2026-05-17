@@ -64,7 +64,22 @@ Branch `fad-design-os-v01-frontend`. HEAD after this session: `be202ef`
   Mac. Verify it's posting messages by checking the `messages` table for new
   inbound rows after the run.
 
-## What shipped today (2026-05-17 afternoon)
+## What shipped today (2026-05-17 afternoon + evening)
+
+Evening additions (post 13:00 UTC), newest-first:
+
+`1d70cc4` — feat(reservations): wire AllReservations + Overview to live /api/reservations
+`c09d087` — feat(fc): auto-fit height + chips trail last message + compact spacing
+`14a5345` — fix(fc): compact teaching cards (fcard frame)
+`0d45a3f` — feat(fc): resizable FC height with localStorage + compact tool cards
+`ad69281` — fix(fc): FAD design tokens on draft cards + Awaiting-reply chip + remove broken Polish
+`1073d8d` — fix(inbox): strip auto-summary surface + dead Polish handler
+`32a8874` — fix(inbox): drop subtitle + conversation title; meta strip only
+`6f84715` — fix(inbox): summary collapsed by default + remove dead Translate
+`b329af1` — feat(fc): drafts as first-class chat messages, stack like tool calls
+`180cfef` — fix(inbox): remove FC header line + remove +Compose button
+
+Afternoon batch:
 
 Newest-first. Every commit pushed + deployed to prod.
 
@@ -99,9 +114,10 @@ Newest-first. Every commit pushed + deployed to prod.
 
 | # | What | Effort | Blocker | Notes |
 |---|---|---|---|---|
-| **R** | Reservations → live Guesty | 2-3h | Quota recovery for first sync, then live | Data already in `guesty_reservations` from poller |
-| **P** | Properties → live Guesty | 2-3h | Same | Data in `guesty_listings` |
-| **C** | Calendar → live booking data | 3-4h | After R+P | Render and filter over the live tables |
+| **R** | ~~Reservations → live~~ Phase 1 DONE (`1d70cc4`): AllReservationsPage + OverviewPage use `/api/reservations` via `reservationsClient.ts` with fixture fallback. | — | — | Phase 2 remaining: CalendarModule + CreateReservationDrawer still on fixtures. |
+| **P** | Properties → consolidate live wiring | 1h | None | Design module already triggers `hydrateDesignTopLevel()` which mutates `FIXTURE_PROPERTIES` from `/api/design/properties`. Properties module piggybacks but implicit — wire `useHydrateDesignTopLevel()` into Properties module first page OR build dedicated `propertiesClient.ts` against `/api/properties` (Guesty listings cache). Decide which dataset (Design metadata vs Guesty channel info). |
+| **C** | Calendar → live booking data | 2-3h | After R Phase 2 | Reuses `useLiveReservations()` from `reservationsClient.ts`. |
+| **R2** | Reservations Phase 2: CalendarModule + CreateReservationDrawer | 1-2h | None | Calendar swaps `RESERVATIONS` → `useLiveReservations()`. CreateReservationDrawer currently fixture-push; needs `POST /api/reservations` backend route. |
 | **+** | ~~+ Compose new-conversation flow~~ | — | KILLED 2026-05-17 evening — new conversations now flow through FC ("Friday, compose a message to <guest> about X"). The +Compose button is removed from the inbox UI. |
 | **K** | TeamInbox per-message read-receipt popover | 1h | None | Handover queue item K |
 | **I** | Cleanup job for orphaned attachments | 1h | None | Handover queue item I |
