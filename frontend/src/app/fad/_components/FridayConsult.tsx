@@ -847,19 +847,21 @@ function EmbeddedDraftCard({
         )}
       </div>
 
-      {/* Editable body — Slack-pattern keyboard: Enter sends, Shift+Enter
-          (or Cmd/Ctrl+Enter) for newline. Per Ishant 2026-05-17 — sending
-          is the high-frequency action so it gets the unmodified key. */}
+      {/* Editable body — Enter is for editing (newline). Sending to
+          the GUEST is the careful action and takes the modifier:
+          Cmd/Ctrl+Enter sends. Plain Enter is reserved for the Ask
+          Friday input below (chat with FC, high frequency).
+          Per Ishant 2026-05-17. */}
       <textarea
         value={workingBody}
         onChange={(e) => setWorkingBody(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             if (!sendDisabled && !rejecting) onApprove();
           }
         }}
-        placeholder="Draft will appear here when Friday writes one, or type your own… (Enter sends · Shift+Enter for new line)"
+        placeholder="Draft will appear here when Friday writes one, or type your own… (⌘/Ctrl+Enter sends to guest)"
         rows={4}
         style={{
           width: '100%',
