@@ -55,6 +55,67 @@ function pickUserForRole(role: Role): string {
   return user?.id ?? DEFAULT_USER_ID;
 }
 
+// JWT email → fad_role mapping. Per Ishant 2026-05-18:
+//   ishant     → director (sees all, approves)
+//   mathias    → commercial_marketing (commercial side, no finance)
+//   franny     → ops_manager (ops side, no finance, can't approve time-off)
+//   mary       → field (own tasks, no finance)
+//   bryan      → field (field staff)
+//   catherine  → field (field staff)
+//
+// Unknown FR users default to 'field' (least privilege). Unknown system
+// admins default to 'director' (other tenants).
+const FAD_ROLE_BY_EMAIL: Record<string, Role> = {
+  'ishant@friday.mu':    'director',
+  'mathias@friday.mu':   'commercial_marketing',
+  'franny@friday.mu':    'ops_manager',
+  'mary@friday.mu':      'field',
+  'bryan@friday.mu':     'field',
+  'catherine@friday.mu': 'field',
+};
+
+const FAD_USER_BY_EMAIL: Record<string, string> = {
+  'ishant@friday.mu':    'u-ishant',
+  'mathias@friday.mu':   'u-mathias',
+  'franny@friday.mu':    'u-franny',
+  'mary@friday.mu':      'u-mary',
+  'bryan@friday.mu':     'u-bryan',
+  'catherine@friday.mu': 'u-catherine',
+};
+
+/** Decode the JWT and return { email, role, userId } from its claims.
+ *  Returns nulls when token is missing / malformed. */
+function readJwtClaims(): { email: string | null; dbRole: string | null; userId: string | null } {
+  if (typeof window === 'undefined') return { email: null, dbRole: null, userId: null };
+  const token = localStorage.getItem('gms_token');
+  if (!token) return { email: null, dbRole: null, userId: null };
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1] || ''));
+    return {
+      email: (payload?.username || payload?.email || '').toLowerCase() || null,
+      dbRole: payload?.role || null,
+      userId: payload?.user_id || null,
+    };
+  } catch {
+    return { email: null, dbRole: null, userId: null };
+  }
+}
+
+/** Resolve the real fad_role for the logged-in user from the JWT. */
+function resolveJwtFadRole(): { role: Role; userFixtureId: string } | null {
+  const { email, dbRole } = readJwtClaims();
+  if (!email) return null;
+  if (FAD_ROLE_BY_EMAIL[email]) {
+    return {
+      role: FAD_ROLE_BY_EMAIL[email],
+      userFixtureId: FAD_USER_BY_EMAIL[email] || DEFAULT_USER_ID,
+    };
+  }
+  // Unknown email: admin → director (other tenants), non-admin → field.
+  if (dbRole === 'admin') return { role: 'director', userFixtureId: DEFAULT_USER_ID };
+  return { role: 'field', userFixtureId: DEFAULT_USER_ID };
+}
+
 interface ProviderProps {
   children: ReactNode;
   /** Override for tests / SSR. Skipped when localStorage has a value. */
@@ -69,22 +130,29 @@ export function PermissionsProvider({ children, initialRole }: ProviderProps) {
 
   useEffect(() => {
     try {
+      // JWT-derived real role takes precedence over any storage default.
+      // The "View as" switcher (Director-only) still uses STORAGE_KEY to
+      // override the view, but `realRole` reflects who the user IS.
+      const jwtRole = resolveJwtFadRole();
       const stored = localStorage.getItem(STORAGE_KEY) as Role | null;
       const storedUser = localStorage.getItem(STORAGE_USER_KEY);
-      const storedReal = localStorage.getItem(STORAGE_REAL_ROLE_KEY) as Role | null;
-      if (storedReal && storedReal in PERMISSIONS) {
-        setRealRole(storedReal);
-      } else {
-        // First load: snapshot the initial role as the "real" role.
-        const real = initialRole ?? DEFAULT_ROLE;
-        setRealRole(real);
-        localStorage.setItem(STORAGE_REAL_ROLE_KEY, real);
-      }
-      if (stored && stored in PERMISSIONS) {
+
+      const real = jwtRole?.role ?? (initialRole ?? DEFAULT_ROLE);
+      setRealRole(real);
+      try { localStorage.setItem(STORAGE_REAL_ROLE_KEY, real); } catch { /* ignore */ }
+
+      // Non-directors can't use the View-as switcher — pin them to their
+      // real role to prevent a stale localStorage override granting them
+      // unintended access.
+      if (real !== 'director') {
+        setRoleState(real);
+        setCurrentUserId(jwtRole?.userFixtureId ?? pickUserForRole(real));
+      } else if (stored && stored in PERMISSIONS) {
         setRoleState(stored);
         setCurrentUserId(storedUser ?? pickUserForRole(stored));
       } else {
-        setCurrentUserId(pickUserForRole(initialRole ?? DEFAULT_ROLE));
+        setRoleState(real);
+        setCurrentUserId(jwtRole?.userFixtureId ?? pickUserForRole(real));
       }
     } catch {
       // localStorage unavailable; keep defaults

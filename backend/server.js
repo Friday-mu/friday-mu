@@ -1189,9 +1189,9 @@ app.post('/api/auth/login', asyncHandler(async (req, res) => {
   try {
     const { data } = await userGmsCall.post('/api/auth/login', req.body);
     // Surface must_change_password from the shared DB so the frontend
-    // can block usage until they reset. GMS doesn't include this field
-    // in its login response today; we augment client-side.
-    const userId = data?.user?.id;
+    // can block usage until they reset. GMS returns user_id at top
+    // level (not nested under user), so check both shapes for safety.
+    const userId = data?.user_id || data?.user?.id || data?.id;
     const mustChange = await loadMustChangePassword(userId);
     res.json({ ...data, must_change_password: mustChange });
   } catch (e) {
