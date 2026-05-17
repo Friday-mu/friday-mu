@@ -14,6 +14,8 @@ import { ModuleHeader } from '../ModuleHeader';
 import { useCurrentRole } from '../usePermissions';
 import { SavedRepliesImport } from './properties/SavedRepliesImport';
 import { apiFetch } from '../../../../components/types';
+import { ChangePasswordModal } from '../ChangePasswordModal';
+import { fireToast } from '../Toaster';
 
 interface Props {
   theme: 'light' | 'dark';
@@ -99,6 +101,7 @@ function Appearance({ theme, onToggleTheme }: Props) {
 }
 
 function Account() {
+  const [pwOpen, setPwOpen] = useState(false);
   return (
     <div className="card settings-section">
       <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>Account</h3>
@@ -126,6 +129,25 @@ function Account() {
         </div>
         <span className="chip info">Admin</span>
       </div>
+      <div className="settings-row">
+        <div>
+          <h5>Password</h5>
+          <p>Change your sign-in password.</p>
+        </div>
+        <button className="btn ghost sm" onClick={() => setPwOpen(true)}>
+          Change password
+        </button>
+      </div>
+      {pwOpen && (
+        <ChangePasswordModal
+          mode="optional"
+          onChanged={() => {
+            setPwOpen(false);
+            fireToast('Password updated');
+          }}
+          onCancel={() => setPwOpen(false)}
+        />
+      )}
     </div>
   );
 }

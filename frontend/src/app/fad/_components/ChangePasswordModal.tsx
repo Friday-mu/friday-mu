@@ -1,26 +1,42 @@
 'use client';
 
-// Force-change-password modal — non-dismissible overlay that blocks the
-// FAD shell until the user replaces their temp/initial password.
+// Change-password modal — two modes:
+//   - FORCED (mode 'forced', default): non-dismissible, triggered by
+//     /api/auth/me returning must_change_password=true. Blocks the
+//     shell until the user replaces their temp password.
+//   - OPTIONAL (mode 'optional'): operator clicked Settings → Change
+//     password. Dismissible via X / Cancel / Escape.
 //
-// Triggered by /api/auth/me returning must_change_password=true. On
-// successful POST /api/auth/change-password the column flips to false
-// and the modal unmounts itself.
+// Both modes POST /api/auth/change-password and call onChanged on
+// success. The forced case also flips must_change_password=false on
+// the server.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { trackEvent } from '../../../lib/analytics';
 
 interface Props {
   onChanged: () => void;
+  mode?: 'forced' | 'optional';
+  onCancel?: () => void;
 }
 
-export function ChangePasswordModal({ onChanged }: Props) {
+export function ChangePasswordModal({ onChanged, mode = 'forced', onCancel }: Props) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Escape to dismiss in optional mode. Forced mode ignores it.
+  useEffect(() => {
+    if (mode !== 'optional' || !onCancel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mode, onCancel]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,16 +83,41 @@ export function ChangePasswordModal({ onChanged }: Props) {
           borderRadius: 12,
           padding: 24,
           boxShadow: '0 12px 40px rgba(15, 24, 54, 0.25)',
+          position: 'relative',
         }}
       >
+        {mode === 'optional' && onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            style={{
+              position: 'absolute',
+              top: 12,
+              right: 12,
+              width: 28,
+              height: 28,
+              border: 'none',
+              background: 'transparent',
+              fontSize: 22,
+              lineHeight: 1,
+              cursor: 'pointer',
+              color: 'var(--color-text-tertiary, #8a8780)',
+            }}
+          >
+            ×
+          </button>
+        )}
         <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4, color: 'var(--color-text-primary, #1a1917)' }}>
-          Set a new password
+          {mode === 'forced' ? 'Set a new password' : 'Change your password'}
         </div>
         <div style={{ fontSize: 13, color: 'var(--color-text-secondary, #55534d)', marginBottom: 16, lineHeight: 1.4 }}>
-          You're using a temporary password. Choose a new one before continuing.
+          {mode === 'forced'
+            ? "You're using a temporary password. Choose a new one before continuing."
+            : 'Enter your current password and choose a new one.'}
         </div>
         <form onSubmit={submit}>
-          <Field label="Current (temporary) password">
+          <Field label={mode === 'forced' ? 'Current (temporary) password' : 'Current password'}>
             <input
               type="password"
               value={current}
@@ -120,27 +161,53 @@ export function ChangePasswordModal({ onChanged }: Props) {
               {error}
             </div>
           )}
-          <button
-            type="submit"
-            disabled={submitting || !current || !next || !confirm}
-            style={{
-              width: '100%',
-              padding: '10px 16px',
-              background: 'var(--color-brand-accent, #2B4A93)',
-              color: 'white',
-              border: 'none',
-              borderRadius: 8,
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: submitting ? 'wait' : 'pointer',
-              opacity: submitting || !current || !next || !confirm ? 0.6 : 1,
-            }}
-          >
-            {submitting ? 'Updating…' : 'Update password and continue'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {mode === 'optional' && onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={submitting}
+                style={{
+                  flex: '0 0 auto',
+                  padding: '10px 16px',
+                  background: 'transparent',
+                  color: 'var(--color-text-secondary, #55534d)',
+                  border: '0.5px solid var(--color-border-tertiary, #d4d0c4)',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: submitting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={submitting || !current || !next || !confirm}
+              style={{
+                flex: 1,
+                padding: '10px 16px',
+                background: 'var(--color-brand-accent, #2B4A93)',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: submitting ? 'wait' : 'pointer',
+                opacity: submitting || !current || !next || !confirm ? 0.6 : 1,
+              }}
+            >
+              {submitting
+                ? 'Updating…'
+                : mode === 'forced'
+                  ? 'Update password and continue'
+                  : 'Update password'}
+            </button>
+          </div>
         </form>
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary, #8a8780)', marginTop: 12, textAlign: 'center' }}>
-          Your new password is hashed and stored encrypted. You won't be asked again on this device.
+          Your new password is hashed and stored encrypted.
         </div>
       </div>
     </div>
