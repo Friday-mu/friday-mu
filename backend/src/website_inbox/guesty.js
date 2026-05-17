@@ -7,8 +7,17 @@
 // module's home grows beyond v1 we should pull both call sites onto
 // this single client; for now we share the env-driven creds and use
 // our own axios instance to keep imports tidy.
+//
+// Token caching is THREE tiers:
+//   1. in-memory  — fast path, alive for the life of this process
+//   2. shared file on disk — written by both fad-backend and friday-gms,
+//      so a token minted by one is picked up by the other. Critical
+//      because Guesty caps OAuth mints at 5/clientId/24h (per audit
+//      2026-05-16) and the two backends share one clientId.
+//   3. fresh mint — last resort. Updates layers 2 + 1 on success.
 
 const axios = require('axios');
+const fs = require('node:fs');
 
 const BASE_URL = process.env.GUESTY_BASE_URL || 'https://open-api.guesty.com/v1';
 const TOKEN_URL = process.env.GUESTY_TOKEN_URL || 'https://open-api.guesty.com/oauth2/token';
@@ -18,15 +27,61 @@ const CLIENT_SECRET = process.env.GUESTY_CLIENT_SECRET;
 // 60s safety buffer before the cached token expires.
 const TOKEN_SAFETY_MS = 60_000;
 
+// Shared on-disk cache. Default points at friday-gms's location —
+// override via GUESTY_SHARED_TOKEN_PATH if topology changes.
+const SHARED_TOKEN_PATH =
+  process.env.GUESTY_SHARED_TOKEN_PATH || '/var/www/friday-gms/.guesty-token.json';
+
 let tokenCache = { token: null, expiresAt: 0 };
 
+function loadTokenFromDisk() {
+  try {
+    const raw = fs.readFileSync(SHARED_TOKEN_PATH, 'utf-8');
+    const data = JSON.parse(raw);
+    // friday-gms historically used `expiresAt`; older versions may
+    // have used `expires_at` or `expiry`. Accept any of them.
+    const expiresAt = Number(data.expiresAt || data.expires_at || data.expiry || 0);
+    const access = data.access_token || data.accessToken;
+    if (access && expiresAt > Date.now() + TOKEN_SAFETY_MS) {
+      return { token: String(access), expiresAt };
+    }
+  } catch {
+    // File missing / unreadable / malformed — fall through to mint.
+  }
+  return null;
+}
+
+function saveTokenToDisk(token, expiresAt) {
+  try {
+    const payload = JSON.stringify({ access_token: token, expiresAt }, null, 2);
+    // Atomic write so friday-gms doesn't read a torn file while we
+    // overwrite. Keep the same path so friday-gms's existing loader
+    // picks it up on its next cache miss / restart.
+    const tmp = `${SHARED_TOKEN_PATH}.tmp.${process.pid}`;
+    fs.writeFileSync(tmp, payload, { mode: 0o644 });
+    fs.renameSync(tmp, SHARED_TOKEN_PATH);
+  } catch (e) {
+    console.warn('[guesty] could not write shared token cache:', e.message);
+  }
+}
+
 async function getAccessToken({ retries = 1 } = {}) {
+  // Tier 1: in-memory.
   if (tokenCache.token && Date.now() < tokenCache.expiresAt - TOKEN_SAFETY_MS) {
     return tokenCache.token;
+  }
+  // Tier 2: shared disk cache — covers the case where friday-gms
+  // already minted a fresh token in the last 24h.
+  const fromDisk = loadTokenFromDisk();
+  if (fromDisk) {
+    tokenCache = fromDisk;
+    return fromDisk.token;
   }
   if (!CLIENT_ID || !CLIENT_SECRET) {
     throw new Error('Guesty credentials not configured (GUESTY_CLIENT_ID / GUESTY_CLIENT_SECRET)');
   }
+  // Tier 3: fresh mint. Both backends share one clientId with a
+  // 5/24h ceiling — only mint when truly necessary.
   const params = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id: CLIENT_ID,
@@ -39,10 +94,9 @@ async function getAccessToken({ retries = 1 } = {}) {
       timeout: 15_000,
     });
     if (!data?.access_token) throw new Error('Guesty token response missing access_token');
-    tokenCache = {
-      token: data.access_token,
-      expiresAt: Date.now() + (data.expires_in || 86400) * 1000,
-    };
+    const expiresAt = Date.now() + (data.expires_in || 86400) * 1000;
+    tokenCache = { token: data.access_token, expiresAt };
+    saveTokenToDisk(data.access_token, expiresAt);
     return tokenCache.token;
   } catch (e) {
     // The token endpoint is in the same rate-limit bucket as the
@@ -236,4 +290,7 @@ module.exports = {
   listListings,
   listReservations,
   getReservation,
+  // Exposed so server.js can route its legacy `guestyAPI` instance
+  // through the same 3-tier cache (in-memory + shared disk + mint).
+  getAccessToken,
 };

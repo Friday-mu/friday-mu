@@ -835,31 +835,16 @@ if (GMS_POLLING_ENABLED) {
 const GUESTY_BASE_URL = process.env.GUESTY_BASE_URL || 'https://open-api.guesty.com/v1';
 const GUESTY_TOKEN_URL = process.env.GUESTY_TOKEN_URL || 'https://open-api.guesty.com/oauth2/token';
 
-let guestyTokenCache = { token: null, expiresAt: 0 };
+// Delegate to the shared Guesty client (website_inbox/guesty.js) so
+// fad-backend has ONE token cache for all Guesty calls — and so it
+// shares the on-disk cache with friday-gms (per R1, 2026-05-17).
+// Both backends share the 5/24h OAuth mint quota; this collapses
+// fad-backend's two parallel caches into one + reads what friday-gms
+// already minted.
+const { getAccessToken: getSharedGuestyToken } = require('./src/website_inbox/guesty');
 
 async function getGuestyAccessToken() {
-  if (guestyTokenCache.token && Date.now() < guestyTokenCache.expiresAt - 60_000) {
-    return guestyTokenCache.token;
-  }
-  if (!process.env.GUESTY_CLIENT_ID || !process.env.GUESTY_CLIENT_SECRET) {
-    throw new Error('GUESTY_CLIENT_ID / GUESTY_CLIENT_SECRET not configured');
-  }
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    scope: 'open-api',
-    client_id: process.env.GUESTY_CLIENT_ID,
-    client_secret: process.env.GUESTY_CLIENT_SECRET,
-  });
-  const { data } = await axios.post(GUESTY_TOKEN_URL, body.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    timeout: 15000,
-  });
-  guestyTokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in || 86400) * 1000,
-  };
-  console.log(`[Guesty] OAuth token refreshed (expires in ${data.expires_in}s)`);
-  return guestyTokenCache.token;
+  return getSharedGuestyToken();
 }
 
 const guestyAPI = axios.create({ baseURL: GUESTY_BASE_URL, timeout: 30000 });
