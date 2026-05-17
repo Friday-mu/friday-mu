@@ -45,7 +45,11 @@ export function StaffPage() {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [drawerMode, setDrawerMode] = useState<{ kind: 'create' } | { kind: 'edit'; userId: string } | null>(null);
+  const [drawerMode, setDrawerMode] = useState<
+    | { kind: 'create' }
+    | { kind: 'edit'; userId: string; initial?: Partial<TaskUser> }
+    | null
+  >(null);
 
   // Live staff list from FAD HR backend. Falls back to TASK_USERS fixture
   // during loading / when the API is unreachable, so the page never blanks.
@@ -216,7 +220,7 @@ export function StaffPage() {
             user={selected}
             canEdit={canManage || selected.id === currentUserId}
             canBulkReassign={can('hr_staff', 'write')}
-            onEdit={() => setDrawerMode({ kind: 'edit', userId: selected.id })}
+            onEdit={() => setDrawerMode({ kind: 'edit', userId: selected.id, initial: selected })}
             onAfterChange={bumpRev}
           />
         ) : (

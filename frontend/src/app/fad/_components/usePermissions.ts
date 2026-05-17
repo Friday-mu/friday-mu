@@ -55,11 +55,11 @@ function pickUserForRole(role: Role): string {
   return user?.id ?? DEFAULT_USER_ID;
 }
 
-// JWT email → fad_role mapping. Per Ishant 2026-05-18:
+// JWT email → fad_role mapping. Per Ishant 2026-05-18, updated 2026-05-17:
 //   ishant     → director (sees all, approves)
 //   mathias    → commercial_marketing (commercial side, no finance)
 //   franny     → ops_manager (ops side, no finance, can't approve time-off)
-//   mary       → field (own tasks, no finance)
+//   mary       → director (2026-05-17: promoted to help test the platform)
 //   bryan      → field (field staff)
 //   catherine  → field (field staff)
 //
@@ -69,7 +69,7 @@ const FAD_ROLE_BY_EMAIL: Record<string, Role> = {
   'ishant@friday.mu':    'director',
   'mathias@friday.mu':   'commercial_marketing',
   'franny@friday.mu':    'ops_manager',
-  'mary@friday.mu':      'field',
+  'mary@friday.mu':      'director',
   'bryan@friday.mu':     'field',
   'catherine@friday.mu': 'field',
 };

@@ -13,7 +13,7 @@ import {
 import { fireToast } from '../../Toaster';
 import { IconClose } from '../../icons';
 
-type Mode = { kind: 'create' } | { kind: 'edit'; userId: string };
+type Mode = { kind: 'create' } | { kind: 'edit'; userId: string; initial?: Partial<TaskUser> };
 
 interface Props {
   mode: Mode;
@@ -37,7 +37,10 @@ const SKILL_OPTIONS = [
 ];
 
 export function StaffDrawer({ mode, onClose, onSaved }: Props) {
-  const existing = mode.kind === 'edit' ? TASK_USER_BY_ID[mode.userId] : undefined;
+  // Prefer initial values handed in by the parent (live hr_staff record);
+  // fall back to TASK_USER_BY_ID for legacy fixture-based callers.
+  const existing: Partial<TaskUser> | undefined =
+    mode.kind === 'edit' ? (mode.initial ?? TASK_USER_BY_ID[mode.userId]) : undefined;
 
   const [name, setName] = useState(existing?.name ?? '');
   const [email, setEmail] = useState(existing?.email ?? '');
