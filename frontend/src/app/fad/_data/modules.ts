@@ -26,10 +26,12 @@ export interface GroupDef {
 
 export const MODULES: ModuleDef[] = [
   { id: 'inbox', label: 'Inbox', group: 'Today', tier: 'live', ship: 'live', icon: 'IconInbox', path: '/gms/inbox' },
-  // Website inbox — separate surface from the GMS inbox above. Fed by
-  // webhooks from friday.mu (booking forms, payment proofs, contact,
-  // owner enquiries). Per-guest threads collapse multiple events.
-  { id: 'website-inbox', label: 'Website', group: 'Today', tier: 'live', ship: 'live', icon: 'IconInbox', path: '/fad/website-inbox' },
+  // Website-inbox is now folded into the unified Inbox above (Phase 1
+  // landed in f1717fd, 2026-05-17). The standalone /fad/website-inbox
+  // route + WebsiteInboxModule are retired — website threads appear
+  // alongside Guesty conversations in the Inbox list. Keeping the
+  // route stub in FadApp.tsx briefly for any deep-linked bookmarks
+  // but no sidebar entry.
   { id: 'operations', label: 'Operations', group: 'Today', tier: 'live', ship: 'live', icon: 'IconTasks', path: '/fad/operations', subPages: [
     { id: 'overview', label: 'Overview' },
     { id: 'all', label: 'All tasks' },
