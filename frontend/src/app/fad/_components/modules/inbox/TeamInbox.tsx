@@ -12,6 +12,8 @@ import {
   useChannels,
   useDms,
   useTeamMessages,
+  addReaction,
+  removeReaction,
   type LiveChannel,
   type LiveDm,
 } from '../../../_data/teamInboxClient';
@@ -107,6 +109,60 @@ export function TeamInbox({
     }
     return msgs;
   }, [liveMessages, mentionsOnly, currentUserId]);
+
+  // Separate Map from messageId → reactions so the existing TeamMessage
+  // shape doesn't need to grow a reactions field. Built from liveMessages
+  // and re-derived when the message list re-fetches. Optimistically
+  // mutated on add/remove (sync with server on next poll).
+  const [reactionOverride, setReactionOverride] = useState<Record<string, Record<string, string[]>>>({});
+  const reactionsByMessageId: Record<string, Record<string, string[]>> = useMemo(() => {
+    const out: Record<string, Record<string, string[]>> = {};
+    (liveMessages ?? []).forEach((m) => {
+      out[m.id] = reactionOverride[m.id] ?? m.reactions ?? {};
+    });
+    return out;
+  }, [liveMessages, reactionOverride]);
+
+  const messageKind: 'channel' | 'dm' = selection?.kind === 'dm' ? 'dm' : 'channel';
+
+  const handleAddReaction = async (messageId: string, emoji: string) => {
+    // Optimistic: add current user to the emoji list immediately.
+    setReactionOverride((prev) => {
+      const cur = prev[messageId] ?? reactionsByMessageId[messageId] ?? {};
+      const list = new Set(cur[emoji] ?? []);
+      list.add(currentUserId);
+      return { ...prev, [messageId]: { ...cur, [emoji]: Array.from(list) } };
+    });
+    try {
+      await addReaction(messageKind, messageId, emoji);
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Reaction failed');
+      // Rollback on failure
+      setReactionOverride((prev) => {
+        const cur = prev[messageId] ?? {};
+        const list = (cur[emoji] ?? []).filter((u) => u !== currentUserId);
+        const next = { ...cur, [emoji]: list };
+        if (list.length === 0) delete next[emoji];
+        return { ...prev, [messageId]: next };
+      });
+    }
+  };
+
+  const handleRemoveReaction = async (messageId: string, emoji: string) => {
+    setReactionOverride((prev) => {
+      const cur = prev[messageId] ?? reactionsByMessageId[messageId] ?? {};
+      const list = (cur[emoji] ?? []).filter((u) => u !== currentUserId);
+      const next = { ...cur };
+      if (list.length === 0) delete next[emoji];
+      else next[emoji] = list;
+      return { ...prev, [messageId]: next };
+    });
+    try {
+      await removeReaction(messageKind, messageId, emoji);
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Reaction remove failed');
+    }
+  };
 
   const sendMessage = () => {
     const text = draft.trim();
@@ -355,7 +411,17 @@ export function TeamInbox({
               if (m.kind === 'roster_publish') {
                 return <SystemMessage key={m.id} icon="🤖" title="Roster published" body={m.text} ts={m.ts} author={author} />;
               }
-              return <TextMessage key={m.id} message={m} author={author} />;
+              return (
+                <TextMessage
+                  key={m.id}
+                  message={m}
+                  author={author}
+                  reactions={reactionsByMessageId[m.id] ?? {}}
+                  currentUserId={currentUserId}
+                  onAddReaction={(emoji) => handleAddReaction(m.id, emoji)}
+                  onRemoveReaction={(emoji) => handleRemoveReaction(m.id, emoji)}
+                />
+              );
             })}
           </div>
 
@@ -425,9 +491,47 @@ export function TeamInbox({
 
 // ───────────────── Message components ─────────────────
 
-function TextMessage({ message, author }: { message: TeamMessage; author?: TaskUser }) {
+// Semantic reaction set per Ishant 2026-05-17:
+//   👀 — "I'm looking / on it"
+//   ✅ — "Done"
+//   🙋 — "Need help"
+// Three with distinct meanings, not a Slack-style emoji free-for-all.
+// To add a 4th, update VALID_REACTIONS in backend too.
+const REACTION_SET = ['👀', '✅', '🙋'] as const;
+const REACTION_LABEL: Record<string, string> = {
+  '👀': 'I\'m looking',
+  '✅': 'Done',
+  '🙋': 'Need help',
+};
+
+function TextMessage({
+  message,
+  author,
+  reactions,
+  currentUserId,
+  onAddReaction,
+  onRemoveReaction,
+}: {
+  message: TeamMessage;
+  author?: TaskUser;
+  reactions?: Record<string, string[]>;
+  currentUserId?: string;
+  onAddReaction?: (emoji: string) => void;
+  onRemoveReaction?: (emoji: string) => void;
+}) {
+  const [hovering, setHovering] = useState(false);
+  const reactionEntries = Object.entries(reactions ?? {})
+    .filter(([_, users]) => users.length > 0)
+    .sort(([a], [b]) => REACTION_SET.indexOf(a as typeof REACTION_SET[number]) -
+                        REACTION_SET.indexOf(b as typeof REACTION_SET[number]));
+
   return (
-    <div className="msg-bubble them" style={{ maxWidth: 'unset' }}>
+    <div
+      className="msg-bubble them"
+      style={{ maxWidth: 'unset', position: 'relative' }}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+    >
       <div className="msg-meta" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {author && (
           <span
@@ -453,6 +557,84 @@ function TextMessage({ message, author }: { message: TeamMessage; author?: TaskU
       <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>
         {renderMentions(message.text, message.mentions)}
       </div>
+      {/* Aggregated reactions — one chip per emoji with count.
+          Operator clicks their own chip to remove; clicks others to add. */}
+      {reactionEntries.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+          {reactionEntries.map(([emoji, users]) => {
+            const meReacted = !!currentUserId && users.includes(currentUserId);
+            return (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  if (meReacted && onRemoveReaction) onRemoveReaction(emoji);
+                  else if (!meReacted && onAddReaction) onAddReaction(emoji);
+                }}
+                title={`${REACTION_LABEL[emoji] || emoji} · ${users.length} ${users.length === 1 ? 'person' : 'people'}`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 6px',
+                  fontSize: 11,
+                  background: meReacted ? 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.15))' : 'var(--color-background-secondary)',
+                  border: `0.5px solid ${meReacted ? 'var(--color-brand-accent)' : 'var(--color-border-tertiary)'}`,
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                }}
+              >
+                <span>{emoji}</span>
+                <span style={{ fontWeight: meReacted ? 600 : 400 }}>{users.length}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {/* Hover picker — three semantic emojis appear on top-right. Clicking
+          adds the current user's reaction. */}
+      {hovering && onAddReaction && (
+        <div
+          style={{
+            position: 'absolute',
+            top: -14,
+            right: 8,
+            display: 'flex',
+            gap: 2,
+            padding: '2px 4px',
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-sm)',
+            boxShadow: '0 2px 8px rgba(15, 24, 54, 0.08)',
+          }}
+        >
+          {REACTION_SET.map((emoji) => {
+            const meReacted = !!currentUserId && (reactions?.[emoji] ?? []).includes(currentUserId);
+            return (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  if (meReacted && onRemoveReaction) onRemoveReaction(emoji);
+                  else onAddReaction(emoji);
+                }}
+                title={REACTION_LABEL[emoji]}
+                style={{
+                  padding: '2px 4px',
+                  fontSize: 14,
+                  background: meReacted ? 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.15))' : 'transparent',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                {emoji}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {(message.threadCount ?? 0) > 0 && (
         <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-brand-accent)' }}>
           {message.threadCount} repl{message.threadCount === 1 ? 'y' : 'ies'}

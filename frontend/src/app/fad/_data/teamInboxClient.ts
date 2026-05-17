@@ -49,6 +49,11 @@ export interface LiveTeamMessage {
   meta: Record<string, unknown> | null;
   editedAt: string | null;
   ts: string;
+  /** Aggregated reactions for this message — emoji → array of user IDs
+   *  who reacted with it. Bulk-fetched in the messages endpoint so we
+   *  avoid N+1. UI renders one chip per emoji with count + click to
+   *  toggle the current user's reaction. */
+  reactions: Record<string, string[]>;
 }
 
 export interface LiveUser {

@@ -149,7 +149,34 @@ function shapeMessage(row, kind) {
     meta: row.meta || null,
     editedAt: row.edited_at,
     ts: row.created_at,
+    // Aggregated reactions: { '👀': [user_id, ...], '✅': [...], '🙋': [...] }
+    // The frontend renders a chip per emoji with count + a clickable
+    // toggle for the current user. Populated by the messages endpoint
+    // via a side query (see loadReactionsForMessages below).
+    reactions: row._reactions || {},
   };
+}
+
+/**
+ * Bulk-fetch reactions for a list of message IDs of a given kind.
+ * One query instead of N. Returns a Map keyed by message_id.
+ */
+async function loadReactionsForMessages(messageIds, kind) {
+  if (messageIds.length === 0) return new Map();
+  const { rows } = await query(
+    `SELECT message_id, emoji, user_id
+     FROM team_message_reactions
+     WHERE message_id = ANY($1::uuid[]) AND message_kind = $2`,
+    [messageIds, kind],
+  );
+  const byMsg = new Map();
+  for (const r of rows) {
+    if (!byMsg.has(r.message_id)) byMsg.set(r.message_id, {});
+    const emojiMap = byMsg.get(r.message_id);
+    if (!emojiMap[r.emoji]) emojiMap[r.emoji] = [];
+    emojiMap[r.emoji].push(r.user_id);
+  }
+  return byMsg;
 }
 
 function shapeUser(row) {
@@ -313,6 +340,9 @@ router.get('/channels/:id/messages', attachIdentity, async (req, res) => {
     sql += ` ORDER BY msg.created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
     const { rows } = await query(sql, params);
+    // Bulk-fetch reactions for these messages — single query vs N
+    const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'channel');
+    rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
     res.json({ messages: rows.map((r) => shapeMessage(r, 'channel')).reverse() });
   } catch (e) {
     console.error('[team_inbox] channel messages error:', e.message);
@@ -527,6 +557,8 @@ router.get('/dms/:id/messages', attachIdentity, async (req, res) => {
     sql += ` ORDER BY msg.created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
     const { rows } = await query(sql, params);
+    const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'dm');
+    rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
     res.json({ messages: rows.map((r) => shapeMessage(r, 'dm')).reverse() });
   } catch (e) {
     console.error('[team_inbox] dm messages error:', e.message);
