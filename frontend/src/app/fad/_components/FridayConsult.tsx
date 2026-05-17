@@ -42,12 +42,19 @@ interface TeachingAction {
 }
 
 interface ConsultMessage {
-  role: 'user' | 'friday';
+  role: 'user' | 'friday' | 'draft';
   text: string;
   /** When set, the assistant turn carries a draft rewrite. UI shows
    *  a chip "Friday rewrote the draft → apply" that triggers
    *  onDraftUpdate(draftUpdate) in the parent. */
   draftUpdate?: string;
+  /** Revision number for 'draft' role — sequentially increments each
+   *  time Friday produces a new draft via DRAFT_UPDATE or via a fresh
+   *  GMS draft. Latest revision is the active/editable one. */
+  draftRev?: number;
+  /** GMS draft id for 'draft' role when sourced from a GMS draft (vs
+   *  produced inline via DRAFT_UPDATE in a consult turn). */
+  draftId?: string;
   /** When non-empty, render TeachingCards under the message. Each card
    *  closes the learning loop: operator confirms → POST /api/inbox/teachings,
    *  GMS stores it, every future draft prompt includes it. */
@@ -225,6 +232,36 @@ export function FridayConsult({
     if (el) el.scrollTop = el.scrollHeight;
   }, [msgs, thinking, currentDraft?.id, currentDraft?.body, workingBody]);
 
+  // Seed an initial 'draft' chat message when the conversation arrives
+  // with an active GMS draft. Drafts flow into the chat history like
+  // tool-call results — when Friday revises, a NEW draft msg appends;
+  // older ones scroll up as read-only history. Per Ishant 2026-05-17.
+  const seededDraftIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentDraft?.id || !currentDraft.body) return;
+    if (seededDraftIdRef.current === currentDraft.id) return;
+    seededDraftIdRef.current = currentDraft.id;
+    setMsgs((prev) => {
+      const lastDraftRev = prev.reduce(
+        (max, m) => (m.role === 'draft' && (m.draftRev ?? 0) > max ? m.draftRev! : max),
+        0,
+      );
+      // Avoid double-seeding if the same draft body is already the
+      // most recent draft msg (e.g. a duplicate render path).
+      const lastDraft = [...prev].reverse().find((m) => m.role === 'draft');
+      if (lastDraft && lastDraft.text === currentDraft.body) return prev;
+      return [
+        ...prev,
+        {
+          role: 'draft',
+          text: currentDraft.body!,
+          draftRev: lastDraftRev + 1,
+          draftId: currentDraft.id,
+        },
+      ];
+    });
+  }, [currentDraft?.id, currentDraft?.body]);
+
   // ─── Quick chips ─────────────────────────────────────────────────────
   // Context-aware quick replies. draft_review gets the OLD-UI set
   // (Polish / Shorter / More formal / More casual / STR KB); compose
@@ -319,10 +356,14 @@ export function FridayConsult({
       if (data?.missingKnowledge) setMissingKnowledge(true);
       if (typeof data?.confidence === 'number') setLatestConfidence(data.confidence);
 
-      // Friday rewrote the draft — surface inline in the embedded
-      // DraftCard. The chat bubble itself just confirms the action.
-      if (data?.draft_update && data.draft_update.trim().length > 0) {
-        setWorkingBody(data.draft_update.trim());
+      // Friday rewrote the draft — push it as a NEW draft chat msg.
+      // Older drafts stay in the transcript as read-only history;
+      // only the latest is editable + sendable. Per Ishant 2026-05-17:
+      // drafts behave like tool-call results in the chat flow, not a
+      // singleton pinned panel.
+      const newDraftBody = data?.draft_update?.trim() || '';
+      if (newDraftBody.length > 0) {
+        setWorkingBody(newDraftBody);
       }
 
       const teachings = Array.isArray(data?.teaching_actions) ? data!.teaching_actions! : [];
@@ -334,10 +375,26 @@ export function FridayConsult({
         teachingStates: teachings.length > 0 ? teachings.map(() => 'pending' as const) : undefined,
         source: data?.model,
       };
-      if (aiMsg.text.length === 0 && !aiMsg.draftUpdate && teachings.length === 0) {
+      setMsgs((m) => {
+        const next = [...m];
+        if (aiMsg.text.length > 0 || teachings.length > 0) {
+          next.push(aiMsg);
+        }
+        if (newDraftBody.length > 0) {
+          const lastDraftRev = next.reduce(
+            (max, x) => (x.role === 'draft' && (x.draftRev ?? 0) > max ? x.draftRev! : max),
+            0,
+          );
+          next.push({
+            role: 'draft',
+            text: newDraftBody,
+            draftRev: lastDraftRev + 1,
+          });
+        }
+        return next;
+      });
+      if (aiMsg.text.length === 0 && !newDraftBody && teachings.length === 0) {
         setError('Friday went quiet — try rephrasing.');
-      } else {
-        setMsgs((m) => [...m, aiMsg]);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Friday is unreachable right now.';
@@ -588,22 +645,45 @@ export function FridayConsult({
           button stays visible without going below the fold. Capacity:
           long chats scroll; the Ask Friday input below the transcript
           is always visible because it lives outside this scroller. */}
-      {(msgs.length > 0 || thinking || error || currentDraft || workingBody.trim().length > 0) && (
+      {(msgs.length > 0 || thinking || error) && (
         <div
           className="friday-consult-body"
           ref={transcriptRef}
           style={{ maxHeight: '40vh' }}
         >
-          {msgs.map((m, i) => (
-            <MessageRow
-              key={i}
-              m={m}
-              msgIndex={i}
-              onChipClick={submit}
-              onConfirmTeaching={confirmTeaching}
-              onDismissTeaching={dismissTeaching}
-            />
-          ))}
+          {(() => {
+            // Latest draft msg is the editable one; older drafts are
+            // read-only history. Compute the index once so MessageRow
+            // doesn't have to scan the array per row.
+            let latestDraftIndex = -1;
+            for (let i = msgs.length - 1; i >= 0; i--) {
+              if (msgs[i].role === 'draft') { latestDraftIndex = i; break; }
+            }
+            return msgs.map((m, i) => (
+              <MessageRow
+                key={i}
+                m={m}
+                msgIndex={i}
+                isLatestDraft={i === latestDraftIndex}
+                workingBody={workingBody}
+                setWorkingBody={setWorkingBody}
+                liveConfidence={latestConfidence}
+                channelLabel={channelLabel}
+                whatsappWindow={whatsappWindow}
+                sendBusy={sendBusy}
+                rejecting={rejecting}
+                rejectReason={rejectReason}
+                setRejectReason={setRejectReason}
+                onApprove={submitApprove}
+                onStartReject={() => setRejecting(true)}
+                onConfirmReject={submitReject}
+                onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+                onChipClick={submit}
+                onConfirmTeaching={confirmTeaching}
+                onDismissTeaching={dismissTeaching}
+              />
+            ));
+          })()}
           {thinking && <ThinkingRow />}
           {error && (
             <div
@@ -618,24 +698,6 @@ export function FridayConsult({
             >
               {error}
             </div>
-          )}
-          {(currentDraft || workingBody.trim().length > 0) && (
-            <EmbeddedDraftCard
-              workingBody={workingBody}
-              setWorkingBody={setWorkingBody}
-              currentDraft={currentDraft || null}
-              liveConfidence={latestConfidence}
-              channelLabel={channelLabel}
-              whatsappWindow={whatsappWindow}
-              sendBusy={sendBusy}
-              rejecting={rejecting}
-              rejectReason={rejectReason}
-              setRejectReason={setRejectReason}
-              onApprove={submitApprove}
-              onStartReject={() => setRejecting(true)}
-              onConfirmReject={submitReject}
-              onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-            />
           )}
         </div>
       )}
@@ -821,16 +883,81 @@ function AskFridayInput({
 function MessageRow({
   m,
   msgIndex,
+  isLatestDraft,
+  workingBody,
+  setWorkingBody,
+  liveConfidence,
+  channelLabel,
+  whatsappWindow,
+  sendBusy,
+  rejecting,
+  rejectReason,
+  setRejectReason,
+  onApprove,
+  onStartReject,
+  onConfirmReject,
+  onCancelReject,
   onChipClick: _onChipClick,
   onConfirmTeaching,
   onDismissTeaching,
 }: {
   m: ConsultMessage;
   msgIndex: number;
+  isLatestDraft: boolean;
+  workingBody: string;
+  setWorkingBody: (s: string) => void;
+  liveConfidence: number | null;
+  channelLabel?: string;
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  sendBusy: boolean;
+  rejecting: boolean;
+  rejectReason: string;
+  setRejectReason: (s: string) => void;
+  onApprove: () => void;
+  onStartReject: () => void;
+  onConfirmReject: () => void;
+  onCancelReject: () => void;
   onChipClick: (text: string) => void;
   onConfirmTeaching: (msgIndex: number, actionIndex: number, ta: TeachingAction, extraPropertyCodes?: string[]) => void;
   onDismissTeaching: (msgIndex: number, actionIndex: number) => void;
 }) {
+  // Draft-role messages render very differently from chat:
+  //   - Latest = an editable card with Approve & send + Reject buttons
+  //   - Older = read-only "Friday's draft (rev N)" surface, accent-soft
+  if (m.role === 'draft') {
+    if (isLatestDraft) {
+      // The active draft — operator can edit + send. Body comes from
+      // workingBody (live), not m.text (frozen snapshot).
+      return (
+        <div style={{ margin: '8px 12px' }}>
+          <DraftMessageActive
+            workingBody={workingBody}
+            setWorkingBody={setWorkingBody}
+            revisionNumber={m.draftRev}
+            liveConfidence={liveConfidence}
+            channelLabel={channelLabel}
+            whatsappWindow={whatsappWindow}
+            sendBusy={sendBusy}
+            rejecting={rejecting}
+            rejectReason={rejectReason}
+            setRejectReason={setRejectReason}
+            onApprove={onApprove}
+            onStartReject={onStartReject}
+            onConfirmReject={onConfirmReject}
+            onCancelReject={onCancelReject}
+            canReject={!!m.draftId}
+          />
+        </div>
+      );
+    }
+    // Older draft — read-only, frozen.
+    return (
+      <div style={{ margin: '6px 12px' }}>
+        <DraftMessageHistory body={m.text} revisionNumber={m.draftRev} />
+      </div>
+    );
+  }
+
   const isUser = m.role === 'user';
   return (
     <div style={{ margin: '6px 12px' }}>
@@ -856,9 +983,6 @@ function MessageRow({
           }}
         >
           {m.text}
-          {/* If [DRAFT_UPDATE] arrived, the working draft below already
-              picked it up. Show a small affordance so it's obvious the
-              chat caused the change, not a UI bug. */}
           {m.draftUpdate && (
             <div
               style={{
@@ -869,14 +993,11 @@ function MessageRow({
                 fontStyle: 'italic',
               }}
             >
-              ↓ Draft updated below
+              ↓ New draft below
             </div>
           )}
         </div>
       </div>
-      {/* Teaching cards — below the bubble, full-width within the message
-          row. One card per teaching action. Each closes the learning loop
-          when the operator confirms. */}
       {m.teachingActions && m.teachingActions.map((ta, ai) => (
         <TeachingCard
           key={ai}
@@ -886,6 +1007,274 @@ function MessageRow({
           onDismiss={() => onDismissTeaching(msgIndex, ai)}
         />
       ))}
+    </div>
+  );
+}
+
+// Read-only render of a past draft revision. Operator can scroll up
+// to see what Friday wrote at each turn; only the latest is editable.
+function DraftMessageHistory({ body, revisionNumber }: { body: string; revisionNumber?: number }) {
+  return (
+    <div
+      style={{
+        maxWidth: '85%',
+        padding: '8px 10px',
+        fontSize: 12,
+        lineHeight: 1.45,
+        whiteSpace: 'pre-wrap',
+        color: 'var(--color-text-secondary)',
+        background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.06))',
+        border: '0.5px dashed var(--color-border-accent, rgba(56, 132, 255, 0.3))',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          textTransform: 'uppercase',
+          color: 'var(--color-text-tertiary)',
+          marginBottom: 4,
+        }}
+      >
+        Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''} · superseded
+      </div>
+      {body}
+    </div>
+  );
+}
+
+// Active (latest) draft card — editable textarea + Approve & send +
+// Reject. Replaces the previous EmbeddedDraftCard standalone surface;
+// now rendered inline as a chat message so revisions stack like
+// tool-call results in conversational order.
+function DraftMessageActive({
+  workingBody,
+  setWorkingBody,
+  revisionNumber,
+  liveConfidence,
+  channelLabel,
+  whatsappWindow,
+  sendBusy,
+  rejecting,
+  rejectReason,
+  setRejectReason,
+  onApprove,
+  onStartReject,
+  onConfirmReject,
+  onCancelReject,
+  canReject,
+}: {
+  workingBody: string;
+  setWorkingBody: (s: string) => void;
+  revisionNumber?: number;
+  liveConfidence?: number | null;
+  channelLabel?: string;
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  sendBusy: boolean;
+  rejecting: boolean;
+  rejectReason: string;
+  setRejectReason: (s: string) => void;
+  onApprove: () => void;
+  onStartReject: () => void;
+  onConfirmReject: () => void;
+  onCancelReject: () => void;
+  canReject: boolean;
+}) {
+  const tier = confidenceTier(liveConfidence ?? undefined);
+  const confLabel = typeof liveConfidence === 'number' ? `${Math.round(liveConfidence * 100)}%` : null;
+  const confColor: Record<'high' | 'mid' | 'low', string> = {
+    high: 'var(--color-text-success)',
+    mid: 'var(--color-text-warning)',
+    low: 'var(--color-text-danger)',
+  };
+  const sendDisabled = sendBusy || !workingBody.trim();
+  const showWaPill = channelLabel?.toLowerCase().includes('whatsapp') && whatsappWindow;
+  const waOpen = whatsappWindow?.open;
+  const waLeft = whatsappWindow?.expiresInMinutes;
+  return (
+    <div
+      style={{
+        padding: 12,
+        background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.08))',
+        border: '0.5px solid var(--color-brand-accent)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: '0 1px 4px rgba(15, 24, 54, 0.05)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            textTransform: 'uppercase',
+            color: 'var(--color-brand-accent)',
+          }}
+        >
+          <IconSparkle size={10} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''}
+        </span>
+        {confLabel && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '1px 6px',
+              borderRadius: 'var(--radius-sm)',
+              background: confColor[tier],
+              color: '#fff',
+            }}
+            title="Friday's confidence on this draft"
+          >
+            {confLabel}
+          </span>
+        )}
+        {showWaPill && (
+          <span
+            style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 'var(--radius-sm)',
+              background: waOpen ? 'rgba(16, 185, 129, 0.12)' : 'rgba(220, 38, 38, 0.12)',
+              color: waOpen ? 'var(--color-text-success)' : 'var(--color-text-danger)',
+              fontWeight: 600,
+            }}
+            title="WhatsApp 24-hour reply window"
+          >
+            {waOpen
+              ? `WA · ${typeof waLeft === 'number' ? `${Math.floor(waLeft / 60)}h ${waLeft % 60}m left` : 'open'}`
+              : 'WA window closed — use template'}
+          </span>
+        )}
+      </div>
+      <textarea
+        value={workingBody}
+        onChange={(e) => setWorkingBody(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            if (!sendDisabled && !rejecting) onApprove();
+          }
+        }}
+        placeholder="Draft body…"
+        rows={4}
+        style={{
+          width: '100%',
+          minHeight: 72,
+          maxHeight: 160,
+          padding: 8,
+          fontSize: 13,
+          lineHeight: 1.45,
+          fontFamily: 'inherit',
+          color: 'var(--color-text-primary)',
+          background: 'var(--color-background-primary)',
+          border: '0.5px solid var(--color-border-tertiary)',
+          borderRadius: 'var(--radius-sm)',
+          resize: 'vertical',
+          boxSizing: 'border-box',
+        }}
+        disabled={sendBusy || rejecting}
+      />
+      {rejecting ? (
+        <div style={{ marginTop: 8 }}>
+          <input
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Why is this draft wrong? (Friday learns — leave empty to dismiss silently)"
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              fontSize: 12,
+              color: 'var(--color-text-primary)',
+              background: 'var(--color-background-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              boxSizing: 'border-box',
+            }}
+            autoFocus
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={onConfirmReject}
+              style={{
+                padding: '6px 10px',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#fff',
+                background: 'var(--color-text-danger)',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              <IconClose size={11} /> {rejectReason.trim() ? 'Reject with feedback' : 'Dismiss'}
+            </button>
+            <button
+              type="button"
+              onClick={onCancelReject}
+              style={{
+                padding: '6px 10px',
+                fontSize: 12,
+                color: 'var(--color-text-secondary)',
+                background: 'transparent',
+                border: '0.5px solid var(--color-border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={onApprove}
+            disabled={sendDisabled}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '7px 14px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#fff',
+              background: 'var(--color-brand-accent)',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              cursor: sendDisabled ? 'not-allowed' : 'pointer',
+              opacity: sendDisabled ? 0.5 : 1,
+            }}
+            title="Cmd/Ctrl+Enter also sends"
+          >
+            <IconSend size={12} /> Approve &amp; send
+          </button>
+          {canReject && (
+            <button
+              type="button"
+              onClick={onStartReject}
+              disabled={sendBusy}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '7px 10px',
+                fontSize: 12,
+                color: 'var(--color-text-secondary)',
+                background: 'transparent',
+                border: '0.5px solid var(--color-border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              <IconClose size={11} /> Reject
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
