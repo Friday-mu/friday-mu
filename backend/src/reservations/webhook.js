@@ -18,6 +18,7 @@
 const crypto = require('crypto');
 const { upsertReservationById } = require('./sync');
 const { FR_TENANT_ID } = require('./worker');
+const { isMessageEvent, handleMessageEvent } = require('../inbox/guesty_message_webhook');
 
 const WEBHOOK_SECRET = process.env.GUESTY_WEBHOOK_SECRET;
 
@@ -61,6 +62,18 @@ async function handleWebhook(req, res) {
     return res.status(400).json({ error: 'invalid JSON' });
   }
   const type = event?.event || event?.type;
+
+  // Message events: handle inline (no Guesty API refetch needed —
+  // payload contains the whole message). This is the rate-limit
+  // escape valve, so we want it on the fast path.
+  if (isMessageEvent(type)) {
+    res.json({ ok: true, queued: 'message' });
+    handleMessageEvent(event).catch((e) => {
+      console.error(`[guesty/webhook/msg] handler failed:`, e.message);
+    });
+    return;
+  }
+
   if (!RESERVATION_EVENTS.has(type)) {
     // Not interested — but ack so Guesty doesn't retry.
     return res.json({ ok: true, ignored: type });
