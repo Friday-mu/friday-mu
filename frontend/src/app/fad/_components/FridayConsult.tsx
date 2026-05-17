@@ -414,23 +414,21 @@ export function FridayConsult({
   };
 
   // FC is compact-by-default: header + chips + Ask Friday input only.
-  // The transcript+draft area only renders once there's something to
-  // show — a user message, a thinking spinner, an error, a GMS draft,
-  // or a working body. Per Ishant 2026-05-17.
-  const hasActivity =
-    msgs.length > 0
-    || thinking
-    || !!error
-    || !!currentDraft
-    || workingBody.trim().length > 0;
-
+  // Transcript + EmbeddedDraftCard appear conditionally below. Each
+  // section sizes to its content; transcript caps with internal
+  // scroll so the send button stays visible. Per Ishant + Mary
+  // 2026-05-17.
   return (
     <div
       className="friday-consult"
       style={{
-        // Compact when idle, grows up to 65vh when there's activity.
-        maxHeight: '65vh',
-        flex: hasActivity ? '1 1 auto' : '0 0 auto',
+        // Compact when idle. When active, internal transcript scrolls
+        // (max-height: 30vh on .friday-consult-body) so the draft card
+        // + Ask input stay pinned. No outer max-height cap — Mary's
+        // bug 2026-05-17 was the panel growing tall enough to push
+        // the send button below the viewport.
+        maxHeight: 'none',
+        flex: '0 0 auto',
       }}
     >
       <div className="friday-consult-header">
@@ -457,8 +455,15 @@ export function FridayConsult({
           <IconClose size={12} />
         </button>
       </div>
-      {hasActivity && (
-        <div className="friday-consult-body" ref={transcriptRef}>
+      {/* Transcript — internally scrolling, capped height. Keeps the
+          send button + Ask input pinned at the bottom of the panel
+          regardless of chat length. Per Mary 2026-05-17. */}
+      {(msgs.length > 0 || thinking || error) && (
+        <div
+          className="friday-consult-body"
+          ref={transcriptRef}
+          style={{ maxHeight: '30vh' }}
+        >
           {msgs.map((m, i) => (
             <MessageRow
               key={i}
@@ -484,29 +489,30 @@ export function FridayConsult({
               {error}
             </div>
           )}
-          {/* Reply surface — only renders when there's a GMS draft OR
-              Friday has produced one via chat (workingBody populated).
-              No empty "Your reply" placeholder when the operator hasn't
-              asked for anything yet. Per Ishant 2026-05-17. */}
-          {(currentDraft || workingBody.trim().length > 0) && (
-            <EmbeddedDraftCard
-              workingBody={workingBody}
-              setWorkingBody={setWorkingBody}
-              currentDraft={currentDraft || null}
-              liveConfidence={latestConfidence}
-              channelLabel={channelLabel}
-              whatsappWindow={whatsappWindow}
-              sendBusy={sendBusy}
-              rejecting={rejecting}
-              rejectReason={rejectReason}
-              setRejectReason={setRejectReason}
-              onApprove={submitApprove}
-              onStartReject={() => setRejecting(true)}
-              onConfirmReject={submitReject}
-              onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-            />
-          )}
         </div>
+      )}
+      {/* Reply surface — lives OUTSIDE the scrolling transcript so the
+          Approve & Send button is always visible at the bottom of the
+          panel. Only renders when there's a GMS draft OR Friday has
+          produced one via chat (workingBody populated). Per Mary
+          2026-05-17. */}
+      {(currentDraft || workingBody.trim().length > 0) && (
+        <EmbeddedDraftCard
+          workingBody={workingBody}
+          setWorkingBody={setWorkingBody}
+          currentDraft={currentDraft || null}
+          liveConfidence={latestConfidence}
+          channelLabel={channelLabel}
+          whatsappWindow={whatsappWindow}
+          sendBusy={sendBusy}
+          rejecting={rejecting}
+          rejectReason={rejectReason}
+          setRejectReason={setRejectReason}
+          onApprove={submitApprove}
+          onStartReject={() => setRejecting(true)}
+          onConfirmReject={submitReject}
+          onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+        />
       )}
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
@@ -853,11 +859,11 @@ function EmbeddedDraftCard({
           }
         }}
         placeholder="Draft will appear here when Friday writes one, or type your own…"
-        rows={6}
+        rows={4}
         style={{
           width: '100%',
-          minHeight: 100,
-          maxHeight: 280,
+          minHeight: 72,
+          maxHeight: 160,
           padding: 8,
           fontSize: 13,
           lineHeight: 1.45,
