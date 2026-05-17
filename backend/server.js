@@ -1224,6 +1224,138 @@ app.get('/api/inbox/conversations/:id/reservation', requireAuth, asyncHandler((r
   gmsProxy(req, res, `/api/conversations/${req.params.id}/reservation`)
 ));
 
+// ─── Conversation mutations ───────────────────────────────────────────
+// Read/unread, notes/status updates, on-demand translation. All thin
+// pass-throughs to GMS — GMS owns the conversation record + RLS.
+
+app.patch('/api/inbox/conversations/:id/read', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}/read`, 'patch')
+));
+
+app.patch('/api/inbox/conversations/:id/unread', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}/unread`, 'patch')
+));
+
+app.patch('/api/inbox/conversations/:id', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}`, 'patch')
+));
+
+app.post('/api/inbox/conversations/:id/translate', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}/translate`, 'post')
+));
+
+// ─── Compose ──────────────────────────────────────────────────────────
+// Three modes per friday-gms/src/routes/compose.ts:
+//   manual      — operator-authored body, send as-is
+//   draft       — request an AI draft (returns draft_id, no auto-send)
+//   direct_send — instruction → AI generate + auto-send (skip review)
+// Body: { mode, body?, channel?, instruction? }. Returns the new draft
+// or the sent-message record depending on mode.
+
+app.post('/api/inbox/conversations/:id/compose', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/conversations/${req.params.id}/compose`, 'post')
+));
+
+// ─── Drafts — review workflow ─────────────────────────────────────────
+// State machine in friday-gms/src/routes/drafts.ts:
+//   friday_drafting → draft_ready → under_review → approved → sending → sent
+//                                                  ↘ rejected
+//                                                  ↘ revision_requested → (new cycle)
+//                                                  ↘ superseded
+//   sent path: send_queued → sent | send_failed | dismissed
+
+app.get('/api/inbox/drafts/queued/list', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, '/api/drafts/queued/list')
+));
+
+app.get('/api/inbox/drafts/:id', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/drafts/${req.params.id}`)
+));
+
+// Approve & send. Body: { reviewed_by, sent_via, draft_body? (if edited),
+// learnMode?: 'learn'|'no_learn'|'normal', scope?: 'global'|'property' }.
+// Returns 409 with { error: 'whatsapp_window_expired' } when the WA 24h
+// window has closed — frontend shows the "use template" toast.
+app.post('/api/inbox/drafts/:id/approve', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/drafts/${req.params.id}/approve`, 'post')
+));
+
+// Reject. Body: { reason? }. Empty reason = dismiss (no learning).
+// Populated reason = rejected with learning event captured.
+app.post('/api/inbox/drafts/:id/reject', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/drafts/${req.params.id}/reject`, 'post')
+));
+
+// Revise. Body: { revision_instruction, mode?: 'standard'|'teach'|'one_time',
+// scope?: 'global'|'property' }. Kicks off async re-generation; current
+// draft transitions to revision_requested; new draft created with
+// revision_number = prev + 1. Frontend awaits SSE draft_updated to clear
+// the "Friday is revising…" spinner.
+app.post('/api/inbox/drafts/:id/revise', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/drafts/${req.params.id}/revise`, 'post')
+));
+
+// Send-queue management (for the queued-draft retry cards in the thread).
+app.post('/api/inbox/drafts/:id/retry', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/drafts/${req.params.id}/retry`, 'post')
+));
+
+app.post('/api/inbox/drafts/:id/fail', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/drafts/${req.params.id}/fail`, 'post')
+));
+
+app.post('/api/inbox/drafts/:id/dismiss', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/drafts/${req.params.id}/dismiss`, 'post')
+));
+
+// ─── Friday Consult (Ask Friday) ──────────────────────────────────────
+// POST body: { text|instruction, conversationId, context, draftId?,
+//   draftBody?, history?, sessionId?, model_tier?, contextData? }.
+// Valid context: revision | compose | draft_review | pending_action |
+//   next_step | teaching | learning_candidate | message_review.
+// Response: { response, model, draft_update?, teaching_actions?,
+//   teaching_action?, sessionId, compacted?, missingKnowledge? }.
+// FAD parses [DRAFT_UPDATE] tag via the draft_update field — wires
+// directly back into DraftPanel's editingDraft + editBody state.
+
+app.post('/api/inbox/consult', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, '/api/ai/consult', 'post')
+));
+
+app.get('/api/inbox/consult/session/active', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, '/api/ai/consult/session/active')
+));
+
+app.get('/api/inbox/consult/history/:conversationId', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/ai/consult/history/${req.params.conversationId}`)
+));
+
+app.post('/api/inbox/consult/session/end', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, '/api/ai/consult/session/end', 'post')
+));
+
+// ─── Teachings (write-side, driven by Friday Consult's teaching_action) ─
+// Friday Consult emits structured teaching proposals via [TEACH] tags
+// (parsed server-side, returned as `teaching_actions` array). The UI
+// renders confirmation cards; on click these proxies create/update/pause
+// teachings in friday-gms's `teachings` table, which are then loaded
+// back into every draft prompt via draft-generator.ts:677-702. The
+// learning loop closes here.
+
+app.post('/api/inbox/teachings', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, '/api/teachings', 'post')
+));
+
+app.patch('/api/inbox/teachings/:id', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/teachings/${req.params.id}`, 'patch')
+));
+
+// Pause an existing teaching — used by the flag_conflict resolution flow
+// when the operator confirms the new rule should replace an existing one.
+app.post('/api/inbox/teachings/:id/pause', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/teachings/${req.params.id}/pause`, 'post')
+));
+
 // ====================================================================
 // Reviews — Guesty direct (service credentials)
 // ====================================================================
