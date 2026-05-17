@@ -2080,21 +2080,30 @@ function SendByMenu({
           </div>
         </button>
         <div className="send-split-divider" />
-        <button className="send-split-item" onClick={onClose}>
+        <button
+          className="send-split-item"
+          onClick={() => { onClose(); fireToast('Schedule send lands in a follow-up sprint'); }}
+        >
           <IconClock size={14} />
           <div className="lab">
             Schedule send
             <div className="desc">Pick a date + time · coming soon</div>
           </div>
         </button>
-        <button className="send-split-item" onClick={onClose}>
+        <button
+          className="send-split-item"
+          onClick={() => { onClose(); fireToast('WhatsApp template picker lands in a follow-up sprint'); }}
+        >
           <span style={{ width: 14, textAlign: 'center', fontSize: 12 }}>💬</span>
           <div className="lab">
             Send WhatsApp template
             <div className="desc">Pre-approved templates · coming soon</div>
           </div>
         </button>
-        <button className="send-split-item" onClick={onClose}>
+        <button
+          className="send-split-item"
+          onClick={() => { onClose(); fireToast(`"Send when ${entity} is awake" lands in a follow-up sprint`); }}
+        >
           <IconSparkle size={14} />
           <div className="lab">
             Send when {entity} is awake
