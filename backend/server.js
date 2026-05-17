@@ -991,6 +991,15 @@ app.use('/api/feedback', feedbackRoutes);
 // else under this router requires the standard FAD auth header.
 const websiteInbox = require('./src/website_inbox');
 app.use('/api/inbox/website', websiteInbox.router);
+
+// ─── Team inbox (FAD's Slack replacement) ─────────────────────────
+// Channels + DMs + messages + read receipts + reactions. Routes
+// require attachIdentity (JWT). Single-tenant in v1 (FR only); the
+// schema is tenant-scoped so multi-tenant rollout doesn't need a
+// migration when the time comes. Mount at /api/team — separate from
+// /api/inbox/* which is the guest-inbox surface (proxied to GMS).
+const teamInbox = require('./src/team_inbox');
+app.use('/api/team', teamInbox.router);
 // Start the DLQ worker that drains inbox_guesty_jobs. Cheap interval
 // poll (every 15s), runs in-process. See src/website_inbox/jobs.js.
 websiteInbox.startWorker();

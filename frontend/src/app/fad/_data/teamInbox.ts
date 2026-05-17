@@ -7,11 +7,24 @@
 // GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9.
 
 export type ChannelKey =
-  | 'general'
-  | 'ops'
-  | 'finance'
-  | 'syndic'
-  | 'marketing';
+  // Public channels (everyone in tenant)
+  | 'gm'             // daily good morning check-in
+  | 'announce'       // company announcements + updates from Judith
+  | 'random'         // non-work / miscellaneous
+  | 'ops'            // operations (incl. guest comms execution)
+  | 'reservations'   // listings / OTAs / pricing / website / new bookings
+  | 'syndic'         // syndic work
+  | 'agency'         // agency work
+  | 'marketing'      // marketing campaigns + content
+  | 'photoshoot'     // FULL-quality image storage; compression bypassed
+  // Private channels (explicit membership)
+  | 'finance'        // finance + accounting
+  | 'admin'          // Stripe, bank accounts, legal-ops, accountant comms
+  | 'refunds'        // refund decisions + paper trail
+  | 'adjustments'    // pricing / reservation adjustments
+  // Legacy — kept so older fixtures don't break the type check during
+  // the rollout window. Backend never emits this; consumers can prune.
+  | 'general';
 
 export interface TeamChannel {
   id: string;

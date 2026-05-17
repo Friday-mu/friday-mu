@@ -1,17 +1,22 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  TEAM_CHANNELS,
-  TEAM_DMS,
   TEAM_MESSAGES,
   type ChannelKey,
   type TeamCallMeta,
   type TeamDM,
   type TeamMessage,
 } from '../../../_data/teamInbox';
+import {
+  useChannels,
+  useDms,
+  useTeamMessages,
+  type LiveChannel,
+  type LiveDm,
+} from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
-import { ROLE_LABEL, type Resource } from '../../../_data/permissions';
+import { ROLE_LABEL } from '../../../_data/permissions';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
 import { IconCal, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
 import { ScheduleCallDrawer } from './ScheduleCallDrawer';
@@ -20,14 +25,6 @@ import { fireToast } from '../../Toaster';
 type Selection =
   | { kind: 'channel'; channelKey: ChannelKey }
   | { kind: 'dm'; dm: TeamDM };
-
-const CHANNEL_RESOURCE_BY_KEY: Record<ChannelKey, Resource> = {
-  general: 'inbox_team',
-  ops: 'inbox_team',
-  marketing: 'inbox_team',
-  finance: 'finance',  // restricted: only roles with finance read see #finance
-  syndic: 'inbox_syndic',
-};
 
 export function TeamInbox({
   mentionsOnly = false,
@@ -40,74 +37,102 @@ export function TeamInbox({
   mobileThreadOpen?: boolean;
   onMobileThreadOpenChange?: (open: boolean) => void;
 }) {
-  const { role, can } = usePermissions();
+  // role/permissions still wired but no longer used for channel filtering —
+  // backend enforces channel visibility via membership table. Kept here
+  // because other surfaces (compose toolbar, send permissions) may need
+  // them in follow-ups.
+  const _perms = usePermissions();
+  void _perms;
   const currentUserId = useCurrentUserId();
 
-  const visibleChannels = useMemo(
-    () => TEAM_CHANNELS.filter((c) => can(CHANNEL_RESOURCE_BY_KEY[c.key], 'read')),
-    [role, can],
+  // Live data from /api/team/* (polled every 30s for unread badges).
+  const { channels: liveChannels } = useChannels();
+  const { dms: liveDms } = useDms();
+
+  const visibleChannels: LiveChannel[] = useMemo(
+    () => liveChannels ?? [],
+    [liveChannels],
   );
-  const visibleDms = useMemo(
-    () => TEAM_DMS.filter((d) => d.participantIds.includes(currentUserId)),
-    [currentUserId],
+  // LiveDm is a superset of fixture TeamDM; convert for downstream compat.
+  const visibleDms: TeamDM[] = useMemo(
+    () => (liveDms ?? [])
+      .filter((d: LiveDm) => d.participantIds.includes(currentUserId))
+      .map((d: LiveDm) => ({ id: d.id, participantIds: d.participantIds, unread: d.unread })),
+    [liveDms, currentUserId],
   );
 
-  const [selection, setSelection] = useState<Selection>(() =>
-    visibleChannels[0]
-      ? { kind: 'channel', channelKey: visibleChannels[0].key }
-      : visibleDms[0]
-        ? { kind: 'dm', dm: visibleDms[0] }
-        : { kind: 'channel', channelKey: 'general' },
-  );
+  const [selection, setSelection] = useState<Selection | null>(null);
+  // Auto-select the first available channel once data lands. Switches
+  // to a different channel/DM are explicit user actions thereafter.
+  useEffect(() => {
+    if (selection !== null) return;
+    if (visibleChannels[0]) {
+      setSelection({ kind: 'channel', channelKey: visibleChannels[0].key });
+    } else if (visibleDms[0]) {
+      setSelection({ kind: 'dm', dm: visibleDms[0] });
+    }
+  }, [visibleChannels, visibleDms, selection]);
 
   const [draft, setDraft] = useState('');
   const [callOpen, setCallOpen] = useState(false);
-  // Local revision counter to force a re-render when the fixture array mutates.
-  const [rev, setRev] = useState(0);
-  const bumpRev = () => setRev((n) => n + 1);
 
-  const messages = useMemo(() => {
-    let msgs: TeamMessage[];
-    if (selection.kind === 'channel') {
-      msgs = TEAM_MESSAGES.filter((m) => m.channelKey === selection.channelKey);
-    } else {
-      msgs = TEAM_MESSAGES.filter((m) => m.dmId === selection.dm.id);
-    }
+  // Resolve the selected channel's database id so the messages hook
+  // can fetch via /api/team/channels/:id/messages (the API takes the
+  // UUID, not the channel_key).
+  const selectedChannel = selection?.kind === 'channel'
+    ? visibleChannels.find((c) => c.key === selection.channelKey) || null
+    : null;
+  const messagesTarget = selection
+    ? selection.kind === 'channel'
+      ? (selectedChannel ? { kind: 'channel' as const, id: selectedChannel.id } : null)
+      : { kind: 'dm' as const, id: selection.dm.id }
+    : null;
+
+  const { messages: liveMessages, send: sendLive } = useTeamMessages(messagesTarget);
+
+  const messages: TeamMessage[] = useMemo(() => {
+    let msgs: TeamMessage[] = (liveMessages ?? []).map((m): TeamMessage => ({
+      id: m.id,
+      channelKey: m.channelKey,
+      dmId: m.dmId,
+      authorId: m.authorId || '',
+      text: m.text,
+      ts: m.ts,
+      mentions: m.mentions,
+      kind: m.kind,
+      // Pass-through extras when present in meta (call/task-link fixtures).
+      callMeta: (m.meta as { call?: TeamCallMeta })?.call,
+    }));
     if (mentionsOnly) {
       msgs = msgs.filter((m) => m.mentions?.includes(currentUserId));
     }
     return msgs;
-  }, [selection, rev, mentionsOnly, currentUserId]);
+  }, [liveMessages, mentionsOnly, currentUserId]);
 
   const sendMessage = () => {
     const text = draft.trim();
-    if (!text) return;
-    const message: TeamMessage = {
-      id: `tm-${Date.now()}`,
-      authorId: currentUserId,
-      text,
-      ts: new Date().toISOString(),
-      kind: 'text',
-      ...(selection.kind === 'channel'
-        ? { channelKey: selection.channelKey }
-        : { dmId: selection.dm.id }),
-    };
-    TEAM_MESSAGES.push(message);
+    if (!text || !selection) return;
+    // Fire and forget — the hook does optimistic append + refetch.
+    sendLive(text);
     setDraft('');
-    bumpRev();
   };
 
-  const targetTitle = selection.kind === 'channel'
-    ? TEAM_CHANNELS.find((c) => c.key === selection.channelKey)?.name ?? '#unknown'
-    : dmTitle(selection.dm, currentUserId);
+  const targetTitle = selection?.kind === 'channel'
+    ? selectedChannel?.name ?? '#unknown'
+    : selection?.kind === 'dm' ? dmTitle(selection.dm, currentUserId) : '';
 
-  const targetSubtitle = selection.kind === 'channel'
-    ? TEAM_CHANNELS.find((c) => c.key === selection.channelKey)?.purpose ?? ''
-    : `Direct message · ${selection.dm.participantIds.length === 2 ? '1:1' : 'group'}`;
+  const targetSubtitle = selection?.kind === 'channel'
+    ? selectedChannel?.purpose ?? ''
+    : selection?.kind === 'dm'
+      ? `Direct message · ${selection.dm.participantIds.length === 2 ? '1:1' : 'group'}`
+      : '';
 
-  const defaultInviteeIds = selection.kind === 'dm'
+  // Channel member list lives behind GET /api/team/channels/:id (detail);
+  // for v1 ScheduleCallDrawer we don't pre-populate invitees from the
+  // channel — operator picks them. DMs still pre-fill participants.
+  const defaultInviteeIds = selection?.kind === 'dm'
     ? selection.dm.participantIds
-    : visibleChannels.find((c) => selection.kind === 'channel' && c.key === selection.channelKey)?.memberIds.slice(0, 4) ?? [];
+    : [];
 
   const openSelection = (next: Selection) => {
     setSelection(next);
@@ -140,6 +165,26 @@ export function TeamInbox({
             Internal team chat lands with the next inbox sprint.
           </span>
         </div>
+      </div>
+    );
+  }
+
+  // Brief loading window: channels list returned non-empty but useEffect
+  // hasn't auto-selected yet (single render frame typically).
+  if (!selection) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 40,
+          color: 'var(--color-text-tertiary)',
+          fontSize: 13,
+        }}
+      >
+        Loading team chat…
       </div>
     );
   }
@@ -279,12 +324,12 @@ export function TeamInbox({
             </div>
             <div className="inbox-thread-meta" style={{ marginBottom: 4 }}>
               <span>{targetSubtitle}</span>
-              {selection.kind === 'channel' && (
+              {selection.kind === 'channel' && selectedChannel && (
                 <>
                   <span className="sep">·</span>
                   <span>
                     <IconUsers size={11} />{' '}
-                    {visibleChannels.find((c) => c.key === selection.channelKey)?.memberIds.length ?? 0} members
+                    {selectedChannel.visibility === 'private' ? 'Private' : 'Everyone'}
                   </span>
                 </>
               )}
