@@ -21,12 +21,27 @@ import {
 import { IconClose, IconPlus, IconUsers } from '../../icons';
 import { fireToast } from '../../Toaster';
 
+// JWT-derived identity — the `currentUserId` from usePermissions() is
+// a fixture id ('u-ishant') for the role switcher, NOT the real DB
+// UUID. The members API uses real UUIDs, so we read the JWT here to
+// match correctly + detect system-admin (DB users.role === 'admin').
+function readJwtIdentity(): { userId: string | null; role: string | null } {
+  if (typeof window === 'undefined') return { userId: null, role: null };
+  const token = localStorage.getItem('gms_token');
+  if (!token) return { userId: null, role: null };
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1] || ''));
+    return { userId: payload?.user_id || null, role: payload?.role || null };
+  } catch {
+    return { userId: null, role: null };
+  }
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
   channelId: string;
   channelName: string;
-  currentUserId: string;
   /** Fired after add/remove so the parent can refetch channels (membership
    *  affects visibility of private channels in the sidebar). */
   onMembersChanged?: () => void;
@@ -39,9 +54,13 @@ export function ChannelMembersDrawer({
   onClose,
   channelId,
   channelName,
-  currentUserId,
   onMembersChanged,
 }: Props) {
+  // Real DB user ID from JWT (NOT the fixture role-switcher id that
+  // usePermissions() returns — that's 'u-ishant' which never matches
+  // the UUIDs the team_inbox API returns).
+  const jwt = useMemo(() => readJwtIdentity(), []);
+  const currentUserId = jwt.userId ?? '';
   const [channel, setChannel] = useState<LiveChannel | null>(null);
   const [members, setMembers] = useState<ChannelMember[]>([]);
   const [tenantUsers, setTenantUsers] = useState<LiveUser[]>([]);
@@ -73,10 +92,12 @@ export function ChannelMembersDrawer({
   const me = members.find((m) => m.id === currentUserId);
   // System admin (DB-side users.role === 'admin') is the bootstrap path
   // for private channels with zero seeded members — without this, nobody
-  // could ever become a channel admin via the UI. Channel admins manage
-  // ongoing membership independent of system role.
+  // could ever become a channel admin via the UI. Both signals checked:
+  // (1) JWT `role` claim (always available, even before tenantUsers loads),
+  // (2) tenant users lookup (canonical, but async).
   const meTenant = tenantUsers.find((u) => u.id === currentUserId);
-  const isAdmin = me?.channelRole === 'admin' || meTenant?.role === 'admin';
+  const isSystemAdmin = jwt.role === 'admin' || meTenant?.role === 'admin';
+  const isAdmin = me?.channelRole === 'admin' || isSystemAdmin;
 
   const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
   const candidates = useMemo(() => {

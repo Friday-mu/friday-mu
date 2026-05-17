@@ -1208,7 +1208,7 @@ app.get('/api/auth/me', asyncHandler(async (req, res) => {
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const { data } = await userGmsCall.get('/api/auth/me', { headers: { Authorization: auth } });
-    const userId = data?.user?.id || data?.id;
+    const userId = data?.user_id || data?.user?.id || data?.id;
     const mustChange = await loadMustChangePassword(userId);
     res.json({ ...data, must_change_password: mustChange });
   } catch (e) {
@@ -1241,7 +1241,7 @@ app.post('/api/auth/change-password', asyncHandler(async (req, res) => {
   let userId;
   try {
     const { data } = await userGmsCall.get('/api/auth/me', { headers: { Authorization: auth } });
-    userId = data?.user?.id || data?.id;
+    userId = data?.user_id || data?.user?.id || data?.id;
   } catch (e) {
     return res.status(401).json({ error: 'Invalid token' });
   }
@@ -1313,6 +1313,12 @@ async function gmsProxy(req, res, gmsPath, method = 'get') {
 // instead — so we proxy to GMS to keep analytics flowing.
 app.all('/api/analytics/*', asyncHandler((req, res) =>
   gmsProxy(req, res, req.path, req.method.toLowerCase())
+));
+
+// /api/version — legacy update-banner polling endpoint (lib/analytics.ts +
+// page.tsx). Pre-cutover hit GMS directly; now proxied through fad-backend.
+app.get('/api/version', asyncHandler((req, res) =>
+  gmsProxy(req, res, '/api/version')
 ));
 
 app.get('/api/inbox/conversations', requireAuth, asyncHandler((req, res) =>

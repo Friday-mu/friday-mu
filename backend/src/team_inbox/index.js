@@ -72,9 +72,11 @@ const router = express.Router();
 // ─── Attachment storage config ─────────────────────────────────────
 // Public nginx static serve under /uploads/team/... per locked
 // decision §8 + Ishant 2026-05-18 nod (attachments-as-company-info,
-// terms-of-use govern misuse). Reuses the existing /var/www/fad-uploads
-// nginx location — no nginx config change needed.
-const UPLOAD_DIR = process.env.FAD_UPLOAD_DIR || '/var/www/fad-uploads';
+// terms-of-use govern misuse). Writes under the fad-uploads root, NOT
+// the FAD_UPLOAD_DIR env (which is design-photos-specific and points
+// at .../photos on prod) — a separate TEAM_UPLOAD_DIR env keeps them
+// independent.
+const UPLOAD_DIR = process.env.TEAM_UPLOAD_DIR || '/var/www/fad-uploads';
 const TEAM_UPLOAD_SUBDIR = 'team';
 const TEAM_UPLOAD_URL_PREFIX = '/uploads/team';
 const MAX_ATTACHMENT_BYTES = parseInt(process.env.TEAM_ATTACHMENT_MAX_BYTES || String(25 * 1024 * 1024), 10);

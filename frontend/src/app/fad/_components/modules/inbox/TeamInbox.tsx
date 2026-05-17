@@ -668,7 +668,6 @@ export function TeamInbox({
           onClose={() => setMembersOpen(false)}
           channelId={selectedChannel.id}
           channelName={selectedChannel.name}
-          currentUserId={currentUserId}
           onMembersChanged={() => {
             // A private channel may have just become visible/invisible to
             // the caller; refetch the sidebar so the list stays in sync.
