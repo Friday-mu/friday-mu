@@ -623,6 +623,21 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
   let mentions = Array.isArray(req.body?.mentions) ? req.body.mentions : [];
   // Cap mention count and dedup. Validate they're real channel members.
   mentions = [...new Set(mentions)].slice(0, 50);
+  // Defensive: drop non-UUID mention values before the `uuid[]` cast
+  // below. Frontend currently passes roster IDs (e.g. 'u-catherine')
+  // from TASK_USERS in some flows (ScheduleCallDrawer). Without this
+  // filter Postgres rejects the cast and the whole send 500s, blocking
+  // the message entirely. Reported by Mary 2026-05-17 14:21 UTC.
+  // TODO: frontend should map roster IDs → real DB UUIDs before send.
+  {
+    const before = mentions.length;
+    mentions = mentions.filter(
+      (m) => typeof m === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m),
+    );
+    if (mentions.length < before) {
+      console.warn(`[team_inbox] channel POST: dropped ${before - mentions.length} non-UUID mentions`);
+    }
+  }
   try {
     const { rows: chRows } = await query(
       `SELECT id, visibility FROM team_channels WHERE id = $1 AND tenant_id = $2`,
@@ -875,9 +890,21 @@ router.post('/dms/:id/messages', attachIdentity, async (req, res) => {
   const kind = req.body?.kind || 'text';
   const meta = req.body?.meta || null;
   const parentMessageId = req.body?.parentMessageId || null;
-  const mentions = Array.isArray(req.body?.mentions)
+  let mentions = Array.isArray(req.body?.mentions)
     ? [...new Set(req.body.mentions)].slice(0, 50)
     : [];
+  // Defensive: drop non-UUID mention values — frontend may pass roster
+  // IDs (e.g. 'u-catherine') which would crash the uuid[] cast on
+  // INSERT below. See channels POST for the longer note + Mary's report.
+  {
+    const before = mentions.length;
+    mentions = mentions.filter(
+      (m) => typeof m === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m),
+    );
+    if (mentions.length < before) {
+      console.warn(`[team_inbox] dm POST: dropped ${before - mentions.length} non-UUID mentions`);
+    }
+  }
   try {
     const { rows: dmRows } = await query(
       `SELECT * FROM team_dms WHERE id = $1 AND tenant_id = $2`,
