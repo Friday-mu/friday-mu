@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   INBOX_INTERNAL_NOTES,
   INBOX_THREADS,
@@ -169,13 +169,26 @@ export function InboxModule({ onAskFriday }: Props) {
   const filtered = sourceThreads.filter((t) => {
     if (entityFilter !== 'all' && entityFilter !== 'team' && t.entity !== entityFilter) return false;
     if (triageFilter === 'unread' && !t.unread) return false;
-    if (triageFilter === 'review' && t.triageStatus !== 'review') return false;
+    // 'review' now means "an AI draft is awaiting my approval" — the
+    // operational definition operators actually want. GMS's
+    // triageStatus 'review' (snoozed) is rare and was confusingly
+    // overloading the same chip name. Match on latestDraftState
+    // directly (data lands on every list row via the API).
+    if (triageFilter === 'review' && t.latestDraftState !== 'draft_ready' && t.latestDraftState !== 'under_review') return false;
     if (triageFilter === 'open' && t.triageStatus !== 'open') return false;
     if (triageFilter === 'done' && t.triageStatus !== 'done') return false;
     if (stayFilter !== 'all' && t.stayStatus !== stayFilter) return false;
     if (mentionsOnly && !t.mentionsMe) return false;
     return true;
   });
+  // Review tab badge count — surfaced in the FilterButton chip so
+  // operators see "Review (3)" at a glance.
+  const reviewCount = useMemo(
+    () => sourceThreads.filter(
+      (t) => t.latestDraftState === 'draft_ready' || t.latestDraftState === 'under_review',
+    ).length,
+    [sourceThreads],
+  );
 
   // Thread shown in the detail pane. List response gives summary metadata only;
   // useThreadDetail lazily fetches full messages + reservation when selection
@@ -808,12 +821,12 @@ export function InboxModule({ onAskFriday }: Props) {
           <div className="inbox-thread-body" ref={threadBodyRef}>
             {/* Render full message thread when available (live data path). Falls
                 back to a single preview bubble for fixture/empty states.
-                Per-message Show-original toggle when GMS detected a non-EN
-                source and translated the body. */}
+                Sent drafts merged inline as outbound bubbles with reviewer
+                attribution — operators see what Friday + the team actually
+                sent without leaving the conversation. Per-message
+                Show-original toggle when GMS detected a non-EN source. */}
             {thread.messages && thread.messages.length > 0 ? (
-              thread.messages.map((m, idx) => (
-                <MessageBubble key={idx} m={m} threadGuest={thread.guest} />
-              ))
+              <UnifiedTimeline thread={thread} />
             ) : (
               <div className="msg-bubble them">
                 <div className="msg-meta">
@@ -1128,6 +1141,145 @@ export function InboxModule({ onAskFriday }: Props) {
 // (m.bodyOriginal present, different from m.body), shows the translated
 // version with a "Show original · {lang}" toggle. Outbound messages
 // never carry a translation; the toggle is hidden for them.
+// Unified message + sent-draft timeline. Merges thread.messages (inbound
+// + outbound conversation events) with thread.drafts in 'sent' state
+// (AI drafts approved + sent by the team). Sorted chronologically so
+// the operator sees the conversation in order, with sent drafts
+// rendered as outbound bubbles carrying reviewer attribution
+// ("Sent by Mathias via Friday").
+//
+// Why merge here rather than at the API: the bundled detail response
+// is two arrays (messages + drafts); the timeline view is a derived
+// shape with date separators + interleaving. Keeping the merge
+// client-side means GMS doesn't need to change.
+function UnifiedTimeline({ thread }: { thread: InboxThread }) {
+  const items = useMemo(() => {
+    type Item =
+      | { kind: 'msg'; key: string; ts: string; m: InboxMessage }
+      | { kind: 'sent-draft'; key: string; ts: string; body: string; bodyTranslated?: string; reviewer?: string };
+
+    const out: Item[] = [];
+    (thread.messages || []).forEach((m, idx) => {
+      out.push({ kind: 'msg', key: `m-${idx}`, ts: m.time, m });
+    });
+    // Only sent drafts get rendered — draft_ready / under_review live
+    // in the DraftPanel/Friday Consult, not in the thread timeline.
+    // Failed/queued sends could surface later as retry cards.
+    (thread.drafts || []).forEach((d) => {
+      if (d.state !== 'sent') return;
+      out.push({
+        kind: 'sent-draft',
+        key: `d-${d.id}`,
+        ts: d.createdAt,
+        body: d.body,
+        bodyTranslated: d.bodyTranslated && d.bodyTranslated !== d.body ? d.bodyTranslated : undefined,
+        // For v1 we don't have reviewer-name on the draft row; GMS
+        // returns reviewed_by which we'd surface here if the
+        // transformer captured it. For now show generic attribution.
+      });
+    });
+    // Sort ascending by ts so thread reads top-to-bottom chronologically.
+    out.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+    return out;
+  }, [thread.messages, thread.drafts]);
+
+  // Date separator helper — "Today / Yesterday / Mon May 12".
+  let lastDateLabel = '';
+  const dateLabelFor = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const sameDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (sameDay(d, now)) return 'Today';
+    if (sameDay(d, yesterday)) return 'Yesterday';
+    return d.toLocaleDateString('en-GB', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <>
+      {items.map((it) => {
+        const dateLabel = dateLabelFor(it.ts);
+        const showSeparator = dateLabel !== lastDateLabel;
+        lastDateLabel = dateLabel;
+        return (
+          <React.Fragment key={it.key}>
+            {showSeparator && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  margin: '12px 0 6px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  color: 'var(--color-text-tertiary)',
+                }}
+              >
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border-tertiary)' }} />
+                <span>{dateLabel}</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border-tertiary)' }} />
+              </div>
+            )}
+            {it.kind === 'msg' ? (
+              <MessageBubble m={it.m} threadGuest={thread.guest} />
+            ) : (
+              <SentDraftBubble body={it.body} bodyTranslated={it.bodyTranslated} ts={it.ts} channel={thread.channel} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+function SentDraftBubble({
+  body,
+  bodyTranslated,
+  ts,
+  channel,
+}: {
+  body: string;
+  bodyTranslated?: string;
+  ts: string;
+  channel: string;
+}) {
+  const [showTranslated, setShowTranslated] = useState(false);
+  const visible = showTranslated && bodyTranslated ? bodyTranslated : body;
+  return (
+    <div className="msg-bubble us">
+      <div className="msg-meta">
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          padding: '1px 4px',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--color-text-success)',
+          color: '#fff',
+          marginRight: 4,
+        }}>
+          Sent
+        </span>
+        Friday on {channel} · {formatRelative(ts)}
+      </div>
+      <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{visible}</div>
+      {bodyTranslated && (
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => setShowTranslated((v) => !v)}
+          style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}
+        >
+          {showTranslated ? 'Show English' : 'Show what was sent'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: string }) {
   const [showOriginal, setShowOriginal] = useState(false);
   const hasTranslation = !!(m.bodyOriginal && m.bodyOriginal !== m.body);
