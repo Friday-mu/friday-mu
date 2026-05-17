@@ -1355,7 +1355,11 @@ export function FloorPlanTracingEditor({
    * existing onMouseDown/Move/Up handlers can consume. Only the fields
    * those handlers actually read are populated.
    */
-  function synthesizeMouseEvent(touch: Touch): React.MouseEvent<SVGSVGElement> {
+  // React.TouchEvent.touches yields React.Touch (Synthetic-Event narrowing)
+  // — structurally compatible with DOM Touch for the {clientX, clientY,
+  // identifier, target} fields we actually use, but TS strict mode flags
+  // the missing force/radius/rotationAngle. Accept the React-narrowed shape.
+  function synthesizeMouseEvent(touch: React.Touch): React.MouseEvent<SVGSVGElement> {
     return {
       clientX: touch.clientX,
       clientY: touch.clientY,
@@ -1370,11 +1374,11 @@ export function FloorPlanTracingEditor({
     } as unknown as React.MouseEvent<SVGSVGElement>;
   }
 
-  function touchDistPx(t1: Touch, t2: Touch): number {
+  function touchDistPx(t1: React.Touch, t2: React.Touch): number {
     return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
   }
 
-  function touchMidpoint(t1: Touch, t2: Touch): { x: number; y: number } {
+  function touchMidpoint(t1: React.Touch, t2: React.Touch): { x: number; y: number } {
     return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
   }
 

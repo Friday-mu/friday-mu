@@ -199,7 +199,11 @@ function Body({
   onAddCost: () => void;
 }) {
   const { byId: usersById } = useTenantUsers();
-  const assignees = task.assigneeIds.map((id) => usersById.get(id)).filter(Boolean);
+  // Narrow to non-undefined via type predicate — Map.get returns T | undefined.
+  type AssigneeUser = NonNullable<ReturnType<typeof usersById.get>>;
+  const assignees = task.assigneeIds
+    .map((id) => usersById.get(id))
+    .filter((u): u is AssigneeUser => Boolean(u));
   return (
     <>
       {task.description && (

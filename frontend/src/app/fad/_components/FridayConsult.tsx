@@ -393,7 +393,6 @@ export function FridayConsult({
             key={i}
             m={m}
             msgIndex={i}
-            onApplyDraftUpdate={onDraftUpdate}
             onChipClick={submit}
             onConfirmTeaching={confirmTeaching}
             onDismissTeaching={dismissTeaching}

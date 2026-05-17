@@ -7,6 +7,11 @@
 // belong server-side once auth is real. Tag: PROD-DESIGN-2.
 
 import { FRIDAY_CATALOG_HISTORY, FRIDAY_STYLE_GUIDE } from './fridayCatalogHistory';
+// `export { formatMUR } from './finance'` at L1022 below re-exports for
+// other modules but doesn't bring the symbol into THIS file's scope.
+// Two callers (change-order activity summaries, L2809 + L2848) use it
+// inline so we import it locally too.
+import { formatMUR } from './finance';
 
 // Re-export so consumers don't need to reach into the helper file.
 export { FRIDAY_CATALOG_HISTORY, FRIDAY_STYLE_GUIDE };

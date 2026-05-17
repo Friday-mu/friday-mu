@@ -92,7 +92,7 @@ export function useDisplayedUser(): DisplayedUser {
       return {
         name: u.name,
         initials: u.initials,
-        email: u.email,
+        email: u.email ?? '',
         avatarColor: u.avatarColor,
       };
     }
