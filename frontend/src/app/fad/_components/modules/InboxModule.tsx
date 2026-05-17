@@ -590,6 +590,25 @@ export function InboxModule({ onAskFriday }: Props) {
           </span>
         </button>
       )}
+      {!onTeam && canSeeGuest && (
+        <button
+          className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}
+          onClick={() => setTriageFilter(triageFilter === 'review' ? 'all' : 'review')}
+          title="Threads with an AI draft awaiting your approval (per old GMS 'in review' section)"
+          style={{
+            // Subtle accent so this stands out from the entity chips
+            // — it's a triage filter, not an entity filter.
+            color: triageFilter === 'review' ? '#fff' : 'var(--color-brand-accent)',
+            borderColor: 'var(--color-brand-accent)',
+            background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'transparent',
+          }}
+        >
+          ● Awaiting reply{' '}
+          <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.85 }}>
+            {reviewCount}
+          </span>
+        </button>
+      )}
       <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
         {onTeam ? 'Channels · DMs · calls' : `${unread} unread across all channels`}
       </span>
@@ -704,6 +723,24 @@ export function InboxModule({ onAskFriday }: Props) {
                   >
                     {t.guest}
                   </span>
+                  {(t.latestDraftState === 'draft_ready' || t.latestDraftState === 'under_review') && (
+                    <span
+                      title="Friday drafted a reply — awaiting your approval"
+                      style={{
+                        fontSize: 9,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        color: '#fff',
+                        padding: '1px 5px',
+                        background: 'var(--color-brand-accent)',
+                        borderRadius: 4,
+                        flexShrink: 0,
+                        fontWeight: 600,
+                      }}
+                    >
+                      ● reply
+                    </span>
+                  )}
                   {t.entity !== 'guest' && (
                     <span
                       style={{

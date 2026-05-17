@@ -1011,34 +1011,24 @@ function MessageRow({
   );
 }
 
-// Read-only render of a past draft revision. Operator can scroll up
-// to see what Friday wrote at each turn; only the latest is editable.
+// Read-only render of a past draft revision. Uses the FAD design
+// system (.fcard / .fcard-kicker / .fcard-block) so the look matches
+// the rest of the dashboard rather than the legacy GMS-style heavy-
+// accent treatment. Per Ishant 2026-05-17.
 function DraftMessageHistory({ body, revisionNumber }: { body: string; revisionNumber?: number }) {
   return (
     <div
+      className="fcard fcard-block"
       style={{
         maxWidth: '85%',
-        padding: '8px 10px',
-        fontSize: 12,
-        lineHeight: 1.45,
+        opacity: 0.65,
         whiteSpace: 'pre-wrap',
+        lineHeight: 1.45,
         color: 'var(--color-text-secondary)',
-        background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.06))',
-        border: '0.5px dashed var(--color-border-accent, rgba(56, 132, 255, 0.3))',
-        borderRadius: 'var(--radius-md)',
       }}
     >
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: 0.5,
-          textTransform: 'uppercase',
-          color: 'var(--color-text-tertiary)',
-          marginBottom: 4,
-        }}
-      >
-        Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''} · superseded
+      <div className="fcard-kicker" style={{ marginBottom: 6 }}>
+        <IconSparkle size={9} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''} · superseded
       </div>
       {body}
     </div>
@@ -1094,25 +1084,9 @@ function DraftMessageActive({
   const waOpen = whatsappWindow?.open;
   const waLeft = whatsappWindow?.expiresInMinutes;
   return (
-    <div
-      style={{
-        padding: 12,
-        background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.08))',
-        border: '0.5px solid var(--color-brand-accent)',
-        borderRadius: 'var(--radius-md)',
-        boxShadow: '0 1px 4px rgba(15, 24, 54, 0.05)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: 0.5,
-            textTransform: 'uppercase',
-            color: 'var(--color-brand-accent)',
-          }}
-        >
+    <div className="fcard fcard-block">
+      <div className="fcard-kicker" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ color: 'var(--color-brand-accent)' }}>
           <IconSparkle size={10} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''}
         </span>
         {confLabel && (
@@ -1124,6 +1098,8 @@ function DraftMessageActive({
               borderRadius: 'var(--radius-sm)',
               background: confColor[tier],
               color: '#fff',
+              letterSpacing: 0,
+              textTransform: 'none',
             }}
             title="Friday's confidence on this draft"
           >
@@ -1139,12 +1115,14 @@ function DraftMessageActive({
               background: waOpen ? 'rgba(16, 185, 129, 0.12)' : 'rgba(220, 38, 38, 0.12)',
               color: waOpen ? 'var(--color-text-success)' : 'var(--color-text-danger)',
               fontWeight: 600,
+              letterSpacing: 0,
+              textTransform: 'none',
             }}
             title="WhatsApp 24-hour reply window"
           >
             {waOpen
               ? `WA · ${typeof waLeft === 'number' ? `${Math.floor(waLeft / 60)}h ${waLeft % 60}m left` : 'open'}`
-              : 'WA window closed — use template'}
+              : 'WA closed — use template'}
           </span>
         )}
       </div>

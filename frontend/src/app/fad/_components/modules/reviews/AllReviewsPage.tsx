@@ -427,12 +427,10 @@ function ReviewDetail({
           style={{ width: '100%', minHeight: 80, fontSize: 12, fontFamily: 'inherit', padding: 8 }}
         />
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 6 }}>
-          <button
-            className="btn ghost sm"
-            onClick={() => fireToast('AI draft polished · stub for now')}
-          >
-            ✨ Polish with Friday
-          </button>
+          {/* 'Polish with Friday' removed 2026-05-17 — was a toast stub
+              and Mary reported it as broken (clicked, nothing happened).
+              Reply tone polishing for reviews can be a future targeted
+              feature; for now operators edit directly. */}
           <button
             className="btn primary sm"
             onClick={sendReply}

@@ -779,10 +779,12 @@ export function TeamInbox({
                 }
               }}
             />
-            <div className="inbox-compose-actions" style={{ justifyContent: 'space-between' }}>
-              <button className="btn ghost">
-                <IconSparkle size={12} /> Polish with Friday
-              </button>
+            <div className="inbox-compose-actions" style={{ justifyContent: 'flex-end' }}>
+              {/* 'Polish with Friday' removed 2026-05-17 — Mary reported
+                  it as broken (no onClick wired). Polish needs FC's
+                  consult endpoint which requires conversationId; team
+                  channels don't have one. Operator polishes team
+                  messages directly. */}
               <button
                 className="btn primary"
                 onClick={sendMessage}
