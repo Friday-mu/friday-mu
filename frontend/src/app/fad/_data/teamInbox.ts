@@ -86,6 +86,16 @@ export interface TeamMessage {
   /** for kind: 'finance_escalation' — see FinanceEscalationMeta */
   financeEscalation?: FinanceEscalationMeta;
   attachments?: number;
+  /** Attached files / images on this message. */
+  attachmentList?: Array<{
+    id: string;
+    filename: string;
+    mimeType: string | null;
+    sizeBytes: number;
+    url: string;
+    width: number | null;
+    height: number | null;
+  }>;
   /** Slack-style flat threading. Set on replies; top-level messages are null. */
   parentMessageId?: string | null;
   /** Reply count for top-level messages (replies themselves report 0). */

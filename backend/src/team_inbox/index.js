@@ -60,10 +60,57 @@
 // seed.
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const { randomUUID } = require('crypto');
+const multer = require('multer');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 
 const router = express.Router();
+
+// ─── Attachment storage config ─────────────────────────────────────
+// Public nginx static serve under /uploads/team/... per locked
+// decision §8 + Ishant 2026-05-18 nod (attachments-as-company-info,
+// terms-of-use govern misuse). Reuses the existing /var/www/fad-uploads
+// nginx location — no nginx config change needed.
+const UPLOAD_DIR = process.env.FAD_UPLOAD_DIR || '/var/www/fad-uploads';
+const TEAM_UPLOAD_SUBDIR = 'team';
+const TEAM_UPLOAD_URL_PREFIX = '/uploads/team';
+const MAX_ATTACHMENT_BYTES = parseInt(process.env.TEAM_ATTACHMENT_MAX_BYTES || String(25 * 1024 * 1024), 10);
+
+try { fs.mkdirSync(path.join(UPLOAD_DIR, TEAM_UPLOAD_SUBDIR), { recursive: true }); } catch (e) {
+  console.warn('[team_inbox] could not pre-create upload dir:', e.message);
+}
+
+// Disk storage with deterministic UUID filenames. Multer processes
+// the file stream before req.body, so we read target id from req.params.
+// req._targetKind is set by the per-route setTargetKind() middleware
+// since multer can't tell channel vs DM from the route alone.
+const attachmentStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const targetKind = req._targetKind || 'unknown';
+    const targetId = req.params.id || 'unknown';
+    const dest = path.join(UPLOAD_DIR, TEAM_UPLOAD_SUBDIR, targetKind, targetId);
+    fs.mkdirSync(dest, { recursive: true });
+    cb(null, dest);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase().slice(0, 8) || '';
+    cb(null, `${randomUUID()}${ext}`);
+  },
+});
+
+const attachmentUploader = multer({
+  storage: attachmentStorage,
+  limits: { fileSize: MAX_ATTACHMENT_BYTES },
+  // Public team channel — no MIME filter. Operator-internal; abuse
+  // covered by terms of use, not technical gating.
+});
+
+function setTargetKind(kind) {
+  return (req, _res, next) => { req._targetKind = kind; next(); };
+}
 
 // ─── Reaction emoji set ────────────────────────────────────────────
 // Three semantic reactions per Ishant's spec. Adding a fourth later
@@ -147,6 +194,7 @@ function shapeMessage(row, kind) {
     text: row.text,
     mentions: row.mention_user_ids || [],
     parentMessageId: row.parent_message_id,
+    attachments: row._attachments || [],
     // Reply count is computed by a LEFT JOIN LATERAL on the list endpoints.
     // Replies themselves return 0 here (they're fetched via /replies, never top-level).
     replyCount: Number(row.reply_count) || 0,
@@ -159,6 +207,43 @@ function shapeMessage(row, kind) {
     // via a side query (see loadReactionsForMessages below).
     reactions: row._reactions || {},
   };
+}
+
+function shapeAttachment(row) {
+  return {
+    id: row.id,
+    filename: row.filename,
+    mimeType: row.mime_type,
+    sizeBytes: Number(row.size_bytes) || 0,
+    url: row.url,
+    width: row.width,
+    height: row.height,
+    uploadedByUserId: row.uploaded_by_user_id,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Bulk-fetch attachments for a list of message IDs of a given kind.
+ * One query instead of N. Returns a Map keyed by message_id with the
+ * value being an array of shaped attachment objects.
+ */
+async function loadAttachmentsForMessages(messageIds, kind) {
+  if (messageIds.length === 0) return new Map();
+  const col = kind === 'channel' ? 'channel_message_id' : 'dm_message_id';
+  const { rows } = await query(
+    `SELECT * FROM team_message_attachments
+     WHERE ${col} = ANY($1::uuid[])
+     ORDER BY created_at`,
+    [messageIds],
+  );
+  const byMsg = new Map();
+  for (const r of rows) {
+    const id = kind === 'channel' ? r.channel_message_id : r.dm_message_id;
+    if (!byMsg.has(id)) byMsg.set(id, []);
+    byMsg.get(id).push(shapeAttachment(r));
+  }
+  return byMsg;
 }
 
 /**
@@ -369,9 +454,16 @@ router.get('/channels/:id/messages', attachIdentity, async (req, res) => {
     sql += ` ORDER BY msg.created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
     const { rows } = await query(sql, params);
-    // Bulk-fetch reactions for these messages — single query vs N
-    const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'channel');
-    rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
+    const ids = rows.map((r) => r.id);
+    // Bulk-fetch reactions + attachments — single query each vs N
+    const [reactionMap, attachmentMap] = await Promise.all([
+      loadReactionsForMessages(ids, 'channel'),
+      loadAttachmentsForMessages(ids, 'channel'),
+    ]);
+    rows.forEach((r) => {
+      r._reactions = reactionMap.get(r.id) || {};
+      r._attachments = attachmentMap.get(r.id) || [];
+    });
     res.json({ messages: rows.map((r) => shapeMessage(r, 'channel')).reverse() });
   } catch (e) {
     console.error('[team_inbox] channel messages error:', e.message);
@@ -379,13 +471,134 @@ router.get('/channels/:id/messages', attachIdentity, async (req, res) => {
   }
 });
 
+/**
+ * Bind a list of unbound attachment IDs to the just-sent message.
+ * Validates the attachments belong to the same target (channel/dm) and
+ * are unbound (no existing message ref). Silently drops invalid IDs
+ * rather than failing the send — operators shouldn't lose a message
+ * to a stale upload reference.
+ */
+async function bindAttachments({ attachmentIds, kind, targetId, messageId, tenantId }) {
+  if (!Array.isArray(attachmentIds) || attachmentIds.length === 0) return;
+  const targetCol = kind === 'channel' ? 'channel_id' : 'dm_id';
+  const messageCol = kind === 'channel' ? 'channel_message_id' : 'dm_message_id';
+  const otherMessageCol = kind === 'channel' ? 'dm_message_id' : 'channel_message_id';
+  await query(
+    `UPDATE team_message_attachments
+     SET ${messageCol} = $1
+     WHERE id = ANY($2::uuid[])
+       AND tenant_id = $3
+       AND ${targetCol} = $4
+       AND ${messageCol} IS NULL
+       AND ${otherMessageCol} IS NULL`,
+    [messageId, attachmentIds.slice(0, 20), tenantId, targetId],
+  );
+}
+
+// POST /channels/:id/attachments — upload a single file. Returns the
+// attachment row; operator then references the id in the next send.
+// Channel must be visible to the caller (private channels gated on
+// membership).
+router.post(
+  '/channels/:id/attachments',
+  attachIdentity,
+  setTargetKind('channel'),
+  attachmentUploader.single('file'),
+  async (req, res) => {
+    const userId = req.identity?.userId;
+    if (!userId) return res.status(401).json({ error: 'No user context' });
+    if (!req.file) return res.status(400).json({ error: 'file required (multipart field "file")' });
+    try {
+      const { rows: chRows } = await query(
+        `SELECT id, visibility FROM team_channels WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, req.tenantId],
+      );
+      if (chRows.length === 0) {
+        // Best-effort cleanup of the orphaned file.
+        try { fs.unlinkSync(req.file.path); } catch (_e) { /* ignore */ }
+        return res.status(404).json({ error: 'Channel not found' });
+      }
+      const ch = chRows[0];
+      if (ch.visibility === 'private') {
+        const member = await isChannelMember(ch.id, userId);
+        if (!member) {
+          try { fs.unlinkSync(req.file.path); } catch (_e) { /* ignore */ }
+          return res.status(403).json({ error: 'Not a member of this channel' });
+        }
+      }
+      const relPath = path.relative(UPLOAD_DIR, req.file.path);
+      const url = `${TEAM_UPLOAD_URL_PREFIX}/channel/${ch.id}/${path.basename(req.file.path)}`;
+      const { rows } = await query(
+        `INSERT INTO team_message_attachments (
+           tenant_id, channel_id, uploaded_by_user_id,
+           filename, mime_type, size_bytes, storage_path, url
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *`,
+        [req.tenantId, ch.id, userId, req.file.originalname,
+         req.file.mimetype, req.file.size, relPath, url],
+      );
+      res.json({ attachment: shapeAttachment(rows[0]) });
+    } catch (e) {
+      console.error('[team_inbox] channel upload error:', e.message);
+      try { fs.unlinkSync(req.file.path); } catch (_e) { /* ignore */ }
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// POST /dms/:id/attachments — DM equivalent.
+router.post(
+  '/dms/:id/attachments',
+  attachIdentity,
+  setTargetKind('dm'),
+  attachmentUploader.single('file'),
+  async (req, res) => {
+    const userId = req.identity?.userId;
+    if (!userId) return res.status(401).json({ error: 'No user context' });
+    if (!req.file) return res.status(400).json({ error: 'file required (multipart field "file")' });
+    try {
+      const { rows: dmRows } = await query(
+        `SELECT id, participant_user_ids FROM team_dms WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, req.tenantId],
+      );
+      if (dmRows.length === 0) {
+        try { fs.unlinkSync(req.file.path); } catch (_e) { /* ignore */ }
+        return res.status(404).json({ error: 'DM not found' });
+      }
+      if (!dmRows[0].participant_user_ids.includes(userId)) {
+        try { fs.unlinkSync(req.file.path); } catch (_e) { /* ignore */ }
+        return res.status(403).json({ error: 'Not a participant' });
+      }
+      const relPath = path.relative(UPLOAD_DIR, req.file.path);
+      const url = `${TEAM_UPLOAD_URL_PREFIX}/dm/${dmRows[0].id}/${path.basename(req.file.path)}`;
+      const { rows } = await query(
+        `INSERT INTO team_message_attachments (
+           tenant_id, dm_id, uploaded_by_user_id,
+           filename, mime_type, size_bytes, storage_path, url
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *`,
+        [req.tenantId, dmRows[0].id, userId, req.file.originalname,
+         req.file.mimetype, req.file.size, relPath, url],
+      );
+      res.json({ attachment: shapeAttachment(rows[0]) });
+    } catch (e) {
+      console.error('[team_inbox] dm upload error:', e.message);
+      try { fs.unlinkSync(req.file.path); } catch (_e) { /* ignore */ }
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
 // Send a channel message. Validates @mentions are channel members.
 router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
   const userId = req.identity?.userId;
   if (!userId) return res.status(401).json({ error: 'No user context' });
   const text = String(req.body?.text || '').trim();
-  if (!text && req.body?.kind === 'text') {
-    return res.status(400).json({ error: 'text required' });
+  const attachmentIds = Array.isArray(req.body?.attachmentIds) ? req.body.attachmentIds : [];
+  // Text is required only when there are no attachments — operators
+  // can post a photo with no caption.
+  if (!text && req.body?.kind === 'text' && attachmentIds.length === 0) {
+    return res.status(400).json({ error: 'text or attachmentIds required' });
   }
   const kind = req.body?.kind || 'text';
   const meta = req.body?.meta || null;
@@ -434,6 +647,15 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
       [ch.id, userId, req.identity?.displayName || req.identity?.username || 'Unknown',
        text, mentions, kind, meta ? JSON.stringify(meta) : null, parentMessageId],
     );
+    await bindAttachments({
+      attachmentIds, kind: 'channel', targetId: ch.id,
+      messageId: insRows[0].id, tenantId: req.tenantId,
+    });
+    // Refetch attachments to surface them in the response.
+    if (attachmentIds.length > 0) {
+      const attachmentMap = await loadAttachmentsForMessages([insRows[0].id], 'channel');
+      insRows[0]._attachments = attachmentMap.get(insRows[0].id) || [];
+    }
     res.json({ message: shapeMessage(insRows[0], 'channel') });
   } catch (e) {
     console.error('[team_inbox] channel send error:', e.message);
@@ -609,8 +831,15 @@ router.get('/dms/:id/messages', attachIdentity, async (req, res) => {
     sql += ` ORDER BY msg.created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
     const { rows } = await query(sql, params);
-    const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'dm');
-    rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
+    const ids = rows.map((r) => r.id);
+    const [reactionMap, attachmentMap] = await Promise.all([
+      loadReactionsForMessages(ids, 'dm'),
+      loadAttachmentsForMessages(ids, 'dm'),
+    ]);
+    rows.forEach((r) => {
+      r._reactions = reactionMap.get(r.id) || {};
+      r._attachments = attachmentMap.get(r.id) || [];
+    });
     res.json({ messages: rows.map((r) => shapeMessage(r, 'dm')).reverse() });
   } catch (e) {
     console.error('[team_inbox] dm messages error:', e.message);
@@ -622,8 +851,9 @@ router.post('/dms/:id/messages', attachIdentity, async (req, res) => {
   const userId = req.identity?.userId;
   if (!userId) return res.status(401).json({ error: 'No user context' });
   const text = String(req.body?.text || '').trim();
-  if (!text && req.body?.kind === 'text') {
-    return res.status(400).json({ error: 'text required' });
+  const attachmentIds = Array.isArray(req.body?.attachmentIds) ? req.body.attachmentIds : [];
+  if (!text && req.body?.kind === 'text' && attachmentIds.length === 0) {
+    return res.status(400).json({ error: 'text or attachmentIds required' });
   }
   const kind = req.body?.kind || 'text';
   const meta = req.body?.meta || null;
@@ -659,6 +889,14 @@ router.post('/dms/:id/messages', attachIdentity, async (req, res) => {
       [dm.id, userId, req.identity?.displayName || req.identity?.username || 'Unknown',
        text, mentions, kind, meta ? JSON.stringify(meta) : null, parentMessageId],
     );
+    await bindAttachments({
+      attachmentIds, kind: 'dm', targetId: dm.id,
+      messageId: ins[0].id, tenantId: req.tenantId,
+    });
+    if (attachmentIds.length > 0) {
+      const attachmentMap = await loadAttachmentsForMessages([ins[0].id], 'dm');
+      ins[0]._attachments = attachmentMap.get(ins[0].id) || [];
+    }
     // Bump last_message_at so the DM list orders correctly.
     await query(
       `UPDATE team_dms SET last_message_at = NOW() WHERE id = $1`,
@@ -770,8 +1008,15 @@ router.get('/messages/:kind/:id/replies', attachIdentity, async (req, res) => {
          ORDER BY msg.created_at ASC`,
         [parentId, parent.channel_key],
       );
-      const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'channel');
-      rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
+      const ids = rows.map((r) => r.id);
+      const [reactionMap, attachmentMap] = await Promise.all([
+        loadReactionsForMessages(ids, 'channel'),
+        loadAttachmentsForMessages(ids, 'channel'),
+      ]);
+      rows.forEach((r) => {
+        r._reactions = reactionMap.get(r.id) || {};
+        r._attachments = attachmentMap.get(r.id) || [];
+      });
       return res.json({ replies: rows.map((r) => shapeMessage(r, 'channel')) });
     }
     // DM replies.
@@ -793,8 +1038,15 @@ router.get('/messages/:kind/:id/replies', attachIdentity, async (req, res) => {
        ORDER BY msg.created_at ASC`,
       [parentId, parentRows[0].dm_id],
     );
-    const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'dm');
-    rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
+    const ids = rows.map((r) => r.id);
+    const [reactionMap, attachmentMap] = await Promise.all([
+      loadReactionsForMessages(ids, 'dm'),
+      loadAttachmentsForMessages(ids, 'dm'),
+    ]);
+    rows.forEach((r) => {
+      r._reactions = reactionMap.get(r.id) || {};
+      r._attachments = attachmentMap.get(r.id) || [];
+    });
     res.json({ replies: rows.map((r) => shapeMessage(r, 'dm')) });
   } catch (e) {
     console.error('[team_inbox] replies error:', e.message);

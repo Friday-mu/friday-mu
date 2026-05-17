@@ -12,8 +12,25 @@
 // badges. Pure poll for v1; SSE upgrade in v2.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch } from '../../../components/types';
+import { apiFetch, API_BASE, getToken } from '../../../components/types';
 import type { ChannelKey, TeamMessage, TeamMessageKind } from './teamInbox';
+
+// FormData uploader — apiFetch hardcodes Content-Type: application/json
+// which would break multipart boundary detection. Mirrors apiFetch's
+// auth + error handling but omits the JSON header so the browser sets
+// the correct multipart/form-data; boundary=... automatically.
+async function uploadFile(path: string, formData: FormData): Promise<Record<string, unknown>> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', body: formData, headers });
+  if (res.status === 401) throw new Error('Unauthorized');
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 // ─── Wire shapes (mirror backend shapeChannel / shapeMessage) ───────
 
@@ -36,6 +53,18 @@ export interface LiveDm {
   lastMessageAt: string;
 }
 
+export interface LiveAttachment {
+  id: string;
+  filename: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  url: string; // relative — render with new URL(url, location.origin)
+  width: number | null;
+  height: number | null;
+  uploadedByUserId: string | null;
+  createdAt: string;
+}
+
 export interface LiveTeamMessage {
   id: string;
   kind: TeamMessageKind;
@@ -50,6 +79,9 @@ export interface LiveTeamMessage {
    *  themselves report 0). Backend populates via a LEFT JOIN LATERAL
    *  count subquery on the list endpoints. */
   replyCount: number;
+  /** Files / images attached to this message. Backend bulk-loads via
+   *  the same N+1-avoiding pattern as reactions. */
+  attachments: LiveAttachment[];
   meta: Record<string, unknown> | null;
   editedAt: string | null;
   ts: string;
@@ -112,6 +144,7 @@ export async function sendChannelMessage(channelId: string, body: {
   kind?: TeamMessageKind;
   meta?: Record<string, unknown>;
   parentMessageId?: string;
+  attachmentIds?: string[];
 }): Promise<LiveTeamMessage> {
   const data = await apiFetch(`/api/team/channels/${channelId}/messages`, {
     method: 'POST',
@@ -173,6 +206,7 @@ export async function sendDmMessage(dmId: string, body: {
   kind?: TeamMessageKind;
   meta?: Record<string, unknown>;
   parentMessageId?: string;
+  attachmentIds?: string[];
 }): Promise<LiveTeamMessage> {
   const data = await apiFetch(`/api/team/dms/${dmId}/messages`, {
     method: 'POST',
@@ -232,6 +266,25 @@ export async function loadMessageReads(kind: 'channel' | 'dm', messageId: string
 export async function loadMessageReactions(kind: 'channel' | 'dm', messageId: string): Promise<LiveReactions> {
   const data = await apiFetch(`/api/team/messages/${kind}/${messageId}/reactions`) as { reactions?: LiveReactions };
   return data?.reactions ?? {};
+}
+
+/**
+ * Upload a single file to a channel. Returns the attachment row; the
+ * caller passes the id in `attachmentIds` when sending the next
+ * message to bind the upload to that message.
+ */
+export async function uploadChannelAttachment(channelId: string, file: File): Promise<LiveAttachment> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const data = await uploadFile(`/api/team/channels/${channelId}/attachments`, fd) as { attachment: LiveAttachment };
+  return data.attachment;
+}
+
+export async function uploadDmAttachment(dmId: string, file: File): Promise<LiveAttachment> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const data = await uploadFile(`/api/team/dms/${dmId}/attachments`, fd) as { attachment: LiveAttachment };
+  return data.attachment;
 }
 
 /**
@@ -326,7 +379,7 @@ export function useTeamMessages(target: { kind: 'channel' | 'dm'; id: string } |
   loading: boolean;
   error: string | null;
   refetch: () => void;
-  send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; parentMessageId?: string; kind?: TeamMessageKind }) => Promise<LiveTeamMessage | null>;
+  send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; parentMessageId?: string; kind?: TeamMessageKind; attachmentIds?: string[] }) => Promise<LiveTeamMessage | null>;
 } {
   const [messages, setMessages] = useState<LiveTeamMessage[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -357,9 +410,10 @@ export function useTeamMessages(target: { kind: 'channel' | 'dm'; id: string } |
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.kind, target?.id]);
 
-  const send = useCallback(async (text: string, opts: { mentions?: string[]; meta?: Record<string, unknown>; parentMessageId?: string; kind?: TeamMessageKind } = {}) => {
+  const send = useCallback(async (text: string, opts: { mentions?: string[]; meta?: Record<string, unknown>; parentMessageId?: string; kind?: TeamMessageKind; attachmentIds?: string[] } = {}) => {
     const t = targetRef.current;
-    if (!t || !text.trim()) return null;
+    const hasAttachments = (opts.attachmentIds?.length ?? 0) > 0;
+    if (!t || (!text.trim() && !hasAttachments)) return null;
     try {
       const msg = t.kind === 'channel'
         ? await sendChannelMessage(t.id, { text: text.trim(), ...opts })

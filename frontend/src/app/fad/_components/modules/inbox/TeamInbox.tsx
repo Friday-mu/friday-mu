@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   TEAM_MESSAGES,
   type ChannelKey,
@@ -13,11 +13,14 @@ import {
   useDms,
   useTeamMessages,
   useMessageReplies,
+  uploadChannelAttachment,
+  uploadDmAttachment,
   addReaction,
   removeReaction,
   type LiveChannel,
   type LiveDm,
   type LiveTeamMessage,
+  type LiveAttachment,
 } from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
@@ -93,6 +96,36 @@ export function TeamInbox({
       : { kind: 'dm' as const, id: selection.dm.id }
     : null;
 
+  // Files staged via paperclip / drag / paste, awaiting send. Cleared
+  // on selection change so attachments don't leak between channels.
+  const [pendingAttachments, setPendingAttachments] = useState<LiveAttachment[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setPendingAttachments([]);
+    setUploadingCount(0);
+  }, [selection?.kind, selection?.kind === 'channel' ? selection.channelKey : selection?.kind === 'dm' ? selection.dm.id : null]);
+
+  const uploadFilesToTarget = useCallback(async (files: FileList | File[]) => {
+    if (!messagesTarget) return;
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    setUploadingCount((c) => c + arr.length);
+    await Promise.all(arr.map(async (f) => {
+      try {
+        const attachment = messagesTarget.kind === 'channel'
+          ? await uploadChannelAttachment(messagesTarget.id, f)
+          : await uploadDmAttachment(messagesTarget.id, f);
+        setPendingAttachments((prev) => [...prev, attachment]);
+      } catch (e) {
+        fireToast(e instanceof Error ? `${f.name}: ${e.message}` : 'Upload failed');
+      } finally {
+        setUploadingCount((c) => c - 1);
+      }
+    }));
+  }, [messagesTarget]);
+
   const { messages: liveMessages, send: sendLive, refetch: refetchMessages } = useTeamMessages(messagesTarget);
 
   // Open thread state — when set, an inline ThreadSurface renders below
@@ -123,6 +156,7 @@ export function TeamInbox({
       kind: m.kind,
       parentMessageId: m.parentMessageId,
       threadCount: m.replyCount,
+      attachmentList: m.attachments,
       // Pass-through extras when present in meta (call/task-link fixtures).
       callMeta: (m.meta as { call?: TeamCallMeta })?.call,
     }));
@@ -188,10 +222,12 @@ export function TeamInbox({
 
   const sendMessage = () => {
     const text = draft.trim();
-    if (!text || !selection) return;
+    if (!selection) return;
+    if (!text && pendingAttachments.length === 0) return;
     // Fire and forget — the hook does optimistic append + refetch.
-    sendLive(text);
+    sendLive(text, { attachmentIds: pendingAttachments.map((a) => a.id) });
     setDraft('');
+    setPendingAttachments([]);
   };
 
   const targetTitle = selection?.kind === 'channel'
@@ -486,7 +522,52 @@ export function TeamInbox({
             })}
           </div>
 
-          <div className="inbox-compose">
+          <div
+            className="inbox-compose"
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              if (e.dataTransfer?.files?.length) uploadFilesToTarget(e.dataTransfer.files);
+            }}
+            style={{
+              position: 'relative',
+              outline: dragOver ? '2px dashed var(--color-brand-accent)' : 'none',
+              outlineOffset: -4,
+              borderRadius: 'var(--radius-sm)',
+              transition: 'outline-color 0.1s',
+            }}
+          >
+            {dragOver && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
+                  fontSize: 13,
+                  color: 'var(--color-brand-accent)',
+                  background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.08))',
+                  borderRadius: 'var(--radius-sm)',
+                  zIndex: 1,
+                }}
+              >
+                Drop files to upload
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                if (e.target.files?.length) uploadFilesToTarget(e.target.files);
+                e.target.value = '';
+              }}
+            />
             <div className="inbox-compose-toolbar">
               <button
                 className="btn ghost sm"
@@ -495,7 +576,11 @@ export function TeamInbox({
               >
                 <IconCal size={12} /> Schedule call
               </button>
-              <button className="btn ghost sm" title="Attach a file">
+              <button
+                className="btn ghost sm"
+                title="Attach a file"
+                onClick={() => fileInputRef.current?.click()}
+              >
                 <IconPaperclip size={12} /> Attach
               </button>
               <button className="btn ghost sm" title="Insert mention">
@@ -508,6 +593,25 @@ export function TeamInbox({
                 {targetTitle}
               </span>
             </div>
+            {(pendingAttachments.length > 0 || uploadingCount > 0) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 8px' }}>
+                {pendingAttachments.map((att) => (
+                  <PendingAttachmentChip
+                    key={att.id}
+                    attachment={att}
+                    onRemove={() => setPendingAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+                  />
+                ))}
+                {uploadingCount > 0 && (
+                  <span
+                    className="chip"
+                    style={{ fontSize: 11, padding: '4px 8px', color: 'var(--color-text-tertiary)' }}
+                  >
+                    Uploading {uploadingCount} file{uploadingCount === 1 ? '' : 's'}…
+                  </span>
+                )}
+              </div>
+            )}
             <textarea
               className="inbox-compose-textarea"
               placeholder={`Message ${targetTitle}…`}
@@ -519,12 +623,23 @@ export function TeamInbox({
                   sendMessage();
                 }
               }}
+              onPaste={(e) => {
+                const files = Array.from(e.clipboardData?.files || []);
+                if (files.length > 0) {
+                  e.preventDefault();
+                  uploadFilesToTarget(files);
+                }
+              }}
             />
             <div className="inbox-compose-actions" style={{ justifyContent: 'space-between' }}>
               <button className="btn ghost">
                 <IconSparkle size={12} /> Polish with Friday
               </button>
-              <button className="btn primary" onClick={sendMessage} disabled={!draft.trim()}>
+              <button
+                className="btn primary"
+                onClick={sendMessage}
+                disabled={(!draft.trim() && pendingAttachments.length === 0) || uploadingCount > 0}
+              >
                 <IconSend size={12} /> Send
               </button>
             </div>
@@ -562,6 +677,139 @@ export function TeamInbox({
         />
       )}
     </>
+  );
+}
+
+// ───────────────── Attachment helpers ─────────────────
+
+const IMAGE_MIME_RE = /^image\//;
+
+function isImageAttachment(att: { mimeType: string | null; filename: string }): boolean {
+  if (att.mimeType && IMAGE_MIME_RE.test(att.mimeType)) return true;
+  return /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg)$/i.test(att.filename);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function PendingAttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: LiveAttachment;
+  onRemove: () => void;
+}) {
+  const isImage = isImageAttachment(attachment);
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 6px 4px 4px',
+        background: 'var(--color-background-secondary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 11,
+      }}
+    >
+      {isImage ? (
+        <img
+          src={attachment.url}
+          alt=""
+          style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 3 }}
+        />
+      ) : (
+        <span style={{ fontSize: 14 }}>📎</span>
+      )}
+      <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {attachment.filename}
+      </span>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{formatBytes(attachment.sizeBytes)}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        title="Remove"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '0 2px',
+          color: 'var(--color-text-tertiary)',
+          fontSize: 13,
+          lineHeight: 1,
+        }}
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
+function MessageAttachments({ attachments }: { attachments: TeamMessage['attachmentList'] }) {
+  if (!attachments || attachments.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+      {attachments.map((att) => {
+        if (isImageAttachment(att)) {
+          return (
+            <a
+              key={att.id}
+              href={att.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'inline-block', lineHeight: 0 }}
+            >
+              <img
+                src={att.url}
+                alt={att.filename}
+                style={{
+                  maxWidth: 320,
+                  maxHeight: 240,
+                  borderRadius: 'var(--radius-sm)',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  objectFit: 'cover',
+                }}
+              />
+            </a>
+          );
+        }
+        return (
+          <a
+            key={att.id}
+            href={att.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={att.filename}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 10px',
+              background: 'var(--color-background-secondary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 12,
+              color: 'var(--color-text-primary)',
+              textDecoration: 'none',
+            }}
+          >
+            <span style={{ fontSize: 16 }}>📎</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 500, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {att.filename}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                {formatBytes(att.sizeBytes)}
+              </div>
+            </div>
+          </a>
+        );
+      })}
+    </div>
   );
 }
 
@@ -644,6 +892,7 @@ function TextMessage({
       <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>
         {renderMentions(message.text, message.mentions)}
       </div>
+      <MessageAttachments attachments={message.attachmentList} />
       {/* Aggregated reactions — one chip per emoji with count.
           Operator clicks their own chip to remove; clicks others to add. */}
       {reactionEntries.length > 0 && (
@@ -855,6 +1104,7 @@ function ThreadSurface({
           mentions: r.mentions,
           kind: r.kind,
           parentMessageId: r.parentMessageId,
+          attachmentList: r.attachments,
         };
         return (
           <TextMessage
