@@ -16,7 +16,6 @@ import {
   type LiveDm,
 } from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
-import { ROLE_LABEL } from '../../../_data/permissions';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
 import { IconCal, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
 import { ScheduleCallDrawer } from './ScheduleCallDrawer';
@@ -379,7 +378,7 @@ export function TeamInbox({
                 className="mono"
                 style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)' }}
               >
-                {ROLE_LABEL[role]} · {targetTitle}
+                {targetTitle}
               </span>
             </div>
             <textarea
@@ -413,7 +412,12 @@ export function TeamInbox({
           ? { kind: 'channel', channelKey: selection.channelKey }
           : { kind: 'dm', dmId: selection.dm.id, participantIds: selection.dm.participantIds }}
         defaultInviteeIds={defaultInviteeIds}
-        onScheduled={() => bumpRev()}
+        onScheduled={() => {
+          // Refetch the active thread so the just-scheduled call
+          // message appears. Hook owns the polling cadence; manual
+          // refetch on a known mutation is a UX nicety.
+          // (The 15s poll would also pick it up.)
+        }}
       />
     </>
   );

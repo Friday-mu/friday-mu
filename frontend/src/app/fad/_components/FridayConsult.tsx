@@ -570,7 +570,7 @@ function MessageRow({
   m: ConsultMessage;
   msgIndex: number;
   onChipClick: (text: string) => void;
-  onConfirmTeaching: (msgIndex: number, actionIndex: number, ta: TeachingAction) => void;
+  onConfirmTeaching: (msgIndex: number, actionIndex: number, ta: TeachingAction, extraPropertyCodes?: string[]) => void;
   onDismissTeaching: (msgIndex: number, actionIndex: number) => void;
 }) {
   const isUser = m.role === 'user';

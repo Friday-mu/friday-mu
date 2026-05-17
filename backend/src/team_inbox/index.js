@@ -818,6 +818,58 @@ router.get('/search', attachIdentity, async (req, res) => {
   }
 });
 
+// ─── Slack import (one-time backfill — parked on bot token) ─────────
+// Admin posts the Slack bot token + optional date floor; worker pulls
+// users, channels, messages into TeamInbox with provenance tracking.
+// See slack_import.js for the full flow + docs/handover/slack-import-setup.md
+// for the Slack app creation steps.
+
+router.post('/slack-import/start', attachIdentity, async (req, res) => {
+  const userId = req.identity?.userId;
+  if (!userId) return res.status(401).json({ error: 'No user context' });
+  // Only admins can trigger an import. Role check matches the gating
+  // patterns elsewhere in fad-backend (design module, etc.).
+  if (req.identity?.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Admin role required' });
+  }
+  const token = String(req.body?.botToken || '').trim();
+  if (!token.startsWith('xoxb-')) {
+    return res.status(400).json({ error: 'Slack bot token required (starts with xoxb-)' });
+  }
+  const importedSince = req.body?.importedSince || null;
+
+  try {
+    const { runSlackImport } = require('./slack_import');
+    // Kick off async — return run id immediately so the admin UI can
+    // poll for status. The run can take minutes for large workspaces.
+    const runPromise = runSlackImport(req.tenantId, token, { importedSince });
+    // Fire-and-forget; don't await. Errors land in slack_import_runs.last_error.
+    runPromise.catch((e) => console.error('[slack-import/start] async run failed:', e.message));
+    res.json({ ok: true, message: 'Import started; poll /api/team/slack-import/runs for status' });
+  } catch (e) {
+    console.error('[slack-import/start] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/slack-import/runs', attachIdentity, async (req, res) => {
+  const userId = req.identity?.userId;
+  if (!userId) return res.status(401).json({ error: 'No user context' });
+  if (req.identity?.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Admin role required' });
+  }
+  try {
+    const { rows } = await query(
+      `SELECT * FROM slack_import_runs WHERE tenant_id = $1 ORDER BY started_at DESC LIMIT 20`,
+      [req.tenantId],
+    );
+    res.json({ runs: rows });
+  } catch (e) {
+    console.error('[slack-import/runs] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Users (for @mention picker + DM target selection) ──────────────
 
 router.get('/users', attachIdentity, async (req, res) => {
