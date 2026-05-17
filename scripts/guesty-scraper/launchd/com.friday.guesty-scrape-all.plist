@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.friday.guesty-scrape-all</string>
+
+  <!-- Run every 900 seconds (15 minutes). If the Mac sleeps mid-run,
+       launchd doesn't fire — it picks up at the next interval after
+       wake. Acceptable for a backup/verification scraper. -->
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <!-- Don't fire at load time (avoid double-trigger when reloading
+       the plist). The first scheduled run happens 15 min after load. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- The actual command. Wraps in `cd && npm run scrape:all` so the
+       relative .profile path resolves correctly. zsh -lc to source
+       PATH (node, npm). -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /Users/judith/repos/friday-admin-dashboard/.claude/worktrees/fad-design-os/scripts/guesty-scraper &amp;&amp; npm run scrape:all</string>
+  </array>
+
+  <!-- Log everything launchd-side. Append; we rotate manually if it
+       grows. tail -f this file to watch the last run live. -->
+  <key>StandardOutPath</key>
+  <string>/Users/judith/Library/Logs/guesty-scrape-all.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/judith/Library/Logs/guesty-scrape-all.log</string>
+
+  <!-- Keep the working directory consistent with the npm script's
+       relative paths. -->
+  <key>WorkingDirectory</key>
+  <string>/Users/judith/repos/friday-admin-dashboard/.claude/worktrees/fad-design-os/scripts/guesty-scraper</string>
+
+  <!-- Inherit user PATH for node/npm. launchd jobs default to a tiny
+       PATH that doesn't include nvm / homebrew node — so set it
+       explicitly to whatever this machine uses. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>

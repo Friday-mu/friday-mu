@@ -8,7 +8,10 @@
     "auth": "node scrape.mjs --auth-only",
     "scrape": "node scrape.mjs",
     "scrape:dry": "node scrape.mjs --dry-run",
-    "scrape:peek": "node scrape.mjs --use-peekaboo"
+    "scrape:peek": "node scrape.mjs --use-peekaboo",
+    "scrape:reservations": "node scrape-reservations.mjs",
+    "scrape:listings": "node scrape-listings.mjs",
+    "scrape:all": "node scrape-all.mjs"
   },
   "dependencies": {
     "playwright": "^1.48.0"

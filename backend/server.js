@@ -52,6 +52,7 @@ app.use((req, res, next) => {
   // — fixed 2026-05-17 when the inbox-message handler was added.
   if (req.path === '/api/integrations/guesty/webhook') return next();
   if (req.path === '/api/integrations/guesty/scraped-reservations') return next();
+  if (req.path === '/api/integrations/guesty/scraped-listings') return next();
   return express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(limiter);
@@ -931,7 +932,8 @@ app.use('/api/auth', passwordResetRoutes);
       p.startsWith('/api/reservations') ||
       p.startsWith('/api/tasks') ||
       p.startsWith('/api/integrations/guesty/webhook') || // HMAC-signed
-      p.startsWith('/api/integrations/guesty/scraped-reservations') // HMAC-signed (scraper)
+      p.startsWith('/api/integrations/guesty/scraped-reservations') || // HMAC-signed (scraper)
+      p.startsWith('/api/integrations/guesty/scraped-listings') // HMAC-signed (scraper)
     ) {
       return next();
     }
@@ -1043,6 +1045,12 @@ app.post(
   '/api/integrations/guesty/scraped-reservations',
   express.raw({ type: '*/*', limit: '256kb' }),
   scrapedReservations.handleScrapedReservation,
+);
+const scrapedListings = require('./src/reservations/scraped_listings_webhook');
+app.post(
+  '/api/integrations/guesty/scraped-listings',
+  express.raw({ type: '*/*', limit: '256kb' }),
+  scrapedListings.handleScrapedListing,
 );
 const guestyPoller = require('./src/reservations/worker');
 guestyPoller.start();
