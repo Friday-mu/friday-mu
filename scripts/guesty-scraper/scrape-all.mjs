@@ -159,8 +159,10 @@ async function scrapeMessages(state) {
 
     const msgs = await page.evaluate(() => {
       const nodes = document.querySelectorAll('[data-testid="message-content"]');
+      // Real Guesty class names (confirmed from prod HTML 2026-05-17):
+      // messageBodyWrapperGuest = inbound, messageBodyWrapperUs = outbound.
       const inboundRe = /messageBodyWrapperGuest/i;
-      const outboundRe = /messageBodyWrapper(Host|Owner|Operator|Sent)/i;
+      const outboundRe = /messageBodyWrapperUs(?:\b|-)/i;
       return Array.from(nodes).map((node) => {
         let direction = 'inbound', cur = node;
         for (let d = 0; d < 8 && cur; d++) {
@@ -226,7 +228,11 @@ async function scrapeReservations() {
           confirmationCode: cell('confirmationCode'),
           checkInRaw: cell('checkIn'), checkOutRaw: cell('checkOut'),
           listingNickname, listingTitle, listingRaw,
-          guestName: (r.querySelector('.person-cell')?.textContent || '').trim() || null,
+          // Guest cell: person-cell class WITHOUT a datakey attr — the
+          // listing column has datakey="listing" + sometimes person-cell
+          // too, so a bare `.person-cell` lands on the listing instead
+          // of the guest.
+          guestName: (r.querySelector('[data-qa="text-cell"]:not([datakey]).person-cell')?.textContent || '').trim() || null,
         };
       }).filter((x) => x.confirmationCode || x.guestName),
     };

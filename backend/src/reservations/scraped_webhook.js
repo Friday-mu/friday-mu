@@ -75,24 +75,42 @@ async function handleScrapedReservation(req, res) {
                                                             // _id arrives via API poller
   const nights = nightsFrom(r.checkInDate, r.checkOutDate);
 
+  // Split "First Last" → first_name + last_name. Without this the
+  // FAD reservations list renders every scraper row as "Guest"
+  // (transformReservation falls back to that when both name halves
+  // are null). For names like "Maria Del Carmen Lopez", first_name
+  // captures the first token and last_name captures the rest —
+  // imperfect but recognizable in the UI; the API path will overwrite
+  // with proper structured data when it recovers.
+  let guestFirst = null, guestLast = null;
+  if (typeof r.guestName === 'string' && r.guestName.trim()) {
+    const parts = r.guestName.trim().split(/\s+/);
+    guestFirst = parts[0] || null;
+    guestLast = parts.slice(1).join(' ') || null;
+  }
+
   try {
     await query(
       `INSERT INTO guesty_reservations (
          tenant_id, guesty_id, listing_guesty_id, confirmation_code,
          status, source, channel,
          check_in_date, check_out_date,
+         guest_first_name, guest_last_name,
          raw, synced_at
        ) VALUES (
          $1, $2, $3, $4,
          $5, $6, $7,
          $8, $9,
-         $10, NOW()
+         $10, $11,
+         $12, NOW()
        )
        ON CONFLICT (tenant_id, guesty_id) DO UPDATE SET
          listing_guesty_id = EXCLUDED.listing_guesty_id,
          confirmation_code = EXCLUDED.confirmation_code,
          check_in_date     = EXCLUDED.check_in_date,
          check_out_date    = EXCLUDED.check_out_date,
+         guest_first_name  = COALESCE(EXCLUDED.guest_first_name, guesty_reservations.guest_first_name),
+         guest_last_name   = COALESCE(EXCLUDED.guest_last_name,  guesty_reservations.guest_last_name),
          raw               = EXCLUDED.raw,
          synced_at         = NOW(),
          updated_at        = NOW()`,
@@ -106,6 +124,8 @@ async function handleScrapedReservation(req, res) {
         null,                 // channel not exposed in summary view
         r.checkInDate,
         r.checkOutDate,
+        guestFirst,
+        guestLast,
         JSON.stringify({
           scrape: r,
           scrapedAt: payload.scrapedAt,

@@ -126,7 +126,10 @@ async function extractRows() {
           const el = r.querySelector(`[datakey="${key}"]`);
           return (el?.textContent || '').trim() || null;
         };
-        const personText = (r.querySelector('.person-cell')?.textContent || '').trim() || null;
+        // Guest cell has class `person-cell` AND no datakey attribute
+        // (listing has datakey="listing" and sometimes also person-cell
+        // — picking plain `.person-cell` lands on the listing column).
+        const personText = (r.querySelector('[data-qa="text-cell"]:not([datakey]).person-cell')?.textContent || '').trim() || null;
         // Listing cell is e.g. "RC-14 / Modern Sea View Apt with Pool ...";
         // split into nickname (before " / ") and title.
         const listingRaw = cell('listing');

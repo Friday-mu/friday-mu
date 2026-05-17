@@ -234,8 +234,14 @@ const SELECTORS = {
   // Wrappers around message-content carry the direction. Inspecting
   // prod HTML: inbound has `messageBodyWrapperGuest`, outbound has
   // `messageBodyWrapperHost` somewhere in the ancestor chain.
+  // Real Guesty class names (confirmed from prod HTML, 2026-05-17):
+  //   .messageBodyWrapperGuest-*  — message FROM the guest (inbound)
+  //   .messageBodyWrapperUs-*     — message FROM us / Friday   (outbound)
+  // The earlier Host|Owner|Operator|Sent guess never matched any
+  // outbound message — net result: all 162 first-run messages were
+  // tagged 'inbound' and FAD's inbox put them all on the same side.
   inboundWrapperRegex: /messageBodyWrapperGuest/i,
-  outboundWrapperRegex: /messageBodyWrapper(Host|Owner|Operator|Sent)/i,
+  outboundWrapperRegex: /messageBodyWrapperUs(?:\b|-)/i,
 };
 
 // Pure DOM extraction of visible conversation rows. Does NOT include
