@@ -713,7 +713,25 @@ export function TeamInbox({
               >
                 <IconPaperclip size={12} /> Attach
               </button>
-              <button className="btn ghost sm" title="Insert mention">
+              <button
+                className="btn ghost sm"
+                title="Insert mention"
+                onClick={() => {
+                  // Insert '@' at the end and focus the textarea so the
+                  // operator types the name inline. Full picker is a
+                  // follow-up — discoverable affordance first.
+                  setDraft((d) => (d.endsWith(' ') || d.length === 0 ? d + '@' : d + ' @'));
+                  // Defer focus to next paint so React's update lands first.
+                  requestAnimationFrame(() => {
+                    const ta = document.querySelector('.team-compose-textarea') as HTMLTextAreaElement | null;
+                    ta?.focus();
+                    if (ta) {
+                      const end = ta.value.length;
+                      ta.setSelectionRange(end, end);
+                    }
+                  });
+                }}
+              >
                 @ Mention
               </button>
               <span
@@ -743,7 +761,7 @@ export function TeamInbox({
               </div>
             )}
             <textarea
-              className="inbox-compose-textarea"
+              className="inbox-compose-textarea team-compose-textarea"
               placeholder={`Message ${targetTitle}…`}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -781,14 +799,11 @@ export function TeamInbox({
         open={callOpen}
         onClose={() => setCallOpen(false)}
         target={selection.kind === 'channel'
-          ? { kind: 'channel', channelKey: selection.channelKey }
+          ? { kind: 'channel', channelKey: selection.channelKey, channelId: selectedChannel?.id }
           : { kind: 'dm', dmId: selection.dm.id, participantIds: selection.dm.participantIds }}
         defaultInviteeIds={defaultInviteeIds}
         onScheduled={() => {
-          // Refetch the active thread so the just-scheduled call
-          // message appears. Hook owns the polling cadence; manual
-          // refetch on a known mutation is a UX nicety.
-          // (The 15s poll would also pick it up.)
+          // 15s poller will pick up the new message; nothing to do here.
         }}
       />
 

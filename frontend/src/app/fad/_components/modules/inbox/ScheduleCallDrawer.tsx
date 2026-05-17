@@ -10,8 +10,11 @@ import { fireToast } from '../../Toaster';
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** Either channel or DM target — exactly one. */
-  target: { kind: 'channel'; channelKey: ChannelKey } | { kind: 'dm'; dmId: string; participantIds: string[] };
+  /** Either channel or DM target — exactly one. `channelId` is the
+   *  live UUID for posting; `channelKey` stays for fixture renderers. */
+  target:
+    | { kind: 'channel'; channelKey: ChannelKey; channelId?: string }
+    | { kind: 'dm'; dmId: string; participantIds: string[] };
   /** Pre-filled invitee ids based on the thread context. */
   defaultInviteeIds?: string[];
   /** Called after successful submit so the parent can refresh the thread. */
@@ -61,7 +64,11 @@ export function ScheduleCallDrawer({ open, onClose, target, defaultInviteeIds, o
     }
   };
 
-  const submit = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     // @demo:config — Google Meet hardcoded as video provider. Replace with
     // GET /api/integrations/video-conferencing returning active provider + URL template. Tag: PROD-CONFIG-7.
     const meetUrl = `https://meet.google.com/${makeMeetSlug()}`;
@@ -75,23 +82,50 @@ export function ScheduleCallDrawer({ open, onClose, target, defaultInviteeIds, o
       inviteeEmails: externalEmails.length > 0 ? externalEmails : undefined,
       organizerId: currentUserId,
     };
-
-    const message: TeamMessage = {
-      id: `tm-${Date.now()}`,
-      authorId: currentUserId,
-      text: `📅 Call scheduled: ${callMeta.title} — ${formatStart(startAt)} (${duration} min)`,
-      ts: new Date().toISOString(),
-      kind: 'call_scheduled',
-      callMeta,
-      ...(target.kind === 'channel' ? { channelKey: target.channelKey } : { dmId: target.dmId }),
-    };
-    TEAM_MESSAGES.push(message);
-
+    const text = `📅 Call scheduled: ${callMeta.title} — ${formatStart(startAt)} (${duration} min) — ${meetUrl}`;
     const totalAttendees = inviteeIds.length + externalEmails.length;
-    fireToast(`Would create Google Calendar event for ${totalAttendees} attendee${totalAttendees === 1 ? '' : 's'}`);
 
-    onScheduled?.(message);
-    onClose();
+    // Persist a real message to the backend so it shows up for other
+    // operators on the thread. Previously this was fixture-only
+    // (TEAM_MESSAGES.push) — Mary 2026-05-17 reported nothing happened.
+    try {
+      const { sendChannelMessage, sendDmMessage } = await import('../../../_data/teamInboxClient');
+      let liveMsg = null;
+      if (target.kind === 'channel' && target.channelId) {
+        liveMsg = await sendChannelMessage(target.channelId, {
+          text,
+          kind: 'call_scheduled',
+          meta: { callMeta: callMeta as unknown as Record<string, unknown> },
+          mentions: inviteeIds,
+        });
+      } else if (target.kind === 'dm') {
+        liveMsg = await sendDmMessage(target.dmId, {
+          text,
+          kind: 'call_scheduled',
+          meta: { callMeta: callMeta as unknown as Record<string, unknown> },
+          mentions: inviteeIds,
+        });
+      }
+      // Fixture push kept for any non-live renderer paths still around;
+      // becomes a no-op once everything reads from the live API.
+      const fixtureMessage: TeamMessage = {
+        id: liveMsg?.id || `tm-${Date.now()}`,
+        authorId: currentUserId,
+        text,
+        ts: new Date().toISOString(),
+        kind: 'call_scheduled',
+        callMeta,
+        ...(target.kind === 'channel' ? { channelKey: target.channelKey } : { dmId: target.dmId }),
+      };
+      TEAM_MESSAGES.push(fixtureMessage);
+      fireToast(`Call scheduled · ${totalAttendees} attendee${totalAttendees === 1 ? '' : 's'} (Calendar invite is Phase 2)`);
+      onScheduled?.(fixtureMessage);
+      onClose();
+    } catch (e) {
+      fireToast(e instanceof Error ? `Schedule failed · ${e.message}` : 'Schedule failed');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!open) return null;
@@ -216,13 +250,13 @@ export function ScheduleCallDrawer({ open, onClose, target, defaultInviteeIds, o
               type="button"
               className="btn primary"
               onClick={submit}
-              disabled={inviteeIds.length === 0 && externalEmails.length === 0}
+              disabled={submitting || (inviteeIds.length === 0 && externalEmails.length === 0)}
             >
-              <IconSend size={12} /> Generate Meet & send
+              <IconSend size={12} /> {submitting ? 'Scheduling…' : 'Generate Meet & send'}
             </button>
           </div>
           <div style={{ marginTop: 12, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            Phase 1: generates fixture Meet URL and posts to thread. Phase 2 wires the real Google Calendar API.
+            Phase 1: generates a Meet URL and posts to thread. Phase 2 wires the real Google Calendar API.
           </div>
         </div>
       </aside>
