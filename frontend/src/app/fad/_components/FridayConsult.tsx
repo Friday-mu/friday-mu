@@ -1620,107 +1620,81 @@ function TeachingCard({
 
   const isConflict = action.action === 'flag_conflict';
   const accent = isConflict ? 'var(--color-text-warning)' : 'var(--color-brand-accent)';
-  const bg = isConflict
-    ? 'var(--color-background-warning-soft, rgba(245, 158, 11, 0.08))'
-    : 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.08))';
 
   const title = isConflict
-    ? '⚠ Conflicts with an existing rule'
+    ? 'Conflicts with an existing rule'
     : action.action === 'update'
-    ? '✎ Refine an existing teaching'
-    : '✦ New teaching from Friday';
+    ? 'Refine teaching'
+    : 'New teaching';
 
   const scopeLine = action.scope === 'property' && action.propertyCode
-    ? `Scope: property ${action.propertyCode}`
-    : 'Scope: global (all properties)';
+    ? `${action.propertyCode}`
+    : 'all properties';
 
   return (
     <div
-      style={{
-        marginTop: 6,
-        padding: 10,
-        background: bg,
-        border: `0.5px solid ${accent}`,
-        borderRadius: 'var(--radius-md)',
-        fontSize: 12,
-        color: 'var(--color-text-primary)',
-      }}
+      className="fcard"
+      style={{ marginTop: 4, padding: '6px 8px', fontSize: 12, color: 'var(--color-text-primary)' }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, color: accent, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-        {title}
-      </div>
-      <div style={{ marginBottom: 4 }}>
-        <strong>“{action.instruction}”</strong>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: action.reason ? 4 : 8 }}>
-        {scopeLine}
-        {/* Multi-property expansion: when scope is 'property', let the
-            operator apply the same teaching to additional properties.
-            v1 takes comma-separated codes (e.g. "LB-2, KS-5"); a richer
-            checkbox picker against the live /api/properties list lands
-            once that endpoint is wired into the inbox surface. */}
+      <div
+        className="fcard-kicker"
+        style={{ marginBottom: 4, color: accent, display: 'flex', alignItems: 'center', gap: 6 }}
+      >
+        {isConflict ? '⚠' : '✦'} {title} · {scopeLine}
         {action.scope === 'property' && state !== 'saving' && state !== 'saved' && (
-          <>
-            {' · '}
-            <button
-              type="button"
-              onClick={() => setPickerOpen((v) => !v)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: accent,
-                fontSize: 11,
-                cursor: 'pointer',
-                padding: 0,
-                textDecoration: 'underline',
-              }}
-            >
-              {pickerOpen ? 'Cancel' : 'Apply to more properties'}
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            style={{
+              marginLeft: 'auto',
+              background: 'transparent',
+              border: 'none',
+              color: accent,
+              fontSize: 10,
+              cursor: 'pointer',
+              padding: 0,
+              textDecoration: 'underline',
+              letterSpacing: 0,
+              textTransform: 'none',
+            }}
+          >
+            {pickerOpen ? 'Cancel' : '+ more properties'}
+          </button>
         )}
       </div>
+      <div style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 4 }}>
+        “{action.instruction}”
+      </div>
       {pickerOpen && state !== 'saving' && state !== 'saved' && (
-        <div style={{ marginBottom: 8 }}>
-          <input
-            type="text"
-            value={extraCodesInput}
-            onChange={(e) => setExtraCodesInput(e.target.value)}
-            placeholder="Additional property codes — e.g. LB-2, KS-5, MV-1"
-            style={{
-              width: '100%',
-              padding: '5px 8px',
-              fontSize: 11,
-              color: 'var(--color-text-primary)',
-              background: 'var(--color-background-primary)',
-              border: '0.5px solid var(--color-border-secondary)',
-              borderRadius: 'var(--radius-sm)',
-              boxSizing: 'border-box',
-            }}
-          />
-          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-            The teaching will apply to {action.propertyCode ? `${action.propertyCode} + ` : ''}every code you list above.
-          </div>
-        </div>
+        <input
+          type="text"
+          value={extraCodesInput}
+          onChange={(e) => setExtraCodesInput(e.target.value)}
+          placeholder="e.g. LB-2, KS-5, MV-1"
+          style={{
+            width: '100%',
+            padding: '4px 6px',
+            fontSize: 11,
+            marginBottom: 6,
+            color: 'var(--color-text-primary)',
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-sm)',
+            boxSizing: 'border-box',
+          }}
+        />
       )}
       {action.reason && (
-        <div style={{
-          fontSize: 11,
-          color: 'var(--color-text-secondary)',
-          marginBottom: 8,
-          padding: '4px 6px',
-          background: 'var(--color-background-primary)',
-          borderRadius: 'var(--radius-sm)',
-        }}>
-          Friday&apos;s reasoning: {action.reason}
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4, fontStyle: 'italic' }}>
+          {action.reason}
         </div>
       )}
       {state === 'saved' ? (
         <div style={{ fontSize: 11, color: 'var(--color-text-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <IconCheck size={11} /> Saved — Friday will use this in future drafts
+          <IconCheck size={10} /> Friday will use this in future drafts
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
           <button
             type="button"
             onClick={() => {
@@ -1732,7 +1706,7 @@ function TeachingCard({
             }}
             disabled={state === 'saving'}
             style={{
-              padding: '5px 10px',
+              padding: '3px 8px',
               fontSize: 11,
               fontWeight: 600,
               color: '#fff',
@@ -1742,16 +1716,14 @@ function TeachingCard({
               cursor: 'pointer',
             }}
           >
-            <IconCheck size={11} /> {state === 'saving'
-              ? 'Saving…'
-              : (isConflict ? 'Replace old rule' : action.action === 'update' ? 'Apply update' : 'Confirm')}
+            {state === 'saving' ? 'Saving…' : (isConflict ? 'Replace' : 'Confirm')}
           </button>
           <button
             type="button"
             onClick={onDismiss}
             disabled={state === 'saving'}
             style={{
-              padding: '5px 10px',
+              padding: '3px 8px',
               fontSize: 11,
               color: 'var(--color-text-secondary)',
               background: 'transparent',
