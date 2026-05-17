@@ -490,30 +490,26 @@ export function FridayConsult({
             {error}
           </div>
         )}
-        {/* Active draft renders inline at the end of the consult thread
-            (not pinned below). When Friday revises, the new draft body
-            replaces this card's contents — older revisions stay visible
-            as part of the conversation messages above. Only renders
-            when there's something to edit/approve so the empty
-            "Your reply will be…" placeholder no longer takes a row. */}
-        {(currentDraft || workingBody.trim().length > 0) && (
-          <EmbeddedDraftCard
-            workingBody={workingBody}
-            setWorkingBody={setWorkingBody}
-            currentDraft={currentDraft || null}
-            liveConfidence={latestConfidence}
-            channelLabel={channelLabel}
-            whatsappWindow={whatsappWindow}
-            sendBusy={sendBusy}
-            rejecting={rejecting}
-            rejectReason={rejectReason}
-            setRejectReason={setRejectReason}
-            onApprove={submitApprove}
-            onStartReject={() => setRejecting(true)}
-            onConfirmReject={submitReject}
-            onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-          />
-        )}
+        {/* Reply surface — always rendered now (no compose-box outside FC).
+            When Friday has a draft, this is where the operator edits +
+            approves it; when not, the operator just types here. Enter
+            sends, Shift+Enter newlines. */}
+        <EmbeddedDraftCard
+          workingBody={workingBody}
+          setWorkingBody={setWorkingBody}
+          currentDraft={currentDraft || null}
+          liveConfidence={latestConfidence}
+          channelLabel={channelLabel}
+          whatsappWindow={whatsappWindow}
+          sendBusy={sendBusy}
+          rejecting={rejecting}
+          rejectReason={rejectReason}
+          setRejectReason={setRejectReason}
+          onApprove={submitApprove}
+          onStartReject={() => setRejecting(true)}
+          onConfirmReject={submitReject}
+          onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+        />
       </div>
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
@@ -546,11 +542,89 @@ export function FridayConsult({
           ))}
         </div>
       )}
-      {/* Consult no longer owns a compose input. The unified inbox-compose
-          at the bottom of the inbox view is the single typing surface;
-          parent invokes submitQuery() via ref when the operator picks
-          "Ask Friday" from the dropdown. Removes the "two compose
-          tension" that Ishant called out on 2026-05-18. */}
+      {/* Ask Friday input — restored 2026-05-17 per Ishant: FridayConsult
+          is the single compose surface. The reply body lives in the
+          EmbeddedDraftCard above; THIS input is for chatting with Friday
+          (drafts, polish, KB lookups, teaching). Enter submits. */}
+      <AskFridayInput
+        onSubmit={(q) => submit(q)}
+        disabled={thinking || sendBusy}
+        threadGuest={threadScope}
+      />
+    </div>
+  );
+}
+
+function AskFridayInput({
+  onSubmit,
+  disabled,
+  threadGuest,
+}: {
+  onSubmit: (q: string) => void;
+  disabled: boolean;
+  threadGuest: string;
+}) {
+  const [text, setText] = useState('');
+  const submit = () => {
+    const q = text.trim();
+    if (!q || disabled) return;
+    setText('');
+    onSubmit(q);
+  };
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 6,
+        padding: '8px 12px 12px',
+        borderTop: '0.5px solid var(--color-border-tertiary)',
+        background: 'var(--color-background-primary)',
+      }}
+    >
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder={`Ask Friday about ${threadGuest}…`}
+        disabled={disabled}
+        style={{
+          flex: 1,
+          padding: '8px 10px',
+          fontSize: 13,
+          color: 'var(--color-text-primary)',
+          background: 'var(--color-background-secondary)',
+          border: '0.5px solid var(--color-border-tertiary)',
+          borderRadius: 'var(--radius-sm)',
+          outline: 'none',
+        }}
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={disabled || !text.trim()}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '8px 12px',
+          fontSize: 12,
+          fontWeight: 600,
+          color: '#fff',
+          background: 'var(--color-brand-accent)',
+          border: 'none',
+          borderRadius: 'var(--radius-sm)',
+          cursor: disabled || !text.trim() ? 'not-allowed' : 'pointer',
+          opacity: disabled || !text.trim() ? 0.5 : 1,
+        }}
+      >
+        <IconSend size={12} /> Ask
+      </button>
     </div>
   );
 }
@@ -770,10 +844,17 @@ function EmbeddedDraftCard({
         )}
       </div>
 
-      {/* Editable body — operator can tweak before sending. */}
+      {/* Editable body — operator can tweak before sending.
+          Enter sends (Mary feedback 2026-05-17). Shift+Enter newlines. */}
       <textarea
         value={workingBody}
         onChange={(e) => setWorkingBody(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            if (!sendDisabled && !rejecting) onApprove();
+          }
+        }}
         placeholder="Draft will appear here when Friday writes one, or type your own…"
         rows={6}
         style={{

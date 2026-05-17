@@ -17,6 +17,7 @@ import {
   reviseDraft,
   sendCompose,
   isReviewReady,
+  markRead,
 } from '../../_data/draftsClient';
 import { DraftPanel } from './inbox/DraftPanel';
 import { SendPreflightModal } from './inbox/SendPreflightModal';
@@ -110,7 +111,10 @@ export function InboxModule({ onAskFriday }: Props) {
    // operator immediately sees the draft to review. The unified
    // compose at the bottom stays visible regardless — no duplicate
    // "Write a reply" surface flickers in/out when consult toggles.
-  const [consultOpen, setConsultOpen] = useState(false);
+  // FridayConsult is now the SOLE compose surface. Always open when a
+  // thread is selected (no toggle). Decision 2026-05-17.
+  const consultOpen = true;
+  const setConsultOpen = (_v: boolean | ((v: boolean) => boolean)) => { /* noop */ };
   // Track which draft id we've auto-opened consult for, so we don't
   // fight the operator after they explicitly close — only auto-opens
   // again when a NEW draft replaces the current one (revision).
@@ -433,13 +437,21 @@ export function InboxModule({ onAskFriday }: Props) {
 
   useEffect(() => {
     setReplyBody('');
-    // Reset to the default reply surface (Friday Consult open, compose
-    // mode = reply) every time the operator switches threads. If they
-    // explicitly closed consult on a previous thread, switching means
-    // a fresh start — open it again.
-    setConsultOpen(true);
     setComposeMode('reply');
   }, [selected]);
+
+  // Mark conversation as read when the operator opens it (Mary bug
+  // 2026-05-17: "Messages do not update to read"). Fire-and-forget —
+  // the optimistic refetchConversations() right after picks up the
+  // new unread state.
+  useEffect(() => {
+    if (!thread?.id) return;
+    if (!thread.unread) return;
+    markRead(thread.id)
+      .then(() => { refetchConversations(); })
+      .catch(() => { /* swallow — read state is best-effort */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread?.id, thread?.unread]);
 
   const handleComposeSend = () => {
     if (!thread || !replyBody.trim() || composeBusy) return;
@@ -1015,145 +1027,12 @@ export function InboxModule({ onAskFriday }: Props) {
               </button>
             </div>
           )}
-          <div
-            className={
-              'inbox-compose' + (isMobile && composeCollapsed ? ' mobile-collapsed' : '')
-            }
-          >
-            {isMobile && composeCollapsed && (
-              <div
-                className="inbox-compose-collapsed-bar"
-                onClick={() => setComposeCollapsed(false)}
-              >
-                <IconSend size={12} />
-                <span style={{ flex: 1, marginLeft: 8 }}>Tap to reply to {thread.guest}</span>
-                <IconChevron size={10} />
-              </div>
-            )}
-            {isMobile && !composeCollapsed && (
-              <button
-                className="inbox-compose-collapse-btn"
-                onClick={() => setComposeCollapsed(true)}
-                title="Minimize"
-                style={{ float: 'right', marginBottom: -24 }}
-              >
-                ×
-              </button>
-            )}
-            {composeMode === 'reply' ? (
-              <>
-                <div className="inbox-compose-toolbar">
-                  <button
-                    className={'btn ghost sm' + (consultOpen ? ' primary' : '')}
-                    onClick={() => setConsultOpen((v) => !v)}
-                  >
-                    <IconSparkle size={12} /> Friday Consult
-                  </button>
-                  <button className="btn ghost sm">
-                    <IconPaperclip size={12} /> Attach
-                  </button>
-                </div>
-                <textarea
-                  className="inbox-compose-textarea"
-                  placeholder={
-                    activeDraft
-                      ? 'Write an additional reply… (the AI draft is above)'
-                      : `Write a reply to ${thread.guest}…`
-                  }
-                  value={replyBody}
-                  onChange={(e) => setReplyBody(e.target.value)}
-                  onKeyDown={(e) => {
-                    // Cmd/Ctrl+Enter sends. Plain Enter allows newlines.
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
-                      handleComposeSend();
-                    }
-                  }}
-                  disabled={composeBusy}
-                />
-                <div
-                  className="inbox-compose-actions"
-                  style={{ position: 'relative', justifyContent: 'space-between' }}
-                >
-                  <button
-                    className="btn ghost"
-                    onClick={handlePolishCompose}
-                    disabled={polishBusy || composeBusy || !replyBody.trim()}
-                    type="button"
-                    title="Have Friday rewrite for tone and clarity"
-                  >
-                    <IconAI size={12} /> {polishBusy ? 'Polishing…' : 'Polish with Friday'}
-                  </button>
-                  <div className="send-split">
-                    <button
-                      className="send-split-main"
-                      onClick={() => { setSendMenuOpen(false); handleComposeSend(); }}
-                      disabled={composeBusy || !replyBody.trim()}
-                      type="button"
-                    >
-                      <IconSend size={12} /> {composeBusy ? 'Sending…' : 'Send'}
-                    </button>
-                    <button
-                      className="send-split-caret"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSendMenuOpen((v) => !v);
-                      }}
-                      aria-haspopup="menu"
-                      aria-expanded={sendMenuOpen}
-                    >
-                      ▾
-                    </button>
-                    {sendMenuOpen && (
-                      <SendByMenu
-                        channel={thread.channel}
-                        entity={thread.entity}
-                        canAskFriday={!!replyBody.trim()}
-                        onAskFriday={() => {
-                          // Route the typed text into Friday Consult and
-                          // expand the panel if collapsed. The textarea
-                          // clears since the message is now a consult
-                          // query, not a guest reply.
-                          const q = replyBody.trim();
-                          if (!q) return;
-                          setConsultOpen(true);
-                          setPendingConsultQuery(q);
-                          setReplyBody('');
-                          setSendMenuOpen(false);
-                        }}
-                        onSwitchToNote={() => {
-                          setComposeMode('note');
-                          setSendMenuOpen(false);
-                        }}
-                        onClose={() => setSendMenuOpen(false)}
-                      />
-                    )}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <InternalNoteCompose
-                threadId={thread.id}
-                draft={noteDraft}
-                setDraft={setNoteDraft}
-                mentions={noteMentions}
-                setMentions={setNoteMentions}
-                onPosted={() => {
-                  setNoteDraft('');
-                  setNoteMentions([]);
-                  setNotesRev((n) => n + 1);
-                }}
-                onSwitchToReply={() => {
-                  // Coming back from internal-note mode — restore the
-                  // default reply surface (Friday Consult open).
-                  setComposeMode('reply');
-                  setConsultOpen(true);
-                }}
-                replyEntity={thread.entity}
-                authorId={currentUserId}
-              />
-            )}
-          </div>
+          {/* Inbox-compose REMOVED 2026-05-17 per Ishant: FridayConsult
+              is the single compose surface (Reply, Note, Ask Friday all
+              flow through FC). Old block deleted in full — toolbar,
+              textarea, send-split, SendByMenu, InternalNoteCompose. The
+              note-compose component is still defined below for re-mount
+              from a future FC header button. */}
         </div>
         )}
 
