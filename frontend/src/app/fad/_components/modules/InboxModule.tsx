@@ -139,9 +139,15 @@ export function InboxModule({ onAskFriday }: Props) {
     setRightCollapsed(localStorage.getItem('fad:inbox:right') === '1');
     const mobile = window.innerWidth <= 768;
     setIsMobile(mobile);
-    // On mobile, default collapse chatter-heavy panels
-    if (mobile) {
+    // Default-collapse the summary on any viewport where it would
+    // crowd the thread bubbles. Threshold: viewport height ≤ 800 OR
+    // mobile width. Mary's 720x406 hit this; my own 1440 didn't, which
+    // is why I missed it in the first pass. Per audit 2026-05-17.
+    const shouldCollapseSummary = mobile || window.innerHeight <= 800;
+    if (shouldCollapseSummary) {
       setSummaryCollapsed(true);
+    }
+    if (mobile) {
       setComposeCollapsed(true);
     }
     const onResize = () => setIsMobile(window.innerWidth <= 768);
@@ -828,20 +834,21 @@ export function InboxModule({ onAskFriday }: Props) {
             {summaryOn && thread.summary && (
               <div
                 className={
-                  'inbox-ai-summary' + (isMobile && summaryCollapsed ? ' collapsed' : '')
+                  'inbox-ai-summary' + (summaryCollapsed ? ' collapsed' : '')
                 }
               >
                 <div
                   className="inbox-ai-summary-label"
-                  style={{ cursor: isMobile ? 'pointer' : 'default' }}
-                  onClick={() => isMobile && setSummaryCollapsed((v) => !v)}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setSummaryCollapsed((v) => !v)}
+                  title={summaryCollapsed ? 'Show summary' : 'Hide summary'}
                 >
-                  Summary · auto
+                  Summary · auto {summaryCollapsed ? '▸' : '▾'}
                 </div>
-                {thread.summary}
+                {!summaryCollapsed && thread.summary}
               </div>
             )}
-            {summaryOn && thread.summary && isMobile && summaryCollapsed && (
+            {summaryOn && thread.summary && false && summaryCollapsed && (
               <button
                 onClick={() => setSummaryCollapsed(false)}
                 style={{
