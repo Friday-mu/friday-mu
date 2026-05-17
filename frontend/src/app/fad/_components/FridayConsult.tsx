@@ -1630,59 +1630,113 @@ function TeachingCard({
   const isConflict = action.action === 'flag_conflict';
   const accent = isConflict ? 'var(--color-text-warning)' : 'var(--color-brand-accent)';
 
+  // Property cohorts (from guesty_listings.cohort, 2026-05-17):
+  //   north → grand_baie: 12 properties (GBH-*, MV-*, VA-*, RCN-*)
+  //   west  → flic_en_flac: 15 properties (BS, BW, KS, LB, LF, LV, NYH, RC, SD, …)
+  // Quick-select buttons in the multi-property picker let the operator
+  // scope a teaching to a region without typing codes. Per Ishant
+  // 2026-05-17 — teachings should be an explicit approve-with-scope
+  // moment, not auto-saved.
+  const NORTH_CODES = ['GBH-B4', 'GBH-C3', 'GBH-C5', 'GBH-C6', 'GBH-C8', 'MV-1', 'RCN-4', 'VA-1', 'VA-2', 'VA-3', 'VA-4', 'VA-C'];
+  const WEST_CODES = ['BS-1', 'BW-C4', 'KS-5', 'LB-1', 'LB-2', 'LB-3', 'LB-C', 'LF-7', 'LV-10', 'NYH-A2', 'RC-14', 'RC-15', 'RC-16', 'RC-7', 'SD-10'];
+
   const title = isConflict
     ? 'Conflicts with an existing rule'
     : action.action === 'update'
-    ? 'Refine teaching'
-    : 'New teaching';
+    ? 'Friday wants to refine'
+    : 'Friday wants to remember';
 
   const scopeLine = action.scope === 'property' && action.propertyCode
     ? `${action.propertyCode}`
     : 'all properties';
 
+  // Parse the user-typed extra codes into a Set for tracking selection.
+  const currentExtras = new Set(
+    extraCodesInput.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean),
+  );
+  const applyRegion = (codes: string[]) => {
+    // Adds region codes to the picker (de-duped) — operator can still
+    // edit the text box manually to add/remove.
+    const merged = new Set([...currentExtras, ...codes]);
+    if (action.propertyCode) merged.delete(action.propertyCode.toUpperCase());
+    setExtraCodesInput(Array.from(merged).join(', '));
+    setPickerOpen(true);
+  };
+
   return (
     <div
       className="fcard"
-      style={{ marginTop: 4, padding: '6px 8px', fontSize: 12, color: 'var(--color-text-primary)' }}
+      style={{ marginTop: 4, padding: '8px 10px', fontSize: 12, color: 'var(--color-text-primary)' }}
     >
       <div
         className="fcard-kicker"
-        style={{ marginBottom: 4, color: accent, display: 'flex', alignItems: 'center', gap: 6 }}
+        style={{ marginBottom: 6, color: accent, display: 'flex', alignItems: 'center', gap: 6 }}
       >
-        {isConflict ? '⚠' : '✦'} {title} · {scopeLine}
-        {action.scope === 'property' && state !== 'saving' && state !== 'saved' && (
-          <button
-            type="button"
-            onClick={() => setPickerOpen((v) => !v)}
-            style={{
-              marginLeft: 'auto',
-              background: 'transparent',
-              border: 'none',
-              color: accent,
-              fontSize: 10,
-              cursor: 'pointer',
-              padding: 0,
-              textDecoration: 'underline',
-              letterSpacing: 0,
-              textTransform: 'none',
-            }}
-          >
-            {pickerOpen ? 'Cancel' : '+ more properties'}
-          </button>
-        )}
+        {isConflict ? '⚠' : '✦'} {title}
       </div>
-      <div style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 4 }}>
+      <div
+        style={{
+          fontSize: 13,
+          lineHeight: 1.4,
+          marginBottom: 6,
+          padding: '6px 8px',
+          background: 'var(--color-background-primary)',
+          border: '0.5px solid var(--color-border-tertiary)',
+          borderRadius: 'var(--radius-sm)',
+        }}
+      >
         “{action.instruction}”
+      </div>
+      <div
+        style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+      >
+        <span>Apply to:</span>
+        <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
+          {scopeLine}
+          {currentExtras.size > 0 ? ` + ${currentExtras.size} more` : ''}
+        </span>
+        {state !== 'saving' && state !== 'saved' && (
+          <>
+            <button
+              type="button"
+              onClick={() => applyRegion(NORTH_CODES)}
+              style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+            >
+              + All North
+            </button>
+            <button
+              type="button"
+              onClick={() => applyRegion(WEST_CODES)}
+              style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+            >
+              + All West
+            </button>
+            <button
+              type="button"
+              onClick={() => applyRegion([...NORTH_CODES, ...WEST_CODES])}
+              style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+            >
+              + All properties
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickerOpen((v) => !v)}
+              style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+            >
+              {pickerOpen ? 'Hide list' : '+ Custom'}
+            </button>
+          </>
+        )}
       </div>
       {pickerOpen && state !== 'saving' && state !== 'saved' && (
         <input
           type="text"
           value={extraCodesInput}
           onChange={(e) => setExtraCodesInput(e.target.value)}
-          placeholder="e.g. LB-2, KS-5, MV-1"
+          placeholder="Comma-separated codes, e.g. LB-2, KS-5, MV-1"
           style={{
             width: '100%',
-            padding: '4px 6px',
+            padding: '5px 7px',
             fontSize: 11,
             marginBottom: 6,
             color: 'var(--color-text-primary)',
@@ -1694,13 +1748,13 @@ function TeachingCard({
         />
       )}
       {action.reason && (
-        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4, fontStyle: 'italic' }}>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, fontStyle: 'italic' }}>
           {action.reason}
         </div>
       )}
       {state === 'saved' ? (
         <div style={{ fontSize: 11, color: 'var(--color-text-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <IconCheck size={10} /> Friday will use this in future drafts
+          <IconCheck size={10} /> Saved — Friday will use this in future drafts
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 4 }}>
@@ -1715,7 +1769,7 @@ function TeachingCard({
             }}
             disabled={state === 'saving'}
             style={{
-              padding: '3px 8px',
+              padding: '4px 10px',
               fontSize: 11,
               fontWeight: 600,
               color: '#fff',
@@ -1725,14 +1779,14 @@ function TeachingCard({
               cursor: 'pointer',
             }}
           >
-            {state === 'saving' ? 'Saving…' : (isConflict ? 'Replace' : 'Confirm')}
+            {state === 'saving' ? 'Saving…' : (isConflict ? 'Replace' : 'Approve & remember')}
           </button>
           <button
             type="button"
             onClick={onDismiss}
             disabled={state === 'saving'}
             style={{
-              padding: '3px 8px',
+              padding: '4px 10px',
               fontSize: 11,
               color: 'var(--color-text-secondary)',
               background: 'transparent',
