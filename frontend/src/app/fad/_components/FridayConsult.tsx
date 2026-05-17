@@ -224,6 +224,45 @@ export function FridayConsult({
   // parent's key={selected} remounts FC).
   const [useFullThread, setUseFullThread] = useState(false);
 
+  // Operator-resizable FC height. Drag handle at the top — user picks
+  // how much vertical space FC eats vs how much thread shows behind.
+  // Persisted in localStorage; future conversations default to the
+  // saved height. Per Ishant 2026-05-17.
+  const FC_HEIGHT_STORAGE_KEY = 'fad:fc:height';
+  const FC_HEIGHT_DEFAULT = 280;
+  const FC_HEIGHT_MIN = 120;
+  const FC_HEIGHT_MAX = 700;
+  const [fcHeight, setFcHeight] = useState<number>(() => {
+    if (typeof window === 'undefined') return FC_HEIGHT_DEFAULT;
+    const raw = window.localStorage.getItem(FC_HEIGHT_STORAGE_KEY);
+    const parsed = raw ? Number(raw) : NaN;
+    if (Number.isFinite(parsed) && parsed >= FC_HEIGHT_MIN && parsed <= FC_HEIGHT_MAX) return parsed;
+    return FC_HEIGHT_DEFAULT;
+  });
+  const dragStartRef = useRef<{ y: number; h: number } | null>(null);
+  const onDragStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    dragStartRef.current = { y: e.clientY, h: fcHeight };
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    const start = dragStartRef.current;
+    if (!start) return;
+    // Drag UP (negative delta) grows FC; drag DOWN shrinks it.
+    const next = Math.max(FC_HEIGHT_MIN, Math.min(FC_HEIGHT_MAX, start.h - (e.clientY - start.y)));
+    setFcHeight(next);
+  };
+  const onDragEnd = (e: React.PointerEvent) => {
+    if (!dragStartRef.current) return;
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    dragStartRef.current = null;
+    try {
+      window.localStorage.setItem(FC_HEIGHT_STORAGE_KEY, String(fcHeight));
+    } catch {
+      // private mode or quota — ignore; size resets next session
+    }
+  };
+
   // Auto-scroll on new messages / thinking / a draft appearing or
   // changing — so the Approve & send button is in view when Friday
   // produces a draft, not below the fold.
@@ -566,22 +605,45 @@ export function FridayConsult({
     <div
       className="friday-consult"
       style={{
-        // Pinned to the bottom of the inbox center column (sticky,
-        // not fixed — only sticks within the column). Thread bubbles
-        // above scroll behind it. Per Ishant 2026-05-17: 'consider
-        // friday consult as a box, pin it to the bottom of the page;
-        // things just appear behind it.'
         position: 'sticky',
         bottom: 0,
         zIndex: 5,
-        maxHeight: 'none',
+        height: fcHeight,
         flex: '0 0 auto',
-        // Solid background so scrolling content doesn't bleed through.
+        display: 'flex',
+        flexDirection: 'column',
         background: 'var(--color-background-secondary)',
-        // Soft top shadow so it visually floats over the thread.
         boxShadow: '0 -8px 16px -8px rgba(0, 0, 0, 0.08)',
       }}
     >
+      {/* Resize handle — drag up to reveal more FC, drag down to
+          reveal more thread bubbles behind. Saved per-user in
+          localStorage. Per Ishant 2026-05-17. */}
+      <div
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+        title="Drag to resize"
+        style={{
+          height: 10,
+          flex: '0 0 auto',
+          cursor: 'ns-resize',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          touchAction: 'none',
+        }}
+      >
+        <div
+          style={{
+            width: 32,
+            height: 3,
+            background: 'var(--color-border-secondary)',
+            borderRadius: 2,
+          }}
+        />
+      </div>
       {/* Header removed 2026-05-17 per Ishant — 'Friday Consult' is
           a developer concept, not something operators need to see.
           History + missing-KB warning move inline into the chips row
@@ -645,11 +707,13 @@ export function FridayConsult({
           button stays visible without going below the fold. Capacity:
           long chats scroll; the Ask Friday input below the transcript
           is always visible because it lives outside this scroller. */}
-      {(msgs.length > 0 || thinking || error) && (
+      {/* Transcript always renders to fill the operator-resized FC
+          height. Empty until there's chat / draft activity. */}
+      {true && (
         <div
           className="friday-consult-body"
           ref={transcriptRef}
-          style={{ maxHeight: '40vh' }}
+          style={{ flex: '1 1 auto', minHeight: 0, maxHeight: 'none' }}
         >
           {(() => {
             // Latest draft msg is the editable one; older drafts are
@@ -1084,8 +1148,8 @@ function DraftMessageActive({
   const waOpen = whatsappWindow?.open;
   const waLeft = whatsappWindow?.expiresInMinutes;
   return (
-    <div className="fcard fcard-block">
-      <div className="fcard-kicker" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+    <div className="fcard" style={{ padding: '8px 10px' }}>
+      <div className="fcard-kicker" style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <span style={{ color: 'var(--color-brand-accent)' }}>
           <IconSparkle size={10} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''}
         </span>
@@ -1136,14 +1200,14 @@ function DraftMessageActive({
           }
         }}
         placeholder="Draft body…"
-        rows={4}
+        rows={3}
         style={{
           width: '100%',
-          minHeight: 72,
-          maxHeight: 160,
-          padding: 8,
-          fontSize: 13,
-          lineHeight: 1.45,
+          minHeight: 56,
+          maxHeight: 140,
+          padding: 6,
+          fontSize: 12,
+          lineHeight: 1.4,
           fontFamily: 'inherit',
           color: 'var(--color-text-primary)',
           background: 'var(--color-background-primary)',
@@ -1207,7 +1271,7 @@ function DraftMessageActive({
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={onApprove}
@@ -1216,8 +1280,8 @@ function DraftMessageActive({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 4,
-              padding: '7px 14px',
-              fontSize: 12,
+              padding: '5px 10px',
+              fontSize: 11,
               fontWeight: 600,
               color: '#fff',
               background: 'var(--color-brand-accent)',
@@ -1228,7 +1292,7 @@ function DraftMessageActive({
             }}
             title="Cmd/Ctrl+Enter also sends"
           >
-            <IconSend size={12} /> Approve &amp; send
+            <IconSend size={11} /> Send
           </button>
           {canReject && (
             <button
@@ -1239,8 +1303,8 @@ function DraftMessageActive({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 4,
-                padding: '7px 10px',
-                fontSize: 12,
+                padding: '5px 8px',
+                fontSize: 11,
                 color: 'var(--color-text-secondary)',
                 background: 'transparent',
                 border: '0.5px solid var(--color-border-secondary)',
@@ -1248,7 +1312,7 @@ function DraftMessageActive({
                 cursor: 'pointer',
               }}
             >
-              <IconClose size={11} /> Reject
+              Reject
             </button>
           )}
         </div>
