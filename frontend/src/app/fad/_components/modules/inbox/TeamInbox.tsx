@@ -15,6 +15,8 @@ import {
   useMessageReplies,
   useTenantTeamUsers,
   openDm,
+  markChannelRead,
+  markDmRead,
   uploadChannelAttachment,
   uploadDmAttachment,
   addReaction,
@@ -175,6 +177,31 @@ export function TeamInbox({
   }, [messagesTarget]);
 
   const { messages: liveMessages, send: sendLive, refetch: refetchMessages } = useTeamMessages(messagesTarget);
+
+  // Mark-read: when a channel/DM is selected and its messages have
+  // loaded, mark them read for the current user so the unread badge
+  // clears in the sidebar. Debounced by 800ms so rapidly tabbing
+  // between channels doesn't mark a bunch of stuff read the user
+  // never actually saw. Re-runs whenever the visible message count
+  // grows (new arrivals while the channel is in view → still read).
+  // Mary 2026-05-17 14:24: "the number of messages still pops up …
+  // it never clears" — markChannelRead/markDmRead existed in the
+  // client but were never called.
+  useEffect(() => {
+    if (!messagesTarget || !liveMessages || liveMessages.length === 0) return;
+    const t = window.setTimeout(() => {
+      const op = messagesTarget.kind === 'channel'
+        ? markChannelRead(messagesTarget.id)
+        : markDmRead(messagesTarget.id);
+      op
+        .then(() => {
+          if (messagesTarget.kind === 'channel') refetchChannels();
+          else refetchDms();
+        })
+        .catch(() => { /* best-effort — badge will catch up on next 30s poll */ });
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [messagesTarget?.kind, messagesTarget?.id, liveMessages?.length, refetchChannels, refetchDms]);
 
   // Open thread state — when set, an inline ThreadSurface renders below
   // the matching parent message. Reset on selection change so switching
