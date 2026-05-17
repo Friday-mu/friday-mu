@@ -23,6 +23,7 @@ import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
 import { IconCal, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
 import { ScheduleCallDrawer } from './ScheduleCallDrawer';
+import { ChannelMembersDrawer } from './ChannelMembersDrawer';
 import { fireToast } from '../../Toaster';
 
 type Selection =
@@ -49,7 +50,7 @@ export function TeamInbox({
   const currentUserId = useCurrentUserId();
 
   // Live data from /api/team/* (polled every 30s for unread badges).
-  const { channels: liveChannels } = useChannels();
+  const { channels: liveChannels, refetch: refetchChannels } = useChannels();
   const { dms: liveDms } = useDms();
 
   const visibleChannels: LiveChannel[] = useMemo(
@@ -78,6 +79,7 @@ export function TeamInbox({
 
   const [draft, setDraft] = useState('');
   const [callOpen, setCallOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   // Resolve the selected channel's database id so the messages hook
   // can fetch via /api/team/channels/:id/messages (the API takes the
@@ -397,15 +399,33 @@ export function TeamInbox({
             <div className="inbox-thread-subject" style={{ fontSize: 16 }}>
               {targetTitle}
             </div>
-            <div className="inbox-thread-meta" style={{ marginBottom: 4 }}>
+            <div className="inbox-thread-meta" style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>{targetSubtitle}</span>
               {selection.kind === 'channel' && selectedChannel && (
                 <>
                   <span className="sep">·</span>
-                  <span>
+                  <button
+                    type="button"
+                    onClick={() => setMembersOpen(true)}
+                    title="View / manage members"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'inherit',
+                      fontSize: 'inherit',
+                      padding: 0,
+                      textDecoration: 'underline',
+                      textDecorationStyle: 'dotted',
+                      textUnderlineOffset: 2,
+                    }}
+                  >
                     <IconUsers size={11} />{' '}
-                    {selectedChannel.visibility === 'private' ? 'Private' : 'Everyone'}
-                  </span>
+                    {selectedChannel.visibility === 'private' ? 'Private · members' : 'Members'}
+                  </button>
                 </>
               )}
             </div>
@@ -526,6 +546,21 @@ export function TeamInbox({
           // (The 15s poll would also pick it up.)
         }}
       />
+
+      {selection.kind === 'channel' && selectedChannel && membersOpen && (
+        <ChannelMembersDrawer
+          open={membersOpen}
+          onClose={() => setMembersOpen(false)}
+          channelId={selectedChannel.id}
+          channelName={selectedChannel.name}
+          currentUserId={currentUserId}
+          onMembersChanged={() => {
+            // A private channel may have just become visible/invisible to
+            // the caller; refetch the sidebar so the list stays in sync.
+            refetchChannels();
+          }}
+        />
+      )}
     </>
   );
 }

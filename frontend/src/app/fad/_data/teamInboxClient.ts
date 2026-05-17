@@ -124,6 +124,27 @@ export async function markChannelRead(channelId: string): Promise<void> {
   await apiFetch(`/api/team/channels/${channelId}/read`, { method: 'POST' });
 }
 
+/**
+ * Add a user to a channel. Caller must be a channel admin; backend
+ * returns 403 otherwise. Idempotent — re-adding an existing member
+ * is a no-op.
+ */
+export async function addChannelMember(
+  channelId: string,
+  userId: string,
+  role: 'admin' | 'member' = 'member',
+): Promise<void> {
+  await apiFetch(`/api/team/channels/${channelId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ userId, role }),
+  });
+}
+
+/** Remove a user from a channel. Caller must be a channel admin. */
+export async function removeChannelMember(channelId: string, userId: string): Promise<void> {
+  await apiFetch(`/api/team/channels/${channelId}/members/${userId}`, { method: 'DELETE' });
+}
+
 export async function loadDms(): Promise<LiveDm[]> {
   const data = await apiFetch('/api/team/dms') as { dms?: LiveDm[] };
   return data?.dms ?? [];

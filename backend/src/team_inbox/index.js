@@ -269,15 +269,23 @@ router.get('/channels/:id', attachIdentity, async (req, res) => {
   }
 });
 
-// Add a member (admin only).
+// Add a member (channel admin OR system admin).
+//
+// System admin escape hatch: private channels seed with zero members,
+// so until at least one channel admin exists, only a tenant admin can
+// bootstrap membership. Without this, the admin UI is unusable for
+// freshly seeded private channels.
 router.post('/channels/:id/members', attachIdentity, async (req, res) => {
   const userId = req.identity?.userId;
   if (!userId) return res.status(401).json({ error: 'No user context' });
   const targetUserId = req.body?.userId;
   if (!targetUserId) return res.status(400).json({ error: 'userId required' });
   try {
-    const admin = await isChannelAdmin(req.params.id, userId);
-    if (!admin) return res.status(403).json({ error: 'Channel admin required' });
+    const systemAdmin = req.identity?.userRole === 'admin';
+    const channelAdmin = await isChannelAdmin(req.params.id, userId);
+    if (!systemAdmin && !channelAdmin) {
+      return res.status(403).json({ error: 'Channel admin or system admin required' });
+    }
     const { rows: targetRows } = await query(
       `SELECT id FROM users WHERE id = $1 AND tenant_id = $2`,
       [targetUserId, req.tenantId],
@@ -300,8 +308,13 @@ router.delete('/channels/:id/members/:userId', attachIdentity, async (req, res) 
   const userId = req.identity?.userId;
   if (!userId) return res.status(401).json({ error: 'No user context' });
   try {
-    const admin = await isChannelAdmin(req.params.id, userId);
-    if (!admin) return res.status(403).json({ error: 'Channel admin required' });
+    const systemAdmin = req.identity?.userRole === 'admin';
+    const channelAdmin = await isChannelAdmin(req.params.id, userId);
+    // Self-removal is always allowed (operators can leave a channel).
+    const selfRemoval = req.params.userId === userId;
+    if (!systemAdmin && !channelAdmin && !selfRemoval) {
+      return res.status(403).json({ error: 'Channel admin or system admin required' });
+    }
     await query(
       `DELETE FROM team_channel_members WHERE channel_id = $1 AND user_id = $2`,
       [req.params.id, req.params.userId],
