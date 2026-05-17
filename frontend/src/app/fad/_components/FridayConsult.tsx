@@ -490,26 +490,28 @@ export function FridayConsult({
             {error}
           </div>
         )}
-        {/* Reply surface — always rendered now (no compose-box outside FC).
-            When Friday has a draft, this is where the operator edits +
-            approves it; when not, the operator just types here. Enter
-            sends, Shift+Enter newlines. */}
-        <EmbeddedDraftCard
-          workingBody={workingBody}
-          setWorkingBody={setWorkingBody}
-          currentDraft={currentDraft || null}
-          liveConfidence={latestConfidence}
-          channelLabel={channelLabel}
-          whatsappWindow={whatsappWindow}
-          sendBusy={sendBusy}
-          rejecting={rejecting}
-          rejectReason={rejectReason}
-          setRejectReason={setRejectReason}
-          onApprove={submitApprove}
-          onStartReject={() => setRejecting(true)}
-          onConfirmReject={submitReject}
-          onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-        />
+        {/* Reply surface — only renders when there's a GMS draft OR
+            Friday has produced one via chat (workingBody populated).
+            No empty "Your reply" placeholder when the operator hasn't
+            asked for anything yet. Per Ishant 2026-05-17. */}
+        {(currentDraft || workingBody.trim().length > 0) && (
+          <EmbeddedDraftCard
+            workingBody={workingBody}
+            setWorkingBody={setWorkingBody}
+            currentDraft={currentDraft || null}
+            liveConfidence={latestConfidence}
+            channelLabel={channelLabel}
+            whatsappWindow={whatsappWindow}
+            sendBusy={sendBusy}
+            rejecting={rejecting}
+            rejectReason={rejectReason}
+            setRejectReason={setRejectReason}
+            onApprove={submitApprove}
+            onStartReject={() => setRejecting(true)}
+            onConfirmReject={submitReject}
+            onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+          />
+        )}
       </div>
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
