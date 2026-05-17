@@ -51,20 +51,16 @@ const args = new Set(process.argv.slice(2));
 const DRY_RUN = args.has('--dry-run');
 const PROBE_ONLY = args.has('--probe');
 
-// Selectors — best-guess; refined after first probe run.
-//
-// Guesty's reservations page is likely a table view. Common patterns
-// to try: data-qa="reservation-row" / role="row" inside the table
-// container. Probe mode dumps the DOM so we can verify.
+// Selectors — calibrated against Guesty's /reservations table
+// (probed 2026-05-17). Each data row is a `.cell-row` container with
+// `[data-qa="text-cell"]` children. Each cell carries a `datakey`
+// attribute identifying the field (confirmationCode / checkIn /
+// checkOut / listing). The guest cell has no datakey but a unique
+// `person-cell` class.
 const SELECTORS = {
-  rowContainer: '[data-qa*="reservation"], [data-testid*="reservation-row"], .reservations-table tbody tr, [role="grid"] [role="row"]',
-  confCode:     '[data-qa*="confirmation"], td[class*="confirm"]',
-  guestName:    '[data-qa*="guest-name"], [data-qa*="person-name"], td[class*="guest"]',
-  property:     '[data-qa*="listing"], [data-qa*="property"], td[class*="listing"]',
-  status:       '[data-qa*="status"], td[class*="status"]',
-  channel:      '[data-qa*="channel"], [data-qa*="source"], td[class*="channel"]',
-  checkIn:      '[data-qa*="check-in"], [data-qa*="checkin"], td[class*="check"]',
-  checkOut:     '[data-qa*="check-out"], [data-qa*="checkout"]',
+  rowContainer: '.cell-row',
+  cellByDatakey: (key) => `[datakey="${key}"]`,
+  personCell: '.person-cell',
 };
 
 if (!existsSync(PROFILE_DIR)) {
@@ -94,7 +90,7 @@ function signPayload(rawBody) {
 
 async function postReservation(record) {
   if (DRY_RUN) {
-    console.log(`[res-scrape] [dry-run] ${record.confirmationCode || record.guestyId} — ${record.guestName} ${record.checkIn}→${record.checkOut}`);
+    console.log(`[res-scrape] [dry-run] ${record.confirmationCode} — ${record.guestName} @ ${record.listingNickname} ${record.checkInDate}→${record.checkOutDate}`);
     return { ok: true, dryRun: true };
   }
   const event = {
@@ -121,47 +117,66 @@ async function postReservation(record) {
 }
 
 async function extractRows() {
-  return page.evaluate((sel) => {
-    // Try each candidate selector; pick the one with the most matches.
-    const splits = sel.rowContainer.split(',').map((s) => s.trim());
-    let best = { sel: null, rows: [] };
-    for (const s of splits) {
-      try {
-        const found = Array.from(document.querySelectorAll(s));
-        if (found.length > best.rows.length) best = { sel: s, rows: found };
-      } catch {}
-    }
-    if (best.rows.length === 0) return { selector: null, rows: [] };
-
-    const rows = best.rows.slice(0, 500).map((r, idx) => {
-      const text = (q) => {
-        for (const candidate of q.split(',').map((s) => s.trim())) {
-          try {
-            const el = r.querySelector(candidate);
-            if (el) {
-              const t = (el.textContent || '').trim();
-              if (t) return t;
-            }
-          } catch {}
+  return page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('.cell-row'));
+    return {
+      selector: '.cell-row',
+      rows: rows.slice(0, 500).map((r, idx) => {
+        const cell = (key) => {
+          const el = r.querySelector(`[datakey="${key}"]`);
+          return (el?.textContent || '').trim() || null;
+        };
+        const personText = (r.querySelector('.person-cell')?.textContent || '').trim() || null;
+        // Listing cell is e.g. "RC-14 / Modern Sea View Apt with Pool ...";
+        // split into nickname (before " / ") and title.
+        const listingRaw = cell('listing');
+        let listingNickname = null, listingTitle = null;
+        if (listingRaw) {
+          const parts = listingRaw.split(' / ');
+          listingNickname = parts[0]?.trim() || null;
+          listingTitle = parts.slice(1).join(' / ').trim() || null;
         }
-        return null;
-      };
-      const allCellText = Array.from(r.querySelectorAll('td, [role="cell"], [role="gridcell"]')).map((c) => (c.textContent || '').trim());
-      return {
-        rowIndex: idx,
-        confCode: text(sel.confCode),
-        guestName: text(sel.guestName),
-        property: text(sel.property),
-        status: text(sel.status),
-        channel: text(sel.channel),
-        checkIn: text(sel.checkIn),
-        checkOut: text(sel.checkOut),
-        // Raw cells in column order — useful fallback when selectors don't match.
-        cells: allCellText.slice(0, 12),
-      };
-    });
-    return { selector: best.sel, rows };
-  }, SELECTORS);
+        return {
+          rowIndex: idx,
+          confirmationCode: cell('confirmationCode'),
+          checkInRaw: cell('checkIn'),
+          checkOutRaw: cell('checkOut'),
+          listingNickname,
+          listingTitle,
+          listingRaw,
+          guestName: personText,
+        };
+      }).filter((r) => r.confirmationCode || r.guestName),
+    };
+  });
+}
+
+// Parse Guesty's check-in/out cell text into ISO. Format observed:
+//   "Mar 20, 2026 9:00 PM"  → "2026-03-20T21:00:00"
+//   "May 31, 2026 10:00 AM" → "2026-05-31T10:00:00"
+// Returns the ISO date only (no TZ) — backend converts to date col.
+function parseGuestyDateTime(text) {
+  if (!text) return { date: null, time: null };
+  try {
+    const m = text.match(/^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})\s+(AM|PM))?$/);
+    if (!m) return { date: null, time: null, raw: text };
+    const months = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+    const mm = months[m[1].slice(0, 3)];
+    if (!mm) return { date: null, time: null, raw: text };
+    const dd = String(m[2]).padStart(2, '0');
+    const yyyy = m[3];
+    const date = `${yyyy}-${String(mm).padStart(2, '0')}-${dd}`;
+    let time = null;
+    if (m[4]) {
+      let hh = parseInt(m[4], 10);
+      if (m[6] === 'PM' && hh < 12) hh += 12;
+      if (m[6] === 'AM' && hh === 12) hh = 0;
+      time = `${String(hh).padStart(2, '0')}:${m[5]}`;
+    }
+    return { date, time, raw: text };
+  } catch {
+    return { date: null, time: null, raw: text };
+  }
 }
 
 let exitCode = 0;
@@ -170,6 +185,10 @@ try {
   console.log(`[res-scrape] navigating to ${GUESTY_RES_URL}…`);
   await page.goto(GUESTY_RES_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+  // The reservations table is data-heavy and renders rows AFTER
+  // networkidle. Wait for cells to appear, plus a brief settle.
+  await page.waitForSelector('[data-qa="text-cell"]', { timeout: 25_000 }).catch(() => {});
+  await page.waitForTimeout(2500);
 
   if (page.url().includes('login') || page.url().includes('signin')) {
     console.error(`[res-scrape] Session expired. Run: npm run auth`);
@@ -205,19 +224,23 @@ try {
         let posted = 0, skipped = 0;
         const toProcess = rows.slice(0, MAX_RESERVATIONS);
         for (const r of toProcess) {
-          if (!r.confCode && !r.guestName) {
+          if (!r.confirmationCode && !r.guestName) {
             skipped++;
             continue;
           }
+          const checkIn = parseGuestyDateTime(r.checkInRaw);
+          const checkOut = parseGuestyDateTime(r.checkOutRaw);
           const record = {
-            confirmationCode: r.confCode || null,
-            guestName: r.guestName || (r.cells?.[0] ?? null),
-            propertyName: r.property || null,
-            status: r.status || null,
-            channel: r.channel || null,
-            checkIn: r.checkIn || null,
-            checkOut: r.checkOut || null,
-            rawCells: r.cells,
+            confirmationCode: r.confirmationCode,
+            guestName: r.guestName,
+            listingNickname: r.listingNickname,
+            listingTitle: r.listingTitle,
+            checkInDate: checkIn.date,
+            checkInTime: checkIn.time,
+            checkOutDate: checkOut.date,
+            checkOutTime: checkOut.time,
+            rawCheckIn: r.checkInRaw,
+            rawCheckOut: r.checkOutRaw,
           };
           const result = await postReservation(record);
           if (result.ok) posted++;
