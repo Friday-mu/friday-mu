@@ -10,6 +10,7 @@ import {
   type ReservationChannel,
   type ReservationStatus,
 } from '../../../_data/reservations';
+import { useLiveReservations } from '../../../_data/reservationsClient';
 import { FilterBar, FilterPill } from '../../FilterBar';
 import { IconSearch } from '../../icons';
 
@@ -63,7 +64,12 @@ export function AllReservationsPage({ onOpen }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('checkIn');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
-  const allInScope = useMemo(() => RESERVATIONS.filter(isInScope), []);
+  // Live reservations from /api/reservations (guesty_reservations cache);
+  // falls back to fixture during loading / on backend failure so the page
+  // never blanks out. Per Phase-1 wiring 2026-05-17 (queue item R).
+  const { reservations: liveReservations } = useLiveReservations();
+  const sourceReservations = liveReservations ?? RESERVATIONS;
+  const allInScope = useMemo(() => sourceReservations.filter(isInScope), [sourceReservations]);
   const properties = useMemo(
     () => Array.from(new Set(allInScope.map((r) => r.propertyCode))).sort(),
     [allInScope],

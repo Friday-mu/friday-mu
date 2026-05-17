@@ -7,6 +7,7 @@ import {
   formatMoney,
   type Reservation,
 } from '../../../_data/reservations';
+import { useLiveReservations } from '../../../_data/reservationsClient';
 
 interface Props {
   onOpen: (reservationId: string) => void;
@@ -38,33 +39,36 @@ export function OverviewPage({ onOpen }: Props) {
   const sevenDaysOut = dayOffsetISO(today, 7);
   const thirtyDaysOut = dayOffsetISO(today, 30);
 
+  const { reservations: liveReservations } = useLiveReservations();
+  const sourceReservations = liveReservations ?? RESERVATIONS;
+
   const arrivingToday = useMemo(
-    () => RESERVATIONS.filter((r) => r.status !== 'cancelled' && isoDay(r.checkIn) === today),
-    [today],
+    () => sourceReservations.filter((r) => r.status !== 'cancelled' && isoDay(r.checkIn) === today),
+    [today, sourceReservations],
   );
   const departingToday = useMemo(
-    () => RESERVATIONS.filter((r) => r.status !== 'cancelled' && isoDay(r.checkOut) === today),
-    [today],
+    () => sourceReservations.filter((r) => r.status !== 'cancelled' && isoDay(r.checkOut) === today),
+    [today, sourceReservations],
   );
   const inHouse = useMemo(
-    () => RESERVATIONS.filter((r) => r.status === 'checked_in'),
-    [],
+    () => sourceReservations.filter((r) => r.status === 'checked_in'),
+    [sourceReservations],
   );
   const next7d = useMemo(
     () =>
-      RESERVATIONS
+      sourceReservations
         .filter((r) => r.status !== 'cancelled' && r.status !== 'checked_in')
         .filter((r) => isoDay(r.checkIn) > today && isoDay(r.checkIn) <= sevenDaysOut)
         .sort((a, b) => a.checkIn.localeCompare(b.checkIn)),
-    [today, sevenDaysOut],
+    [today, sevenDaysOut, sourceReservations],
   );
   const next30d = useMemo(
     () =>
-      RESERVATIONS
+      sourceReservations
         .filter((r) => r.status !== 'cancelled')
         .filter((r) => isoDay(r.checkIn) > sevenDaysOut && isoDay(r.checkIn) <= thirtyDaysOut)
         .sort((a, b) => a.checkIn.localeCompare(b.checkIn)),
-    [sevenDaysOut, thirtyDaysOut],
+    [sevenDaysOut, thirtyDaysOut, sourceReservations],
   );
 
   // Urgent flags per scoping pack §2: no-access-info-sent (within 24h), no-driver-assigned,
@@ -75,7 +79,7 @@ export function OverviewPage({ onOpen }: Props) {
       const diffH = (new Date(iso).getTime() - new Date(`${today}T12:00:00`).getTime()) / 3_600_000;
       return diffH >= 0 && diffH <= 24;
     };
-    for (const r of RESERVATIONS) {
+    for (const r of sourceReservations) {
       if (r.status === 'cancelled' || r.status === 'checked_out') continue;
       if (within24h(r.checkIn) && !r.accessInfoSentAt) {
         flags.push({
@@ -103,7 +107,7 @@ export function OverviewPage({ onOpen }: Props) {
       }
     }
     return flags;
-  }, [today, sevenDaysOut]);
+  }, [today, sevenDaysOut, sourceReservations]);
 
   return (
     <div className="fad-module-body" style={{ flex: 1, overflowY: 'auto' }}>
