@@ -847,13 +847,17 @@ function EmbeddedDraftCard({
         )}
       </div>
 
-      {/* Editable body — operator can tweak before sending.
-          Enter sends (Mary feedback 2026-05-17). Shift+Enter newlines. */}
+      {/* Editable body — operator can tweak the draft freely. Enter
+          inserts a newline (normal textarea behavior); Cmd/Ctrl+Enter
+          sends. Per Mary 2026-05-17 #7 — plain Enter was firing the
+          send during edits, making the draft uneditable in practice.
+          The Ask Friday input below uses plain-Enter-to-submit because
+          chat queries are typically one-liners. */}
       <textarea
         value={workingBody}
         onChange={(e) => setWorkingBody(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             if (!sendDisabled && !rejecting) onApprove();
           }
@@ -975,9 +979,6 @@ function EmbeddedDraftCard({
             </button>
           )}
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>
-            <IconRefresh size={10} /> Keep chatting to refine
-          </span>
         </div>
       )}
     </div>
