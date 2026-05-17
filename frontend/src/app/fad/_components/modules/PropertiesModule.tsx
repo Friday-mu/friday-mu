@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { OverviewPage } from './properties/OverviewPage';
 import { AllPropertiesPage } from './properties/AllPropertiesPage';
@@ -9,6 +9,7 @@ import { InsightsPage } from './properties/InsightsPage';
 import { PropertyDetail } from './properties/PropertyDetail';
 import { CreatePropertyDrawer } from './properties/CreatePropertyDrawer';
 import { portfolioInsights } from '../../_data/properties';
+import { useHydrateDesignTopLevel } from '../../_data/designClient';
 import { IconPlus } from '../icons';
 
 interface Props {
@@ -17,7 +18,20 @@ interface Props {
 }
 
 export function PropertiesModule({ subPage, onChangeSubPage }: Props) {
-  const insightsCount = portfolioInsights().filter((i) => i.severity === 'high').length;
+  // Hydrate FIXTURE_PROPERTIES from /api/design/properties on mount so
+  // Properties module renders real listings without relying on the
+  // Design module having been visited first. Previously this only ran
+  // inside DesignModule, leaving Properties on stale fixtures when the
+  // operator opened the dashboard straight to Properties. The hook
+  // mutates the FIXTURE_PROPERTIES array in place; `rev` re-triggers
+  // this component so insightsCount and the child pages re-read fresh.
+  // (Handover queue item P, 2026-05-17.)
+  const { rev: hydrateRev } = useHydrateDesignTopLevel();
+  // Recompute after hydration so the Insights badge reflects live data.
+  const insightsCount = useMemo(
+    () => portfolioInsights().filter((i) => i.severity === 'high').length,
+    [hydrateRev],
+  );
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'all', label: 'All properties' },
