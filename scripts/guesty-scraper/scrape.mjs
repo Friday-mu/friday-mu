@@ -53,7 +53,7 @@ const FAD_WEBHOOK_URL = process.env.FAD_WEBHOOK_URL
 const FAD_WEBHOOK_SECRET = process.env.FAD_WEBHOOK_SECRET
   || 'fr1day_wh_2026_s3cure';
 const GUESTY_INBOX_URL = process.env.GUESTY_INBOX_URL
-  || 'https://app.guesty.com/communication/inbox';
+  || 'https://app.guesty.com/inbox-v2';
 const PROFILE_DIR = process.env.GUESTY_PROFILE_DIR
   || resolve(__dirname, '.profile');
 const STATE_FILE = resolve(__dirname, '.state.json');
