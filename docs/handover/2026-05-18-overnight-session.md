@@ -6,8 +6,8 @@
 
 ## TL;DR
 
-Three ships, all on `fad-design-os-v01-frontend`, all deployed to
-prod. Backend at `a52f1fa`, frontend at `56f79d9` (email skeleton is
+Five ships, all on `fad-design-os-v01-frontend`, all deployed to prod.
+Backend at `6e5b767`, frontend at `2dec9aa` (the latter two ships are
 backend-only).
 
 | # | Commit | What | Deployed |
@@ -15,8 +15,11 @@ backend-only).
 | 1 | `330d6e3` | TeamInbox threading UI — inline expandable threads + reply count badges | backend + frontend |
 | 2 | `56f79d9` | Channel members admin drawer — replaces curl for membership | backend + frontend |
 | 3 | `a52f1fa` | Email integration: mig 055 + backend skeleton (Gmail OAuth, classifier, threading, Pub/Sub push) | backend only |
+| 4 | `2dec9aa` | TeamInbox file uploads — mig 056, drag/drop/paste/paperclip, public nginx static serve | backend + frontend |
+| 5 | `6e5b767` | Unified outbound abstraction `/api/outbound/send` — federates Guesty + Resend + TeamInbox + Meta stub | backend only |
 
-Migrations applied on prod: **055_email_integration.sql**. Verify with
+Migrations applied on prod: **055_email_integration.sql**,
+**056_team_attachments.sql**. Verify with
 `SELECT * FROM fad_schema_migrations ORDER BY applied_at DESC LIMIT 5`.
 
 ## Smoke-test plan (priority order)
@@ -68,6 +71,40 @@ Migrations applied on prod: **055_email_integration.sql**. Verify with
     `#finance` even though you're not yet a channel admin — backend
     has a `system admin OR channel admin` gate.
 
+### File uploads
+
+20. In any TeamInbox channel/DM compose, click the **Attach** button
+    → file picker opens. Pick a file → it uploads in parallel, appears
+    as a removable chip above the textarea (thumbnail for images,
+    📎 icon for other files) with filename + size.
+21. Drag a file (or several) onto the compose area → dashed outline +
+    "Drop files to upload" overlay → release → files queue up.
+22. Copy an image to clipboard (Cmd+Shift+4 → opens preview, then copy)
+    and paste in the textarea → image uploads. Confirm chip appears.
+23. Click ×  on a chip to remove. Confirm Send disables when only
+    uploads are queued AND uploads are in-flight.
+24. Hit Send → message posts with attachments; images render as
+    clickable thumbnails (max 320×240) in the timeline, other files
+    render as 📎 cards linking to download.
+25. Switch channels → confirm queued attachments clear (don't leak
+    between contexts).
+26. 25 MB cap per file — try a bigger one to confirm a clean error.
+
+### Unified outbound abstraction
+
+27. Public ping: `curl -s -X POST https://gms.friday.mu/api/outbound/send -H
+    "Content-Type: application/json" -d '{}'` → expect `401
+    Unauthorized` (auth gate fires).
+28. With a real JWT, try `{"audience":"unclassified","channel":"email","contextId":"x","body":"hi"}`
+    → expect `400 classify_first`.
+29. With a real JWT, try `{"audience":"team","channel":"team-channel","contextId":"<channel-uuid>","body":"hello via outbound"}`
+    → expect `200 { ok, messageId, sentAt }` and the message appears
+    in TeamInbox.
+30. Existing callers (Friday Consult send + TeamInbox compose) are
+    NOT yet migrated to this endpoint — that's a separate cleanup
+    commit. The endpoint is ready for new outbound (email integration,
+    autonomous send) to adopt directly.
+
 ### Email integration status
 
 18. Public ping: `curl https://gms.friday.mu/api/email/status` →
@@ -116,38 +153,22 @@ fallback in the classifier; heuristic-only works without it.
 `docs/handover/slack-import-setup.md` for the 10-min app-creation
 walkthrough.
 
-### TeamInbox file uploads — DEFERRED, needs your input
+### File uploads — SHIPPED (was deferred; Ishant green-lit the
+public nginx path)
 
-The locked decision (§8) says "local disk + nginx static serve". I
-hesitated to ship that autonomously because publicly-served
-attachments leak — private-channel files would be readable by anyone
-who guessed the URL. Two options:
+Public static serve under `/uploads/team/{channel,dm}/<id>/<uuid>.<ext>`
+via the existing nginx `/uploads/` location (no nginx config change
+needed — reuses the dir already serving design photos). 25 MB cap,
+multer-only (no sharp dep, originals stored as-is). See smoke-test
+items 20-26.
 
-- **A (locked spec):** nginx static under `/var/www/fad-attachments/`,
-  exposed at `https://gms.friday.mu/attachments/<uuid>`. Fast but
-  unauthenticated. Acceptable if attachments are non-sensitive.
-- **B (auth):** new `/api/team/attachments/:id` endpoint that streams
-  the file after a channel-member / DM-participant check. Slower (Node
-  serving binary) but safe. Same disk layout, different access path.
+### Outbound abstraction — SHIPPED
 
-I'd prefer (B) for security parity with the rest of the inbox. ~30
-min difference in implementation. Pick one and I'll ship.
-
-(Also note: `multer` is already in `package.json`; would still need
-to add `sharp` for image compression.)
-
-### Unified outbound abstraction — designed not built
-
-Decision §2 says BUILD UNIFIED. I didn't ship this overnight because
-the contract has subtle policy decisions (e.g., "what does
-`channel: 'whatsapp'` mean for a `team` audience — error or
-TeamInbox DM?") and the refactor part touches currently-working
-Friday Consult send + TeamInbox compose. Better as a focused session
-when you can review the contract before I refactor callers.
-
-The skeleton would land at `backend/src/outbound/` with a
-`POST /api/outbound/send` route fed by an audience+channel routing
-table. Ready to start when you greenlight the contract.
+`/api/outbound/send` is live. Existing callers (Friday Consult send,
+TeamInbox compose) still use their direct paths — refactoring them
+to go through the unified endpoint is a separate cleanup commit and
+not strictly required (the endpoint stands alone for new callers like
+the email integration outbound path + future autonomous send).
 
 ## Files touched
 
@@ -225,24 +246,37 @@ POST   /api/email/pubsub/push                   Pub/Sub push receiver (no auth)
 
 | # | What | Effort | Blocker |
 |---|---|---|---|
-| A | File uploads — pick A or B from above | 3-4h | Your call on auth model |
-| B | Unified outbound abstraction | 1-2 days | Your nod on contract |
-| C | Email frontend (Settings panel for accounts + email-thread surfaces) | 1-2 days | GCP setup gates real connection, but skeleton/empty-state UI can land |
-| D | Slack import run | 5-30 min | Bot token |
-| E | Reservations + Properties wire to live Guesty | 2-3h | Cooldown clear |
-| F | Per-message read-receipt popover UI | 1h | None |
+| A | Refactor Friday Consult send + TeamInbox compose to use `/api/outbound/send` | 1-2h | None — incremental |
+| B | Email frontend (Settings panel for accounts + email-thread surfaces) | 1-2 days | GCP setup gates real connection, but skeleton/empty-state UI can land |
+| C | Slack import run | 5-30 min | Bot token |
+| D | Reservations + Properties wire to live Guesty | 2-3h | Cooldown clear |
+| E | Per-message read-receipt popover UI | 1h | None |
+| F | sharp for image compression on team attachments | 1h | Decide if needed — current uploads can be large |
+| G | Cleanup job for unbound attachments (uploaded but never sent, >24h old) | 1h | None |
 
 ## Process state on prod (session end)
 
 ```
-fad-backend   restart count: 73   status: online
-friday-gms    uptime: ~110m       status: online
+fad-backend   restart count: 76   status: online
+friday-gms    uptime: ~2h         status: online
 ```
 
 ```
 $ curl -s https://gms.friday.mu/version.json
-{"version": "56f79d9", "builtAt": "2026-05-17T04:16:57.175Z"}
+{"version": "2dec9aa", "builtAt": "2026-05-17T04:44:46.996Z"}
 ```
 
-Backend HEAD is `a52f1fa` (email skeleton) — version.json reflects
-frontend HEAD only.
+Backend HEAD is `6e5b767` (outbound abstraction). The version.json
+reflects frontend HEAD only — outbound is backend-only.
+
+## API surface added this session (beyond the email schema)
+
+```
+POST   /api/team/channels/:id/attachments       Upload single file (multipart)
+POST   /api/team/dms/:id/attachments             Upload single file to DM
+       (Both update existing POST .../messages to accept attachmentIds)
+
+POST   /api/outbound/send                        Unified outbound:
+       Body: { audience, channel, contextId, body, meta? }
+       Returns: { ok, messageId|draftId, sentAt, upstream }
+```
