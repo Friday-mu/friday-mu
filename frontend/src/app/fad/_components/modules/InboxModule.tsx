@@ -130,7 +130,10 @@ export function InboxModule({ onAskFriday }: Props) {
   const [hydrated, setHydrated] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [aiToolbarExpanded, setAiToolbarExpanded] = useState(false);
-  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+  // Collapsed-by-default. Operator clicks the label to expand when
+  // they want the summary; otherwise it's wasted vertical space.
+  // Per Ishant 2026-05-17.
+  const [summaryCollapsed, setSummaryCollapsed] = useState(true);
   const [composeCollapsed, setComposeCollapsed] = useState(false);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
 
@@ -139,14 +142,6 @@ export function InboxModule({ onAskFriday }: Props) {
     setRightCollapsed(localStorage.getItem('fad:inbox:right') === '1');
     const mobile = window.innerWidth <= 768;
     setIsMobile(mobile);
-    // Default-collapse the summary on any viewport where it would
-    // crowd the thread bubbles. Threshold: viewport height ≤ 800 OR
-    // mobile width. Mary's 720x406 hit this; my own 1440 didn't, which
-    // is why I missed it in the first pass. Per audit 2026-05-17.
-    const shouldCollapseSummary = mobile || window.innerHeight <= 800;
-    if (shouldCollapseSummary) {
-      setSummaryCollapsed(true);
-    }
     if (mobile) {
       setComposeCollapsed(true);
     }
@@ -170,7 +165,10 @@ export function InboxModule({ onAskFriday }: Props) {
   }, [rightCollapsed, hydrated]);
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
   const [summaryOn, setSummaryOn] = useState(true);
-  const [translateOn, setTranslateOn] = useState(false);
+  // Translate toggle removed — translation happens automatically at
+  // send-time (compose.ts:199 + drafts.ts:180) into the guest's last-
+  // detected language. Per-message "Show original" toggle is on each
+  // bubble. No need for a top-level toggle. Per Ishant 2026-05-17.
 
   // Live GMS data via FAD backend proxy; falls back to fixture INBOX_THREADS
   // during initial load or on backend failure so the inbox never blanks out.
@@ -812,12 +810,6 @@ export function InboxModule({ onAskFriday }: Props) {
                 onClick={() => setSummaryOn((v) => !v)}
               >
                 <IconSparkle size={10} /> Summary
-              </button>
-              <button
-                className={'inbox-ai-chip' + (translateOn ? ' on' : '')}
-                onClick={() => setTranslateOn((v) => !v)}
-              >
-                <IconGlobe size={10} /> Translate
               </button>
               {thread.sentiment === 'urgent' && (
                 <span
