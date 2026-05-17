@@ -160,6 +160,10 @@ router.post('/chat', attachIdentity, async (req, res) => {
 const TYPES = new Set(['bug', 'feature', 'suggestion']);
 const SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
 const STATUSES = new Set(['new', 'triaged', 'in_progress', 'resolved', 'wontfix', 'duplicate']);
+// `source` identifies which app/surface filed the feedback so the
+// inbox can split FAD operator reports from website visitor reports
+// (and mobile / portals when they ship). DB has a matching CHECK.
+const SOURCES = new Set(['fad', 'website', 'mobile', 'design-portal', 'owner-portal']);
 
 // 5MB cap on the base64 data URL keeps DB rows bounded. A 0.5-scale
 // 0.7-quality JPEG (what html2canvas produces in the frontend) lands
@@ -223,6 +227,7 @@ router.post('/', attachIdentity, async (req, res) => {
       route_url: routeUrl,
       module_label: moduleLabel,
       screenshot_data_url: screenshotDataUrl,
+      source: rawSource,
     } = req.body || {};
 
     if (!TYPES.has(type)) {
@@ -233,6 +238,12 @@ router.post('/', attachIdentity, async (req, res) => {
     }
     if (severity != null && !SEVERITIES.has(severity)) {
       return res.status(400).json({ error: 'severity must be low|medium|high|critical' });
+    }
+    // Default to 'fad' for callers that don't send a source — that
+    // covers the existing FAD shell which doesn't pass the field.
+    const source = rawSource == null ? 'fad' : rawSource;
+    if (!SOURCES.has(source)) {
+      return res.status(400).json({ error: `source must be one of: ${[...SOURCES].join(', ')}` });
     }
 
     let screenshot = null;
@@ -250,10 +261,10 @@ router.post('/', attachIdentity, async (req, res) => {
       `INSERT INTO feedback (
          type, title, description, severity, route_url, module_label,
          screenshot_data_url, user_id, user_username, user_display_name,
-         tenant_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         tenant_id, source
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id, type, title, description, severity, route_url, module_label,
-                 status, created_at`,
+                 status, source, created_at`,
       [
         type,
         (title || '').toString().trim() || null,
@@ -266,6 +277,7 @@ router.post('/', attachIdentity, async (req, res) => {
         req.identity.username,
         req.identity.displayName,
         req.tenantId,
+        source,
       ],
     );
 
@@ -307,10 +319,14 @@ router.get('/', attachIdentity, async (req, res) => {
       params.push(req.query.status);
       filters.push(`status = $${params.length}`);
     }
+    if (req.query.source && SOURCES.has(req.query.source)) {
+      params.push(req.query.source);
+      filters.push(`source = $${params.length}`);
+    }
     const sql = `
       SELECT id, type, title, description, severity, route_url, module_label,
              user_username, user_display_name, status, resolution_note,
-             resolved_at, created_at, updated_at
+             resolved_at, source, created_at, updated_at
       FROM feedback
       WHERE ${filters.join(' AND ')}
       ORDER BY created_at DESC

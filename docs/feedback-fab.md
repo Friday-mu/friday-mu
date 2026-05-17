@@ -390,6 +390,11 @@ function FeedbackModal({
         module_label: currentModuleLabel ?? null,
       };
       if (screenshot) payload.screenshot_data_url = screenshot;
+      // Required: tell the backend which app this report came from so
+      // FAD operators don't get website-visitor reports mixed in
+      // (and vice-versa). Filterable in the inbox + the source column
+      // is indexed.
+      payload.source = 'website';
       const r = await fetch(apiBase, {
         method: 'POST',
         headers: fetchHeaders(),
@@ -585,7 +590,12 @@ Request body:
   "severity": "low" | "medium" | "high" | "critical",  // optional
   "route_url": "/property/RC-14",
   "module_label": "Property detail",
-  "screenshot_data_url": "data:image/jpeg;base64,..."   // optional, ≤5MB
+  "screenshot_data_url": "data:image/jpeg;base64,...",  // optional, ≤5MB
+  "source": "website"  // REQUIRED for non-FAD callers (allowed:
+                       // fad | website | mobile | design-portal | owner-portal).
+                       // Defaults to 'fad' when omitted, which is correct
+                       // for the FAD shell. The website MUST set 'website'
+                       // so the inbox can split surfaces.
 }
 
 Response: the inserted feedback row.
