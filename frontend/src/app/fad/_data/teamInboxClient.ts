@@ -46,6 +46,10 @@ export interface LiveTeamMessage {
   text: string;
   mentions: string[];
   parentMessageId: string | null;
+  /** Number of replies on this message (top-level only — replies
+   *  themselves report 0). Backend populates via a LEFT JOIN LATERAL
+   *  count subquery on the list endpoints. */
+  replyCount: number;
   meta: Record<string, unknown> | null;
   editedAt: string | null;
   ts: string;
@@ -209,6 +213,19 @@ export async function loadMessageReactions(kind: 'channel' | 'dm', messageId: st
   return data?.reactions ?? {};
 }
 
+/**
+ * Fetch all replies for a top-level message. Returned in chronological
+ * order (oldest first) — threads read top-down like Slack, opposite of
+ * the main timeline.
+ */
+export async function loadMessageReplies(
+  kind: 'channel' | 'dm',
+  messageId: string,
+): Promise<LiveTeamMessage[]> {
+  const data = await apiFetch(`/api/team/messages/${kind}/${messageId}/replies`) as { replies?: LiveTeamMessage[] };
+  return data?.replies ?? [];
+}
+
 export async function addReaction(kind: 'channel' | 'dm', messageId: string, emoji: string): Promise<void> {
   await apiFetch(`/api/team/messages/${kind}/${messageId}/reactions`, {
     method: 'POST',
@@ -336,6 +353,64 @@ export function useTeamMessages(target: { kind: 'channel' | 'dm'; id: string } |
   }, []);
 
   return { messages, loading, error, refetch, send };
+}
+
+/**
+ * Live thread-replies hook. Pass null target to "pause" (no thread
+ * open). Polls every 15s like the main timeline. The `send` helper
+ * posts a reply with parentMessageId set; the optimistic append keeps
+ * the thread responsive between polls.
+ *
+ * The caller owns the parent (kind+parentId); when the operator closes
+ * the thread surface, pass null to stop polling.
+ */
+export function useMessageReplies(target: { kind: 'channel' | 'dm'; parentId: string; targetId: string } | null): {
+  replies: LiveTeamMessage[] | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+  send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind }) => Promise<LiveTeamMessage | null>;
+} {
+  const [replies, setReplies] = useState<LiveTeamMessage[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const targetRef = useRef(target);
+  useEffect(() => { targetRef.current = target; }, [target]);
+
+  const refetch = useCallback(() => {
+    const t = targetRef.current;
+    if (!t) { setReplies(null); setLoading(false); return; }
+    setLoading(true);
+    loadMessageReplies(t.kind, t.parentId)
+      .then((data) => { setReplies(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load replies'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refetch();
+    if (!target) return;
+    const id = setInterval(refetch, MESSAGES_POLL_MS);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.kind, target?.parentId, target?.targetId]);
+
+  const send = useCallback(async (text: string, opts: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind } = {}) => {
+    const t = targetRef.current;
+    if (!t || !text.trim()) return null;
+    try {
+      const msg = t.kind === 'channel'
+        ? await sendChannelMessage(t.targetId, { text: text.trim(), ...opts, parentMessageId: t.parentId })
+        : await sendDmMessage(t.targetId, { text: text.trim(), ...opts, parentMessageId: t.parentId });
+      setReplies((prev) => prev ? [...prev, msg] : [msg]);
+      return msg;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Send failed');
+      return null;
+    }
+  }, []);
+
+  return { replies, loading, error, refetch, send };
 }
 
 /** Tenant user list, cached for the session — used by the @mention

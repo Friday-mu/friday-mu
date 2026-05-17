@@ -35,6 +35,7 @@
 //   Read receipts + reactions (per-message)
 //   ---------------------------------------
 //   GET    /api/team/messages/:kind/:id/reads       Who's seen this
+//   GET    /api/team/messages/:kind/:id/replies     Thread replies for parent
 //   GET    /api/team/messages/:kind/:id/reactions   Aggregated reactions
 //   POST   /api/team/messages/:kind/:id/reactions   Add a reaction
 //   DELETE /api/team/messages/:kind/:id/reactions/:emoji  Remove
@@ -48,10 +49,10 @@
 // kind = 'channel' | 'dm' (route param distinguishes which table the
 // message id lives in — messages are split across two tables).
 //
-// V1 features: text + @mentions + last-seen-at + polling. Threading
-// works at the schema level (parent_message_id column) but the UI
-// won't surface it until Day 2-3. Reactions land in Day 2-3 too;
-// the endpoints exist now so the frontend can land in lockstep.
+// V1 features: text + @mentions + last-seen-at + polling. Threading:
+// list endpoints return top-level messages only (parent_message_id IS
+// NULL) with a reply_count subquery; thread replies are fetched on
+// demand via /messages/:kind/:id/replies. Reactions land alongside.
 //
 // New-user channel autojoin: every authenticated request triggers a
 // best-effort "join all public channels" insert at the top of the
@@ -146,6 +147,9 @@ function shapeMessage(row, kind) {
     text: row.text,
     mentions: row.mention_user_ids || [],
     parentMessageId: row.parent_message_id,
+    // Reply count is computed by a LEFT JOIN LATERAL on the list endpoints.
+    // Replies themselves return 0 here (they're fetched via /replies, never top-level).
+    replyCount: Number(row.reply_count) || 0,
     meta: row.meta || null,
     editedAt: row.edited_at,
     ts: row.created_at,
@@ -210,6 +214,7 @@ router.get('/channels', attachIdentity, async (req, res) => {
          FROM team_channel_messages msg
          WHERE msg.channel_id = c.id
            AND msg.deleted_at IS NULL
+           AND msg.parent_message_id IS NULL
            AND msg.author_user_id <> $2
            AND NOT EXISTS (
              SELECT 1 FROM team_message_reads r
@@ -328,10 +333,21 @@ router.get('/channels/:id/messages', attachIdentity, async (req, res) => {
     const before = req.query.before ? new Date(String(req.query.before)) : null;
     const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || 50), 10) || 50));
     const params = [ch.id];
+    // Top-level only: replies are fetched separately via /messages/:kind/:id/replies.
+    // The reply_count subquery powers the "N replies" badge under each parent.
     let sql =
-      `SELECT msg.*, $${params.length + 1}::text AS channel_key
+      `SELECT msg.*,
+              $${params.length + 1}::text AS channel_key,
+              COALESCE(rc.cnt, 0)         AS reply_count
        FROM team_channel_messages msg
-       WHERE msg.channel_id = $1 AND msg.deleted_at IS NULL`;
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS cnt
+         FROM team_channel_messages reply
+         WHERE reply.parent_message_id = msg.id AND reply.deleted_at IS NULL
+       ) rc ON TRUE
+       WHERE msg.channel_id = $1
+         AND msg.deleted_at IS NULL
+         AND msg.parent_message_id IS NULL`;
     params.push(ch.channel_key);
     if (before && !Number.isNaN(before.getTime())) {
       sql += ` AND msg.created_at < $${params.length + 1}`;
@@ -374,6 +390,18 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
     if (ch.visibility === 'private') {
       const member = await isChannelMember(ch.id, userId);
       if (!member) return res.status(403).json({ error: 'Not a member of this channel' });
+    }
+    // Thread reply: parent must belong to this channel + be a top-level
+    // message (no nested threads — Slack-style flat threading).
+    if (parentMessageId) {
+      const { rows: parentRows } = await query(
+        `SELECT id FROM team_channel_messages
+         WHERE id = $1 AND channel_id = $2 AND parent_message_id IS NULL AND deleted_at IS NULL`,
+        [parentMessageId, ch.id],
+      );
+      if (parentRows.length === 0) {
+        return res.status(400).json({ error: 'Parent message not found in this channel, or is itself a reply' });
+      }
     }
     // Drop mentions of non-members (channel might be private and the
     // mentioned user isn't in it; silently drop rather than 400).
@@ -450,6 +478,7 @@ router.get('/dms', attachIdentity, async (req, res) => {
          FROM team_dm_messages msg
          WHERE msg.dm_id = dm.id
            AND msg.deleted_at IS NULL
+           AND msg.parent_message_id IS NULL
            AND msg.author_user_id <> $2
            AND NOT EXISTS (
              SELECT 1 FROM team_message_reads r
@@ -545,10 +574,20 @@ router.get('/dms/:id/messages', attachIdentity, async (req, res) => {
     const before = req.query.before ? new Date(String(req.query.before)) : null;
     const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || 50), 10) || 50));
     const params = [dm.id];
+    // Top-level only — same threading model as channel messages.
     let sql =
-      `SELECT msg.*, $${params.length + 1}::uuid AS dm_id
+      `SELECT msg.*,
+              $${params.length + 1}::uuid AS dm_id,
+              COALESCE(rc.cnt, 0)         AS reply_count
        FROM team_dm_messages msg
-       WHERE msg.dm_id = $1 AND msg.deleted_at IS NULL`;
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS cnt
+         FROM team_dm_messages reply
+         WHERE reply.parent_message_id = msg.id AND reply.deleted_at IS NULL
+       ) rc ON TRUE
+       WHERE msg.dm_id = $1
+         AND msg.deleted_at IS NULL
+         AND msg.parent_message_id IS NULL`;
     params.push(dm.id);
     if (before && !Number.isNaN(before.getTime())) {
       sql += ` AND msg.created_at < $${params.length + 1}`;
@@ -588,6 +627,16 @@ router.post('/dms/:id/messages', attachIdentity, async (req, res) => {
     const dm = dmRows[0];
     if (!dm.participant_user_ids.includes(userId)) {
       return res.status(403).json({ error: 'Not a participant' });
+    }
+    if (parentMessageId) {
+      const { rows: parentRows } = await query(
+        `SELECT id FROM team_dm_messages
+         WHERE id = $1 AND dm_id = $2 AND parent_message_id IS NULL AND deleted_at IS NULL`,
+        [parentMessageId, dm.id],
+      );
+      if (parentRows.length === 0) {
+        return res.status(400).json({ error: 'Parent message not found in this DM, or is itself a reply' });
+      }
     }
     const { rows: ins } = await query(
       `INSERT INTO team_dm_messages
@@ -664,6 +713,78 @@ router.get('/messages/:kind/:id/reads', attachIdentity, async (req, res) => {
     });
   } catch (e) {
     console.error('[team_inbox] reads list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Thread replies ─────────────────────────────────────────────────
+// GET /api/team/messages/:kind/:id/replies — fetch all replies for a
+// top-level message. Replies are excluded from the main list endpoint
+// (parent_message_id IS NULL filter) so the UI fetches them on demand
+// when the operator opens a thread surface.
+//
+// Returns replies in chronological order (oldest first) — thread reads
+// top-down like Slack, opposite of the main timeline.
+
+router.get('/messages/:kind/:id/replies', attachIdentity, async (req, res) => {
+  const userId = req.identity?.userId;
+  if (!userId) return res.status(401).json({ error: 'No user context' });
+  const kind = req.params.kind;
+  if (kind !== 'channel' && kind !== 'dm') {
+    return res.status(400).json({ error: 'kind must be channel or dm' });
+  }
+  const parentId = req.params.id;
+  try {
+    if (kind === 'channel') {
+      // Resolve channel + verify access (private channels are member-gated).
+      const { rows: parentRows } = await query(
+        `SELECT msg.id, msg.channel_id, c.visibility, c.channel_key
+         FROM team_channel_messages msg
+         JOIN team_channels c ON c.id = msg.channel_id
+         WHERE msg.id = $1 AND c.tenant_id = $2`,
+        [parentId, req.tenantId],
+      );
+      if (parentRows.length === 0) return res.status(404).json({ error: 'Parent message not found' });
+      const parent = parentRows[0];
+      if (parent.visibility === 'private') {
+        const member = await isChannelMember(parent.channel_id, userId);
+        if (!member) return res.status(403).json({ error: 'Not a member of this channel' });
+      }
+      const { rows } = await query(
+        `SELECT msg.*, $2::text AS channel_key, 0 AS reply_count
+         FROM team_channel_messages msg
+         WHERE msg.parent_message_id = $1 AND msg.deleted_at IS NULL
+         ORDER BY msg.created_at ASC`,
+        [parentId, parent.channel_key],
+      );
+      const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'channel');
+      rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
+      return res.json({ replies: rows.map((r) => shapeMessage(r, 'channel')) });
+    }
+    // DM replies.
+    const { rows: parentRows } = await query(
+      `SELECT msg.id, msg.dm_id, dm.participant_user_ids
+       FROM team_dm_messages msg
+       JOIN team_dms dm ON dm.id = msg.dm_id
+       WHERE msg.id = $1 AND dm.tenant_id = $2`,
+      [parentId, req.tenantId],
+    );
+    if (parentRows.length === 0) return res.status(404).json({ error: 'Parent message not found' });
+    if (!parentRows[0].participant_user_ids.includes(userId)) {
+      return res.status(403).json({ error: 'Not a participant' });
+    }
+    const { rows } = await query(
+      `SELECT msg.*, $2::uuid AS dm_id, 0 AS reply_count
+       FROM team_dm_messages msg
+       WHERE msg.parent_message_id = $1 AND msg.deleted_at IS NULL
+       ORDER BY msg.created_at ASC`,
+      [parentId, parentRows[0].dm_id],
+    );
+    const reactionMap = await loadReactionsForMessages(rows.map((r) => r.id), 'dm');
+    rows.forEach((r) => { r._reactions = reactionMap.get(r.id) || {}; });
+    res.json({ replies: rows.map((r) => shapeMessage(r, 'dm')) });
+  } catch (e) {
+    console.error('[team_inbox] replies error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

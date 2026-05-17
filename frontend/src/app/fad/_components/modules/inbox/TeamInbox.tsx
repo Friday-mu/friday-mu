@@ -12,10 +12,12 @@ import {
   useChannels,
   useDms,
   useTeamMessages,
+  useMessageReplies,
   addReaction,
   removeReaction,
   type LiveChannel,
   type LiveDm,
+  type LiveTeamMessage,
 } from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
@@ -89,7 +91,23 @@ export function TeamInbox({
       : { kind: 'dm' as const, id: selection.dm.id }
     : null;
 
-  const { messages: liveMessages, send: sendLive } = useTeamMessages(messagesTarget);
+  const { messages: liveMessages, send: sendLive, refetch: refetchMessages } = useTeamMessages(messagesTarget);
+
+  // Open thread state — when set, an inline ThreadSurface renders below
+  // the matching parent message. Reset on selection change so switching
+  // channels doesn't leave a stale surface open against the wrong context.
+  const [openThreadParentId, setOpenThreadParentId] = useState<string | null>(null);
+  useEffect(() => { setOpenThreadParentId(null); }, [selection?.kind, selection?.kind === 'channel' ? selection.channelKey : selection?.kind === 'dm' ? selection.dm.id : null]);
+
+  const threadTarget = useMemo(() => {
+    if (!openThreadParentId || !messagesTarget) return null;
+    return {
+      kind: messagesTarget.kind,
+      parentId: openThreadParentId,
+      targetId: messagesTarget.id,
+    };
+  }, [openThreadParentId, messagesTarget]);
+  const { replies: threadReplies, send: sendThreadReply } = useMessageReplies(threadTarget);
 
   const messages: TeamMessage[] = useMemo(() => {
     let msgs: TeamMessage[] = (liveMessages ?? []).map((m): TeamMessage => ({
@@ -101,6 +119,8 @@ export function TeamInbox({
       ts: m.ts,
       mentions: m.mentions,
       kind: m.kind,
+      parentMessageId: m.parentMessageId,
+      threadCount: m.replyCount,
       // Pass-through extras when present in meta (call/task-link fixtures).
       callMeta: (m.meta as { call?: TeamCallMeta })?.call,
     }));
@@ -405,6 +425,7 @@ export function TeamInbox({
             )}
             {messages.map((m) => {
               const author = TASK_USER_BY_ID[m.authorId];
+              const threadOpen = openThreadParentId === m.id;
               if (m.kind === 'call_scheduled' && m.callMeta) {
                 return <CallMessage key={m.id} message={m} author={author} />;
               }
@@ -412,15 +433,35 @@ export function TeamInbox({
                 return <SystemMessage key={m.id} icon="🤖" title="Roster published" body={m.text} ts={m.ts} author={author} />;
               }
               return (
-                <TextMessage
-                  key={m.id}
-                  message={m}
-                  author={author}
-                  reactions={reactionsByMessageId[m.id] ?? {}}
-                  currentUserId={currentUserId}
-                  onAddReaction={(emoji) => handleAddReaction(m.id, emoji)}
-                  onRemoveReaction={(emoji) => handleRemoveReaction(m.id, emoji)}
-                />
+                <div key={m.id}>
+                  <TextMessage
+                    message={m}
+                    author={author}
+                    reactions={reactionsByMessageId[m.id] ?? {}}
+                    currentUserId={currentUserId}
+                    onAddReaction={(emoji) => handleAddReaction(m.id, emoji)}
+                    onRemoveReaction={(emoji) => handleRemoveReaction(m.id, emoji)}
+                    onOpenThread={() => setOpenThreadParentId(threadOpen ? null : m.id)}
+                    threadOpen={threadOpen}
+                  />
+                  {threadOpen && (
+                    <ThreadSurface
+                      parentId={m.id}
+                      replies={threadReplies ?? []}
+                      currentUserId={currentUserId}
+                      onSend={async (text) => {
+                        const msg = await sendThreadReply(text);
+                        if (msg) {
+                          // Bump the parent's threadCount badge without
+                          // waiting for the 15s poll cycle.
+                          refetchMessages();
+                        }
+                        return !!msg;
+                      }}
+                      onClose={() => setOpenThreadParentId(null)}
+                    />
+                  )}
+                </div>
               );
             })}
           </div>
@@ -511,6 +552,9 @@ function TextMessage({
   currentUserId,
   onAddReaction,
   onRemoveReaction,
+  onOpenThread,
+  threadOpen,
+  compact,
 }: {
   message: TeamMessage;
   author?: TaskUser;
@@ -518,6 +562,14 @@ function TextMessage({
   currentUserId?: string;
   onAddReaction?: (emoji: string) => void;
   onRemoveReaction?: (emoji: string) => void;
+  /** When provided, message gets a hover "Reply" affordance + the
+   *  thread-count badge becomes clickable. Omit inside the thread
+   *  itself (replies don't have their own threads). */
+  onOpenThread?: () => void;
+  threadOpen?: boolean;
+  /** Replies in the thread surface render tighter (smaller avatars,
+   *  reduced padding). */
+  compact?: boolean;
 }) {
   const [hovering, setHovering] = useState(false);
   const reactionEntries = Object.entries(reactions ?? {})
@@ -591,8 +643,8 @@ function TextMessage({
           })}
         </div>
       )}
-      {/* Hover picker — three semantic emojis appear on top-right. Clicking
-          adds the current user's reaction. */}
+      {/* Hover picker — three semantic emojis + an optional "Reply in
+          thread" button appear on top-right when hovering. */}
       {hovering && onAddReaction && (
         <div
           style={{
@@ -633,13 +685,184 @@ function TextMessage({
               </button>
             );
           })}
+          {onOpenThread && (
+            <button
+              type="button"
+              onClick={onOpenThread}
+              title={threadOpen ? 'Close thread' : 'Reply in thread'}
+              style={{
+                padding: '2px 4px',
+                fontSize: 12,
+                background: threadOpen ? 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.15))' : 'transparent',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                lineHeight: 1,
+                marginLeft: 2,
+                borderLeft: '0.5px solid var(--color-border-tertiary)',
+                paddingLeft: 6,
+                color: 'var(--color-text-secondary)',
+              }}
+            >
+              💬
+            </button>
+          )}
         </div>
       )}
-      {(message.threadCount ?? 0) > 0 && (
-        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-brand-accent)' }}>
-          {message.threadCount} repl{message.threadCount === 1 ? 'y' : 'ies'}
+      {(message.threadCount ?? 0) > 0 && !compact && (
+        <button
+          type="button"
+          onClick={onOpenThread}
+          disabled={!onOpenThread}
+          style={{
+            marginTop: 4,
+            padding: '2px 6px',
+            fontSize: 11,
+            color: 'var(--color-brand-accent)',
+            background: threadOpen ? 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.15))' : 'transparent',
+            border: 'none',
+            borderRadius: 4,
+            cursor: onOpenThread ? 'pointer' : 'default',
+            display: 'inline-block',
+            fontWeight: 500,
+          }}
+        >
+          💬 {message.threadCount} repl{message.threadCount === 1 ? 'y' : 'ies'}
+          {threadOpen && ' · hide'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Inline thread surface — renders below the parent message with replies
+// in chronological order + a small compose. Reactions are not yet
+// supported on replies (Slack-style "reply, then react in thread" is a
+// Day 2-3 polish item); reply-to-reply nesting is disallowed by the
+// backend (flat threads only).
+function ThreadSurface({
+  parentId: _parentId,
+  replies,
+  currentUserId,
+  onSend,
+  onClose,
+}: {
+  parentId: string;
+  replies: LiveTeamMessage[];
+  currentUserId: string;
+  onSend: (text: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    const ok = await onSend(text);
+    setSending(false);
+    if (ok) setDraft('');
+    else fireToast('Reply failed — try again');
+  };
+  return (
+    <div
+      style={{
+        marginLeft: 24,
+        marginTop: 6,
+        marginBottom: 12,
+        paddingLeft: 12,
+        borderLeft: '2px solid var(--color-border-secondary)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          fontSize: 11,
+          color: 'var(--color-text-tertiary)',
+          marginBottom: 6,
+        }}
+      >
+        <span style={{ fontWeight: 500 }}>
+          Thread · {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            marginLeft: 'auto',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--color-text-tertiary)',
+            fontSize: 11,
+            padding: '2px 4px',
+          }}
+        >
+          Close ×
+        </button>
+      </div>
+      {replies.length === 0 && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
+          No replies yet. Be the first.
         </div>
       )}
+      {replies.map((r) => {
+        const author = TASK_USER_BY_ID[r.authorId || ''];
+        const msg: TeamMessage = {
+          id: r.id,
+          channelKey: r.channelKey,
+          dmId: r.dmId,
+          authorId: r.authorId || '',
+          text: r.text,
+          ts: r.ts,
+          mentions: r.mentions,
+          kind: r.kind,
+          parentMessageId: r.parentMessageId,
+        };
+        return (
+          <TextMessage
+            key={r.id}
+            message={msg}
+            author={author}
+            reactions={r.reactions}
+            currentUserId={currentUserId}
+            compact
+          />
+        );
+      })}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder="Reply in thread…"
+          rows={2}
+          style={{
+            flex: 1,
+            fontSize: 13,
+            padding: 8,
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--radius-sm)',
+            resize: 'vertical',
+            fontFamily: 'inherit',
+          }}
+        />
+        <button
+          className="btn primary sm"
+          onClick={send}
+          disabled={!draft.trim() || sending}
+          style={{ alignSelf: 'flex-end' }}
+        >
+          <IconSend size={11} /> Reply
+        </button>
+      </div>
     </div>
   );
 }

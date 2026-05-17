@@ -86,6 +86,9 @@ export interface TeamMessage {
   /** for kind: 'finance_escalation' — see FinanceEscalationMeta */
   financeEscalation?: FinanceEscalationMeta;
   attachments?: number;
+  /** Slack-style flat threading. Set on replies; top-level messages are null. */
+  parentMessageId?: string | null;
+  /** Reply count for top-level messages (replies themselves report 0). */
   threadCount?: number;
 }
 
