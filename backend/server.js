@@ -45,6 +45,12 @@ app.use((req, res, next) => {
   // express.json() consume the bytes first would re-serialise the
   // payload and break the signature check.
   if (req.path === '/api/tenants/stripe/webhook') return next();
+  // Guesty webhooks (reservation + message events) also need RAW bytes
+  // for the HMAC-SHA256 signature (x-guesty-signature header). The
+  // route mounts its own express.raw(); skipping express.json() here
+  // makes that work. Latent bug since the reservations webhook landed
+  // — fixed 2026-05-17 when the inbox-message handler was added.
+  if (req.path === '/api/integrations/guesty/webhook') return next();
   return express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(limiter);
