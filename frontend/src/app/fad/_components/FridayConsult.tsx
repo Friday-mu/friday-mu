@@ -413,16 +413,24 @@ export function FridayConsult({
     setTeachingState(msgIndex, actionIndex, 'dismissed');
   };
 
+  // FC is compact-by-default: header + chips + Ask Friday input only.
+  // The transcript+draft area only renders once there's something to
+  // show — a user message, a thinking spinner, an error, a GMS draft,
+  // or a working body. Per Ishant 2026-05-17.
+  const hasActivity =
+    msgs.length > 0
+    || thinking
+    || !!error
+    || !!currentDraft
+    || workingBody.trim().length > 0;
+
   return (
     <div
       className="friday-consult"
       style={{
-        // When consult is the primary surface (no compose below), allow
-        // it to grow tall instead of being capped at the legacy 360px.
-        // 65vh gives plenty of room for chat + DraftCard + input without
-        // pushing the rest off-screen.
+        // Compact when idle, grows up to 65vh when there's activity.
         maxHeight: '65vh',
-        flex: '1 1 auto',
+        flex: hasActivity ? '1 1 auto' : '0 0 auto',
       }}
     >
       <div className="friday-consult-header">
@@ -449,70 +457,57 @@ export function FridayConsult({
           <IconClose size={12} />
         </button>
       </div>
-      <div className="friday-consult-body" ref={transcriptRef}>
-        {msgs.length === 0 && (
-          <div
-            style={{
-              padding: 16,
-              fontSize: 12,
-              color: 'var(--color-text-tertiary)',
-              textAlign: 'center',
-              lineHeight: 1.5,
-            }}
-          >
-            Ask Friday about this conversation — drafting tone, missing context,
-            policy lookups, refunds. Friday reads the thread + property knowledge
-            + active draft.
-          </div>
-        )}
-        {msgs.map((m, i) => (
-          <MessageRow
-            key={i}
-            m={m}
-            msgIndex={i}
-            onChipClick={submit}
-            onConfirmTeaching={confirmTeaching}
-            onDismissTeaching={dismissTeaching}
-          />
-        ))}
-        {thinking && <ThinkingRow />}
-        {error && (
-          <div
-            style={{
-              padding: '8px 12px',
-              margin: '4px 0',
-              fontSize: 12,
-              color: 'var(--color-text-danger)',
-              background: 'var(--color-background-danger-soft, rgba(220, 38, 38, 0.08))',
-              borderRadius: 'var(--radius-sm)',
-            }}
-          >
-            {error}
-          </div>
-        )}
-        {/* Reply surface — only renders when there's a GMS draft OR
-            Friday has produced one via chat (workingBody populated).
-            No empty "Your reply" placeholder when the operator hasn't
-            asked for anything yet. Per Ishant 2026-05-17. */}
-        {(currentDraft || workingBody.trim().length > 0) && (
-          <EmbeddedDraftCard
-            workingBody={workingBody}
-            setWorkingBody={setWorkingBody}
-            currentDraft={currentDraft || null}
-            liveConfidence={latestConfidence}
-            channelLabel={channelLabel}
-            whatsappWindow={whatsappWindow}
-            sendBusy={sendBusy}
-            rejecting={rejecting}
-            rejectReason={rejectReason}
-            setRejectReason={setRejectReason}
-            onApprove={submitApprove}
-            onStartReject={() => setRejecting(true)}
-            onConfirmReject={submitReject}
-            onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-          />
-        )}
-      </div>
+      {hasActivity && (
+        <div className="friday-consult-body" ref={transcriptRef}>
+          {msgs.map((m, i) => (
+            <MessageRow
+              key={i}
+              m={m}
+              msgIndex={i}
+              onChipClick={submit}
+              onConfirmTeaching={confirmTeaching}
+              onDismissTeaching={dismissTeaching}
+            />
+          ))}
+          {thinking && <ThinkingRow />}
+          {error && (
+            <div
+              style={{
+                padding: '8px 12px',
+                margin: '4px 0',
+                fontSize: 12,
+                color: 'var(--color-text-danger)',
+                background: 'var(--color-background-danger-soft, rgba(220, 38, 38, 0.08))',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              {error}
+            </div>
+          )}
+          {/* Reply surface — only renders when there's a GMS draft OR
+              Friday has produced one via chat (workingBody populated).
+              No empty "Your reply" placeholder when the operator hasn't
+              asked for anything yet. Per Ishant 2026-05-17. */}
+          {(currentDraft || workingBody.trim().length > 0) && (
+            <EmbeddedDraftCard
+              workingBody={workingBody}
+              setWorkingBody={setWorkingBody}
+              currentDraft={currentDraft || null}
+              liveConfidence={latestConfidence}
+              channelLabel={channelLabel}
+              whatsappWindow={whatsappWindow}
+              sendBusy={sendBusy}
+              rejecting={rejecting}
+              rejectReason={rejectReason}
+              setRejectReason={setRejectReason}
+              onApprove={submitApprove}
+              onStartReject={() => setRejecting(true)}
+              onConfirmReject={submitReject}
+              onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+            />
+          )}
+        </div>
+      )}
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
         <div
