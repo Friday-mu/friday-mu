@@ -1013,6 +1013,14 @@ const emailModule = require('./src/email');
 app.use('/api/email', emailModule.router);
 require('./src/email/pull_worker').start();
 
+// ─── Unified outbound abstraction ─────────────────────────────────
+// POST /api/outbound/send federates per-channel send paths under one
+// endpoint. Per locked decision §2 — first callers are TeamInbox
+// compose + Friday Consult send; refactor of those callers is a
+// separate cleanup commit.
+const outboundModule = require('./src/outbound');
+app.use('/api/outbound', outboundModule.router);
+
 // ────────────────────────────────────────────────────────────────────
 // Guesty sync — Properties + Reservations modules (mig 049).
 //

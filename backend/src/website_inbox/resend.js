@@ -72,4 +72,52 @@ async function sendBookingConfirmation({ toEmail, toName, residenceName, checkIn
   return data;
 }
 
-module.exports = { sendBookingConfirmation };
+/**
+ * Generic email send — used by the unified outbound abstraction
+ * (POST /api/outbound/send) when audience is owner|vendor and channel
+ * is email. Returns the Resend API response. Throws on failure.
+ *
+ * If RESEND_API_KEY isn't set, logs + returns { skipped: true }.
+ */
+async function sendEmail({ to, toName, subject, body, html, replyTo, from }) {
+  if (!to || !subject) {
+    throw new Error('sendEmail requires `to` and `subject`');
+  }
+  const toFormatted = toName ? `${toName} <${to}>` : to;
+  // Default to plain-text wrapped in a minimal HTML shell when only
+  // `body` (text) is provided. Callers can override with `html`.
+  const finalHtml = html || `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #14233d; white-space: pre-wrap;">${escapeHtml(body || '')}</div>`;
+  if (!RESEND_API_KEY) {
+    console.warn('[resend] RESEND_API_KEY not set — skipping email to', to);
+    return { skipped: true };
+  }
+  const { data } = await axios.post('https://api.resend.com/emails',
+    {
+      from: from || RESEND_FROM,
+      to: [toFormatted],
+      subject,
+      html: finalHtml,
+      text: body || '',
+      ...(replyTo ? { reply_to: replyTo } : {}),
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 15_000,
+    },
+  );
+  return data;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+module.exports = { sendBookingConfirmation, sendEmail };
