@@ -1004,6 +1004,15 @@ app.use('/api/team', teamInbox.router);
 // poll (every 15s), runs in-process. See src/website_inbox/jobs.js.
 websiteInbox.startWorker();
 
+// ─── Email integration (mig 055) ───────────────────────────────────
+// Per-user Gmail OAuth + threading + classifier + Pub/Sub push handler.
+// PARKED on Ishant creating the GCP OAuth client; the router mounts
+// regardless so /api/email/status reflects readiness publicly.
+// pull_worker is a no-op until EMAIL_PULL_ENABLED=true.
+const emailModule = require('./src/email');
+app.use('/api/email', emailModule.router);
+require('./src/email/pull_worker').start();
+
 // ────────────────────────────────────────────────────────────────────
 // Guesty sync — Properties + Reservations modules (mig 049).
 //
