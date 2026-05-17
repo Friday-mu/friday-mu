@@ -7,6 +7,13 @@
 
 After TeamInbox replaces Slack (Day 1 shipped 2026-05-17), the team loses access to historical context — "what did we decide about LB-2 last month", "when did Mathias mention the AC issue", etc. This worker imports your Slack workspace's message history into TeamInbox so that context survives the cut-over. After the import runs successfully, you cancel Slack and the team's historical knowledge stays in FAD.
 
+## Scope of the import (default settings)
+
+- **180 days** of history per Ishant 2026-05-17. Slack's free tier caps server-side at 90 days regardless of what we ask for, so on free tier you effectively get the last 90 days. On paid tier you get the full 180.
+- **Only the channels we're keeping in FAD.** The worker auto-maps Slack channels by name to the 13 seeded FAD channels (with explicit renames: `#frgm` → `gm`, `#general` → `random`, `#guest-services` → `ops`). Anything else — per-property channels, defunct project channels, ad-hoc spaces — gets `skip = TRUE` and is silently ignored. No noise imported.
+- **DMs:** all 1:1 + group DMs where every participant has a FAD account. DMs where any participant is a non-FAD user (ex-employee, bot, external) are skipped.
+- **Users:** matched by Slack email ↔ FAD email. Unmatched Slack users' messages still come through but with their Slack display name as author + no clickable user link.
+
 ## What Ishant needs to do (one-time, ~10 minutes)
 
 ### 1. Create a Slack app
@@ -51,13 +58,20 @@ After install, you'll see **Bot User OAuth Token** — starts with `xoxb-...`. C
 Drop it in our chat. I'll plug it in via:
 
 ```bash
+# Uses the default 180-day floor — recommended
 curl -X POST https://gms.friday.mu/api/team/slack-import/start \
   -H "Authorization: Bearer <your-admin-jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"botToken": "xoxb-...", "importedSince": "2026-02-17T00:00:00Z"}'
+  -d '{"botToken": "xoxb-..."}'
+
+# Or override with a custom floor
+curl -X POST https://gms.friday.mu/api/team/slack-import/start \
+  -H "Authorization: Bearer <your-admin-jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"botToken": "xoxb-...", "importedSince": "2025-11-17T00:00:00Z"}'
 ```
 
-`importedSince` is optional — if omitted, imports everything Slack lets us see (free-tier Slack caps at 90 days of history; paid tiers see further back).
+`importedSince` is optional — defaults to 180 days ago. Slack free tier caps history at 90 days server-side, so on free tier you get whatever falls within those 90 days; on paid tier you get the full 180.
 
 The endpoint returns immediately with `{ok: true, message: ...}` — the actual import runs async in the background (takes ~5-30 min depending on workspace size).
 

@@ -294,11 +294,19 @@ async function importChannelHistory(tenantId, token, slackChannelId, fadChannelI
 // ─── Top-level orchestrator ─────────────────────────────────────────
 
 async function runSlackImport(tenantId, token, opts = {}) {
+  // Default floor: 180 days back per Ishant 2026-05-17 ("go back a full
+  // 180 days if possible"). Slack's free tier caps history at 90 days
+  // server-side, so on free tier we effectively get whatever Slack
+  // returns inside that window. On paid tier we get the full 180.
+  // Operator can still override via opts.importedSince.
+  const defaultFloor = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+  const importedSince = opts.importedSince || defaultFloor;
+
   // Insert run row
   const { rows: runRows } = await query(
     `INSERT INTO slack_import_runs (tenant_id, imported_since)
      VALUES ($1, $2) RETURNING id`,
-    [tenantId, opts.importedSince || null],
+    [tenantId, importedSince],
   );
   const runId = runRows[0].id;
 
@@ -321,9 +329,7 @@ async function runSlackImport(tenantId, token, opts = {}) {
       [tenantId],
     );
 
-    const oldestTs = opts.importedSince
-      ? (new Date(opts.importedSince).getTime() / 1000).toString()
-      : null;
+    const oldestTs = (new Date(importedSince).getTime() / 1000).toString();
 
     let totalMessages = 0;
     let channelsImported = 0;
