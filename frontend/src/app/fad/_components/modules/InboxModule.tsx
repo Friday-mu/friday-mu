@@ -26,6 +26,19 @@ import { apiFetch } from '../../../../components/types';
 
 // Human-readable relative time. Used in list rows + message bubbles.
 // Returns "now", "5m", "2h", "yesterday", "Mar 14" depending on age.
+function formatStayDates(checkIn?: string, checkOut?: string): string {
+  if (!checkIn) return '';
+  const fmt = (s?: string) => {
+    if (!s) return '';
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+  const cin = fmt(checkIn);
+  const cout = fmt(checkOut);
+  return cout ? `${cin} → ${cout}` : cin;
+}
+
 function formatRelative(iso: string): string {
   if (!iso) return '';
   const t = new Date(iso).getTime();
@@ -612,7 +625,6 @@ export function InboxModule({ onAskFriday }: Props) {
       >
         <ModuleHeader
           title="Inbox"
-          subtitle="Team channels · DMs · scheduled calls"
           actions={actions}
         />
         {chipsRow}
@@ -633,7 +645,6 @@ export function InboxModule({ onAskFriday }: Props) {
     >
       <ModuleHeader
         title="Inbox"
-        subtitle="Guest · owner · vendor threads across Airbnb, Booking, WhatsApp, Email"
         actions={actions}
       />
       {chipsRow}
@@ -771,9 +782,12 @@ export function InboxModule({ onAskFriday }: Props) {
             >
               ← Back to inbox
             </button>
-            <div className="inbox-thread-subject">
-              <span style={{ flex: 1, minWidth: 0 }}>{thread.subject}</span>
-              {isMobile && (
+            {/* Conversation 'subject' line stripped 2026-05-17 per Ishant —
+                the AI summary or first-line preview was big + redundant.
+                Start with the meta row: name, property, channel, dates,
+                guests, price — everything you need to triage at a glance. */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
                 <button
                   type="button"
                   className={'btn ghost sm' + (mobileDetailsOpen ? ' active' : '')}
@@ -783,15 +797,39 @@ export function InboxModule({ onAskFriday }: Props) {
                 >
                   {mobileDetailsOpen ? 'Hide details ▴' : 'Details ▾'}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
             <div className={'inbox-thread-details' + (isMobile && !mobileDetailsOpen ? ' mobile-hidden' : '')}>
-            <div className="inbox-thread-meta" style={{ marginBottom: 8 }}>
-              <span>{thread.guest}</span>
+            <div className="inbox-thread-meta" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{thread.guest}</span>
+              <span className="sep">·</span>
+              <span>{thread.property || '—'}</span>
               <span className="sep">·</span>
               <span>{thread.channel}</span>
-              <span className="sep">·</span>
-              <span>{thread.property}</span>
+              {thread.reservation?.checkIn && (
+                <>
+                  <span className="sep">·</span>
+                  <span>
+                    {formatStayDates(thread.reservation.checkIn, thread.reservation.checkOut)}
+                    {typeof thread.reservation.numberOfNights === 'number' ? ` · ${thread.reservation.numberOfNights}n` : ''}
+                  </span>
+                </>
+              )}
+              {typeof thread.reservation?.numGuests === 'number' && (
+                <>
+                  <span className="sep">·</span>
+                  <span>{thread.reservation.numGuests} {thread.reservation.numGuests === 1 ? 'guest' : 'guests'}</span>
+                </>
+              )}
+              {typeof thread.reservation?.totalPrice === 'number' && (
+                <>
+                  <span className="sep">·</span>
+                  <span>
+                    {thread.reservation.currency || ''}{thread.reservation.currency ? ' ' : ''}
+                    {Math.round(thread.reservation.totalPrice).toLocaleString()}
+                  </span>
+                </>
+              )}
               {thread.language && (
                 <>
                   <span className="sep">·</span>
