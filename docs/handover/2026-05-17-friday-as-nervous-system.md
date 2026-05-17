@@ -265,25 +265,61 @@ directly:
 | TeamInbox extension blocked by absent backend; promise unfulfilled to team | Be explicit in scoping: TeamInbox-Friday is Phase 7, gated on Tier E. Don't commit a date until Tier E ships. |
 | FAD ↔ GMS coupling makes failure modes blast across systems | Document each new tool's failure mode. FridayContext aggregation seam contains module API errors. Friday-gms never assumes a tool call succeeds. |
 
-## 10. Open questions (need Ishant's answers before Phase 2/3 plan locks)
+## 10. Open questions — ANSWERED 2026-05-17
 
-1. **Sprint 9 sequencing.** Wait for `gms-v6.33.0-sprint9-final` before
-   starting Phase 3, or design Phase 3 to layer on top of post-Sprint-9
-   (cleaner architecturally, pushes timeline by ~1-2 weeks)?
-2. **Multi-audience outbound abstraction.** Should fad-backend grow a
-   unified outbound abstraction (single `sendMessage(audience, channel,
-   body)` API that federates to Guesty / Resend / Meta-when-live /
-   TeamInbox-when-live), or stay per-channel forever?
-3. **Team-chat-Friday scope.** When you said "same pattern across team
-   chat", did you mean (a) the existing TeamInbox surface (FAD-owned,
-   needs Tier E backend first), or (b) wiring Friday into the real
-   Slack/WhatsApp the team uses today, or (c) something else?
-4. **Tool calling scope for Phase 3.** Draft-level tools only (fetch
-   reservation, edit draft, look up KB — all bounded to the current
-   consult turn) vs cross-module operational tools (create tasks,
-   record transactions). The first ships in current sprint shape;
-   the second requires the per-module Ask Friday routing parked to
-   post-Sprint 10.
+All eight questions (4 from this doc + 4 added during the email
+integration scoping conversation) have been answered or parked-with-
+recommendation. Build sequence locked.
+
+### Architecture (2)
+
+1. **Sprint 9 sequencing** — **PARKED, recommendation stands: wait.**
+   Phase 3 tool calling work in `friday-gms/src/routes/consult.ts`
+   waits for `gms-v6.33.0-sprint9-final` to ship before starting.
+   Sprint 9's "contract preserved" promise + Post-Sprint 10's "don't
+   tangle two verification stages" warning both point at sequencing.
+2. **Multi-audience outbound abstraction** — **AGREED: build unified.**
+   `fad-backend` grows `sendMessage(audience, channel, body, contextId)`
+   that federates internally to Guesty / Resend / Meta-when-live /
+   TeamInbox. Build alongside TeamInbox + Friday Consult since both
+   become first callers. Pays off as soon as we add the second channel.
+3. **Team-chat-Friday scope** — **ANSWERED: TeamInbox.** That IS the
+   team's Slack replacement. Friday extends INTO it as Phase 6+ once
+   the TeamInbox backend is fully fleshed out (Day 2-3 work).
+4. **Tool calling scope for Phase 3** — **ANSWERED: cross-module
+   from day one.** Friday can read reservation/financial data + write
+   actions (create tasks, capture expenses, etc.). Per-module Ask
+   Friday routing per the FAD-Knowledge sprint scope.
+
+### Email integration (6)
+
+5. **Provider strategy** — **ANSWERED: Gmail-only v1; design for
+   Gmail + Outlook/M365 expandability later.** Schema columns generic
+   (`provider`, `provider_account_id`), worker code paths split so
+   adding Outlook later is layered, not a retrofit.
+6. **Sync model** — **ANSWERED: Gmail API push notifications +
+   periodic pull as safety net.** Watch for push via Cloud Pub/Sub
+   (real-time arrival), full history pull every N hours as gap-filler
+   in case a push event is missed.
+7. **OAuth flow** — **ANSWERED: per-user OAuth, `@friday.mu` domain
+   allowlist by default. Ishant can authorize other domains
+   case-by-case.** Each team member authenticates with their company
+   Gmail. Schema needs an `allowed: bool` (+ `authorized_by` / reason)
+   on `email_accounts`; non-`@friday.mu` addresses default to
+   `allowed=false` pending Ishant override.
+8. **Audience classification** — **ANSWERED: hybrid.** Heuristics
+   first (sender domain match against owners/vendors/guests known
+   lists), LLM fallback for ambiguous cases. Cache classifier
+   decisions per (sender, audience-pattern) so we don't re-classify
+   the same sender repeatedly.
+9. **Threading strategy** — **ANSWERED: both.** Message-ID/References
+   headers for the cross-provider standard path, Gmail thread_id as a
+   Gmail-specific assist for accuracy. Threading falls back to the
+   message-id chain when Gmail thread_id is missing.
+10. **Storage scope** — **ANSWERED: headers + bodies + attachments.**
+    Full email storage. Attachments stored in the same storage layer
+    we'll use for TeamInbox file uploads (default local-disk +
+    nginx static serve for v1; S3/DO Spaces if Ishant prefers later).
 
 ## 11. Decisions taken in this doc (no further input needed unless you object)
 

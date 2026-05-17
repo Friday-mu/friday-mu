@@ -247,24 +247,24 @@ Easier: I build the admin UI in next session (~2h).
 
 ---
 
-## Architecture questions to answer
+## Architecture decisions — ALL 8 LOCKED 2026-05-17
 
-### Two architectural — affect the big plan
+Ishant answered all 8 questions during session wrap-up. No more design
+gates blocking the build queue. Full detail in architecture doc §10.
 
-1. **Sprint 9 sequencing for Phase 3 tool calling.** Wait for `gms-v6.33.0-sprint9-final` to ship before starting Phase 3, or design Phase 3 to layer on top of post-Sprint-9?
-   - **My recommendation:** wait. Sprint 9's "contract preserved, no breaking changes" promise + Post-Sprint 10 doc's "don't tangle two verification stages" warning both point at waiting. Worth the 1-2 week push.
+### Architecture (2)
 
-2. **Multi-audience outbound abstraction.** Should fad-backend grow a unified `sendMessage(audience, channel, body, contextId)` API that federates internally to Guesty/Resend/Meta-when-live/TeamInbox? Or stay per-channel forever?
-   - **My recommendation:** unified. Build it alongside TeamInbox + Friday Consult since both will be first callers. Pays off as soon as we add a second channel.
+1. **Sprint 9 sequencing** — PARKED, wait. Phase 3 tool calling work in `friday-gms/src/routes/consult.ts` waits for `gms-v6.33.0-sprint9-final`.
+2. **Multi-audience outbound abstraction** — BUILD UNIFIED. New `fad-backend` API `sendMessage(audience, channel, body, contextId)` federates internally to Guesty / Resend / Meta-when-live / TeamInbox. First callers: TeamInbox compose + Friday Consult send.
 
-### Six on email integration — block starting the build
+### Email integration (6)
 
-3. **Provider strategy** — Gmail-only (best DX) vs design for Gmail + Outlook/M365 from start (more schema, more work, more flexibility)?
-4. **Sync model** — Gmail API push notifications (real-time, webhook setup) vs polling every N min (simpler) vs IMAP IDLE (universal, heavier)?
-5. **OAuth flow** — per-user OAuth (each team member authenticates) vs shared service account reading a Friday-controlled inbox?
-6. **Email-to-audience classification** — heuristics (sender domain matching) vs LLM-based (more accurate, more expensive, slower) vs hybrid?
-7. **Threading strategy** — Message-ID/References headers (standard, works everywhere) vs Gmail thread_id (Gmail-specific) vs both?
-8. **Storage scope** — headers + bodies only (light, ~5KB/email) vs also attachments (needs S3 wiring we don't have)?
+3. **Provider strategy** — Gmail-only v1; design for Gmail + Outlook/M365 expandability (generic `provider` columns).
+4. **Sync model** — Gmail API push notifications via Cloud Pub/Sub + periodic pull as safety net.
+5. **OAuth flow** — per-user OAuth, `@friday.mu` domain allowlist by default; Ishant can authorize other domains case-by-case.
+6. **Email-to-audience classification** — hybrid. Heuristics first (sender domain match against owners/vendors/guests), LLM fallback for ambiguous cases. Cache classifier decisions per sender.
+7. **Threading strategy** — both Message-ID/References headers AND Gmail thread_id.
+8. **Storage scope** — headers + bodies + attachments. Default attachment storage to local disk + nginx static serve for v1.
 
 ---
 
