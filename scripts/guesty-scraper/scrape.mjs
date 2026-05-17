@@ -214,57 +214,84 @@ async function postMessage({ guestyConversationId, guestyMessageId, direction, b
 //   1. Re-inspect via Playwright Inspector: `PWDEBUG=1 npm run scrape`
 //   2. Fall through to peekaboo (--use-peekaboo) for visual extraction.
 
+// Selectors for Guesty's /inbox-v2 UI (rewritten 2026-05-17 — the old
+// /communication/inbox testids are gone). The new UI is a React app
+// with virtualized rows; conversation IDs live in the URL only, so we
+// click each row and read the URL afterward to associate messages.
 const SELECTORS = {
-  conversationListItem: '[data-testid="inbox-conversation-row"], .conversation-list-item, [class*="ConversationRow"]',
-  conversationGuestName: '[data-testid="guest-name"], [class*="GuestName"]',
-  conversationChannelIcon: '[data-testid="channel-icon"], [class*="ChannelIcon"]',
-  conversationUnreadDot: '[data-testid="unread-indicator"], [class*="UnreadDot"]',
-  threadMessage: '[data-testid="message-bubble"], [class*="MessageBubble"], [role="article"]',
-  messageDirection: '[data-direction], [class*="inbound"], [class*="outbound"]',
-  messageBody: '[data-testid="message-body"], [class*="MessageBody"], [class*="bubble-body"]',
-  messageTimestamp: 'time, [data-testid="message-time"], [class*="Timestamp"]',
-  messageSender: '[data-testid="sender-name"], [class*="SenderName"]',
+  // Conversation rows are <div class="...row-wrapper..."> elements
+  // inside the .conversation-section feed (which lives inside a
+  // ReactVirtualized grid — only the visible window of rows is
+  // rendered at any time). `data-qa="side-bar-item"` matches FILTER
+  // chips (All conversations / Sample Inquiry), and `role="row"`
+  // matches DayPicker calendar rows — neither is what we want.
+  conversationListItem: '.conversation-section .row-wrapper',
+  conversationGuestName: '[data-qa="person-name"]',
+  conversationSnippet: '[data-qa="person-card-description"]',
+  conversationChannelIcon: '[data-qa="indicator-circle"]',
+  conversationUnreadDot: '[data-qa="bullet"]',
+  threadMessage: '[data-testid="message-content"]',
+  // Wrappers around message-content carry the direction. Inspecting
+  // prod HTML: inbound has `messageBodyWrapperGuest`, outbound has
+  // `messageBodyWrapperHost` somewhere in the ancestor chain.
+  inboundWrapperRegex: /messageBodyWrapperGuest/i,
+  outboundWrapperRegex: /messageBodyWrapper(Host|Owner|Operator|Sent)/i,
 };
 
+// Pure DOM extraction of visible conversation rows. Does NOT include
+// conv IDs (the new UI doesn't put them on the row element) — those
+// come from clicking each row and reading the URL.
 async function extractConversationList(page) {
   return page.evaluate((sel) => {
     const rows = document.querySelectorAll(sel.conversationListItem);
-    return Array.from(rows).slice(0, 100).map((row) => {
-      // Conversation id might be in a data attribute or href.
-      const link = row.closest('a') || row.querySelector('a');
-      const href = link?.getAttribute('href') || '';
-      const idMatch = href.match(/conversations?\/([a-f0-9-]+)/i);
-      const id = idMatch?.[1] || row.getAttribute('data-conversation-id') || row.id || null;
+    return Array.from(rows).slice(0, 100).map((row, idx) => {
       const name = row.querySelector(sel.conversationGuestName)?.textContent?.trim() || null;
+      const snippet = row.querySelector(sel.conversationSnippet)?.textContent?.trim() || null;
       const unread = !!row.querySelector(sel.conversationUnreadDot);
-      const channel = row.querySelector(sel.conversationChannelIcon)?.getAttribute('aria-label')
-        || row.querySelector(sel.conversationChannelIcon)?.getAttribute('title')
+      const channelEl = row.querySelector(sel.conversationChannelIcon);
+      const channel = channelEl?.getAttribute('aria-label')
+        || channelEl?.getAttribute('title')
         || null;
-      return { id, name, unread, channel, href };
-    }).filter((c) => c.id || c.href);
+      return { rowIndex: idx, name, snippet, unread, channel };
+    }).filter((c) => c.name);
   }, SELECTORS);
 }
 
 async function extractThreadMessages(page) {
   return page.evaluate((sel) => {
+    const inboundRe = new RegExp(sel.inboundWrapperRegex.source, sel.inboundWrapperRegex.flags);
+    const outboundRe = new RegExp(sel.outboundWrapperRegex.source, sel.outboundWrapperRegex.flags);
     const nodes = document.querySelectorAll(sel.threadMessage);
     return Array.from(nodes).map((node) => {
-      // Direction: inferred from class names or data-direction attribute.
-      let direction = node.getAttribute('data-direction') || '';
-      if (!direction) {
-        const cls = node.className?.toString?.() || '';
-        if (/outbound|sent|host/i.test(cls)) direction = 'outbound';
-        else if (/inbound|received|guest/i.test(cls)) direction = 'inbound';
+      // Walk up the ancestor chain looking for the wrapper class that
+      // signals direction.
+      let direction = 'inbound';
+      let cur = node;
+      for (let depth = 0; depth < 8 && cur; depth++) {
+        const cls = cur.className?.toString?.() || '';
+        if (outboundRe.test(cls)) { direction = 'outbound'; break; }
+        if (inboundRe.test(cls)) { direction = 'inbound'; break; }
+        cur = cur.parentElement;
       }
-      const body = node.querySelector(sel.messageBody)?.textContent?.trim()
-        || node.textContent?.trim() || '';
-      const tEl = node.querySelector(sel.messageTimestamp);
+      const body = node.textContent?.trim() || '';
+      // Timestamp: closest <time> in the ancestor chain. Guesty renders
+      // a single time-stamp per message bubble.
+      let tEl = null;
+      let probe = node;
+      for (let depth = 0; depth < 6 && probe && !tEl; depth++) {
+        tEl = probe.querySelector('time');
+        probe = probe.parentElement;
+      }
       const ts = tEl?.getAttribute('datetime') || tEl?.getAttribute('title') || tEl?.textContent?.trim() || null;
-      const sender = node.querySelector(sel.messageSender)?.textContent?.trim() || null;
-      const localId = node.getAttribute('data-message-id') || node.id || null;
-      return { localId, direction, body, ts, sender };
-    });
-  }, SELECTORS);
+      return { localId: null, direction, body, ts, sender: null };
+    }).filter((m) => m.body && m.body.length > 0);
+  }, {
+    conversationListItem: SELECTORS.conversationListItem,
+    conversationGuestName: SELECTORS.conversationGuestName,
+    threadMessage: SELECTORS.threadMessage,
+    inboundWrapperRegex: { source: SELECTORS.inboundWrapperRegex.source, flags: SELECTORS.inboundWrapperRegex.flags },
+    outboundWrapperRegex: { source: SELECTORS.outboundWrapperRegex.source, flags: SELECTORS.outboundWrapperRegex.flags },
+  });
 }
 
 function deriveStableMessageId(guestyConversationId, msg, index) {
@@ -354,20 +381,67 @@ async function runScrape() {
 
     let posted = 0;
     let skipped = 0;
-    const conversationsToProcess = conversations
-      .filter((c) => c.unread || !state.conversations[c.id])
-      .slice(0, MAX_CONVERSATIONS);
+    const seenConvIds = new Set();
+    const maxToProcess = Math.min(conversations.length, MAX_CONVERSATIONS);
+    console.log(`[scrape] processing up to ${maxToProcess} conversation(s)`);
 
-    for (const conv of conversationsToProcess) {
-      if (!conv.id) continue;
-      const url = conv.href.startsWith('http') ? conv.href : `https://app.guesty.com${conv.href}`;
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
+    for (let i = 0; i < maxToProcess; i++) {
+      // Re-query rows each iteration — the virtualized list re-renders
+      // around the active row after each click, so a stale handle would
+      // misalign.
+      const rows = page.locator(SELECTORS.conversationListItem);
+      const liveCount = await rows.count();
+      if (i >= liveCount) {
+        // Virtualization hid this row; bail rather than guess.
+        console.log(`[scrape] only ${liveCount} rows currently in DOM — stopping at i=${i}`);
+        break;
+      }
+      const row = rows.nth(i);
+      const name = await row.locator(SELECTORS.conversationGuestName).textContent().catch(() => null);
+      const channelEl = row.locator(SELECTORS.conversationChannelIcon).first();
+      const channel = await channelEl.getAttribute('aria-label').catch(() => null)
+        || await channelEl.getAttribute('title').catch(() => null);
+
+      // Click and wait for the URL to settle on a conv-specific path.
+      const urlBefore = page.url();
+      try {
+        await row.click({ timeout: 5000 });
+      } catch (e) {
+        console.warn(`[scrape] row ${i} (${name || '?'}) — click failed: ${e?.message || e}`);
+        continue;
+      }
+      try {
+        await page.waitForFunction(
+          (before) => location.href !== before && /\/inbox-v2\/[a-f0-9]{18,32}/.test(location.href),
+          urlBefore,
+          { timeout: 8000 },
+        );
+      } catch {
+        console.warn(`[scrape] row ${i} (${name || '?'}) — URL never updated after click; skipping`);
+        continue;
+      }
+      const urlAfter = page.url();
+      const convId = urlAfter.match(/\/inbox-v2\/([a-f0-9]{18,32})/)?.[1];
+      if (!convId) {
+        console.warn(`[scrape] row ${i} (${name || '?'}) — could not parse conv id from ${urlAfter}`);
+        continue;
+      }
+      if (seenConvIds.has(convId)) {
+        // Same conv opened twice (e.g., virtualization re-shuffled).
+        continue;
+      }
+      seenConvIds.add(convId);
+
+      // Give the thread time to render its messages.
       await page.waitForSelector(SELECTORS.threadMessage, { timeout: 8000 }).catch(() => {});
+      // Also give virtualization a beat — some message panes render
+      // skeleton bubbles first.
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
       let msgs = await extractThreadMessages(page);
 
       if (msgs.length === 0 && USE_PEEKABOO) {
-        const shot = resolve(__dirname, `.peek-${conv.id}.png`);
+        const shot = resolve(__dirname, `.peek-${convId}.png`);
         await page.screenshot({ path: shot, fullPage: true });
         const peekMsgs = await peekabooExtract(shot);
         msgs = peekMsgs.map((m) => ({
@@ -379,31 +453,33 @@ async function runScrape() {
         }));
       }
 
-      const cursor = state.conversations[conv.id] || '1970-01-01T00:00:00Z';
+      const cursor = state.conversations[convId] || '1970-01-01T00:00:00Z';
       const newMsgs = msgs.filter((m) => {
         if (!m.body) return false;
         if (!m.ts) return true; // unknown ts → trust server dedup
         return new Date(m.ts).toISOString() > cursor;
       });
 
-      console.log(`[scrape] conv ${conv.id} (${conv.name || '?'}) — ${msgs.length} total, ${newMsgs.length} new`);
+      console.log(`[scrape] conv ${convId} (${name || '?'}) — ${msgs.length} total, ${newMsgs.length} new`);
 
-      for (let i = 0; i < newMsgs.length; i++) {
-        const m = newMsgs[i];
-        const id = deriveStableMessageId(conv.id, m, i);
+      for (let j = 0; j < newMsgs.length; j++) {
+        const m = newMsgs[j];
+        const id = deriveStableMessageId(convId, m, j);
         const result = await postMessage({
-          guestyConversationId: conv.id,
+          guestyConversationId: convId,
           guestyMessageId: id,
           direction: m.direction || 'inbound',
           body: m.body,
-          senderName: m.sender || (m.direction === 'outbound' ? 'Friday' : conv.name || 'Guest'),
+          senderName: m.sender || (m.direction === 'outbound' ? 'Friday' : name || 'Guest'),
           createdAt: m.ts ? new Date(m.ts).toISOString() : new Date().toISOString(),
-          channel: conv.channel,
-          guestName: conv.name,
+          channel,
+          guestName: name,
         });
         if (result.ok || result.dryRun) posted++;
         else skipped++;
       }
+      // Shadow `conv` for the cursor-advancing block below.
+      var conv = { id: convId, name, channel };
 
       // Advance the cursor to the latest message we saw (even if some
       // posts failed — server-side dedup will replay safely on retry).
