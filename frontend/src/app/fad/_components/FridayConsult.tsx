@@ -224,31 +224,35 @@ export function FridayConsult({
   // parent's key={selected} remounts FC).
   const [useFullThread, setUseFullThread] = useState(false);
 
-  // Operator-resizable FC height. Drag handle at the top — user picks
-  // how much vertical space FC eats vs how much thread shows behind.
-  // Persisted in localStorage; future conversations default to the
-  // saved height. Per Ishant 2026-05-17.
+  // Operator-resizable FC height. Default = AUTO (wraps content up to
+  // max-height). Once the operator drags the handle, the height
+  // becomes explicit and persists in localStorage. To reset to auto,
+  // double-click the handle. Per Ishant 2026-05-17.
   const FC_HEIGHT_STORAGE_KEY = 'fad:fc:height';
-  const FC_HEIGHT_DEFAULT = 280;
   const FC_HEIGHT_MIN = 120;
   const FC_HEIGHT_MAX = 700;
-  const [fcHeight, setFcHeight] = useState<number>(() => {
-    if (typeof window === 'undefined') return FC_HEIGHT_DEFAULT;
+  // null = auto (wrap content); number = explicit pixel height.
+  const [fcHeight, setFcHeight] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
     const raw = window.localStorage.getItem(FC_HEIGHT_STORAGE_KEY);
-    const parsed = raw ? Number(raw) : NaN;
+    if (!raw || raw === 'auto') return null;
+    const parsed = Number(raw);
     if (Number.isFinite(parsed) && parsed >= FC_HEIGHT_MIN && parsed <= FC_HEIGHT_MAX) return parsed;
-    return FC_HEIGHT_DEFAULT;
+    return null;
   });
   const dragStartRef = useRef<{ y: number; h: number } | null>(null);
   const onDragStart = (e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    dragStartRef.current = { y: e.clientY, h: fcHeight };
+    // Use the current rendered height as the drag starting point —
+    // grabs the auto-fit size when transitioning from auto → explicit.
+    const currentEl = (e.currentTarget as HTMLElement).parentElement;
+    const h = currentEl ? currentEl.getBoundingClientRect().height : (fcHeight ?? 280);
+    dragStartRef.current = { y: e.clientY, h };
   };
   const onDragMove = (e: React.PointerEvent) => {
     const start = dragStartRef.current;
     if (!start) return;
-    // Drag UP (negative delta) grows FC; drag DOWN shrinks it.
     const next = Math.max(FC_HEIGHT_MIN, Math.min(FC_HEIGHT_MAX, start.h - (e.clientY - start.y)));
     setFcHeight(next);
   };
@@ -257,10 +261,13 @@ export function FridayConsult({
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     dragStartRef.current = null;
     try {
-      window.localStorage.setItem(FC_HEIGHT_STORAGE_KEY, String(fcHeight));
-    } catch {
-      // private mode or quota — ignore; size resets next session
-    }
+      window.localStorage.setItem(FC_HEIGHT_STORAGE_KEY, String(fcHeight ?? ''));
+    } catch { /* ignore */ }
+  };
+  // Double-click the handle → reset to auto (wrap content).
+  const onDragReset = () => {
+    setFcHeight(null);
+    try { window.localStorage.setItem(FC_HEIGHT_STORAGE_KEY, 'auto'); } catch { /* ignore */ }
   };
 
   // Auto-scroll on new messages / thinking / a draft appearing or
@@ -608,7 +615,9 @@ export function FridayConsult({
         position: 'sticky',
         bottom: 0,
         zIndex: 5,
-        height: fcHeight,
+        // Auto mode: wrap content up to 50vh. Explicit mode: fixed
+        // pixel height set by drag. Per Ishant 2026-05-17.
+        ...(fcHeight !== null ? { height: fcHeight } : { maxHeight: '50vh' }),
         flex: '0 0 auto',
         display: 'flex',
         flexDirection: 'column',
@@ -616,17 +625,17 @@ export function FridayConsult({
         boxShadow: '0 -8px 16px -8px rgba(0, 0, 0, 0.08)',
       }}
     >
-      {/* Resize handle — drag up to reveal more FC, drag down to
-          reveal more thread bubbles behind. Saved per-user in
-          localStorage. Per Ishant 2026-05-17. */}
+      {/* Resize handle — drag up to grow, drag down to shrink, DOUBLE-
+          CLICK to reset to auto-fit content. Auto by default. */}
       <div
         onPointerDown={onDragStart}
         onPointerMove={onDragMove}
         onPointerUp={onDragEnd}
         onPointerCancel={onDragEnd}
-        title="Drag to resize"
+        onDoubleClick={onDragReset}
+        title={fcHeight === null ? 'Auto-fit · drag to resize, double-click resets' : 'Drag to resize, double-click resets to auto-fit'}
         style={{
-          height: 10,
+          height: 8,
           flex: '0 0 auto',
           cursor: 'ns-resize',
           display: 'flex',
@@ -637,10 +646,11 @@ export function FridayConsult({
       >
         <div
           style={{
-            width: 32,
-            height: 3,
+            width: 28,
+            height: 2,
             background: 'var(--color-border-secondary)',
             borderRadius: 2,
+            opacity: fcHeight === null ? 0.5 : 1,
           }}
         />
       </div>
@@ -752,9 +762,9 @@ export function FridayConsult({
           {error && (
             <div
               style={{
-                padding: '8px 12px',
-                margin: '4px 0',
-                fontSize: 12,
+                padding: '6px 10px',
+                margin: '4px 12px',
+                fontSize: 11,
                 color: 'var(--color-text-danger)',
                 background: 'var(--color-background-danger-soft, rgba(220, 38, 38, 0.08))',
                 borderRadius: 'var(--radius-sm)',
@@ -763,72 +773,71 @@ export function FridayConsult({
               {error}
             </div>
           )}
+          {/* Action chips trail the last item in the transcript so they
+              feel contextually tied to whatever Friday just did (or to
+              the top if conversation is empty). Per Ishant 2026-05-17. */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 12px 6px',
+            }}
+          >
+            {chips.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => submit(c)}
+                disabled={thinking}
+                style={{
+                  padding: '3px 7px',
+                  fontSize: 10,
+                  color: 'var(--color-text-secondary)',
+                  background: 'transparent',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                }}
+              >
+                {c}
+              </button>
+            ))}
+            <span style={{ flex: 1 }} />
+            {missingKnowledge && (
+              <span
+                style={{
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  color: 'var(--color-text-warning)',
+                  background: 'var(--color-background-warning-soft, rgba(245, 158, 11, 0.08))',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+                title="No property knowledge file loaded for this property"
+              >
+                ⚠ no KB
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={loadHistory}
+              title="Past sessions on this conversation"
+              style={{
+                padding: '3px 7px',
+                fontSize: 10,
+                color: 'var(--color-text-tertiary)',
+                background: 'transparent',
+                border: '0.5px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              <IconRefresh size={9} /> History
+            </button>
+          </div>
         </div>
       )}
-      {/* Quick-reply chips + History + KB-warning, on one compact row.
-          History and ⚠ no-KB used to live in a separate header; folded
-          here to save a line per Ishant 2026-05-17. Chips only render
-          when there's no chat yet; History stays visible at all times. */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 4,
-          padding: '6px 12px 6px',
-        }}
-      >
-        {msgs.length === 0 && chips.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => submit(c)}
-            disabled={thinking}
-            style={{
-              padding: '4px 8px',
-              fontSize: 11,
-              color: 'var(--color-text-secondary)',
-              background: 'var(--color-background-secondary)',
-              border: '0.5px solid var(--color-border-tertiary)',
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-            }}
-          >
-            {c}
-          </button>
-        ))}
-        <span style={{ flex: 1 }} />
-        {missingKnowledge && (
-          <span
-            style={{
-              padding: '2px 6px',
-              fontSize: 10,
-              color: 'var(--color-text-warning)',
-              background: 'var(--color-background-warning-soft, rgba(245, 158, 11, 0.08))',
-              borderRadius: 'var(--radius-sm)',
-            }}
-            title="No property knowledge file loaded for this property"
-          >
-            ⚠ no KB
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={loadHistory}
-          title="Past sessions on this conversation"
-          style={{
-            padding: '4px 8px',
-            fontSize: 11,
-            color: 'var(--color-text-secondary)',
-            background: 'transparent',
-            border: '0.5px solid var(--color-border-tertiary)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-          }}
-        >
-          <IconRefresh size={10} /> History
-        </button>
-      </div>
       {/* Ask Friday input — restored 2026-05-17 per Ishant: FridayConsult
           is the single compose surface. The reply body lives in the
           EmbeddedDraftCard above; THIS input is for chatting with Friday
@@ -867,11 +876,11 @@ function AskFridayInput({
   return (
     <div
       style={{
-        padding: '8px 12px 12px',
+        padding: '6px 10px 8px',
         borderTop: '0.5px solid var(--color-border-tertiary)',
         background: 'var(--color-background-primary)',
         display: 'flex',
-        gap: 6,
+        gap: 4,
         alignItems: 'center',
       }}
     >
@@ -880,12 +889,12 @@ function AskFridayInput({
         onClick={onToggleFullThread}
         title={useFullThread
           ? 'On — your next question includes the entire thread. Click to turn off.'
-          : 'Off — Friday sees the last 10 messages. Click to include the full thread.'}
+          : 'Off — Friday sees the last 20 messages. Click to include the full thread.'}
         style={{
-          padding: '6px 8px',
-          fontSize: 11,
+          padding: '5px 7px',
+          fontSize: 10,
           color: useFullThread ? '#fff' : 'var(--color-text-secondary)',
-          background: useFullThread ? 'var(--color-brand-accent)' : 'var(--color-background-secondary)',
+          background: useFullThread ? 'var(--color-brand-accent)' : 'transparent',
           border: '0.5px solid ' + (useFullThread ? 'var(--color-brand-accent)' : 'var(--color-border-tertiary)'),
           borderRadius: 'var(--radius-sm)',
           cursor: 'pointer',
@@ -908,8 +917,8 @@ function AskFridayInput({
         disabled={disabled}
         style={{
           flex: 1,
-          padding: '8px 10px',
-          fontSize: 13,
+          padding: '6px 9px',
+          fontSize: 12,
           color: 'var(--color-text-primary)',
           background: 'var(--color-background-secondary)',
           border: '0.5px solid var(--color-border-tertiary)',
@@ -925,8 +934,8 @@ function AskFridayInput({
           display: 'inline-flex',
           alignItems: 'center',
           gap: 4,
-          padding: '8px 12px',
-          fontSize: 12,
+          padding: '6px 10px',
+          fontSize: 11,
           fontWeight: 600,
           color: '#fff',
           background: 'var(--color-brand-accent)',
@@ -1024,7 +1033,7 @@ function MessageRow({
 
   const isUser = m.role === 'user';
   return (
-    <div style={{ margin: '6px 12px' }}>
+    <div style={{ margin: '4px 12px' }}>
       <div
         style={{
           display: 'flex',
@@ -1034,9 +1043,9 @@ function MessageRow({
         <div
           style={{
             maxWidth: '85%',
-            padding: '8px 10px',
-            fontSize: 13,
-            lineHeight: 1.45,
+            padding: '5px 9px',
+            fontSize: 12,
+            lineHeight: 1.4,
             whiteSpace: 'pre-wrap',
             color: 'var(--color-text-primary)',
             background: isUser
