@@ -93,20 +93,11 @@ async function main() {
     console.log(`   - ${h._id || h.id} | ${h.url} | enabled=${h.enabled ?? h.isActive ?? '?'}`);
   }
 
-  let existing = hooks.find((h) => h.url === TARGET_URL);
-  let action;
-  if (existing) {
-    action = 'update-existing-at-target';
-  } else {
-    existing = hooks.find((h) => h.url && h.url.includes('judiths-mac-mini'));
-    action = existing ? 'repoint-legacy-mac-mini' : null;
-  }
-  if (!existing) {
-    action = hooks.find((h) => (h.enabled === false || h.isActive === false)) ? 'enable-other-disabled' : 'create-new';
-    if (action === 'enable-other-disabled') {
-      existing = hooks.find((h) => (h.enabled === false || h.isActive === false));
-    }
-  }
+  // Per Angelo (Guesty support, 2026-05-17): disabled webhooks must be
+  // DELETEd and re-created — PUT does not re-enable. Default to create-new
+  // unless we find a hook at exactly TARGET_URL (idempotent re-runs).
+  const existing = hooks.find((h) => h.url === TARGET_URL);
+  const action = existing ? 'update-existing-at-target' : 'create-new';
   console.log(`→ Strategy: ${action}`);
 
   let webhookId;
@@ -143,7 +134,37 @@ async function main() {
     console.log('  (Endpoint may be /webhooks/secret without id — try that manually.)');
   }
 
-  console.log('Done. Verify deliveries land within ~5 min.');
+  // Cleanup: DELETE known-dead endpoints in the same token session.
+  //   - judiths-mac-mini   (our old disabled endpoint)
+  //   - weareinto.ai       (Into partner integration, no longer in use per Ishant 2026-05-17)
+  // DO NOT DELETE Breezeway endpoints or any other unrecognised hooks —
+  // leave them for manual review.
+  const cleanupPatterns = [
+    { match: (u) => u && u.includes('judiths-mac-mini'), label: 'judiths-mac-mini (old disabled)' },
+    { match: (u) => u && u.includes('weareinto.ai'), label: 'Into (weareinto.ai) — partner no longer used' },
+  ];
+  const toDelete = hooks.filter((h) => {
+    const id = h._id || h.id;
+    if (id === webhookId) return false;
+    return cleanupPatterns.some((p) => p.match(h.url));
+  });
+  if (toDelete.length === 0) {
+    console.log('→ No legacy endpoints to clean up.');
+  } else {
+    console.log(`→ Cleaning up ${toDelete.length} legacy endpoint(s):`);
+    for (const h of toDelete) {
+      const id = h._id || h.id;
+      const label = cleanupPatterns.find((p) => p.match(h.url))?.label || h.url;
+      try {
+        await guesty(token, 'DELETE', `/webhooks/${id}`);
+        console.log(`  [ok]   DELETE ${id} (${label})`);
+      } catch (e) {
+        console.log(`  [FAIL] DELETE ${id} (${label}): ${e?.message || e}`);
+      }
+    }
+  }
+
+  console.log('\nDone. Verify deliveries land within ~5 min.');
 }
 
 main().catch((e) => { logErr('fatal', e); process.exit(2); });

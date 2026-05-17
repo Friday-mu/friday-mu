@@ -3,3 +3,5 @@ node_modules/
 .state.json
 .peek-*.png
 *.log
+.debug/
+.mfa-code

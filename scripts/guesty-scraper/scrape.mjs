@@ -314,6 +314,38 @@ async function runScrape() {
     console.log(`[scrape] found ${conversations.length} conversations in list`);
     if (conversations.length === 0) {
       console.warn(`[scrape] Empty conversation list. UI structure may have changed.`);
+      // Dump what we actually saw so we can diagnose without a graphical
+      // session. Saved under .debug/.
+      try {
+        const debugDir = resolve(__dirname, '.debug');
+        mkdirSync(debugDir, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const shotPath = resolve(debugDir, `inbox-list-${stamp}.png`);
+        const htmlPath = resolve(debugDir, `inbox-list-${stamp}.html`);
+        await page.screenshot({ path: shotPath, fullPage: true });
+        writeFileSync(htmlPath, await page.content());
+        const diag = await page.evaluate((sel) => ({
+          url: location.href,
+          title: document.title,
+          bodyTextHead: (document.body?.innerText || '').slice(0, 400),
+          conversationListItem: document.querySelectorAll(sel.conversationListItem).length,
+          anyAnchorToConversation: document.querySelectorAll('a[href*="conversation"]').length,
+          anyDataTestid: document.querySelectorAll('[data-testid]').length,
+          anyRoleListitemOrRow: document.querySelectorAll('[role="listitem"], [role="row"]').length,
+          firstFewTestids: Array.from(document.querySelectorAll('[data-testid]')).slice(0, 12).map((n) => n.getAttribute('data-testid')),
+          firstFewClassPrefixes: Array.from(new Set(Array.from(document.querySelectorAll('[class]')).slice(0, 80).map((n) => (n.className?.toString?.() || '').split(' ')[0]).filter(Boolean))).slice(0, 20),
+        }), SELECTORS);
+        console.warn(`[scrape] page url=${diag.url}`);
+        console.warn(`[scrape] page title=${diag.title}`);
+        console.warn(`[scrape] body-text head: ${JSON.stringify(diag.bodyTextHead)}`);
+        console.warn(`[scrape] selector hits: conversationListItem=${diag.conversationListItem} anchors=${diag.anyAnchorToConversation} dataTestid=${diag.anyDataTestid} listitemOrRow=${diag.anyRoleListitemOrRow}`);
+        console.warn(`[scrape] first data-testid values: ${JSON.stringify(diag.firstFewTestids)}`);
+        console.warn(`[scrape] first class prefixes: ${JSON.stringify(diag.firstFewClassPrefixes)}`);
+        console.warn(`[scrape] saved screenshot: ${shotPath}`);
+        console.warn(`[scrape] saved html: ${htmlPath}`);
+      } catch (e) {
+        console.warn(`[scrape] debug-dump failed: ${e?.message || e}`);
+      }
       if (!USE_PEEKABOO) {
         console.warn(`[scrape] Re-run with --use-peekaboo for visual fallback.`);
       }
