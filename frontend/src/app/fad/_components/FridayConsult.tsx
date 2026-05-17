@@ -509,13 +509,20 @@ export function FridayConsult({
     <div
       className="friday-consult"
       style={{
-        // Compact when idle. When active, internal transcript scrolls
-        // (max-height: 30vh on .friday-consult-body) so the draft card
-        // + Ask input stay pinned. No outer max-height cap — Mary's
-        // bug 2026-05-17 was the panel growing tall enough to push
-        // the send button below the viewport.
+        // Pinned to the bottom of the inbox center column (sticky,
+        // not fixed — only sticks within the column). Thread bubbles
+        // above scroll behind it. Per Ishant 2026-05-17: 'consider
+        // friday consult as a box, pin it to the bottom of the page;
+        // things just appear behind it.'
+        position: 'sticky',
+        bottom: 0,
+        zIndex: 5,
         maxHeight: 'none',
         flex: '0 0 auto',
+        // Solid background so scrolling content doesn't bleed through.
+        background: 'var(--color-background-secondary)',
+        // Soft top shadow so it visually floats over the thread.
+        boxShadow: '0 -8px 16px -8px rgba(0, 0, 0, 0.08)',
       }}
     >
       <div className="friday-consult-header">
@@ -731,27 +738,30 @@ function AskFridayInput({
         padding: '8px 12px 12px',
         borderTop: '0.5px solid var(--color-border-tertiary)',
         background: 'var(--color-background-primary)',
+        display: 'flex',
+        gap: 6,
+        alignItems: 'center',
       }}
     >
-      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-        <button
-          type="button"
-          onClick={onToggleFullThread}
-          title="When on, prepend the full guest↔team thread to your next question so Friday has complete context (default cap: 10 messages)"
-          style={{
-            padding: '3px 8px',
-            fontSize: 10,
-            color: useFullThread ? '#fff' : 'var(--color-text-secondary)',
-            background: useFullThread ? 'var(--color-brand-accent)' : 'var(--color-background-secondary)',
-            border: '0.5px solid ' + (useFullThread ? 'var(--color-brand-accent)' : 'var(--color-border-tertiary)'),
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-          }}
-        >
-          {useFullThread ? '✓ Full thread' : 'Full thread'}
-        </button>
-      </div>
-      <div style={{ display: 'flex', gap: 6 }}>
+      <button
+        type="button"
+        onClick={onToggleFullThread}
+        title={useFullThread
+          ? 'On — your next question includes the entire thread. Click to turn off.'
+          : 'Off — Friday sees the last 10 messages. Click to include the full thread.'}
+        style={{
+          padding: '6px 8px',
+          fontSize: 11,
+          color: useFullThread ? '#fff' : 'var(--color-text-secondary)',
+          background: useFullThread ? 'var(--color-brand-accent)' : 'var(--color-background-secondary)',
+          border: '0.5px solid ' + (useFullThread ? 'var(--color-brand-accent)' : 'var(--color-border-tertiary)'),
+          borderRadius: 'var(--radius-sm)',
+          cursor: 'pointer',
+          flex: '0 0 auto',
+        }}
+      >
+        {useFullThread ? '✓ Full' : '∞'}
+      </button>
       <input
         type="text"
         value={text}
@@ -796,7 +806,6 @@ function AskFridayInput({
       >
         <IconSend size={12} /> Ask
       </button>
-      </div>
     </div>
   );
 }

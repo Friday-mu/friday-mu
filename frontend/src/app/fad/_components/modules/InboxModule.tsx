@@ -820,11 +820,16 @@ export function InboxModule({ onAskFriday }: Props) {
                   {aiToolbarExpanded ? 'Hide AI' : 'AI tools'}
                 </button>
               )}
+              {/* Single chip is the summary's ONLY surface — clicking
+                  expands/collapses the panel below. When collapsed,
+                  no panel renders (no second line). Per Ishant
+                  2026-05-17. */}
               <button
-                className={'inbox-ai-chip' + (summaryOn ? ' on' : '')}
-                onClick={() => setSummaryOn((v) => !v)}
+                className={'inbox-ai-chip' + (!summaryCollapsed ? ' on' : '')}
+                onClick={() => setSummaryCollapsed((v) => !v)}
+                title={summaryCollapsed ? 'Show summary' : 'Hide summary'}
               >
-                <IconSparkle size={10} /> Summary
+                <IconSparkle size={10} /> Summary {summaryCollapsed ? '▸' : '▾'}
               </button>
               {thread.sentiment === 'urgent' && (
                 <span
@@ -838,21 +843,9 @@ export function InboxModule({ onAskFriday }: Props) {
                 </span>
               )}
             </div>
-            {summaryOn && thread.summary && (
-              <div
-                className={
-                  'inbox-ai-summary' + (summaryCollapsed ? ' collapsed' : '')
-                }
-              >
-                <div
-                  className="inbox-ai-summary-label"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setSummaryCollapsed((v) => !v)}
-                  title={summaryCollapsed ? 'Show summary' : 'Hide summary'}
-                >
-                  Summary · auto {summaryCollapsed ? '▸' : '▾'}
-                </div>
-                {!summaryCollapsed && thread.summary}
+            {thread.summary && !summaryCollapsed && (
+              <div className="inbox-ai-summary">
+                {thread.summary}
               </div>
             )}
             {summaryOn && thread.summary && false && summaryCollapsed && (
