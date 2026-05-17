@@ -103,7 +103,13 @@ export function InboxModule({ onAskFriday }: Props) {
   const [noteMentions, setNoteMentions] = useState<string[]>([]);
   const [, setNotesRev] = useState(0);
   const currentUserId = useCurrentUserId();
-  const [consultOpen, setConsultOpen] = useState(false);
+  // Friday Consult is now the default reply surface — every inbound
+   // reply flows through it so the learning loop captures every
+   // approval/edit signal. The compose textarea is collapsed; the
+   // working draft is editable inline inside Friday Consult.
+   // Operators who want to bypass Friday for a manual reply: type
+   // directly into the DraftCard textarea and hit Approve & Send.
+  const [consultOpen, setConsultOpen] = useState(true);
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
   const [listCollapsed, setListCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -330,6 +336,12 @@ export function InboxModule({ onAskFriday }: Props) {
 
   useEffect(() => {
     setReplyBody('');
+    // Reset to the default reply surface (Friday Consult open, compose
+    // mode = reply) every time the operator switches threads. If they
+    // explicitly closed consult on a previous thread, switching means
+    // a fresh start — open it again.
+    setConsultOpen(true);
+    setComposeMode('reply');
   }, [selected]);
 
   const handleComposeSend = () => {
@@ -818,6 +830,14 @@ export function InboxModule({ onAskFriday }: Props) {
                 // close the panel without sending.
                 if (!activeDraft) setReplyBody(body);
               }}
+              onSwitchToNote={() => {
+                // Switch to internal-note mode. Close consult so the
+                // note compose surface (different audience) becomes
+                // visible. composeMode resets to 'reply' on thread
+                // switch (see useEffect on [selected]).
+                setComposeMode('note');
+                setConsultOpen(false);
+              }}
               onClose={() => setConsultOpen(false)}
             />
           )}
@@ -1000,7 +1020,12 @@ export function InboxModule({ onAskFriday }: Props) {
                   setNoteMentions([]);
                   setNotesRev((n) => n + 1);
                 }}
-                onSwitchToReply={() => setComposeMode('reply')}
+                onSwitchToReply={() => {
+                  // Coming back from internal-note mode — restore the
+                  // default reply surface (Friday Consult open).
+                  setComposeMode('reply');
+                  setConsultOpen(true);
+                }}
                 replyEntity={thread.entity}
                 authorId={currentUserId}
               />

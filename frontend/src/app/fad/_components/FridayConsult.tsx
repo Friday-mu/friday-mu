@@ -117,6 +117,10 @@ interface Props {
    *  whatever they had drafted comes through here so we don't drop it. */
   onBodyChanged?: (body: string) => void;
 
+  /** Operator wants to write an internal team note (different audience —
+   *  team, not guest). Parent switches composeMode + closes consult. */
+  onSwitchToNote?: () => void;
+
   onClose: () => void;
 }
 
@@ -133,6 +137,7 @@ export function FridayConsult({
   onSendManual,
   sendBusy = false,
   onBodyChanged,
+  onSwitchToNote,
   onClose,
 }: Props) {
   // The "working draft body" is what the operator will eventually send.
@@ -410,28 +415,25 @@ export function FridayConsult({
           </div>
         )}
       </div>
-      {/* Embedded DraftCard — the operator's working draft lives here.
-          Visible whenever there's a body to act on (either a GMS-generated
-          draft, in-progress compose text, or a Friday rewrite from this
-          session). Edit inline, then Approve & Send / Reject directly
-          without leaving the panel. */}
-      {(workingBody.length > 0 || currentDraft) && (
-        <EmbeddedDraftCard
-          workingBody={workingBody}
-          setWorkingBody={setWorkingBody}
-          currentDraft={currentDraft || null}
-          channelLabel={channelLabel}
-          whatsappWindow={whatsappWindow}
-          sendBusy={sendBusy}
-          rejecting={rejecting}
-          rejectReason={rejectReason}
-          setRejectReason={setRejectReason}
-          onApprove={submitApprove}
-          onStartReject={() => setRejecting(true)}
-          onConfirmReject={submitReject}
-          onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
-        />
-      )}
+      {/* Embedded DraftCard — always rendered so the operator has a
+          consistent "type here OR ask Friday" surface. Empty state shows
+          an empty textarea with a hint; chatting with Friday fills it
+          via [DRAFT_UPDATE]; operator can type directly any time. */}
+      <EmbeddedDraftCard
+        workingBody={workingBody}
+        setWorkingBody={setWorkingBody}
+        currentDraft={currentDraft || null}
+        channelLabel={channelLabel}
+        whatsappWindow={whatsappWindow}
+        sendBusy={sendBusy}
+        rejecting={rejecting}
+        rejectReason={rejectReason}
+        setRejectReason={setRejectReason}
+        onApprove={submitApprove}
+        onStartReject={() => setRejecting(true)}
+        onConfirmReject={submitReject}
+        onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
+      />
       {/* Quick-reply chips: context-aware presets */}
       {msgs.length === 0 && (
         <div
@@ -461,6 +463,36 @@ export function FridayConsult({
               {c}
             </button>
           ))}
+        </div>
+      )}
+      {/* Internal note escape hatch — different audience (team, not guest)
+          so notes don't flow through Friday's draft pipeline. Switches the
+          parent's composeMode to 'note' and closes consult. */}
+      {onSwitchToNote && (
+        <div
+          style={{
+            padding: '4px 12px 6px',
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onSwitchToNote}
+            style={{
+              padding: '3px 6px',
+              fontSize: 11,
+              color: 'var(--color-text-tertiary)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
+            }}
+            title="Write an internal team note (not visible to the guest)"
+          >
+            Add internal note instead
+          </button>
         </div>
       )}
       <form className="friday-consult-input" onSubmit={onSubmit}>
