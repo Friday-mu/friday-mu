@@ -64,6 +64,7 @@ function channelLabel(key: InboxChannel): string {
     booking: 'Booking',
     whatsapp: 'WhatsApp',
     email: 'Email',
+    website: 'Website',
     owner_email: 'Owner email',
     owner_whatsapp: 'Owner WhatsApp',
     vendor_breezeway: 'Breezeway',

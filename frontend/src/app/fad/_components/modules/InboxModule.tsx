@@ -11,6 +11,7 @@ import {
   type StayStatus,
 } from '../../_data/fixtures';
 import { useLiveConversations, useThreadDetail } from '../../_data/inboxClient';
+import { useWebsiteThreads } from '../../_data/websiteInboxClient';
 import {
   approveDraft,
   rejectDraft,
@@ -173,10 +174,23 @@ export function InboxModule({ onAskFriday }: Props) {
   // Live GMS data via FAD backend proxy; falls back to fixture INBOX_THREADS
   // during initial load or on backend failure so the inbox never blanks out.
   const { threads: liveThreads, loading: inboxLoading, error: inboxError, refetch: refetchConversations } = useLiveConversations();
-  const sourceThreads = liveThreads ?? INBOX_THREADS;
+
+  // Website-inbox fold (locked decision §L, 2026-05-17). friday.mu
+  // inquiries appear alongside Guesty conversations in the unified
+  // list, with entity='unclassified' so operators triage them per row.
+  const { threads: websiteThreads } = useWebsiteThreads();
+  const sourceThreads = useMemo(() => {
+    const guesty = liveThreads ?? INBOX_THREADS;
+    if (!websiteThreads || websiteThreads.length === 0) return guesty;
+    const merged = [...guesty, ...websiteThreads];
+    // Sort by last activity descending so newest activity bubbles up
+    // regardless of source.
+    merged.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    return merged;
+  }, [liveThreads, websiteThreads]);
 
   const counts = useMemo(() => {
-    const byEntity: Record<string, number> = { guest: 0, owner: 0, vendor: 0, all: sourceThreads.length };
+    const byEntity: Record<string, number> = { guest: 0, owner: 0, vendor: 0, unclassified: 0, all: sourceThreads.length };
     for (const t of sourceThreads) {
       byEntity[t.entity] = (byEntity[t.entity] || 0) + 1;
     }
@@ -555,6 +569,7 @@ export function InboxModule({ onAskFriday }: Props) {
     { key: 'guest', label: 'Guest', count: counts.byEntity.guest },
     { key: 'owner', label: 'Owner', count: counts.byEntity.owner },
     { key: 'vendor', label: 'Vendor', count: counts.byEntity.vendor },
+    { key: 'unclassified', label: 'Other', count: counts.byEntity.unclassified || 0 },
   ];
 
   const teamUnread =

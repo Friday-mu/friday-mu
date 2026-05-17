@@ -18,12 +18,13 @@ export interface InboxMessage {
   bodyLang?: string;
 }
 
-export type InboxEntity = 'guest' | 'owner' | 'vendor';
+export type InboxEntity = 'guest' | 'owner' | 'vendor' | 'unclassified';
 export type InboxChannel =
   | 'airbnb'
   | 'booking'
   | 'whatsapp'
   | 'email'
+  | 'website'
   | 'owner_email'
   | 'owner_whatsapp'
   | 'vendor_breezeway'
