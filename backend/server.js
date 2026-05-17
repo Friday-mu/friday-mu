@@ -1166,10 +1166,34 @@ function logUpstreamFailure(label, e) {
   }
 }
 
+// Look up the user's must_change_password flag from the shared DB by
+// JWT-resolved userId. Returns false on any error so the login flow
+// stays robust — worst case we miss surfacing the forced-change once,
+// next auth/me call catches it.
+async function loadMustChangePassword(userId) {
+  if (!userId) return false;
+  try {
+    const { query } = require('./src/database/client');
+    const { rows } = await query(
+      `SELECT must_change_password FROM users WHERE id = $1`,
+      [userId],
+    );
+    return !!rows[0]?.must_change_password;
+  } catch (e) {
+    console.warn('[auth] must_change lookup failed:', e.message);
+    return false;
+  }
+}
+
 app.post('/api/auth/login', asyncHandler(async (req, res) => {
   try {
     const { data } = await userGmsCall.post('/api/auth/login', req.body);
-    res.json(data);
+    // Surface must_change_password from the shared DB so the frontend
+    // can block usage until they reset. GMS doesn't include this field
+    // in its login response today; we augment client-side.
+    const userId = data?.user?.id;
+    const mustChange = await loadMustChangePassword(userId);
+    res.json({ ...data, must_change_password: mustChange });
   } catch (e) {
     logUpstreamFailure('auth/login', e);
     const status = e.response?.status || 502;
@@ -1184,13 +1208,60 @@ app.get('/api/auth/me', asyncHandler(async (req, res) => {
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const { data } = await userGmsCall.get('/api/auth/me', { headers: { Authorization: auth } });
-    res.json(data);
+    const userId = data?.user?.id || data?.id;
+    const mustChange = await loadMustChangePassword(userId);
+    res.json({ ...data, must_change_password: mustChange });
   } catch (e) {
     logUpstreamFailure('auth/me', e);
     const status = e.response?.status || 502;
     res.status(status).json({
       error: e.response?.data?.error || (e.response ? 'Auth check failed' : 'GMS unreachable'),
     });
+  }
+}));
+
+// POST /api/auth/change-password — authenticated user changes their own
+// password (used for force-change-on-first-login). Verifies the current
+// password, hashes the new one, clears must_change_password. JWT only —
+// caller is whoever holds the token.
+app.post('/api/auth/change-password', asyncHandler(async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const { current_password, new_password } = req.body || {};
+  if (typeof current_password !== 'string' || !current_password) {
+    return res.status(400).json({ error: 'current_password required' });
+  }
+  if (typeof new_password !== 'string' || new_password.length < 8) {
+    return res.status(400).json({ error: 'new_password must be ≥ 8 characters' });
+  }
+  if (new_password === current_password) {
+    return res.status(400).json({ error: 'new_password must differ from current_password' });
+  }
+  // Resolve user from JWT via GMS /auth/me — single source of truth.
+  let userId;
+  try {
+    const { data } = await userGmsCall.get('/api/auth/me', { headers: { Authorization: auth } });
+    userId = data?.user?.id || data?.id;
+  } catch (e) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  if (!userId) return res.status(401).json({ error: 'Invalid token' });
+  try {
+    const bcrypt = require('bcryptjs');
+    const { query } = require('./src/database/client');
+    const { rows } = await query(`SELECT password_hash FROM users WHERE id = $1 AND is_active = TRUE`, [userId]);
+    if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const ok = bcrypt.compareSync(current_password, rows[0].password_hash);
+    if (!ok) return res.status(400).json({ error: 'current_password is incorrect' });
+    const newHash = bcrypt.hashSync(new_password, 10);
+    await query(
+      `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2`,
+      [newHash, userId],
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[auth/change-password] error:', e.message);
+    res.status(500).json({ error: 'change-password failed' });
   }
 }));
 
@@ -1233,6 +1304,16 @@ async function gmsProxy(req, res, gmsPath, method = 'get') {
     });
   }
 }
+
+// ─── /api/analytics — proxy to GMS ────────────────────────────────
+// The OLD GMS UI at frontend/src/app/page.tsx tracks analytics events
+// to /api/analytics/events/batch (lib/analytics.ts). Pre-migration
+// these went directly to admin.friday.mu (where GMS lived). Once
+// admin.friday.mu is migrated to FAD, that URL hits fad-backend
+// instead — so we proxy to GMS to keep analytics flowing.
+app.all('/api/analytics/*', asyncHandler((req, res) =>
+  gmsProxy(req, res, req.path, req.method.toLowerCase())
+));
 
 app.get('/api/inbox/conversations', requireAuth, asyncHandler((req, res) =>
   gmsProxy(req, res, '/api/conversations')

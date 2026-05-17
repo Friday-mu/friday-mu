@@ -28,6 +28,7 @@ import {
 } from './modules/Tier3Modules';
 import { ReviewsModule } from './modules/ReviewsModule';
 import { BugReportFab } from './BugReport';
+import { ChangePasswordModal } from './ChangePasswordModal';
 import { UpdateBanner } from './UpdateBanner';
 import { AnalyticsModule } from './modules/AnalyticsModule';
 import { ReservationsModule } from './modules/ReservationsModule';
@@ -90,6 +91,10 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  // Force-change-password overlay state. Set by the auth/me check below
+  // when the user's must_change_password column is TRUE; cleared on
+  // successful change-password POST.
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   // Auth guard — the shell is post-login. Missing token → back to /.
   // Token is set by LoginScreen on successful /api/auth/login; cleared by
@@ -98,7 +103,23 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
     if (typeof window === 'undefined') return;
     if (!localStorage.getItem('gms_token')) {
       window.location.href = '/';
+      return;
     }
+    // Surface must_change_password from /api/auth/me. Forced-change is a
+    // hard block — the modal renders over everything until they reset.
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${localStorage.getItem('gms_token')}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.must_change_password) setMustChangePassword(true);
+        }
+      } catch (_e) {
+        // Non-fatal — worst case they reset later.
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -319,6 +340,9 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       />
       <BugReportFab currentModuleLabel={fridayFs ? 'Ask Friday' : mod.label} />
       <Toaster />
+      {mustChangePassword && (
+        <ChangePasswordModal onChanged={() => setMustChangePassword(false)} />
+      )}
     </div>
   );
 }
