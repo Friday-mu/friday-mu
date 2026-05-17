@@ -155,6 +155,40 @@ export async function markDmRead(dmId: string): Promise<void> {
   await apiFetch(`/api/team/dms/${dmId}/read`, { method: 'POST' });
 }
 
+// ─── Search ────────────────────────────────────────────────────────
+
+export interface SearchHit {
+  kind: 'channel' | 'dm';
+  // Channel hits
+  channelId?: string;
+  channelKey?: ChannelKey;
+  channelName?: string;
+  // DM hits
+  dmId?: string;
+  participantIds?: string[];
+  // Common
+  messageId: string;
+  authorName: string;
+  text: string;
+  ts: string;
+  rank: number;
+}
+
+/**
+ * Postgres full-text search over channel messages + DMs the caller
+ * has access to. Results ranked by ts_rank_cd then recency. For
+ * `q.length < 2` returns empty + a note (server-side guard).
+ *
+ * File search hooks in later (Day 2-3 when file uploads ship).
+ * Semantic / vector search is a v2 upgrade — additive, not a
+ * replacement; both APIs will coexist.
+ */
+export async function searchTeam(q: string, limit = 30): Promise<SearchHit[]> {
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  const data = await apiFetch(`/api/team/search?${params.toString()}`) as { hits?: SearchHit[] };
+  return data?.hits ?? [];
+}
+
 export async function loadTenantUsers(): Promise<LiveUser[]> {
   const data = await apiFetch('/api/team/users') as { users?: LiveUser[] };
   return data?.users ?? [];

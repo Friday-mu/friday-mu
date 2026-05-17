@@ -708,6 +708,116 @@ router.delete('/messages/:kind/:id/reactions/:emoji', attachIdentity, async (req
   }
 });
 
+// ─── Search ────────────────────────────────────────────────────────
+// Postgres full-text search over channel messages + DM messages the
+// caller has access to. Returns hits with channel/DM context for
+// the result-card UI. File search hooks in later (Day 2-3 when file
+// uploads ship; separate `team_file_attachments` table will get its
+// own tsvector).
+//
+// GET /api/team/search?q=<query>&limit=N
+//
+// Result shape:
+//   {
+//     hits: [
+//       { kind: 'channel'|'dm', channelId/dmId, messageId,
+//         authorName, text, ts, channelKey?, channelName?,
+//         participantIds?, rank }
+//     ]
+//   }
+//
+// Ranking uses ts_rank_cd on the tsvector + the query. Hits ordered
+// by rank DESC then created_at DESC. Limit caps at 100 results.
+
+router.get('/search', attachIdentity, async (req, res) => {
+  const userId = req.identity?.userId;
+  if (!userId) return res.status(401).json({ error: 'No user context' });
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) {
+    return res.json({ hits: [], note: 'query must be at least 2 characters' });
+  }
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || 30), 10) || 30));
+  try {
+    // websearch_to_tsquery handles natural-language queries with
+    // quotes, OR, etc. Falls back to plainto_tsquery for safety.
+    const { rows: channelHits } = await query(
+      `WITH q AS (SELECT websearch_to_tsquery('english', $1) AS tsq)
+       SELECT msg.id          AS message_id,
+              msg.channel_id,
+              msg.author_display_name,
+              msg.text,
+              msg.created_at,
+              c.channel_key,
+              c.name          AS channel_name,
+              ts_rank_cd(msg.text_tsv, q.tsq) AS rank
+       FROM team_channel_messages msg
+       JOIN team_channels c ON c.id = msg.channel_id
+       JOIN team_channel_members mem ON mem.channel_id = c.id AND mem.user_id = $2
+       CROSS JOIN q
+       WHERE c.tenant_id = $3
+         AND msg.deleted_at IS NULL
+         AND c.archived_at IS NULL
+         AND msg.text_tsv @@ q.tsq
+       ORDER BY rank DESC, msg.created_at DESC
+       LIMIT $4`,
+      [q, userId, req.tenantId, limit],
+    );
+
+    const { rows: dmHits } = await query(
+      `WITH q AS (SELECT websearch_to_tsquery('english', $1) AS tsq)
+       SELECT msg.id          AS message_id,
+              msg.dm_id,
+              msg.author_display_name,
+              msg.text,
+              msg.created_at,
+              dm.participant_user_ids,
+              ts_rank_cd(msg.text_tsv, q.tsq) AS rank
+       FROM team_dm_messages msg
+       JOIN team_dms dm ON dm.id = msg.dm_id
+       CROSS JOIN q
+       WHERE dm.tenant_id = $3
+         AND $2 = ANY(dm.participant_user_ids)
+         AND msg.deleted_at IS NULL
+         AND msg.text_tsv @@ q.tsq
+       ORDER BY rank DESC, msg.created_at DESC
+       LIMIT $4`,
+      [q, userId, req.tenantId, limit],
+    );
+
+    // Merge + re-rank across both kinds, then cap to limit.
+    const hits = [
+      ...channelHits.map((r) => ({
+        kind: 'channel',
+        channelId: r.channel_id,
+        channelKey: r.channel_key,
+        channelName: r.channel_name,
+        messageId: r.message_id,
+        authorName: r.author_display_name,
+        text: r.text,
+        ts: r.created_at,
+        rank: Number(r.rank) || 0,
+      })),
+      ...dmHits.map((r) => ({
+        kind: 'dm',
+        dmId: r.dm_id,
+        participantIds: r.participant_user_ids,
+        messageId: r.message_id,
+        authorName: r.author_display_name,
+        text: r.text,
+        ts: r.created_at,
+        rank: Number(r.rank) || 0,
+      })),
+    ]
+      .sort((a, b) => b.rank - a.rank || new Date(b.ts).getTime() - new Date(a.ts).getTime())
+      .slice(0, limit);
+
+    res.json({ hits });
+  } catch (e) {
+    console.error('[team_inbox] search error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Users (for @mention picker + DM target selection) ──────────────
 
 router.get('/users', attachIdentity, async (req, res) => {
