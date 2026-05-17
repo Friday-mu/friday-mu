@@ -62,6 +62,11 @@ interface ConsultMessage {
 interface ConsultResponse {
   response: string;
   model?: string;
+  /** 0..1 confidence score on this consult turn. Surfaces in the
+   *  embedded DraftCard's confidence pill and in the send preflight
+   *  modal so the operator can weigh whether to send as-is or revise.
+   *  GMS-side heuristic for v1 (consult.ts); model self-report later. */
+  confidence?: number;
   draft_update?: string;
   teaching_actions?: TeachingAction[];
   sessionId?: string;
@@ -161,6 +166,18 @@ export function FridayConsult({
 
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  // Live confidence on the most recent consult turn. Surfaces in the
+  // DraftCard header so the operator can see how confident Friday is
+  // in their latest rewrite, separate from the GMS-draft confidence
+  // (which is on currentDraft.confidence).
+  const [latestConfidence, setLatestConfidence] = useState<number | null>(
+    typeof currentDraft?.confidence === 'number' ? currentDraft.confidence : null,
+  );
+  useEffect(() => {
+    if (typeof currentDraft?.confidence === 'number') {
+      setLatestConfidence(currentDraft.confidence);
+    }
+  }, [currentDraft?.id, currentDraft?.confidence]);
   const [msgs, setMsgs] = useState<ConsultMessage[]>([]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
@@ -210,6 +227,7 @@ export function FridayConsult({
 
       if (data?.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
       if (data?.missingKnowledge) setMissingKnowledge(true);
+      if (typeof data?.confidence === 'number') setLatestConfidence(data.confidence);
 
       // Friday rewrote the draft — surface inline in the embedded
       // DraftCard. The chat bubble itself just confirms the action.
@@ -285,14 +303,35 @@ export function FridayConsult({
   //   update        → PATCH /api/inbox/teachings/:existingId
   //   flag_conflict → POST /api/inbox/teachings/:conflictingId/pause
   //                   then POST /api/inbox/teachings (the replacement)
-  const confirmTeaching = async (msgIndex: number, actionIndex: number, ta: TeachingAction) => {
+  //
+  // Optional `extraPropertyCodes` widens the scope from a single
+  // property (proposed by Friday) to multiple — wired through to GMS
+  // via the property_codes[] array which mig 053-era teachings already
+  // support. Used by the multi-property picker in TeachingCard.
+  const confirmTeaching = async (
+    msgIndex: number,
+    actionIndex: number,
+    ta: TeachingAction,
+    extraPropertyCodes?: string[],
+  ) => {
     setTeachingState(msgIndex, actionIndex, 'saving');
     try {
       const payload: Record<string, unknown> = {
         instruction: ta.instruction,
         scope: ta.scope,
       };
-      if (ta.propertyCode) payload.property_code = ta.propertyCode;
+      if (ta.propertyCode && (!extraPropertyCodes || extraPropertyCodes.length === 0)) {
+        payload.property_code = ta.propertyCode;
+      }
+      // Multi-property: send property_codes[] when picker added codes
+      // beyond the one Friday proposed. Backend prefers this over the
+      // single property_code field.
+      if (extraPropertyCodes && extraPropertyCodes.length > 0) {
+        const all = ta.propertyCode
+          ? [...new Set([ta.propertyCode, ...extraPropertyCodes])]
+          : [...new Set(extraPropertyCodes)];
+        payload.property_codes = all;
+      }
 
       if (ta.action === 'create') {
         await apiFetch('/api/inbox/teachings', {
@@ -301,6 +340,11 @@ export function FridayConsult({
         });
         fireToast('Friday will remember this');
       } else if (ta.action === 'update' && ta.existingTeachingId) {
+        // Update + multi-property: backend's PATCH /api/teachings/:id
+        // takes instruction only. For multi-property updates we'd need
+        // to also POST a new teaching scoped to the additional properties.
+        // For v1 keep update path as instruction-only; multi-property
+        // extension after an update is a Phase 2.1 enhancement.
         await apiFetch(`/api/inbox/teachings/${ta.existingTeachingId}`, {
           method: 'PATCH',
           body: JSON.stringify({ instruction: ta.instruction }),
@@ -422,6 +466,7 @@ export function FridayConsult({
         workingBody={workingBody}
         setWorkingBody={setWorkingBody}
         currentDraft={currentDraft || null}
+        liveConfidence={latestConfidence}
         channelLabel={channelLabel}
         whatsappWindow={whatsappWindow}
         sendBusy={sendBusy}
@@ -579,7 +624,7 @@ function MessageRow({
           key={ai}
           action={ta}
           state={(m.teachingStates && m.teachingStates[ai]) || 'pending'}
-          onConfirm={() => onConfirmTeaching(msgIndex, ai, ta)}
+          onConfirm={(extraPropertyCodes) => onConfirmTeaching(msgIndex, ai, ta, extraPropertyCodes)}
           onDismiss={() => onDismissTeaching(msgIndex, ai)}
         />
       ))}
@@ -598,6 +643,7 @@ function EmbeddedDraftCard({
   workingBody,
   setWorkingBody,
   currentDraft,
+  liveConfidence,
   channelLabel,
   whatsappWindow,
   sendBusy,
@@ -612,6 +658,10 @@ function EmbeddedDraftCard({
   workingBody: string;
   setWorkingBody: (s: string) => void;
   currentDraft: InboxDraft | null;
+  /** Confidence from the most recent consult turn — supersedes
+   *  currentDraft.confidence whenever Friday has rewritten the draft
+   *  in this session (so the pill reflects the freshest score). */
+  liveConfidence?: number | null;
   channelLabel?: string;
   whatsappWindow?: { open: boolean; expiresInMinutes?: number };
   sendBusy: boolean;
@@ -623,10 +673,21 @@ function EmbeddedDraftCard({
   onConfirmReject: () => void;
   onCancelReject: () => void;
 }) {
-  const tier = currentDraft ? confidenceTier(currentDraft.confidence) : 'high';
-  const confLabel = currentDraft && typeof currentDraft.confidence === 'number'
-    ? `${Math.round(currentDraft.confidence * 100)}%`
+  // Resolve which confidence number to render. Live consult-turn
+  // confidence wins (it's the freshest). Falls back to GMS-draft
+  // confidence. Manual (operator-typed) compose has neither — show
+  // "Operator-authored" instead.
+  const effectiveConfidence: number | null =
+    typeof liveConfidence === 'number'
+      ? liveConfidence
+      : typeof currentDraft?.confidence === 'number'
+        ? currentDraft.confidence
+        : null;
+  const tier = confidenceTier(effectiveConfidence ?? undefined);
+  const confLabel = effectiveConfidence !== null
+    ? `${Math.round(effectiveConfidence * 100)}%`
     : null;
+  const isOperatorAuthored = effectiveConfidence === null && !currentDraft;
   const confColor: Record<'high' | 'mid' | 'low', string> = {
     high: 'var(--color-text-success)',
     mid: 'var(--color-text-warning)',
@@ -669,8 +730,25 @@ function EmbeddedDraftCard({
             borderRadius: 'var(--radius-sm)',
             background: confColor[tier],
             color: '#fff',
-          }}>
+          }}
+            title="Friday's confidence on this draft. Live consult turns supersede the original GMS-draft score."
+          >
             {confLabel}
+          </span>
+        )}
+        {isOperatorAuthored && workingBody.length > 0 && (
+          <span
+            style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-background-tertiary)',
+              color: 'var(--color-text-secondary)',
+              fontStyle: 'italic',
+            }}
+            title="You typed this — no AI confidence to display."
+          >
+            Operator-authored
           </span>
         )}
         {currentDraft && typeof currentDraft.revisionNumber === 'number' && currentDraft.revisionNumber > 1 && (
@@ -833,9 +911,15 @@ function TeachingCard({
 }: {
   action: TeachingAction;
   state: 'pending' | 'saving' | 'saved' | 'dismissed';
-  onConfirm: () => void;
+  /** Optional `extraPropertyCodes` widens scope from single-property to
+   *  multi-property. Operator picks which properties beyond the one
+   *  Friday proposed should also receive this teaching. */
+  onConfirm: (extraPropertyCodes?: string[]) => void;
   onDismiss: () => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [extraCodesInput, setExtraCodesInput] = useState('');
+
   if (state === 'dismissed') return null;
 
   const isConflict = action.action === 'flag_conflict';
@@ -874,7 +958,55 @@ function TeachingCard({
       </div>
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: action.reason ? 4 : 8 }}>
         {scopeLine}
+        {/* Multi-property expansion: when scope is 'property', let the
+            operator apply the same teaching to additional properties.
+            v1 takes comma-separated codes (e.g. "LB-2, KS-5"); a richer
+            checkbox picker against the live /api/properties list lands
+            once that endpoint is wired into the inbox surface. */}
+        {action.scope === 'property' && state !== 'saving' && state !== 'saved' && (
+          <>
+            {' · '}
+            <button
+              type="button"
+              onClick={() => setPickerOpen((v) => !v)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: accent,
+                fontSize: 11,
+                cursor: 'pointer',
+                padding: 0,
+                textDecoration: 'underline',
+              }}
+            >
+              {pickerOpen ? 'Cancel' : 'Apply to more properties'}
+            </button>
+          </>
+        )}
       </div>
+      {pickerOpen && state !== 'saving' && state !== 'saved' && (
+        <div style={{ marginBottom: 8 }}>
+          <input
+            type="text"
+            value={extraCodesInput}
+            onChange={(e) => setExtraCodesInput(e.target.value)}
+            placeholder="Additional property codes — e.g. LB-2, KS-5, MV-1"
+            style={{
+              width: '100%',
+              padding: '5px 8px',
+              fontSize: 11,
+              color: 'var(--color-text-primary)',
+              background: 'var(--color-background-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+            The teaching will apply to {action.propertyCode ? `${action.propertyCode} + ` : ''}every code you list above.
+          </div>
+        </div>
+      )}
       {action.reason && (
         <div style={{
           fontSize: 11,
@@ -895,7 +1027,13 @@ function TeachingCard({
         <div style={{ display: 'flex', gap: 6 }}>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => {
+              const extras = extraCodesInput
+                .split(',')
+                .map((s) => s.trim().toUpperCase())
+                .filter((s) => s.length > 0);
+              onConfirm(extras.length > 0 ? extras : undefined);
+            }}
             disabled={state === 'saving'}
             style={{
               padding: '5px 10px',

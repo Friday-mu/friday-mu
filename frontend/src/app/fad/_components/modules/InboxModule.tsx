@@ -19,6 +19,7 @@ import {
   isReviewReady,
 } from '../../_data/draftsClient';
 import { DraftPanel } from './inbox/DraftPanel';
+import { SendPreflightModal } from './inbox/SendPreflightModal';
 import { apiFetch } from '../../../../components/types';
 
 // Human-readable relative time. Used in list rows + message bubbles.
@@ -272,14 +273,53 @@ export function InboxModule({ onAskFriday }: Props) {
   const handleApprove = (opts: { draftBody?: string; learnMode?: 'learn' }) => {
     if (!activeDraft) return;
     setDraftError(null);
-    // Stage the send behind a 5s undo banner. If the operator doesn't
-    // cancel, the countdown effect above fires approveDraft.
-    setPendingSend({
-      draftId: activeDraft.id,
-      draftBody: opts.draftBody,
-      sentVia: (thread?.recommendedChannel || thread?.channelKey || 'whatsapp') as PendingSend['sentVia'],
-      countdown: 5,
-    });
+    // Phase 2: open preflight modal first (channel selector, body
+    // preview, teachables review, learnMode). Modal Confirm → 5s undo
+    // countdown. Modal Cancel → no send.
+    const body = opts.draftBody ?? activeDraft.body;
+    if (!body.trim()) return;
+    setPreflight({ bodyToSend: body, fromDraft: true });
+  };
+
+  // Modal Confirm → kick off the actual send. For from-draft sends this
+  // is the 5s undo + /api/inbox/drafts/:id/approve path. For manual
+  // compose it's a direct sendCompose call without the 5s undo (modal
+  // already provided the confirmation step; double-confirmation = friction).
+  const confirmPreflight = (opts: { channel: string; learnMode?: 'learn' | 'no_learn' | 'normal' }) => {
+    if (!preflight || !thread) return;
+    const { bodyToSend, fromDraft } = preflight;
+    setPreflight(null);
+    const channel = opts.channel as 'whatsapp' | 'airbnb' | 'booking' | 'email';
+
+    if (fromDraft && activeDraft) {
+      setPendingSend({
+        draftId: activeDraft.id,
+        draftBody: bodyToSend !== activeDraft.body ? bodyToSend : undefined,
+        sentVia: channel,
+        countdown: 5,
+      });
+      return;
+    }
+    // Manual compose path — fire directly. Preflight modal IS the
+    // confirmation step; no second undo.
+    setComposeBusy(true);
+    sendCompose(thread.id, { mode: 'manual', body: bodyToSend, channel })
+      .then(() => {
+        fireToast('Sent ✓');
+        setReplyBody('');
+        setConsultOpen(false);
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Send failed';
+        if (msg.includes('whatsapp_window_expired')) {
+          fireToast('WhatsApp 24h window expired — use a template');
+        } else {
+          fireToast(msg);
+        }
+      })
+      .finally(() => setComposeBusy(false));
   };
 
   const handleRevise = (instruction: string, mode: 'standard' | 'teach') => {
@@ -324,6 +364,21 @@ export function InboxModule({ onAskFriday }: Props) {
   // jumps into edit mode pre-filled with this body, then calls back to
   // clear it so we don't re-trigger on subsequent renders.
   const [pendingRewrite, setPendingRewrite] = useState<string | null>(null);
+
+  // ─── Send preflight modal ────────────────────────────────────────────
+  // Phase 2 of the guest inbox: a preflight check between Approve & Send
+  // and the 5s undo countdown. Modal lets the operator confirm channel,
+  // review the body + translated version, see pending teachables, set
+  // learnMode. Confirm → countdown → POST. Cancel → no send.
+  //
+  // Why both modal AND countdown: preflight catches "wrong channel /
+  // wrong body / forgot to commit a teach". Countdown catches "I just
+  // typed an obvious typo and clicked too fast". Different concerns.
+  type Preflight = {
+    bodyToSend: string;
+    fromDraft: boolean;
+  };
+  const [preflight, setPreflight] = useState<Preflight | null>(null);
 
   // ─── Compose state ─────────────────────────────────────────────────────
   // Operator-initiated manual reply (vs. draft-review path which goes
@@ -793,36 +848,21 @@ export function InboxModule({ onAskFriday }: Props) {
               context={activeDraft ? 'draft_review' : 'compose'}
               channelLabel={thread.channel}
               whatsappWindow={thread.whatsappWindow}
-              sendBusy={draftBusy || composeBusy || !!pendingSend}
-              onApproveDraft={(body) => handleApprove({ draftBody: body })}
+              sendBusy={draftBusy || composeBusy || !!pendingSend || !!preflight}
+              onApproveDraft={(body) => {
+                // Open preflight instead of going straight to 5s undo.
+                // Modal confirms channel + learnMode + lets operator
+                // review teachables; then countdown fires.
+                if (!body.trim()) return;
+                setPreflight({ bodyToSend: body, fromDraft: true });
+              }}
               onRejectDraft={handleReject}
               onSendManual={(body) => {
-                // No active draft — the operator's working body is a
-                // manual compose. Stage the 5s undo via the same code
-                // path the DraftPanel approve uses; we just don't have
-                // a draftId, so we go through the compose mode=manual
-                // endpoint instead.
-                if (!thread || !body.trim() || composeBusy) return;
-                setComposeBusy(true);
-                const channel = (thread.recommendedChannel || thread.channelKey) as
-                  | 'whatsapp' | 'airbnb' | 'booking' | 'email' | undefined;
-                sendCompose(thread.id, { mode: 'manual', body: body.trim(), channel })
-                  .then(() => {
-                    fireToast('Sent ✓');
-                    setReplyBody('');
-                    setConsultOpen(false);
-                    refetchDetail();
-                    refetchConversations();
-                  })
-                  .catch((e: Error) => {
-                    const msg = e?.message || 'Send failed';
-                    if (msg.includes('whatsapp_window_expired')) {
-                      fireToast('WhatsApp 24h window expired — use a template');
-                    } else {
-                      fireToast(msg);
-                    }
-                  })
-                  .finally(() => setComposeBusy(false));
+                // Manual compose path also funnels through preflight.
+                // Different downstream API (mode=manual via compose),
+                // same preflight UX.
+                if (!body.trim()) return;
+                setPreflight({ bodyToSend: body, fromDraft: false });
               }}
               onBodyChanged={(body) => {
                 // Mirror Friday Consult's working body into the compose
@@ -859,6 +899,29 @@ export function InboxModule({ onAskFriday }: Props) {
                 onPendingRewriteConsumed={() => setPendingRewrite(null)}
               />
             </div>
+          )}
+          {/* Send preflight modal — opens on Approve & Send from
+              FridayConsult or DraftPanel. Confirm → 5s undo banner +
+              POST. Cancel → no send, modal closes. */}
+          {preflight && thread && (
+            <SendPreflightModal
+              currentDraft={activeDraft ?? null}
+              liveConfidence={null}
+              bodyToSend={preflight.bodyToSend}
+              recipientLabel={`${thread.guest} on ${thread.channel}`}
+              availableChannels={thread.availableChannels ?? []}
+              defaultChannel={(thread.recommendedChannel || thread.channelKey || 'whatsapp')}
+              pendingTeachingCount={0}
+              whatsappWindow={thread.whatsappWindow}
+              onConfirm={confirmPreflight}
+              onCancel={() => setPreflight(null)}
+              onReviewTeachings={() => {
+                // Close modal so operator can scroll FridayConsult and
+                // confirm/dismiss the cards. Re-opening Approve & Send
+                // brings the modal back.
+                setPreflight(null);
+              }}
+            />
           )}
           {/* 5-second undo banner — visible during the countdown after
               Approve & Send. Cancel restores the DraftPanel without
