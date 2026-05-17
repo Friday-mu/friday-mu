@@ -31,6 +31,13 @@ const TOKEN_SAFETY_MS = 60_000;
 // override via GUESTY_SHARED_TOKEN_PATH if topology changes.
 const SHARED_TOKEN_PATH =
   process.env.GUESTY_SHARED_TOKEN_PATH || '/var/www/friday-gms/.guesty-token.json';
+// Shared mint-quota meta (GMS hotfix 9a091da introduced this — tracks
+// the 5/24h Guesty mint limit per UTC day). FAD respects the same
+// file so the two backends coordinate. Without this, FAD could mint
+// past GMS's counter and re-burn quota.
+const SHARED_TOKEN_META_PATH =
+  process.env.GUESTY_SHARED_TOKEN_META_PATH || '/var/www/friday-gms/.guesty-token-meta.json';
+const DAILY_MINT_LIMIT = 5;
 
 let tokenCache = { token: null, expiresAt: 0 };
 
@@ -65,6 +72,34 @@ function saveTokenToDisk(token, expiresAt) {
   }
 }
 
+function utcDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function readMintMeta() {
+  try {
+    const raw = fs.readFileSync(SHARED_TOKEN_META_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed?.date === utcDate() && typeof parsed.refreshCount === 'number') {
+      return { date: parsed.date, refreshCount: parsed.refreshCount };
+    }
+  } catch {
+    // file missing / unreadable — treat as fresh day
+  }
+  return { date: utcDate(), refreshCount: 0 };
+}
+
+function writeMintMeta(meta) {
+  try {
+    const payload = JSON.stringify(meta, null, 2);
+    const tmp = `${SHARED_TOKEN_META_PATH}.tmp.${process.pid}`;
+    fs.writeFileSync(tmp, payload, { mode: 0o644 });
+    fs.renameSync(tmp, SHARED_TOKEN_META_PATH);
+  } catch (e) {
+    console.warn('[guesty] could not write mint meta:', e.message);
+  }
+}
+
 async function getAccessToken({ retries = 1 } = {}) {
   // Tier 1: in-memory.
   if (tokenCache.token && Date.now() < tokenCache.expiresAt - TOKEN_SAFETY_MS) {
@@ -81,7 +116,16 @@ async function getAccessToken({ retries = 1 } = {}) {
     throw new Error('Guesty credentials not configured (GUESTY_CLIENT_ID / GUESTY_CLIENT_SECRET)');
   }
   // Tier 3: fresh mint. Both backends share one clientId with a
-  // 5/24h ceiling — only mint when truly necessary.
+  // 5/24h ceiling. Check the shared meta file first — if GMS has
+  // already minted 5x today, refuse without making the API call.
+  // This matches friday-gms's hotfix 9a091da behavior so the two
+  // backends can't collectively burn past quota.
+  const meta = readMintMeta();
+  if (meta.refreshCount >= DAILY_MINT_LIMIT) {
+    throw new Error(
+      `Guesty token daily mint limit reached (${meta.refreshCount}/${DAILY_MINT_LIMIT} on ${meta.date}). Waits until UTC midnight.`,
+    );
+  }
   const params = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id: CLIENT_ID,
@@ -97,6 +141,8 @@ async function getAccessToken({ retries = 1 } = {}) {
     const expiresAt = Date.now() + (data.expires_in || 86400) * 1000;
     tokenCache = { token: data.access_token, expiresAt };
     saveTokenToDisk(data.access_token, expiresAt);
+    // Update the shared mint-counter so GMS sees our mint.
+    writeMintMeta({ date: utcDate(), refreshCount: meta.refreshCount + 1 });
     return tokenCache.token;
   } catch (e) {
     // The token endpoint is in the same rate-limit bucket as the
