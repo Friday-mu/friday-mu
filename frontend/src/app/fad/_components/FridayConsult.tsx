@@ -198,6 +198,25 @@ export function FridayConsult({
   const [missingKnowledge, setMissingKnowledge] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
+  // Past consult sessions for this conversation. Fetched on demand
+  // when the operator opens the history panel. Endpoint already exists
+  // (GMS /api/ai/consult/history/:conversationId via FAD proxy).
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pastSessions, setPastSessions] = useState<Array<{
+    id: string;
+    userName: string;
+    messages: Array<{ role: string; text?: string; content?: string }>;
+    summary?: string;
+    createdAt: string;
+    endedAt?: string;
+  }> | null>(null);
+
+  // Full-thread context toggle. When on, the operator's next consult
+  // query is prepended with the full guest↔team thread so Friday has
+  // more than the default 10-msg cap. Resets on thread switch (the
+  // parent's key={selected} remounts FC).
+  const [useFullThread, setUseFullThread] = useState(false);
+
   // Auto-scroll on new messages / thinking state.
   useEffect(() => {
     const el = transcriptRef.current;
@@ -232,8 +251,37 @@ export function FridayConsult({
     setThinking(true);
 
     try {
+      // If the operator turned on "Use full thread", fetch every guest↔
+      // team message for this conversation and prepend it to the user
+      // query. This works around GMS's LIMIT 10 cap on conversation
+      // context in consult.ts:544 — the model sees the full thread as
+      // part of the user message, not via the cap-controlled prompt
+      // path. No GMS-side change required.
+      let queryText = q;
+      if (useFullThread && conversationId) {
+        try {
+          const detail = await apiFetch(`/api/inbox/conversations/${conversationId}`) as {
+            messages?: Array<{ direction: string; body: string; translated_body?: string; created_at: string; sender_name?: string }>;
+          };
+          const msgs = detail?.messages || [];
+          if (msgs.length > 0) {
+            const formatted = msgs.map((m) => {
+              const who = m.direction === 'inbound' ? 'Guest' : (m.sender_name || 'Team');
+              const ts = new Date(m.created_at).toLocaleString('en-GB');
+              return `[${ts}] ${who}: ${m.translated_body || m.body}`;
+            }).join('\n');
+            queryText =
+              `[Operator requested FULL conversation context — ${msgs.length} messages]\n` +
+              `${formatted}\n\n` +
+              `My question: ${q}`;
+          }
+        } catch (e) {
+          console.warn('[FC] full-thread fetch failed, sending without:', (e as Error).message);
+        }
+      }
+
       const body: Record<string, unknown> = {
-        text: q,
+        text: queryText,
         context,
       };
       if (conversationId) body.conversationId = conversationId;
@@ -413,6 +461,43 @@ export function FridayConsult({
     setTeachingState(msgIndex, actionIndex, 'dismissed');
   };
 
+  // Load past consult sessions for this conversation when the history
+  // panel opens (lazy — don't fetch until requested).
+  const loadHistory = async () => {
+    if (!conversationId || pastSessions !== null) {
+      setHistoryOpen((v) => !v);
+      return;
+    }
+    setHistoryOpen(true);
+    try {
+      const data = await apiFetch(`/api/inbox/consult/history/${conversationId}`) as {
+        sessions?: Array<{
+          id: string;
+          userName: string;
+          messages?: Array<{ role: string; text?: string; content?: string }>;
+          summary?: string;
+          createdAt: string;
+          endedAt?: string;
+        }>;
+      };
+      setPastSessions(data?.sessions || []);
+    } catch (e) {
+      setPastSessions([]);
+      console.warn('[FC] history load failed:', (e as Error).message);
+    }
+  };
+
+  const loadPastSessionIntoTranscript = (s: { messages?: Array<{ role: string; text?: string; content?: string }> }) => {
+    // Read-only replay of a past session in the current transcript.
+    // The operator can browse but new turns start a fresh sessionId.
+    const restored: ConsultMessage[] = (s.messages || []).map((m) => ({
+      role: m.role === 'user' ? 'user' : 'friday',
+      text: String(m.text || m.content || ''),
+    }));
+    setMsgs(restored);
+    setHistoryOpen(false);
+  };
+
   // FC is compact-by-default: header + chips + Ask Friday input only.
   // Transcript + EmbeddedDraftCard appear conditionally below. Each
   // section sizes to its content; transcript caps with internal
@@ -448,13 +533,70 @@ export function FridayConsult({
         )}
         <button
           className="fad-util-btn"
+          onClick={loadHistory}
+          style={{ marginLeft: 'auto', width: 'auto', height: 24, padding: '0 8px', fontSize: 11 }}
+          title="Past Ask Friday sessions on this conversation"
+        >
+          <IconRefresh size={12} /> History
+        </button>
+        <button
+          className="fad-util-btn"
           onClick={onClose}
-          style={{ marginLeft: 'auto', width: 24, height: 24 }}
+          style={{ width: 24, height: 24, marginLeft: 4 }}
           title="Close"
         >
           <IconClose size={12} />
         </button>
       </div>
+      {historyOpen && (
+        <div
+          style={{
+            maxHeight: '40vh',
+            overflowY: 'auto',
+            padding: '8px 12px',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            background: 'var(--color-background-secondary)',
+          }}
+        >
+          {pastSessions === null ? (
+            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Loading…</div>
+          ) : pastSessions.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+              No previous sessions on this conversation.
+            </div>
+          ) : (
+            pastSessions.map((s) => {
+              const firstUser = s.messages?.find((m) => m.role === 'user');
+              const preview = String(firstUser?.text || firstUser?.content || '(empty)').slice(0, 80);
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => loadPastSessionIntoTranscript(s)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    marginBottom: 4,
+                    background: 'var(--color-background-primary)',
+                    border: '0.5px solid var(--color-border-tertiary)',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    color: 'var(--color-text-primary)',
+                  }}
+                >
+                  <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>
+                    {new Date(s.createdAt).toLocaleString('en-GB')} · {s.userName || 'unknown'}
+                    {' · '}{s.messages?.length || 0} turn{(s.messages?.length || 0) === 1 ? '' : 's'}
+                  </div>
+                  <div style={{ lineHeight: 1.3 }}>{preview}{preview.length === 80 ? '…' : ''}</div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
       {/* Transcript — internally scrolling, capped height. Keeps the
           send button + Ask input pinned at the bottom of the panel
           regardless of chat length. Per Mary 2026-05-17. */}
@@ -553,6 +695,8 @@ export function FridayConsult({
         onSubmit={(q) => submit(q)}
         disabled={thinking || sendBusy}
         threadGuest={threadScope}
+        useFullThread={useFullThread}
+        onToggleFullThread={() => setUseFullThread((v) => !v)}
       />
     </div>
   );
@@ -562,10 +706,14 @@ function AskFridayInput({
   onSubmit,
   disabled,
   threadGuest,
+  useFullThread,
+  onToggleFullThread,
 }: {
   onSubmit: (q: string) => void;
   disabled: boolean;
   threadGuest: string;
+  useFullThread: boolean;
+  onToggleFullThread: () => void;
 }) {
   const [text, setText] = useState('');
   const submit = () => {
@@ -577,13 +725,30 @@ function AskFridayInput({
   return (
     <div
       style={{
-        display: 'flex',
-        gap: 6,
         padding: '8px 12px 12px',
         borderTop: '0.5px solid var(--color-border-tertiary)',
         background: 'var(--color-background-primary)',
       }}
     >
+      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+        <button
+          type="button"
+          onClick={onToggleFullThread}
+          title="When on, prepend the full guest↔team thread to your next question so Friday has complete context (default cap: 10 messages)"
+          style={{
+            padding: '3px 8px',
+            fontSize: 10,
+            color: useFullThread ? '#fff' : 'var(--color-text-secondary)',
+            background: useFullThread ? 'var(--color-brand-accent)' : 'var(--color-background-secondary)',
+            border: '0.5px solid ' + (useFullThread ? 'var(--color-brand-accent)' : 'var(--color-border-tertiary)'),
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer',
+          }}
+        >
+          {useFullThread ? '✓ Full thread' : 'Full thread'}
+        </button>
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
       <input
         type="text"
         value={text}
@@ -628,6 +793,7 @@ function AskFridayInput({
       >
         <IconSend size={12} /> Ask
       </button>
+      </div>
     </div>
   );
 }
