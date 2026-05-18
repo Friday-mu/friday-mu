@@ -96,12 +96,25 @@ async function callKimiOnce({ system, user, model, maxTokens, temperature, timeo
       },
     );
     const text = data?.choices?.[0]?.message?.content;
+    const finishReason = data?.choices?.[0]?.finish_reason || 'unknown';
     if (typeof text !== 'string' || text.length === 0) {
-      return { ok: false, error: 'empty response', latencyMs: Date.now() - start };
+      // Empty content is usually deterministic — content-filter block,
+      // max_tokens=0, or upstream malformed prompt. Surface the finish
+      // reason so the caller's retry logic can decide whether to retry
+      // (transient) or fail fast (deterministic).
+      return {
+        ok: false,
+        error: `empty response (finish_reason=${finishReason})`,
+        finishReason,
+        latencyMs: Date.now() - start,
+        inputTokens: data?.usage?.prompt_tokens ?? null,
+        outputTokens: data?.usage?.completion_tokens ?? null,
+      };
     }
     return {
       ok: true,
       text,
+      finishReason,
       inputTokens: data?.usage?.prompt_tokens ?? null,
       outputTokens: data?.usage?.completion_tokens ?? null,
       model,
@@ -118,8 +131,11 @@ async function callKimiOnce({ system, user, model, maxTokens, temperature, timeo
 }
 
 // Wrapper with retry + exp backoff. Retries on 5xx, timeouts, parse
-// failures. Does NOT retry on 4xx (auth/quota/validation) — those won't
-// succeed on a retry and would burn budget.
+// failures. Does NOT retry on:
+//   - 4xx (auth/quota/validation — deterministic)
+//   - finish_reason in (content_filter | stop with empty content |
+//     length-with-zero) — these are deterministic outcomes that won't
+//     change on a fresh call with the same prompt.
 async function callWithRetry(opts) {
   let lastError = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -134,6 +150,17 @@ async function callWithRetry(opts) {
     // Don't retry on hard client-side errors.
     if (result.status && result.status >= 400 && result.status < 500) {
       console.warn(`[ai/kimi-draft] non-retryable error ${result.status}: ${result.error}`);
+      return result;
+    }
+    // Don't retry on deterministic empty/blocked responses. A fresh
+    // call with the same prompt will hit the same wall and burn
+    // budget for no value.
+    if (
+      result.finishReason
+      && ['content_filter', 'stop', 'length'].includes(result.finishReason)
+      && (result.outputTokens === 0 || result.outputTokens == null)
+    ) {
+      console.warn(`[ai/kimi-draft] non-retryable: empty response with finish_reason=${result.finishReason} (in=${result.inputTokens} out=${result.outputTokens})`);
       return result;
     }
     if (attempt < MAX_RETRIES) {
