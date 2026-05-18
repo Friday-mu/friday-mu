@@ -63,6 +63,11 @@ const RATE_TABLE = {
   'moonshot-v1-8k':                { kind: 'text',  inputUsdPerM:  1.40,  outputUsdPerM: 1.40 },
   'moonshot-v1-32k':               { kind: 'text',  inputUsdPerM:  2.40,  outputUsdPerM: 2.40 },
   'moonshot-v1-128k':              { kind: 'text',  inputUsdPerM:  6.00,  outputUsdPerM: 6.00 },
+  // Kimi K2.6 — Moonshot's 1T-param MoE flagship (262K context).
+  // Official Moonshot API rate as of 2026-05: $0.75 / $3.50 per M
+  // tokens. Used by Phase 3.1 draft-generator + Phase 3.3 followup
+  // draft generator. Source: platform.moonshot.ai/docs/pricing.
+  'kimi-k2.6':                     { kind: 'text',  inputUsdPerM:  0.75,  outputUsdPerM: 3.50 },
 };
 
 // Unknown model? Default to a moderate text rate so we still capture

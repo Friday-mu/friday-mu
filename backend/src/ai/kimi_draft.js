@@ -20,10 +20,27 @@
 // without code changes.
 
 const axios = require('axios');
+const { recordUsage } = require('../tenants/ai_usage');
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const DRAFT_MODEL = process.env.KIMI_DRAFT_MODEL || 'kimi-k2.6';
 const CLASSIFY_MODEL = process.env.KIMI_CLASSIFY_MODEL || 'moonshot-v1-8k';
+
+// Default tenant — FAD is FR-only today. Callers can override via
+// `meter.tenantId` if multi-tenant logging is needed later.
+const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
+// Helper: fire-and-forget recordUsage. Never throws (recordUsage is
+// already swallow-safe; this is the belt-and-braces version).
+function logUsage(meter, fields) {
+  if (!meter || !meter.feature) return;
+  recordUsage({
+    tenantId: meter.tenantId || DEFAULT_TENANT_ID,
+    feature: meter.feature,
+    provider: 'moonshot',
+    ...fields,
+  }).catch(() => {}); // never block on usage log
+}
 
 // Generation parameters. Kimi K2.6 rejects any temperature ≠ 1 with
 // a 400 ("invalid temperature: only 1 is allowed for this model"),
@@ -129,8 +146,13 @@ async function callWithRetry(opts) {
 }
 
 // Public API — long-context draft generation (K2.6 by default).
-async function generateDraftReply({ system, user }) {
-  return callWithRetry({
+//
+// `meter` is optional. When provided as { tenantId, feature }, every
+// call (success or fail) logs to ai_usage. Examples of `feature`
+// values: 'inbox_draft', 'inbox_followup_draft'. tenantId defaults
+// to FR when omitted.
+async function generateDraftReply({ system, user, meter }) {
+  const result = await callWithRetry({
     system,
     user,
     model: DRAFT_MODEL,
@@ -138,6 +160,15 @@ async function generateDraftReply({ system, user }) {
     temperature: DRAFT_TEMPERATURE,
     timeoutMs: DRAFT_TIMEOUT_MS,
   });
+  logUsage(meter, {
+    model: result.model || DRAFT_MODEL,
+    promptTokens: result.inputTokens,
+    completionTokens: result.outputTokens,
+    durationMs: result.latencyMs,
+    success: !!result.ok,
+    errorCode: result.ok ? null : (result.error || 'unknown'),
+  });
+  return result;
 }
 
 // Public API — fast classification call (small model, low cost).
@@ -154,7 +185,7 @@ const CLASSIFY_SYSTEM = `You are a message classifier. Read the guest message an
 - emergency: urgent safety, security, or critical-failure issue
 - other: anything that doesn't fit above`;
 
-async function classifyMessageWithKimi(text) {
+async function classifyMessageWithKimi(text, meter) {
   if (!text || typeof text !== 'string') return 'other';
   const trimmed = text.slice(0, 1000); // classify the head, not the whole body
   const result = await callKimiOnce({
@@ -164,6 +195,14 @@ async function classifyMessageWithKimi(text) {
     maxTokens: 10,
     temperature: 0.0,
     timeoutMs: 15_000,
+  });
+  logUsage(meter, {
+    model: CLASSIFY_MODEL,
+    promptTokens: result.inputTokens,
+    completionTokens: result.outputTokens,
+    durationMs: result.latencyMs,
+    success: !!result.ok,
+    errorCode: result.ok ? null : (result.error || 'unknown'),
   });
   if (!result.ok) {
     console.warn(`[ai/kimi-draft] classifyMessage failed: ${result.error}`);
@@ -185,12 +224,13 @@ const EXTRACT_MODEL = process.env.KIMI_EXTRACT_MODEL || 'moonshot-v1-8k';
 const EXTRACT_MAX_TOKENS = Number(process.env.KIMI_EXTRACT_MAX_TOKENS) || 800;
 const EXTRACT_TIMEOUT_MS = Number(process.env.KIMI_EXTRACT_TIMEOUT_MS) || 20_000;
 
-async function extractStructuredOutput({ system, user, model, maxTokens, timeoutMs }) {
+async function extractStructuredOutput({ system, user, model, maxTokens, timeoutMs, meter }) {
   if (!process.env.KIMI_API_KEY) {
     return { ok: false, error: 'KIMI_API_KEY not set' };
   }
   const start = Date.now();
   const m = model || EXTRACT_MODEL;
+  let result;
   try {
     const { data } = await axios.post(
       `${KIMI_BASE_URL}/chat/completions`,
@@ -213,49 +253,61 @@ async function extractStructuredOutput({ system, user, model, maxTokens, timeout
       },
     );
     const raw = data?.choices?.[0]?.message?.content;
+    const promptTokens = data?.usage?.prompt_tokens ?? null;
+    const completionTokens = data?.usage?.completion_tokens ?? null;
+    const latencyMs = Date.now() - start;
     if (typeof raw !== 'string') {
-      return { ok: false, error: 'no response text', latencyMs: Date.now() - start };
-    }
-    // Most models honour response_format and emit clean JSON, but a few
-    // wrap it in code fences. Strip a single ```json fence if present.
-    const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
-    try {
-      const parsed = JSON.parse(cleaned);
-      return {
-        ok: true,
-        parsed,
-        raw,
-        inputTokens: data?.usage?.prompt_tokens ?? null,
-        outputTokens: data?.usage?.completion_tokens ?? null,
-        model: m,
-        latencyMs: Date.now() - start,
-      };
-    } catch (parseErr) {
-      // Fallback: try to pull the first {...} block out of the raw text.
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (match) {
-        try {
-          return {
-            ok: true,
-            parsed: JSON.parse(match[0]),
-            raw,
-            inputTokens: data?.usage?.prompt_tokens ?? null,
-            outputTokens: data?.usage?.completion_tokens ?? null,
-            model: m,
-            latencyMs: Date.now() - start,
-          };
-        } catch { /* fall through */ }
+      result = { ok: false, error: 'no response text', latencyMs, _meterTokens: { promptTokens, completionTokens } };
+    } else {
+      // Most models honour response_format and emit clean JSON, but a few
+      // wrap it in code fences. Strip a single ```json fence if present.
+      const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+      try {
+        result = {
+          ok: true,
+          parsed: JSON.parse(cleaned),
+          raw,
+          inputTokens: promptTokens,
+          outputTokens: completionTokens,
+          model: m,
+          latencyMs,
+        };
+      } catch (parseErr) {
+        // Fallback: try to pull the first {...} block out of the raw text.
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        let recovered = null;
+        if (match) {
+          try { recovered = JSON.parse(match[0]); } catch { /* fall through */ }
+        }
+        result = recovered != null
+          ? { ok: true, parsed: recovered, raw, inputTokens: promptTokens, outputTokens: completionTokens, model: m, latencyMs }
+          : { ok: false, error: `JSON parse failed: ${parseErr.message}`, raw, latencyMs, _meterTokens: { promptTokens, completionTokens } };
       }
-      return { ok: false, error: `JSON parse failed: ${parseErr.message}`, raw, latencyMs: Date.now() - start };
     }
   } catch (e) {
-    return {
+    result = {
       ok: false,
       error: e.response?.data?.error?.message || e.message,
       status: e.response?.status,
       latencyMs: Date.now() - start,
     };
   }
+
+  // Single exit point so we log usage exactly once, even on parse-fail
+  // recovery and API-error paths. Tokens come from data.usage when the
+  // request reached Moonshot; otherwise null (counts as 0 in
+  // computeCostMinorUsd which still records the failed call shape).
+  logUsage(meter, {
+    model: m,
+    promptTokens: result.inputTokens ?? result._meterTokens?.promptTokens ?? null,
+    completionTokens: result.outputTokens ?? result._meterTokens?.completionTokens ?? null,
+    durationMs: result.latencyMs,
+    success: !!result.ok,
+    errorCode: result.ok ? null : (result.error || 'unknown'),
+  });
+  // Strip the internal-only field before returning.
+  if (result._meterTokens) delete result._meterTokens;
+  return result;
 }
 
 module.exports = {

@@ -285,7 +285,7 @@ async function generateDraft({ message, conversation, revisionInstruction, previ
   // 2. Classify the triggering message — used for both confidence and
   //    (potentially) lazy-load signals. Fail-open to 'other'.
   const guestText = message.translated_body || message.body || '';
-  const category = await classifyMessageWithKimi(guestText);
+  const category = await classifyMessageWithKimi(guestText, { feature: 'inbox_classify' });
 
   // 3. Compose system prompt.
   const propertyCode = resolvePropertyCode(conversation);
@@ -354,6 +354,7 @@ ${taskDirective}`;
   const kimi = await generateDraftReply({
     system: composerOutput.system_message,
     user: userMessage,
+    meter: { feature: 'inbox_draft' },
   });
 
   if (!kimi.ok) {

@@ -155,7 +155,11 @@ Output the message text only — no preamble, no commentary.`;
     const systemPrompt = `${composed.system_message}\n\n${taskFraming}`;
     const userMessage = `CONVERSATION SO FAR:\n${conversationContext}`;
 
-    const kimi = await generateDraftReply({ system: systemPrompt, user: userMessage });
+    const kimi = await generateDraftReply({
+      system: systemPrompt,
+      user: userMessage,
+      meter: { feature: 'inbox_followup_draft' },
+    });
     if (!kimi.ok) {
       throw new Error(`Kimi followup call failed: ${kimi.error || 'unknown'}`);
     }

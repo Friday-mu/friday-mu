@@ -181,6 +181,7 @@ async function detectActions(params) {
     const result = await extractStructuredOutput({
       system: systemPrompt,
       user: userMessage,
+      meter: { feature: 'inbox_action_detect' },
     });
     if (!result.ok) {
       console.warn(`[action-detector] Kimi extraction failed (conv=${conversationId}): ${result.error}`);
