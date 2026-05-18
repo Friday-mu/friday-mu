@@ -31,8 +31,9 @@ function useSpeechDictation({
   onInterim: (text: string) => void;
   onFinal: (text: string) => void;
   lang?: string;
-}): { state: DictationState; toggle: () => void; supported: boolean } {
+}): { state: DictationState; toggle: () => void; supported: boolean; lastError: string | null } {
   const [state, setState] = useState<DictationState>('idle');
+  const [lastError, setLastError] = useState<string | null>(null);
   const recognitionRef = useRef<unknown>(null);
   // Stash callbacks in refs so the setup effect doesn't re-fire (and
   // throw away the recognition object) every parent render.
@@ -78,11 +79,15 @@ function useSpeechDictation({
     };
     r.onend = () => setState('idle');
     r.onerror = (e) => {
-      // `not-allowed` (user denied mic), `no-speech`, `audio-capture`,
-      // `network`, etc. Log so a console glance diagnoses why a click
-      // had no visible effect; user-facing toast would be noisier.
+      // `not-allowed` (user denied mic) is the common one; the others
+      // (`no-speech`, `audio-capture`, `network`, `service-not-allowed`)
+      // are rarer. Surface the reason to the UI so the user knows why
+      // their click did nothing — silently swallowing this is what
+      // made the bug invisible in the first place.
+      const code = e?.error || 'unknown';
       // eslint-disable-next-line no-console
-      console.warn('[dictation] recognition error:', e?.error);
+      console.warn('[dictation] recognition error:', code);
+      setLastError(code);
       setState('idle');
     };
     recognitionRef.current = r;
@@ -108,17 +113,19 @@ function useSpeechDictation({
     }
     if (state === 'idle') {
       try {
+        setLastError(null);
         r.start();
         setState('recording');
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('[dictation] start failed:', err);
+        setLastError(err instanceof Error ? err.message : String(err));
         setState('idle');
       }
     }
   }, [state]);
 
-  return { state, toggle, supported: state !== 'unsupported' };
+  return { state, toggle, supported: state !== 'unsupported', lastError };
 }
 
 function IconMic({ size = 14, active = false }: { size?: number; active?: boolean }) {
@@ -746,12 +753,25 @@ function BugReportModal({
                     <IconMic size={13} active={dictation.state === 'recording'} />
                   </button>
                 )}
-                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-                  {dictation.state === 'recording'
-                    ? 'Listening… click mic to stop.'
-                    : reachedTurnCap
-                      ? 'Friday\'s heard enough — submit when ready.'
-                      : 'Cmd/Ctrl+Enter to send.'}
+                <span style={{
+                  fontSize: 10,
+                  color: dictation.lastError ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)',
+                }}>
+                  {dictation.lastError === 'not-allowed'
+                    ? 'Mic blocked — click the lock icon in your browser to allow.'
+                    : dictation.lastError === 'no-speech'
+                      ? "Didn't catch that — click mic and try again."
+                      : dictation.lastError === 'audio-capture'
+                        ? 'No microphone detected on this device.'
+                        : dictation.lastError === 'service-not-allowed'
+                          ? 'Speech service blocked by browser / OS settings.'
+                          : dictation.lastError
+                            ? `Dictation error: ${dictation.lastError}`
+                            : dictation.state === 'recording'
+                              ? 'Listening… click mic to stop.'
+                              : reachedTurnCap
+                                ? 'Friday\'s heard enough — submit when ready.'
+                                : 'Cmd/Ctrl+Enter to send.'}
                 </span>
               </div>
               <button
