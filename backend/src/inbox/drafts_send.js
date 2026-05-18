@@ -339,4 +339,211 @@ async function sendViaGuesty(guestyConversationId, body, channel) {
   return data;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// POST /api/inbox/drafts/:id/reject
+// Mark a pending draft as rejected. Captures the reviewer + an
+// optional reason. Skips the learning-collector hook GMS does
+// post-update — that's an intelligence-layer side effect (Stage 3).
+// ────────────────────────────────────────────────────────────────────
+router.post('/:id/reject', attachIdentity, async (req, res) => {
+  const draftId = req.params.id;
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : null;
+  const reviewedBy =
+    req.identity?.displayName
+    || req.identity?.username
+    || req.identity?.userId
+    || 'fad-user';
+  try {
+    const { rows } = await query(
+      `UPDATE drafts
+         SET state = 'rejected',
+             reviewed_by = $1,
+             rejection_reason = $2,
+             updated_at = NOW()
+       WHERE id = $3
+         AND state IN ('draft_ready', 'under_review')
+       RETURNING *`,
+      [reviewedBy, reason, draftId],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'draft_not_found', message: 'draft not in a reviewable state' });
+    }
+    console.log(`[drafts/reject] draft ${draftId} rejected by ${reviewedBy}${reason ? ` (${reason.slice(0, 80)})` : ''}`);
+    res.json({ draft: rows[0] });
+  } catch (e) {
+    console.error('[drafts/reject] error:', e.message);
+    res.status(500).json({ error: 'reject_failed', message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────
+// POST /api/inbox/drafts/:id/retry
+// Re-send a queued or failed draft. Same send orchestration as
+// /approve — we just enter from a different starting state.
+// Atomically claims the draft via state transition so concurrent
+// retries can't double-send.
+// ────────────────────────────────────────────────────────────────────
+router.post('/:id/retry', attachIdentity, async (req, res) => {
+  const draftId = req.params.id;
+  const reviewedBy =
+    req.identity?.displayName
+    || req.identity?.username
+    || req.identity?.userId
+    || 'fad-user';
+  try {
+    // Atomic claim — transitions to 'sending' only if in send_queued
+    // / send_failed. Prevents double-send race.
+    const claim = await query(
+      `UPDATE drafts d
+         SET state = 'sending', retry_count = COALESCE(retry_count, 0) + 1, updated_at = NOW()
+        FROM conversations c
+       WHERE d.id = $1 AND d.conversation_id = c.id
+         AND d.state IN ('send_queued', 'send_failed')
+       RETURNING d.id, d.conversation_id, d.draft_body, d.translated_content, d.sent_via, d.sent_language,
+                 c.guesty_conversation_id, c.channel, c.communication_channel, c.last_inbound_at, c.tenant_id`,
+      [draftId],
+    );
+    if (claim.rows.length === 0) {
+      // Could be: already sent (race lost), still sending, or just wrong state.
+      const check = await query(`SELECT state FROM drafts WHERE id = $1`, [draftId]);
+      const state = check.rows[0]?.state;
+      if (state === 'sent') return res.json({ draft: { id: draftId, state }, message: 'already sent' });
+      if (state === 'sending') return res.status(409).json({ error: 'send_in_progress' });
+      return res.status(404).json({ error: 'draft_not_found', message: 'not in a retryable state' });
+    }
+    const draft = claim.rows[0];
+    const channel = (draft.sent_via || draft.communication_channel || draft.channel || '').toLowerCase();
+
+    // WhatsApp window check — same gating as the approve path.
+    if (channel === 'whatsapp') {
+      const windowOpen = draft.last_inbound_at
+        && (Date.now() - new Date(draft.last_inbound_at).getTime()) < WA_WINDOW_MS;
+      if (!windowOpen) {
+        // Revert to send_failed so the user can try again after the
+        // guest replies (or via template).
+        await query(`UPDATE drafts SET state = 'send_failed', updated_at = NOW() WHERE id = $1`, [draftId]);
+        return res.status(409).json({
+          error: 'whatsapp_window_expired',
+          message: 'WhatsApp 24h window closed — guest must message first',
+        });
+      }
+    }
+
+    // Reuse the body/translation already on the draft if present,
+    // otherwise re-translate fresh from draft_body.
+    const messageBody = stripProtocolTags(draft.translated_content || draft.draft_body || '');
+    if (!messageBody.trim()) {
+      await query(`UPDATE drafts SET state = 'send_failed', updated_at = NOW() WHERE id = $1`, [draftId]);
+      return res.status(400).json({ error: 'empty_body' });
+    }
+
+    let sendResult;
+    try {
+      sendResult = await sendViaGuesty(draft.guesty_conversation_id, messageBody, channel);
+    } catch (e) {
+      await query(`UPDATE drafts SET state = 'send_failed', updated_at = NOW() WHERE id = $1`, [draftId]).catch(() => {});
+      return res.status(502).json({ error: 'guesty_send_failed', message: e.message });
+    }
+    const guestyMessageId =
+      sendResult?._id || sendResult?.id || sendResult?.data?._id
+      || sendResult?.message?._id || null;
+
+    await query(
+      `UPDATE drafts SET state = 'sent', sent_at = NOW(), send_method = 'manual',
+         reviewed_by = COALESCE(reviewed_by, $2), updated_at = NOW() WHERE id = $1`,
+      [draftId, reviewedBy],
+    );
+
+    const moduleType = channelToGuestyModule(channel);
+    await query(
+      `INSERT INTO messages (
+         tenant_id, conversation_id, guesty_message_id, direction, body,
+         translated_body, original_language, sender_name, sent_by, sent_via_system, module_type, created_at
+       ) VALUES ($1, $2, $3, 'outbound', $4, $5, $6, $7, $8, 'friday', $9, NOW())
+       ON CONFLICT (guesty_message_id) DO NOTHING`,
+      [
+        FR_TENANT_ID,
+        draft.conversation_id,
+        guestyMessageId,
+        messageBody,
+        draft.sent_language ? draft.draft_body : null,
+        draft.sent_language,
+        `${reviewedBy} via Friday`,
+        reviewedBy,
+        moduleType,
+      ],
+    ).catch((e) => console.warn('[drafts/retry] message insert failed:', e.message));
+
+    await query(
+      `UPDATE conversations SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [draft.conversation_id],
+    ).catch(() => {});
+
+    console.log(`[drafts/retry] ✓ draft ${draftId} sent via ${channel} (guesty_message_id=${guestyMessageId})`);
+    res.json({
+      ok: true,
+      draft: { id: draftId, state: 'sent' },
+      sent_at: new Date().toISOString(),
+      sent_via: channel,
+      guesty_message_id: guestyMessageId,
+    });
+  } catch (e) {
+    console.error('[drafts/retry] error:', e.message);
+    res.status(500).json({ error: 'retry_failed', message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────
+// POST /api/inbox/drafts/:id/fail
+// Manually mark a queued/sending draft as failed (cancels any
+// pending auto-retry on the GMS side — N/A here since we don't run
+// an auto-retry worker yet).
+// ────────────────────────────────────────────────────────────────────
+router.post('/:id/fail', attachIdentity, async (req, res) => {
+  const draftId = req.params.id;
+  try {
+    const { rows } = await query(
+      `UPDATE drafts
+         SET state = 'send_failed', next_retry_at = NULL, updated_at = NOW()
+       WHERE id = $1
+         AND state IN ('send_queued', 'sending')
+       RETURNING *`,
+      [draftId],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'queued_draft_not_found' });
+    }
+    res.json({ draft: rows[0], message: 'marked as failed' });
+  } catch (e) {
+    console.error('[drafts/fail] error:', e.message);
+    res.status(500).json({ error: 'fail_failed', message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────
+// POST /api/inbox/drafts/:id/dismiss
+// Remove a failed draft from the queue view (silent — no learning
+// event, no rejection_reason).
+// ────────────────────────────────────────────────────────────────────
+router.post('/:id/dismiss', attachIdentity, async (req, res) => {
+  const draftId = req.params.id;
+  try {
+    const { rows } = await query(
+      `UPDATE drafts
+         SET state = 'dismissed', next_retry_at = NULL, updated_at = NOW()
+       WHERE id = $1
+         AND state = 'send_failed'
+       RETURNING *`,
+      [draftId],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'failed_draft_not_found' });
+    }
+    res.json({ draft: rows[0], message: 'dismissed' });
+  } catch (e) {
+    console.error('[drafts/dismiss] error:', e.message);
+    res.status(500).json({ error: 'dismiss_failed', message: e.message });
+  }
+});
+
 module.exports = router;

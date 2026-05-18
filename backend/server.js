@@ -1463,40 +1463,13 @@ function injectReviewer(req, _res, next) {
   next();
 }
 
-// Approve & send. Body: { reviewed_by, sent_via, draft_body? (if edited),
-// learnMode?: 'learn'|'no_learn'|'normal', scope?: 'global'|'property' }.
-// Returns 409 with { error: 'whatsapp_window_expired' } when the WA 24h
-// window has closed — frontend shows the "use template" toast.
-app.post('/api/inbox/drafts/:id/approve', requireAuth, _identityForDrafts, injectReviewer, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/drafts/${req.params.id}/approve`, 'post')
-));
-
-// Reject. Body: { reason? }. Empty reason = dismiss (no learning).
-// Populated reason = rejected with learning event captured.
-app.post('/api/inbox/drafts/:id/reject', requireAuth, _identityForDrafts, injectReviewer, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/drafts/${req.params.id}/reject`, 'post')
-));
-
-// Revise. Body: { revision_instruction, mode?: 'standard'|'teach'|'one_time',
-// scope?: 'global'|'property' }. Kicks off async re-generation; current
-// draft transitions to revision_requested; new draft created with
-// revision_number = prev + 1. Frontend awaits SSE draft_updated to clear
-// the "Friday is revising…" spinner.
+// /approve, /reject, /retry, /fail, /dismiss are now FAD-native — see
+// the draftsSendRouter mounted above (./src/inbox/drafts_send.js).
+//
+// /revise stays proxied to GMS because it triggers draft regeneration
+// (intelligence-layer-adjacent — Stage 3 port).
 app.post('/api/inbox/drafts/:id/revise', requireAuth, _identityForDrafts, injectReviewer, asyncHandler((req, res) =>
   gmsProxy(req, res, `/api/drafts/${req.params.id}/revise`, 'post')
-));
-
-// Send-queue management (for the queued-draft retry cards in the thread).
-app.post('/api/inbox/drafts/:id/retry', requireAuth, _identityForDrafts, injectReviewer, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/drafts/${req.params.id}/retry`, 'post')
-));
-
-app.post('/api/inbox/drafts/:id/fail', requireAuth, _identityForDrafts, injectReviewer, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/drafts/${req.params.id}/fail`, 'post')
-));
-
-app.post('/api/inbox/drafts/:id/dismiss', requireAuth, _identityForDrafts, injectReviewer, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/drafts/${req.params.id}/dismiss`, 'post')
 ));
 
 // ─── Friday Consult (Ask Friday) ──────────────────────────────────────
