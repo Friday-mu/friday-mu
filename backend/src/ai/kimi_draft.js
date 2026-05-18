@@ -171,9 +171,96 @@ async function classifyMessageWithKimi(text) {
   return VALID_CATEGORIES.includes(raw) ? raw : 'other';
 }
 
+// Public API — structured (JSON) extraction. Used by action_detector
+// (Phase 3.2) and later by consult/learning surfaces that need a small
+// reliably-parseable JSON envelope. Defaults to moonshot-v1-8k for
+// cost since these calls are typically a few hundred output tokens.
+//
+// Returns { ok, parsed, raw, inputTokens, outputTokens, model, latencyMs, error? }.
+// On parse failure, returns { ok: false, error, raw } so the caller can
+// log/inspect what the model actually returned.
+const EXTRACT_MODEL = process.env.KIMI_EXTRACT_MODEL || 'moonshot-v1-8k';
+const EXTRACT_MAX_TOKENS = Number(process.env.KIMI_EXTRACT_MAX_TOKENS) || 800;
+const EXTRACT_TIMEOUT_MS = Number(process.env.KIMI_EXTRACT_TIMEOUT_MS) || 20_000;
+
+async function extractStructuredOutput({ system, user, model, maxTokens, timeoutMs }) {
+  if (!process.env.KIMI_API_KEY) {
+    return { ok: false, error: 'KIMI_API_KEY not set' };
+  }
+  const start = Date.now();
+  const m = model || EXTRACT_MODEL;
+  try {
+    const { data } = await axios.post(
+      `${KIMI_BASE_URL}/chat/completions`,
+      {
+        model: m,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        temperature: 0.0,
+        max_tokens: maxTokens || EXTRACT_MAX_TOKENS,
+        response_format: { type: 'json_object' },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: timeoutMs || EXTRACT_TIMEOUT_MS,
+      },
+    );
+    const raw = data?.choices?.[0]?.message?.content;
+    if (typeof raw !== 'string') {
+      return { ok: false, error: 'no response text', latencyMs: Date.now() - start };
+    }
+    // Most models honour response_format and emit clean JSON, but a few
+    // wrap it in code fences. Strip a single ```json fence if present.
+    const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+    try {
+      const parsed = JSON.parse(cleaned);
+      return {
+        ok: true,
+        parsed,
+        raw,
+        inputTokens: data?.usage?.prompt_tokens ?? null,
+        outputTokens: data?.usage?.completion_tokens ?? null,
+        model: m,
+        latencyMs: Date.now() - start,
+      };
+    } catch (parseErr) {
+      // Fallback: try to pull the first {...} block out of the raw text.
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+          return {
+            ok: true,
+            parsed: JSON.parse(match[0]),
+            raw,
+            inputTokens: data?.usage?.prompt_tokens ?? null,
+            outputTokens: data?.usage?.completion_tokens ?? null,
+            model: m,
+            latencyMs: Date.now() - start,
+          };
+        } catch { /* fall through */ }
+      }
+      return { ok: false, error: `JSON parse failed: ${parseErr.message}`, raw, latencyMs: Date.now() - start };
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.response?.data?.error?.message || e.message,
+      status: e.response?.status,
+      latencyMs: Date.now() - start,
+    };
+  }
+}
+
 module.exports = {
   generateDraftReply,
   classifyMessageWithKimi,
+  extractStructuredOutput,
   DRAFT_MODEL,
   CLASSIFY_MODEL,
+  EXTRACT_MODEL,
 };

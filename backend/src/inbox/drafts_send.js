@@ -30,6 +30,12 @@ const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { translateText, getConversationLanguageFallback } = require('../ai/translate');
 const { guestyRequest } = require('../website_inbox/guesty');
+const { detectActions } = require('./action_detector');
+
+// Feature flag — set FAD_ACTION_DETECTOR_DISABLED=true on the backend
+// env to stop post-send commitment detection. Rollback handle for
+// Phase 3.2 if Kimi pending_actions misbehave.
+const ACTION_DETECTOR_DISABLED = process.env.FAD_ACTION_DETECTOR_DISABLED === 'true';
 
 const router = express.Router();
 
@@ -93,7 +99,7 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
     const { rows } = await query(
       `SELECT d.id, d.conversation_id, d.draft_body, d.state, d.confidence,
               c.guesty_conversation_id, c.channel, c.communication_channel,
-              c.last_inbound_at, c.tenant_id
+              c.last_inbound_at, c.tenant_id, c.guest_name, c.property_name
          FROM drafts d
          JOIN conversations c ON c.id = d.conversation_id
          WHERE d.id = $1
@@ -280,6 +286,22 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
   ).catch(() => {});
 
   console.log(`[drafts/approve] ✓ draft ${draftId} sent via ${channel} (guesty_message_id=${guestyMessageId})`);
+
+  // Phase 3.2 — scan the sent message for commitments the team made
+  // ("we'll check with the owner", "we'll send you the address") and
+  // create pending_actions for each. Fire-and-forget so a slow Kimi
+  // call never blocks the operator's response ack.
+  if (!ACTION_DETECTOR_DISABLED) {
+    detectActions({
+      draftBody: messageBody,
+      conversationId: draftRow.conversation_id,
+      guestName: draftRow.guest_name || null,
+      propertyCode: draftRow.property_name || null,
+    }).catch((e) => {
+      console.error(`[drafts/approve] action-detector failed for draft ${draftId}:`, e.message);
+    });
+  }
+
   return res.json({
     ok: true,
     draft: { id: draftId, state: 'sent' },
