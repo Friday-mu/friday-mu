@@ -85,12 +85,10 @@ Do not inline bank account details in any guest-facing draft. Direct-booking inq
 - Deposit: 20-30% security deposit or fixed amount based on property value
 - Contract: Rental agreement required (guest names, dates, address, cost breakdown, cancellation, house rules, damage liability, check-in/out, max occupancy)
 - ID verification: Government-issued ID from primary guest
-- Payment methods: Bank transfer preferred; credit card via processor; PayPal acceptable [⚠ CONFLICTING TEACHING — see Decision Pending below]
+- Payment methods: Bank transfer (preferred) or cash. We do NOT accept card payments or PayPal for direct bookings.
 - Payment split: Full payment upfront is the standard policy. The 50/50 split (50% deposit now, 50% on arrival) is offered as a flexible exception, not the default. Use this framing in negotiations when guests try to reduce the deposit further.
-- Payment confirmation: Verify funds are actually received in the bank account before confirming a reservation or blocking the calendar. Payment links, screenshots, or proof of transfer initiation are NOT confirmation — transfer platforms (Wise, PayPal, etc.) allow senders to cancel or reverse after initiating. Calendar blocks only after funds are confirmed in account.
-- Never accept cash for full booking amount — always documented payment trail
-
-> **Decision pending (2026-05-19):** Teaching `1350ef8c` (currently active) states "For direct bookings, we do not accept card payments. Available payment methods are bank transfer or cash only" — conflicts with the line above accepting credit card. Held for Ishant resolution.
+- Payment confirmation: Verify funds are actually received in the bank account before confirming a reservation or blocking the calendar. Payment links, screenshots, or proof of transfer initiation are NOT confirmation — transfer platforms allow senders to cancel or reverse after initiating. Calendar blocks only after funds are confirmed in account.
+- Never accept cash for full booking amount — always documented payment trail.
 
 ## Marketing
 
