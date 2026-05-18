@@ -1365,17 +1365,19 @@ app.get('/api/auth/login-roster', asyncHandler(async (req, res) => {
   }
 }));
 
-app.get('/api/inbox/conversations', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, '/api/conversations')
-));
-
-app.get('/api/inbox/conversations/:id', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/conversations/${req.params.id}`)
-));
-
-app.get('/api/inbox/conversations/:id/messages', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/conversations/${req.params.id}/messages`)
-));
+// Inbox read-side, Phase 1 port — GET conversations list, detail,
+// messages. Replaces the three gmsProxy routes that previously sat
+// here. Native SQL against the shared Postgres; see
+// backend/src/inbox/conversations_read.js. Per the rebuild audit memo
+// docs/handover/2026-05-18-gms-rebuild-audit.md (Option A).
+//
+// The mount captures the three specific GET paths inside the router.
+// PATCHes and other methods on /api/inbox/conversations/:id (read,
+// unread, status update, translate, etc.) still match the inline
+// gmsProxy routes below — Express continues past this router for any
+// inner path the router doesn't handle.
+const conversationsReadRouter = require('./src/inbox/conversations_read');
+app.use('/api/inbox/conversations', conversationsReadRouter);
 
 app.get('/api/inbox/conversations/:id/reservation', requireAuth, asyncHandler((req, res) =>
   gmsProxy(req, res, `/api/conversations/${req.params.id}/reservation`)
