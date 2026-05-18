@@ -14,8 +14,8 @@ Distinct from the earlier-in-the-day evening-consolidation handover
 
 - **Branch:** `fad-design-os-v01-frontend`
 - **Worktree:** `/Users/judith/repos/friday-admin-dashboard/.claude/worktrees/fad-design-os`
-- **HEAD at session close:** `99f6c50` (Stage 3.0 KB composer port)
-- **fad-backend deployed:** matches HEAD, restart count #146
+- **HEAD at session close:** `954b1e8` (public-API listing DTO expanded for website's zero-touch publishing — 8 new fields projected from raw JSONB)
+- **fad-backend deployed:** matches HEAD, restart count #148
 - **friday-gms deployed:** `c2eb781` (dedup fix earlier today), pm2 restart #3208 — stays running through Stage 3, intelligence-layer routes still proxy here
 - **Frontend deployed:** `0de257b-fix` (sent-by + channel display, env-var-corrected build)
 
@@ -55,6 +55,7 @@ ssh -i ~/.ssh/do_friday_admin root@gms.friday.mu 'df -h / | tail -1'
 - Outbound send via fad-backend's own Guesty client — `backend/src/inbox/drafts_send.js`. Translates EN→guest-lang via thin Kimi call. ON CONFLICT dedup against webhook race.
 - 4 draft state mutations native: reject, retry, fail, dismiss
 - Public API Stage 1: `POST /api/auth/token` + `GET /api/public/listings` + `GET /api/public/listings/:nickname`. friday-website client minted (`8eb6d92a...`).
+- **Zero-touch publishing policy locked** (Ishant, 2026-05-18 late). Website drops `_seed/properties.json` whitelist; FAD becomes single source of truth for what appears on friday.mu. Listing DTO expanded to 36 keys (gallery, lat/lng, description, summary, space, amenities, houseRules, checkInTime, checkOutTime, address.street/zipcode/state, reviewsCount, reviewsAvg) all projected from `guesty_listings.raw` at query time — commit `954b1e8`.
 - KB composer at `backend/src/knowledge/composer.js` — byte-identical to GMS for same input (verified MD5)
 - Sender + via-channel display in inbox bubbles
 - Send dedup (GMS-side drafts.ts now captures guesty_message_id)
