@@ -62,14 +62,19 @@ router.post('/', async (req, res) => {
   const requestUa = String(req.headers['user-agent'] || '').slice(0, 500);
 
   const refuse = async (status, code, reason) => {
+    const requestId = crypto.randomUUID();
     try {
       await query(
-        `INSERT INTO api_client_audit (client_id, event, reason, request_ip, request_ua)
-         VALUES ($1, 'token_refused', $2, $3, $4)`,
-        [clientId || '<unknown>', reason || code, requestIp, requestUa],
+        `INSERT INTO api_client_audit (client_id, event, reason, request_ip, request_ua, metadata)
+         VALUES ($1, 'token_refused', $2, $3, $4, $5)`,
+        [clientId || '<unknown>', reason || code, requestIp, requestUa, JSON.stringify({ request_id: requestId })],
       );
     } catch { /* audit best-effort */ }
-    return res.status(status).json({ error: code, error_description: reason });
+    // Per website-side fadFetch contract: { error, message, request_id }.
+    // The OAuth 2.0 RFC's error_description is dropped — fadFetch keys
+    // on `message` instead, and request_id joins our audit log to their
+    // thrown error for cross-side debug.
+    return res.status(status).json({ error: code, message: reason || code, request_id: requestId });
   };
 
   if (grantType !== 'client_credentials') {
@@ -162,14 +167,24 @@ router.post('/', async (req, res) => {
 // JWT verifier — middleware for /api/public/*
 // ────────────────────────────────────────────────────────────────────
 
+// Uniform error envelope for the public-API surface (matches the
+// shape fadFetch on the website expects: { error, message, request_id }).
+function apiError(res, status, code, message) {
+  return res.status(status).json({
+    error: code,
+    message: message || code,
+    request_id: crypto.randomUUID(),
+  });
+}
+
 function attachApiClient(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'invalid_token', error_description: 'missing Bearer token' });
+    return apiError(res, 401, 'invalid_token', 'missing Bearer token');
   }
   const token = auth.slice('Bearer '.length).trim();
   if (!process.env.JWT_SECRET) {
-    return res.status(500).json({ error: 'server_error', error_description: 'token verification unavailable' });
+    return apiError(res, 500, 'server_error', 'token verification unavailable');
   }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, {
@@ -185,10 +200,12 @@ function attachApiClient(req, res, next) {
     };
     next();
   } catch (e) {
-    return res.status(401).json({
-      error: 'invalid_token',
-      error_description: e.name === 'TokenExpiredError' ? 'token expired' : 'token verification failed',
-    });
+    return apiError(
+      res,
+      401,
+      'invalid_token',
+      e.name === 'TokenExpiredError' ? 'token expired' : 'token verification failed',
+    );
   }
 }
 
@@ -198,12 +215,7 @@ function requireScope(...required) {
     const have = req.apiClient?.scopes || [];
     for (const need of required) {
       if (!have.includes(need)) {
-        return res.status(403).json({
-          error: 'insufficient_scope',
-          error_description: `missing scope: ${need}`,
-          required: required,
-          granted: have,
-        });
+        return apiError(res, 403, 'insufficient_scope', `missing scope: ${need}`);
       }
     }
     next();

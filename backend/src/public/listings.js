@@ -17,6 +17,18 @@ const crypto = require('crypto');
 const { query } = require('../database/client');
 const { attachApiClient, requireScope } = require('../auth/api_clients');
 
+// Per the website-side fadFetch contract (their lib/fad-client/auth.ts):
+// every public-API error response includes { error, message, request_id }.
+// The request_id is generated per response and surfaces in their thrown
+// errors so cross-side debugging joins. Helper keeps the shape consistent.
+function publicError(res, status, code, message) {
+  return res.status(status).json({
+    error: code,
+    message: message || code,
+    request_id: crypto.randomUUID(),
+  });
+}
+
 const router = express.Router();
 
 // Shape the website uses. Mirrors the internal /api/properties shape
@@ -71,13 +83,16 @@ router.get('/', attachApiClient, requireScope('listings:read'), async (req, res)
          ORDER BY nickname`,
       [req.apiClient.tenantId],
     );
+    // Single named-key envelope per the website-side contract — no
+    // generic { data, error, meta } wrapper, no bonus keys like `total`.
+    // Forward-compat: extra keys can be bolted in later (pagination
+    // cursor, rate-limit meta) without breaking their types.
     sendWithEtag(req, res, {
       listings: rows.map(shapeListingPublic),
-      total: rows.length,
     });
   } catch (e) {
     console.error('[public/listings] list error:', e.message);
-    res.status(500).json({ error: 'server_error', error_description: e.message });
+    publicError(res, 500, 'server_error', e.message);
   }
 });
 
@@ -86,7 +101,7 @@ router.get('/:nickname', attachApiClient, requireScope('listings:read'), async (
     // Look up by nickname OR guesty_id (both unique). Lets callers use
     // whichever they have without a second lookup.
     const key = String(req.params.nickname || '').trim();
-    if (!key) return res.status(400).json({ error: 'invalid_request', error_description: 'nickname required' });
+    if (!key) return publicError(res, 400, 'invalid_request', 'nickname required');
     const { rows } = await query(
       `SELECT * FROM guesty_listings
          WHERE tenant_id = $1
@@ -95,12 +110,12 @@ router.get('/:nickname', attachApiClient, requireScope('listings:read'), async (
       [req.apiClient.tenantId, key],
     );
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'not_found', error_description: 'no listing with that nickname or id' });
+      return publicError(res, 404, 'not_found', 'no listing with that nickname or id');
     }
     sendWithEtag(req, res, { listing: shapeListingPublic(rows[0]) });
   } catch (e) {
     console.error('[public/listings] detail error:', e.message);
-    res.status(500).json({ error: 'server_error', error_description: e.message });
+    publicError(res, 500, 'server_error', e.message);
   }
 });
 
