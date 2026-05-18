@@ -62,13 +62,18 @@ const ENGLISH_MARKERS = new Set([
 const NON_LATIN_SCRIPT = /[Ͱ-ϿЀ-ӿԀ-ԯ֐-׿؀-ۿ฀-๿ऀ-ॿ一-鿿぀-ゟ゠-ヿ가-힯]/;
 
 function looksEnglish(text) {
-  if (!text || typeof text !== 'string') return true;
+  if (!text || typeof text !== 'string') return false;
   const trimmed = text.trim();
-  if (trimmed.length < 15) return true;
+  if (!trimmed) return false;
   // Any non-Latin script character → definitely not English. Must NOT
   // short-circuit, must call the LLM. (Earlier bug: Japanese / Russian
   // text returned 0 Latin words and falsely tripped the "too short" gate.)
   if (NON_LATIN_SCRIPT.test(trimmed)) return false;
+  // Removed the previous `length < 15` short-circuit per Ishant
+  // 2026-05-18 — it false-positived short non-English greetings
+  // ("Bonjour", "Merci", "Danke" etc.) as English and they never got
+  // translated. Cost of dropping is one extra Kimi call per short
+  // message; trade is worth it for correctness.
   const words = trimmed.toLowerCase().match(/\b[a-zà-ÿ]+\b/g) || [];
   if (words.length < 6) return false; // Latin script but too few words to be confident
   const distinctHits = new Set();
@@ -76,6 +81,36 @@ function looksEnglish(text) {
   const density = distinctHits.size === 0 ? 0 :
     [...distinctHits].reduce((n, w) => n + words.filter((x) => x === w).length, 0) / words.length;
   return distinctHits.size >= 2 && density >= 0.08;
+}
+
+// Conversation-language fallback chain. Ported from friday-gms
+// draft-generator.ts getConversationLanguageFallback. Used when the
+// LLM can't detect a language confidently — e.g. emoji-only messages,
+// very short text, or model parse failure. Chain:
+//   1. conversations.last_detected_language (cached on the row)
+//   2. most-recent non-NULL inbound original_language in the thread
+//   3. 'en' as final fallback (never error / fail-open)
+async function getConversationLanguageFallback(conversationId) {
+  if (!conversationId) return 'en';
+  try {
+    const cached = await require('../database/client').query(
+      'SELECT last_detected_language FROM conversations WHERE id = $1',
+      [conversationId],
+    );
+    const lang = cached.rows[0]?.last_detected_language;
+    if (lang) return lang;
+    const inbound = await require('../database/client').query(
+      `SELECT original_language FROM messages
+         WHERE conversation_id = $1
+           AND direction = 'inbound'
+           AND original_language IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1`,
+      [conversationId],
+    );
+    return inbound.rows[0]?.original_language || 'en';
+  } catch {
+    return 'en';
+  }
 }
 
 // ────────────────── disk cache ──────────────────
@@ -157,9 +192,18 @@ async function translateText(text, opts = {}) {
   const trimmed = text.trim();
   if (!trimmed) return emptyResult(text);
 
-  // Emoji-only short-circuit (matches GMS).
+  // Emoji-only short-circuit (matches GMS). Source language must
+  // fall back through the conversation's prior detected language,
+  // not hard-code 'en' — otherwise a guest who has been chatting in
+  // German sends "👍" and we'd switch their language to English on
+  // the next outbound translate. Per Ishant's smiley rule: default
+  // to the last known language, fall through to 'en' only when
+  // there is no prior language on the thread.
   if (isEmojiOnly(trimmed)) {
-    return { translated: trimmed, original: trimmed, sourceLang: 'en', cached: false, model: null, latencyMs: 0, reason: 'emoji-only' };
+    const sourceLang = opts.conversationId
+      ? await getConversationLanguageFallback(opts.conversationId)
+      : 'en';
+    return { translated: trimmed, original: trimmed, sourceLang, cached: false, model: null, latencyMs: 0, reason: 'emoji-only' };
   }
 
   // Channel-supplied language hint (Booking has content.language_code).
@@ -193,7 +237,12 @@ async function translateText(text, opts = {}) {
     };
   }
 
-  const detectedLang = kimi.parsed.language;
+  // When Kimi parses but returns no language (blocked code, missing
+  // field, JSON malformed past the parser's recovery) — fall back to
+  // the conversation's known language so we never write NULL and the
+  // worker doesn't keep retrying the same row.
+  const detectedLang = kimi.parsed.language
+    || (opts.conversationId ? await getConversationLanguageFallback(opts.conversationId) : 'en');
   // LLM says English → no translation needed, return original.
   const finalTranslated = (detectedLang === 'en' || !kimi.parsed.translation)
     ? trimmed
@@ -237,5 +286,6 @@ module.exports = {
   translateText,
   looksEnglish,
   isEmojiOnly,
+  getConversationLanguageFallback,
   getCacheStats,
 };

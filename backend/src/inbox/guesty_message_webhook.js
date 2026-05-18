@@ -86,6 +86,120 @@ function mapChannel(message, conversation) {
   return s.slice(0, 50);
 }
 
+// Auto-responses Guesty CS or channel platforms send on our behalf —
+// regex-matched on body text. Ported from friday-gms poller's
+// isGuestyAutoResponse so identical heuristics catch identical noise.
+// Outbound messages matching these patterns get is_auto_response=true
+// so they're filtered out of read-status / next-step / language-
+// detection queries downstream.
+const AUTO_RESPONSE_PATTERNS = [
+  /thank you for your message/i,
+  /our team will get back to you/i,
+  /thank you for your patience/i,
+  /thank you for contacting/i,
+  /we have received your message/i,
+  /we will respond as soon as possible/i,
+  /we will get back to you/i,
+  /your message has been received/i,
+  /merci pour votre message/i,
+  /nous vous répondrons/i,
+];
+
+function isGuestyAutoResponse(body) {
+  if (!body || typeof body !== 'string') return false;
+  return AUTO_RESPONSE_PATTERNS.some((rx) => rx.test(body));
+}
+
+// System notifications from Guesty (booking confirmations, status
+// changes, cancellation pings). Same heuristics as GMS's
+// isSystemNotification — body-text-based pattern matching. We tag
+// these is_auto_response=true so they don't trigger draft generation
+// or pollute the unread badge logic.
+function isSystemNotification(body) {
+  if (!body || typeof body !== 'string') return false;
+  const lower = body.toLowerCase();
+  if (lower.startsWith('new guest reservation') || lower.startsWith('new guest inquiry')) return true;
+  if (lower.includes('status changed to')) return true;
+  if (/reservation\s+[a-f0-9]{10,}/i.test(body)) return true;
+  if (lower.startsWith('booking confirmed') || lower.startsWith('reservation confirmed')) return true;
+  if (lower.startsWith('check-in reminder') || lower.startsWith('check-out reminder')) return true;
+  if (lower.includes('has been canceled') || lower.includes('has been cancelled')) return true;
+  if (lower.includes('payment received') || lower.includes('payment failed')) return true;
+  return false;
+}
+
+// Body + attachments + reaction-flag derivation. Mirrors GMS poller
+// lines 240-295 — the historical fix for "empty body" messages that
+// otherwise render as blank bubbles. Handles three categories:
+//   (a) text + optional attachments → strip HTML, append attachment
+//       indicator if media present
+//   (b) attachments-only → synthesize a "📎 Guest sent N photos/..."
+//       placeholder body
+//   (c) empty body + no attachments → likely a reaction, synthesize
+//       "💬 Guest may have reacted" + flag for the caller to skip
+//       draft generation
+function processBodyAndAttachments(message) {
+  let body = String(message?.body || '').slice(0, 50_000).trim();
+  // Lightweight HTML strip — Guesty occasionally surfaces channel
+  // platform HTML (Airbnb especially). Removes tags + collapses ws.
+  body = body.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+
+  const attachmentsRaw = Array.isArray(message?.attachments) ? message.attachments : [];
+  const attachments = attachmentsRaw
+    .filter((a) => a && (a.url || a.original))
+    .map((a) => ({
+      url: a.url || a.original,
+      filename: a.filename || null,
+      mimeType: a.mimeType || a.type || null,
+    }));
+
+  let isReaction = false;
+
+  if (!body && attachments.length > 0) {
+    const types = attachments.map((a) => {
+      const m = String(a.mimeType || '').toLowerCase();
+      if (m.startsWith('image/')) return 'photo';
+      if (m.startsWith('video/')) return 'video';
+      if (m.startsWith('audio/')) return 'audio';
+      return 'file';
+    });
+    const uniqueTypes = [...new Set(types)];
+    body = `📎 Guest sent ${attachments.length} ${uniqueTypes.join('/')}${attachments.length > 1 ? 's' : ''}`;
+  } else if (!body) {
+    // No body and no filterable attachments — check the raw payload
+    // for any attachment hints we might have dropped (no url but a
+    // thumbnail / filename present).
+    if (attachmentsRaw.length > 0) {
+      const urls = attachmentsRaw.map((a) => a?.url || a?.original || a?.thumbnail).filter(Boolean);
+      if (urls.length > 0) {
+        for (const a of attachmentsRaw) {
+          const url = a?.url || a?.original || a?.thumbnail;
+          if (!url) continue;
+          attachments.push({
+            url,
+            filename: a?.filename || 'attachment',
+            mimeType: a?.mimeType || a?.type || 'image/jpeg',
+          });
+        }
+        body = `📷 Guest sent ${urls.length} image${urls.length > 1 ? 's' : ''}`;
+      } else {
+        body = '📷 Guest sent media (image may not be available via API)';
+      }
+    } else {
+      // Truly empty. Best guess: reaction (👍 etc.) or an unsupported
+      // type Guesty couldn't surface. Tag as reaction so the caller
+      // can skip draft generation; otherwise we'd ask Kimi to draft
+      // a reply to an empty message.
+      body = '💬 Guest may have reacted to a message';
+      isReaction = true;
+    }
+  } else if (attachments.length > 0 && !body.startsWith('📎') && !body.startsWith('📷')) {
+    body += `\n📎 ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}`;
+  }
+
+  return { body, attachments, isReaction };
+}
+
 // Guesty's `message.from` is a STRING — either bare email or
 // "Display Name <email>". Extract email + display name defensively.
 function parseFromString(from) {
@@ -176,7 +290,11 @@ async function handleMessageEvent(event) {
   }
 
   const direction = mapDirection(message, eventType);
-  const body = String(message.body || '').slice(0, 50_000);
+
+  // Derive body + attachments + reaction flag via the GMS-poller-
+  // equivalent processor. Handles the empty-body / attachment-only /
+  // reaction-only cases so the bubble never renders blank.
+  const { body, attachments, isReaction } = processBodyAndAttachments(message);
 
   // Sender name: parse from the `from` string for inbound (guest);
   // fall back to conversation.meta.guestName. Outbound has no
@@ -199,11 +317,29 @@ async function handleMessageEvent(event) {
   // detectLanguage on body and fills original_language + translated_body
   // properly within ~60s.
 
+  // Module type — Guesty's per-message channel marker. Live in
+  // message.module which is sometimes `{ type: 'whatsapp' }` and
+  // sometimes the bare string. Preserve the raw value; the FAD
+  // adapter (inboxClient.ts MODULE_TYPE_LABEL) normalises display.
+  const rawModule = message?.module;
+  const moduleType = (rawModule && typeof rawModule === 'object'
+    ? rawModule.type
+    : (rawModule ? String(rawModule) : null)) || null;
+
+  // is_auto_response covers two upstream categories of "not really a
+  // human reply" outbound messages: Guesty CS canned responses
+  // (regex on body) and Guesty system pings (booking confirmations
+  // etc.). Downstream queries filter these out of read-status /
+  // next-step / draft-trigger logic.
+  const isAutoResponse = direction === 'outbound'
+    && (isGuestyAutoResponse(body) || isSystemNotification(body));
+
   const inserted = await query(
     `INSERT INTO messages (
        tenant_id, conversation_id, guesty_message_id, direction,
-       body, sender_name, created_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+       body, sender_name, created_at,
+       module_type, attachments, is_auto_response
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (guesty_message_id) DO NOTHING
      RETURNING id`,
     [
@@ -214,6 +350,9 @@ async function handleMessageEvent(event) {
       body,
       senderName,
       createdAt,
+      moduleType,
+      attachments.length > 0 ? JSON.stringify(attachments) : null,
+      isAutoResponse,
     ],
   );
 
@@ -232,8 +371,22 @@ async function handleMessageEvent(event) {
     [conversationId, createdAt, direction],
   );
 
-  console.log(`[guesty/webhook/msg] inserted ${direction} message ${inserted.rows[0].id} (guesty=${guestyMessageId}) into conversation ${conversationId}`);
-  return { messageId: inserted.rows[0].id, conversationId, direction };
+  // Auto-reopen: a new inbound message on a 'done' conversation
+  // means the guest is back and we need to attend to it. GMS poller
+  // did this; we preserve the behavior so closed threads don't
+  // silently swallow new replies.
+  if (direction === 'inbound' && !isReaction) {
+    await query(
+      `UPDATE conversations
+         SET status = 'active', updated_at = NOW()
+       WHERE id = $1 AND status = 'done'`,
+      [conversationId],
+    ).catch((e) => console.warn('[guesty/webhook/msg] auto-reopen failed:', e.message));
+  }
+
+  const tag = isReaction ? ' [reaction]' : isAutoResponse ? ' [auto-response]' : '';
+  console.log(`[guesty/webhook/msg] inserted ${direction}${tag} message ${inserted.rows[0].id} (guesty=${guestyMessageId}) into conversation ${conversationId}`);
+  return { messageId: inserted.rows[0].id, conversationId, direction, isReaction, isAutoResponse };
 }
 
 module.exports = { isMessageEvent, handleMessageEvent };

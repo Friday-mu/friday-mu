@@ -35,7 +35,7 @@ async function translateOneTick() {
     // where language was set but translation is missing AND language
     // is non-English (legacy rows that GMS's poller didn't reach).
     const { rows } = await query(
-      `SELECT id, body
+      `SELECT id, conversation_id, body
          FROM messages
          WHERE direction = 'inbound'
            AND created_at > NOW() - INTERVAL '${LOOKBACK_DAYS} days'
@@ -45,6 +45,13 @@ async function translateOneTick() {
            )
            AND body IS NOT NULL
            AND LENGTH(body) > 0
+           -- Skip the synthetic placeholder bodies the webhook writes
+           -- for attachment-only / reaction-only / system messages.
+           -- They're not real text to translate; running detectLanguage
+           -- on them burns Kimi calls for no value.
+           AND body NOT LIKE '📎%'
+           AND body NOT LIKE '📷%'
+           AND body NOT LIKE '💬%'
          ORDER BY created_at DESC
          LIMIT $1`,
       [BATCH_SIZE],
@@ -54,7 +61,7 @@ async function translateOneTick() {
 
     for (const row of rows) {
       try {
-        const result = await translateText(row.body);
+        const result = await translateText(row.body, { conversationId: row.conversation_id });
         // translateText returns { translated, sourceLang, ... }.
         // sourceLang is the detected language. translated is either
         // the English translation OR the original (if already English).
@@ -81,6 +88,16 @@ async function translateOneTick() {
             [sourceLang, result.translated || null, row.id],
           );
         }
+
+        // Cache the detected language on the conversation so future
+        // emoji-only / undetectable messages can fall back to it
+        // (matches GMS's last_detected_language column behavior).
+        await query(
+          `UPDATE conversations
+             SET last_detected_language = $1
+           WHERE id = $2 AND last_detected_language IS DISTINCT FROM $1`,
+          [sourceLang, row.conversation_id],
+        ).catch(() => {});
       } catch (e) {
         console.warn(`[translation/worker] row ${row.id} failed:`, e.message);
       }
