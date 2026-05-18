@@ -915,6 +915,14 @@ app.use('/api/auth/token', apiClientsAuth.router);
 const publicListingsRoutes = require('./src/public/listings');
 app.use('/api/public/listings', publicListingsRoutes);
 
+// /api/public/chat — multi-provider chat-completions proxy. Replaces
+// the website's three direct LLM integrations (Ask Friday hero,
+// owner-enquiry chat, feedback FAB chat). Streaming SSE + non-streaming
+// JSON. Kimi K2.6 primary, Anthropic Claude fallback on 429.
+// Per FAD-HANDOFF-PUBLIC-CHAT-2026-05-18.md.
+const publicChatRoutes = require('./src/public/chat');
+app.use('/api/public/chat', publicChatRoutes);
+
 // Defensive multitenant lockdown — applied to every route mounted
 // below this line. Non-FR tenants get 403 on any non-design / non-
 // tenants route; FR continues unchanged. Routes whose queries have
