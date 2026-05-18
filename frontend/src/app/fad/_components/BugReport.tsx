@@ -10,6 +10,18 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
 import { useDictation } from './useDictation';
+import { useDoubleTapModifier } from './useDoubleTapModifier';
+
+// Pick the platform-appropriate modifier symbol to surface in tooltips
+// and hints. Mac shows ⌘ (Cmd); everyone else shows "Ctrl". Detection is
+// best-effort — userAgentData.platform is preferred when available
+// (Chromium), with a navigator.platform fallback for older browsers.
+function getModifierSymbol(): string {
+  if (typeof navigator === 'undefined') return '⌘';
+  const uaData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  const platform = uaData?.platform || navigator.platform || '';
+  return /mac|iphone|ipad|ipod/i.test(platform) ? '⌘' : 'Ctrl';
+}
 
 function IconMic({ size = 14, active = false }: { size?: number; active?: boolean }) {
   return (
@@ -184,6 +196,14 @@ export function BugReportFab({ currentModuleLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
+  // Set when the modal is opened via the ⌘⌘ / Ctrl-Ctrl shortcut so the
+  // child modal knows to auto-start dictation as soon as it mounts.
+  const [shouldAutoStartDictation, setShouldAutoStartDictation] = useState(false);
+  // Bumped on every ⌘⌘ tap that arrives while the modal is already
+  // open. The child modal watches this to toggle dictation from
+  // outside (the dictation hook lives in the modal, not here, so we
+  // signal via a counter rather than calling toggle directly).
+  const [dictationToggleSeq, setDictationToggleSeq] = useState(0);
 
   // Kick off the html2canvas dynamic import in the background as soon as
   // the FAB mounts. By the time the user clicks, the module is parsed
@@ -193,19 +213,39 @@ export function BugReportFab({ currentModuleLabel }: Props) {
     prewarmHtml2canvas();
   }, []);
 
-  const handleClick = async () => {
+  const handleClick = useCallback(async () => {
     if (capturing || open) return;
     setCapturing(true);
     const shot = await captureViewport();
     setScreenshot(shot);
     setCapturing(false);
     setOpen(true);
-  };
+  }, [capturing, open]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setOpen(false);
     setScreenshot(null);
-  };
+    // Reset shortcut-driven flags so the next plain-click open doesn't
+    // inherit a stale auto-start signal from the previous session.
+    setShouldAutoStartDictation(false);
+    setDictationToggleSeq(0);
+  }, []);
+
+  // ⌘⌘ / Ctrl-Ctrl: open the modal AND start dictation in one move
+  // from anywhere in FAD. If the modal is already open, the tap just
+  // toggles dictation (start/stop).
+  const handleShortcut = useCallback(() => {
+    if (open) {
+      setDictationToggleSeq((s) => s + 1);
+    } else if (!capturing) {
+      setShouldAutoStartDictation(true);
+      void handleClick();
+    }
+  }, [open, capturing, handleClick]);
+
+  useDoubleTapModifier({ keys: ['Meta', 'Control'], onDoubleTap: handleShortcut });
+
+  const modSym = getModifierSymbol();
 
   return (
     <>
@@ -218,7 +258,7 @@ export function BugReportFab({ currentModuleLabel }: Props) {
       {!open && (
         <button
           className={'bug-fab' + (capturing ? ' is-capturing' : '')}
-          title={capturing ? 'Capturing…' : 'Send feedback — bug · feature · suggestion'}
+          title={capturing ? 'Capturing…' : `Send feedback — bug · feature · suggestion  ·  ${modSym}${modSym} for voice`}
           onClick={handleClick}
           aria-label="Send feedback"
           disabled={capturing}
@@ -231,6 +271,8 @@ export function BugReportFab({ currentModuleLabel }: Props) {
           currentModuleLabel={currentModuleLabel}
           initialScreenshot={screenshot}
           onClose={handleClose}
+          autoStartDictation={shouldAutoStartDictation}
+          dictationToggleSeq={dictationToggleSeq}
         />
       )}
     </>
@@ -299,10 +341,16 @@ function BugReportModal({
   currentModuleLabel,
   initialScreenshot,
   onClose,
+  autoStartDictation = false,
+  dictationToggleSeq = 0,
 }: {
   currentModuleLabel?: string;
   initialScreenshot: string | null;
   onClose: () => void;
+  /** True when the modal was opened via the ⌘⌘ shortcut — start dictation on mount. */
+  autoStartDictation?: boolean;
+  /** Sequence counter from the parent; each increment is a ⌘⌘ tap while the modal was already open. */
+  dictationToggleSeq?: number;
 }) {
   const [type, setType] = useState<FeedbackType>('bug');
   // Screenshot is captured upstream in BugReportFab before this modal
@@ -343,6 +391,32 @@ function BugReportModal({
   const handleMicClick = () => {
     dictation.toggle();
   };
+
+  // Auto-start dictation when the modal was opened via the ⌘⌘ shortcut.
+  // Tiny delay so the modal has time to paint and the mic-permission
+  // prompt doesn't feel slammed-open simultaneously with the dialog.
+  // We intentionally fire-once-on-mount; the parent resets the
+  // autoStartDictation flag on close so each session starts clean.
+  useEffect(() => {
+    if (!autoStartDictation) return;
+    const t = window.setTimeout(() => {
+      dictation.toggle();
+    }, 120);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // React to ⌘⌘ taps that land while the modal is already open. Parent
+  // bumps the seq counter on each tap; we toggle on every change. The
+  // initial-value capture avoids a phantom toggle on first mount when
+  // the modal was opened via the shortcut (autoStartDictation handles
+  // that path).
+  const lastSeqRef = useRef(dictationToggleSeq);
+  useEffect(() => {
+    if (dictationToggleSeq === lastSeqRef.current) return;
+    lastSeqRef.current = dictationToggleSeq;
+    dictation.toggle();
+  }, [dictationToggleSeq, dictation]);
 
   const trimmedInput = input.trim();
   const userMsgCount = messages.filter((m) => m.role === 'user').length;
@@ -612,10 +686,10 @@ function BugReportModal({
                     aria-pressed={dictation.state === 'recording'}
                     title={
                       dictation.state === 'recording'
-                        ? 'Stop dictation'
+                        ? `Stop dictation (or ${getModifierSymbol()}${getModifierSymbol()})`
                         : dictation.state === 'transcribing'
                           ? 'Transcribing…'
-                          : 'Dictate (voice → text)'
+                          : `Dictate — voice to text (${getModifierSymbol()}${getModifierSymbol()})`
                     }
                     style={{
                       display: 'inline-flex',
@@ -690,7 +764,7 @@ function BugReportModal({
                                                 ? 'Transcribing…'
                                                 : reachedTurnCap
                                                   ? "Friday's heard enough — submit when ready."
-                                                  : 'Cmd/Ctrl+Enter to send.'}
+                                                  : `${getModifierSymbol()}${getModifierSymbol()} to dictate · ${getModifierSymbol()}+Enter to send`}
                 </span>
               </div>
               <button
