@@ -212,16 +212,14 @@ ADRs and §1 / §5.7 / §5.8 of the running decisions log (Notion `34f43ca884928
 
 Full ADR detail in consolidated roadmap §3.
 
-## Workflow rules
+## Workflow rules (Friday-specific layer)
 
-Procedural rules from Operating Rules (Notion `34d43ca88492810ea8aec815655e0042`) §§3.2, 3.3, 10, 11, 12 and FAD running decisions log §3. Memorise; don't make Ishant re-state them.
+Universal workflow rules (plan-first, verify-before-done, surface errors, minimal blast radius, escalation list) live in `~/.claude/CLAUDE.md` and the Universal Bootstrap Rules Notion page (`36443ca8849281fea06df5f83ae8e00a`). The below are Friday-specific only.
 
-- **Investigation before implementation (§3.2, ADR-009).** For every code-touching task: investigate current state → produce a proposal → get approval → implement as a separate dispatch. Never go from "we want X" straight to "implement X".
 - **No parallelization across waves (§3.3, ADR-010).** Within a wave, independent tasks may parallelize. Across waves, never. Investigate → propose → approve → implement is strict.
 - **Verification gates must be executable in the dev env (§11).** Pre-flight every gate: "what state does this need; does the env have it?" If infeasible, **block and flag** — never silently downgrade. 2026-04-28 team.json incident is the case study.
-- **Autonomous unless one of the listed exceptions (§10).** Act without confirmation when established memory / instructions / protocols cover the ground. Escalate only for: spending above caps, credential changes, SOUL/AGENTS/MEMORY edits, hard-reset GO, gateway surgery beyond standard restart.
-- **Direct push, no PRs.** Push to master / current sprint branch. No feature branches unless Ishant explicitly asks. 3-layer reconciliation (working tree, index, remote) — always `git fetch origin` first.
-- **Git author = `Judith Friday <judith@friday.mu>`.** Watch the silent `user.email`-unset fallback to `$USER@$HOSTNAME` (caught 2026-05-18 on Ishant's Mac). Treat git's "configured automatically based on your username and hostname" warning as a hard signal, not a notice. See memory `git_author_convention.md`.
+- **Direct push, no PRs.** Push to master / current sprint branch. No feature branches unless Ishant explicitly asks. 3-layer reconciliation (working tree, index, remote) — `git fetch origin` first (enforced by SessionStart hook, but verify if the hook didn't fire).
+- **Git author = `Judith Friday <judith@friday.mu>`.** Enforced by PreToolUse hook. If the hook blocks a commit: fix via `git config --global user.email "judith@friday.mu"`. Background on the 2026-05-18 silent-fallback incident in memory `git_author_convention.md`.
 - **Git tag formats (§12).** GMS `gms-v[X.Y.Z]` · FridayOS `fridayos-s[N]-v0.[N].0` · Symbiosis `symbiosis-v[X.Y.Z]` · Mission Control `mc-v[X.Y.Z]`. Tag after a clean ship.
 - **Sprint close ritual (§12).** Update Notion (Sprint Timeline + Priority Queue + Atlas) → tag git → generate paste-able status update prompt for next Atlas session. Atlas won't auto-discover; the prompt is the handoff.
 
