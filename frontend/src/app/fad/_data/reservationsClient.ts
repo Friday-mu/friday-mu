@@ -98,8 +98,12 @@ export function transformReservation(r: RawReservation): Reservation {
 }
 
 export async function loadReservations(): Promise<Reservation[]> {
-  const data = await apiFetch('/api/reservations?limit=500') as { results?: RawReservation[] };
-  return (data?.results || []).map(transformReservation);
+  // Backend returns { reservations: [...] } (see backend/src/reservations/index.js
+  // shapeReservation). Earlier wiring read `data.results` and silently fell back
+  // to the empty array → consumers either showed nothing or kept rendering the
+  // RESERVATIONS fixture via `liveReservations ?? RESERVATIONS`.
+  const data = await apiFetch('/api/reservations?limit=500') as { reservations?: RawReservation[] };
+  return (data?.reservations || []).map(transformReservation);
 }
 
 export interface UseLiveReservationsResult {

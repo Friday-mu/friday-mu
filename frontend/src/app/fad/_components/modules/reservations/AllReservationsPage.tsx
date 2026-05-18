@@ -21,9 +21,7 @@ interface Props {
   onOpen: (reservationId: string) => void;
 }
 
-// @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
-// Hardcoded demo date. Replace with new Date() (server-aware).
-const TODAY_ISO = '2026-04-27';
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
 function statusToneClass(s: ReservationStatus): string {
   switch (s) {

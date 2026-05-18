@@ -31,9 +31,7 @@ function statusToneClass(s: InquiryStatus): string {
 }
 
 function daysSince(iso: string): number {
-  // @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
-  // Hardcoded demo date. Replace `new Date('2026-04-27')` with `new Date()`.
-  const days = (new Date('2026-04-27').getTime() - new Date(iso).getTime()) / 86_400_000;
+  const days = (Date.now() - new Date(iso).getTime()) / 86_400_000;
   return Math.max(0, Math.round(days));
 }
 
