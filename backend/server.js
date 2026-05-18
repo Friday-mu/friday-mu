@@ -1645,9 +1645,6 @@ app.get('/api/system/status', requireAuth, asyncHandler(async (req, res) => {
     anthropic: {
       configured: envConfigured('ANTHROPIC_API_KEY'),
     },
-    openai: {
-      configured: envConfigured('OPENAI_API_KEY'),
-    },
     channels: channelCounts,
   });
 }));
