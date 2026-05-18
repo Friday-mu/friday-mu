@@ -765,13 +765,17 @@ function BugReportModal({
                         ? 'No microphone detected on this device.'
                         : dictation.lastError === 'service-not-allowed'
                           ? 'Speech service blocked by browser / OS settings.'
-                          : dictation.lastError
-                            ? `Dictation error: ${dictation.lastError}`
-                            : dictation.state === 'recording'
-                              ? 'Listening… click mic to stop.'
-                              : reachedTurnCap
-                                ? 'Friday\'s heard enough — submit when ready.'
-                                : 'Cmd/Ctrl+Enter to send.'}
+                          : dictation.lastError === 'network'
+                            ? 'Speech service unreachable — try a regular browser tab (PWAs can block this) or check your VPN / DNS filter.'
+                            : dictation.lastError === 'aborted'
+                              ? 'Dictation stopped.'
+                              : dictation.lastError
+                                ? `Dictation error: ${dictation.lastError}`
+                                : dictation.state === 'recording'
+                                  ? 'Listening… click mic to stop.'
+                                  : reachedTurnCap
+                                    ? 'Friday\'s heard enough — submit when ready.'
+                                    : 'Cmd/Ctrl+Enter to send.'}
                 </span>
               </div>
               <button
