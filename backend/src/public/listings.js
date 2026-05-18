@@ -39,6 +39,33 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Shape the photos[] payload Guesty stores. Each entry has
+// `original` (full-res), `thumbnail` (~240h), and optional `caption`.
+// We expose: { url, thumbnailUrl?, alt? } to match the website's
+// gallery contract per FAD-HANDOFF 2026-05-18.
+function shapeGallery(rawPictures) {
+  if (!Array.isArray(rawPictures)) return [];
+  return rawPictures
+    .map((p) => {
+      if (!p || typeof p !== 'object') return null;
+      const url = p.original || p.url || p.thumbnail;
+      if (!url) return null;
+      const out = { url };
+      if (p.thumbnail && p.thumbnail !== url) out.thumbnailUrl = p.thumbnail;
+      if (p.caption && String(p.caption).trim()) out.alt = String(p.caption).trim();
+      return out;
+    })
+    .filter(Boolean);
+}
+
+// Guesty stores houseRules as a single multi-line string. Website
+// expects string[] of individual rules. Split on newline, trim,
+// drop empties. Preserves order.
+function splitHouseRules(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+}
+
 // Shape the website's GuestyListingDTO maps to. Per their 2026-05-18
 // reply (FAD-REPLY-STAGE1.md): renames + unit conversions stay on
 // their side, FAD keeps the cleaner names. The bottom block reads from
@@ -61,24 +88,43 @@ function shapeListingPublic(row) {
   const raw = row.raw || {};
   const prices = raw.prices || {};
   const terms = raw.terms || {};
+  const address = raw.address || {};
+  const pubDesc = raw.publicDescription || {};
   return {
     id: row.id,
     guestyId: row.guesty_id,
     nickname: row.nickname,
     title: row.title,
+
+    // Address: keep the existing { full, city, country } structure
+    // and add street / zipcode / state for the website's map + form
+    // rendering. Coordinates from raw.address.lat/lng so the website
+    // can place pins without geocoding.
     address: {
       full: row.address_full,
       city: row.address_city,
       country: row.address_country,
+      street: address.street || null,
+      zipcode: address.zipcode || null,
+      state: address.state || null,
     },
+    lat: num(address.lat),
+    lng: num(address.lng),
+
     cohort: row.cohort,
     pictureUrl: row.picture_url,
+    // gallery is the full photo set — website renders the carousel
+    // from this; pictureUrl stays as the lead-thumbnail shortcut.
+    gallery: shapeGallery(raw.pictures),
+
     propertyType: row.property_type,
     roomType: raw.roomType || null,
     bedrooms: row.bedrooms,
     bathrooms: row.bathrooms != null ? Number(row.bathrooms) : null,
     beds: num(raw.beds),
     accommodates: row.accommodates,
+
+    // Money + terms (Stage 1 field-gap close)
     basePriceMinor: row.base_price_minor != null ? Number(row.base_price_minor) : null,
     cleaningFee: num(prices.cleaningFee),
     extraPersonFee: num(prices.extraPersonFee),
@@ -88,6 +134,32 @@ function shapeListingPublic(row) {
     minNights: num(terms.minNights),
     maxNights: num(terms.maxNights),
     currencyCode: row.currency_code,
+
+    // Editorial fields for the public-site copy. description / summary
+    // alias the same Guesty field for now; if you need them to diverge
+    // later (e.g. description = summary + space concatenated) tweak
+    // here. space stays as Guesty's standalone field.
+    description: pubDesc.summary || null,
+    summary: pubDesc.summary || null,
+    space: pubDesc.space || null,
+
+    // amenities[] is already a clean string[] in Guesty. Pass through.
+    amenities: Array.isArray(raw.amenities) ? raw.amenities : [],
+
+    // houseRules: Guesty stores newline-separated string. Split for
+    // the website's list rendering.
+    houseRules: splitHouseRules(pubDesc.houseRules),
+
+    // Check-in/out times — strings like "14:00" / "10:00".
+    checkInTime: raw.defaultCheckInTime || null,
+    checkOutTime: raw.defaultCheckOutTime || null,
+
+    // Reviews — Guesty doesn't populate these for all listings yet,
+    // so they often come through null. Website should treat null/0
+    // as "no rating yet" rather than "0 stars."
+    reviewsCount: num(raw.reviewsCount),
+    reviewsAvg: num(raw.reviewsAvgRating),
+
     isActive: row.is_active,
     syncedAt: row.synced_at,
   };
