@@ -359,10 +359,10 @@
       "idVerification": "Request government-issued ID from the primary guest for direct bookings. Verify the name matches the payment method. Store ID information securely and in compliance with data protection laws (GDPR if applicable).",
       "paymentMethods": [
         "Bank transfer (preferred — lower fees, clear paper trail)",
-        "Credit card via payment processor (Stripe, Square — adds 2-3% fee but provides chargeback protection)",
-        "PayPal (acceptable but higher fees and chargeback risk)",
-        "Never accept cash for the full booking amount — always have a documented payment trail",
-        "Wire transfer for international bookings (verify bank details carefully — wire fraud is common)"
+        "Cash (smaller bookings only)",
+        "Wire transfer for international bookings (verify bank details carefully — wire fraud is common)",
+        "Friday Retreats does NOT accept credit card payments or PayPal for direct bookings (no processor active as of 2026-05-19). Industry-general note: card processors (Stripe, Square) provide chargeback protection at 2-3% fee; PayPal works but has higher fees and chargeback risk. These are reference-only — we do not offer them.",
+        "Never accept cash for the full amount on large bookings — always keep a documented payment trail"
       ],
       "noPlatformProtection": "Direct bookings have no platform mediation or host protection programme. You are responsible for your own damage protection, payment disputes, and guest vetting. Consider requiring travel insurance and maintaining your own short-term rental insurance policy.",
       "advantages": [
