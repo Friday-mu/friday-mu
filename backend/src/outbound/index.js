@@ -84,10 +84,22 @@ router.post('/send', attachIdentity, async (req, res) => {
       if (!GUEST_CHANNELS.has(channel)) {
         return res.status(400).json({ error: `audience=guest does not support channel=${channel}` });
       }
+      // friday-gms compose requires reviewed_by (audit) + sent_via
+      // (channel reference). The legacy GMS dashboard passed them from
+      // its session; we read them from the FAD user's JWT identity.
+      // Fallback chain favours human-readable name → username → userId
+      // so the audit log never shows "anonymous".
+      const reviewedBy =
+        req.identity?.displayName ||
+        req.identity?.username ||
+        req.identity?.userId ||
+        'fad-user';
       const composeBody = {
         mode: meta.mode || 'manual',
         body,
         channel,
+        reviewed_by: reviewedBy,
+        sent_via: channel,
         ...(meta.instruction ? { instruction: meta.instruction } : {}),
         ...(meta.scope       ? { scope:       meta.scope       } : {}),
       };
