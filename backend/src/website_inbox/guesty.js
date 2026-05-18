@@ -41,6 +41,13 @@ const DAILY_MINT_LIMIT = 5;
 
 let tokenCache = { token: null, expiresAt: 0 };
 
+// Single-flight mutex: when a refresh is in flight, every other caller
+// awaits the same promise instead of independently calling /oauth2/token.
+// Matches friday-gms's guard. Today the only caller is the serial poller
+// so this is dormant; becomes load-bearing once FAD is the org-wide
+// single Guesty consumer (parallel calls from website /api/public/*).
+let tokenRefreshInflight = null;
+
 function loadTokenFromDisk() {
   try {
     const raw = fs.readFileSync(SHARED_TOKEN_PATH, 'utf-8');
@@ -100,11 +107,29 @@ function writeMintMeta(meta) {
   }
 }
 
-async function getAccessToken({ retries = 1 } = {}) {
-  // Tier 1: in-memory.
+async function getAccessToken() {
+  // Tier 1: in-memory. Fast path — no mutex needed.
   if (tokenCache.token && Date.now() < tokenCache.expiresAt - TOKEN_SAFETY_MS) {
     return tokenCache.token;
   }
+  // Slow path: coalesce concurrent callers on a single in-flight promise.
+  // The inner refresh handles disk-cache + mint + 429 retry on its own;
+  // its recursive retry call sees tokenRefreshInflight === this promise
+  // so it bypasses the mutex and proceeds directly (no deadlock).
+  if (tokenRefreshInflight) {
+    return tokenRefreshInflight;
+  }
+  tokenRefreshInflight = (async () => {
+    try {
+      return await refreshAccessToken({ retries: 1 });
+    } finally {
+      tokenRefreshInflight = null;
+    }
+  })();
+  return tokenRefreshInflight;
+}
+
+async function refreshAccessToken({ retries = 1 } = {}) {
   // Tier 2: shared disk cache — covers the case where friday-gms
   // already minted a fresh token in the last 24h.
   const fromDisk = loadTokenFromDisk();
@@ -149,12 +174,13 @@ async function getAccessToken({ retries = 1 } = {}) {
     // regular API. Same single-retry treatment — burn 30s waiting on
     // Retry-After (or default), then bubble. Without this the 5-min
     // poller can't recover from a transient 429 burst because every
-    // call starts with this token fetch.
+    // call starts with this token fetch. Retry stays inside the same
+    // in-flight promise so coalesced callers still see one outcome.
     if (retries > 0 && e?.response?.status === 429) {
       const retryAfterSec = Number(e.response.headers?.['retry-after']) || 30;
       const waitMs = Math.min(retryAfterSec * 1000, 60_000);
       await new Promise((r) => setTimeout(r, waitMs));
-      return getAccessToken({ retries: retries - 1 });
+      return refreshAccessToken({ retries: retries - 1 });
     }
     throw e;
   }
