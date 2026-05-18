@@ -31,11 +31,16 @@ const { attachIdentity } = require('../design/auth');
 const { translateText, getConversationLanguageFallback } = require('../ai/translate');
 const { guestyRequest } = require('../website_inbox/guesty');
 const { detectActions } = require('./action_detector');
+const { checkAutoResolve } = require('./auto_resolve');
 
 // Feature flag — set FAD_ACTION_DETECTOR_DISABLED=true on the backend
 // env to stop post-send commitment detection. Rollback handle for
 // Phase 3.2 if Kimi pending_actions misbehave.
 const ACTION_DETECTOR_DISABLED = process.env.FAD_ACTION_DETECTOR_DISABLED === 'true';
+
+// Phase 3.4 — auto-resolve. Same rollback handle for the post-send
+// "did this message complete any open pending_actions?" scan.
+const AUTO_RESOLVE_DISABLED = process.env.FAD_AUTO_RESOLVE_DISABLED === 'true';
 
 const router = express.Router();
 
@@ -299,6 +304,15 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
       propertyCode: draftRow.property_name || null,
     }).catch((e) => {
       console.error(`[drafts/approve] action-detector failed for draft ${draftId}:`, e.message);
+    });
+  }
+
+  // Phase 3.4 — scan the sent message against open pending_actions
+  // and mark any that the team's reply resolved. Complementary to the
+  // action-detector above: detector creates, resolve completes.
+  if (!AUTO_RESOLVE_DISABLED) {
+    checkAutoResolve(draftRow.conversation_id, messageBody).catch((e) => {
+      console.error(`[drafts/approve] auto-resolve failed for draft ${draftId}:`, e.message);
     });
   }
 
