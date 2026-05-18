@@ -1029,6 +1029,12 @@ require('./src/email/pull_worker').start();
 // conversations stayed untranslated).
 require('./src/inbox/translation_worker').start();
 
+// Phase 3.1 draft reaper — flips any drafts row stuck in
+// `friday_drafting` for longer than DRAFT_STUCK_THRESHOLD_MS (default
+// 5 minutes) to `generation_failed`. Covers the case where a Kimi call
+// + process crash leaves a row dangling — GMS has no equivalent today.
+require('./src/inbox/draft_reaper').start();
+
 // ─── Unified outbound abstraction ─────────────────────────────────
 // POST /api/outbound/send federates per-channel send paths under one
 // endpoint. Per locked decision §2 — first callers are TeamInbox

@@ -1,0 +1,542 @@
+'use strict';
+
+// Phase 3.1 — FAD-native auto-draft generator.
+//
+// Replaces friday-gms/src/services/draft-generator.ts.triggerDraftGeneration
+// for the inbound-message → AI-draft pipeline. Reads conversation +
+// message + property knowledge, builds a structured system prompt via
+// the knowledge composer (Phase 3.0), calls Kimi K2.6, writes a drafts
+// row that the inbox UI displays for user review.
+//
+// Structural differences from the GMS source:
+//   - Uses the structured composer (`backend/knowledge/composer.js`)
+//     instead of the 400-line string-concat in generateReply(). GMS
+//     ran the composer in shadow mode only (output discarded); we
+//     promote it to the active loader. Per FAD shadow-log analysis
+//     this cuts ~70-78% of prompt tokens with strictly more named
+//     rule coverage.
+//   - Kimi K2.6 (Moonshot) instead of Claude Sonnet 4. Locked
+//     2026-05-18 by Ishant — cheaper, OpenAI-compatible, 262K context.
+//   - No parallel-run with GMS. GMS's draft-gen gets disabled at the
+//     same time this ships. See [[fad_kill_gms_no_parallel_run]] for
+//     the rollback flow if regression appears.
+//   - Auto-send path removed for first burn-in. Every FAD-native draft
+//     passes through user review. Re-enable via AUTO_SEND_ENABLED env
+//     once quality is observed steady.
+//
+// Triggering: called from guesty_message_webhook.js after an inbound
+// non-reaction non-auto-response message is inserted. Fire-and-forget
+// from the webhook's perspective — failures don't fail the webhook.
+
+const { query } = require('../database/client');
+const { defaultComposer } = require('../knowledge/composer');
+const { generateDraftReply, classifyMessageWithKimi, DRAFT_MODEL } = require('../ai/kimi_draft');
+
+const DRAFT_INITIAL_STATE = 'friday_drafting';
+const DRAFT_READY_STATE = 'draft_ready';
+const DRAFT_FAILED_STATE = 'generation_failed';
+const DRAFT_SUPERSEDED_STATE = 'superseded';
+
+// ────────────────────────────────────────────────────────────────────
+// Helpers ported from friday-gms/src/services/draft-generator.ts
+// ────────────────────────────────────────────────────────────────────
+
+// Format a single message row for the conversation-history block in the
+// user prompt. Mirrors GMS's formatMessageForContext: human-readable
+// timestamp + sender + body, with [System notification] /
+// [Automated reply already sent] prefixes for filtered outbound rows
+// so the model knows not to repeat them.
+function formatMessageForContext(msg) {
+  const date = new Date(msg.created_at);
+  const stamp = date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  let prefix = '';
+  if (msg.is_auto_response) {
+    // The webhook flags auto-responses + system notifications via this
+    // single column. Distinguish them in display by looking at body
+    // shape — GMS treats them identically for draft purposes anyway.
+    prefix = '[Automated reply already sent] ';
+  }
+
+  const text = msg.translated_body || msg.body || '';
+  const sender = msg.sender_name || (msg.direction === 'inbound' ? 'Guest' : 'Friday');
+  return `[${stamp}] ${prefix}${sender}: ${text}`;
+}
+
+// Strip AI-preamble wrappers that some models emit despite system-prompt
+// instructions ("Here's a draft:", "Of course! Here is a reply:", etc.).
+// Mirrors GMS's regex list + greeting-heuristic fallback. Imperfect by
+// nature — false positives risk truncating the actual reply. Kept
+// conservative.
+const PREAMBLE_PATTERNS = [
+  /^(here(?:'s| is)?\s+(?:a |the |an |your |my )?(?:draft|reply|response|suggestion|message|version)[:\.]?\s*)/i,
+  /^(of course[,!]?\s+(?:here(?:'s| is)?[:\.]?\s*)?)/i,
+  /^(sure[,!]?\s+(?:here(?:'s| is)?[:\.]?\s*)?)/i,
+  /^(certainly[,!]?\s+(?:here(?:'s| is)?[:\.]?\s*)?)/i,
+  /^(?:draft|reply|response)[:\.]\s+/i,
+  /^(absolutely[,!]?\s+)/i,
+  /^(no problem[,!]?\s+)/i,
+  /^(happy to[^\.!]*[\.!]\s+)/i,
+  /^(let me[^\.!]*[\.!]\s+)/i,
+  /^(i'(?:ll|d)\s+(?:draft|write|reply|respond)[^\.!]*[\.!]\s+)/i,
+  /^(here you go[:\.]?\s+)/i,
+];
+
+const GREETINGS = [
+  'hi ', 'hello ', 'dear ', 'bonjour ', 'hey ', 'hi,', 'hello,', 'dear,', 'bonjour,', 'hey,',
+  'thank you', 'thanks', 'welcome', 'good morning', 'good afternoon', 'good evening',
+];
+
+function stripAIPreamble(text) {
+  if (!text || typeof text !== 'string') return text || '';
+  let out = String(text).trim();
+
+  // First pass: known preamble patterns
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const rx of PREAMBLE_PATTERNS) {
+      const next = out.replace(rx, '');
+      if (next !== out) {
+        out = next.trim();
+        changed = true;
+      }
+    }
+  }
+
+  // Second pass: if the text still has obvious meta-talk before a
+  // greeting, drop everything before the greeting. Only triggers when
+  // there's actually content before the greeting (i.e. preamble) AND
+  // the greeting appears within the first ~250 chars.
+  const lowered = out.toLowerCase();
+  for (const g of GREETINGS) {
+    const idx = lowered.indexOf(g);
+    if (idx > 0 && idx < 250) {
+      out = out.slice(idx).trim();
+      break;
+    }
+  }
+
+  return out;
+}
+
+// Currency normalisation. Mirrors GMS's correctCurrencyFormatting —
+// "595 euros" → "€595", "595 USD" → "$595", "595 MUR" / "595 rupees"
+// → "Rs 595". Single-pass for each known unit.
+function correctCurrencyFormatting(text) {
+  if (!text || typeof text !== 'string') return text || '';
+  let out = String(text);
+
+  out = out.replace(/(\d+(?:[.,]\d+)?)\s*(?:euros?|EUR\b)/gi, '€$1');
+  out = out.replace(/EUR\s*(\d+(?:[.,]\d+)?)/gi, '€$1');
+
+  out = out.replace(/(\d+(?:[.,]\d+)?)\s*(?:dollars?|USD\b)/gi, '$$$1');
+  out = out.replace(/USD\s*(\d+(?:[.,]\d+)?)/gi, '$$$1');
+
+  out = out.replace(/(\d+(?:[.,]\d+)?)\s*(?:rupees?|MUR\b)/gi, 'Rs $1');
+  out = out.replace(/MUR\s*(\d+(?:[.,]\d+)?)/gi, 'Rs $1');
+
+  out = out.replace(/(\d+(?:[.,]\d+)?)\s*GBP\b/gi, '£$1');
+  out = out.replace(/GBP\s*(\d+(?:[.,]\d+)?)/gi, '£$1');
+
+  return out;
+}
+
+// Confidence scoring. Mirrors GMS's calculateConfidence — starts at 70,
+// adjusts for completeness + risk signals + content red-flags. Result
+// is clamped [10, 98] and stored on drafts.confidence.
+function calculateConfidence({
+  category,
+  hasCheckIn,
+  hasCheckOut,
+  hasGuests,
+  hasProperty,
+  hasStaffNotes,
+  messageCount,
+  hasPropertyKnowledge,
+  isNonEnglish,
+  messageWordCount,
+  bodyText,
+}) {
+  let score = 70;
+
+  if (category === 'routine') score += 10;
+  if (category === 'question') score += 5;
+
+  if (hasCheckIn && hasCheckOut && hasGuests && hasProperty) score += 10;
+  if (hasStaffNotes) score += 5;
+  if (messageCount >= 3) score += 5;
+  if (messageCount >= 6) score += 5;
+  if (hasPropertyKnowledge) score += 10;
+  else score -= 10;
+
+  if (category === 'complaint') score -= 20;
+  if (category === 'emergency') score -= 10;
+  if (messageWordCount > 200) score -= 15;
+  if (!hasProperty) score -= 10;
+  if (isNonEnglish) score -= 5;
+
+  const lower = String(bodyText || '').toLowerCase();
+  if (/\b(legal|safety|emergency|injury|security|lawyer|police)\b/.test(lower)) score -= 10;
+  if (/\b(damage|refund|discount|problem|issue|broken|dirty|disgusting)\b/.test(lower)) score -= 20;
+
+  return Math.max(10, Math.min(98, Math.round(score)));
+}
+
+// Should we even draft on this conversation? GMS's three suppression
+// rules:
+//   1. Reservation status is terminal (cancelled / completed / closed /
+//      no_show) — guest is no longer staying with us.
+//   2. Checkout was before yesterday AND no inbound in the last 2h —
+//      conversation is winding down naturally, don't proactively chase.
+//   3. Last message > 7 days ago AND no pending_actions — this thread
+//      is dormant.
+// Best-effort: any DB error returns false (let the gen proceed) per
+// GMS's fail-open semantics.
+async function shouldSuppressDraft(conversationId) {
+  try {
+    const { rows } = await query(
+      `SELECT c.last_message_at, c.last_inbound_at, c.check_out_date,
+              r.status AS reservation_status
+         FROM conversations c
+         LEFT JOIN reservations r ON r.id = c.reservation_id
+         WHERE c.id = $1
+         LIMIT 1`,
+      [conversationId],
+    );
+    const row = rows[0];
+    if (!row) return false;
+
+    if (['cancelled', 'completed', 'closed', 'no_show'].includes(String(row.reservation_status))) {
+      return 'reservation_terminated';
+    }
+
+    if (row.check_out_date) {
+      const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+      const checkout = new Date(row.check_out_date).getTime();
+      const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+      const lastInbound = row.last_inbound_at ? new Date(row.last_inbound_at).getTime() : 0;
+      if (checkout <= yesterday && lastInbound < twoHoursAgo) {
+        return 'post_checkout_no_recent_inbound';
+      }
+    }
+
+    if (row.last_message_at) {
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const lastMessage = new Date(row.last_message_at).getTime();
+      if (lastMessage < sevenDaysAgo) {
+        const { rows: pa } = await query(
+          `SELECT 1 FROM pending_actions WHERE conversation_id = $1 AND status != 'resolved' LIMIT 1`,
+          [conversationId],
+        );
+        if (pa.length === 0) return 'stale_no_pending_actions';
+      }
+    }
+
+    return false;
+  } catch (e) {
+    console.warn(`[draft-gen] shouldSuppressDraft check failed for ${conversationId}: ${e.message} — proceeding`);
+    return false;
+  }
+}
+
+// Property-code resolution for the composer's property card. FAD stores
+// the short code (e.g. "AO-11", "GBH-C3") in conversations.property_name
+// — the column name is legacy. The composer reads
+// `properties/<code>.json` from the KB; if there's no card for this
+// property the composer throws and we retry without a property card.
+function resolvePropertyCode(conversation) {
+  if (!conversation) return null;
+  const code = conversation.property_name || conversation.property_code;
+  return code ? String(code).trim() : null;
+}
+
+// Detect a few task signals from the inbound body so the composer can
+// lazy-load discount-bounds / refund-bounds rule fragments. Mirrors the
+// trigger keywords declared in `backend/knowledge/index.json`.
+function detectTaskSignals(text) {
+  if (!text) return [];
+  const signals = [];
+  if (/discount|deal|promo|reduction|reduce/i.test(text)) signals.push('discount');
+  if (/refund|compensation|reimburse/i.test(text)) signals.push('refund');
+  return signals;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Core generation flow
+// ────────────────────────────────────────────────────────────────────
+
+async function generateDraft({ message, conversation, revisionInstruction, previousDraftBody }) {
+  // 1. Conversation history. Used in the user-message half of the prompt.
+  const { rows: allMessages } = await query(
+    `SELECT id, direction, body, translated_body, sender_name, created_at, is_auto_response, module_type
+       FROM messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC`,
+    [conversation.id],
+  );
+
+  // 2. Classify the triggering message — used for both confidence and
+  //    (potentially) lazy-load signals. Fail-open to 'other'.
+  const guestText = message.translated_body || message.body || '';
+  const category = await classifyMessageWithKimi(guestText);
+
+  // 3. Compose system prompt.
+  const propertyCode = resolvePropertyCode(conversation);
+  const taskSignals = detectTaskSignals(guestText);
+
+  let composerOutput;
+  try {
+    composerOutput = defaultComposer().load('inbox-drafts', {
+      property_code: propertyCode || undefined,
+      task_signals: taskSignals,
+      context_text: guestText.slice(0, 2000),
+    });
+  } catch (e) {
+    // Most common cause: property_code didn't match any properties/*.json
+    // card. Fall back to composing without a property card so the draft
+    // still ships — degraded but useful.
+    console.warn(
+      `[draft-gen] composer with property_code=${propertyCode} failed (${e.message}); retrying without property card`,
+    );
+    composerOutput = defaultComposer().load('inbox-drafts', {
+      task_signals: taskSignals,
+      context_text: guestText.slice(0, 2000),
+    });
+  }
+
+  // 4. Build the user message — conversation context + history + the
+  //    final task directive.
+  const history = allMessages.map(formatMessageForContext).join('\n\n');
+
+  const ctxLines = [
+    `Property: ${conversation.property_name || 'unknown'}`,
+    `Channel: ${conversation.channel || 'unknown'}`,
+    `Check-in: ${conversation.check_in_date || 'n/a'} → check-out: ${conversation.check_out_date || 'n/a'}`,
+    `Guests: ${conversation.num_guests || 'n/a'}`,
+    `Conversation status: ${conversation.status || 'unknown'}`,
+    `Triggering message classified as: ${category}`,
+  ];
+  if (conversation.notes) ctxLines.push(`Staff notes: ${conversation.notes}`);
+  if (conversation.conversation_summary) ctxLines.push(`Prior summary: ${conversation.conversation_summary}`);
+
+  let taskDirective;
+  if (revisionInstruction) {
+    taskDirective = `⚠️ REVISION REQUEST — TOP PRIORITY: ${revisionInstruction}
+
+Previous draft:
+${previousDraftBody || '(unknown)'}
+
+Rewrite the draft to address the revision instruction above. Preserve everything that wasn't called out for change.`;
+  } else {
+    taskDirective = `DRAFT A REPLY TO THE LATEST MESSAGE.
+
+Messages labeled [Automated reply already sent] or [System notification] indicate actions already taken — do NOT repeat information that was already sent to the guest.
+
+Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
+  }
+
+  const userMessage = `CONVERSATION CONTEXT:
+${ctxLines.map((l) => `- ${l}`).join('\n')}
+
+PREVIOUS MESSAGES:
+${history}
+
+${taskDirective}`;
+
+  // 5. Call Kimi.
+  const kimi = await generateDraftReply({
+    system: composerOutput.system_message,
+    user: userMessage,
+  });
+
+  if (!kimi.ok) {
+    throw new Error(`Kimi draft call failed: ${kimi.error || 'unknown'}`);
+  }
+
+  // 6. Post-process: strip AI-preamble + currency normalisation.
+  const stripped = stripAIPreamble(kimi.text);
+  const draftBody = correctCurrencyFormatting(stripped);
+
+  // 7. Confidence scoring.
+  const confidence = calculateConfidence({
+    category,
+    hasCheckIn: !!conversation.check_in_date,
+    hasCheckOut: !!conversation.check_out_date,
+    hasGuests: !!conversation.num_guests,
+    hasProperty: !!conversation.property_name,
+    hasStaffNotes: !!conversation.notes,
+    messageCount: allMessages.length,
+    hasPropertyKnowledge: composerOutput.metadata.property_code !== null,
+    isNonEnglish: message.original_language && message.original_language !== 'en',
+    messageWordCount: (guestText.match(/\S+/g) || []).length,
+    bodyText: guestText,
+  });
+
+  return {
+    draftBody,
+    confidence,
+    inputTokens: kimi.inputTokens || 0,
+    outputTokens: kimi.outputTokens || 0,
+    model: kimi.model || DRAFT_MODEL,
+    category,
+    loadedSkills: composerOutput.metadata.loaded_skills || [],
+    tokenEstimate: composerOutput.metadata.token_estimate || 0,
+    promptLatencyMs: kimi.latencyMs || null,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Orchestrator — owns the drafts-row state machine
+// ────────────────────────────────────────────────────────────────────
+
+async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
+  const { revisionInstruction, revisionNumber = 1 } = opts;
+  let draftId = null;
+
+  try {
+    // Defensive direction recheck — at trigger time the row is already
+    // inserted, so this catches the rare case of an outbound message
+    // routing into draft-gen by mistake.
+    if (!revisionInstruction) {
+      const { rows } = await query(
+        `SELECT direction FROM messages WHERE id = $1 LIMIT 1`,
+        [messageId],
+      );
+      if (!rows[0]) {
+        return { skipped: 'message_not_found' };
+      }
+      if (rows[0].direction !== 'inbound') {
+        return { skipped: 'not_inbound' };
+      }
+
+      const suppress = await shouldSuppressDraft(conversationId);
+      if (suppress) {
+        console.log(`[draft-gen] suppressed for conv ${conversationId}: ${suppress}`);
+        return { skipped: suppress };
+      }
+    }
+
+    // Supersede prior actionable drafts — they're stale now there's
+    // either a new inbound or a fresh revision request.
+    await query(
+      `UPDATE drafts
+          SET state = $1, updated_at = NOW()
+        WHERE conversation_id = $2 AND state IN ($3, 'under_review')`,
+      [DRAFT_SUPERSEDED_STATE, conversationId, DRAFT_READY_STATE],
+    );
+
+    // Insert the placeholder friday_drafting row so the inbox UI can
+    // show "Generating…" while we wait on Kimi.
+    const { rows: inserted } = await query(
+      `INSERT INTO drafts (
+         message_id, conversation_id, draft_body, state,
+         revision_number, revision_instruction
+       ) VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [
+        messageId,
+        conversationId,
+        revisionInstruction ? '(Revising…)' : '(Generating…)',
+        DRAFT_INITIAL_STATE,
+        revisionNumber,
+        revisionInstruction || null,
+      ],
+    );
+    draftId = inserted[0].id;
+
+    // Pull the message + conversation rows we need for the prompt.
+    const [messageRows, convRows] = await Promise.all([
+      query(
+        `SELECT id, body, translated_body, original_language, sender_name, created_at, direction
+           FROM messages WHERE id = $1 LIMIT 1`,
+        [messageId],
+      ),
+      query(
+        `SELECT id, property_name, property_id, guesty_conversation_id, channel, status,
+                check_in_date, check_out_date, num_guests, notes, conversation_summary,
+                last_message_at, last_inbound_at, last_detected_language, reservation_id,
+                auto_send_enabled
+           FROM conversations WHERE id = $1 LIMIT 1`,
+        [conversationId],
+      ),
+    ]);
+
+    if (!messageRows.rows[0] || !convRows.rows[0]) {
+      throw new Error(`message ${messageId} or conversation ${conversationId} not found`);
+    }
+
+    // Previous draft body — only fetched on revision so the revision
+    // prompt can show what's being rewritten.
+    let previousDraftBody = null;
+    if (revisionInstruction) {
+      const prior = await query(
+        `SELECT draft_body FROM drafts
+          WHERE conversation_id = $1 AND state = $2
+          ORDER BY updated_at DESC LIMIT 1`,
+        [conversationId, DRAFT_SUPERSEDED_STATE],
+      );
+      previousDraftBody = prior.rows[0]?.draft_body || null;
+    }
+
+    const result = await generateDraft({
+      message: messageRows.rows[0],
+      conversation: convRows.rows[0],
+      revisionInstruction,
+      previousDraftBody,
+    });
+
+    await query(
+      `UPDATE drafts
+          SET draft_body = $1,
+              confidence = $2,
+              state = $3,
+              updated_at = NOW()
+        WHERE id = $4`,
+      [result.draftBody, result.confidence, DRAFT_READY_STATE, draftId],
+    );
+
+    console.log(
+      `[draft-gen] ready draft=${draftId} msg=${messageId} conv=${conversationId} ` +
+      `model=${result.model} conf=${result.confidence} ` +
+      `tokens=${result.inputTokens}+${result.outputTokens} ` +
+      `kbSkills=${result.loadedSkills.length} latency=${result.promptLatencyMs}ms`,
+    );
+
+    return {
+      draftId,
+      state: DRAFT_READY_STATE,
+      confidence: result.confidence,
+      model: result.model,
+    };
+  } catch (e) {
+    console.error(`[draft-gen] failed message=${messageId} conv=${conversationId}: ${e.message}`);
+    if (draftId) {
+      await query(
+        `UPDATE drafts SET state = $1, updated_at = NOW()
+          WHERE id = $2 AND state = $3`,
+        [DRAFT_FAILED_STATE, draftId, DRAFT_INITIAL_STATE],
+      ).catch((err) => console.warn(`[draft-gen] failed-state UPDATE errored: ${err.message}`));
+    }
+    return { error: e.message, draftId };
+  }
+}
+
+module.exports = {
+  triggerDraftGeneration,
+  generateDraft,
+  // Exposed for tests + the reaper.
+  stripAIPreamble,
+  correctCurrencyFormatting,
+  calculateConfidence,
+  shouldSuppressDraft,
+  resolvePropertyCode,
+  detectTaskSignals,
+  formatMessageForContext,
+};

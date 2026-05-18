@@ -22,8 +22,14 @@
 // missing field.
 
 const { query } = require('../database/client');
+const { triggerDraftGeneration } = require('./draft_generator');
 
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
+// Feature flag — set FAD_DRAFTGEN_DISABLED=true on the backend env to
+// stop auto-drafts from firing. Rollback handle for Phase 3.1 burn-in
+// if Kimi-FAD drafts misbehave. Default off → drafts fire.
+const DRAFTGEN_DISABLED = process.env.FAD_DRAFTGEN_DISABLED === 'true';
 
 // Guesty's actual event names (camelCase, "reservation." prefix).
 // Per audit 2026-05-17 — the previous dotted-snake variants don't exist.
@@ -386,6 +392,24 @@ async function handleMessageEvent(event) {
 
   const tag = isReaction ? ' [reaction]' : isAutoResponse ? ' [auto-response]' : '';
   console.log(`[guesty/webhook/msg] inserted ${direction}${tag} message ${inserted.rows[0].id} (guesty=${guestyMessageId}) into conversation ${conversationId}`);
+
+  // Phase 3.1 — auto-draft generation. Fire-and-forget so a slow Kimi
+  // call never blocks the webhook ack to Guesty (their retry threshold
+  // is short). Skip outbound, reactions, auto-responses, and system
+  // pings — they're not real guest messages and shouldn't burn LLM
+  // budget. Disable globally via FAD_DRAFTGEN_DISABLED for rollback.
+  if (
+    direction === 'inbound'
+    && !isReaction
+    && !isAutoResponse
+    && !DRAFTGEN_DISABLED
+  ) {
+    const msgId = inserted.rows[0].id;
+    triggerDraftGeneration(msgId, conversationId).catch((e) => {
+      console.error(`[guesty/webhook/msg] draft trigger failed for ${msgId}:`, e.message);
+    });
+  }
+
   return { messageId: inserted.rows[0].id, conversationId, direction, isReaction, isAutoResponse };
 }
 

@@ -2,7 +2,7 @@
   "schema_version": "v2.1",
   "surfaces": {
     "inbox-drafts": {
-      "consumer": "src/services/draft-generator.ts",
+      "consumer": "backend/src/inbox/draft_generator.js",
       "always_load": [
         "global/critical-rules",
         "global/brand-voice",
@@ -14,7 +14,7 @@
         "discount-bounds": "trigger:discount|deal|promo|reduction|reduce",
         "refund-bounds": "trigger:refund|compensation|reimburse"
       },
-      "property_card": "required"
+      "property_card": "optional"
     },
     "inbox-advisory": {
       "consumer": "src/routes/consult.ts",

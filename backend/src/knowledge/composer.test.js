@@ -33,15 +33,16 @@ test('inbox-drafts loads with property card', () => {
   assert(result.metadata.loaded_skills.length >= 4, 'must load at least 4 skills');
 });
 
-test('inbox-drafts errors when property_code missing', () => {
-  let threw = false;
-  try {
-    composer.load('inbox-drafts');
-  } catch (e) {
-    threw = true;
-    assert(/property_code is required/i.test(e.message), 'error msg should mention property_code');
-  }
-  assert(threw, 'must throw when property_code is missing');
+test('inbox-drafts loads without property card', () => {
+  // Per Phase 3.1: inbox-drafts surface was relaxed to property_card:
+  // optional so newly-stubbed conversations (no resolved property yet)
+  // still produce a usable draft. Composer emits no property section
+  // and metadata.property_code stays null.
+  const result = composer.load('inbox-drafts');
+  assert(result.system_message.length > 0, 'system_message must be non-empty');
+  assert(result.metadata.property_code === null, 'no property card when none passed');
+  assert(!result.system_message.includes('## property:'),
+    'property section header must NOT appear when no card loaded');
 });
 
 test('inbox-advisory loads without property card', () => {
