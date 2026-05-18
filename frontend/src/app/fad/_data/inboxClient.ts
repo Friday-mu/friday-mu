@@ -97,6 +97,20 @@ function channelLabel(key: InboxChannel): string {
 //   sender_name, created_at, sentiment, is_auto_response, sent_by,
 //   sent_via_system, attachments, module_type.
 
+// Human-readable labels for Guesty's module_type enum. Keeps the bubble
+// caption short ("WhatsApp" not "whatsapp", "Airbnb" not "airbnb2").
+const MODULE_TYPE_LABEL: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  airbnb: 'Airbnb',
+  airbnb2: 'Airbnb',
+  booking: 'Booking',
+  bookingcom: 'Booking',
+  bookingCom: 'Booking',
+  email: 'Email',
+  sms: 'SMS',
+  log: 'Note',
+};
+
 function transformGmsMessage(raw: Record<string, unknown>): InboxMessage {
   const direction = String(raw.direction ?? 'inbound');
   // When GMS's translateConversationMessages populated translated_body,
@@ -105,13 +119,43 @@ function transformGmsMessage(raw: Record<string, unknown>): InboxMessage {
   const translated = raw.translated_body ? String(raw.translated_body) : '';
   const original = raw.body ? String(raw.body) : '';
   const hasTranslation = translated && translated !== original;
+
+  // For outbound, prefer the raw `sent_by` column (the reviewer's
+  // actual name) over `sender_name` (which gets concatenated as
+  // "Judith via Friday" by the GMS-side compose path — messy in UI).
+  // Fall back to sender_name with the " via Friday" suffix stripped,
+  // then to a sensible default.
+  let name: string;
+  if (direction === 'outbound') {
+    const sentBy = raw.sent_by ? String(raw.sent_by).trim() : '';
+    const senderRaw = raw.sender_name ? String(raw.sender_name).trim() : '';
+    const senderCleaned = senderRaw.replace(/\s+via\s+Friday$/i, '').trim();
+    name = sentBy || senderCleaned || 'Friday';
+  } else {
+    name = String(raw.sender_name || 'Guest');
+  }
+
+  // Where the message went out. module_type is the per-channel marker
+  // (whatsapp / airbnb2 / etc.); sent_via_system is "friday" for
+  // FAD-originated sends and may be missing on webhook-arrived rows.
+  // We surface module_type as the primary "via" since that's what the
+  // operator cares about (which channel did it actually go on).
+  let via: string | undefined;
+  const moduleType = raw.module_type ? String(raw.module_type) : '';
+  if (moduleType) {
+    via = MODULE_TYPE_LABEL[moduleType.toLowerCase()] || MODULE_TYPE_LABEL[moduleType] || moduleType;
+  } else if (raw.sent_via_system) {
+    via = String(raw.sent_via_system) === 'friday' ? 'Friday' : String(raw.sent_via_system);
+  }
+
   return {
     from: direction === 'outbound' ? 'us' : 'them',
-    name: String(raw.sender_name || (direction === 'outbound' ? 'Friday' : 'Guest')),
+    name,
     time: String(raw.created_at || new Date().toISOString()),
     body: hasTranslation ? translated : (original || translated),
     bodyOriginal: hasTranslation ? original : undefined,
     bodyLang: raw.original_language ? String(raw.original_language) : undefined,
+    via,
   };
 }
 

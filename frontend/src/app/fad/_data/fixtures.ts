@@ -16,6 +16,11 @@ export interface InboxMessage {
   bodyOriginal?: string;
   /** ISO 639-1 source-language code from GMS's detectLanguage(). */
   bodyLang?: string;
+  /** How the message was sent — human-readable channel/system label
+   *  (e.g. "WhatsApp", "Airbnb", "Guesty"). Used in the bubble meta
+   *  line to show provenance for outbound messages. Undefined when
+   *  we don't know (older rows without module_type / sent_via_system). */
+  via?: string;
 }
 
 export type InboxEntity = 'guest' | 'owner' | 'vendor' | 'unclassified';

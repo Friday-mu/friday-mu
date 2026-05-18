@@ -1289,12 +1289,14 @@ function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: strin
   const [showOriginal, setShowOriginal] = useState(false);
   const hasTranslation = !!(m.bodyOriginal && m.bodyOriginal !== m.body);
   const body = hasTranslation && showOriginal ? m.bodyOriginal! : m.body;
+  const displayName = m.from === 'them'
+    ? (m.name && m.name !== 'Guest' ? m.name : threadGuest)
+    : (m.name || 'Friday');
   return (
     <div className={`msg-bubble ${m.from}`}>
       <div className="msg-meta">
-        {m.from === 'them'
-          ? (m.name && m.name !== 'Guest' ? m.name : threadGuest)
-          : (m.name || 'Friday')}
+        {displayName}
+        {m.via ? ` · via ${m.via}` : ''}
         {' · '}
         {formatRelative(m.time)}
       </div>
