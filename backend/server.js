@@ -1035,6 +1035,13 @@ require('./src/inbox/translation_worker').start();
 // + process crash leaves a row dangling — GMS has no equivalent today.
 require('./src/inbox/draft_reaper').start();
 
+// Phase 3.3 inquiry follow-up scanner — every 15min, sweep stale
+// prospect conversations and create pending_actions + AI follow-up
+// drafts. Includes the auto-dismiss pass (booking confirmed /
+// check-in passed / team responded). Mirrors what GMS did at the
+// same cadence; the GMS cron is disabled via GMS_FOLLOWUP_SCANNER_DISABLED.
+require('./src/inbox/followup_scanner').start();
+
 // ─── Unified outbound abstraction ─────────────────────────────────
 // POST /api/outbound/send federates per-channel send paths under one
 // endpoint. Per locked decision §2 — first callers are TeamInbox
