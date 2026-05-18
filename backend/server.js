@@ -1379,25 +1379,12 @@ app.get('/api/auth/login-roster', asyncHandler(async (req, res) => {
 const conversationsReadRouter = require('./src/inbox/conversations_read');
 app.use('/api/inbox/conversations', conversationsReadRouter);
 
-app.get('/api/inbox/conversations/:id/reservation', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/conversations/${req.params.id}/reservation`)
-));
-
-// ─── Conversation mutations ───────────────────────────────────────────
-// Read/unread, notes/status updates, on-demand translation. All thin
-// pass-throughs to GMS — GMS owns the conversation record + RLS.
-
-app.patch('/api/inbox/conversations/:id/read', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/conversations/${req.params.id}/read`, 'patch')
-));
-
-app.patch('/api/inbox/conversations/:id/unread', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/conversations/${req.params.id}/unread`, 'patch')
-));
-
-app.patch('/api/inbox/conversations/:id', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/conversations/${req.params.id}`, 'patch')
-));
+// /:id/reservation, /:id/drafts, /:id/channels, /search, /filters, and
+// the PATCH /:id/read, /:id/unread, /:id (status) routes are all
+// handled by conversationsReadRouter above (Phase 2+3 port).
+//
+// On-demand translation stays proxied — it calls into GMS's draft
+// generator (intelligence-layer-adjacent, frozen anti-goal).
 
 app.post('/api/inbox/conversations/:id/translate', requireAuth, asyncHandler((req, res) =>
   gmsProxy(req, res, `/api/conversations/${req.params.id}/translate`, 'post')
@@ -1423,13 +1410,12 @@ app.post('/api/inbox/conversations/:id/compose', requireAuth, asyncHandler((req,
 //                                                  ↘ superseded
 //   sent path: send_queued → sent | send_failed | dismissed
 
-app.get('/api/inbox/drafts/queued/list', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, '/api/drafts/queued/list')
-));
-
-app.get('/api/inbox/drafts/:id', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/drafts/${req.params.id}`)
-));
+// GET /api/inbox/drafts/queued/list + /api/inbox/drafts/:id are now
+// FAD-native (Phase 2 of the read-side port). The write-side draft
+// mutations below remain proxied — they orchestrate the intelligence
+// layer (auto-learn, action-detector, learning-collector, etc.).
+const draftsReadRouter = require('./src/inbox/drafts_read');
+app.use('/api/inbox/drafts', draftsReadRouter);
 
 // Friday-gms requires `reviewed_by` on every draft mutation for the
 // audit log (who approved/rejected/revised/etc.). The legacy GMS
