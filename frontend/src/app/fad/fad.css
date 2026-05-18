@@ -1568,6 +1568,13 @@ html.fad-dark .fad-palette-overlay { background: rgba(0,0,0,0.6); }
   50% { opacity: 0.85; transform: scale(1.1); box-shadow: 0 0 0 3px transparent; }
 }
 
+/* Mic button — recording state pulse. Used by the feedback FAB
+   dictation control (BugReport.tsx → useSpeechDictation). */
+@keyframes fad-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-text-danger); }
+  50%      { box-shadow: 0 0 0 4px transparent; }
+}
+
 /* Module body fades in when switching */
 .fad-main > * {
   animation: fad-fade-in var(--dur-3) var(--ease);

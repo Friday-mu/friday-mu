@@ -6,9 +6,110 @@
 // BugReport for backwards-compat with the existing FadApp import; the
 // public surface is broader now.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
+
+// ── Web Speech dictation ─────────────────────────────────────────────
+//
+// Lightweight wrapper over the browser's SpeechRecognition API so ops
+// can dictate bug reports instead of typing. Zero backend cost. Falls
+// back gracefully (returns supported=false) when the browser doesn't
+// implement the API (Firefox without the flag, older Safari).
+//
+// The API is not yet in lib.dom.d.ts ubiquitously, so we go through
+// `any` for the constructor/instance instead of pulling in a separate
+// @types package.
+
+type DictationState = 'idle' | 'recording' | 'unsupported';
+
+function useSpeechDictation({
+  onInterim,
+  onFinal,
+  lang,
+}: {
+  onInterim: (text: string) => void;
+  onFinal: (text: string) => void;
+  lang?: string;
+}): { state: DictationState; toggle: () => void; supported: boolean } {
+  const [state, setState] = useState<DictationState>('idle');
+  const recognitionRef = useRef<unknown>(null);
+  // Stash callbacks in refs so the setup effect doesn't re-fire (and
+  // throw away the recognition object) every parent render.
+  const onInterimRef = useRef(onInterim);
+  const onFinalRef = useRef(onFinal);
+  useEffect(() => { onInterimRef.current = onInterim; }, [onInterim]);
+  useEffect(() => { onFinalRef.current = onFinal; }, [onFinal]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as {
+      SpeechRecognition?: new () => unknown;
+      webkitSpeechRecognition?: new () => unknown;
+    };
+    const Recognition = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!Recognition) {
+      setState('unsupported');
+      return;
+    }
+    const r = new Recognition() as {
+      continuous: boolean;
+      interimResults: boolean;
+      lang: string;
+      onresult: (e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void;
+      onend: () => void;
+      onerror: (e: { error: string }) => void;
+      start: () => void;
+      stop: () => void;
+    };
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = lang ?? (typeof navigator !== 'undefined' ? navigator.language || 'en-US' : 'en-US');
+    r.onresult = (event) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) final += result[0].transcript;
+        else interim += result[0].transcript;
+      }
+      if (final) onFinalRef.current(final);
+      if (interim) onInterimRef.current(interim);
+    };
+    r.onend = () => setState('idle');
+    r.onerror = () => setState('idle');
+    recognitionRef.current = r;
+    return () => {
+      try { r.stop(); } catch { /* already stopped */ }
+      recognitionRef.current = null;
+    };
+  }, [lang]);
+
+  const toggle = useCallback(() => {
+    const r = recognitionRef.current as { start: () => void; stop: () => void } | null;
+    if (!r) return;
+    setState((prev) => {
+      if (prev === 'recording') {
+        try { r.stop(); } catch { /* already stopped */ }
+        return 'idle';
+      }
+      try { r.start(); return 'recording'; }
+      catch { return 'idle'; }
+    });
+  }, []);
+
+  return { state, toggle, supported: state !== 'unsupported' };
+}
+
+function IconMic({ size = 14, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="2" width="6" height="12" rx="3" fill={active ? 'currentColor' : 'none'} />
+      <path d="M5 10v2a7 7 0 0 0 14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
+  );
+}
 
 type FeedbackType = 'bug' | 'feature' | 'suggestion';
 
@@ -316,6 +417,31 @@ function BugReportModal({
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, thinking]);
 
+  // Dictation — appends final transcript chunks to a rolling base so
+  // partial (interim) results can replace cleanly without nuking what
+  // the user typed before clicking the mic.
+  const dictationBaseRef = useRef('');
+  const dictation = useSpeechDictation({
+    onInterim: (text) => {
+      const base = dictationBaseRef.current;
+      setInput(base + (base && !base.endsWith(' ') ? ' ' : '') + text);
+    },
+    onFinal: (text) => {
+      const base = dictationBaseRef.current;
+      const joined = base + (base && !base.endsWith(' ') ? ' ' : '') + text.trim();
+      dictationBaseRef.current = joined;
+      setInput(joined);
+    },
+  });
+
+  const handleMicClick = () => {
+    if (dictation.state === 'idle') {
+      // Snapshot the current input so dictation appends instead of replacing.
+      dictationBaseRef.current = input;
+    }
+    dictation.toggle();
+  };
+
   const trimmedInput = input.trim();
   const userMsgCount = messages.filter((m) => m.role === 'user').length;
   const fridayMsgCount = messages.filter((m) => m.role === 'friday').length;
@@ -331,6 +457,10 @@ function BugReportModal({
 
   const send = async () => {
     if (!canSend) return;
+    // Stop any in-flight dictation so the next interim result doesn't
+    // refill the cleared input with the previous utterance.
+    if (dictation.state === 'recording') dictation.toggle();
+    dictationBaseRef.current = '';
     const userMsg: ChatMessage = { role: 'user', text: trimmedInput };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
@@ -380,6 +510,8 @@ function BugReportModal({
   // suggestion, so reusing a transcript would confuse Kimi.
   const switchType = (t: FeedbackType) => {
     if (t === type) return;
+    if (dictation.state === 'recording') dictation.toggle();
+    dictationBaseRef.current = '';
     setType(t);
     setMessages([]);
     setInput('');
@@ -567,11 +699,41 @@ function BugReportModal({
               disabled={thinking || reachedTurnCap}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 6 }}>
-              <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-                {reachedTurnCap
-                  ? 'Friday\'s heard enough — submit when ready.'
-                  : 'Cmd/Ctrl+Enter to send.'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                {dictation.supported && (
+                  <button
+                    type="button"
+                    onClick={handleMicClick}
+                    disabled={thinking || reachedTurnCap}
+                    aria-pressed={dictation.state === 'recording'}
+                    title={dictation.state === 'recording' ? 'Stop dictation' : 'Dictate (uses browser speech recognition)'}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 26,
+                      height: 26,
+                      borderRadius: 999,
+                      border: '1px solid var(--color-border)',
+                      background: dictation.state === 'recording' ? 'var(--color-bg-danger)' : 'var(--color-bg-subtle)',
+                      color: dictation.state === 'recording' ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)',
+                      cursor: thinking || reachedTurnCap ? 'not-allowed' : 'pointer',
+                      opacity: thinking || reachedTurnCap ? 0.4 : 1,
+                      animation: dictation.state === 'recording' ? 'fad-mic-pulse 1.4s ease-in-out infinite' : undefined,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <IconMic size={13} active={dictation.state === 'recording'} />
+                  </button>
+                )}
+                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                  {dictation.state === 'recording'
+                    ? 'Listening… click mic to stop.'
+                    : reachedTurnCap
+                      ? 'Friday\'s heard enough — submit when ready.'
+                      : 'Cmd/Ctrl+Enter to send.'}
+                </span>
+              </div>
               <button
                 type="button"
                 className="btn primary sm"
