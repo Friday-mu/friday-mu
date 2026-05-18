@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   INBOX_INTERNAL_NOTES,
-  INBOX_THREADS,
   type InboxEntity,
   type InboxMessage,
   type InboxThread,
@@ -184,8 +183,10 @@ export function InboxModule({ onAskFriday }: Props) {
   // detected language. Per-message "Show original" toggle is on each
   // bubble. No need for a top-level toggle. Per Ishant 2026-05-17.
 
-  // Live GMS data via FAD backend proxy; falls back to fixture INBOX_THREADS
-  // during initial load or on backend failure so the inbox never blanks out.
+  // Live GMS data via FAD backend proxy. The fixture INBOX_THREADS is
+  // an empty array today, so a previous "silent fallback to fixtures"
+  // pattern was hiding real load failures behind a blank list — see
+  // inboxError surfaced below so the failure is now visible.
   const { threads: liveThreads, loading: inboxLoading, error: inboxError, refetch: refetchConversations } = useLiveConversations();
 
   // Website-inbox fold (locked decision §L, 2026-05-17). friday.mu
@@ -193,7 +194,7 @@ export function InboxModule({ onAskFriday }: Props) {
   // list, with entity='unclassified' so operators triage them per row.
   const { threads: websiteThreads } = useWebsiteThreads();
   const sourceThreads = useMemo(() => {
-    const guesty = liveThreads ?? INBOX_THREADS;
+    const guesty = liveThreads ?? [];
     if (!websiteThreads || websiteThreads.length === 0) return guesty;
     const merged = [...guesty, ...websiteThreads];
     // Sort by last activity descending so newest activity bubbles up
@@ -664,7 +665,52 @@ export function InboxModule({ onAskFriday }: Props) {
               <span>Threads · {filtered.length}</span>
             </div>
           )}
-          {filtered.length === 0 && (
+          {inboxError && (
+            <div
+              role="alert"
+              style={{
+                margin: '12px 16px',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-bg-danger)',
+                color: 'var(--color-text-danger)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ marginBottom: 6 }}>
+                Inbox failed to load: <strong>{inboxError}</strong>
+              </div>
+              <button
+                type="button"
+                onClick={refetchConversations}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid currentColor',
+                  background: 'transparent',
+                  color: 'inherit',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!inboxError && inboxLoading && liveThreads === null && (
+            <div
+              style={{
+                padding: 24,
+                textAlign: 'center',
+                fontSize: 12,
+                color: 'var(--color-text-tertiary)',
+              }}
+            >
+              Loading conversations…
+            </div>
+          )}
+          {!inboxError && !inboxLoading && filtered.length === 0 && (
             <div
               style={{
                 padding: 24,
