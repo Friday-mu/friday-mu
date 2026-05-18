@@ -388,6 +388,16 @@ router.get('/:id/channels', attachIdentity, async (req, res) => {
   }
 });
 
+// Website-inbox thread IDs are prefixed with `web-` and aren't UUIDs.
+// The unified inbox UI sends mark-read/unread to /api/inbox/conversations/
+// regardless of source, so we have to gracefully short-circuit those —
+// the website-inbox has its own read-state mechanism in
+// /api/inbox/website/*. Returning success keeps the badge logic stable
+// without erroring.
+function isWebsiteThreadId(id) {
+  return typeof id === 'string' && id.startsWith('web-');
+}
+
 // ────────────────────────────────────────────────────────────────────
 // PATCH /api/inbox/conversations/:id/read
 // Upsert read_status row for (conv, user).
@@ -395,6 +405,10 @@ router.get('/:id/channels', attachIdentity, async (req, res) => {
 router.patch('/:id/read', attachIdentity, async (req, res) => {
   try {
     const { id } = req.params;
+    if (isWebsiteThreadId(id)) {
+      // website-inbox owns its own read tracking; no-op for us.
+      return res.json({ success: true, skipped: 'website-thread' });
+    }
     const userId = req.identity?.username || req.identity?.userId || 'unknown';
     await query(
       `INSERT INTO read_status (conversation_id, user_id, last_read_at)
@@ -417,6 +431,9 @@ router.patch('/:id/read', attachIdentity, async (req, res) => {
 router.patch('/:id/unread', attachIdentity, async (req, res) => {
   try {
     const { id } = req.params;
+    if (isWebsiteThreadId(id)) {
+      return res.json({ success: true, skipped: 'website-thread' });
+    }
     const userId = req.identity?.username || req.identity?.userId || 'unknown';
     await query(
       'DELETE FROM read_status WHERE conversation_id = $1 AND user_id = $2',

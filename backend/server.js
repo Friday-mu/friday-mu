@@ -1438,6 +1438,13 @@ app.post('/api/inbox/conversations/:id/compose', requireAuth, asyncHandler((req,
 const draftsReadRouter = require('./src/inbox/drafts_read');
 app.use('/api/inbox/drafts', draftsReadRouter);
 
+// POST /api/inbox/drafts/:id/approve — FAD-native (Stage 2.1 port).
+// Owns translation + Guesty send + state transition + message insert.
+// The other draft mutations (reject/revise/retry/fail/dismiss) stay
+// proxied below — they touch the GMS intelligence layer.
+const draftsSendRouter = require('./src/inbox/drafts_send');
+app.use('/api/inbox/drafts', draftsSendRouter);
+
 // Friday-gms requires `reviewed_by` on every draft mutation for the
 // audit log (who approved/rejected/revised/etc.). The legacy GMS
 // dashboard passed it from its session; FAD frontend may omit it, so
