@@ -8,7 +8,7 @@
     "area": "Flic en Flac",
     "region": "west",
     "address": "Avenue Des Toucans, 90502 Flic en Flac, Mauritius",
-    "floor": null,
+    "floor": 4,
     "coordinates": {
       "lat": null,
       "lng": null
@@ -66,7 +66,7 @@
     "gym": false,
     "elevator": true,
     "garage": true,
-    "view": [],
+    "view": ["sea"],
     "power_backup": null,
     "pool_access": {
       "type": null,
@@ -89,7 +89,7 @@
       "code_last_updated": null
     },
     "spare_keys": {
-      "location": null,
+      "location": "In the cabinet above the fridge",
       "phone": null
     },
     "wifi": {
@@ -129,7 +129,9 @@
     "cleaning_fee_eur": null,
     "minimum_stay_nights": null
   },
-  "operational_notes": [],
+  "operational_notes": [
+    "Top-floor (4th) penthouse with sea view, on the same floor as RC-15. Sleeping capacity slightly higher than RC-15 (6 vs 5)."
+  ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
     "equipment_specific_mitigations": [],

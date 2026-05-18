@@ -69,8 +69,8 @@
     "view": [],
     "power_backup": null,
     "pool_access": {
-      "type": null,
-      "location": null,
+      "type": "shared_complex",
+      "location": "Back of the building. From the road entrance, go straight ahead, turn left after the stairs that go up, continue around the corner to the back.",
       "hours": null
     },
     "air_conditioning": {
@@ -129,7 +129,9 @@
     "cleaning_fee_eur": null,
     "minimum_stay_nights": null
   },
-  "operational_notes": [],
+  "operational_notes": [
+    "Main electrical meter is managed by CEB (Mauritian electricity authority). Electrical issues at the building meter level are outside Friday Retreats' control and require CEB intervention."
+  ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
     "equipment_specific_mitigations": [],

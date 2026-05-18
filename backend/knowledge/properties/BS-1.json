@@ -95,10 +95,10 @@
     "complex_name": null,
     "complex_code": null,
     "electrical_authority": "CEB",
-    "shared_facilities": [],
+    "shared_facilities": ["entrance"],
     "syndic": null,
     "acoustic_notes": null,
-    "notes": null
+    "notes": "Three units on the compound: this guest apartment, a similar apartment on the ground floor, and the owner's unit upstairs. Entrance is shared; each apartment is fully private."
   },
   "distances": {
     "airport": {

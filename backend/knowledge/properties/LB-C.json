@@ -7,7 +7,7 @@
   "location": {
     "area": "Flic en Flac",
     "region": "west",
-    "address": null,
+    "address": "Avenue Pailles en Queue, Flic en Flac, Mauritius",
     "floor": null,
     "coordinates": {
       "lat": null,
@@ -24,7 +24,7 @@
     "LB-2",
     "LB-3"
   ],
-  "adjacent_friday_properties": [],
+  "adjacent_friday_properties": ["NYH-A2"],
   "capacity": {
     "adults": 18,
     "children": 0,
@@ -169,13 +169,15 @@
   "distances": {
     "airport": {
       "km": null,
-      "minutes_typical": null
+      "minutes_typical": 53
     },
     "nearest_beach": {
-      "minutes_walk": null,
-      "name": null
+      "minutes_walk": 5,
+      "name": "Flic en Flac beach"
     },
-    "nearby_landmarks": []
+    "nearby_landmarks": [
+      { "name": "NYH-A2 (Friday property)", "minutes_walk": 5, "type": "landmark" }
+    ]
   },
   "house_rules": {
     "smoking": null,
@@ -189,13 +191,17 @@
     "minimum_stay_nights": null
   },
   "operational_notes": [
-    "Complex has 3 separate villas (LB-1, LB-2, LB-3) that can be booked individually or together",
-    "Max 18 guests when all booked together",
-    "Pool is shared between the 3 villas",
-    "Great for weddings/events but need advance notice",
-    "The pool is shared between the 3 villas. It is effectively private only when all 3 villas are booked together by a single group.",
+    "Complex has 3 separate villas (LB-1, LB-2, LB-3) that can be booked individually or together.",
+    "Subunit names (keep in French, do not translate): LB-1 is 'La Raie Manta', LB-2 is 'Le Requin', LB-3 is 'L'Espadon'.",
+    "Max 18 guests when all booked together. Capacity breakdown: 2 king beds, 6 queen/double beds, 2 single beds across 9 bedrooms.",
+    "Pool is shared between the 3 villas. It is effectively private only when all 3 villas are booked together by a single group. Pool is on a regular cleaning schedule.",
+    "Pool net is stored next to LB-1 (La Raie Manta), near where the sun loungers are kept.",
+    "2 of the 3 villas have been fully renovated (approximately early 2026). The third villa retains an older interior style; check with the team for the current renovation timeline.",
+    "Great for weddings/events but needs advance notice.",
     "Verify specific-villa availability with the team before confirming which villa(s) a guest will occupy.",
-    "Cribs available on request, 1 per villa."
+    "Cribs available on request, 1 per villa.",
+    "BBQ is available for guest use at the property.",
+    "Garbage setup: small bins in each villa's kitchen; larger bins are in the courtyard near the entrance, by the electricity meters."
   ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",

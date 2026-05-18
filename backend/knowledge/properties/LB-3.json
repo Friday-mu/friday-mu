@@ -31,21 +31,21 @@
     {
       "id": 1,
       "beds": [
-        "double"
+        "king"
       ],
       "ac": true
     },
     {
       "id": 2,
       "beds": [
-        "double"
+        "queen"
       ],
       "ac": true
     },
     {
       "id": 3,
       "beds": [
-        "double"
+        "queen"
       ],
       "ac": true
     }
@@ -129,7 +129,10 @@
     "cleaning_fee_eur": null,
     "minimum_stay_nights": null
   },
-  "operational_notes": [],
+  "operational_notes": [
+    "Display name (do not translate): 'L'Espadon'. Keep in French.",
+    "Bedroom setup matches LB-2: 2 bedrooms with queen-size beds and 1 bedroom with a king-size bed."
+  ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
     "equipment_specific_mitigations": [],

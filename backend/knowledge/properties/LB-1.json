@@ -31,21 +31,23 @@
     {
       "id": 1,
       "beds": [
-        "double"
+        "single",
+        "single"
       ],
-      "ac": true
+      "ac": true,
+      "label": "kid-friendly bedroom"
     },
     {
       "id": 2,
       "beds": [
-        "double"
+        "queen"
       ],
       "ac": true
     },
     {
       "id": 3,
       "beds": [
-        "double"
+        "queen"
       ],
       "ac": true
     }
@@ -129,7 +131,10 @@
     "cleaning_fee_eur": null,
     "minimum_stay_nights": null
   },
-  "operational_notes": [],
+  "operational_notes": [
+    "Display name (do not translate): 'La Raie Manta'. Keep in French.",
+    "Only bedroom at LB-C with single beds is the kid-friendly room in LB-1 (room 1). No bedroom combines single + double beds in the same room."
+  ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
     "equipment_specific_mitigations": [],

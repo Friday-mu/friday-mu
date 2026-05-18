@@ -122,7 +122,9 @@
     "cleaning_fee_eur": null,
     "minimum_stay_nights": null
   },
-  "operational_notes": [],
+  "operational_notes": [
+    "TV is connected to a Mi Box via HDMI. Guests access YouTube and streaming apps through the Mi Box interface. If the TV shows the wrong input, cycle HDMI sources on the remote until the Mi Box interface appears."
+  ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
     "equipment_specific_mitigations": [],

@@ -122,7 +122,9 @@
     "cleaning_fee_eur": null,
     "minimum_stay_nights": null
   },
-  "operational_notes": [],
+  "operational_notes": [
+    "Long-term-rental (yearly) terms: MUR 50,000/month, 1 month deposit + 1 month agency fee. Electricity billed separately; WiFi included."
+  ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
     "equipment_specific_mitigations": [],
