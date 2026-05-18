@@ -22,6 +22,7 @@
 const { query } = require('../database/client');
 const { defaultComposer } = require('../knowledge/composer');
 const { generateDraftReply, DRAFT_MODEL } = require('../ai/kimi_draft');
+const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
 
 const DRAFT_INITIAL_STATE = 'friday_drafting';
 const DRAFT_READY_STATE = 'draft_ready';
@@ -152,7 +153,15 @@ Guest: ${guestName || 'Guest'}
 
 Output the message text only — no preamble, no commentary.`;
 
-    const systemPrompt = `${composed.system_message}\n\n${taskFraming}`;
+    // Dynamic learning blocks — restored after Sprint 8/9 audit
+    // (2026-05-19). Same rationale as draft_generator.js: composer
+    // alone doesn't carry teachings + action_feedback, GMS originals
+    // injected both per surface. Sprint 9 contract preserved them.
+    const [teachingsBlock, feedbackBlock] = await Promise.all([
+      loadTeachingsBlock(propertyCode),
+      loadActionFeedbackBlock(),
+    ]);
+    const systemPrompt = `${composed.system_message}${teachingsBlock}${feedbackBlock}\n\n${taskFraming}`;
     const userMessage = `CONVERSATION SO FAR:\n${conversationContext}`;
 
     const kimi = await generateDraftReply({

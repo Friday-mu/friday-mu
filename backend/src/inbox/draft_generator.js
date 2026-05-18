@@ -31,6 +31,7 @@
 const { query } = require('../database/client');
 const { defaultComposer } = require('../knowledge/composer');
 const { generateDraftReply, classifyMessageWithKimi, DRAFT_MODEL } = require('../ai/kimi_draft');
+const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
 
 const DRAFT_INITIAL_STATE = 'friday_drafting';
 const DRAFT_READY_STATE = 'draft_ready';
@@ -350,9 +351,20 @@ ${history}
 
 ${taskDirective}`;
 
+  // 4b. Dynamic learning blocks — restored after Sprint 8/9 audit
+  // (2026-05-19): the structured composer doesn't include them, but
+  // GMS draft-generator.ts:726-751 + :941-960 always injected them
+  // and Sprint 9 explicitly preserved the contract. Appended to the
+  // composer's system_message so they augment rather than replace.
+  const [teachingsBlock, feedbackBlock] = await Promise.all([
+    loadTeachingsBlock(propertyCode),
+    loadActionFeedbackBlock(),
+  ]);
+  const systemPrompt = composerOutput.system_message + teachingsBlock + feedbackBlock;
+
   // 5. Call Kimi.
   const kimi = await generateDraftReply({
-    system: composerOutput.system_message,
+    system: systemPrompt,
     user: userMessage,
     meter: { feature: 'inbox_draft' },
   });

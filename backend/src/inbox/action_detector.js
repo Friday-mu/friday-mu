@@ -23,6 +23,7 @@
 const { query } = require('../database/client');
 const { defaultComposer } = require('../knowledge/composer');
 const { extractStructuredOutput, EXTRACT_MODEL } = require('../ai/kimi_draft');
+const { loadTeachingsBlock } = require('./learning_context');
 const { checkAutoRules } = require('./action_suppression');
 const { getLearnedDeadlineHours } = require('./deadline_learner');
 
@@ -173,8 +174,15 @@ async function detectActions(params) {
       });
     }
 
+    // Dynamic teachings injection — restored after Sprint 8/9 audit
+    // (2026-05-19). GMS action-detector.ts always pulled active
+    // teachings into the system prompt; my Phase 3.2 port dropped it.
+    // Action_feedback isn't injected here (GMS doesn't do that for the
+    // detector — feedback shapes pending_actions, doesn't shape detection).
+    const teachingsBlock = await loadTeachingsBlock(propertyCode);
+
     const taskInstruction = buildTaskInstruction({ checkInDate, checkOutDate });
-    const systemPrompt = `${composed.system_message}\n\n${taskInstruction}`;
+    const systemPrompt = `${composed.system_message}${teachingsBlock}\n\n${taskInstruction}`;
     const userMessage = `Reply text:\n"""\n${draftBody}\n"""`;
 
     // 3. Kimi extraction.
