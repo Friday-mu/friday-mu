@@ -31,12 +31,36 @@ function publicError(res, status, code, message) {
 
 const router = express.Router();
 
-// Shape the website uses. Mirrors the internal /api/properties shape
-// almost exactly — minor renames where the website's GuestyListingDTO
-// uses different keys. If the website session confirms a different
-// envelope spec, this map gets tweaked.
+// Numeric coercion for jsonb-extracted values (jsonb scalars come out
+// as strings via `->>`). Returns null for null / undefined / NaN.
+function num(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Shape the website's GuestyListingDTO maps to. Per their 2026-05-18
+// reply (FAD-REPLY-STAGE1.md): renames + unit conversions stay on
+// their side, FAD keeps the cleaner names. The bottom block reads from
+// the `raw` JSONB — these fields aren't projected into dedicated
+// columns yet, but the poller stores the full Guesty payload so we
+// have them. A later migration can promote them out of `raw` for
+// indexability if it becomes load-bearing.
+//
+// Money field convention:
+// - basePriceMinor: minor units (cents) — preserved from the
+//   `base_price_minor` column populated by the poller.
+// - cleaningFee / extraPersonFee: whatever Guesty stores in prices.*
+//   (typically major units in the listing's currency_code). Website
+//   normalises on their side.
+//
+// Factor fields (weeklyPriceFactor, monthlyPriceFactor) are decimals,
+// e.g. 0.85 = 15% discount applied to the long-stay total.
 function shapeListingPublic(row) {
   if (!row) return null;
+  const raw = row.raw || {};
+  const prices = raw.prices || {};
+  const terms = raw.terms || {};
   return {
     id: row.id,
     guestyId: row.guesty_id,
@@ -50,10 +74,19 @@ function shapeListingPublic(row) {
     cohort: row.cohort,
     pictureUrl: row.picture_url,
     propertyType: row.property_type,
+    roomType: raw.roomType || null,
     bedrooms: row.bedrooms,
     bathrooms: row.bathrooms != null ? Number(row.bathrooms) : null,
+    beds: num(raw.beds),
     accommodates: row.accommodates,
     basePriceMinor: row.base_price_minor != null ? Number(row.base_price_minor) : null,
+    cleaningFee: num(prices.cleaningFee),
+    extraPersonFee: num(prices.extraPersonFee),
+    guestsIncludedInRegularFee: num(prices.guestsIncludedInRegularFee),
+    weeklyPriceFactor: num(prices.weeklyPriceFactor),
+    monthlyPriceFactor: num(prices.monthlyPriceFactor),
+    minNights: num(terms.minNights),
+    maxNights: num(terms.maxNights),
     currencyCode: row.currency_code,
     isActive: row.is_active,
     syncedAt: row.synced_at,
