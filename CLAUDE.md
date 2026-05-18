@@ -45,6 +45,27 @@ Friday Admin Dashboard (FAD) is the operations cockpit for Friday Retreats — a
 - **Data fixtures:** `src/app/fad/_data/*.ts` — module data, fixtures, and config objects.
 - **TypeScript:** `ignoreBuildErrors: true` in next.config.js — don't rely on this; fix types properly.
 
+## Reusable features (cross-product catalog)
+
+Before implementing a feature that may already exist in another product (GMS, the website, Zunko, etc.), **check the feature catalog first**: `Friday-mu/feature-catalog` on GitHub.
+
+Catalogued features relevant to FAD:
+
+- **[Friday Consult pattern](https://github.com/Friday-mu/feature-catalog/blob/main/ui/friday-consult-pattern.md)** — embedded AI consult chat (revision/compose/draft-review/teaching); canonical impl is `frontend/src/components/ConsultChat.tsx`.
+- **[FAD dashboard shell](https://github.com/Friday-mu/feature-catalog/blob/main/ui/fad-dashboard-shell.md)** — the shell pattern itself (sidebar + module routing + static export).
+- **[Chat history + summarization](https://github.com/Friday-mu/feature-catalog/blob/main/architecture/chat-history-summarization.md)** — multi-session GMS-side pattern; FAD consumes it via `ConsultChat`.
+
+**Fetch a catalog entry from any session:**
+
+```bash
+gh api repos/Friday-mu/feature-catalog/contents/README.md --jq .content | base64 -d   # master index
+gh api repos/Friday-mu/feature-catalog/contents/ui/friday-consult-pattern.md --jq .content | base64 -d   # any entry
+```
+
+Or clone once for fast local read: `git clone git@github.com:Friday-mu/feature-catalog.git ~/repos/feature-catalog`.
+
+**Discipline:** if you change a catalogued feature in this repo (e.g. `ConsultChat.tsx`), **update its catalog entry in the same commit**. Drift kills the catalog.
+
 ## Common patterns
 
 **Adding a page:** Create folder under `src/app/fad/` or root `src/app/`, add `page.tsx`. Use `layout.tsx` for shared shells.
