@@ -77,7 +77,14 @@ function useSpeechDictation({
       if (interim) onInterimRef.current(interim);
     };
     r.onend = () => setState('idle');
-    r.onerror = () => setState('idle');
+    r.onerror = (e) => {
+      // `not-allowed` (user denied mic), `no-speech`, `audio-capture`,
+      // `network`, etc. Log so a console glance diagnoses why a click
+      // had no visible effect; user-facing toast would be noisier.
+      // eslint-disable-next-line no-console
+      console.warn('[dictation] recognition error:', e?.error);
+      setState('idle');
+    };
     recognitionRef.current = r;
     return () => {
       try { r.stop(); } catch { /* already stopped */ }
@@ -85,18 +92,31 @@ function useSpeechDictation({
     };
   }, [lang]);
 
+  // Toggle MUST call r.start() / r.stop() synchronously inside the
+  // user-gesture click handler, NOT inside a setState updater. Browsers
+  // (Chrome and Safari both) silently refuse to activate the mic if
+  // .start() runs outside the gesture context — and React invokes
+  // setState updaters asynchronously, which breaks that chain. Read
+  // `state` from closure (deps array tracks it) instead.
   const toggle = useCallback(() => {
     const r = recognitionRef.current as { start: () => void; stop: () => void } | null;
     if (!r) return;
-    setState((prev) => {
-      if (prev === 'recording') {
-        try { r.stop(); } catch { /* already stopped */ }
-        return 'idle';
+    if (state === 'recording') {
+      try { r.stop(); } catch { /* already stopped */ }
+      setState('idle');
+      return;
+    }
+    if (state === 'idle') {
+      try {
+        r.start();
+        setState('recording');
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[dictation] start failed:', err);
+        setState('idle');
       }
-      try { r.start(); return 'recording'; }
-      catch { return 'idle'; }
-    });
-  }, []);
+    }
+  }, [state]);
 
   return { state, toggle, supported: state !== 'unsupported' };
 }
