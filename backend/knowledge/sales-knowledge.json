@@ -1,0 +1,71 @@
+{
+  "follow_up_templates": {
+    "initial_contact": {
+      "tone": "warm, enthusiastic, helpful",
+      "key_elements": ["acknowledge their interest", "highlight property strengths", "offer to answer questions", "mention availability"],
+      "example_openings": [
+        "Thank you for your interest in [property]! We'd love to help you plan your perfect stay.",
+        "Great to hear from you! [Property] is a wonderful choice for your dates."
+      ]
+    },
+    "warm_follow_up": {
+      "tone": "friendly, personal, low-pressure",
+      "key_elements": ["reference original inquiry", "add value (local tips, seasonal highlights)", "gentle availability reminder", "offer flexibility"],
+      "example_openings": [
+        "Just checking in — I noticed you were looking at [property] for [dates]. Still considering?",
+        "Hi [name], following up on your inquiry. Happy to answer any questions about [property] or the area."
+      ]
+    },
+    "final_attempt": {
+      "tone": "professional, respectful of their time, creates gentle urgency",
+      "key_elements": ["acknowledge they may be busy", "mention if dates are popular", "offer alternative properties", "leave door open"],
+      "example_openings": [
+        "I know you're probably weighing options — just wanted to let you know [property] is getting quite popular for your dates.",
+        "Last note from me — if [property] isn't quite right, we have some other options that might be a better fit."
+      ]
+    }
+  },
+  "objection_handling": {
+    "price_concern": {
+      "approach": "Value framing, not discounting",
+      "talking_points": ["Highlight what's included (cleaning, amenities, concierge)", "Compare value to hotel rates", "Mention loyalty benefits for returning guests", "Offer longer-stay discounts if applicable"]
+    },
+    "availability": {
+      "approach": "Offer alternatives immediately",
+      "talking_points": ["Suggest similar properties in the same area", "Offer flexible dates if possible", "Add to waitlist if cancellation likely"]
+    },
+    "location_questions": {
+      "approach": "Paint a picture of the experience",
+      "talking_points": ["Proximity to beaches/attractions", "Transport options", "Local restaurant recommendations", "Neighborhood character and safety"]
+    },
+    "comparison_shopping": {
+      "approach": "Differentiate on service, not just price",
+      "talking_points": ["Personal concierge service", "Local expertise and recommendations", "Property quality guarantee", "Flexible check-in/out", "Direct communication (no platform delays)"]
+    }
+  },
+  "tone_escalation": {
+    "stage_1_inquiry": "Warm, enthusiastic, helpful — match their energy",
+    "stage_2_followup_3h": "Friendly, informative — add value, don't just ask 'still interested?'",
+    "stage_3_followup_12h": "Personal, low-pressure — reference specifics from their inquiry",
+    "stage_4_followup_24h": "Professional, gentle urgency — mention popularity or limited availability",
+    "stage_5_followup_1w": "Respectful closing — offer alternatives, leave door open"
+  },
+  "general_selling_points": {
+    "friday_retreats": [
+      "Curated collection of premium properties across Mauritius",
+      "Personal concierge service from booking to checkout",
+      "Local team on the ground for any issues",
+      "Direct communication — no waiting for platform message relay",
+      "Flexible booking terms",
+      "Authentic Mauritius experiences — local tips and recommendations"
+    ],
+    "mauritius": [
+      "Year-round tropical climate",
+      "World-class beaches and marine life",
+      "Rich cultural diversity (Creole, Indian, Chinese, French)",
+      "Safe and welcoming destination",
+      "Direct flights from major European and Asian hubs",
+      "No visa required for most nationalities"
+    ]
+  }
+}

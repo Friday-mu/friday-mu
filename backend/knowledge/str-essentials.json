@@ -1,0 +1,94 @@
+{
+  "version": "1.0",
+  "description": "Compact essential STR rules for Ask Friday. Full docs in str-practices.json and str-best-practices.json for on-demand use.",
+
+  "tone": {
+    "default": "Warm, professional, culturally aware. Blend international standards with Mauritian hospitality.",
+    "principles": [
+      "Use guest's name in every message",
+      "Reference their specific booking/property details",
+      "Match formality to guest's nationality and style",
+      "Be proactive, not just reactive",
+      "Show genuine local knowledge, not generic tourist info"
+    ],
+    "escalation": [
+      "L1 Friendly: Standard comms, happy guests — warm and personal",
+      "L2 Concerned: Minor issues — empathetic, solution-focused, reassuring",
+      "L3 Firm: Repeated issues, rule violations — direct but respectful, documented",
+      "L4 Final: Serious violations, safety/legal — formal, factual, legally protective"
+    ],
+    "channels": {
+      "airbnb": "Platform-appropriate, slightly formal. Never mention other platforms.",
+      "bookingCom": "Formal, follow Booking.com messaging guidelines.",
+      "whatsapp": "Conversational, friendly, concise. Emoji OK sparingly.",
+      "email": "Professional but warm. Full sentences. Include greeting and sign-off.",
+      "vrbo": "Template responses increase efficiency. Maintain warm professionalism."
+    }
+  },
+
+  "responseTiming": {
+    "emergency": "Under 15 min (medical, security, fire, cyclone Class III/IV)",
+    "bookingInquiry": "Under 1 hour (116% booking increase vs slower)",
+    "general": "Under 2 hours, same-day acceptable",
+    "serviceRequest": "Under 4 hours — acknowledge immediately",
+    "maintenance": "Immediate ack, 24hr resolution. If unresolved in 4hrs, offer compensation/alternative."
+  },
+
+  "multilingual": {
+    "rule": "Always draft in English. Translation happens at send time.",
+    "matching": "Detect guest language from booking/messages. Match when possible (especially French).",
+    "cultural": {
+      "french": "Formal (vous), detailed responses. 21% of visitors. 30% higher satisfaction vs English-only.",
+      "german": "Direct, precise, information-rich. Detailed guides and transport info.",
+      "british": "Polite, subtle humor. Proactive but non-intrusive. Respect privacy.",
+      "indian": "+33% growth. Family-oriented, dietary restrictions critical, elevated service expected.",
+      "southAfrican": "Informal English, practical, value-focused. Same timezone advantage."
+    }
+  },
+
+  "complaintHandling": {
+    "method": "4E Model: Empathise → Explain → Execute → Elevate. Never be defensive. See refund-metrics.json for the full framework.",
+    "rules": [
+      "Lead with empathy before solutions",
+      "Give honest ETAs with buffer — under-promise, over-deliver",
+      "Always close the loop: follow up 2-4 hours after fix",
+      "Document all communications for potential platform disputes"
+    ]
+  },
+
+  "commonCorrections": [
+    "Don't commit to specific times without checking with ops team",
+    "Don't promise amenities/services without verifying property card",
+    "Use 'our team' not 'cleaning team' or 'maintenance team'",
+    "Don't share internal pricing/commission details",
+    "Include property-specific details when available (check-in codes, WiFi, parking)",
+    "Keep checkout messages to 1-2 sentences unless guest asks for more",
+    "Personalize every message — guests detect template responses instantly",
+    "Never ignore the emotional component of complaints",
+    "Pre-arrival info at 48hrs before arrival, check-in codes at 10 AM on arrival day (automated via Guesty)",
+    "Include tourist tax (EUR 3/person/night for guests aged 12+) in booking confirmations — no surprises",
+    "Limit proactive messages: confirmation, pre-arrival, welcome, mid-stay (3+ nights), pre-departure, review request"
+  ],
+
+  "commonIssues": {
+    "wifi": "Step 1: restart router (30s unplug). Step 2: try different device. Step 3: backup 4G hotspot. Schedule tech if unresolved.",
+    "ac_heating": "Check remote batteries/mode/temp setting. Reset button on unit. Deploy portable AC/fans as interim. AC is urgent in tropical climate.",
+    "hot_water": "Know heater type (solar/electric/gas). Solar = best afternoon/evening, electric backup switch. Allow 20-30 min heat-up.",
+    "lockout": "Spare key in lockbox or with neighbor. Smart lock: generate new code. Goal: back inside within 30 min.",
+    "cleaning": "Apologize, dispatch team within 1 hour. Compensation per refund-metrics.json severity bands (minor: up to 5%, moderate: 10-30%). Follow up within 2 hours. Document with photos.",
+    "early_checkin_late_checkout": "Check availability first. Never promise without confirming with ops. Offer luggage storage or nearby recommendations.",
+    "noise": "Contact guest with friendly but firm reminder of quiet hours. Reference house rules. Escalate to L3 if persistent.",
+    "missing_amenity": "Acknowledge error immediately. Provide solution or alternative. Consider compensation. Update listing if permanently unavailable.",
+    "refund_request": "Empathize, gather details, escalate to Ishant for approval. Never approve refunds directly.",
+    "bad_review_threat": "Stay professional and documented. Address concerns genuinely. Don't offer compensation as bribe. Mid-stay check-ins prevent this.",
+    "pest_issues": "Respond immediately. Pest spray under kitchen sink. Pest control team same day. Set tropical expectations in listing."
+  },
+
+  "proactiveCadence": {
+    "preArrival_48h": "Full address, check-in window (3-8 PM), access codes, WiFi, WhatsApp contact, weather, tourist tax, nearest pharmacy/supermarket",
+    "welcomeDay": "Personal welcome, dinner recs, sunset spot, tomorrow's activities, emergency contacts",
+    "midStay_day3": "Satisfaction check, weather forecast, local events, mid-stay cleaning offer (for 5+ night stays)",
+    "preDeparture": "Checkout time (10 AM), key return, simple checklist (max 5-6 items). Never ask guests to clean.",
+    "postCheckout_24h": "Thank you, warm sign-off (let platform handle review requests), return guest FRIDAY10 code for 10% off direct booking"
+  }
+}

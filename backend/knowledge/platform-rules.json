@@ -1,0 +1,504 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-04-03",
+  "platforms": {
+    "airbnb": {
+      "pricingMarkup": "~5% above website base price. Airbnb is the preferred platform — higher quality leads, better differentiation, most volume by design.",
+      "messaging": {
+        "rules": [
+          "All guest communication must go through the Airbnb messaging system until booking is confirmed",
+          "After booking confirmation, hosts may share direct contact information (phone, email) within the platform message thread",
+          "Never ask guests to communicate outside the platform before a booking is confirmed",
+          "Messages are monitored for policy violations — assume all messages are reviewed",
+          "Automated messages are allowed but must comply with all content policies",
+          "Do not send marketing or promotional content unrelated to the current booking",
+          "Keep messages relevant to the guest's trip and booking"
+        ],
+        "restrictions": [
+          "No sharing of personal contact information (phone, email, WhatsApp) before booking confirmation",
+          "No directing guests to book off-platform or through a personal website",
+          "No mentioning that prices are cheaper if booked directly",
+          "No sharing links to competing booking platforms",
+          "No discriminatory language or content that violates anti-discrimination policies",
+          "No threatening, harassing, or abusive language",
+          "No requesting payments outside the Airbnb payment system",
+          "No requesting guests leave reviews or offering incentives for reviews",
+          "No sharing other guests' personal information"
+        ],
+        "automatedMessageLimits": "No hard limit on automated messages, but excessive messaging can lead to guest complaints. Best practice: limit to 4-5 automated touchpoints per booking (confirmation, pre-arrival, check-in day, mid-stay for longer stays, checkout reminder).",
+        "responseTimeRequirements": "Respond to all new enquiries and booking requests within 24 hours to maintain response rate. Aim for under 1 hour — Superhost criteria requires 90%+ response rate. Response rate is measured on first response to new message threads, not every message. Pre-approval or declining a request also counts as a response.",
+        "responseTimeImpact": "Response rate directly affects search ranking, Superhost eligibility, and the 'Responds within X' badge on your listing. Consistently slow responses can suppress listing visibility."
+      },
+      "cancellation": {
+        "hostPolicies": [
+          {
+            "name": "Flexible",
+            "description": "Full refund up to 24 hours before check-in (except fees). Partial refund if cancelled less than 24 hours before."
+          },
+          {
+            "name": "Moderate",
+            "description": "Full refund up to 5 days before check-in. 50% refund of nightly rate if cancelled less than 5 days before."
+          },
+          {
+            "name": "Strict",
+            "description": "Full refund within 48 hours of booking if at least 14 days before check-in. 50% refund of nightly rate if cancelled at least 7 days before check-in. No refund after that."
+          },
+          {
+            "name": "Super Strict 30 Days",
+            "description": "By invitation only. 50% refund up to 30 days before check-in. No refund within 30 days."
+          }
+        ],
+        "hostCancellationPenalties": [
+          "Hosts who cancel confirmed bookings face severe penalties",
+          "First cancellation: calendar blocked for dates, $50 penalty fee, automated review noting cancellation",
+          "Repeated cancellations: $100 penalty fee per cancellation, Superhost status revoked, potential listing suspension or removal",
+          "Host cancellation rate affects search ranking and Superhost eligibility",
+          "Never cancel on a guest — contact Airbnb support to have the guest cancel if needed"
+        ],
+        "guestPolicies": [
+          "Guests receive refunds according to the listing's cancellation policy",
+          "Service fees are generally non-refundable if cancelled after 48 hours of booking",
+          "Guests can request a full refund within 24 hours of check-in if the listing is materially different from the description"
+        ],
+        "extenuatingCircumstances": "Airbnb may override the cancellation policy for natural disasters, government travel restrictions, serious illness/injury (documented), death of host/guest or immediate family, or military deployment. Both host and guest can apply. Documentation required."
+      },
+      "reviews": {
+        "timeline": "Both guest and host have 14 days after checkout to leave a review. Reviews are published simultaneously when both parties submit, or after 14 days, whichever comes first. Neither party can see the other's review before it's published.",
+        "policies": [
+          "Reviews must reflect the actual experience during the stay",
+          "Hosts cannot offer incentives for positive reviews (discounts, gifts, refund promises)",
+          "Hosts cannot threaten negative reviews to pressure guests",
+          "Retaliatory reviews (reviewing based on the review you received) violate policy and can be removed",
+          "Reviews mentioning Airbnb policies or pricing rather than the stay experience may be removed",
+          "Guests cannot use review threats to get refunds or policy exceptions"
+        ],
+        "responseGuidelines": [
+          "You have 30 days after a review is published to post a public response",
+          "Responses are public and visible to all future guests — write for your future audience, not the reviewer",
+          "Keep responses professional, factual, and brief (2-4 sentences)",
+          "For positive reviews: thank the guest, mention something specific about their stay",
+          "For negative reviews: acknowledge the issue without being defensive, state what you've done to fix it, invite future guests to experience the improvement",
+          "Never argue, blame, or get personal in review responses",
+          "Never reveal private details about the guest's stay",
+          "A thoughtful response to a negative review builds more trust than no negative reviews at all"
+        ],
+        "superhostReviewRequirements": "Maintain 4.8+ overall rating with at least 10 reviews in the past year (or 100+ nights with 3+ stays)."
+      },
+      "resolutionCenter": {
+        "process": "Use Airbnb's Resolution Centre to request money from guests for damages or extra charges. Hosts should submit a request through the Resolution Centre, and if the guest declines, Airbnb can mediate. Always document damage with timestamped photos and provide evidence of the pre-stay condition.",
+        "damageClaimTimeline": "Submit damage claims within 14 days of checkout or before the next guest checks in, whichever is sooner. Late claims are typically denied. Take photos/video before and after every stay.",
+        "tips": [
+          "Always photograph damage immediately upon discovery with timestamps",
+          "Maintain a baseline photo set of the property (pre-stay walkthrough)",
+          "Include receipts or quotes for repairs/replacement",
+          "Contact Airbnb Support if the guest is unresponsive after 72 hours",
+          "AirCover for Hosts provides up to $3M in damage protection — but you must document and report promptly",
+          "Keep communication about damages in the Airbnb message thread for evidence"
+        ]
+      },
+      "contentRestrictions": [
+        "No sharing personal phone numbers, email addresses, or social media before booking is confirmed",
+        "No directing guests to book off-platform",
+        "No mentioning lower prices on other platforms or direct booking sites",
+        "No discriminatory preferences or language (race, religion, nationality, gender, etc.)",
+        "No sexually explicit or inappropriate content in messages or listings",
+        "No misleading information about the property or amenities",
+        "No requesting cash payments or payments outside Airbnb",
+        "No promoting illegal activities",
+        "No sharing other properties' listing URLs in guest messages (can appear as redirecting off-platform)",
+        "Photos must accurately represent the current state of the property"
+      ],
+      "hostObligations": [
+        "Provide accurate listing information — description, photos, amenities must reflect reality",
+        "Maintain the property in safe, habitable condition",
+        "Honour confirmed bookings (cancellation penalties apply)",
+        "Respond to guest messages in a timely manner",
+        "Provide all essential amenities as listed (towels, linens, toilet paper, soap, hot water)",
+        "Comply with local laws, regulations, and tax obligations",
+        "Disclose any security cameras or monitoring devices (cameras only allowed in common areas, never in bedrooms or bathrooms)",
+        "Provide accurate check-in instructions before arrival",
+        "Be available or have a co-host available for guest issues during stays"
+      ],
+      "penaltyTriggers": [
+        "Host-initiated cancellations of confirmed bookings ($50-$100+ fee, calendar blocked, Superhost at risk)",
+        "Response rate below 90% (affects search ranking and Superhost status)",
+        "Repeated guest complaints about cleanliness or accuracy (listing suppressed in search)",
+        "Discriminatory behaviour (immediate suspension possible)",
+        "Off-platform booking solicitation (listing removal)",
+        "Requesting off-platform payments (listing removal, potential ban)",
+        "Review manipulation or incentivised reviews (review removal, potential suspension)",
+        "Safety incidents that are not promptly addressed",
+        "Multiple valid damage claims indicating negligence",
+        "Rating dropping below 4.0 (risk of listing deactivation)"
+      ],
+      "superhost": {
+        "criteria": [
+          "4.8+ overall rating",
+          "90%+ response rate",
+          "Less than 1% host cancellation rate",
+          "At least 10 trips OR 100 nights across at least 3 stays in the past year"
+        ],
+        "benefits": [
+          "Superhost badge on listing and profile",
+          "Priority placement in search results",
+          "Increased guest trust and booking rates",
+          "Eligible for Superhost-only bonuses and promotions",
+          "Priority customer support"
+        ],
+        "assessmentPeriod": "Reviewed quarterly (January 1, April 1, July 1, October 1). Based on the prior 365 days of activity."
+      }
+    },
+    "bookingcom": {
+      "pricingMarkup": "10-20% above website base price depending on Genius status. Genius discounts: Level 1 = 10%, Level 2 = 15%, Level 3 = 20% — base price marked up higher to compensate.",
+      "messaging": {
+        "rules": [
+          "All pre-arrival communication should go through the Booking.com Extranet messaging or Partner Hub",
+          "Hosts can share contact details (phone, email) in the property description and confirmation emails",
+          "Booking.com is more permissive than Airbnb about direct contact — guests see the host's phone number and email after booking",
+          "Templates can be set up for automated messages at different stages",
+          "Messages should be professional and relevant to the booking"
+        ],
+        "restrictions": [
+          "Do not request guests cancel and rebook on another platform",
+          "Do not solicit off-platform bookings for future stays in messages",
+          "Do not send marketing emails to Booking.com guests without consent",
+          "Payment must go through Booking.com's system (or Virtual Credit Card if applicable)",
+          "No discriminatory content in any communication",
+          "Do not request reviews or offer incentives for reviews"
+        ],
+        "responseTimeRequirements": "Respond to all guest messages within 24 hours. Booking.com tracks response time as part of your property score. Aim for under 4 hours for Quick Response badge.",
+        "replyScoreImpact": "Reply speed and rate contribute to your property's internal quality score, which affects search ranking. Properties with faster response times appear higher in search results. Booking.com may display 'Quick responder' or similar badges."
+      },
+      "cancellation": {
+        "freeCancellationExpectations": "Booking.com heavily promotes free cancellation options. Properties offering free cancellation get significantly more visibility. Consider offering free cancellation up to 7-14 days before check-in to balance conversion rates with protection.",
+        "noShowPolicies": "For no-shows, charge up to the first night (or per your policy). Report no-shows in the Extranet within 48 hours. Booking.com may waive guest charges in some force majeure situations.",
+        "modificationRules": "Guests can request modifications through Booking.com. Hosts are not obligated to accept modifications but refusing frequently can impact scores. Date changes, guest count changes, and room type changes can be handled through the Extranet.",
+        "hostCancellationPenalties": [
+          "Cancellation by host is strongly penalised on Booking.com",
+          "Each host cancellation triggers a commission surcharge on future bookings",
+          "Repeated cancellations lead to listing suppression or suspension",
+          "Calendar may be automatically blocked for cancelled dates",
+          "If you must cancel, relocate the guest to an equivalent or better property and report through Extranet"
+        ]
+      },
+      "reviews": {
+        "timeline": "Guests receive a review invitation email from Booking.com within 48 hours after checkout. They have 90 days to submit a review. Hosts cannot initiate the review process — it is automated by Booking.com.",
+        "scoringFactors": [
+          "Reviews are scored 1-10 (not 1-5 like Airbnb)",
+          "Sub-categories: Staff, Facilities, Cleanliness, Comfort, Value for money, Location, Free WiFi",
+          "The overall score is the average of sub-category scores",
+          "Booking.com weights recent reviews more heavily in the displayed score",
+          "A minimum of 5 reviews is needed before a score is displayed"
+        ],
+        "responseGuidelines": [
+          "Respond through the Extranet — both public and private responses are available",
+          "Public responses are visible to all potential guests",
+          "Keep responses professional, warm, and forward-looking",
+          "For negative reviews: acknowledge, don't argue, state improvements made",
+          "Booking.com may remove reviews that contain profanity, personal attacks, or content unrelated to the stay",
+          "You cannot remove genuine reviews — focus on improving the experience"
+        ],
+        "targetScore": "Aim for 8.0+ for good visibility. 9.0+ earns 'Superb' badge. Scores below 7.0 significantly reduce search visibility."
+      },
+      "payments": {
+        "handledByPlatform": true,
+        "payoutTimeline": "Booking.com pays hosts via bank transfer. Standard payout is after guest checkout, typically received within 1-2 weeks depending on your bank and region. Some properties use Virtual Credit Cards (VCC) which are charged at check-in.",
+        "virtualCreditCards": "Booking.com may issue Virtual Credit Cards (VCCs) for guest payments. VCCs are pre-loaded with the booking amount and can be charged at check-in or after. Some properties prefer Payments by Booking.com, where the platform handles collection and pays the host directly.",
+        "commissionStructure": "Standard commission is 15% of the booking subtotal (before taxes/fees). Commission percentage may vary by region and property type. Commission is only charged on completed stays, not on valid cancellations."
+      },
+      "propertyScore": {
+        "factors": [
+          "Guest review scores (most important factor)",
+          "Reply speed and response rate to messages",
+          "Cancellation rate by host (lower is better)",
+          "Conversion rate (bookings vs. page views)",
+          "Calendar availability and update frequency",
+          "Rate competitiveness vs. similar properties",
+          "Content quality (photos, description completeness)",
+          "Mobile-friendly pricing and availability",
+          "Free cancellation options availability",
+          "Participation in Booking.com promotions"
+        ],
+        "optimizationTips": [
+          "Keep calendar up to date — close dates you cannot honour rather than cancelling bookings",
+          "Respond to all messages within 6 hours",
+          "Upload at least 20 high-quality photos",
+          "Complete every field in your property listing",
+          "Offer flexible cancellation for at least some rate plans",
+          "Keep pricing competitive — use the rate insights tool in Extranet",
+          "Enable instant booking (no approval required)",
+          "Participate in Genius programme for additional visibility",
+          "Offer mobile-only rates for incremental bookings",
+          "Maintain cleanliness and comfort scores above 8.5"
+        ]
+      },
+      "contentRestrictions": [
+        "Property descriptions must be accurate and up to date",
+        "Photos must accurately represent the property",
+        "Do not redirect guests to book on other platforms",
+        "No discriminatory language or policies",
+        "Pricing must include all mandatory fees (no hidden charges)",
+        "Must comply with local laws and regulations",
+        "Cannot request tips or surcharges not listed in the rate"
+      ],
+      "geniusProgram": {
+        "description": "Genius is Booking.com's loyalty programme that rewards frequent travellers with discounts and perks. Properties can opt in to offer Genius rates (10-20% discount) in exchange for increased visibility to high-value travellers.",
+        "levels": [
+          "Genius Level 1: 10% discount, free breakfast or room upgrade where applicable",
+          "Genius Level 2: 15% discount + additional perks",
+          "Genius Level 3: 20% discount + priority support + free room upgrades"
+        ],
+        "hostBenefits": "Participating hosts get a Genius badge, increased search visibility among Genius travellers, and access to a larger pool of loyal repeat bookers. The discounted rate comes from the host's margin.",
+        "consideration": "Evaluate whether the increased booking volume from Genius visibility offsets the margin reduction. Works well for properties with lower occupancy that need volume."
+      },
+      "preferredPartner": {
+        "description": "Preferred Partner Programme increases visibility in exchange for a higher commission rate (typically 17-18% instead of 15%).",
+        "benefits": [
+          "Preferred Partner badge (thumbs-up icon)",
+          "Higher placement in search results",
+          "Increased visibility during high-demand periods",
+          "Access to additional promotional tools"
+        ],
+        "consideration": "Calculate whether the increased bookings justify the higher commission. Most useful during low seasons or for new listings building traction."
+      }
+    },
+    "vrbo": {
+      "messaging": {
+        "rules": [
+          "All initial communication should go through Vrbo's messaging system",
+          "Host contact details are shared with guests after booking",
+          "Respond promptly to enquiries — Vrbo tracks response metrics",
+          "Messages should be relevant to the booking and property"
+        ],
+        "restrictions": [
+          "No soliciting off-platform bookings before a booking is confirmed",
+          "No requesting payments outside Vrbo's system",
+          "No discriminatory content",
+          "No sharing links to competing platforms"
+        ],
+        "responseTimeRequirements": "Respond within 24 hours. Vrbo tracks response rate and time, which affects search ranking. Aim for under 6 hours for best visibility.",
+        "responseTimeImpact": "Properties with faster response times and higher response rates receive better search placement and a 'Responds quickly' badge."
+      },
+      "cancellation": {
+        "hostPolicies": [
+          {
+            "name": "No refund",
+            "description": "No refund for cancellation at any time."
+          },
+          {
+            "name": "Strict",
+            "description": "Full refund if cancelled 60+ days before check-in. 50% refund if 30-60 days before. No refund within 30 days."
+          },
+          {
+            "name": "Firm",
+            "description": "Full refund if cancelled 60+ days before check-in. 50% refund if 30-60 days. No refund within 30 days."
+          },
+          {
+            "name": "Moderate",
+            "description": "Full refund if cancelled 30+ days before check-in. 50% refund if 14-30 days. No refund within 14 days."
+          },
+          {
+            "name": "Relaxed",
+            "description": "Full refund if cancelled 14+ days before check-in. 50% refund if 7-14 days. No refund within 7 days."
+          }
+        ],
+        "hostCancellationPenalties": [
+          "Host cancellations result in penalties and listing suppression",
+          "May lose Premier Host status",
+          "Calendar blocked for cancelled dates",
+          "Repeated cancellations can lead to listing removal"
+        ]
+      },
+      "reviews": {
+        "timeline": "Guests can leave reviews for up to 1 year after checkout on Vrbo. Review invitations are sent by email after checkout.",
+        "policies": [
+          "Reviews must reflect the actual stay experience",
+          "Vrbo uses a 1-10 scoring system",
+          "Sub-categories include cleanliness, communication, check-in, location, and listing accuracy",
+          "Reviews can be reported for policy violations but genuine reviews cannot be removed"
+        ],
+        "responseGuidelines": [
+          "Respond professionally to all reviews",
+          "Keep responses brief and forward-looking",
+          "For negative reviews: acknowledge, state improvement, invite return",
+          "Never argue or get personal"
+        ]
+      },
+      "payments": {
+        "handledByPlatform": true,
+        "payoutTimeline": "Vrbo pays hosts via direct deposit, typically within 1-2 business days after guest check-in.",
+        "serviceFees": "Vrbo charges either a per-booking service fee to the guest (typically 6-12%) or a subscription model for the host ($499/year per listing). Most hosts use the per-booking model.",
+        "commissionStructure": "If using the per-booking model, Vrbo charges 5% commission to the host plus 6-12% service fee to the guest. If using subscription, only the annual fee applies."
+      },
+      "contentRestrictions": [
+        "Accurate property descriptions and photos required",
+        "No discriminatory content or policies",
+        "Must disclose all fees upfront",
+        "No misleading amenity claims",
+        "Security camera disclosure required"
+      ],
+      "premierHost": {
+        "criteria": [
+          "4.3+ average review score",
+          "Fewer than 3% host-initiated cancellations",
+          "Maintain a booking acceptance rate above 90%",
+          "Active listing with availability",
+          "Compliance with Vrbo policies"
+        ],
+        "benefits": [
+          "Premier Host badge on listing",
+          "Higher search ranking",
+          "Priority customer support",
+          "Increased guest trust"
+        ]
+      }
+    },
+    "direct": {
+      "depositRequirements": "For direct bookings, always collect a security deposit (typically 20-30% of total stay or a fixed amount based on property value). Clarify deposit terms, refund conditions, and timeline in writing before accepting payment.",
+      "contractTerms": "Always use a rental agreement for direct bookings. Include: guest names, dates, property address, total cost breakdown, cancellation policy, house rules, damage liability, check-in/checkout times, maximum occupancy, and governing law/jurisdiction.",
+      "idVerification": "Request government-issued ID from the primary guest for direct bookings. Verify the name matches the payment method. Store ID information securely and in compliance with data protection laws (GDPR if applicable).",
+      "paymentMethods": [
+        "Bank transfer (preferred — lower fees, clear paper trail)",
+        "Credit card via payment processor (Stripe, Square — adds 2-3% fee but provides chargeback protection)",
+        "PayPal (acceptable but higher fees and chargeback risk)",
+        "Never accept cash for the full booking amount — always have a documented payment trail",
+        "Wire transfer for international bookings (verify bank details carefully — wire fraud is common)"
+      ],
+      "noPlatformProtection": "Direct bookings have no platform mediation or host protection programme. You are responsible for your own damage protection, payment disputes, and guest vetting. Consider requiring travel insurance and maintaining your own short-term rental insurance policy.",
+      "advantages": [
+        "No commission fees (save 15-20% vs. OTA bookings)",
+        "Direct relationship with guest — can market future stays",
+        "Full control over pricing, policies, and communication",
+        "Can collect email addresses for marketing (with consent)",
+        "No platform policy changes to worry about"
+      ],
+      "risks": [
+        "No mediation for disputes",
+        "No review system for social proof (unless using your own website)",
+        "Higher risk of payment fraud or chargebacks",
+        "Must handle all guest vetting and verification yourself",
+        "No damage protection programme — need private insurance",
+        "Legal liability falls entirely on the host"
+      ],
+      "bestPractices": [
+        "Use a channel manager to sync calendars with OTAs",
+        "Maintain your own terms and conditions reviewed by a local lawyer",
+        "Take pre- and post-stay photos for every booking",
+        "Collect signed rental agreements before arrival",
+        "Use a payment processor with fraud protection",
+        "Carry adequate short-term rental insurance",
+        "Build a guest database for repeat bookings and referrals"
+      ]
+    }
+  },
+  "crossPlatform": {
+    "priceParity": {
+      "description": "Most OTAs have rate parity clauses in their contracts, but enforcement varies by region and has been relaxed in the EU. Price parity means you cannot advertise a lower price on a competing platform.",
+      "airbnb": "Airbnb does not enforce strict rate parity — you can price differently on other platforms. However, significantly lower prices elsewhere may trigger Airbnb's price tips or Smart Pricing adjustments.",
+      "bookingcom": "Booking.com historically enforced rate parity (same or better price on their platform). In the EU, narrow rate parity clauses were banned in some countries (France, Germany, Italy, Austria). In practice, moderate price differences are tolerated but large discrepancies may affect visibility.",
+      "vrbo": "Vrbo does not strictly enforce rate parity. You can set different prices on different platforms.",
+      "directBooking": "You are free to offer lower direct booking prices. This is a common and accepted practice for building your direct channel.",
+      "bestPractice": "Price consistently across OTAs to avoid guest confusion and potential policy issues. Offer your best rates for direct bookings to incentivise your direct channel."
+    },
+    "calendarSync": {
+      "importance": "Double bookings are one of the most damaging issues — they lead to host cancellations (severe penalties on all platforms), guest displacement, negative reviews, and potential platform suspension.",
+      "methods": [
+        "iCal sync between platforms (standard, but has 15-60 minute delay)",
+        "Channel manager (PMS) for real-time sync (recommended for multi-platform hosts)",
+        "Manual calendar management (not recommended — high error risk)"
+      ],
+      "bestPractice": "Use a channel manager for real-time sync. If using iCal, set sync frequency to maximum (every 15 minutes) and maintain buffer days between bookings. Always block dates manually on all platforms immediately when accepting a booking before sync catches up."
+    },
+    "contentConsistency": {
+      "description": "Maintain consistent property descriptions, amenity lists, and photos across all platforms. Guests often cross-reference listings on different platforms. Inconsistencies erode trust and can lead to complaints.",
+      "tips": [
+        "Use the same professional photos on all platforms",
+        "Keep amenity lists identical — don't list a pool on Airbnb but not on Booking.com",
+        "Ensure house rules are consistent across platforms",
+        "Update all platforms simultaneously when making property changes",
+        "Adapt description tone slightly per platform audience but keep facts identical"
+      ]
+    },
+    "guestCommunicationDifferences": {
+      "airbnb": {
+        "audienceProfile": "Often younger, experience-oriented travellers. Expect personalised, friendly communication. Value local tips and unique experiences. Used to messaging within the app.",
+        "toneExpectation": "Warm, friendly, conversational. Personal touches appreciated. Guests often want to know about the host.",
+        "communicationStyle": "In-app messaging primary. Many guests prefer text-style communication. Quick responses expected."
+      },
+      "bookingcom": {
+        "audienceProfile": "Broader demographic, includes more business travellers and hotel-experienced guests. Expect professional, efficient communication. May be less engaged in messaging.",
+        "toneExpectation": "Professional and efficient. Clear, structured information. Less casual than Airbnb but still warm.",
+        "communicationStyle": "Email-based communication more common. Guests may be less responsive to messages. Provide all essential information proactively."
+      },
+      "vrbo": {
+        "audienceProfile": "Often families and groups booking larger properties for vacations. More likely to be experienced vacation rental users. Value detailed property information.",
+        "toneExpectation": "Professional, detailed, family-friendly. Emphasis on practical information — parking, nearby family activities, kitchen equipment.",
+        "communicationStyle": "Mix of in-app and email. Guests may have detailed questions about the property and surrounding area."
+      },
+      "direct": {
+        "audienceProfile": "Often repeat guests or referrals. More likely to have a direct relationship with the host. May be more flexible and understanding.",
+        "toneExpectation": "Personal and relationship-focused. Can be more casual once rapport is established.",
+        "communicationStyle": "WhatsApp, email, or phone. More flexible and direct. Build the relationship for repeat bookings."
+      }
+    }
+  },
+  "complianceChecklist": {
+    "description": "Use this checklist to validate any guest-facing message before sending.",
+    "checks": [
+      {
+        "rule": "No off-platform booking solicitation",
+        "platforms": ["airbnb", "bookingcom", "vrbo"],
+        "severity": "critical",
+        "description": "Never suggest, imply, or link to booking outside the current platform. This includes phrases like 'book direct next time', 'visit our website', or sharing booking links for other platforms."
+      },
+      {
+        "rule": "No contact info before booking confirmation",
+        "platforms": ["airbnb"],
+        "severity": "critical",
+        "description": "Do not share phone numbers, email addresses, WhatsApp, or social media handles with guests before their booking is confirmed on Airbnb."
+      },
+      {
+        "rule": "No off-platform payment requests",
+        "platforms": ["airbnb", "bookingcom", "vrbo"],
+        "severity": "critical",
+        "description": "Never ask guests to pay outside the platform's payment system. This includes cash, direct bank transfer, PayPal, or any other method not handled by the platform."
+      },
+      {
+        "rule": "No review solicitation or incentives",
+        "platforms": ["airbnb", "bookingcom", "vrbo"],
+        "severity": "high",
+        "description": "Do not offer discounts, gifts, upgrades, or any other incentive in exchange for reviews. Do not explicitly ask guests to leave a review — let the platform's automated review request handle it."
+      },
+      {
+        "rule": "No discriminatory language",
+        "platforms": ["airbnb", "bookingcom", "vrbo"],
+        "severity": "critical",
+        "description": "Ensure messages contain no language that could be interpreted as discriminatory based on race, ethnicity, nationality, religion, gender, sexual orientation, age, or disability."
+      },
+      {
+        "rule": "No price comparison mentions",
+        "platforms": ["airbnb", "bookingcom"],
+        "severity": "high",
+        "description": "Do not mention that your property is available at a different (especially lower) price on another platform or through direct booking."
+      },
+      {
+        "rule": "Accurate property representation",
+        "platforms": ["airbnb", "bookingcom", "vrbo"],
+        "severity": "high",
+        "description": "Do not overstate amenities, views, distances, or features in messages. Everything stated in messages should match the listing and reality."
+      },
+      {
+        "rule": "Disclose monitoring devices",
+        "platforms": ["airbnb", "bookingcom", "vrbo"],
+        "severity": "critical",
+        "description": "If the property has any cameras (even exterior-only), noise monitors, or other monitoring devices, ensure guests are informed. Airbnb requires disclosure in the listing and will suspend hosts who have undisclosed cameras."
+      },
+      {
+        "rule": "No guest personal data sharing",
+        "platforms": ["airbnb", "bookingcom", "vrbo"],
+        "severity": "critical",
+        "description": "Never share one guest's personal information, booking details, or review content with another guest."
+      }
+    ]
+  }
+}

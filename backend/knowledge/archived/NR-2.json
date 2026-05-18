@@ -1,0 +1,112 @@
+{
+  "property_id": "675fea6d8f9638000f70bbbc",
+  "display_name": "NR-2",
+  "full_name": "1 Bedroom Studio, 10mins Walk to Beach - NR2",
+  "location": "Grand Baie, Mauritius",
+  "property_type": "Apartment",
+  "bedrooms": 1,
+  "bathrooms": 1,
+  "guest_capacity": 2,
+  "priority_level": "medium",
+  "quick_responses": {
+    "wifi": {
+      "trigger_keywords": [
+        "wifi",
+        "internet",
+        "password",
+        "connection",
+        "wi-fi"
+      ],
+      "response": "WiFi Network: HUAWEI_B612_0B2B | Password: E3HEQRJ03HR | Speed: Suitable for streaming and remote work",
+      "priority": "high"
+    },
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Geranium Lane, 30525 Grand Baie, Mauritius | Lockbox Code: 2411",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "Please note that checkout is at 10:00am, unless otherwise agreed.  Before you head out, kindly: Turn off all ACs and lights Close all windows and doors Leave the keys in the lockbox and scramble the code  If you have any questions, feel free to reach out at any time.",
+      "priority": "high"
+    },
+    "parking": {
+      "trigger_keywords": [
+        "parking",
+        "car",
+        "garage",
+        "park"
+      ],
+      "response": "Where to park the car: In the courtyard, on the ground floor.  Gate access: Just open the gate, no code or remote is needed.  Street parking: Please note that street parking is not possible, as the road is very narrow.",
+      "priority": "medium"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +2304084119 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    },
+    "location": {
+      "trigger_keywords": [
+        "location",
+        "directions",
+        "beach",
+        "restaurant",
+        "shops",
+        "nearby",
+        "supermarket"
+      ],
+      "response": "Situated in a prime location, this studio is just a 5-minute walk from La Croisette Mall, a popular destination for shopping, dining, and entertainment. The famous Grand Baie Beach is only 10 minutes away, offering crystal-clear waters, soft sandy shores, and a lively beachfront scene with restauran",
+      "priority": "medium"
+    }
+  },
+  "property_details": {
+    "address": "Geranium Lane, 30525 Grand Baie, Mauritius",
+    "amenities": [
+      "Air conditioning",
+      "Crib",
+      "High chair",
+      "Kitchen",
+      "TV",
+      "Washer",
+      "Wireless Internet"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": "This cozy and stylish studio is the perfect retreat for solo travelers or couples looking to explore the vibrant coastal town of Grand Baie. Conveniently located just 10 minutes from the beach and 5 minutes from La Croisette Mall, this recently decorated space offers modern comforts, a smart TV, and a well-equipped kitchen. Whether you're here for relaxation, shopping, or adventure, this bright and airy studio provides a comfortable home base for your stay.",
+    "space": "Located on the second floor, this well-designed studio features a king-size bed, making it a comfortable stay for up to two guests. The full bathroom is clean and modern, stocked with all essentials for a hassle-free visit.\n\nThe functional kitchen is compact yet fully equipped, allowing guests to prepare light meals with ease. The living area includes a smart TV, perfect for unwinding after a day of exploring Grand Baie. Thoughtfully decorated with neutral tones and a fresh, modern touch, this studio creates a warm and inviting atmosphere.",
+    "house_rules": null,
+    "parking": "Where to park the car:\nIn the courtyard, on the ground floor.\n\nGate access:\nJust open the gate, no code or remote is needed.\n\nStreet parking:\nPlease note that street parking is not possible, as the road is very narrow.",
+    "guest_access": "Guests have full access to the studio, including the kitchen, living area, and bathroom. A lockbox is available for easy self-check-in, ensuring a smooth and flexible arrival experience."
+  },
+  "emergency_contact": "+2304084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ]
+}

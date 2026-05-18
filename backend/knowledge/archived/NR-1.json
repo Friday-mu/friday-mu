@@ -1,0 +1,91 @@
+{
+  "property_id": "674d62795e483e0012dc6ec9",
+  "display_name": "NR-1",
+  "full_name": "Cozy Studio, 10 Mins Walk from the Beach",
+  "location": "Grand Baie, Mauritius",
+  "property_type": "Condominium",
+  "bedrooms": 1,
+  "bathrooms": 1,
+  "guest_capacity": 3,
+  "priority_level": "medium",
+  "quick_responses": {
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Geranium Lane, 30525 Grand Baie, Mauritius | Lockbox Code: 4910",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "Please note that checkout is at 10:00am, unless otherwise agreed.  Before you head out, kindly: Turn off all ACs and lights Close all windows and doors Leave the keys in the lockbox and scramble the code  If you have any questions, feel free to reach out at any time.",
+      "priority": "high"
+    },
+    "parking": {
+      "trigger_keywords": [
+        "parking",
+        "car",
+        "garage",
+        "park"
+      ],
+      "response": "Where to park the car: In the courtyard, on the ground floor.  Gate access: Just open the gate, no code or remote is needed.  Street parking: Please note that street parking is not possible, as the road is very narrow.",
+      "priority": "medium"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +2304084119 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    }
+  },
+  "property_details": {
+    "address": "Geranium Lane, 30525 Grand Baie, Mauritius",
+    "amenities": [
+      "Air conditioning",
+      "Crib",
+      "Garage",
+      "Hair dryer",
+      "High chair",
+      "Kitchen",
+      "TV",
+      "Washer",
+      "Wireless Internet"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": "Step into this beautifully updated studio in the heart of Grand Baie, offering a bright and airy space. Just a 10-minute stroll from the beach and only 5 minutes from La Croisette Mall, it’s perfect for couples, solo travelers, or couples eager to enjoy Mauritius’ lively coastal vibes. The studio features a comfortable king-size bed, a sofa bed, a smart TV, and a practical kitchenette, everything you need for a relaxing stay by the sea.",
+    "space": "Located on the third floor, this studio is thoughtfully designed for comfort and style. Natural light fills the space, highlighting modern décor in neutral tones. The king-size bed ensures restful sleep, while the sofa bed accommodates an additional guest. A well-kept bathroom provides all the essentials for a refreshing experience.\n\nThe kitchenette is compact yet fully equipped for light meal preparation, and the living area, complete with a smart TV, offers a cozy spot to unwind. With contemporary furnishings and attention to detail, this studio provides a welcoming atmosphere for your Mauritius getaway.",
+    "house_rules": null,
+    "parking": "Where to park the car:\nIn the courtyard, on the ground floor.\n\nGate access:\nJust open the gate, no code or remote is needed.\n\nStreet parking:\nPlease note that street parking is not possible, as the road is very narrow.",
+    "guest_access": "Guests have exclusive access to the entire studio, including the kitchen, living area, and bathroom. Self-check-in is easy with a secure lockbox. For those traveling by car, a parking space is available on the property."
+  },
+  "emergency_contact": "+2304084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ],
+  "_note": "Partial data — some fields may need enrichment from conversations or Breezeway"
+}

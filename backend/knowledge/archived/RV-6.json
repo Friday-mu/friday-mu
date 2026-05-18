@@ -1,0 +1,91 @@
+{
+  "property_id": "674d628b81a8a00014b957a1",
+  "display_name": "RV-6",
+  "full_name": "Cozy 3-Bedroom Townhouse, 10mins Walk to Beach",
+  "location": "Grand Baie, Mauritius",
+  "property_type": "Townhouse",
+  "bedrooms": 3,
+  "bathrooms": 2,
+  "guest_capacity": 6,
+  "priority_level": "medium",
+  "quick_responses": {
+    "wifi": {
+      "trigger_keywords": [
+        "wifi",
+        "internet",
+        "password",
+        "connection",
+        "wi-fi"
+      ],
+      "response": "WiFi Network: HUAWEI B612 9054 | Password: 0NM5EJ02EQG | Speed: Suitable for streaming and remote work",
+      "priority": "high"
+    },
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Rays Villa, Racket Lane, 30525 Grand Baie, Mauritius | Lockbox Code: 0152",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "",
+      "priority": "high"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +230 4084119 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    }
+  },
+  "property_details": {
+    "address": "Rays Villa, Racket Lane, 30525 Grand Baie, Mauritius",
+    "amenities": [
+      "Hair dryer",
+      "High chair",
+      "Kitchen",
+      "Washer",
+      "TV",
+      "Wireless Internet",
+      "Crib",
+      "Air conditioning",
+      "Garage"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": "Immerse yourself in the comfort and style of this stunning duplex, perfectly designed for families or groups of up to six guests. With three spacious bedrooms—two featuring their own private balconies—this secure and tranquil oasis is set in the heart of Grand Baie. Enjoy modern amenities, a refreshing shared swimming pool, and the convenience of nearby shops, restaurants, and beaches, all just a short walk away.",
+    "space": "Step inside this well-maintained duplex, where you’ll find two tastefully furnished bedrooms on the main floor and a luxurious master bedroom tucked away on the top floor. Each bedroom is designed for relaxation, offering plush beds, ample storage, and plenty of natural light. There are two bathrooms and two separate toilets, ensuring everyone’s comfort and privacy.\n\nThe spacious living area invites you to unwind with comfortable seating, a TV, and high-speed internet—perfect for leisurely evenings after a day of exploration. The fully equipped kitchen, complete with a fridge, washing machine, coffee maker, toaster, and hot water kettle, allows you to whip up meals and snacks with ease. Excellent air circulation throughout the duplex keeps the atmosphere fresh and cool.\n\nOutside, enjoy a private sitting area, or take advantage of the large, well-maintained shared swimming pool for a refreshing dip. Free on-site parking, a gated property, and easy access to public transport ensure a secure and convenient stay for all.",
+    "house_rules": null,
+    "parking": null,
+    "guest_access": null
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ]
+}
