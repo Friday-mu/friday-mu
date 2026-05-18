@@ -191,13 +191,19 @@ async function handleMessageEvent(event) {
   }
 
   const createdAt = message.createdAt || message.sentAt || new Date().toISOString();
-  const language = event?.conversation?.language || null;
+  // NOTE: we deliberately do NOT pre-set original_language here. The
+  // conversation-level language Guesty sends (event.conversation.language)
+  // is the guest's profile preference, not the language of THIS message.
+  // Trusting it caused German guest replies on English-profile conversations
+  // to be tagged "en" and never translated. The translation_worker runs
+  // detectLanguage on body and fills original_language + translated_body
+  // properly within ~60s.
 
   const inserted = await query(
     `INSERT INTO messages (
        tenant_id, conversation_id, guesty_message_id, direction,
-       body, sender_name, created_at, original_language
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       body, sender_name, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (guesty_message_id) DO NOTHING
      RETURNING id`,
     [
@@ -208,7 +214,6 @@ async function handleMessageEvent(event) {
       body,
       senderName,
       createdAt,
-      language,
     ],
   );
 

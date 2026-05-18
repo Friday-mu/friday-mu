@@ -1008,6 +1008,13 @@ const emailModule = require('./src/email');
 app.use('/api/email', emailModule.router);
 require('./src/email/pull_worker').start();
 
+// Inbox translation worker — runs detectLanguage + translateText on
+// recent inbound messages without a confirmed language. Replaces the
+// friday-gms poller-driven translation that was missing fad-backend-
+// inserted rows (guests sending in non-English on English-profile
+// conversations stayed untranslated).
+require('./src/inbox/translation_worker').start();
+
 // ─── Unified outbound abstraction ─────────────────────────────────
 // POST /api/outbound/send federates per-channel send paths under one
 // endpoint. Per locked decision §2 — first callers are TeamInbox
