@@ -25,10 +25,12 @@ const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const DRAFT_MODEL = process.env.KIMI_DRAFT_MODEL || 'kimi-k2.6';
 const CLASSIFY_MODEL = process.env.KIMI_CLASSIFY_MODEL || 'moonshot-v1-8k';
 
-// Generation parameters — temperature low for consistency since we want
-// repeatable phrasing for the same input during burn-in diffing. Not
-// zero — drafts that always come out word-identical feel robotic.
-const DRAFT_TEMPERATURE = Number(process.env.KIMI_DRAFT_TEMPERATURE) || 0.4;
+// Generation parameters. Kimi K2.6 rejects any temperature ≠ 1 with
+// a 400 ("invalid temperature: only 1 is allowed for this model"),
+// the same pattern Anthropic's Opus 4.7 follows. The env override
+// stays so a fallback model (moonshot-v1-32k etc.) can use a lower
+// temperature if we ever flip — those models DO accept 0.x.
+const DRAFT_TEMPERATURE = Number(process.env.KIMI_DRAFT_TEMPERATURE) || 1;
 
 // Hard cap on output length. Most drafts are <500 tokens; cap at 1200
 // to allow long-form when needed (sales replies with several pricing
