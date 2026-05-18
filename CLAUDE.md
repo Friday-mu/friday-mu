@@ -179,3 +179,72 @@ Vercel handles preview deploys automatically on push to `fad-rebuild`. VPS produ
 - **FAD finance schema:** `/mnt/user-data/outputs/fad_finance_schema_v1.sql`
 - **Latest session handover:** `~/Downloads/fad-handover-v9.md`
 - **Code bundle:** `~/Downloads/fad-bundle-v10.md`
+- **Consolidated FAD/GMS roadmap (2026-05-18):** `docs/roadmap/2026-05-18-consolidated.md` (mirror: Notion `36443ca8849281e38052fb6d67343f74`)
+- **FAD Running Decisions Log:** Notion `34f43ca88492819f8284ea6a89e8624e` — strategic constraints, module ownership, locked module decisions
+- **Claude Operating Rules:** Notion `34d43ca88492810ea8aec815655e0042` — procedural rules + ADRs in force
+- **FAD Code Session Handover (current):** Notion `36443ca8849281eb834ddbcf1154e777`
+- **Active Work zone (parent):** Notion `35243ca8849281ce9781ccc214d6a595`
+
+## Strategic constraints (locked, not re-litigable)
+
+ADRs and §1 / §5.7 / §5.8 of the running decisions log (Notion `34f43ca88492819f8284ea6a89e8624e`). **Reopening requires explicit Ishant approval.** Do not re-litigate.
+
+- **FAD = control + AI layer on Guesty / Breezeway.** Through Phase 1, FAD reads from them; they remain system of record. FAD layers AI surfaces, cross-module linking, unified UX.
+- **Guesty-replacement curve per module.** Phase 1 (read-from) → Phase 2 (write-through) → Phase 3 (source-of-truth). Strategic target: mid-2027. Channel-manager + WhatsApp pulled forward to Q3-Q4 2026 via Channex (memo `35943ca88492818883d3fcefd8bb5e02`).
+- **Multi-tenant from day one.** Every module + integration ships multi-tenant. Credentials per-tenant in pgcrypto-encrypted `key_vault`. Non-negotiable for schema, API auth, route guards, RLS, AI prompt isolation. v0.1 foundation already shipped (`fridayos-mt-v0.1.0..v0.4.0`).
+- **FridayOS as MCP server long-term.** `mcp.fridayos.com` productises FAD's integration layer. Every wrapper designed typed + multi-tenant + well-documented for eventual external-tenant consumption.
+- **Typed wrapper architecture.** For each integration: one typed TS client. Surface twice — Express backend (no LLM tokens) + MCP server (thin adapter, same wrapper). Cost is at the LLM context layer only.
+- **FAD as single source of truth for shared external integrations (§5.7, locked 2026-05-18).** FAD is the only org-wide client for Guesty / Resend / Kimi / future overlapping vendors. Website calls FAD `/api/public/*` over short-lived JWTs. Browser-side / website-specific bits (Carto, Google Fonts, PostHog, Bokun widgets, payment processor, Sanity) stay on website.
+- **admin.friday.mu URL canonical (§5.8, re-confirmed 2026-05-18).** Both `admin.friday.mu` and `gms.friday.mu` nginx vhosts root at `/var/www/fad/` — same bundle. Default test instructions + ops references go to `admin.friday.mu`. PWAs install against it.
+
+### ADRs in force
+
+- **001** API-first, UI-on-top.
+- **002** FridayOS 3-layer: integration / intelligence / interface.
+- **003** Auth: OAuth 2.0 client_credentials + short-lived JWTs. Standards-based audit-per-request beats static-key+mTLS.
+- **004** Data freshness via SSE push (Postgres LISTEN/NOTIFY), NOT polling. ETag + Cache-Control for HTTP cold loads.
+- **005** Webhook + API for calendar/pricing, NOT scraping. `scrape-pricing.mjs` scaffold is obsolete.
+- **006** Reservations is the primary key everything cross-links to.
+- **007** Properties is the unification layer between Guesty (commercial) and Breezeway (operational).
+- **008** Internal team comms live in FAD Inbox, not Slack.
+- **009** Investigation before implementation. Always insert the investigation step.
+- **010** No parallelization across waves; sequencing where dependent.
+
+Full ADR detail in consolidated roadmap §3.
+
+## Workflow rules
+
+Procedural rules from Operating Rules (Notion `34d43ca88492810ea8aec815655e0042`) §§3.2, 3.3, 10, 11, 12 and FAD running decisions log §3. Memorise; don't make Ishant re-state them.
+
+- **Investigation before implementation (§3.2, ADR-009).** For every code-touching task: investigate current state → produce a proposal → get approval → implement as a separate dispatch. Never go from "we want X" straight to "implement X".
+- **No parallelization across waves (§3.3, ADR-010).** Within a wave, independent tasks may parallelize. Across waves, never. Investigate → propose → approve → implement is strict.
+- **Verification gates must be executable in the dev env (§11).** Pre-flight every gate: "what state does this need; does the env have it?" If infeasible, **block and flag** — never silently downgrade. 2026-04-28 team.json incident is the case study.
+- **Autonomous unless one of the listed exceptions (§10).** Act without confirmation when established memory / instructions / protocols cover the ground. Escalate only for: spending above caps, credential changes, SOUL/AGENTS/MEMORY edits, hard-reset GO, gateway surgery beyond standard restart.
+- **Direct push, no PRs.** Push to master / current sprint branch. No feature branches unless Ishant explicitly asks. 3-layer reconciliation (working tree, index, remote) — always `git fetch origin` first.
+- **Git author = `Judith Friday <judith@friday.mu>`.** Watch the silent `user.email`-unset fallback to `$USER@$HOSTNAME` (caught 2026-05-18 on Ishant's Mac). Treat git's "configured automatically based on your username and hostname" warning as a hard signal, not a notice. See memory `git_author_convention.md`.
+- **Git tag formats (§12).** GMS `gms-v[X.Y.Z]` · FridayOS `fridayos-s[N]-v0.[N].0` · Symbiosis `symbiosis-v[X.Y.Z]` · Mission Control `mc-v[X.Y.Z]`. Tag after a clean ship.
+- **Sprint close ritual (§12).** Update Notion (Sprint Timeline + Priority Queue + Atlas) → tag git → generate paste-able status update prompt for next Atlas session. Atlas won't auto-discover; the prompt is the handoff.
+
+## Module ownership snapshot
+
+§4 of FAD running decisions log. Ship-target dates are commitments, not aspirations. Module-specific decisions live in each module's scoping pack (FAD Scoping `34f43ca88492812baca2def8dd92eb27`).
+
+| Module | Scoper | Ship target | Notes |
+|---|---|---|---|
+| Inbox / Operations / Calendar / HR | (live) | shipped | In flight per running decisions §5 |
+| Finance | (built v1) | shipped + Mathias additions in flight | Phase 1+2 complete; Phase 3 (GL + QuickBooks) May-Jun |
+| Properties | Mathias | May 2026 | v0.2 LOCKED (`34f43ca8849281f3a130f7def80a7c5d`). Unification layer Guesty↔Breezeway. |
+| Reservations | Mathias | May 2026 | v0.2 LOCKED (`34f43ca884928188a83ad290b1a13b1b`). Primary key. |
+| Legal / Admin | Mary | May 2026 | **HARD DEADLINE 2026-05-25 (Mary leaves).** Xodo Sign is the meat. |
+| Owners (essentials) | Mary + Mathias → Ishant | May 2026 | Statement review + send. |
+| Owners (full portal) | Ishant | Sep 2026 | Same FAD app, role-scoped. Not separate codebase. |
+| Reviews | Ishant + Claude | May 2026 | v0.2 (`34f43ca8849281ec9a08eb46c3779831`). Phase 1 read-from-Reva. |
+| Guests | Mathias (lifecycle) + Mary (admin slice) | Jul 2026 | Mary's admin slice captured before 2026-05-25. |
+| Marketing | Mathias | Aug 2026 | Pitch tier. Direct-booking review collection lives here, not in Reviews. |
+| Leads / CRM-lite | Mathias | "soon" | Pitch tier; Nitzana-driven commit-by. |
+| Analytics | Ishant | Jun 2026 | Cross-module dashboards. |
+| Intelligence | Ishant | Aug 2026 | Pitch tier; AI agent layer. |
+| Training | (cross-cutting) | May 2026 | Per-module; no standalone scope. |
+| Syndic / Interior / Agency | Ishant | Q1-Q2 2027 / TBD | Tease tier. |
+
+External portals: **Owner portal** = same FAD app, role-scoped views (not separate codebase). **Vendor portal** = separate lightweight mobile-first PWA, Phase 3 deferred.
