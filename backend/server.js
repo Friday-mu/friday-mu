@@ -901,6 +901,20 @@ app.use('/api/tenants', tenantDeletionExportRoutes);
 const passwordResetRoutes = require('./src/auth/password_reset');
 app.use('/api/auth', passwordResetRoutes);
 
+// OAuth 2.0 client_credentials token issuer for the /api/public/*
+// surface. Mounted at /api/auth/token; sibling of the password-reset
+// routes above. Per ADR-003 / roadmap §5.2.1.
+const apiClientsAuth = require('./src/auth/api_clients');
+app.use('/api/auth/token', apiClientsAuth.router);
+
+// Public read API for external consumers (friday.mu website etc.).
+// Auth is per-route via attachApiClient + requireScope. Mounted
+// before the FR multitenant lockdown because consumer JWTs carry
+// their own tenant_id and the public routes scope queries by that
+// rather than by the user-session identity.
+const publicListingsRoutes = require('./src/public/listings');
+app.use('/api/public/listings', publicListingsRoutes);
+
 // Defensive multitenant lockdown — applied to every route mounted
 // below this line. Non-FR tenants get 403 on any non-design / non-
 // tenants route; FR continues unchanged. Routes whose queries have
