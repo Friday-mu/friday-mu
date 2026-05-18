@@ -1666,6 +1666,12 @@ app.post('/api/ai/translate', requireAuth, asyncHandler(async (req, res) => {
   }
 }));
 
+// Audio → text. Backs the dictation surfaces (feedback FAB and, as it
+// rolls out, other input fields across FAD). Multipart-encoded; auth
+// is handled inside the router via attachIdentity.
+const transcribeRoutes = require('./src/ai/transcribe');
+app.use('/api/transcribe', transcribeRoutes);
+
 // Ping endpoint hits each configured upstream once for the Settings "Test"
 // button. Returns per-integration status. Cheap on Guesty (lists 1 listing).
 app.post('/api/system/test/:integration', requireAuth, asyncHandler(async (req, res) => {

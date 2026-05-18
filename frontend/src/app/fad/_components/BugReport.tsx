@@ -9,124 +9,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
-
-// ── Web Speech dictation ─────────────────────────────────────────────
-//
-// Lightweight wrapper over the browser's SpeechRecognition API so ops
-// can dictate bug reports instead of typing. Zero backend cost. Falls
-// back gracefully (returns supported=false) when the browser doesn't
-// implement the API (Firefox without the flag, older Safari).
-//
-// The API is not yet in lib.dom.d.ts ubiquitously, so we go through
-// `any` for the constructor/instance instead of pulling in a separate
-// @types package.
-
-type DictationState = 'idle' | 'recording' | 'unsupported';
-
-function useSpeechDictation({
-  onInterim,
-  onFinal,
-  lang,
-}: {
-  onInterim: (text: string) => void;
-  onFinal: (text: string) => void;
-  lang?: string;
-}): { state: DictationState; toggle: () => void; supported: boolean; lastError: string | null } {
-  const [state, setState] = useState<DictationState>('idle');
-  const [lastError, setLastError] = useState<string | null>(null);
-  const recognitionRef = useRef<unknown>(null);
-  // Stash callbacks in refs so the setup effect doesn't re-fire (and
-  // throw away the recognition object) every parent render.
-  const onInterimRef = useRef(onInterim);
-  const onFinalRef = useRef(onFinal);
-  useEffect(() => { onInterimRef.current = onInterim; }, [onInterim]);
-  useEffect(() => { onFinalRef.current = onFinal; }, [onFinal]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const w = window as unknown as {
-      SpeechRecognition?: new () => unknown;
-      webkitSpeechRecognition?: new () => unknown;
-    };
-    const Recognition = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Recognition) {
-      setState('unsupported');
-      return;
-    }
-    const r = new Recognition() as {
-      continuous: boolean;
-      interimResults: boolean;
-      lang: string;
-      onresult: (e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void;
-      onend: () => void;
-      onerror: (e: { error: string }) => void;
-      start: () => void;
-      stop: () => void;
-    };
-    r.continuous = true;
-    r.interimResults = true;
-    r.lang = lang ?? (typeof navigator !== 'undefined' ? navigator.language || 'en-US' : 'en-US');
-    r.onresult = (event) => {
-      let interim = '';
-      let final = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) final += result[0].transcript;
-        else interim += result[0].transcript;
-      }
-      if (final) onFinalRef.current(final);
-      if (interim) onInterimRef.current(interim);
-    };
-    r.onend = () => setState('idle');
-    r.onerror = (e) => {
-      // `not-allowed` (user denied mic) is the common one; the others
-      // (`no-speech`, `audio-capture`, `network`, `service-not-allowed`)
-      // are rarer. Surface the reason to the UI so the user knows why
-      // their click did nothing — silently swallowing this is what
-      // made the bug invisible in the first place.
-      const code = e?.error || 'unknown';
-      // eslint-disable-next-line no-console
-      console.warn('[dictation] recognition error:', code);
-      setLastError(code);
-      setState('idle');
-    };
-    recognitionRef.current = r;
-    return () => {
-      try { r.stop(); } catch { /* already stopped */ }
-      recognitionRef.current = null;
-    };
-  }, [lang]);
-
-  // Toggle MUST call r.start() / r.stop() synchronously inside the
-  // user-gesture click handler, NOT inside a setState updater. Browsers
-  // (Chrome and Safari both) silently refuse to activate the mic if
-  // .start() runs outside the gesture context — and React invokes
-  // setState updaters asynchronously, which breaks that chain. Read
-  // `state` from closure (deps array tracks it) instead.
-  const toggle = useCallback(() => {
-    const r = recognitionRef.current as { start: () => void; stop: () => void } | null;
-    if (!r) return;
-    if (state === 'recording') {
-      try { r.stop(); } catch { /* already stopped */ }
-      setState('idle');
-      return;
-    }
-    if (state === 'idle') {
-      try {
-        setLastError(null);
-        r.start();
-        setState('recording');
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('[dictation] start failed:', err);
-        setLastError(err instanceof Error ? err.message : String(err));
-        setState('idle');
-      }
-    }
-  }, [state]);
-
-  return { state, toggle, supported: state !== 'unsupported', lastError };
-}
+import { useDictation } from './useDictation';
 
 function IconMic({ size = 14, active = false }: { size?: number; active?: boolean }) {
   return (
@@ -444,28 +327,20 @@ function BugReportModal({
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, thinking]);
 
-  // Dictation — appends final transcript chunks to a rolling base so
-  // partial (interim) results can replace cleanly without nuking what
-  // the user typed before clicking the mic.
-  const dictationBaseRef = useRef('');
-  const dictation = useSpeechDictation({
-    onInterim: (text) => {
-      const base = dictationBaseRef.current;
-      setInput(base + (base && !base.endsWith(' ') ? ' ' : '') + text);
-    },
-    onFinal: (text) => {
-      const base = dictationBaseRef.current;
-      const joined = base + (base && !base.endsWith(' ') ? ' ' : '') + text.trim();
-      dictationBaseRef.current = joined;
-      setInput(joined);
+  // Dictation — server-side STT. onTranscript fires once when the
+  // recording finishes uploading and is transcribed, so we just append
+  // to whatever text the user has already typed.
+  const dictation = useDictation({
+    onTranscript: (text) => {
+      setInput((cur) => {
+        const trimmed = cur.replace(/\s+$/, '');
+        const sep = trimmed.length > 0 ? ' ' : '';
+        return trimmed + sep + text;
+      });
     },
   });
 
   const handleMicClick = () => {
-    if (dictation.state === 'idle') {
-      // Snapshot the current input so dictation appends instead of replacing.
-      dictationBaseRef.current = input;
-    }
     dictation.toggle();
   };
 
@@ -484,10 +359,11 @@ function BugReportModal({
 
   const send = async () => {
     if (!canSend) return;
-    // Stop any in-flight dictation so the next interim result doesn't
-    // refill the cleared input with the previous utterance.
-    if (dictation.state === 'recording') dictation.toggle();
-    dictationBaseRef.current = '';
+    // Stop any in-flight dictation so a late transcript doesn't land in
+    // the cleared input after we've sent the message.
+    if (dictation.state === 'recording' || dictation.state === 'transcribing') {
+      dictation.toggle();
+    }
     const userMsg: ChatMessage = { role: 'user', text: trimmedInput };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
@@ -537,8 +413,9 @@ function BugReportModal({
   // suggestion, so reusing a transcript would confuse Kimi.
   const switchType = (t: FeedbackType) => {
     if (t === type) return;
-    if (dictation.state === 'recording') dictation.toggle();
-    dictationBaseRef.current = '';
+    if (dictation.state === 'recording' || dictation.state === 'transcribing') {
+      dictation.toggle();
+    }
     setType(t);
     setMessages([]);
     setInput('');
@@ -731,9 +608,15 @@ function BugReportModal({
                   <button
                     type="button"
                     onClick={handleMicClick}
-                    disabled={thinking || reachedTurnCap}
+                    disabled={thinking || reachedTurnCap || dictation.state === 'transcribing'}
                     aria-pressed={dictation.state === 'recording'}
-                    title={dictation.state === 'recording' ? 'Stop dictation' : 'Dictate (uses browser speech recognition)'}
+                    title={
+                      dictation.state === 'recording'
+                        ? 'Stop dictation'
+                        : dictation.state === 'transcribing'
+                          ? 'Transcribing…'
+                          : 'Dictate (voice → text)'
+                    }
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -742,40 +625,72 @@ function BugReportModal({
                       height: 26,
                       borderRadius: 999,
                       border: '1px solid var(--color-border)',
-                      background: dictation.state === 'recording' ? 'var(--color-bg-danger)' : 'var(--color-bg-subtle)',
-                      color: dictation.state === 'recording' ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)',
-                      cursor: thinking || reachedTurnCap ? 'not-allowed' : 'pointer',
+                      background:
+                        dictation.state === 'recording'
+                          ? 'var(--color-bg-danger)'
+                          : dictation.state === 'transcribing' || dictation.state === 'requesting-mic'
+                            ? 'var(--color-bg-info, var(--color-bg-subtle))'
+                            : 'var(--color-bg-subtle)',
+                      color:
+                        dictation.state === 'recording'
+                          ? 'var(--color-text-danger)'
+                          : dictation.state === 'transcribing' || dictation.state === 'requesting-mic'
+                            ? 'var(--color-text-info, var(--color-text-tertiary))'
+                            : 'var(--color-text-tertiary)',
+                      cursor:
+                        thinking || reachedTurnCap || dictation.state === 'transcribing'
+                          ? 'not-allowed'
+                          : 'pointer',
                       opacity: thinking || reachedTurnCap ? 0.4 : 1,
-                      animation: dictation.state === 'recording' ? 'fad-mic-pulse 1.4s ease-in-out infinite' : undefined,
+                      animation:
+                        dictation.state === 'recording' || dictation.state === 'requesting-mic'
+                          ? 'fad-mic-pulse 1.4s ease-in-out infinite'
+                          : undefined,
                       flexShrink: 0,
                     }}
                   >
                     <IconMic size={13} active={dictation.state === 'recording'} />
                   </button>
                 )}
-                <span style={{
-                  fontSize: 10,
-                  color: dictation.lastError ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)',
-                }}>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: dictation.lastError ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)',
+                  }}
+                >
                   {dictation.lastError === 'not-allowed'
                     ? 'Mic blocked — click the lock icon in your browser to allow.'
-                    : dictation.lastError === 'no-speech'
-                      ? "Didn't catch that — click mic and try again."
-                      : dictation.lastError === 'audio-capture'
-                        ? 'No microphone detected on this device.'
-                        : dictation.lastError === 'service-not-allowed'
-                          ? 'Speech service blocked by browser / OS settings.'
-                          : dictation.lastError === 'network'
-                            ? 'Speech service unreachable — try a regular browser tab (PWAs can block this) or check your VPN / DNS filter.'
-                            : dictation.lastError === 'aborted'
-                              ? 'Dictation stopped.'
-                              : dictation.lastError
-                                ? `Dictation error: ${dictation.lastError}`
-                                : dictation.state === 'recording'
-                                  ? 'Listening… click mic to stop.'
-                                  : reachedTurnCap
-                                    ? 'Friday\'s heard enough — submit when ready.'
-                                    : 'Cmd/Ctrl+Enter to send.'}
+                    : dictation.lastError === 'audio-capture'
+                      ? 'No microphone detected on this device.'
+                      : dictation.lastError === 'mic-init-failed'
+                        ? "Couldn't access the microphone — try again or check OS settings."
+                        : dictation.lastError === 'recorder-error'
+                          ? 'Recorder crashed — click mic to try again.'
+                          : dictation.lastError === 'not-configured'
+                            ? 'Transcription service not configured on the server.'
+                            : dictation.lastError === 'unauthorized'
+                              ? 'Sign in again to use dictation.'
+                              : dictation.lastError === 'rate-limited'
+                                ? 'Dictation rate limit hit — try again in a minute.'
+                                : dictation.lastError === 'network'
+                                  ? 'Network error reaching the transcription service — try again.'
+                                  : dictation.lastError === 'transcribe-failed'
+                                    ? 'Transcription failed — try again.'
+                                    : dictation.lastError === 'no-speech'
+                                      ? "Didn't catch that — click mic and try again."
+                                      : dictation.lastError === 'unsupported'
+                                        ? "This browser doesn't support voice recording."
+                                        : dictation.lastError
+                                          ? `Dictation error: ${dictation.lastError}`
+                                          : dictation.state === 'requesting-mic'
+                                            ? 'Waiting for microphone permission…'
+                                            : dictation.state === 'recording'
+                                              ? `Recording${dictation.recordingMs > 1000 ? ` · ${Math.floor(dictation.recordingMs / 1000)}s` : '…'} · click mic to stop`
+                                              : dictation.state === 'transcribing'
+                                                ? 'Transcribing…'
+                                                : reachedTurnCap
+                                                  ? "Friday's heard enough — submit when ready."
+                                                  : 'Cmd/Ctrl+Enter to send.'}
                 </span>
               </div>
               <button
