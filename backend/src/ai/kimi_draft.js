@@ -49,10 +49,16 @@ function logUsage(meter, fields) {
 // temperature if we ever flip — those models DO accept 0.x.
 const DRAFT_TEMPERATURE = Number(process.env.KIMI_DRAFT_TEMPERATURE) || 1;
 
-// Hard cap on output length. Most drafts are <500 tokens; cap at 1200
-// to allow long-form when needed (sales replies with several pricing
-// scenarios, for example) without giving the model rope to ramble.
-const DRAFT_MAX_TOKENS = Number(process.env.KIMI_DRAFT_MAX_TOKENS) || 1200;
+// Hard cap on output length. Bumped 1200 → 4096 (2026-05-19) after
+// production observed `finish_reason=length` with empty visible
+// content — K2.6 is a reasoning-style model that burns output budget
+// on hidden chain-of-thought before emitting the final reply. 1200
+// was too tight: the model would consume it all on CoT and stop with
+// no surfaced content. 4096 gives ~3K tokens of reasoning headroom
+// plus a ~1K reply, which is comfortably above the longest draft
+// the team produces (sales replies with several pricing scenarios
+// rarely exceed 800 tokens).
+const DRAFT_MAX_TOKENS = Number(process.env.KIMI_DRAFT_MAX_TOKENS) || 4096;
 
 // Timeout for one Kimi call. K2.6 with a 18K-token system prompt
 // typically responds in 6-12s; 45s is generous for tail latency.
@@ -155,12 +161,24 @@ async function callWithRetry(opts) {
     // Don't retry on deterministic empty/blocked responses. A fresh
     // call with the same prompt will hit the same wall and burn
     // budget for no value.
+    //
+    // 'length' is deterministic regardless of output token count —
+    // hitting max_tokens with the same prompt will reproduce the
+    // result. 'content_filter' likewise. Only 'stop' with empty
+    // output is ambiguous enough to deserve a retry (probably a
+    // transient model hiccup).
     if (
       result.finishReason
-      && ['content_filter', 'stop', 'length'].includes(result.finishReason)
+      && ['content_filter', 'length'].includes(result.finishReason)
+    ) {
+      console.warn(`[ai/kimi-draft] non-retryable: empty content with finish_reason=${result.finishReason} (in=${result.inputTokens} out=${result.outputTokens})`);
+      return result;
+    }
+    if (
+      result.finishReason === 'stop'
       && (result.outputTokens === 0 || result.outputTokens == null)
     ) {
-      console.warn(`[ai/kimi-draft] non-retryable: empty response with finish_reason=${result.finishReason} (in=${result.inputTokens} out=${result.outputTokens})`);
+      console.warn(`[ai/kimi-draft] non-retryable: stop with no output (in=${result.inputTokens})`);
       return result;
     }
     if (attempt < MAX_RETRIES) {
