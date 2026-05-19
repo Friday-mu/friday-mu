@@ -10,6 +10,7 @@ import ConflictBanner from './ConflictBanner'
 
 interface ConsultChatProps {
   conversationId?: string
+  draftId?: string
   context: 'revision' | 'compose' | 'draft_review' | 'pending_action' | 'next_step' | 'teaching' | 'learning_candidate'
   initialInstruction: string
   draftBody?: string
@@ -54,7 +55,7 @@ interface HistorySession {
 }
 
 export default function ConsultChat({
-  conversationId, context, initialInstruction, draftBody, contextData,
+  conversationId, draftId, context, initialInstruction, draftBody, contextData,
   onConfirm, onCancel, confirmLabel, propertyCode, active = true,
   onDraftUpdate, chips, onTeachingCreated,
 }: ConsultChatProps) {
@@ -75,7 +76,9 @@ export default function ConsultChat({
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
 
   const startedRef = useRef(false)
-  const prevConversationIdRef = useRef(conversationId)
+  const contentScope = context === 'draft_review' ? (draftBody || initialInstruction || '') : ''
+  const sessionScopeKey = `${conversationId || 'none'}:${context}:${draftId || 'none'}:${contentScope}`
+  const prevScopeKeyRef = useRef(sessionScopeKey)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -119,9 +122,14 @@ export default function ConsultChat({
     setLoading(true)
     setError(null)
     try {
+      const shouldLoadHistory = context !== 'draft_review'
+      // GMS active-session lookup is conversation-only, not scoped to draft/context.
+      // Starting fresh avoids restoring an old draft-review session into a new surface.
+      const shouldRestoreSession = false
+
       // Load history for this conversation (Layer 1 — display only, no AI cost)
-      if (conversationId) {
-        apiFetch(`/api/ai/consult/history/${encodeURIComponent(conversationId)}`)
+      if (conversationId && shouldLoadHistory) {
+        apiFetch(`/api/inbox/consult/history/${encodeURIComponent(conversationId)}`)
           .then((data: any) => {
             if (data.sessions && data.sessions.length > 0) {
               // Filter out active sessions — those will be the current session
@@ -133,9 +141,9 @@ export default function ConsultChat({
       }
 
       // Try to restore an existing active session
-      if (conversationId) {
+      if (conversationId && shouldRestoreSession) {
         try {
-          const existing = await apiFetch(`/api/ai/consult/session/active?conversationId=${encodeURIComponent(conversationId)}`)
+          const existing = await apiFetch(`/api/inbox/consult/session/active?conversationId=${encodeURIComponent(conversationId)}`)
           if (existing.draftChanged) {
             // New draft arrived — show refresh notice, start fresh session
             setDraftRefreshNotice(true)
@@ -154,11 +162,12 @@ export default function ConsultChat({
       const senderName = localStorage.getItem('gms_display_name') || 'Team member'
       const userMsg: ChatMessage = { role: 'user', content: initialInstruction, sender: senderName }
       setMessages([userMsg])
-      const data = await apiFetch('/api/ai/consult', {
+      const data = await apiFetch('/api/inbox/consult', {
         method: 'POST',
         body: JSON.stringify({
           instruction: initialInstruction,
           ...(conversationId ? { conversationId } : {}),
+          ...(draftId ? { draftId } : {}),
           context,
           ...(draftBody ? { draftBody } : {}),
           ...(contextData ? { contextData } : {}),
@@ -183,9 +192,7 @@ export default function ConsultChat({
       } else if (data.teaching_action) {
         setTeachingActions(prev => [...prev, data.teaching_action as TeachingActionData])
       }
-      if (data.missingKnowledge) {
-        setMissingKnowledge(true)
-      }
+      setMissingKnowledge(Boolean(data.missingKnowledge))
     } catch (err: any) {
       setError(err.message || 'Failed to consult')
     } finally {
@@ -193,23 +200,36 @@ export default function ConsultChat({
     }
   }
 
-  // Handle conversationId changes — end old session and reset for new conversation
+  // Handle context changes — end old session and reset for the new scoped surface.
   useEffect(() => {
-    if (prevConversationIdRef.current !== conversationId) {
+    if (prevScopeKeyRef.current !== sessionScopeKey) {
       const oldSessionId = sessionId
       if (oldSessionId) {
-        apiFetch('/api/ai/consult/session/end', {
+        apiFetch('/api/inbox/consult/session/end', {
           method: 'POST',
           body: JSON.stringify({ sessionId: oldSessionId, history: messages }),
         }).catch(() => {})
       }
       resetState()
-      prevConversationIdRef.current = conversationId
+      prevScopeKeyRef.current = sessionScopeKey
+      if (active) setTimeout(() => initSession(), 0)
     }
-  }, [conversationId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionScopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!active) return
+    if (!active) {
+      if (context === 'draft_review' && startedRef.current) {
+        const oldSessionId = sessionId
+        if (oldSessionId) {
+          apiFetch('/api/inbox/consult/session/end', {
+            method: 'POST',
+            body: JSON.stringify({ sessionId: oldSessionId, history: messages, endReason: 'panel_closed' }),
+          }).catch(() => {})
+        }
+        resetState()
+      }
+      return
+    }
     initSession()
   }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -314,11 +334,12 @@ export default function ConsultChat({
   }, [active, started])
 
   const sendConsult = async (instruction: string, history: ChatMessage[]): Promise<{response: string | null, draftUpdate?: string, teachingAction?: TeachingActionData, teachingActions?: TeachingActionData[], sessionId?: string, compacted?: boolean, missingKnowledge?: boolean}> => {
-    const data = await apiFetch('/api/ai/consult', {
+    const data = await apiFetch('/api/inbox/consult', {
       method: 'POST',
       body: JSON.stringify({
         instruction,
         ...(conversationId ? { conversationId } : {}),
+        ...(draftId ? { draftId } : {}),
         context,
         ...(draftBody ? { draftBody } : {}),
         ...(contextData ? { contextData } : {}),
@@ -363,9 +384,7 @@ export default function ConsultChat({
       } else if (result.teachingAction) {
         setTeachingActions(prev => [...prev, result.teachingAction!])
       }
-      if (result.missingKnowledge) {
-        setMissingKnowledge(true)
-      }
+      setMissingKnowledge(Boolean(result.missingKnowledge))
     } catch (err: any) {
       setError(err.message || 'Failed to consult')
     } finally {
@@ -386,7 +405,7 @@ export default function ConsultChat({
 
   if (!started || (loading && messages.length <= 1)) {
     return (
-      <div className="mt-2 p-3 rounded-lg" style={{ background: 'rgba(99,149,255,0.06)', border: '1px solid rgba(99,149,255,0.15)', ...(active ? {} : { display: 'none' as const }) }}>
+      <div className="mt-2 p-3 rounded-lg" style={{ background: 'rgba(99,149,255,0.06)', border: '1px solid rgba(99,149,255,0.15)', minHeight: active ? '84px' : undefined, ...(active ? {} : { display: 'none' as const }) }}>
         <div className="flex items-center space-x-2">
           <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" style={{ color: '#6395ff' }} />
           <span className="text-xs" style={{ color: '#94a3b8' }}>Asking Friday...</span>
@@ -396,7 +415,7 @@ export default function ConsultChat({
   }
 
   return (
-    <div className="mt-2 rounded-lg" style={{ background: 'rgba(99,149,255,0.06)', border: '1px solid rgba(99,149,255,0.15)', overflowAnchor: 'none', ...(active ? {} : { display: 'none' as const }) }}>
+    <div className="mt-2 rounded-lg" style={{ background: 'rgba(99,149,255,0.06)', border: '1px solid rgba(99,149,255,0.15)', overflowAnchor: 'none', display: active ? 'flex' : 'none', flexDirection: 'column', minHeight: 'clamp(220px, 34vh, 420px)', maxHeight: 'min(70vh, 620px)' }}>
       {/* Header with close and new conversation buttons */}
       <div className="flex items-center justify-between px-3 pt-2">
         <span className="text-xs font-medium" style={{ color: '#6395ff' }}>Ask Friday</span>
@@ -419,7 +438,7 @@ export default function ConsultChat({
         </div>
       )}
       {/* Chat messages */}
-      <div className="p-3 pt-1 space-y-2 overflow-y-auto custom-scrollbar consult-chat-messages" style={{ maxHeight: '40vh', overflowAnchor: 'none' }}>
+      <div className="p-3 pt-1 space-y-2 overflow-y-auto custom-scrollbar consult-chat-messages" style={{ flex: '1 1 auto', minHeight: 'clamp(140px, 20vh, 260px)', maxHeight: 'min(44vh, 420px)', overflowAnchor: 'none' }}>
         {/* Historical sessions (Layer 1 — DB read, no AI cost) */}
         {historySessions.map((session) => (
           <div key={session.id} className="mb-2">
@@ -654,12 +673,12 @@ export default function ConsultChat({
               if (!window.confirm('This will save and close the current conversation with Friday. Start a new one?')) return
               if (sessionId) {
                 // End session with reason
-                await apiFetch('/api/ai/consult/session/end', {
+                await apiFetch('/api/inbox/consult/session/end', {
                   method: 'POST',
                   body: JSON.stringify({ sessionId, history: messages, endReason: 'start_fresh' }),
                 }).catch(() => {})
                 // Summarize the old session (fire-and-forget)
-                apiFetch(`/api/ai/consult/${sessionId}/summarize`, { method: 'POST' }).catch(() => {})
+                apiFetch(`/api/inbox/consult/${sessionId}/summarize`, { method: 'POST' }).catch(() => {})
                 // Add current session to visible history
                 const senderName = localStorage.getItem('gms_display_name') || 'Team member'
                 setHistorySessions(prev => [...prev, {

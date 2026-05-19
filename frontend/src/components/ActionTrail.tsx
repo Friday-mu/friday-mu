@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { apiFetch } from './types'
+import { apiFetch, formatConfidencePercent } from './types'
 
 interface TrailEvent {
   id: string
@@ -50,6 +50,11 @@ function DetailRow({ label, value }: { label: string; value: string | number | n
       <span style={{ color: '#cbd5e1', wordBreak: 'break-word' }}>{String(value)}</span>
     </div>
   )
+}
+
+function confidenceValue(value: unknown): string | null {
+  const confidence = formatConfidencePercent(value as number | string | null | undefined)
+  return confidence == null ? null : `${confidence}%`
 }
 
 export default function ActionTrail({ conversationId }: { conversationId: string }) {
@@ -156,7 +161,7 @@ export default function ActionTrail({ conversationId }: { conversationId: string
                       )}
                       <DetailRow label="Actor" value={event.details.sent_by || event.details.revised_by || event.details.rejected_by || event.details.completed_by || event.details.user} />
                       <DetailRow label="Channel" value={event.details.channel || event.details.sent_via} />
-                      <DetailRow label="Confidence" value={event.details.confidence ? `${Math.round(event.details.confidence)}%` : null} />
+                      <DetailRow label="Confidence" value={confidenceValue(event.details.confidence)} />
                       <DetailRow label="Revision" value={event.details.revision_number ? `#${event.details.revision_number}` : null} />
                       <DetailRow label="Instruction" value={event.details.revision_instruction} />
                       <DetailRow label="Reason" value={event.details.rejection_reason || event.details.end_reason} />

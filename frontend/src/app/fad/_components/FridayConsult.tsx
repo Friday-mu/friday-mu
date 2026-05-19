@@ -17,7 +17,7 @@
 //      swap into edit mode with the rewritten body.
 
 import { useEffect, useRef, useState } from 'react';
-import { apiFetch } from '../../../components/types';
+import { apiFetch, formatConfidencePercent } from '../../../components/types';
 import type { InboxDraft } from '../_data/fixtures';
 import { confidenceTier } from '../_data/draftsClient';
 import { fireToast } from './Toaster';
@@ -89,6 +89,51 @@ type ConsultContext =
   | 'next_step'
   | 'message_review';
 
+type WhatsAppWindow = { open: boolean; expiresInMinutes?: number; expiresAt?: string };
+
+function confidenceRatio(value: unknown): number | null {
+  const percent = formatConfidencePercent(value as number | string | null | undefined);
+  return percent == null ? null : percent / 100;
+}
+
+function useWhatsAppWindow(windowInfo?: WhatsAppWindow) {
+  const [state, setState] = useState<{ open: boolean; expiresInMinutes?: number }>({
+    open: !!windowInfo?.open,
+    expiresInMinutes: windowInfo?.expiresInMinutes,
+  });
+
+  useEffect(() => {
+    const update = () => {
+      if (!windowInfo) return;
+      if (!windowInfo.open) {
+        setState({ open: false, expiresInMinutes: 0 });
+        return;
+      }
+      if (!windowInfo.expiresAt) {
+        setState({ open: true, expiresInMinutes: windowInfo.expiresInMinutes });
+        return;
+      }
+      const minutes = Math.max(0, Math.round((new Date(windowInfo.expiresAt).getTime() - Date.now()) / 60_000));
+      setState({ open: minutes > 0, expiresInMinutes: minutes });
+    };
+    update();
+    const interval = globalThis.setInterval(update, 30_000);
+    return () => globalThis.clearInterval(interval);
+  }, [windowInfo?.expiresAt, windowInfo?.expiresInMinutes, windowInfo?.open]);
+
+  return state;
+}
+
+const CHIP_INSTRUCTIONS: Record<string, string> = {
+  Polish: 'Improve the tone, grammar, and professionalism of this draft. Apply brand voice and teachings.',
+  Shorter: 'Make this draft shorter and more concise. Keep the key information.',
+  'More formal': 'Make this draft more formal and professional in tone.',
+  'More casual': 'Make this draft more casual and friendly in tone.',
+  'STR KB': '[STR_KB] Review this draft against the full STR best practices. Flag any issues and suggest improvements.',
+  'Summarise this thread': 'Summarise this conversation for an operator. Focus on guest intent, open questions, and next action.',
+  'What does the guest want?': 'Identify what the guest wants, what we know, and the next best reply.',
+};
+
 interface Props {
   threadScope: string;
   /** Conversation id — required for live LLM context loading. When
@@ -109,7 +154,7 @@ interface Props {
   context?: ConsultContext;
   /** WhatsApp channel + window state for the inline timer in DraftCard. */
   channelLabel?: string;
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: WhatsAppWindow;
 
   // ── Action callbacks ── parent owns the network calls + 5s undo state.
   /** Approve the active GMS draft (with optional inline edits). When
@@ -187,12 +232,10 @@ export function FridayConsult({
   // in their latest rewrite, separate from the GMS-draft confidence
   // (which is on currentDraft.confidence).
   const [latestConfidence, setLatestConfidence] = useState<number | null>(
-    typeof currentDraft?.confidence === 'number' ? currentDraft.confidence : null,
+    confidenceRatio(currentDraft?.confidence),
   );
   useEffect(() => {
-    if (typeof currentDraft?.confidence === 'number') {
-      setLatestConfidence(currentDraft.confidence);
-    }
+    setLatestConfidence(confidenceRatio(currentDraft?.confidence));
   }, [currentDraft?.id, currentDraft?.confidence]);
   const [msgs, setMsgs] = useState<ConsultMessage[]>([]);
   // Dead state: the internal compose form was removed; pendingQuery
@@ -204,6 +247,8 @@ export function FridayConsult({
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [missingKnowledge, setMissingKnowledge] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const sessionScopeKey = `${conversationId || 'none'}:${context}:${currentDraft?.id || 'manual'}`;
+  const previousSessionScopeRef = useRef(sessionScopeKey);
 
   // Past consult sessions for this conversation. Fetched on demand
   // when the operator opens the history panel. Endpoint already exists
@@ -327,6 +372,25 @@ export function FridayConsult({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingQuery]);
 
+  useEffect(() => {
+    if (previousSessionScopeRef.current === sessionScopeKey) return;
+    if (sessionId) {
+      apiFetch('/api/inbox/consult/session/end', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId, history: msgs, endReason: 'scope_changed' }),
+      }).catch(() => {});
+    }
+    previousSessionScopeRef.current = sessionScopeKey;
+    setSessionId(undefined);
+    seededDraftIdRef.current = currentDraft?.id || null;
+    setMsgs(currentDraft?.id && currentDraft.body
+      ? [{ role: 'draft', text: currentDraft.body, draftRev: 1, draftId: currentDraft.id }]
+      : []);
+    setMissingKnowledge(false);
+    setError(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionScopeKey]);
+
   const submit = async (text: string) => {
     const q = text.trim();
     if (!q || thinking) return;
@@ -399,8 +463,9 @@ export function FridayConsult({
       } catch { /* ignore */ }
 
       if (data?.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
-      if (data?.missingKnowledge) setMissingKnowledge(true);
-      if (typeof data?.confidence === 'number') setLatestConfidence(data.confidence);
+      setMissingKnowledge(Boolean(data?.missingKnowledge));
+      const nextConfidence = confidenceRatio(data?.confidence);
+      if (nextConfidence !== null) setLatestConfidence(nextConfidence);
 
       // Friday rewrote the draft — push it as a NEW draft chat msg.
       // Older drafts stay in the transcript as read-only history;
@@ -585,7 +650,7 @@ export function FridayConsult({
           endedAt?: string;
         }>;
       };
-      setPastSessions(data?.sessions || []);
+      setPastSessions((data?.sessions || []).map((s) => ({ ...s, messages: s.messages || [] })));
     } catch (e) {
       setPastSessions([]);
       console.warn('[FC] history load failed:', (e as Error).message);
@@ -603,6 +668,8 @@ export function FridayConsult({
     setHistoryOpen(false);
   };
 
+  const hasConsultContent = msgs.length > 0 || thinking || !!currentDraft || workingBody.trim().length > 0;
+
   // FC is compact-by-default: header + chips + Ask Friday input only.
   // Transcript + EmbeddedDraftCard appear conditionally below. Each
   // section sizes to its content; transcript caps with internal
@@ -617,7 +684,9 @@ export function FridayConsult({
         zIndex: 5,
         // Auto mode: wrap content up to 50vh. Explicit mode: fixed
         // pixel height set by drag. Per Ishant 2026-05-17.
-        ...(fcHeight !== null ? { height: fcHeight } : { maxHeight: '50vh' }),
+        ...(fcHeight !== null
+          ? { height: fcHeight }
+          : { minHeight: hasConsultContent ? 'clamp(260px, 36vh, 460px)' : undefined, maxHeight: '60vh' }),
         flex: '0 0 auto',
         display: 'flex',
         flexDirection: 'column',
@@ -723,7 +792,7 @@ export function FridayConsult({
         <div
           className="friday-consult-body"
           ref={transcriptRef}
-          style={{ flex: '1 1 auto', minHeight: 0, maxHeight: 'none' }}
+          style={{ flex: '1 1 auto', minHeight: hasConsultContent ? 'clamp(160px, 24vh, 300px)' : 0, maxHeight: 'none' }}
         >
           {(() => {
             // Latest draft msg is the editable one; older drafts are
@@ -789,7 +858,7 @@ export function FridayConsult({
               <button
                 key={c}
                 type="button"
-                onClick={() => submit(c)}
+                onClick={() => submit(CHIP_INSTRUCTIONS[c] || c)}
                 disabled={thinking}
                 style={{
                   padding: '3px 7px',
@@ -981,7 +1050,7 @@ function MessageRow({
   setWorkingBody: (s: string) => void;
   liveConfidence: number | null;
   channelLabel?: string;
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: WhatsAppWindow;
   sendBusy: boolean;
   rejecting: boolean;
   rejectReason: string;
@@ -1134,7 +1203,7 @@ function DraftMessageActive({
   revisionNumber?: number;
   liveConfidence?: number | null;
   channelLabel?: string;
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: WhatsAppWindow;
   sendBusy: boolean;
   rejecting: boolean;
   rejectReason: string;
@@ -1154,8 +1223,9 @@ function DraftMessageActive({
   };
   const sendDisabled = sendBusy || !workingBody.trim();
   const showWaPill = channelLabel?.toLowerCase().includes('whatsapp') && whatsappWindow;
-  const waOpen = whatsappWindow?.open;
-  const waLeft = whatsappWindow?.expiresInMinutes;
+  const waState = useWhatsAppWindow(whatsappWindow);
+  const waOpen = waState.open;
+  const waLeft = waState.expiresInMinutes;
   return (
     <div className="fcard" style={{ padding: '8px 10px' }}>
       <div className="fcard-kicker" style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -1361,7 +1431,7 @@ function EmbeddedDraftCard({
    *  in this session (so the pill reflects the freshest score). */
   liveConfidence?: number | null;
   channelLabel?: string;
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: WhatsAppWindow;
   sendBusy: boolean;
   rejecting: boolean;
   rejectReason: string;
@@ -1396,8 +1466,9 @@ function EmbeddedDraftCard({
 
   // WhatsApp window pill (compact). Shown when channel is WhatsApp.
   const showWaPill = channelLabel?.toLowerCase().includes('whatsapp') && whatsappWindow;
-  const waOpen = whatsappWindow?.open;
-  const waLeft = whatsappWindow?.expiresInMinutes;
+  const waState = useWhatsAppWindow(whatsappWindow);
+  const waOpen = waState.open;
+  const waLeft = waState.expiresInMinutes;
 
   return (
     <div

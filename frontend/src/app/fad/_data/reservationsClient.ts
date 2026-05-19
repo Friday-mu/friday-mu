@@ -77,6 +77,11 @@ export function transformReservation(r: RawReservation): Reservation {
     numberOfNights: r.nights ?? 0,
     status: mapStatus(r.status),
     channel: mapChannel(r.channel, r.source),
+    partySize: {
+      adults,
+      children,
+      infants,
+    },
     guests: {
       adults,
       children,
@@ -86,6 +91,7 @@ export function transformReservation(r: RawReservation): Reservation {
     guestEmail: r.guest?.email || undefined,
     guestPhone: r.guest?.phone || undefined,
     totalAmount: total,
+    touristTax: 0,
     balanceDue: 0,
     payoutStatus: 'pending',
     currency: r.currency_code || 'EUR',

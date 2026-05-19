@@ -1294,11 +1294,11 @@ function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: strin
     : (m.name || 'Friday');
   return (
     <div className={`msg-bubble ${m.from}`}>
-      <div className="msg-meta">
-        {displayName}
-        {m.via ? ` · via ${m.via}` : ''}
-        {' · '}
-        {formatRelative(m.time)}
+      <div className="msg-meta" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
+        <span>{formatRelative(m.time)}</span>
+        <span className="msg-provenance-chip">{displayName}</span>
+        {m.viaSystem && <span className="msg-provenance-chip">{m.viaSystem}</span>}
+        {(m.viaChannel || m.via) && <span className="msg-provenance-chip">{m.viaChannel || m.via}</span>}
       </div>
       <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{body}</div>
       {hasTranslation && (
@@ -1499,9 +1499,32 @@ function ThreadReservationChip({ reservation }: { reservation: Reservation }) {
 function WhatsAppTimer({
   window,
 }: {
-  window: { open: boolean; expiresInMinutes?: number };
+  window: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
 }) {
-  if (!window.open) {
+  const [state, setState] = useState<{ open: boolean; minutes: number }>({
+    open: window.open,
+    minutes: window.expiresInMinutes ?? 0,
+  });
+
+  useEffect(() => {
+    const update = () => {
+      if (!window.open) {
+        setState({ open: false, minutes: 0 });
+        return;
+      }
+      if (!window.expiresAt) {
+        setState({ open: true, minutes: window.expiresInMinutes ?? 0 });
+        return;
+      }
+      const minutes = Math.max(0, Math.round((new Date(window.expiresAt).getTime() - Date.now()) / 60_000));
+      setState({ open: minutes > 0, minutes });
+    };
+    update();
+    const interval = globalThis.setInterval(update, 30_000);
+    return () => globalThis.clearInterval(interval);
+  }, [window.expiresAt, window.expiresInMinutes, window.open]);
+
+  if (!state.open) {
     return (
       <div
         style={{
@@ -1530,7 +1553,7 @@ function WhatsAppTimer({
       </div>
     );
   }
-  const mins = window.expiresInMinutes || 0;
+  const mins = state.minutes;
   const low = mins < 60;
   const h = Math.floor(mins / 60);
   const m = mins % 60;

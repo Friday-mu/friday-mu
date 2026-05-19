@@ -60,6 +60,18 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&#39;|&apos;/g, "'")
 }
 
+export function formatConfidencePercent(value: number | string | null | undefined): number | null {
+  if (value == null || value === '') return null
+  let n = Number(value)
+  if (!Number.isFinite(n)) return null
+
+  // Some legacy GMS rows stored percentages as basis points, so 7000 meant 70%.
+  if (n > 100 && n <= 10000) n = n / 100
+  if (n > 0 && n <= 1) n = n * 100
+
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
 export function getToken() {
   return typeof window !== 'undefined' ? localStorage.getItem('gms_token') : null
 }

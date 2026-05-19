@@ -1519,6 +1519,10 @@ app.post('/api/inbox/consult/session/end', requireAuth, asyncHandler((req, res) 
   gmsProxy(req, res, '/api/ai/consult/session/end', 'post')
 ));
 
+app.post('/api/inbox/consult/:sessionId/summarize', requireAuth, asyncHandler((req, res) =>
+  gmsProxy(req, res, `/api/ai/consult/${req.params.sessionId}/summarize`, 'post')
+));
+
 // ─── Teachings (write-side, driven by Friday Consult's teaching_action) ─
 // Friday Consult emits structured teaching proposals via [TEACH] tags
 // (parsed server-side, returned as `teaching_actions` array). The UI

@@ -10,7 +10,7 @@
 // with neutral fallbacks so a malformed entry never crashes the page.
 
 import { useCallback, useEffect, useState } from 'react';
-import { apiFetch } from '../../../components/types';
+import { apiFetch, formatConfidencePercent } from '../../../components/types';
 import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState } from './fixtures';
 
 // ───────── enum mappers ─────────
@@ -71,6 +71,11 @@ function channelLabel(key: InboxChannel): string {
     vendor_driver: 'Driver',
     vendor_chef: 'Chef',
   }[key];
+}
+
+function confidenceRatio(value: unknown): number | undefined {
+  const percent = formatConfidencePercent(value as number | string | null | undefined);
+  return percent == null ? undefined : percent / 100;
 }
 
 // ───────── shape adapters ─────────
@@ -141,12 +146,22 @@ function transformGmsMessage(raw: Record<string, unknown>): InboxMessage {
   // We surface module_type as the primary "via" since that's what the
   // operator cares about (which channel did it actually go on).
   let via: string | undefined;
+  let viaChannel: string | undefined;
   const moduleType = raw.module_type ? String(raw.module_type) : '';
   if (moduleType) {
-    via = MODULE_TYPE_LABEL[moduleType.toLowerCase()] || MODULE_TYPE_LABEL[moduleType] || moduleType;
+    viaChannel = MODULE_TYPE_LABEL[moduleType.toLowerCase()] || MODULE_TYPE_LABEL[moduleType] || moduleType;
+    via = viaChannel;
   } else if (raw.sent_via_system) {
     via = String(raw.sent_via_system) === 'friday' ? 'Friday' : String(raw.sent_via_system);
   }
+  const sentViaSystem = raw.sent_via_system ? String(raw.sent_via_system) : '';
+  const viaSystem = sentViaSystem === 'friday'
+    ? 'FAD'
+    : sentViaSystem === 'guesty'
+      ? 'Guesty'
+      : direction === 'outbound' && /via\s+Friday$/i.test(String(raw.sender_name || ''))
+        ? 'FAD'
+        : 'Guesty';
 
   return {
     from: direction === 'outbound' ? 'us' : 'them',
@@ -156,6 +171,8 @@ function transformGmsMessage(raw: Record<string, unknown>): InboxMessage {
     bodyOriginal: hasTranslation ? original : undefined,
     bodyLang: raw.original_language ? String(raw.original_language) : undefined,
     via,
+    viaSystem,
+    viaChannel,
   };
 }
 
@@ -196,7 +213,7 @@ function transformGmsDraft(raw: Record<string, unknown>): InboxDraft {
     state: (raw.state ? String(raw.state) : 'draft_ready') as DraftState,
     body: String(raw.draft_body || raw.body || ''),
     bodyTranslated: raw.draft_translated ? String(raw.draft_translated) : undefined,
-    confidence: num(raw.confidence),
+    confidence: confidenceRatio(raw.confidence),
     revisionNumber: num(raw.revision_number),
     revisionInstruction: raw.revision_instruction ? String(raw.revision_instruction) : undefined,
     modelUsed: raw.model_used ? String(raw.model_used) : undefined,
@@ -219,9 +236,7 @@ export function transformGmsConversation(
   const channelKey = mapChannelKey(raw.channel ?? raw.communication_channel);
   const status = raw.status;
   const sentiment = raw.sentiment;
-  const confidence = typeof raw.latest_draft_confidence === 'number'
-    ? raw.latest_draft_confidence
-    : undefined;
+  const confidence = confidenceRatio(raw.latest_draft_confidence);
   // Treat low-confidence drafts as "amber" urgency signal alongside sentiment.
   // (1 - confidence) gives an urgency proxy; 0.5+ confidence-gap → amber.
   const draftUrgency = confidence !== undefined ? 1 - confidence : undefined;
@@ -248,7 +263,7 @@ export function transformGmsConversation(
       const ms = new Date(waWindow.expiresAt).getTime() - Date.now();
       expiresInMinutes = Math.max(0, Math.round(ms / 60_000));
     }
-    whatsappWindow = { open: waWindow.open, expiresInMinutes };
+    whatsappWindow = { open: waWindow.open, expiresInMinutes, expiresAt: waWindow.expiresAt };
   }
 
   const drafts: InboxDraft[] | undefined = draftsRaw
@@ -281,7 +296,7 @@ export function transformGmsConversation(
     availableChannels,
     recommendedChannel,
     latestDraftState: raw.latest_draft_state ? (String(raw.latest_draft_state) as DraftState) : undefined,
-    latestDraftConfidence: typeof raw.latest_draft_confidence === 'number' ? raw.latest_draft_confidence : undefined,
+    latestDraftConfidence: confidenceRatio(raw.latest_draft_confidence),
   };
 }
 

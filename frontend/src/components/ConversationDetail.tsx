@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { format } from 'date-fns'
-import { LanguageIcon, ChevronDownIcon, ChevronUpIcon, ChevronDoubleDownIcon } from '@heroicons/react/24/outline'
+import { LanguageIcon, ChevronDownIcon, ChevronUpIcon, ChevronDoubleDownIcon, ClockIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { ConversationDetail as ConversationDetailType, Draft, apiFetch, LANG_FLAGS, LANG_NAMES, decodeHtmlEntities, stripProtocolTags } from './types'
 import { toast } from 'react-hot-toast'
 import ComposePanel from './ComposePanel'
@@ -12,72 +12,117 @@ import CollapsibleMobilePanel from './CollapsibleMobilePanel'
 function formatChannelName(channel: string | null): string | null {
   if (!channel) return null
   if (channel === 'booking') return 'Booking.com'
+  if (channel === 'bookingCom') return 'Booking.com'
   if (channel === 'airbnb') return 'Airbnb'
+  if (channel === 'airbnb2') return 'Airbnb'
   if (channel === 'whatsapp') return 'WhatsApp'
   if (channel === 'email') return 'Email'
   if (channel === 'direct') return 'Direct'
   return channel.charAt(0).toUpperCase() + channel.slice(1)
 }
 
-function formatSenderWithChannel(senderName: string | null, channel?: string | null, sentBy?: string | null, sentViaSystem?: string | null): string {
+function cleanSenderName(senderName?: string | null) {
   if (!senderName) return ''
-  if (senderName.toLowerCase() === 'hook') return 'Automated message'
-
-  const channelName = formatChannelName(channel ?? null)
-
-  // Use explicit fields if available
-  if (sentViaSystem) {
-    const who = sentBy || 'Team'
-    const via = sentViaSystem === 'friday' ? 'Friday' : 'Guesty'
-    return channelName ? `${who} via ${via} on ${channelName}` : `${who} via ${via}`
-  }
-
-  // Fallback: parse from sender_name for older messages without sent_via_system
-  const personName = senderName.replace(/\s*via\s+(Compose|Judith|Friday|compose|judith|friday)$/i, '').trim()
-  if (/via (Compose|Judith|Friday)/i.test(senderName)) {
-    return channelName ? `${personName} via Friday on ${channelName}` : `${personName} via Friday`
-  }
-
-  return channelName ? `${personName} via Guesty on ${channelName}` : `${personName} via Guesty`
+  if (senderName.toLowerCase() === 'hook') return 'Automated'
+  return senderName.replace(/\s*via\s+(Compose|Judith|Friday|compose|judith|friday)$/i, '').trim()
 }
 
-function useWhatsAppTimer(expiresAt?: string | null, windowOpen?: boolean | null) {
-  const [timeLeft, setTimeLeft] = useState('')
+function inferMessageAttribution(msg: any, conversation: ConversationDetailType['conversation']) {
+  const isOutbound = msg.direction === 'outbound'
+  const explicitSystem = msg.sent_via_system === 'friday' ? 'FAD' : msg.sent_via_system === 'guesty' ? 'Guesty' : null
+  const sender = cleanSenderName(msg.sender_name)
+  const actor = isOutbound
+    ? (msg.sent_by || sender || 'Team')
+    : (sender || conversation.guest_name || 'Guest')
+  const system = explicitSystem
+    || (isOutbound && /via (Compose|Judith|Friday)/i.test(msg.sender_name || '') ? 'FAD' : null)
+    || 'Guesty'
+  const channel = formatChannelName(msg.module_type || conversation.communication_channel || conversation.channel || null)
+
+  return { actor, system, channel }
+}
+
+function useWhatsAppWindowState(expiresAt?: string | null, windowOpen?: boolean | null) {
+  const [state, setState] = useState<{ open: boolean | null; timeLeft: string }>({ open: windowOpen ?? null, timeLeft: '' })
 
   useEffect(() => {
-    if (!expiresAt || !windowOpen) { setTimeLeft(''); return }
     const update = () => {
+      if (windowOpen == null) {
+        setState({ open: null, timeLeft: '' })
+        return
+      }
+      if (!windowOpen) {
+        setState({ open: false, timeLeft: '' })
+        return
+      }
+      if (!expiresAt) {
+        setState({ open: true, timeLeft: '' })
+        return
+      }
       const diff = new Date(expiresAt).getTime() - Date.now()
-      if (diff <= 0) { setTimeLeft(''); return }
+      if (diff <= 0) {
+        setState({ open: false, timeLeft: '' })
+        return
+      }
       const h = Math.floor(diff / 3600000)
       const m = Math.floor((diff % 3600000) / 60000)
-      setTimeLeft(`${h}h ${m}m`)
+      setState({ open: true, timeLeft: `${h}h ${m}m` })
     }
     update()
-    const interval = setInterval(update, 60000)
+    const interval = setInterval(update, 30000)
     return () => clearInterval(interval)
   }, [expiresAt, windowOpen])
 
-  return timeLeft
+  return state
+}
+
+function WhatsAppWindowBadge({ windowOpen, expiresAt, compact = false }: {
+  windowOpen?: boolean | null
+  expiresAt?: string | null
+  compact?: boolean
+}) {
+  const { open, timeLeft } = useWhatsAppWindowState(expiresAt, windowOpen)
+  if (open == null) return null
+
+  const Icon = open ? ClockIcon : ExclamationTriangleIcon
+  const label = compact
+    ? (open ? `WA ${timeLeft || 'open'}` : 'WA closed')
+    : (open ? `WhatsApp ${timeLeft ? `${timeLeft} left` : 'open'}` : 'WhatsApp template required')
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+      title={open ? 'WhatsApp free-form window is open' : 'WhatsApp free-form window is closed'}
+      style={{
+        color: open ? '#4ade80' : '#f87171',
+        background: open ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+        border: open ? '1px solid rgba(34,197,94,0.16)' : '1px solid rgba(239,68,68,0.16)',
+      }}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  )
 }
 
 function WhatsAppComposeTimer({ windowOpen, expiresAt }: {
   windowOpen?: boolean | null
   expiresAt?: string | null
 }) {
-  const timeLeft = useWhatsAppTimer(expiresAt, windowOpen)
+  const { open, timeLeft } = useWhatsAppWindowState(expiresAt, windowOpen)
 
-  if (windowOpen == null) return null
+  if (open == null) return null
 
   return (
     <div className="flex-shrink-0 px-4 py-1" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-      {windowOpen ? (
-        <span className="text-[11px]" style={{ color: '#4ade80' }}>
-          WhatsApp window: {timeLeft ? `${timeLeft} remaining` : 'open'}
+      {open ? (
+        <span className="text-[11px] inline-flex items-center gap-1.5" style={{ color: '#4ade80' }}>
+          <ClockIcon className="h-3.5 w-3.5" />
+          WhatsApp free-form: {timeLeft ? `${timeLeft} remaining` : 'open'}
         </span>
       ) : (
-        <span className="text-[11px]" style={{ color: '#f87171' }}>
-          ⚠️ WhatsApp window closed — use template to re-engage
+        <span className="text-[11px] inline-flex items-center gap-1.5" style={{ color: '#f87171' }}>
+          <ExclamationTriangleIcon className="h-3.5 w-3.5" />
+          WhatsApp free-form closed. Use a template or another channel.
         </span>
       )}
     </div>
@@ -227,6 +272,11 @@ export default function ConversationDetail({
             <span className="text-[11px] shrink-0" onClick={() => fetchPropertyCard(detail.conversation.property_name)} style={{cursor: 'pointer', color: '#64748b'}}>· {detail.conversation.property_name}</span>
           )}
           {detail.conversation.channel && channelBadge(detail.conversation.channel)}
+          <WhatsAppWindowBadge
+            windowOpen={detail.whatsapp_window_open}
+            expiresAt={detail.whatsapp_window_expires_at}
+            compact
+          />
           {intentBadge(detail.conversation.conversation_intent)}
           {detail.conversation.avg_response_minutes != null && (
             <span className="text-[10px] shrink-0 font-medium" style={{color: rtColor(detail.conversation.avg_response_minutes)}}>
@@ -254,6 +304,10 @@ export default function ConversationDetail({
               <span className="text-xs flex-shrink-0" onClick={() => fetchPropertyCard(detail.conversation.property_name)} style={{cursor: 'pointer', color: '#64748b', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: '2px'}}>{detail.conversation.property_name}</span>
             )}
             {detail.conversation.channel && channelBadge(detail.conversation.channel)}
+            <WhatsAppWindowBadge
+              windowOpen={detail.whatsapp_window_open}
+              expiresAt={detail.whatsapp_window_expires_at}
+            />
             {intentBadge(detail.conversation.conversation_intent)}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 text-xs" style={{color: '#64748b'}}>
@@ -463,6 +517,7 @@ export default function ConversationDetail({
           if (!isOutbound && hasTranslation && !showingOriginal) {
             displayBody = msg.translated_body!
           }
+          const attribution = inferMessageAttribution(msg, detail.conversation)
 
           return (
             <React.Fragment key={msg.id}>
@@ -519,15 +574,25 @@ export default function ConversationDetail({
                   </div>
                 )}
 
-                <div className="text-xs mt-1" style={{color: '#64748b'}}>
-                  {formatTimestamp(msg.created_at)} {msg.sender_name && ` · ${formatSenderWithChannel(msg.sender_name, (msg as any).module_type || detail.conversation.communication_channel || detail.conversation.channel, msg.sent_by, msg.sent_via_system)}`}
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] mt-1" style={{color: '#64748b'}}>
+                  <span>{formatTimestamp(msg.created_at)}</span>
+                  {attribution.actor && (
+                    <span className="px-1.5 py-0.5 rounded" title={isOutbound ? 'Sent by' : 'Guest'} style={{background: 'rgba(255,255,255,0.04)', color: '#94a3b8'}}>
+                      {attribution.actor}
+                    </span>
+                  )}
+                  {attribution.system && (
+                    <span className="px-1.5 py-0.5 rounded" title={isOutbound ? 'Sending system' : 'Source system'} style={{background: 'rgba(255,255,255,0.04)', color: attribution.system === 'FAD' ? '#6395ff' : '#94a3b8'}}>
+                      {attribution.system}
+                    </span>
+                  )}
+                  {attribution.channel && (
+                    <span className="px-1.5 py-0.5 rounded" title={isOutbound ? 'Guest received on' : 'Received on'} style={{background: 'rgba(255,255,255,0.04)', color: '#94a3b8'}}>
+                      {attribution.channel}
+                    </span>
+                  )}
                   {!isOutbound && isNonEnglish && (
                     <span className="ml-1">{LANG_FLAGS[msg.original_language!] || ''} {LANG_NAMES[msg.original_language!] || msg.original_language}</span>
-                  )}
-                  {!isOutbound && (msg as any).module_type && (
-                    <span className="ml-1" style={{color: '#475569'}}>
-                      · via {(msg as any).module_type === 'airbnb2' ? 'Airbnb' : (msg as any).module_type === 'bookingCom' ? 'Booking.com' : (msg as any).module_type === 'whatsapp' ? 'WhatsApp' : (msg as any).module_type === 'email' ? 'Email' : (msg as any).module_type}
-                    </span>
                   )}
                 </div>
               </div>

@@ -25,7 +25,7 @@
 // "did I commit the teachables this session produced?". The modal is
 // the preflight check; the undo is the typo safety. Different concerns.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { InboxDraft } from '../../../_data/fixtures';
 import { confidenceTier } from '../../../_data/draftsClient';
 import { IconCheck, IconClose, IconSend, IconSparkle } from '../../icons';
@@ -60,7 +60,7 @@ export interface SendPreflightModalProps {
   pendingTeachingCount?: number;
   /** WhatsApp 24-hour window state — surfaced as a warning chip when
    *  channel is WhatsApp + window is closed. */
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
   /** Operator clicked Send. Modal closes; parent starts the 5s undo. */
   onConfirm: (opts: { channel: string; learnMode?: 'learn' | 'no_learn' | 'normal' }) => void;
   /** Operator clicked Cancel or dismissed. Modal closes, no send. */
@@ -85,6 +85,29 @@ export function SendPreflightModal({
 }: SendPreflightModalProps) {
   const [channel, setChannel] = useState<string>(defaultChannel);
   const [learnMode, setLearnMode] = useState<'learn' | 'no_learn' | 'normal'>('normal');
+  const [whatsappState, setWhatsappState] = useState<{ open: boolean; minutes: number }>({
+    open: !!whatsappWindow?.open,
+    minutes: whatsappWindow?.expiresInMinutes ?? 0,
+  });
+
+  useEffect(() => {
+    const update = () => {
+      if (!whatsappWindow) return;
+      if (!whatsappWindow.open) {
+        setWhatsappState({ open: false, minutes: 0 });
+        return;
+      }
+      if (!whatsappWindow.expiresAt) {
+        setWhatsappState({ open: true, minutes: whatsappWindow.expiresInMinutes ?? 0 });
+        return;
+      }
+      const minutes = Math.max(0, Math.round((new Date(whatsappWindow.expiresAt).getTime() - Date.now()) / 60_000));
+      setWhatsappState({ open: minutes > 0, minutes });
+    };
+    update();
+    const interval = globalThis.setInterval(update, 30_000);
+    return () => globalThis.clearInterval(interval);
+  }, [whatsappWindow?.expiresAt, whatsappWindow?.expiresInMinutes, whatsappWindow?.open]);
 
   const effectiveConfidence: number | null =
     typeof liveConfidence === 'number'
@@ -101,7 +124,8 @@ export function SendPreflightModal({
   };
 
   const isWaChannel = channel === 'whatsapp';
-  const waWindowClosed = isWaChannel && whatsappWindow && !whatsappWindow.open;
+  const waWindowClosed = isWaChannel && whatsappWindow && !whatsappState.open;
+  const canConfirm = bodyToSend.trim().length > 0 && !waWindowClosed;
 
   // Channels to render — backend list if available; otherwise just the
   // default (gives a single-radio degenerate case).
@@ -427,8 +451,8 @@ export function SendPreflightModal({
           </button>
           <button
             type="button"
-            onClick={() => onConfirm({ channel, learnMode })}
-            disabled={!bodyToSend.trim()}
+            onClick={() => { if (canConfirm) onConfirm({ channel, learnMode }); }}
+            disabled={!canConfirm}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -440,11 +464,11 @@ export function SendPreflightModal({
               background: 'var(--color-brand-accent)',
               border: 'none',
               borderRadius: 'var(--radius-sm)',
-              cursor: bodyToSend.trim() ? 'pointer' : 'not-allowed',
-              opacity: bodyToSend.trim() ? 1 : 0.5,
+              cursor: canConfirm ? 'pointer' : 'not-allowed',
+              opacity: canConfirm ? 1 : 0.5,
             }}
           >
-            <IconCheck size={12} /> Confirm &amp; send
+            <IconCheck size={12} /> {waWindowClosed ? 'Template required' : 'Confirm & send'}
           </button>
         </div>
       </div>

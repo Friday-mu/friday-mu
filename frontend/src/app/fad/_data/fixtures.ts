@@ -21,6 +21,10 @@ export interface InboxMessage {
    *  line to show provenance for outbound messages. Undefined when
    *  we don't know (older rows without module_type / sent_via_system). */
   via?: string;
+  /** Explicit system provenance for the tri-tag meta row. */
+  viaSystem?: string;
+  /** Guest-visible channel for the tri-tag meta row. */
+  viaChannel?: string;
 }
 
 export type InboxEntity = 'guest' | 'owner' | 'vendor' | 'unclassified';
@@ -116,7 +120,7 @@ export interface InboxThread {
   summary?: string;
   sentiment?: 'positive' | 'neutral' | 'negative' | 'urgent';
   language?: 'EN' | 'FR' | 'PT' | 'IT' | 'NL';
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
   /** Reservation context bundled in the thread-detail response. Optional —
    *  list view doesn't carry it, only the detail fetch does. */
   reservation?: InboxReservation;

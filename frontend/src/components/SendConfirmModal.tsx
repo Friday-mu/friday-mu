@@ -1,5 +1,6 @@
 'use client'
 import React, { useState } from 'react'
+import { ClockIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { trackEvent } from '../lib/analytics'
 import { apiFetch } from './types'
 import TeachingSummary from './TeachingSummary'
@@ -28,6 +29,44 @@ interface SendConfirmModalProps {
   cancelSend: () => void
   sessionTeachings?: Array<{ id: string; instruction: string; scope: string }>
   availableChannels?: string[] | null
+  whatsappWindowOpen?: boolean | null
+  whatsappWindowExpiresAt?: string | null
+}
+
+function useWhatsAppCountdown(expiresAt?: string | null, windowOpen?: boolean | null) {
+  const [state, setState] = React.useState<{ open: boolean | null; label: string }>({ open: windowOpen ?? null, label: '' })
+
+  React.useEffect(() => {
+    const update = () => {
+      if (windowOpen == null) {
+        setState({ open: null, label: '' })
+        return
+      }
+      if (!windowOpen) {
+        setState({ open: false, label: '' })
+        return
+      }
+      if (!expiresAt) {
+        setState({ open: true, label: 'open' })
+        return
+      }
+
+      const diff = new Date(expiresAt).getTime() - Date.now()
+      if (diff <= 0) {
+        setState({ open: false, label: '' })
+        return
+      }
+      const h = Math.floor(diff / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      setState({ open: true, label: `${h}h ${m}m left` })
+    }
+
+    update()
+    const interval = window.setInterval(update, 30000)
+    return () => window.clearInterval(interval)
+  }, [expiresAt, windowOpen])
+
+  return state
 }
 
 export default function SendConfirmModal({
@@ -41,15 +80,19 @@ export default function SendConfirmModal({
   cancelSend,
   sessionTeachings = [],
   availableChannels,
+  whatsappWindowOpen,
+  whatsappWindowExpiresAt,
 }: SendConfirmModalProps) {
   const [acceptedSuggestion, setAcceptedSuggestion] = useState(false)
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
+  const whatsappState = useWhatsAppCountdown(whatsappWindowExpiresAt, whatsappWindowOpen)
+  const whatsappClosed = sendChannel === 'whatsapp' && whatsappState.open === false
   const handleClose = () => {
     setSendConfirm(null)
   }
 
   const handleSend = () => {
-    if (!sendConfirm) return
+    if (!sendConfirm || whatsappClosed) return
     trackEvent('send_flow_choice', { choice: 'send' })
     executeSend(sendConfirm.draftId, 'normal')
   }
@@ -79,7 +122,16 @@ export default function SendConfirmModal({
                     ))}
                   </select>
                   {sendChannel === 'booking' && <p className="text-xs mt-1" style={{color: '#64748b'}}>Message sent via Booking.com through Guesty</p>}
-                  {sendChannel === 'whatsapp' && <p className="text-xs mt-1" style={{color: '#64748b'}}>Message sent via WhatsApp through Guesty</p>}
+                  {sendChannel === 'whatsapp' && (
+                    <div className="text-xs mt-1 flex items-start gap-1.5" style={{color: whatsappClosed ? '#f87171' : '#64748b'}}>
+                      {whatsappClosed ? <ExclamationTriangleIcon className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /> : <ClockIcon className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />}
+                      <span>
+                        {whatsappClosed
+                          ? 'WhatsApp free-form window is closed. Use a template or another channel.'
+                          : `Message sent via WhatsApp through Guesty${whatsappState.label ? ` (${whatsappState.label})` : ''}`}
+                      </span>
+                    </div>
+                  )}
                   {sendChannel === 'email' && <p className="text-xs mt-1" style={{color: '#64748b'}}>Sent as email to the guest</p>}
                 </div>
 
@@ -134,9 +186,10 @@ export default function SendConfirmModal({
                   <button
                     data-testid="btn-send"
                     onClick={handleSend}
-                    className="w-full px-4 py-3 text-sm rounded-lg font-medium"
-                    style={{background: 'rgba(34,197,94,0.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)'}}>
-                    ✉️ Send
+                    disabled={whatsappClosed}
+                    className="w-full px-4 py-3 text-sm rounded-lg font-medium disabled:cursor-not-allowed"
+                    style={{background: whatsappClosed ? 'rgba(100,116,139,0.12)' : 'rgba(34,197,94,0.15)', color: whatsappClosed ? '#94a3b8' : '#4ade80', border: whatsappClosed ? '1px solid rgba(148,163,184,0.18)' : '1px solid rgba(34,197,94,0.3)'}}>
+                    {whatsappClosed ? 'Template required' : 'Send'}
                   </button>
                   <button
                     data-testid="btn-cancel-learn"
