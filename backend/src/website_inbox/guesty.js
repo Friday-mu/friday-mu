@@ -365,4 +365,10 @@ module.exports = {
   // Exposed so server.js can route its legacy `guestyAPI` instance
   // through the same 3-tier cache (in-memory + shared disk + mint).
   getAccessToken,
+  // Generic Guesty HTTP helper. Used by backend/src/inbox/drafts_send.js
+  // for the FAD-native outbound send. Was missing from exports since
+  // Stage 2.1 ship (bc2b61f) — surfaced as
+  // "guestyRequest is not a function" in prod 2026-05-19 05:22 UTC
+  // when Ishant first tried to send.
+  guestyRequest,
 };
