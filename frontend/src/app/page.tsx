@@ -9,7 +9,6 @@ import {
   API_BASE, LANG_NAMES, LANG_FLAGS,
   getToken, setToken, clearToken, apiFetch,
   Conversation, ConversationDetail, MessageItem, Draft, PendingAction, InboxStats,
-  formatConfidencePercent,
 } from '../components/types'
 
 // Extracted components
@@ -37,11 +36,6 @@ import AnalyticsDashboard from '../components/AnalyticsDashboard'
 import type { Notification } from '../components/NotificationBell'
 import NotificationPanel from '../components/NotificationPanel'
 import { trackEvent } from '../lib/analytics'
-
-function confidenceSubtitle(value: unknown) {
-  const confidence = formatConfidencePercent(value as number | string | null | undefined)
-  return confidence == null ? 'Confidence unavailable' : `Confidence: ${confidence}%`
-}
 
 export default function MessageDashboard() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -424,7 +418,7 @@ export default function MessageDashboard() {
                   ...updated[existingIdx],
                   type: 'draft_ready' as const,
                   title: `${updated[existingIdx].title} — Draft ready`,
-                  subtitle: confidenceSubtitle(data.data?.confidence),
+                  subtitle: `Confidence: ${data.data?.confidence || '?'}%`,
                 }
                 return updated
               }
@@ -433,7 +427,7 @@ export default function MessageDashboard() {
                 id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 type: 'draft_ready' as const,
                 title: 'Draft ready',
-                subtitle: confidenceSubtitle(data.data?.confidence),
+                subtitle: `Confidence: ${data.data?.confidence || '?'}%`,
                 preview: '',
                 conversationId: convId,
                 timestamp: Date.now(),
@@ -1105,8 +1099,6 @@ export default function MessageDashboard() {
         cancelSend={cancelSend}
         sessionTeachings={sessionTeachings}
         availableChannels={detail?.available_channels}
-        whatsappWindowOpen={detail?.whatsapp_window_open}
-        whatsappWindowExpiresAt={detail?.whatsapp_window_expires_at}
       />
 
       <DashboardStats

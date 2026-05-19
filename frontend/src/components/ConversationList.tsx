@@ -12,7 +12,7 @@ import {
   ArrowPathIcon,
   ArrowsUpDownIcon,
 } from '@heroicons/react/24/outline'
-import { Conversation, InboxStats, decodeHtmlEntities, formatConfidencePercent } from './types'
+import { Conversation, InboxStats, decodeHtmlEntities } from './types'
 import PendingActionsTab from './PendingActions'
 import FilterChips from './FilterChips'
 
@@ -429,9 +429,8 @@ export default function ConversationList({
                     <span className="text-xs" style={{color: '#94a3b8', cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: '2px'}} onClick={(e) => { e.stopPropagation(); fetchPropertyCard(conv.property_name); }}>{conv.property_name}</span>
                   )}
                   {statusBadge(conv)}
-                  {(() => {
-                    const c = formatConfidencePercent(conv.latest_draft_confidence)
-                    if (c == null) return null
+                  {conv.latest_draft_confidence && (() => {
+                    const c = Number(conv.latest_draft_confidence)
                     const cbg = c >= 80 ? 'rgba(34,197,94,0.15)' : c >= 60 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)'
                     const cclr = c >= 80 ? '#4ade80' : c >= 60 ? '#fbbf24' : '#f87171'
                     return <span className="px-1.5 py-0.5 rounded-full text-xs font-medium" style={{background: cbg, color: cclr}}>{c}%</span>

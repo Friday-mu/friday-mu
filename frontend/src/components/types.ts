@@ -1,5 +1,21 @@
 // Shared types and utilities for Friday Admin Dashboard
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || ''
+export function resolveApiBase(configured: string | undefined, browserHost?: string): string {
+  const base = configured || ''
+  const host = browserHost || ''
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  const isLocalBase = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?/i.test(base)
+
+  // Production static builds must never point an operator's browser at their
+  // own localhost. If a local .env.local leaks into the bundle, fall back to
+  // same-origin API routes.
+  if (isLocalBase && host && !isLocalHost) return ''
+  return base
+}
+
+export const API_BASE = resolveApiBase(
+  process.env.NEXT_PUBLIC_API_URL,
+  typeof window !== 'undefined' ? window.location.hostname : undefined,
+)
 
 export const LANG_NAMES: Record<string, string> = {
   en: 'English', fr: 'French', de: 'German', es: 'Spanish', pt: 'Portuguese',

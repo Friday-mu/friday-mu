@@ -12,7 +12,7 @@ import {
   ChevronUpIcon,
   ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline'
-import { Draft, decodeHtmlEntities, formatConfidencePercent, stripProtocolTags } from './types'
+import { Draft, decodeHtmlEntities, stripProtocolTags } from './types'
 import ConsultChat from './ConsultChat'
 import { trackEvent } from '../lib/analytics'
 
@@ -82,9 +82,8 @@ export default function DraftPanel({
           <div className="flex items-center justify-between mb-1.5" onClick={() => setCollapsed(!collapsed)} style={{cursor: 'pointer'}}>
             <h4 className="text-xs font-medium flex items-center" style={{color: '#94a3b8'}}>
               <GlobeAltIcon className="h-3.5 w-3.5 mr-1" /> AI Draft
-              {(() => {
-                const c = formatConfidencePercent(draft.confidence)
-                if (c == null) return null
+              {draft.confidence != null && (() => {
+                const c = Number(draft.confidence)
                 const dbg = c >= 80 ? 'rgba(34,197,94,0.15)' : c >= 60 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)'
                 const dclr = c >= 80 ? '#4ade80' : c >= 60 ? '#fbbf24' : '#f87171'
                 return <span className="ml-2 px-1.5 py-0.5 rounded-full text-xs font-medium" style={{background: dbg, color: dclr}}>{c}%</span>
@@ -207,7 +206,6 @@ export default function DraftPanel({
                   key={`${conversationId}-${draft.id}`}
                   active={consultDraftId === draft.id}
                   conversationId={conversationId}
-                  draftId={draft.id}
                   context="draft_review"
                   initialInstruction={draft.draft_body}
                   draftBody={draft.draft_body}
