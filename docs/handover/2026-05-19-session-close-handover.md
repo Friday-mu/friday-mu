@@ -5,7 +5,10 @@
 > consolidation work).
 >
 > This doc is the **comprehensive close** for the ~24-hour session running 2026-05-18 17:00 UTC
-> through 2026-05-19 ~09:00 UTC. Read this first.
+> through 2026-05-19 ~09:30 UTC. Read this first.
+>
+> **Updated 2026-05-19 09:30 UTC** with: 22-test smoke sweep results (Test §8), 3 new bug
+> reports triaged (Bug Triage §9), Kimi timeout hotfix (`efaa086`).
 
 ---
 
@@ -141,6 +144,7 @@ End state: **37 active** (28 global + 9 property-scoped).
 | `6f269f2` | Retry-on-empty-response wastes Kimi budget | Caught in prod logs |
 | `437cec0` + `bc415e8` | Direct-booking payment-method conflict between teachings + KB | Surfaced during consolidation |
 | `55024c6` | `guestyRequest` not exported → drafts_send broken since Stage 2.1 | Feedback 0d056c78 from Ishant 05:23 UTC |
+| `efaa086` | Kimi K2.6 timeout 45s → 90s — long-context drafts on cardless properties were timing out | Feedback 507b2bbe + d72dd6a2 from Ishant 08:48-08:55 UTC; pattern visible in 24h logs |
 
 ---
 
@@ -219,9 +223,11 @@ Estimated: 30-45min Ishant ack time + 10min execution. **Use `Write` → `scp` �
 
 4 cards (BW-C4, GBH-C7, KS-5, SD-10) are V1 schema with `quick_responses` / `trigger_keywords`. They need V1→V2 migration before the 6 deferred property-scoped teachings (BW-C4 ×4, KS-5, SD-10) can be absorbed. Estimated ~30-45min per card.
 
-### P0 — A3: Create missing cards (VA-3, VA-4)
+### P0 — A3: Create missing cards (TRR-4, MV-1, VA-3, VA-4) — NOW UPSTREAM OF DRAFT-TIMEOUT BUG
 
-No cards exist. Need to create from Guesty listing data + the 3 deferred teachings (distances, location, building setup). Plus the previously-flagged MV-1 / TRR-4 / VA-3 / VA-4 set (4 properties with no cards).
+**Priority raised after session-close bug triage** (§9.3). 4 properties have no `properties/<code>.json` card, so when their conversations get an inbound message, the composer falls back to a larger generic prompt that K2.6 sometimes times out on. The `efaa086` timeout bump (45s → 90s) is mitigation; creating the cards is the real fix. Plus the 3 deferred teachings (distances, location, building setup) get absorbed.
+
+~30-45min total to scaffold V2 cards from Guesty listing data for all 4 + run a smoke draft on each conv to verify generation completes in < 30s.
 
 ### P1 — Phase 3.5: Consult / Ask Friday
 
@@ -245,16 +251,72 @@ The Stage 2 Analyzer has never fired in production (per the GMS/KB Final-State H
 
 | ID | Summary | Status |
 |---|---|---|
+| `0d056c78` | "guest send failed" (Ishant 05:23 UTC) | **RESOLVED** by `55024c6` (guestyRequest export fix) |
+| `3b2ff028` | "Still having issues sending" (Ishant 08:59 UTC) | **RESOLVED** — reported during broken window; no failures post-`55024c6` |
+| `507b2bbe` | AI draft not auto-generated, recurring (Ishant 08:48 UTC) | **TRIAGED** — Kimi 45s timeout root cause; mitigation `efaa086` (90s); real fix is A3 card creation |
+| `d72dd6a2` | Multi-bug bundle (Ishant 08:55 UTC) | **TRIAGED** — 6 sub-issues, see §9.3 below |
 | `48c478be` | Drafts leaking across conversations in Friday Consult | new — defer to Phase 3.5 (consult port) |
 | `3425ff65` | Confidence level 7000% on a draft | new — likely auto-dies on FAD-native drafts (clamped 10-98) |
-| `dba0a793` | Wrong summary for guest Alessia Barbetta | new — auto-summarize is disabled, this is residual GMS-side |
+| `dba0a793` | Wrong summary for guest Alessia Barbetta | new — auto-summarize is disabled, residual GMS-side |
 | `59b6581a` | Can't edit/refine a draft (revise) | **OBSOLETE** — revise was removed; Polish-with-Friday is the replacement |
-| `2dd203cd` | Polish-with-Friday button doesn't work | unverified post-Phase 3.1 deploy; Ishant said "polish moved to team chat only" |
+| `2dd203cd` | Polish-with-Friday button doesn't work | unverified post-Phase 3.1; Ishant said "polish moved to team chat only" |
 | (10 frontend bugs from earlier sweep) | Channels, mentions, scheduling, read receipts, responsiveness | separate FE track — not phase-blocking |
 
 ### P3 — Disk cleanup on VPS
 
 Steady at 88%. Adding more workers in Phase 3.5+ will tighten. Worth `pm2 flush` + `find /var/log -name '*.gz' -mtime +14 -delete` before any heavy phase deploy.
+
+---
+
+## 9. New bug reports from Ishant — late session (post 08:00 UTC)
+
+Three reports came in during the comprehensive-test sweep at session close. All inbox-related.
+
+### 9.1 — `0d056c78` "guest send failed" (05:23 UTC) ✓ RESOLVED
+
+Root cause: `guestyRequest` defined in `website_inbox/guesty.js` line 189 but never added to `module.exports`. Since Stage 2.1 (commit `bc2b61f`), `drafts_send.js`'s import returned `undefined` and every approve+send returned `guestyRequest is not a function`. Bug was latent because nobody actually exercised the FAD-native send flow until 2026-05-19 05:22.
+
+Fix: commit `55024c6` added `guestyRequest` to the exports list. Deployed fad-backend restart #164. Zero send-failures in logs since. Feedback row updated `resolved` with link to fix.
+
+### 9.2 — `3b2ff028` "still having issues sending" (08:59 UTC) ✓ RESOLVED
+
+Reported DURING the 9.1 broken window. Last send-failure timestamp in logs was 05:23:47 UTC, then `55024c6` shipped. Bug 3 report came in BEFORE that fix took effect on Ishant's end-to-end path. No further send-failures observed. Feedback row updated `resolved` with caveat: "if you see this again, reopen with fresh screenshot + timestamp."
+
+### 9.3 — `507b2bbe` + `d72dd6a2` "AI draft not generating, plus 5 more issues" (08:48 + 08:55 UTC) ⚠ TRIAGED, partial fix deployed
+
+**Six distinct issues in two reports.**
+
+**(1) AI draft not auto-generating, recurring** [SAME ROOT CAUSE for both reports]
+The auto-draft IS firing per Phase 3.1, but **Kimi K2.6 was timing out at 45 seconds** on long-context prompts when the property card is missing. The composer falls back to a larger generic prompt; K2.6's reasoning step exceeds the wall-clock; 3 retries × 45s = ~135s wasted; draft state ends `generation_failed`; frontend shows no draft → looks like "auto-draft didn't fire."
+
+Production evidence (last 12h):
+```
+05:51:51  conv bdbc9ccc — Kimi draft timeout 45000ms exceeded
+08:29:53  conv 95ebd8cb (property TRR-4 — no card) — Kimi draft timeout 45000ms exceeded
+```
+
+**Mitigation deployed** in commit `efaa086`: `KIMI_DRAFT_TIMEOUT_MS` default 45s → 90s. Worst case is now a longer "Generating…" placeholder before draft appears (inbox UI handles this). **Real upstream fix: A3 task — create the 4 missing property cards (TRR-4, MV-1, VA-3, VA-4).** With property cards loaded, prompts focus on per-property facts and Kimi completes in 18-30s typical.
+
+**(2) Wrong conversation context (TRR-4 shown, reservation is LV-10)** — Feature request, not bug
+Guest had old reservation on TRR-4, swapped to LV-10. Conversation continued on the old thread. FAD inbox shows TRR-4 context. **Need to design**: route inbox display by most-recent-reservation-state instead of static conversation→property association. Backend keeps the thread but FE displays current state. Not a regression — pre-existing behavior. Needs dedicated design session.
+
+**(3) Missing WhatsApp 24h session timer in inbox UI** — Frontend enhancement
+WhatsApp business-window rule (24h after last guest reply, free-form allowed; after that, template only) is enforced server-side at send. UI should show countdown so operators know the window state. Frontend work, deferred.
+
+**(4) Sender/platform tri-tag missing** — Frontend enhancement
+Current display: "Friday via WhatsApp" or "Friday via email". Ishant wants three pieces visible:
+  - Who in the team sent it
+  - What platform Friday sent through (FAD vs Guesty vs direct Airbnb/Booking/WA/email)
+  - What platform the guest received it on (Airbnb / Booking / WhatsApp / email)
+Backend has `sent_by`, `sent_via`, and module_type fields; FE binding not surfacing all three. Frontend work, deferred.
+
+**(5) "No KB" indicator showing on Friday Consult panel** — Investigation needed
+Composer IS loading KB (verified in test §3 — composer.load returns 7 skills, 24KB system message). But Ishant reports the frontend shows "no KB". Likely a Friday Consult sidebar binding bug — the consult panel proxies to GMS `/api/ai/consult` which is a different code path from the inbox-drafts composer. Investigate how Friday Consult displays the KB indicator. Frontend + GMS consult.ts. Deferred.
+
+**(6) Friday Consult panel resize default** — Frontend bug
+Ishant: "should default to fixed minimum height when there's content, not be fully pushed down." Currently the panel collapses to almost nothing when not in focus. Frontend UX, deferred.
+
+All sub-items (2)-(6) flagged in feedback resolution_note for `d72dd6a2` with cross-link to this handover.
 
 ---
 
@@ -294,6 +356,44 @@ Steady at 88%. Adding more workers in Phase 3.5+ will tighten. Worth `pm2 flush`
 
 8. **Estimation memory got an upgrade mid-session.** Now tiered: Tier 1 (coding 4-7×), Tier 2 (writing 1.5×), Tier 3 (research 1.3×), Tier 4 (strategy 1×). Apply the right tier — don't lump.
 
+9. **"Auto-draft didn't fire" can mean "auto-draft fired and silently timed out."** Three Kimi timeouts in 12h on cardless properties were invisible to the team because frontend just shows "no draft" — not "draft failed after 135s." A "Generating…" placeholder + a "draft generation failed, click to retry" surface would make this discoverable. UX work for the inbox FE deferred. The 90s timeout bump (`efaa086`) reduces the failure rate; A3 card creation removes the root cause.
+
+10. **A comprehensive smoke test catches latent bugs that absence-of-traffic hides.** The post-deploy 22-test sweep (Test §8) verified all 13 new modules export-correctly + every entry function invokes without crashing + composer loads every surface. Would have caught `guestyRequest` if I'd done it before bedtime — saving the next 6 hours of broken sends.
+
+---
+
+## 8. Comprehensive smoke test results (2026-05-19 09:00-09:30 UTC)
+
+22 tests run post-deploy. Results stored as test rows below; full output in `pm2 logs fad-backend` at the noted timestamps.
+
+| # | Test | Result |
+|---|---|---|
+| 1-2 | `node --check` on 17 modified files + composer test suite | 17 OK, 9/9 composer tests pass |
+| 3 | `require()` + named-export verification for 13 new modules | **13/13 pass** (35 named exports verified) |
+| 4-5 | pm2 log scan (12h) for errors | Only known patterns (Kimi timeouts, `[GMS API Error] /pending 404` pre-existing tech debt at server.js:807, K2.6 empty-response retries on stale fix) |
+| 6 | `learning_context.loadTeachingsBlock(LB-C)` + `loadActionFeedbackBlock()` direct invoke | Returns 9KB + 2.5KB respectively, well-formed blocks with positive-flipped content |
+| 7 | `composer.load('inbox-drafts', { property_code: 'LB-1', task_signals: ['discount'] })` | 7 skills loaded (4 globals + surface + lazy discount-bounds + property:LB-1), 24KB system, includes property card content + discount lazy-load |
+| 8 | Draft state distribution (24h) | 1 ready / 5 generation_failed / 2 send_failed (pre-fix) / 6 superseded. 31% failure rate — mostly Kimi timeouts on cardless properties → `efaa086` fix below |
+| 9 | pending_actions activity (24h) | 6 auto_dismissed + 3 pending. The `reserved`-gate fix from earlier is working |
+| 10 | ai_usage breakdown (24h) | inbox_classify ×11 / inbox_draft ×11 / public_chat ×1 / public_chat_stream ×1. Streaming cost = 0¢ (known caveat — Moonshot streaming SSE doesn't emit usage by default) |
+| 11 | `/api/public/chat` non-streaming | OK — returns kimi-k2.6 reply |
+| 12 | `/api/public/listings` regression | OK (false alarm earlier was wrong-scope token) |
+| 13 | `action_detector.detectActions()` direct invoke | OK — skipped `reservation_inquiry` cleanly, no crash |
+| 14 | `auto_resolve.checkAutoResolve()` direct invoke | OK — returns `{count:0}` cleanly, no crash |
+| 15 | `/api/public/chat` Anthropic fallback path (model=claude-sonnet-4-6) | OK — returns from claude-sonnet-4-5-20250929; fallback chain works |
+| 16 | `composer.load('pending-actions')` | 4 skills, 17.8KB system |
+| 17 | `followup_scanner.detectIntent` + `.autoDismissInquiryFollowups` direct invoke | OK — detects intent + dismiss runs without errors |
+| 18 | `draft_reaper.reapOnce` direct invoke | OK — clean |
+| 19-20 | Env vars on both backends | KIMI_API_KEY + ANTHROPIC_API_KEY set; all 4 GMS disable flags set |
+| 21 | GMS-side flag enforcement | Silent (expected — webhooks go to FAD, not GMS, so GMS triggers don't fire) |
+| 22 | Worker liveness (last 1h) | guesty/poller every 15min ✓, translation/worker processing rows ✓, draft_reaper + followup_scanner silent-running (only emit on action) |
+
+**Catches from the sweep:**
+- ⚠ 31% generation_failed rate — root cause Kimi 45s timeout on cardless properties → mitigated by `efaa086` (90s); A3 task is real fix
+- ⚠ Streaming usage = 0¢ in ai_usage table — known, Tier 1 follow-up (`stream_options: { include_usage: true }`)
+- ✓ All new code paths verified live or via direct invoke
+- ✓ No new latent "function defined but not exported" bugs
+
 ---
 
 ## 7. Resumption prompt — paste this into the next session
@@ -302,30 +402,37 @@ Steady at 88%. Adding more workers in Phase 3.5+ will tighten. Worth `pm2 flush`
 Resume from docs/handover/2026-05-19-session-close-handover.md.
 
 Working directory: /Users/judith/repos/friday-admin-dashboard/.claude/worktrees/fad-design-os
-Branch: fad-design-os-v01-frontend, HEAD = 55024c6 (guestyRequest export hotfix)
-fad-backend deployed restart #164; friday-gms restart #3213.
+Branch: fad-design-os-v01-frontend, HEAD = efaa086 (Kimi timeout hotfix)
+fad-backend deployed restart #165; friday-gms restart #3213.
 
 Run the cold-open checklist in §0 of the handover before any action.
 
-Recommended starter is one of:
-  P0a — Resume teaching consolidation flip walks (22 globals to flip
+Recommended starter is one of (PRIORITY ORDER REVISED 09:30 UTC):
+  P0a — A3 create TRR-4 + MV-1 + VA-3 + VA-4 cards from Guesty data.
+        Now upstream of an active recurring bug (drafts failing on
+        cardless properties → 507b2bbe + d72dd6a2 §1). ~30-45min
+        total. Will eliminate the bulk of generation_failed rows.
+  P0b — Resume teaching consolidation flip walks (22 globals to flip
         to positive framing per docs/teaching-consolidation/
         2026-05-19-100-active-teachings.md). ~40min of Ishant ack
         time + 10min execution. Drops 37 → ~15 globals.
-  P0b — A2 V1→V2 property card migration (BW-C4, KS-5, SD-10).
+  P0c — A2 V1→V2 property card migration (BW-C4, KS-5, SD-10).
         ~30-45min per card. Unblocks the 6 deferred A2 teachings.
-  P0c — A3 create VA-3 + VA-4 + MV-1 + TRR-4 cards from Guesty data.
-        ~30-45min total.
   P1  — Phase 3.5 Consult port (friday-gms consult.ts ~800 lines).
-        Biggest remaining Stage 3 phase.
+        Biggest remaining Stage 3 phase. May also fix the "no KB"
+        indicator bug (d72dd6a2 §5).
 
 Locked decisions: §3 of the handover. Don't re-litigate.
 
 Estimation tier: most of the consolidation work is Tier 4 (judgment-
-heavy). Coding work (3.5 port, V1→V2 migration) is Tier 1. Apply
-correctly per memory feedback-estimation-bias.
+heavy). Coding work (3.5 port, V1→V2 migration, A3 card creation) is
+Tier 1. Apply correctly per memory feedback-estimation-bias.
 
-Bugs still standing: §4 P3 of handover.
+Bugs still standing: §4 P3 of handover. §9 documents the three late-
+session reports (one resolved, one fixed-during-broken-window, two
+triaged with mitigation deployed).
 
-Pending Ishant inputs: none critical right now.
+Pending Ishant inputs: none critical right now. The polish-with-Friday
+verification and any new feedback this session triggered are next-
+session items.
 ```
