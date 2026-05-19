@@ -120,7 +120,7 @@
     },
     "nearest_beach": {
       "minutes_walk": null,
-      "name": null
+      "name": "Grand Baie beaches"
     },
     "nearby_landmarks": [
       {
@@ -144,7 +144,8 @@
   "operational_notes": [
     "Villa includes a master bedroom overlooking the pool with its own bathroom featuring double sinks.",
     "Outdoor area includes garden, private pool, kiosk with barbecue setup, outdoor kitchen, outdoor shower, and outdoor toilet.",
-    "Pool and garden maintenance is scheduled twice a week."
+    "Pool and garden maintenance is scheduled twice a week.",
+    "Beach-distance wording: Guesty says popular beaches are within a short walk, but no exact walking time is confirmed. Do not invent a minute count; say the villa is in Grand Baie and popular beaches are a short walk away."
   ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
