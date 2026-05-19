@@ -60,9 +60,14 @@ const DRAFT_TEMPERATURE = Number(process.env.KIMI_DRAFT_TEMPERATURE) || 1;
 // rarely exceed 800 tokens).
 const DRAFT_MAX_TOKENS = Number(process.env.KIMI_DRAFT_MAX_TOKENS) || 4096;
 
-// Timeout for one Kimi call. K2.6 with a 18K-token system prompt
-// typically responds in 6-12s; 45s is generous for tail latency.
-const DRAFT_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_TIMEOUT_MS) || 45_000;
+// Timeout for one Kimi call. Bumped 45s → 90s on 2026-05-19 after
+// production saw timeouts on long-context prompts when the property
+// card was missing (composer falls back to a larger generic prompt
+// when properties/<code>.json doesn't exist — TRR-4, MV-1, VA-3,
+// VA-4 are all missing cards). K2.6's reasoning step on a generic
+// prompt + full conversation history can exceed 45s. 90s gives
+// headroom; A3 card-creation task is the upstream fix.
+const DRAFT_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_TIMEOUT_MS) || 90_000;
 
 // Retry policy. Matches GMS's draft-generator: 3 retries, exponential
 // backoff. Each retry doubles the wait — 2s, 4s, 8s. Total worst-case
