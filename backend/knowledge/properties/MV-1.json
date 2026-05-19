@@ -1,30 +1,30 @@
 {
-  "card_type": "subunit",
-  "parent_complex_code": "VA-C",
-  "code": "VA-2",
-  "name": "Spacious Apartment, 10 Mins Walk to Beach",
-  "property_id": "69ce4cee41cd7800130879d5",
+  "card_type": "independent",
+  "parent_complex_code": null,
+  "code": "MV-1",
+  "name": "Private 3BR Villa with Pool & Garden",
+  "property_id": "69f4a0d9a67b3700144a98c9",
   "location": {
     "area": "Grand Baie",
     "region": "north",
-    "address": "Geranium Lane, 30525 Grand Baie, Mauritius",
+    "address": "Chemin 20 Pieds, La Mare Ronde, 30513 Grand Baie, Mauritius",
     "floor": null,
     "coordinates": {
-      "lat": null,
-      "lng": null
+      "lat": -20.011525385200237,
+      "lng": 57.5962198152982
     }
   },
   "type": {
-    "property_type": "apartment",
-    "unit_type": "2br",
+    "property_type": "villa",
+    "unit_type": "3br",
     "renovation_status": "current"
   },
   "subunits": [],
   "adjacent_friday_properties": [],
   "capacity": {
-    "adults": 4,
+    "adults": 6,
     "children": 0,
-    "total_max": 4,
+    "total_max": 6,
     "infants_in_crib": 1
   },
   "bedrooms": [
@@ -41,12 +41,20 @@
         "double"
       ],
       "ac": true
+    },
+    {
+      "id": 3,
+      "beds": [
+        "single",
+        "single"
+      ],
+      "ac": true
     }
   ],
   "bathrooms": {
-    "count": 1,
-    "ensuite_count": 0,
-    "half_baths": 0
+    "count": 2,
+    "ensuite_count": 1,
+    "half_baths": 1
   },
   "amenities": {
     "kitchen": true,
@@ -59,15 +67,20 @@
     "gym": false,
     "elevator": false,
     "garage": false,
-    "view": [],
+    "view": [
+      "garden",
+      "pool"
+    ],
     "power_backup": null,
     "pool_access": {
-      "type": null,
-      "location": null,
+      "type": "private",
+      "location": "Private pool in the villa garden.",
       "hours": null
     },
     "air_conditioning": {
-      "locations": [],
+      "locations": [
+        "bedrooms"
+      ],
       "unit_count": null
     },
     "waste_disposal": null
@@ -92,13 +105,13 @@
     }
   },
   "building_context": {
-    "complex_name": null,
+    "complex_name": "Mahogany Villas",
     "complex_code": null,
     "electrical_authority": "CEB",
     "shared_facilities": [],
     "syndic": null,
     "acoustic_notes": null,
-    "notes": "Grand Baie building with 4 units: 2 studios, 1 two-bedroom apartment on the first floor, and 1 two-bedroom apartment on the ground floor."
+    "notes": "Private 3-bedroom villa in a quiet lane in Grand Baie / La Mare Ronde, designed for families or groups needing privacy, garden space, and a private pool."
   },
   "distances": {
     "airport": {
@@ -109,7 +122,13 @@
       "minutes_walk": null,
       "name": null
     },
-    "nearby_landmarks": []
+    "nearby_landmarks": [
+      {
+        "name": "Grand Baie shopping centres and restaurants",
+        "minutes_walk": null,
+        "notes": "Guesty description says shopping centres, restaurants, and popular beaches are within a short walk."
+      }
+    ]
   },
   "house_rules": {
     "smoking": null,
@@ -119,10 +138,14 @@
     "additional_guests_allowed": false
   },
   "pricing": {
-    "cleaning_fee_eur": null,
-    "minimum_stay_nights": null
+    "cleaning_fee_eur": 70,
+    "minimum_stay_nights": 3
   },
-  "operational_notes": [],
+  "operational_notes": [
+    "Villa includes a master bedroom overlooking the pool with its own bathroom featuring double sinks.",
+    "Outdoor area includes garden, private pool, kiosk with barbecue setup, outdoor kitchen, outdoor shower, and outdoor toilet.",
+    "Pool and garden maintenance is scheduled twice a week."
+  ],
   "operational_mitigation_library": {
     "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
     "equipment_specific_mitigations": [],
@@ -133,16 +156,19 @@
     }
   },
   "links": {
-    "airbnb": null,
+    "airbnb": "https://www.airbnb.com/rooms/1678744831084778040",
     "booking": null,
     "google_maps": null,
     "photos_drive": null
   },
   "_v2_migration_metadata": {
-    "source_v1_path": "/Users/judith/repos/friday-gms/knowledge/VA-2.json",
-    "migration_timestamp": "2026-05-14T10:16:31.970725+00:00",
-    "mapping_status": "locked"
+    "source_guesty_cache": "backend/.guesty-listings-cache.json",
+    "migration_timestamp": "2026-05-19T00:00:00+04:00",
+    "mapping_status": "guesty_backfill"
   },
-  "_editorial_review_needed": [],
+  "_editorial_review_needed": [
+    "Confirm exact walking distances to nearest beach, shopping centres, and restaurants.",
+    "Confirm bed sizes, access details, WiFi credentials, and parking instructions before using this card for access replies."
+  ],
   "_rename_log": []
 }

@@ -1,0 +1,177 @@
+{
+  "card_type": "subunit",
+  "parent_complex_code": "VA-C",
+  "code": "VA-4",
+  "name": "Cozy Studio, 10 Mins Walk from the Beach",
+  "property_id": "674d62795e483e0012dc6ec9",
+  "location": {
+    "area": "Grand Baie",
+    "region": "north",
+    "address": "Geranium Lane, 30525 Grand Baie, Mauritius",
+    "floor": "2",
+    "coordinates": {
+      "lat": -20.018718,
+      "lng": 57.576742
+    }
+  },
+  "type": {
+    "property_type": "condominium",
+    "unit_type": "studio",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [
+    "VA-2",
+    "VA-3",
+    "VA-C"
+  ],
+  "capacity": {
+    "adults": 3,
+    "children": 0,
+    "total_max": 3,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "king",
+        "sofa_bed"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 1,
+    "ensuite_count": 0,
+    "half_baths": 0
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": true,
+    "gym": false,
+    "elevator": false,
+    "garage": true,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": null,
+      "location": null,
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [
+        "studio"
+      ],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": null,
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": null,
+      "password": "***",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": null,
+    "complex_code": "VA-C",
+    "electrical_authority": "CEB",
+    "shared_facilities": [
+      "parking"
+    ],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "Grand Baie building with 4 units: 2 studios, 1 two-bedroom apartment on the first floor, and 1 two-bedroom apartment on the ground floor. VA-4 is one of the studios. Guesty public copy says third floor, while the address floor field says 2; verify before giving floor-specific directions."
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": 60
+    },
+    "nearest_beach": {
+      "minutes_walk": 10,
+      "name": "Grand Baie Beach"
+    },
+    "nearby_landmarks": [
+      {
+        "name": "La Croisette Mall",
+        "minutes_walk": 5,
+        "notes": "Guesty description: 5 minutes from La Croisette Mall."
+      },
+      {
+        "name": "Engen gas station at La Croisette",
+        "minutes_walk": null,
+        "notes": "Private directions use this as the driving landmark."
+      },
+      {
+        "name": "Adolphe de Plevitz College",
+        "minutes_walk": null,
+        "notes": "Private directions say to turn after the college."
+      }
+    ]
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": 55,
+    "minimum_stay_nights": 3
+  },
+  "operational_notes": [
+    "Studio has a king-size bed plus sofa bed.",
+    "Kitchenette is compact and suitable for light meal preparation.",
+    "Self-check-in uses a lockbox; exact access details must come from the reservation/access source.",
+    "Guesty notes a parking space available on the property."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": "https://www.airbnb.com/rooms/1683282345455404128",
+    "booking": "https://booking.com/hotel/mu/1-bedroom-studio-10mins-walk-to-beach.en.html",
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_guesty_cache": "backend/.guesty-listings-cache.json",
+    "absorbed_teachings": [
+      "d212258e"
+    ],
+    "migration_timestamp": "2026-05-19T00:00:00+04:00",
+    "mapping_status": "guesty_backfill"
+  },
+  "_editorial_review_needed": [
+    "Resolve VA-4 floor mismatch: Guesty publicDescription says third floor, address.floor says 2.",
+    "Confirm access details and WiFi credentials."
+  ],
+  "_rename_log": []
+}
