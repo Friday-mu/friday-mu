@@ -32,6 +32,7 @@ const { query } = require('../database/client');
 const { defaultComposer } = require('../knowledge/composer');
 const { generateDraftReply, classifyMessageWithKimi, DRAFT_MODEL } = require('../ai/kimi_draft');
 const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
+const { notifyUsers, publishFadEvent, resolveGmWatchers } = require('../realtime');
 
 const DRAFT_INITIAL_STATE = 'friday_drafting';
 const DRAFT_READY_STATE = 'draft_ready';
@@ -245,6 +246,19 @@ async function shouldSuppressDraft(conversationId) {
     console.warn(`[draft-gen] shouldSuppressDraft check failed for ${conversationId}: ${e.message} — proceeding`);
     return false;
   }
+}
+
+async function latestSubstantiveMessage(conversationId) {
+  const { rows } = await query(
+    `SELECT id, direction
+       FROM messages
+      WHERE conversation_id = $1
+        AND COALESCE(is_auto_response, FALSE) IS FALSE
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+    [conversationId],
+  );
+  return rows[0] || null;
 }
 
 // Property-code resolution for the composer's property card. FAD stores
@@ -473,6 +487,7 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
       ),
       query(
         `SELECT id, property_name, property_id, guesty_conversation_id, channel, status,
+                tenant_id, guest_name,
                 check_in_date, check_out_date, num_guests, notes, conversation_summary,
                 last_message_at, last_inbound_at, last_detected_language, reservation_id,
                 auto_send_enabled
@@ -505,6 +520,21 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
       previousDraftBody,
     });
 
+    if (!revisionInstruction) {
+      const latest = await latestSubstantiveMessage(conversationId);
+      if (!latest || latest.direction !== 'inbound' || String(latest.id) !== String(messageId)) {
+        await query(
+          `UPDATE drafts
+              SET state = $1,
+                  updated_at = NOW()
+            WHERE id = $2`,
+          [DRAFT_SUPERSEDED_STATE, draftId],
+        );
+        console.log(`[draft-gen] superseded draft=${draftId}; latest substantive message is ${latest?.direction || 'missing'} ${latest?.id || ''}`);
+        return { draftId, state: DRAFT_SUPERSEDED_STATE, skipped: 'latest_message_not_inbound' };
+      }
+    }
+
     await query(
       `UPDATE drafts
           SET draft_body = $1,
@@ -521,6 +551,27 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
       `tokens=${result.inputTokens}+${result.outputTokens} ` +
       `kbSkills=${result.loadedSkills.length} latency=${result.promptLatencyMs}ms`,
     );
+
+    publishFadEvent({
+      tenantId: convRows.rows[0]?.tenant_id,
+      type: 'inbox.draft_ready',
+      payload: { draftId, messageId, conversationId, confidence: result.confidence },
+    }).catch(() => {});
+    resolveGmWatchers(conversationId, convRows.rows[0]?.tenant_id).then((watchers) => {
+      if (watchers.length === 0) return null;
+      return notifyUsers({
+        tenantId: convRows.rows[0]?.tenant_id,
+        userIds: watchers,
+        type: 'inbox_draft_ready',
+        title: 'Draft ready',
+        body: convRows.rows[0]?.guest_name ? `${convRows.rows[0].guest_name} has a reply ready` : 'A guest reply is ready for review',
+        url: `/fad?m=inbox&thread=${conversationId}`,
+        source: 'inbox',
+        sourceId: draftId,
+        priority: result.confidence < 55 ? 'high' : 'normal',
+        data: { conversationId, draftId, confidence: result.confidence },
+      });
+    }).catch(() => {});
 
     return {
       draftId,

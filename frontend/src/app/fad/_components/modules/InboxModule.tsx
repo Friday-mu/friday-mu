@@ -16,6 +16,7 @@ import {
   rejectDraft,
   reviseDraft,
   sendCompose,
+  sendWhatsAppTemplate,
   isReviewReady,
   markRead,
 } from '../../_data/draftsClient';
@@ -54,7 +55,7 @@ function formatRelative(iso: string): string {
   return new Date(t).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 }
 import { TASK_USERS, TASK_USER_BY_ID } from '../../_data/tasks';
-import { TEAM_CHANNELS, TEAM_DMS } from '../../_data/teamInbox';
+import { useChannels, useDms } from '../../_data/teamInboxClient';
 import {
   RESERVATION_BY_ID,
   CHANNEL_LABEL,
@@ -188,6 +189,8 @@ export function InboxModule({ onAskFriday }: Props) {
   // pattern was hiding real load failures behind a blank list — see
   // inboxError surfaced below so the failure is now visible.
   const { threads: liveThreads, loading: inboxLoading, error: inboxError, refetch: refetchConversations } = useLiveConversations();
+  const { channels: liveTeamChannels } = useChannels();
+  const { dms: liveTeamDms } = useDms();
 
   // Website-inbox fold (locked decision §L, 2026-05-17). friday.mu
   // inquiries appear alongside Guesty conversations in the unified
@@ -512,6 +515,28 @@ export function InboxModule({ onAskFriday }: Props) {
       .finally(() => setComposeBusy(false));
   };
 
+  const handleTemplateSend = (templateId = 'guest_reply_window_closed') => {
+    if (!thread?.id) return;
+    sendWhatsAppTemplate(thread.id, { templateId })
+      .then((r) => {
+        if (r.state === 'blocked') {
+          fireToast(r.message || 'Template send blocked — use Guesty manually');
+          return;
+        }
+        fireToast('WhatsApp template sent ✓');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Template send failed';
+        if (msg.includes('template_send_not_configured')) {
+          fireToast('Template sender not configured — send manually in Guesty/WhatsApp');
+        } else {
+          fireToast(msg);
+        }
+      });
+  };
+
   // 'Polish with Friday' removed from this module 2026-05-17 — FC is
   // the polish surface now (operator types 'polish this' in FC chat).
   // The button remains in TeamInbox + AllReviewsPage, where FC isn't
@@ -562,8 +587,8 @@ export function InboxModule({ onAskFriday }: Props) {
   ];
 
   const teamUnread =
-    TEAM_CHANNELS.reduce((acc, c) => acc + (c.unread ?? 0), 0) +
-    TEAM_DMS.reduce((acc, d) => acc + (d.unread ?? 0), 0);
+    (liveTeamChannels ?? []).reduce((acc, c) => acc + (c.unread ?? 0), 0) +
+    (liveTeamDms ?? []).reduce((acc, d) => acc + (d.unread ?? 0), 0);
 
   const chipsRow = (
     <div className="inbox-chips-row">
@@ -899,7 +924,7 @@ export function InboxModule({ onAskFriday }: Props) {
                 </>
               )}
             </div>
-            {thread.whatsappWindow && <WhatsAppTimer window={thread.whatsappWindow} />}
+            {thread.whatsappWindow && <WhatsAppTimer window={thread.whatsappWindow} onPickTemplate={() => handleTemplateSend()} />}
             {/* AI toolbar + Summary chip + auto-summary panel removed
                 2026-05-17 per Ishant — the GMS-side auto-summary was
                 wasted AI compute (most operators didn't read it) AND
@@ -1498,8 +1523,10 @@ function ThreadReservationChip({ reservation }: { reservation: Reservation }) {
 
 function WhatsAppTimer({
   window,
+  onPickTemplate,
 }: {
   window: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
+  onPickTemplate: () => void;
 }) {
   const [state, setState] = useState<{ open: boolean; minutes: number }>({
     open: window.open,
@@ -1539,6 +1566,8 @@ function WhatsAppTimer({
           <IconClock size={10} /> Window closed · template required
         </span>
         <button
+          type="button"
+          onClick={onPickTemplate}
           style={{
             fontSize: 11,
             color: 'var(--color-brand-accent)',

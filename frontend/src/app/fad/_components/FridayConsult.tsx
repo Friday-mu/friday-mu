@@ -263,6 +263,50 @@ export function FridayConsult({
     endedAt?: string;
   }> | null>(null);
 
+  useEffect(() => {
+    if (!conversationId) {
+      setPastSessions(null);
+      return;
+    }
+    let cancelled = false;
+    setPastSessions(null);
+    apiFetch(`/api/inbox/consult/history/${conversationId}`)
+      .then((data) => {
+        if (cancelled) return;
+        const sessions = (data as {
+          sessions?: Array<{
+            id: string;
+            userName: string;
+            messages?: Array<{ role: string; text?: string; content?: string }>;
+            summary?: string;
+            createdAt: string;
+            endedAt?: string;
+          }>;
+        })?.sessions || [];
+        setPastSessions(sessions.map((s) => ({ ...s, messages: s.messages || [] })));
+      })
+      .catch(() => {
+        if (!cancelled) setPastSessions([]);
+      });
+    return () => { cancelled = true; };
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    const params = new URLSearchParams({ conversationId, context });
+    if (currentDraft?.id) params.set('draftId', currentDraft.id);
+    let cancelled = false;
+    apiFetch(`/api/inbox/consult/session/active?${params.toString()}`)
+      .then((data) => {
+        if (cancelled) return;
+        const activeSessionId = (data as { sessionId?: string; session?: { id?: string } })?.sessionId
+          || (data as { session?: { id?: string } })?.session?.id;
+        if (activeSessionId) setSessionId(activeSessionId);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [conversationId, context, currentDraft?.id]);
+
   // Full-thread context toggle. When on, the operator's next consult
   // query is prepended with the full guest↔team thread so Friday has
   // more than the default 10-msg cap. Resets on thread switch (the

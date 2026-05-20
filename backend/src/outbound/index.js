@@ -94,13 +94,16 @@ router.post('/send', attachIdentity, async (req, res) => {
         req.identity?.username ||
         req.identity?.userId ||
         'fad-user';
+      const requestedMode = String(meta.mode || 'direct_send');
+      const mode = requestedMode === 'manual' ? 'direct_send' : requestedMode;
+      const instruction = meta.instruction || (requestedMode === 'manual' ? body : undefined);
       const composeBody = {
-        mode: meta.mode || 'manual',
+        mode,
         body,
         channel,
         reviewed_by: reviewedBy,
         sent_via: channel,
-        ...(meta.instruction ? { instruction: meta.instruction } : {}),
+        ...(instruction ? { instruction } : {}),
         ...(meta.scope       ? { scope:       meta.scope       } : {}),
       };
       const { data } = await axios.post(

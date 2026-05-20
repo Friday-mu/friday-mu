@@ -21,8 +21,10 @@
 // having to revisit these handlers.
 
 const express = require('express');
+const axios = require('axios');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
+const { publishFadEvent } = require('../realtime');
 
 const router = express.Router();
 
@@ -152,6 +154,85 @@ router.get('/filters', attachIdentity, async (_req, res) => {
   } catch (err) {
     console.error('[inbox/conversations] filters error:', err.message);
     res.status(500).json({ error: 'Failed to get filter options', details: err.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────
+// POST /api/inbox/conversations/:id/send-template
+// WhatsApp templates are mandatory when the 24h window is closed. FAD
+// owns the UI route now, but the upstream sender is still external
+// until the Meta/Guesty template contract is configured. If
+// GMS_TEMPLATE_SEND_PATH is absent, return a blocked state the UI can
+// surface instead of pretending the template was sent.
+// ────────────────────────────────────────────────────────────────────
+router.post('/:id/send-template', attachIdentity, async (req, res) => {
+  const { id } = req.params;
+  const templateId = typeof req.body?.templateId === 'string' ? req.body.templateId.trim() : '';
+  if (!templateId) {
+    return res.status(400).json({ error: 'template_id_required', message: 'Choose a WhatsApp template first.' });
+  }
+  try {
+    const { rows } = await query(
+      `SELECT id, tenant_id, guesty_conversation_id, channel, communication_channel
+         FROM conversations
+        WHERE id = $1 AND tenant_id = $2
+        LIMIT 1`,
+      [id, FR_TENANT_ID],
+    );
+    const conv = rows[0];
+    if (!conv) return res.status(404).json({ error: 'conversation_not_found' });
+    const channel = String(conv.communication_channel || conv.channel || '').toLowerCase();
+    if (channel && channel !== 'whatsapp') {
+      return res.status(409).json({
+        error: 'not_whatsapp_conversation',
+        message: `Template sends are only available for WhatsApp conversations; current channel is ${channel}.`,
+      });
+    }
+
+    const configuredPath = process.env.GMS_TEMPLATE_SEND_PATH;
+    if (!configuredPath) {
+      return res.status(409).json({
+        error: 'template_send_not_configured',
+        state: 'blocked',
+        message: 'WhatsApp template sender is not configured on this backend yet. Send the template manually in Guesty/WhatsApp and refresh the thread.',
+        manualAction: 'open_guesty_or_whatsapp',
+      });
+    }
+
+    const gmsBase = process.env.GMS_BASE_URL || 'https://admin.friday.mu';
+    const path = configuredPath
+      .replace(':conversationId', encodeURIComponent(id))
+      .replace(':guestyConversationId', encodeURIComponent(conv.guesty_conversation_id || id));
+    const { data } = await axios.post(
+      `${gmsBase}${path}`,
+      {
+        template_id: templateId,
+        variables: req.body?.variables || {},
+        conversation_id: id,
+        guesty_conversation_id: conv.guesty_conversation_id,
+      },
+      {
+        timeout: 30_000,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: req.headers.authorization,
+        },
+      },
+    );
+    await publishFadEvent({
+      tenantId: conv.tenant_id,
+      type: 'inbox.template_sent',
+      payload: { conversationId: id, templateId },
+    });
+    res.json({ ok: true, state: 'sent', upstream: data });
+  } catch (e) {
+    const status = e.response?.status || 500;
+    console.error('[inbox/conversations] send-template error:', e.response?.data || e.message);
+    res.status(status).json({
+      error: e.response?.data?.error || 'template_send_failed',
+      message: e.response?.data?.message || e.message,
+      upstream: e.response?.data,
+    });
   }
 });
 

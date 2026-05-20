@@ -1017,6 +1017,16 @@ app.use('/api/inbox/website', websiteInbox.router);
 // /api/inbox/* which is the guest-inbox surface (proxied to GMS).
 const teamInbox = require('./src/team_inbox');
 app.use('/api/team', teamInbox.router);
+
+// ─── FAD realtime + browser push primitives ───────────────────────
+// SSE stream for live Inbox/TeamInbox events plus per-user FAD
+// notifications. Browser push subscription storage is separate from
+// delivery so VAPID/web-push can be enabled without a schema change.
+const realtime = require('./src/realtime');
+const pushRoutes = require('./src/realtime/push');
+app.use('/api/events', realtime.router);
+app.use('/api/push', pushRoutes.router);
+realtime.startPgListener();
 // Start the DLQ worker that drains inbox_guesty_jobs. Cheap interval
 // poll (every 15s), runs in-process. See src/website_inbox/jobs.js.
 websiteInbox.startWorker();
@@ -1507,13 +1517,40 @@ app.post('/api/inbox/consult', requireAuth, asyncHandler((req, res) =>
   gmsProxy(req, res, '/api/ai/consult', 'post')
 ));
 
-app.get('/api/inbox/consult/session/active', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, '/api/ai/consult/session/active')
-));
+app.get('/api/inbox/consult/session/active', requireAuth, asyncHandler(async (req, res) => {
+  try {
+    const client = userScopedGms(req);
+    const { data } = await client.get('/api/ai/consult/session/active', { params: req.query });
+    res.json(data);
+  } catch (e) {
+    if (e.response?.status === 404) {
+      return res.json({ session: null, sessionId: null });
+    }
+    logUpstreamFailure('inbox GET /api/ai/consult/session/active', e);
+    const status = e.response?.status || 502;
+    res.status(status).json({
+      error: e.response?.data?.error || e.message || (e.response ? 'Upstream error' : 'GMS unreachable'),
+    });
+  }
+}));
 
-app.get('/api/inbox/consult/history/:conversationId', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/ai/consult/history/${req.params.conversationId}`)
-));
+app.get('/api/inbox/consult/history/:conversationId', requireAuth, asyncHandler(async (req, res) => {
+  const path = `/api/ai/consult/history/${req.params.conversationId}`;
+  try {
+    const client = userScopedGms(req);
+    const { data } = await client.get(path, { params: req.query });
+    res.json(data);
+  } catch (e) {
+    if (e.response?.status === 404) {
+      return res.json({ sessions: [] });
+    }
+    logUpstreamFailure(`inbox GET ${path}`, e);
+    const status = e.response?.status || 502;
+    res.status(status).json({
+      error: e.response?.data?.error || e.message || (e.response ? 'Upstream error' : 'GMS unreachable'),
+    });
+  }
+}));
 
 app.post('/api/inbox/consult/session/end', requireAuth, asyncHandler((req, res) =>
   gmsProxy(req, res, '/api/ai/consult/session/end', 'post')

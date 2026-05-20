@@ -21,6 +21,7 @@ import {
   uploadDmAttachment,
   addReaction,
   removeReaction,
+  parseMentions,
   type LiveChannel,
   type LiveDm,
   type LiveTeamMessage,
@@ -301,8 +302,12 @@ export function TeamInbox({
     const text = draft.trim();
     if (!selection) return;
     if (!text && pendingAttachments.length === 0) return;
+    const parsedMentions = parseMentions(text, tenantUsers ?? []);
     // Fire and forget — the hook does optimistic append + refetch.
-    sendLive(text, { attachmentIds: pendingAttachments.map((a) => a.id) });
+    sendLive(text, {
+      mentions: parsedMentions.mentions,
+      attachmentIds: pendingAttachments.map((a) => a.id),
+    });
     trackEvent('team_message_send', {
       kind: selection.kind,
       channel_key: selection.kind === 'channel' ? selection.channelKey : undefined,
@@ -659,7 +664,8 @@ export function TeamInbox({
                       replies={threadReplies ?? []}
                       currentUserId={currentUserId}
                       onSend={async (text) => {
-                        const msg = await sendThreadReply(text);
+                        const parsedMentions = parseMentions(text, tenantUsers ?? []);
+                        const msg = await sendThreadReply(text, { mentions: parsedMentions.mentions });
                         if (msg) {
                           trackEvent('team_thread_reply', {
                             kind: messageKind,

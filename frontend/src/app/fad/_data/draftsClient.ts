@@ -130,7 +130,7 @@ export async function dismissDraft(id: string): Promise<{ ok: boolean }> {
 
 export interface ComposeOpts {
   /** Three modes per friday-gms/src/routes/compose.ts:
-   *    manual      — operator-authored body, send as-is
+   *    manual      — legacy alias; FAD maps this to direct_send
    *    draft       — request AI to draft a reply (returns draft_id; no auto-send)
    *    direct_send — instruction → AI generate + auto-send (skip review) */
   mode: 'manual' | 'draft' | 'direct_send';
@@ -155,8 +155,10 @@ export async function sendCompose(conversationId: string, opts: ComposeOpts): Pr
   // locked decision §2 (2026-05-17). Backend's guest branch hits GMS
   // /api/conversations/:id/compose — same downstream as legacy.
   const { outboundSend } = await import('./outboundClient');
-  const meta: Record<string, unknown> = { mode: opts.mode };
+  const mode = opts.mode === 'manual' ? 'direct_send' : opts.mode;
+  const meta: Record<string, unknown> = { mode };
   if (opts.instruction !== undefined) meta.instruction = opts.instruction;
+  if (opts.mode === 'manual' && opts.body !== undefined) meta.instruction = opts.body;
   const r = await outboundSend({
     audience: 'guest',
     channel: opts.channel || 'whatsapp',
@@ -169,6 +171,19 @@ export async function sendCompose(conversationId: string, opts: ComposeOpts): Pr
     message_id: r.messageId ?? undefined,
     draft_id: r.draftId ?? undefined,
   };
+}
+
+export async function sendWhatsAppTemplate(
+  conversationId: string,
+  opts: { templateId: string; variables?: Record<string, unknown> },
+): Promise<{ ok?: boolean; state?: 'sent' | 'blocked'; message?: string; error?: string; manualAction?: string }> {
+  return apiFetch(`/api/inbox/conversations/${conversationId}/send-template`, {
+    method: 'POST',
+    body: JSON.stringify({
+      templateId: opts.templateId,
+      variables: opts.variables || {},
+    }),
+  }) as Promise<{ ok?: boolean; state?: 'sent' | 'blocked'; message?: string; error?: string; manualAction?: string }>;
 }
 
 // ── Conversation mutations (used by other UI surfaces, parked here for

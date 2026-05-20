@@ -32,6 +32,7 @@ const { translateText, getConversationLanguageFallback } = require('../ai/transl
 const { guestyRequest } = require('../website_inbox/guesty');
 const { detectActions } = require('./action_detector');
 const { checkAutoResolve } = require('./auto_resolve');
+const { publishFadEvent } = require('../realtime');
 
 // Feature flag — set FAD_ACTION_DETECTOR_DISABLED=true on the backend
 // env to stop post-send commitment detection. Rollback handle for
@@ -290,6 +291,26 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
     [draftRow.conversation_id],
   ).catch(() => {});
 
+  await query(
+    `UPDATE drafts
+        SET state = 'superseded', updated_at = NOW()
+      WHERE conversation_id = $1
+        AND id <> $2
+        AND state IN ('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')`,
+    [draftRow.conversation_id, draftId],
+  ).catch((e) => console.warn('[drafts/approve] stale draft supersede failed:', e.message));
+
+  publishFadEvent({
+    tenantId: draftRow.tenant_id,
+    type: 'inbox.message_sent',
+    payload: {
+      conversationId: draftRow.conversation_id,
+      draftId,
+      guestyMessageId,
+      channel,
+    },
+  }).catch(() => {});
+
   console.log(`[drafts/approve] ✓ draft ${draftId} sent via ${channel} (guesty_message_id=${guestyMessageId})`);
 
   // Phase 3.2 — scan the sent message for commitments the team made
@@ -514,6 +535,26 @@ router.post('/:id/retry', attachIdentity, async (req, res) => {
       `UPDATE conversations SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [draft.conversation_id],
     ).catch(() => {});
+
+    await query(
+      `UPDATE drafts
+          SET state = 'superseded', updated_at = NOW()
+        WHERE conversation_id = $1
+          AND id <> $2
+          AND state IN ('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')`,
+      [draft.conversation_id, draftId],
+    ).catch((e) => console.warn('[drafts/retry] stale draft supersede failed:', e.message));
+
+    publishFadEvent({
+      tenantId: draft.tenant_id,
+      type: 'inbox.message_sent',
+      payload: {
+        conversationId: draft.conversation_id,
+        draftId,
+        guestyMessageId,
+        channel,
+      },
+    }).catch(() => {});
 
     console.log(`[drafts/retry] ✓ draft ${draftId} sent via ${channel} (guesty_message_id=${guestyMessageId})`);
     res.json({

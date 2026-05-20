@@ -23,6 +23,7 @@
 
 const { query } = require('../database/client');
 const { triggerDraftGeneration } = require('./draft_generator');
+const { notifyUsers, publishFadEvent, resolveGmWatchers } = require('../realtime');
 
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -390,8 +391,48 @@ async function handleMessageEvent(event) {
     ).catch((e) => console.warn('[guesty/webhook/msg] auto-reopen failed:', e.message));
   }
 
+  if (direction === 'outbound' && !isAutoResponse) {
+    await query(
+      `UPDATE drafts
+          SET state = 'superseded', updated_at = NOW()
+        WHERE conversation_id = $1
+          AND state IN ('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')`,
+      [conversationId],
+    ).catch((e) => console.warn('[guesty/webhook/msg] stale draft supersede failed:', e.message));
+  }
+
   const tag = isReaction ? ' [reaction]' : isAutoResponse ? ' [auto-response]' : '';
   console.log(`[guesty/webhook/msg] inserted ${direction}${tag} message ${inserted.rows[0].id} (guesty=${guestyMessageId}) into conversation ${conversationId}`);
+
+  publishFadEvent({
+    tenantId: FR_TENANT_ID,
+    type: direction === 'inbound' ? 'inbox.message_received' : 'inbox.message_sent',
+    payload: {
+      messageId: inserted.rows[0].id,
+      conversationId,
+      direction,
+      isReaction,
+      isAutoResponse,
+    },
+  }).catch(() => {});
+
+  if (direction === 'inbound' && !isReaction && !isAutoResponse) {
+    resolveGmWatchers(conversationId, FR_TENANT_ID).then((watchers) => {
+      if (watchers.length === 0) return null;
+      return notifyUsers({
+        tenantId: FR_TENANT_ID,
+        userIds: watchers,
+        type: 'inbox_new_message',
+        title: `New message from ${senderName || 'Guest'}`,
+        body: body.slice(0, 180),
+        url: `/fad?m=inbox&thread=${conversationId}`,
+        source: 'inbox',
+        sourceId: inserted.rows[0].id,
+        priority: 'high',
+        data: { conversationId, messageId: inserted.rows[0].id },
+      });
+    }).catch(() => {});
+  }
 
   // Phase 3.1 — auto-draft generation. Fire-and-forget so a slow Kimi
   // call never blocks the webhook ack to Guesty (their retry threshold
