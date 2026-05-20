@@ -405,7 +405,14 @@ export function TeamInbox({
         style={{ flex: 1 }}
       >
         {/* Left rail — channels + DMs */}
-        <div className="inbox-list" style={{ minWidth: 220, maxWidth: 280 }}>
+        <div
+          className="inbox-list"
+          style={
+            isMobile
+              ? { width: '100%', minWidth: 0, maxWidth: 'none', flex: '1 1 auto' }
+              : { minWidth: 220, maxWidth: 280 }
+          }
+        >
           <div
             style={{
               padding: '12px 14px 6px',
