@@ -22,6 +22,8 @@ import {
   deleteChannel,
   uploadChannelAttachment,
   uploadDmAttachment,
+  loadAttachmentPreviewBlob,
+  loadAttachmentDownloadBlob,
   addReaction,
   removeReaction,
   parseMentions,
@@ -33,7 +35,7 @@ import {
 } from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
 import { useJwtUserId, usePermissions } from '../../usePermissions';
-import { IconCal, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
+import { IconCal, IconClose, IconDownload, IconExpand, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
 import { ScheduleCallDrawer } from './ScheduleCallDrawer';
 import { ChannelMembersDrawer } from './ChannelMembersDrawer';
 import { fireToast } from '../../Toaster';
@@ -42,6 +44,21 @@ import { trackEvent } from '../../../../../lib/analytics';
 type Selection =
   | { kind: 'channel'; channelKey: ChannelKey }
   | { kind: 'dm'; dm: TeamDM };
+
+type TeamAttachment = NonNullable<TeamMessage['attachmentList']>[number];
+
+async function downloadAttachment(attachment: TeamAttachment) {
+  if (typeof document === 'undefined') return;
+  const blob = await loadAttachmentDownloadBlob(attachment.id);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = attachment.filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export function TeamInbox({
   mentionsOnly = false,
@@ -147,11 +164,21 @@ export function TeamInbox({
   const [pendingAttachments, setPendingAttachments] = useState<LiveAttachment[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<TeamAttachment | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setPendingAttachments([]);
     setUploadingCount(0);
+    setPreviewAttachment(null);
   }, [selection?.kind, selection?.kind === 'channel' ? selection.channelKey : selection?.kind === 'dm' ? selection.dm.id : null]);
+
+  const handleAttachmentDownload = useCallback(async (attachment: TeamAttachment) => {
+    try {
+      await downloadAttachment(attachment);
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Download failed');
+    }
+  }, []);
 
   const uploadFilesToTarget = useCallback(async (files: FileList | File[]) => {
     if (!messagesTarget) return;
@@ -784,6 +811,8 @@ export function TeamInbox({
                     onRemoveReaction={(emoji) => handleRemoveReaction(m.id, emoji)}
                     onOpenThread={() => setOpenThreadParentId(threadOpen ? null : m.id)}
                     threadOpen={threadOpen}
+                    onPreviewAttachment={setPreviewAttachment}
+                    onDownloadAttachment={handleAttachmentDownload}
                   />
                   {threadOpen && (
                     <ThreadSurface
@@ -792,6 +821,8 @@ export function TeamInbox({
                       currentUserId={currentUserId}
                       users={tenantUsers ?? []}
                       usersById={tenantUserById}
+                      onPreviewAttachment={setPreviewAttachment}
+                      onDownloadAttachment={handleAttachmentDownload}
                       onSend={async (text) => {
                         const parsedMentions = parseMentions(text, tenantUsers ?? []);
                         const msg = await sendThreadReply(text, { mentions: parsedMentions.mentions });
@@ -984,6 +1015,12 @@ export function TeamInbox({
           }}
         />
       )}
+
+      <AttachmentPreviewPanel
+        attachment={previewAttachment}
+        onClose={() => setPreviewAttachment(null)}
+        onDownload={handleAttachmentDownload}
+      />
     </>
   );
 }
@@ -1018,10 +1055,24 @@ function deriveColor(name: string | undefined | null): string {
 // ───────────────── Attachment helpers ─────────────────
 
 const IMAGE_MIME_RE = /^image\//;
+const TEXT_MIME_RE = /^(text\/|application\/(json|xml|csv))/;
 
 function isImageAttachment(att: { mimeType: string | null; filename: string }): boolean {
   if (att.mimeType && IMAGE_MIME_RE.test(att.mimeType)) return true;
   return /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg)$/i.test(att.filename);
+}
+
+function isPdfAttachment(att: { mimeType: string | null; filename: string }): boolean {
+  return att.mimeType === 'application/pdf' || /\.pdf$/i.test(att.filename);
+}
+
+function isTextAttachment(att: { mimeType: string | null; filename: string }): boolean {
+  if (att.mimeType && TEXT_MIME_RE.test(att.mimeType)) return true;
+  return /\.(txt|md|csv|json|log|xml)$/i.test(att.filename);
+}
+
+function canPreviewAttachment(att: { mimeType: string | null; filename: string }): boolean {
+  return isImageAttachment(att) || isPdfAttachment(att) || isTextAttachment(att);
 }
 
 function formatBytes(bytes: number): string {
@@ -1084,19 +1135,35 @@ function PendingAttachmentChip({
   );
 }
 
-function MessageAttachments({ attachments }: { attachments: TeamMessage['attachmentList'] }) {
+function MessageAttachments({
+  attachments,
+  onPreview,
+  onDownload,
+}: {
+  attachments: TeamMessage['attachmentList'];
+  onPreview?: (attachment: TeamAttachment) => void;
+  onDownload?: (attachment: TeamAttachment) => void;
+}) {
   if (!attachments || attachments.length === 0) return null;
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
       {attachments.map((att) => {
+        const previewable = canPreviewAttachment(att);
         if (isImageAttachment(att)) {
           return (
-            <a
+            <button
               key={att.id}
-              href={att.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'inline-block', lineHeight: 0 }}
+              type="button"
+              onClick={() => onPreview?.(att)}
+              title="Preview attachment"
+              style={{
+                display: 'inline-block',
+                lineHeight: 0,
+                padding: 0,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+              }}
             >
               <img
                 src={att.url}
@@ -1109,16 +1176,12 @@ function MessageAttachments({ attachments }: { attachments: TeamMessage['attachm
                   objectFit: 'cover',
                 }}
               />
-            </a>
+            </button>
           );
         }
         return (
-          <a
+          <span
             key={att.id}
-            href={att.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            download={att.filename}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -1130,10 +1193,11 @@ function MessageAttachments({ attachments }: { attachments: TeamMessage['attachm
               fontSize: 12,
               color: 'var(--color-text-primary)',
               textDecoration: 'none',
+              maxWidth: '100%',
             }}
           >
-            <span style={{ fontSize: 16 }}>📎</span>
-            <div style={{ minWidth: 0 }}>
+            <IconPaperclip size={15} />
+            <div style={{ minWidth: 0, maxWidth: 240 }}>
               <div style={{ fontWeight: 500, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {att.filename}
               </div>
@@ -1141,9 +1205,255 @@ function MessageAttachments({ attachments }: { attachments: TeamMessage['attachm
                 {formatBytes(att.sizeBytes)}
               </div>
             </div>
-          </a>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, marginLeft: 2 }}>
+              {previewable && (
+                <button
+                  type="button"
+                  onClick={() => onPreview?.(att)}
+                  title="Preview"
+                  style={{
+                    width: 24,
+                    height: 24,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '0.5px solid var(--color-border-tertiary)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--color-background-primary)',
+                    color: 'var(--color-text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <IconExpand size={13} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onDownload?.(att)}
+                title="Download"
+                style={{
+                  width: 24,
+                  height: 24,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-background-primary)',
+                  color: 'var(--color-text-secondary)',
+                  cursor: 'pointer',
+                }}
+              >
+                <IconDownload size={13} />
+              </button>
+            </span>
+          </span>
         );
       })}
+    </div>
+  );
+}
+
+function AttachmentPreviewPanel({
+  attachment,
+  onClose,
+  onDownload,
+}: {
+  attachment: TeamAttachment | null;
+  onClose: () => void;
+  onDownload: (attachment: TeamAttachment) => void;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!attachment || !canPreviewAttachment(attachment)) {
+      setBlobUrl(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let localUrl: string | null = null;
+    setBlobUrl(null);
+    setError(null);
+    setLoading(true);
+
+    loadAttachmentPreviewBlob(attachment.id)
+      .then((blob) => {
+        if (cancelled) return;
+        localUrl = URL.createObjectURL(blob);
+        setBlobUrl(localUrl);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Preview failed');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (localUrl) URL.revokeObjectURL(localUrl);
+    };
+  }, [attachment?.id]);
+
+  useEffect(() => {
+    if (!attachment) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [attachment, onClose]);
+
+  if (!attachment) return null;
+
+  const previewable = canPreviewAttachment(attachment);
+  const content = (() => {
+    if (!previewable) {
+      return (
+        <div style={{ padding: 24, color: 'var(--color-text-secondary)', fontSize: 13 }}>
+          Preview is not available for this file type yet.
+        </div>
+      );
+    }
+    if (loading) {
+      return (
+        <div style={{ padding: 24, color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+          Loading preview…
+        </div>
+      );
+    }
+    if (error) {
+      return (
+        <div style={{ padding: 24, color: 'var(--color-danger, #b42318)', fontSize: 13 }}>
+          {error}
+        </div>
+      );
+    }
+    if (!blobUrl) return null;
+    if (isImageAttachment(attachment)) {
+      return (
+        <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', background: 'var(--color-background-secondary)' }}>
+          <img
+            src={blobUrl}
+            alt={attachment.filename}
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+          />
+        </div>
+      );
+    }
+    return (
+      <iframe
+        title={attachment.filename}
+        src={blobUrl}
+        style={{
+          width: '100%',
+          height: '100%',
+          border: 'none',
+          background: 'white',
+        }}
+      />
+    );
+  })();
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={attachment.filename}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 90,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        background: 'rgba(15, 24, 54, 0.42)',
+      }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={{
+          width: 'min(960px, calc(100vw - 24px))',
+          height: 'min(760px, calc(100dvh - 24px))',
+          display: 'grid',
+          gridTemplateRows: 'auto 1fr',
+          overflow: 'hidden',
+          borderRadius: 'var(--radius-md)',
+          border: '0.5px solid var(--color-border-secondary)',
+          background: 'var(--color-background-primary)',
+          boxShadow: '0 20px 60px rgba(15, 24, 54, 0.25)',
+        }}
+      >
+        <div
+          style={{
+            minHeight: 48,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 10px',
+            borderBottom: '0.5px solid var(--color-border-secondary)',
+          }}
+        >
+          <IconPaperclip size={15} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {attachment.filename}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              {formatBytes(attachment.sizeBytes)}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onDownload(attachment)}
+            title="Download"
+            style={{
+              width: 32,
+              height: 32,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+            }}
+          >
+            <IconDownload size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close"
+            style={{
+              width: 32,
+              height: 32,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+            }}
+          >
+            <IconClose size={15} />
+          </button>
+        </div>
+        <div style={{ minHeight: 0, overflow: 'hidden' }}>
+          {content}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1231,6 +1541,8 @@ function TextMessage({
   onRemoveReaction,
   onOpenThread,
   threadOpen,
+  onPreviewAttachment,
+  onDownloadAttachment,
   compact,
 }: {
   message: TeamMessage;
@@ -1240,6 +1552,8 @@ function TextMessage({
   currentUserId?: string;
   onAddReaction?: (emoji: string) => void;
   onRemoveReaction?: (emoji: string) => void;
+  onPreviewAttachment?: (attachment: TeamAttachment) => void;
+  onDownloadAttachment?: (attachment: TeamAttachment) => void;
   /** When provided, message gets a hover "Reply" affordance + the
    *  thread-count badge becomes clickable. Omit inside the thread
    *  itself (replies don't have their own threads). */
@@ -1299,7 +1613,11 @@ function TextMessage({
         {renderMentions(message.text, message.mentions, usersById)}
       </div>
       <DesignProjectChip project={message.designProject} />
-      <MessageAttachments attachments={message.attachmentList} />
+      <MessageAttachments
+        attachments={message.attachmentList}
+        onPreview={onPreviewAttachment}
+        onDownload={onDownloadAttachment}
+      />
       {/* Aggregated reactions — one chip per emoji with count.
           Operator clicks their own chip to remove; clicks others to add. */}
       {reactionEntries.length > 0 && (
@@ -1437,6 +1755,8 @@ function ThreadSurface({
   currentUserId,
   users,
   usersById,
+  onPreviewAttachment,
+  onDownloadAttachment,
   onSend,
   onClose,
 }: {
@@ -1445,6 +1765,8 @@ function ThreadSurface({
   currentUserId: string;
   users: LiveUser[];
   usersById: Map<string, LiveUser>;
+  onPreviewAttachment: (attachment: TeamAttachment) => void;
+  onDownloadAttachment: (attachment: TeamAttachment) => void;
   onSend: (text: string) => Promise<boolean>;
   onClose: () => void;
 }) {
@@ -1533,6 +1855,8 @@ function ThreadSurface({
             reactions={r.reactions}
             usersById={usersById}
             currentUserId={currentUserId}
+            onPreviewAttachment={onPreviewAttachment}
+            onDownloadAttachment={onDownloadAttachment}
             compact
           />
         );

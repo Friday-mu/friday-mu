@@ -32,6 +32,27 @@ async function uploadFile(path: string, formData: FormData): Promise<Record<stri
   return res.json();
 }
 
+async function fetchAttachmentBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (res.status === 401) throw new Error('Unauthorized');
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || `HTTP ${res.status}`);
+  }
+  return res.blob();
+}
+
+export async function loadAttachmentPreviewBlob(attachmentId: string): Promise<Blob> {
+  return fetchAttachmentBlob(`/api/team/attachments/${attachmentId}/preview`);
+}
+
+export async function loadAttachmentDownloadBlob(attachmentId: string): Promise<Blob> {
+  return fetchAttachmentBlob(`/api/team/attachments/${attachmentId}/preview?download=1`);
+}
+
 // ─── Wire shapes (mirror backend shapeChannel / shapeMessage) ───────
 
 export interface LiveChannel {

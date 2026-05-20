@@ -280,6 +280,54 @@ function shapeAttachment(row) {
   };
 }
 
+function safeAttachmentFilename(filename) {
+  const raw = String(filename || 'attachment').trim() || 'attachment';
+  return raw.replace(/[\r\n"]/g, '').slice(0, 180);
+}
+
+function resolveAttachmentPath(storagePath) {
+  const root = path.resolve(UPLOAD_DIR);
+  const absolutePath = path.resolve(root, String(storagePath || ''));
+  if (absolutePath !== root && absolutePath.startsWith(`${root}${path.sep}`)) {
+    return absolutePath;
+  }
+  return null;
+}
+
+async function loadAccessibleAttachment(attachmentId, tenantId, userId) {
+  const { rows } = await query(
+    `SELECT a.*,
+            c.visibility AS channel_visibility,
+            d.participant_user_ids AS dm_participant_user_ids
+     FROM team_message_attachments a
+     LEFT JOIN team_channels c ON c.id = a.channel_id
+     LEFT JOIN team_dms d ON d.id = a.dm_id
+     WHERE a.id = $1 AND a.tenant_id = $2`,
+    [attachmentId, tenantId],
+  );
+  if (rows.length === 0) {
+    return { status: 404, error: 'Attachment not found' };
+  }
+
+  const attachment = rows[0];
+  const boundToMessage = !!(attachment.channel_message_id || attachment.dm_message_id);
+  if (!boundToMessage && attachment.uploaded_by_user_id !== userId) {
+    return { status: 404, error: 'Attachment not found' };
+  }
+
+  if (attachment.channel_id && attachment.channel_visibility === 'private') {
+    const member = await isChannelMember(attachment.channel_id, userId);
+    if (!member) return { status: 403, error: 'Not a member of this channel' };
+  }
+
+  if (attachment.dm_id) {
+    const participants = attachment.dm_participant_user_ids || [];
+    if (!participants.includes(userId)) return { status: 403, error: 'Not a participant' };
+  }
+
+  return { attachment };
+}
+
 /**
  * Bulk-fetch attachments for a list of message IDs of a given kind.
  * One query instead of N. Returns a Map keyed by message_id with the
@@ -870,6 +918,35 @@ router.post(
     }
   },
 );
+
+// GET /attachments/:id/preview — authenticated inline document viewer
+// source. The older /uploads/team/... URL remains for direct links and
+// downloads, but the in-FAD preview should use this route so private
+// channels and DMs keep their access checks.
+router.get('/attachments/:id/preview', attachIdentity, async (req, res) => {
+  const userId = req.identity?.userId;
+  if (!userId) return res.status(401).json({ error: 'No user context' });
+  try {
+    const loaded = await loadAccessibleAttachment(req.params.id, req.tenantId, userId);
+    if (loaded.error) return res.status(loaded.status).json({ error: loaded.error });
+
+    const attachment = loaded.attachment;
+    const absolutePath = resolveAttachmentPath(attachment.storage_path);
+    if (!absolutePath) return res.status(400).json({ error: 'Invalid attachment path' });
+    if (!fs.existsSync(absolutePath)) return res.status(404).json({ error: 'Attachment file not found' });
+
+    const filename = safeAttachmentFilename(attachment.filename);
+    const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.sendFile(absolutePath);
+  } catch (e) {
+    console.error('[team_inbox] attachment preview error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Send a channel message. Validates @mentions are real tenant users.
 // Private channels remain member-only; public channels may mention any

@@ -1,11 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseMentions, type LiveUser } from './teamInboxClient';
+import {
+  loadAttachmentDownloadBlob,
+  loadAttachmentPreviewBlob,
+  parseMentions,
+  type LiveUser,
+} from './teamInboxClient';
 
 const outboundSendMock = vi.fn();
 
 vi.mock('./outboundClient', () => ({
   outboundSend: outboundSendMock,
 }));
+
+function stubLocalStorage() {
+  const store: Record<string, string> = {};
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => (Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null),
+    setItem: (key: string, value: string) => { store[key] = String(value); },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { for (const key of Object.keys(store)) delete store[key]; },
+  });
+}
 
 const users: LiveUser[] = [
   {
@@ -148,5 +163,40 @@ describe('TeamInbox send contracts', () => {
       },
     });
     expect(message.id).toBe('msg-reply');
+  });
+});
+
+describe('TeamInbox attachment preview contracts', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    stubLocalStorage();
+  });
+
+  it('fetches preview blobs through the authenticated team preview endpoint', async () => {
+    localStorage.setItem('gms_token', 'test-token');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('pdf', {
+      status: 200,
+      headers: { 'Content-Type': 'application/pdf' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await loadAttachmentPreviewBlob('att-1');
+
+    expect(result.type).toBe('application/pdf');
+    expect(fetchMock).toHaveBeenCalledWith('/api/team/attachments/att-1/preview', {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+  });
+
+  it('uses the download variant when saving an attachment', async () => {
+    localStorage.setItem('gms_token', 'test-token');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(['x']), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await loadAttachmentDownloadBlob('att-2');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/team/attachments/att-2/preview?download=1', {
+      headers: { Authorization: 'Bearer test-token' },
+    });
   });
 });
