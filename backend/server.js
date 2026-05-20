@@ -1030,6 +1030,9 @@ const realtime = require('./src/realtime');
 const pushRoutes = require('./src/realtime/push');
 app.use('/api/events', realtime.router);
 app.use('/api/push', pushRoutes.router);
+
+const mcpRoutes = require('./src/mcp');
+app.use('/api/mcp', mcpRoutes.router);
 realtime.startPgListener();
 // Start the DLQ worker that drains inbox_guesty_jobs. Cheap interval
 // poll (every 15s), runs in-process. See src/website_inbox/jobs.js.
