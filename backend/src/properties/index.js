@@ -141,7 +141,7 @@ router.post('/sync', attachIdentity, async (req, res) => {
   // GMS-side admin role (set on the JWT by signup + login). Other
   // tenant roles (manager, staff) shouldn't be able to fan out
   // Guesty API calls.
-  if (req.identity?.role !== 'admin') {
+  if (req.identity?.userRole !== 'admin') {
     return res.status(403).json({ error: 'admin role required' });
   }
   try {

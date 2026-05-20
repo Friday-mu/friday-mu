@@ -167,7 +167,7 @@ router.get('/:guestyId', attachIdentity, async (req, res) => {
 });
 
 router.post('/sync', attachIdentity, async (req, res) => {
-  if (req.identity?.role !== 'admin') {
+  if (req.identity?.userRole !== 'admin') {
     return res.status(403).json({ error: 'admin role required' });
   }
   try {
