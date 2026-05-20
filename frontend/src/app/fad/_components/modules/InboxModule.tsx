@@ -23,6 +23,7 @@ import {
   dismissDraft,
   isReviewReady,
   markRead,
+  markUnread,
 } from '../../_data/draftsClient';
 import { DraftPanel } from './inbox/DraftPanel';
 import { SendPreflightModal } from './inbox/SendPreflightModal';
@@ -156,6 +157,7 @@ export function InboxModule({ onAskFriday }: Props) {
   const [summaryCollapsed, setSummaryCollapsed] = useState(true);
   const [composeCollapsed, setComposeCollapsed] = useState(false);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const manualUnreadThreadRef = useRef<string | null>(null);
 
   useEffect(() => {
     setListCollapsed(localStorage.getItem('fad:inbox:list') === '1');
@@ -174,6 +176,7 @@ export function InboxModule({ onAskFriday }: Props) {
   // Switching entity (Team ↔ Guest/Owner/Vendor/All) resets the mobile slide-over
   // so the user lands on the list of the new entity, not deep in a stale thread.
   useEffect(() => {
+    manualUnreadThreadRef.current = null;
     setMobileThreadOpen(false);
   }, [entityFilter]);
 
@@ -532,11 +535,24 @@ export function InboxModule({ onAskFriday }: Props) {
   useEffect(() => {
     if (!thread?.id) return;
     if (!thread.unread) return;
+    if (manualUnreadThreadRef.current === thread.id) return;
     markRead(thread.id)
       .then(() => { refetchConversations(); })
       .catch(() => { /* swallow — read state is best-effort */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread?.id, thread?.unread]);
+
+  const handleMarkUnread = () => {
+    if (!thread?.id) return;
+    manualUnreadThreadRef.current = thread.id;
+    markUnread(thread.id)
+      .then(() => {
+        fireToast('Marked unread');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => fireToast(e?.message || 'Could not mark unread'));
+  };
 
   const handleComposeSend = () => {
     if (!thread || !replyBody.trim() || composeBusy) return;
@@ -804,6 +820,7 @@ export function InboxModule({ onAskFriday }: Props) {
                 'row' + (t.unread ? ' unread' : '') + (t.id === selected ? ' selected' : '')
               }
               onClick={() => {
+                if (selected !== t.id) manualUnreadThreadRef.current = null;
                 setSelected(t.id);
                 setMobileThreadOpen(true);
               }}
@@ -936,6 +953,18 @@ export function InboxModule({ onAskFriday }: Props) {
                 </button>
               </div>
             )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={handleMarkUnread}
+                disabled={thread.unread}
+                title={thread.unread ? 'This thread is already unread' : 'Put this thread back in the unread queue'}
+                style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
+              >
+                Mark unread
+              </button>
+            </div>
             <div className={'inbox-thread-details' + (isMobile && !mobileDetailsOpen ? ' mobile-hidden' : '')}>
             <div className="inbox-thread-meta" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{thread.guest}</span>

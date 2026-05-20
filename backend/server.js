@@ -986,7 +986,7 @@ app.use('/api/hr/time-off', hrTimeOffRoutes);
 //   requireModule('design') → 403 if the tenant hasn't subscribed
 //     (returns 401 "no tenant context" if the JWT was absent / bad,
 //     which is correct: the inner requireDesignPerm would 401 anyway)
-const { attachIdentitySoft } = require('./src/design/auth');
+const { attachIdentity, attachIdentitySoft } = require('./src/design/auth');
 const { requireModule, requireFrTenant } = require('./src/tenants/middleware');
 const designRoutes = require('./src/design');
 app.use('/api/design', attachIdentitySoft, requireModule('design'), designRoutes);
@@ -1574,6 +1574,30 @@ app.post('/api/inbox/consult/:sessionId/summarize', requireAuth, asyncHandler((r
 // teachings in friday-gms's `teachings` table, which are then loaded
 // back into every draft prompt via draft-generator.ts:677-702. The
 // learning loop closes here.
+
+app.get('/api/inbox/teachings', attachIdentity, asyncHandler(async (req, res) => {
+  const { query } = require('./src/database/client');
+  const status = typeof req.query.status === 'string' ? req.query.status : 'active';
+  const statuses = new Set(['active', 'draft', 'revoked', 'retired', 'rejected']);
+  const filters = ['tenant_id = $1'];
+  const params = [req.tenantId];
+  if (status !== 'all') {
+    if (!statuses.has(status)) return res.status(400).json({ error: 'invalid status' });
+    params.push(status);
+    filters.push(`status = $${params.length}`);
+  }
+  const { rows } = await query(
+    `SELECT id, instruction, scope, property_code, property_codes, source,
+            status, taught_by, taught_at, approved_at, approved_by,
+            evidence_count, confidence, polarity
+       FROM teachings
+      WHERE ${filters.join(' AND ')}
+      ORDER BY taught_at DESC NULLS LAST
+      LIMIT 500`,
+    params,
+  );
+  res.json({ teachings: rows });
+}));
 
 app.post('/api/inbox/teachings', requireAuth, asyncHandler((req, res) =>
   gmsProxy(req, res, '/api/teachings', 'post')

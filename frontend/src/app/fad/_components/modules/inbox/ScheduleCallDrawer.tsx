@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { TASK_USERS } from '../../../_data/tasks';
 import { TEAM_MESSAGES, type ChannelKey, type TeamMessage, type TeamCallMeta } from '../../../_data/teamInbox';
+import { useTenantTeamUsers } from '../../../_data/teamInboxClient';
 import { IconClose, IconSend } from '../../icons';
-import { useCurrentUserId } from '../../usePermissions';
+import { useCurrentUserId, useJwtUserId } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 
 interface Props {
@@ -38,7 +39,9 @@ function tomorrowAt09(): { date: string; time: string } {
 }
 
 export function ScheduleCallDrawer({ open, onClose, target, defaultInviteeIds, onScheduled }: Props) {
-  const currentUserId = useCurrentUserId();
+  const fixtureUserId = useCurrentUserId();
+  const currentUserId = useJwtUserId() ?? fixtureUserId;
+  const { users: tenantUsers } = useTenantTeamUsers();
   const initial = tomorrowAt09();
   const [title, setTitle] = useState('Quick sync');
   const [date, setDate] = useState(initial.date);
@@ -48,7 +51,30 @@ export function ScheduleCallDrawer({ open, onClose, target, defaultInviteeIds, o
   const [externalEmail, setExternalEmail] = useState('');
   const [externalEmails, setExternalEmails] = useState<string[]>([]);
 
-  const candidateUsers = TASK_USERS.filter((u) => u.active && u.role !== 'external');
+  const candidateUsers = useMemo(() => {
+    if (tenantUsers && tenantUsers.length > 0) {
+      return tenantUsers
+        .filter((u) => u.id !== currentUserId)
+        .map((u) => {
+          const parts = u.displayName.trim().split(/\s+/).filter(Boolean);
+          const initials = parts.slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || u.username.slice(0, 2).toUpperCase();
+          return {
+            id: u.id,
+            name: u.displayName || u.username,
+            initials,
+            avatarColor: 'var(--color-brand-accent)',
+          };
+        });
+    }
+    return TASK_USERS
+      .filter((u) => u.active && u.role !== 'external' && u.id !== fixtureUserId)
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        initials: u.initials,
+        avatarColor: u.avatarColor,
+      }));
+  }, [tenantUsers, currentUserId, fixtureUserId]);
 
   const toggleInvitee = (userId: string) => {
     setInviteeIds((prev) =>
@@ -292,4 +318,3 @@ function formatStart(iso: string): string {
     minute: '2-digit',
   });
 }
-

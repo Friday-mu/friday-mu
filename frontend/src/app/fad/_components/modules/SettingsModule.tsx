@@ -5,7 +5,7 @@
 //   - Hardcoded user "Ishant Sagoo" / "ishant@friday.mu" (replace with auth context)
 //   - Inline team roster of 6 names (lines ~131-136) → GET /api/users/team
 //   - Hardcoded integrations list (lines ~171-178) → GET /api/integrations
-//   - Hardcoded bug reports (lines ~207-210) → GET /api/bug-reports
+//   - Feedback inbox is live; screenshots + fix evidence load from /api/feedback
 //   - Billing info "Friday Internal · unmetered" (lines ~233-238) → GET /api/billing
 // Each block gets its own backend endpoint when wired.
 
@@ -249,9 +249,35 @@ interface FeedbackEntry {
   status: FeedbackStatus;
   resolution_note: string | null;
   resolved_at: string | null;
+  source: string | null;
+  has_screenshot?: boolean;
+  screenshot_data_url?: string | null;
+  triaged_at: string | null;
+  fixed_commit: string | null;
+  fixed_branch: string | null;
+  fix_deployed_at: string | null;
+  fix_verified_at: string | null;
+  fix_verification_note: string | null;
+  root_cause: string | null;
   created_at: string;
   updated_at: string;
 }
+
+type FeedbackPatch = {
+  status?: FeedbackStatus;
+  resolution_note?: string | null;
+  root_cause?: string | null;
+  fixed_commit?: string | null;
+  fixed_branch?: string | null;
+  fix_deployed_at?: string | null;
+  fix_verified_at?: string | null;
+  fix_verification_note?: string | null;
+};
+
+type FeedbackTurn = {
+  role: 'You' | 'Friday' | 'Report';
+  text: string;
+};
 
 const TYPE_LABEL: Record<FeedbackType, string> = { bug: 'Bug', feature: 'Feature', suggestion: 'Suggestion' };
 const STATUS_LABEL: Record<FeedbackStatus, string> = {
@@ -271,6 +297,34 @@ const STATUS_TONE: Record<FeedbackStatus, 'warn' | 'info' | ''> = {
   duplicate: '',
 };
 
+function fixStateLabel(entry: FeedbackEntry): string | null {
+  if (entry.fix_verified_at) return 'Verified';
+  if (entry.fix_deployed_at) return 'Deployed';
+  if (entry.fixed_commit) return 'Fixed';
+  if (entry.triaged_at) return 'Triaged';
+  return null;
+}
+
+function parseFeedbackTurns(description: string): FeedbackTurn[] {
+  const chunks = description
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  return chunks.map((chunk) => {
+    const you = chunk.match(/^\*\*You:\*\*\s*([\s\S]*)$/);
+    if (you) return { role: 'You', text: you[1].trim() };
+    const friday = chunk.match(/^\*\*Friday:\*\*\s*([\s\S]*)$/);
+    if (friday) return { role: 'Friday', text: friday[1].trim() };
+    return { role: 'Report', text: chunk };
+  });
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleString();
+}
+
 function FeedbackInbox() {
   const [entries, setEntries] = useState<FeedbackEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -278,6 +332,8 @@ function FeedbackInbox() {
   const [typeFilter, setTypeFilter] = useState<FeedbackType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<FeedbackEntry | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const refetch = async () => {
     setLoading(true);
@@ -303,9 +359,30 @@ function FeedbackInbox() {
 
   const selected = entries.find((e) => e.id === selectedId) || null;
 
-  const updateEntry = async (id: string, patch: { status?: FeedbackStatus; resolution_note?: string | null }) => {
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    apiFetch(`/api/feedback/${selectedId}`)
+      .then((res) => {
+        if (!cancelled) setSelectedDetail((res as { feedback: FeedbackEntry }).feedback);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedId]);
+
+  const updateEntry = async (id: string, patch: FeedbackPatch) => {
     try {
-      await apiFetch(`/api/feedback/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      const updated = (await apiFetch(`/api/feedback/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })) as FeedbackEntry;
+      setSelectedDetail(updated);
       await refetch();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -378,8 +455,8 @@ function FeedbackInbox() {
                 <span className="chip">{TYPE_LABEL[e.type]}</span>
                 {e.severity && <span className="chip warn">{e.severity}</span>}
                 <h5 style={{ margin: 0 }}>{e.title || e.description.slice(0, 80)}</h5>
-                {userTurns > 0 && (
-                  <span
+	                {userTurns > 0 && (
+	                  <span
                     title={`${userTurns} user turn${userTurns === 1 ? '' : 's'} in the chat — open to read the full transcript`}
                     style={{
                       fontSize: 10,
@@ -392,25 +469,30 @@ function FeedbackInbox() {
                   >
                     💬 {userTurns}
                   </span>
-                )}
-              </div>
+	                )}
+	                {e.has_screenshot && <span className="chip">Screenshot</span>}
+	              </div>
               <p style={{ margin: 0 }}>
                 {e.user_display_name || e.user_username || 'unknown'} · {new Date(e.created_at).toLocaleString()}
                 {e.module_label && <> · on <em>{e.module_label}</em></>}
                 {e.route_url && <> · <code style={{ fontSize: 10 }}>{e.route_url}</code></>}
               </p>
-            </div>
-            <span className={'chip ' + STATUS_TONE[e.status]}>{STATUS_LABEL[e.status]}</span>
-          </div>
-        );
-      })}
+	            </div>
+	            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+	              {fixStateLabel(e) && <span className="chip info">{fixStateLabel(e)}</span>}
+	              <span className={'chip ' + STATUS_TONE[e.status]}>{STATUS_LABEL[e.status]}</span>
+	            </div>
+	          </div>
+	        );
+	      })}
 
-      {selected && (
-        <FeedbackDetail
-          entry={selected}
-          onUpdate={(patch) => updateEntry(selected.id, patch)}
-          onClose={() => setSelectedId(null)}
-        />
+	      {selected && (
+	        <FeedbackDetail
+	          entry={selectedDetail || selected}
+	          loadingDetail={detailLoading}
+	          onUpdate={(patch) => updateEntry(selected.id, patch)}
+	          onClose={() => setSelectedId(null)}
+	        />
       )}
     </div>
   );
@@ -418,30 +500,98 @@ function FeedbackInbox() {
 
 function FeedbackDetail({
   entry,
+  loadingDetail = false,
   onUpdate,
   onClose,
 }: {
   entry: FeedbackEntry;
-  onUpdate: (patch: { status?: FeedbackStatus; resolution_note?: string | null }) => void;
+  loadingDetail?: boolean;
+  onUpdate: (patch: FeedbackPatch) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [status, setStatus] = useState<FeedbackStatus>(entry.status);
   const [note, setNote] = useState(entry.resolution_note ?? '');
+  const [rootCause, setRootCause] = useState(entry.root_cause ?? '');
+  const [fixedCommit, setFixedCommit] = useState(entry.fixed_commit ?? '');
+  const [fixedBranch, setFixedBranch] = useState(entry.fixed_branch ?? '');
+  const [deployedAt, setDeployedAt] = useState(entry.fix_deployed_at ?? '');
+  const [verifiedAt, setVerifiedAt] = useState(entry.fix_verified_at ?? '');
+  const [verificationNote, setVerificationNote] = useState(entry.fix_verification_note ?? '');
   const [saving, setSaving] = useState(false);
+  const turns = parseFeedbackTurns(entry.description);
 
   useEffect(() => {
     setStatus(entry.status);
     setNote(entry.resolution_note ?? '');
-  }, [entry.id, entry.status, entry.resolution_note]);
+    setRootCause(entry.root_cause ?? '');
+    setFixedCommit(entry.fixed_commit ?? '');
+    setFixedBranch(entry.fixed_branch ?? '');
+    setDeployedAt(entry.fix_deployed_at ?? '');
+    setVerifiedAt(entry.fix_verified_at ?? '');
+    setVerificationNote(entry.fix_verification_note ?? '');
+  }, [
+    entry.id,
+    entry.status,
+    entry.resolution_note,
+    entry.root_cause,
+    entry.fixed_commit,
+    entry.fixed_branch,
+    entry.fix_deployed_at,
+    entry.fix_verified_at,
+    entry.fix_verification_note,
+  ]);
 
   const save = async () => {
     setSaving(true);
     try {
-      await onUpdate({ status, resolution_note: note.trim() || null });
+      await onUpdate({
+        status,
+        resolution_note: note.trim() || null,
+        root_cause: rootCause.trim() || null,
+        fixed_commit: fixedCommit.trim() || null,
+        fixed_branch: fixedBranch.trim() || null,
+        fix_deployed_at: deployedAt.trim() || null,
+        fix_verified_at: verifiedAt.trim() || null,
+        fix_verification_note: verificationNote.trim() || null,
+      });
     } finally {
       setSaving(false);
     }
   };
+
+  const stampLiveVersion = async () => {
+    try {
+      const res = await fetch('/version.json', { cache: 'no-store' });
+      if (res.ok) {
+        const data = (await res.json()) as { version?: string; gitCommit?: string; branch?: string; builtAt?: string };
+        setFixedCommit(data.gitCommit || data.version || fixedCommit);
+        setFixedBranch(data.branch || fixedBranch);
+        setDeployedAt(data.builtAt || new Date().toISOString());
+        return;
+      }
+    } catch {
+      // Fall through to a local timestamp. Version metadata is helpful,
+      // but the operator still needs a quick deployed-at stamp.
+    }
+    setDeployedAt(new Date().toISOString());
+  };
+
+  const markVerifiedNow = () => {
+    setVerifiedAt(new Date().toISOString());
+    if (!status || status === 'new' || status === 'triaged' || status === 'in_progress') {
+      setStatus('resolved');
+    }
+  };
+
+  const dirty =
+    status !== entry.status ||
+    note !== (entry.resolution_note ?? '') ||
+    rootCause !== (entry.root_cause ?? '') ||
+    fixedCommit !== (entry.fixed_commit ?? '') ||
+    fixedBranch !== (entry.fixed_branch ?? '') ||
+    deployedAt !== (entry.fix_deployed_at ?? '') ||
+    verifiedAt !== (entry.fix_verified_at ?? '') ||
+    verificationNote !== (entry.fix_verification_note ?? '');
 
   return (
     <div
@@ -459,17 +609,75 @@ function FeedbackDetail({
           Collapse
         </button>
       </div>
-      <p style={{ margin: '0 0 12px', whiteSpace: 'pre-wrap', fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.5 }}>
-        {entry.description}
-      </p>
+      {loadingDetail && (
+        <div style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          Loading screenshot and full report…
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, fontSize: 12, marginBottom: 12 }}>
         <Meta label="Reporter" value={entry.user_display_name || entry.user_username || '—'} />
-        <Meta label="Submitted" value={new Date(entry.created_at).toLocaleString()} />
-        <Meta label="Last update" value={new Date(entry.updated_at).toLocaleString()} />
+        <Meta label="Submitted" value={formatDateTime(entry.created_at)} />
+        <Meta label="Last update" value={formatDateTime(entry.updated_at)} />
         <Meta label="Route" value={entry.route_url || '—'} mono />
         <Meta label="Module" value={entry.module_label || '—'} />
         {entry.severity && <Meta label="Severity" value={entry.severity} />}
+        <Meta label="Fix state" value={fixStateLabel(entry) || STATUS_LABEL[entry.status]} />
+        <Meta label="Fixed commit" value={entry.fixed_commit || '—'} mono />
+        <Meta label="Deployed" value={formatDateTime(entry.fix_deployed_at)} />
+        <Meta label="Verified" value={formatDateTime(entry.fix_verified_at)} />
       </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12, marginBottom: 12 }}>
+        <section>
+          <h4 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600 }}>Report thread</h4>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {turns.map((turn, index) => (
+              <div
+                key={`${turn.role}-${index}`}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  background: turn.role === 'Friday' ? 'var(--color-background-secondary)' : 'var(--color-background-primary)',
+                }}
+              >
+                <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 3 }}>
+                  {turn.role}
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.45, color: 'var(--color-text-primary)' }}>
+                  {turn.text}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h4 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600 }}>Screenshot</h4>
+          {entry.screenshot_data_url ? (
+            <a href={entry.screenshot_data_url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+              <img
+                src={entry.screenshot_data_url}
+                alt="Attached bug report screenshot"
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  maxHeight: 520,
+                  objectFit: 'contain',
+                  borderRadius: 6,
+                  border: '0.5px solid var(--color-border-secondary)',
+                  background: 'var(--color-background-primary)',
+                }}
+              />
+            </a>
+          ) : (
+            <div style={{ padding: '12px 10px', borderRadius: 6, border: '0.5px dashed var(--color-border-secondary)', color: 'var(--color-text-tertiary)', fontSize: 12 }}>
+              {entry.has_screenshot ? 'Screenshot metadata exists, but the full image is still loading.' : 'No screenshot was attached.'}
+            </div>
+          )}
+        </section>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 12 }}>
         <div>
           <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Status</label>
@@ -483,6 +691,62 @@ function FeedbackDetail({
             ))}
           </select>
         </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Fixed commit / version</label>
+          <input
+            value={fixedCommit}
+            onChange={(e) => setFixedCommit(e.target.value)}
+            placeholder="Commit hash or deployed version"
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)' }}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Fixed branch</label>
+          <input
+            value={fixedBranch}
+            onChange={(e) => setFixedBranch(e.target.value)}
+            placeholder="Branch or PR"
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)' }}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Deployed at</label>
+          <input
+            value={deployedAt}
+            onChange={(e) => setDeployedAt(e.target.value)}
+            placeholder="ISO date or use live version"
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)' }}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Verified at</label>
+          <input
+            value={verifiedAt}
+            onChange={(e) => setVerifiedAt(e.target.value)}
+            placeholder="ISO date after screenshot/repro check"
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)' }}
+          />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Root cause</label>
+          <textarea
+            value={rootCause}
+            onChange={(e) => setRootCause(e.target.value)}
+            rows={2}
+            placeholder="What actually caused the report?"
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)', resize: 'vertical' }}
+          />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Verification note</label>
+          <textarea
+            value={verificationNote}
+            onChange={(e) => setVerificationNote(e.target.value)}
+            rows={2}
+            placeholder="Screenshot/repro checked, test run, live route checked, remaining risk."
+            style={{ width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 4, border: '0.5px solid var(--color-border-secondary)', resize: 'vertical' }}
+          />
+        </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <label style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Resolution note</label>
           <textarea
@@ -494,12 +758,20 @@ function FeedbackDetail({
           />
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="btn ghost sm" onClick={stampLiveVersion}>
+            Use live version
+          </button>
+          <button type="button" className="btn ghost sm" onClick={markVerifiedNow}>
+            Verified now
+          </button>
+        </div>
         <button
           type="button"
           className="btn primary"
           onClick={save}
-          disabled={saving || (status === entry.status && note === (entry.resolution_note ?? ''))}
+          disabled={saving || !dirty}
         >
           {saving ? 'Saving…' : 'Save'}
         </button>

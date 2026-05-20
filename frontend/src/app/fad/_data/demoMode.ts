@@ -29,6 +29,7 @@ export const LIVE_WIRED_MODULE_IDS = new Set([
   'admin-analytics',
   'notifications',
   'settings',
+  'training',
   // Teaser modules have no row-level demo data; keep them visible in live-only
   // mode so FR can see the product surface without re-enabling fixtures.
   'syndic',

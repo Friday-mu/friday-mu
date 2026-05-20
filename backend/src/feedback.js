@@ -170,6 +170,32 @@ const SOURCES = new Set(['fad', 'website', 'mobile', 'design-portal', 'owner-por
 // at ~200-600KB for full-page captures, so 5MB is generous.
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
 
+function normalizeOptionalText(value, max = 2000) {
+  if (value == null) return undefined;
+  const trimmed = value.toString().trim();
+  return trimmed ? trimmed.slice(0, max) : null;
+}
+
+function normalizeOptionalTimestamp(value) {
+  if (value == null) return undefined;
+  if (value === 'now') return new Date().toISOString();
+  const d = new Date(String(value));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function selectFeedbackFields({ includeScreenshot = false } = {}) {
+  return `
+    id, type, title, description, severity, route_url, module_label,
+    user_username, user_display_name, status, resolution_note,
+    resolved_at, source, created_at, updated_at,
+    triaged_at, fixed_commit, fixed_branch, fix_deployed_at,
+    fix_verified_at, fix_verification_note, root_cause,
+    (screenshot_data_url IS NOT NULL AND length(screenshot_data_url) > 0) AS has_screenshot
+    ${includeScreenshot ? ', screenshot_data_url' : ''}
+  `;
+}
+
 // Slack webhook fan-out — fire-and-forget on every submission so the
 // team sees real-time feedback in a Slack channel. Set
 // SLACK_FEEDBACK_WEBHOOK_URL on the VPS env to enable. Falsy / unset
@@ -324,9 +350,7 @@ router.get('/', attachIdentity, async (req, res) => {
       filters.push(`source = $${params.length}`);
     }
     const sql = `
-      SELECT id, type, title, description, severity, route_url, module_label,
-             user_username, user_display_name, status, resolution_note,
-             resolved_at, source, created_at, updated_at
+      SELECT ${selectFeedbackFields()}
       FROM feedback
       WHERE ${filters.join(' AND ')}
       ORDER BY created_at DESC
@@ -340,6 +364,26 @@ router.get('/', attachIdentity, async (req, res) => {
   }
 });
 
+router.get('/:id', attachIdentity, async (req, res) => {
+  if (req.identity.userRole !== 'admin' && req.identity.userRole !== 'director') {
+    return res.status(403).json({ error: 'Forbidden — admin/director only' });
+  }
+  try {
+    const { rows } = await query(
+      `SELECT ${selectFeedbackFields({ includeScreenshot: true })}
+       FROM feedback
+       WHERE id = $1 AND tenant_id = $2
+       LIMIT 1`,
+      [req.params.id, req.tenantId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'feedback not found' });
+    res.json({ feedback: rows[0] });
+  } catch (err) {
+    console.error('[feedback] GET detail error:', err.message);
+    res.status(500).json({ error: 'Failed to load feedback' });
+  }
+});
+
 // PATCH /api/feedback/:id — admin/director only. Used by the future
 // Settings → Feedback inbox to triage status + add resolution notes.
 router.patch('/:id', attachIdentity, async (req, res) => {
@@ -347,7 +391,16 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden — admin/director only' });
   }
   try {
-    const { status, resolution_note: resolutionNote } = req.body || {};
+    const {
+      status,
+      resolution_note: resolutionNote,
+      fixed_commit: fixedCommit,
+      fixed_branch: fixedBranch,
+      fix_deployed_at: fixDeployedAt,
+      fix_verified_at: fixVerifiedAt,
+      fix_verification_note: fixVerificationNote,
+      root_cause: rootCause,
+    } = req.body || {};
     if (status != null && !STATUSES.has(status)) {
       return res.status(400).json({ error: 'invalid status' });
     }
@@ -356,6 +409,11 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     if (status != null) {
       params.push(status);
       sets.push(`status = $${params.length}`);
+      if (status === 'triaged' || status === 'in_progress') {
+        sets.push(`triaged_at = COALESCE(triaged_at, NOW())`);
+        params.push(req.identity.userId);
+        sets.push(`triaged_by = COALESCE(triaged_by, $${params.length})`);
+      }
       if (status === 'resolved' || status === 'wontfix' || status === 'duplicate') {
         sets.push(`resolved_at = NOW()`);
         params.push(req.identity.userId);
@@ -365,6 +423,40 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     if (resolutionNote != null) {
       params.push(resolutionNote.toString().trim() || null);
       sets.push(`resolution_note = $${params.length}`);
+    }
+    const normalizedRootCause = normalizeOptionalText(rootCause, 4000);
+    if (normalizedRootCause !== undefined) {
+      params.push(normalizedRootCause);
+      sets.push(`root_cause = $${params.length}`);
+    }
+    const normalizedCommit = normalizeOptionalText(fixedCommit, 80);
+    if (normalizedCommit !== undefined) {
+      params.push(normalizedCommit);
+      sets.push(`fixed_commit = $${params.length}`);
+    }
+    const normalizedBranch = normalizeOptionalText(fixedBranch, 120);
+    if (normalizedBranch !== undefined) {
+      params.push(normalizedBranch);
+      sets.push(`fixed_branch = $${params.length}`);
+    }
+    const normalizedDeployedAt = normalizeOptionalTimestamp(fixDeployedAt);
+    if (normalizedDeployedAt !== undefined) {
+      if (normalizedDeployedAt === null) return res.status(400).json({ error: 'invalid fix_deployed_at' });
+      params.push(normalizedDeployedAt);
+      sets.push(`fix_deployed_at = $${params.length}`);
+    }
+    const normalizedVerifiedAt = normalizeOptionalTimestamp(fixVerifiedAt);
+    if (normalizedVerifiedAt !== undefined) {
+      if (normalizedVerifiedAt === null) return res.status(400).json({ error: 'invalid fix_verified_at' });
+      params.push(normalizedVerifiedAt);
+      sets.push(`fix_verified_at = $${params.length}`);
+      params.push(req.identity.userId);
+      sets.push(`fix_verified_by = $${params.length}`);
+    }
+    const normalizedVerifyNote = normalizeOptionalText(fixVerificationNote, 4000);
+    if (normalizedVerifyNote !== undefined) {
+      params.push(normalizedVerifyNote);
+      sets.push(`fix_verification_note = $${params.length}`);
     }
     if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
     sets.push(`updated_at = NOW()`);
@@ -377,7 +469,7 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     const { rows } = await query(
       `UPDATE feedback SET ${sets.join(', ')}
        WHERE id = $${idParamIdx} AND tenant_id = $${tenantParamIdx}
-       RETURNING id, type, status, resolved_at, updated_at`,
+       RETURNING ${selectFeedbackFields({ includeScreenshot: true })}`,
       params,
     );
     if (rows.length === 0) return res.status(404).json({ error: 'feedback not found' });
