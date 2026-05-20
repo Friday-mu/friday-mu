@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type RefObject } from 'react';
 import {
   TEAM_MESSAGES,
   type ChannelKey,
@@ -111,6 +111,7 @@ export function TeamInbox({
   }, [visibleDms, tenantUsers, currentUserId]);
 
   const [selection, setSelection] = useState<Selection | null>(null);
+  const composeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Auto-select the first available channel once data lands. Switches
   // to a different channel/DM are explicit user actions thereafter.
   useEffect(() => {
@@ -297,6 +298,13 @@ export function TeamInbox({
       fireToast(e instanceof Error ? e.message : 'Reaction remove failed');
     }
   };
+
+  const composeMention = useMentionAutocomplete({
+    value: draft,
+    setValue: setDraft,
+    users: tenantUsers ?? [],
+    textareaRef: composeTextareaRef,
+  });
 
   const sendMessage = () => {
     const text = draft.trim();
@@ -652,6 +660,7 @@ export function TeamInbox({
                     message={m}
                     author={author}
                     reactions={reactionsByMessageId[m.id] ?? {}}
+                    usersById={tenantUserById}
                     currentUserId={currentUserId}
                     onAddReaction={(emoji) => handleAddReaction(m.id, emoji)}
                     onRemoveReaction={(emoji) => handleRemoveReaction(m.id, emoji)}
@@ -663,6 +672,8 @@ export function TeamInbox({
                       parentId={m.id}
                       replies={threadReplies ?? []}
                       currentUserId={currentUserId}
+                      users={tenantUsers ?? []}
+                      usersById={tenantUserById}
                       onSend={async (text) => {
                         const parsedMentions = parseMentions(text, tenantUsers ?? []);
                         const msg = await sendThreadReply(text, { mentions: parsedMentions.mentions });
@@ -750,19 +761,7 @@ export function TeamInbox({
                 className="btn ghost sm"
                 title="Insert mention"
                 onClick={() => {
-                  // Insert '@' at the end and focus the textarea so the
-                  // operator types the name inline. Full picker is a
-                  // follow-up — discoverable affordance first.
-                  setDraft((d) => (d.endsWith(' ') || d.length === 0 ? d + '@' : d + ' @'));
-                  // Defer focus to next paint so React's update lands first.
-                  requestAnimationFrame(() => {
-                    const ta = document.querySelector('.team-compose-textarea') as HTMLTextAreaElement | null;
-                    ta?.focus();
-                    if (ta) {
-                      const end = ta.value.length;
-                      ta.setSelectionRange(end, end);
-                    }
-                  });
+                  composeMention.openAtCursor();
                 }}
               >
                 @ Mention
@@ -793,25 +792,37 @@ export function TeamInbox({
                 )}
               </div>
             )}
-            <textarea
-              className="inbox-compose-textarea team-compose-textarea"
-              placeholder={`Message ${targetTitle}…`}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
-              onPaste={(e) => {
-                const files = Array.from(e.clipboardData?.files || []);
-                if (files.length > 0) {
-                  e.preventDefault();
-                  uploadFilesToTarget(files);
-                }
-              }}
-            />
+            <div style={{ position: 'relative' }}>
+              <MentionPicker
+                open={composeMention.open}
+                users={composeMention.candidates}
+                activeIndex={composeMention.activeIndex}
+                onHover={composeMention.setActiveIndex}
+                onPick={composeMention.insertMention}
+              />
+              <textarea
+                ref={composeTextareaRef}
+                className="inbox-compose-textarea team-compose-textarea"
+                placeholder={`Message ${targetTitle}…`}
+                value={draft}
+                onChange={composeMention.onChange}
+                onSelect={composeMention.onSelect}
+                onKeyDown={(e) => {
+                  if (composeMention.onKeyDown(e)) return;
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData?.files || []);
+                  if (files.length > 0) {
+                    e.preventDefault();
+                    uploadFilesToTarget(files);
+                  }
+                }}
+              />
+            </div>
             <div className="inbox-compose-actions" style={{ justifyContent: 'flex-end' }}>
               {/* 'Polish with Friday' removed 2026-05-17 — Mary reported
                   it as broken (no onClick wired). Polish needs FC's
@@ -1038,6 +1049,7 @@ function TextMessage({
   message,
   author,
   reactions,
+  usersById,
   currentUserId,
   onAddReaction,
   onRemoveReaction,
@@ -1048,6 +1060,7 @@ function TextMessage({
   message: TeamMessage;
   author?: TaskUser;
   reactions?: Record<string, string[]>;
+  usersById?: Map<string, LiveUser>;
   currentUserId?: string;
   onAddReaction?: (emoji: string) => void;
   onRemoveReaction?: (emoji: string) => void;
@@ -1107,7 +1120,7 @@ function TextMessage({
         <span style={{ color: 'var(--color-text-tertiary)' }}>· {formatTs(message.ts)}</span>
       </div>
       <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>
-        {renderMentions(message.text, message.mentions)}
+        {renderMentions(message.text, message.mentions, usersById)}
       </div>
       <MessageAttachments attachments={message.attachmentList} />
       {/* Aggregated reactions — one chip per emoji with count.
@@ -1245,17 +1258,28 @@ function ThreadSurface({
   parentId: _parentId,
   replies,
   currentUserId,
+  users,
+  usersById,
   onSend,
   onClose,
 }: {
   parentId: string;
   replies: LiveTeamMessage[];
   currentUserId: string;
+  users: LiveUser[];
+  usersById: Map<string, LiveUser>;
   onSend: (text: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mention = useMentionAutocomplete({
+    value: draft,
+    setValue: setDraft,
+    users,
+    textareaRef,
+  });
   const send = async () => {
     const text = draft.trim();
     if (!text || sending) return;
@@ -1330,33 +1354,46 @@ function ThreadSurface({
             message={msg}
             author={author}
             reactions={r.reactions}
+            usersById={usersById}
             currentUserId={currentUserId}
             compact
           />
         );
       })}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          placeholder="Reply in thread…"
-          rows={2}
-          style={{
-            flex: 1,
-            fontSize: 13,
-            padding: 8,
-            border: '0.5px solid var(--color-border-tertiary)',
-            borderRadius: 'var(--radius-sm)',
-            resize: 'vertical',
-            fontFamily: 'inherit',
-          }}
-        />
+        <div style={{ position: 'relative', flex: 1 }}>
+          <MentionPicker
+            open={mention.open}
+            users={mention.candidates}
+            activeIndex={mention.activeIndex}
+            onHover={mention.setActiveIndex}
+            onPick={mention.insertMention}
+          />
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={mention.onChange}
+            onSelect={mention.onSelect}
+            onKeyDown={(e) => {
+              if (mention.onKeyDown(e)) return;
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder="Reply in thread…"
+            rows={2}
+            style={{
+              width: '100%',
+              fontSize: 13,
+              padding: 8,
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              resize: 'vertical',
+              fontFamily: 'inherit',
+            }}
+          />
+        </div>
         <button
           className="btn primary sm"
           onClick={send}
@@ -1538,29 +1575,287 @@ function formatStart(iso: string): string {
   });
 }
 
-function renderMentions(text: string, mentions?: string[]): React.ReactNode {
-  if (!mentions || mentions.length === 0) return text;
-  // Simple replacement: turn "@Name Name" patterns into chips when matched against mentions.
-  // For Phase 1, just bold any "@" tokens — real autocomplete is T9 polish.
-  const parts = text.split(/(@[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)?)/g);
-  return parts.map((p, i) =>
-    p.startsWith('@') ? (
-      <span
-        key={i}
+type MentionTrigger = { start: number; query: string };
+
+function escapeMentionRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function mentionAliasPattern(alias: string): RegExp {
+  const escaped = escapeMentionRegExp(alias.trim()).replace(/\s+/g, '\\s+');
+  return new RegExp(`^${escaped}(?=$|[\\s.,;:!?()[\\]{}<>])`, 'i');
+}
+
+function mentionAliases(user: LiveUser): string[] {
+  return [user.displayName, user.displayName.replace(/\s+/g, ''), user.username, mentionHandle(user)]
+    .map((v) => v.trim())
+    .filter((v, index, arr) => v && arr.findIndex((x) => x.toLowerCase() === v.toLowerCase()) === index);
+}
+
+function mentionHandle(user: LiveUser): string {
+  return user.username.includes('@') ? user.username.split('@')[0] : user.username;
+}
+
+function findMentionTrigger(text: string, cursor: number): MentionTrigger | null {
+  const before = text.slice(0, cursor);
+  const start = before.lastIndexOf('@');
+  if (start < 0) return null;
+  if (start > 0 && /[\w.-]/.test(before[start - 1])) return null;
+  const query = before.slice(start + 1);
+  if (query.length > 48 || /[\n\r]/.test(query) || /[()[\]{}<>]/.test(query)) return null;
+  return { start, query };
+}
+
+function filterMentionUsers(users: LiveUser[], query: string): LiveUser[] {
+  const q = query.trim().toLowerCase();
+  return users
+    .filter((u) => {
+      if (!q) return true;
+      return u.displayName.toLowerCase().includes(q)
+        || u.username.toLowerCase().includes(q)
+        || u.email.toLowerCase().includes(q);
+    })
+    .slice(0, 8);
+}
+
+function useMentionAutocomplete({
+  value,
+  setValue,
+  users,
+  textareaRef,
+}: {
+  value: string;
+  setValue: (value: string) => void;
+  users: LiveUser[];
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const [trigger, setTrigger] = useState<MentionTrigger | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const candidates = useMemo(
+    () => (trigger ? filterMentionUsers(users, trigger.query) : []),
+    [trigger, users],
+  );
+  const open = !!trigger && candidates.length > 0;
+
+  useEffect(() => {
+    if (activeIndex >= candidates.length) setActiveIndex(0);
+  }, [activeIndex, candidates.length]);
+
+  const refreshTrigger = useCallback((nextValue: string, cursor: number) => {
+    const next = findMentionTrigger(nextValue, cursor);
+    setTrigger(next);
+    if (next) setActiveIndex(0);
+  }, []);
+
+  const insertMention = useCallback((user: LiveUser) => {
+    const textarea = textareaRef.current;
+    const cursor = textarea?.selectionStart ?? value.length;
+    const currentTrigger = trigger ?? findMentionTrigger(value, cursor);
+    if (!currentTrigger) return;
+    const mentionText = `@${user.displayName} `;
+    const before = value.slice(0, currentTrigger.start);
+    const after = value.slice(cursor).replace(/^\s+/, '');
+    const next = `${before}${mentionText}${after}`;
+    const nextCursor = before.length + mentionText.length;
+    setValue(next);
+    setTrigger(null);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }, [setValue, textareaRef, trigger, value]);
+
+  const openAtCursor = useCallback(() => {
+    const textarea = textareaRef.current;
+    const cursor = textarea?.selectionStart ?? value.length;
+    const before = value.slice(0, cursor);
+    const after = value.slice(cursor);
+    const insertion = before.length === 0 || /\s$/.test(before) ? '@' : ' @';
+    const next = `${before}${insertion}${after}`;
+    const nextCursor = before.length + insertion.length;
+    setValue(next);
+    setTrigger({ start: nextCursor - 1, query: '' });
+    setActiveIndex(0);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }, [setValue, textareaRef, value]);
+
+  return {
+    open,
+    candidates,
+    activeIndex,
+    setActiveIndex,
+    insertMention,
+    openAtCursor,
+    onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const next = event.target.value;
+      setValue(next);
+      refreshTrigger(next, event.target.selectionStart ?? next.length);
+    },
+    onSelect: (event: ChangeEvent<HTMLTextAreaElement>) => {
+      refreshTrigger(event.target.value, event.target.selectionStart ?? event.target.value.length);
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+      if (!open) return false;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveIndex((i) => (i + 1) % candidates.length);
+        return true;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveIndex((i) => (i - 1 + candidates.length) % candidates.length);
+        return true;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        insertMention(candidates[activeIndex]);
+        return true;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setTrigger(null);
+        return true;
+      }
+      return false;
+    },
+  };
+}
+
+function MentionPicker({
+  open,
+  users,
+  activeIndex,
+  onHover,
+  onPick,
+}: {
+  open: boolean;
+  users: LiveUser[];
+  activeIndex: number;
+  onHover: (index: number) => void;
+  onPick: (user: LiveUser) => void;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      role="listbox"
+      aria-label="Mention teammate"
+      style={{
+        position: 'absolute',
+        left: 8,
+        bottom: '100%',
+        zIndex: 20,
+        width: 'min(320px, calc(100% - 16px))',
+        marginBottom: 6,
+        padding: 4,
+        background: 'var(--color-background-elevated, var(--color-background-secondary))',
+        border: '0.5px solid var(--color-border-secondary)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: '0 12px 30px rgba(0,0,0,0.25)',
+      }}
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      {users.map((user, index) => {
+        const active = index === activeIndex;
+        return (
+          <button
+            key={user.id}
+            type="button"
+            role="option"
+            aria-selected={active}
+            onMouseEnter={() => onHover(index)}
+            onClick={() => onPick(user)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '7px 8px',
+              border: 0,
+              borderRadius: 'var(--radius-sm)',
+              background: active ? 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.14))' : 'transparent',
+              color: 'var(--color-text-primary)',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <span
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 11,
+                background: deriveColor(user.displayName),
+                color: 'white',
+                fontSize: 10,
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flex: '0 0 auto',
+              }}
+            >
+              {deriveInitials(user.displayName)}
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>{user.displayName}</span>
+              <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-tertiary)' }}>@{mentionHandle(user)}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderMentions(text: string, mentions?: string[], usersById?: Map<string, LiveUser>): React.ReactNode {
+  if (!mentions || mentions.length === 0 || !usersById) return text;
+  const aliases = mentions
+    .map((id) => usersById.get(id))
+    .filter((u): u is LiveUser => !!u)
+    .flatMap((user) => mentionAliases(user).map((alias) => ({ user, alias, re: mentionAliasPattern(alias) })))
+    .sort((a, b) => b.alias.length - a.alias.length);
+  if (aliases.length === 0) return text;
+
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== '@') continue;
+    if (i > 0 && /[\w.-]/.test(text[i - 1])) continue;
+    const tail = text.slice(i + 1);
+    const hit = aliases.find((a) => a.re.test(tail));
+    if (!hit) continue;
+    const matched = tail.match(hit.re)?.[0] ?? hit.alias;
+    if (i > last) nodes.push(<span key={`t-${last}`}>{text.slice(last, i)}</span>);
+    nodes.push(
+      <button
+        key={`m-${i}`}
+        type="button"
+        title={hit.user.email}
+        onClick={() => fireToast(`${hit.user.displayName} · ${hit.user.email}`)}
         style={{
+          display: 'inline',
           color: 'var(--color-brand-accent)',
-          background: 'var(--color-background-tertiary)',
-          padding: '0 4px',
-          borderRadius: 3,
-          fontWeight: 500,
+          background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.14))',
+          border: '0.5px solid var(--color-brand-accent)',
+          padding: '0 5px',
+          borderRadius: 4,
+          font: 'inherit',
+          fontWeight: 600,
+          cursor: 'pointer',
         }}
       >
-        {p}
-      </span>
-    ) : (
-      <span key={i}>{p}</span>
-    ),
-  );
+        @{matched}
+      </button>,
+    );
+    last = i + matched.length + 1;
+    i = last - 1;
+  }
+  if (last === 0) return text;
+  if (last < text.length) nodes.push(<span key={`t-${last}`}>{text.slice(last)}</span>);
+  return nodes;
 }
 
 // ───────────────── Shim for cross-task posting ─────────────────

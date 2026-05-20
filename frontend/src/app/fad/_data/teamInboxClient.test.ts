@@ -49,6 +49,21 @@ describe('parseMentions', () => {
     expect(parsed.matches).toEqual(['@mary', '@IshantAyadassen', '@Ishant']);
   });
 
+  it('resolves the local part when username is stored as an email address', () => {
+    const parsed = parseMentions('@catherine can you check this?', [
+      ...users,
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        username: 'catherine@friday.mu',
+        displayName: 'Catherine Laville',
+        email: 'catherine@friday.mu',
+        role: 'agent',
+      },
+    ]);
+    expect(parsed.mentions).toEqual(['55555555-5555-4555-8555-555555555555']);
+    expect(parsed.matches).toEqual(['@catherine']);
+  });
+
   it('does not resolve ambiguous first names or email-like fragments', () => {
     expect(parseMentions('@Mathias can inspect mathias@friday.mu', users)).toEqual({
       mentions: [],

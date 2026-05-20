@@ -566,8 +566,10 @@ export function parseMentions(text: string, users: LiveUser[]): { mentions: stri
   const aliases: Array<{ userId: string; alias: string; re: RegExp }> = [];
   const seenAliases = new Set<string>();
   for (const user of users) {
+    const usernameHandle = user.username.includes('@') ? user.username.split('@')[0] : user.username;
     const candidates = [
       user.username,
+      usernameHandle,
       user.displayName,
       user.displayName.replace(/\s+/g, ''),
     ];
