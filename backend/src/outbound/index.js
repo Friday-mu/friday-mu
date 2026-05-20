@@ -35,6 +35,12 @@ const express = require('express');
 const axios = require('axios');
 const { attachIdentity } = require('../design/auth');
 const { sendEmail } = require('../website_inbox/resend');
+const { query } = require('../database/client');
+const { guestyRequest } = require('../website_inbox/guesty');
+const { translateText, getConversationLanguageFallback } = require('../ai/translate');
+const { publishFadEvent } = require('../realtime');
+const { detectActions } = require('../inbox/action_detector');
+const { checkAutoResolve } = require('../inbox/auto_resolve');
 
 const router = express.Router();
 
@@ -49,6 +55,10 @@ const VALID_AUDIENCES = new Set(['guest', 'owner', 'vendor', 'team', 'unclassifi
 const GUEST_CHANNELS  = new Set(['whatsapp', 'airbnb', 'booking', 'email']);
 const TEAM_CHANNELS   = new Set(['team-channel', 'team-dm']);
 const EMAIL_CHANNELS  = new Set(['email']);
+const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const WA_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ACTION_DETECTOR_DISABLED = process.env.FAD_ACTION_DETECTOR_DISABLED === 'true';
+const AUTO_RESOLVE_DISABLED = process.env.FAD_AUTO_RESOLVE_DISABLED === 'true';
 
 router.post('/send', attachIdentity, async (req, res) => {
   const userId = req.identity?.userId;
@@ -97,6 +107,19 @@ router.post('/send', attachIdentity, async (req, res) => {
       const requestedMode = String(meta.mode || 'direct_send');
       const mode = requestedMode === 'manual' ? 'direct_send' : requestedMode;
       const instruction = meta.instruction || (requestedMode === 'manual' ? body : undefined);
+      // Operator-authored sends are FAD-native. Proxying this through
+      // GMS compose regressed when the public admin host stopped exposing
+      // /api/conversations/:id/compose; draft/AI compose can still proxy.
+      if (mode === 'direct_send') {
+        const result = await sendGuestDirect({
+          tenantId: req.tenantId,
+          conversationId: contextId,
+          body,
+          channel,
+          reviewedBy,
+        });
+        return res.json(result);
+      }
       const composeBody = {
         mode,
         body,
@@ -190,14 +213,263 @@ router.post('/send', attachIdentity, async (req, res) => {
 
     return res.status(400).json({ error: `unknown (audience, channel) combination: ${audience} + ${channel}` });
   } catch (e) {
-    const status = e.response?.status || 500;
-    const upstreamError = e.response?.data?.error;
+    const status = e.statusCode || e.response?.status || 500;
+    const upstreamError = e.code || e.response?.data?.error;
     console.error('[outbound/send] error:', upstreamError || e.message);
     res.status(status).json({
       error: upstreamError || e.message || 'send failed',
+      message: e.message,
       ...(e.response?.data ? { upstream: e.response.data } : {}),
     });
   }
 });
+
+function channelToGuestyModule(channel) {
+  const c = String(channel || '').toLowerCase();
+  if (c.includes('airbnb')) return 'airbnb2';
+  if (c.includes('booking')) return 'bookingCom';
+  if (c.includes('whatsapp')) return 'whatsapp';
+  if (c.includes('email')) return 'email';
+  if (c.includes('sms')) return 'sms';
+  return 'email';
+}
+
+function stripProtocolTags(text) {
+  if (!text) return text;
+  return String(text)
+    .replace(/\[DRAFT_UPDATE\][\s\S]*?\[\/DRAFT_UPDATE\]/g, '')
+    .replace(/\[TEACH\][\s\S]*?\[\/TEACH\]/g, '')
+    .replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/g, '')
+    .replace(/\[DRAFT\][\s\S]*?\[\/DRAFT\]/g, '')
+    .replace(/\[REVISION_REQUEST\]/g, '')
+    .replace(/\[COMPOSE_LEARNING\]/g, '')
+    .replace(/\[LEARNING_DETECTED\]/g, '')
+    .replace(/\[CONTEXT_REFRESH\]/g, '')
+    .replace(/\[STR_KB\]/g, '')
+    .replace(/\[SALES_KB\]/g, '')
+    .trim();
+}
+
+async function sendViaGuesty(guestyConversationId, body, channel) {
+  const moduleType = channelToGuestyModule(channel);
+  const { data } = await guestyRequest({
+    method: 'POST',
+    path: `/communication/conversations/${encodeURIComponent(guestyConversationId)}/send-message`,
+    data: {
+      body,
+      module: { type: moduleType },
+    },
+  });
+  return data;
+}
+
+async function translateOutbound(text, targetLang) {
+  if (!process.env.KIMI_API_KEY) return null;
+  const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
+  const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+  const system = `Translate the following message FROM English TO ${targetLang}. Preserve tone, warmth, line breaks, emoji and punctuation. Output ONLY the translation, no commentary, no labels.`;
+  const { data } = await axios.post(
+    `${KIMI_BASE_URL}/chat/completions`,
+    {
+      model: KIMI_MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 30_000,
+    },
+  );
+  const out = data?.choices?.[0]?.message?.content;
+  return typeof out === 'string' && out.trim().length > 0 ? out.trim() : null;
+}
+
+function extractGuestyMessageId(result) {
+  return result?._id
+    || result?.id
+    || result?.data?._id
+    || result?.data?.id
+    || result?.message?._id
+    || result?.message?.id
+    || null;
+}
+
+async function sendGuestDirect({ tenantId, conversationId, body, channel, reviewedBy }) {
+  const { rows } = await query(
+    `SELECT id, tenant_id, guesty_conversation_id, channel, communication_channel,
+            last_inbound_at, guest_name, property_name
+       FROM conversations
+      WHERE id = $1
+        AND tenant_id = $2
+      LIMIT 1`,
+    [conversationId, tenantId],
+  );
+  const conversation = rows[0];
+  if (!conversation) {
+    const err = new Error('Conversation not found');
+    err.statusCode = 404;
+    err.code = 'conversation_not_found';
+    throw err;
+  }
+  if (conversation.tenant_id !== FR_TENANT_ID) {
+    const err = new Error('Guesty sending is only configured for the FR tenant');
+    err.statusCode = 403;
+    err.code = 'tenant_not_supported';
+    throw err;
+  }
+  if (!conversation.guesty_conversation_id) {
+    const err = new Error('Conversation is not synced to Guesty yet');
+    err.statusCode = 409;
+    err.code = 'conversation_not_synced';
+    throw err;
+  }
+
+  const outboundChannel = String(channel || conversation.communication_channel || conversation.channel || '').toLowerCase();
+  if (!outboundChannel) {
+    const err = new Error('Cannot determine outbound channel');
+    err.statusCode = 400;
+    err.code = 'channel_required';
+    throw err;
+  }
+  if (outboundChannel === 'whatsapp') {
+    const lastInbound = conversation.last_inbound_at;
+    const windowOpen = lastInbound
+      && (Date.now() - new Date(lastInbound).getTime()) < WA_WINDOW_MS;
+    if (!windowOpen) {
+      const err = new Error('WhatsApp 24h conversation window closed — must use a template');
+      err.statusCode = 409;
+      err.code = 'whatsapp_window_expired';
+      throw err;
+    }
+  }
+
+  const rawBody = stripProtocolTags(body || '');
+  if (!rawBody.trim()) {
+    const err = new Error('Message body is empty after sanitization');
+    err.statusCode = 400;
+    err.code = 'empty_body';
+    throw err;
+  }
+
+  let guestLang = null;
+  try {
+    const langRow = await query(
+      `SELECT original_language FROM messages
+         WHERE conversation_id = $1
+           AND direction = 'inbound'
+           AND original_language IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1`,
+      [conversationId],
+    );
+    guestLang = langRow.rows[0]?.original_language || null;
+  } catch {
+    // best-effort
+  }
+  if (!guestLang) {
+    guestLang = await getConversationLanguageFallback(conversationId);
+  }
+
+  let messageBody = rawBody;
+  let translatedContent = null;
+  let sentLanguage = null;
+  const isGuestNonEnglish = guestLang && guestLang.toLowerCase().split(/[-_]/)[0] !== 'en';
+  if (isGuestNonEnglish) {
+    try {
+      await translateText(rawBody, { conversationId });
+      const targetTranslated = await translateOutbound(rawBody, guestLang);
+      if (targetTranslated) {
+        translatedContent = targetTranslated;
+        messageBody = targetTranslated;
+        sentLanguage = guestLang;
+      }
+    } catch (e) {
+      console.warn('[outbound] guest direct outbound translation failed; sending original:', e.message);
+    }
+  }
+
+  let guestySendResult;
+  try {
+    guestySendResult = await sendViaGuesty(conversation.guesty_conversation_id, messageBody, outboundChannel);
+  } catch (e) {
+    const err = new Error(e.message || 'Failed to send via Guesty');
+    err.statusCode = 502;
+    err.code = 'guesty_send_failed';
+    throw err;
+  }
+
+  const guestyMessageId = extractGuestyMessageId(guestySendResult);
+  const moduleType = channelToGuestyModule(outboundChannel);
+  await query(
+    `INSERT INTO messages (
+       tenant_id, conversation_id, guesty_message_id, direction, body,
+       translated_body, original_language,
+       sender_name, sent_by, sent_via_system, module_type, created_at
+     ) VALUES ($1, $2, $3, 'outbound', $4, $5, $6, $7, $8, 'friday', $9, NOW())
+     ON CONFLICT (guesty_message_id) DO NOTHING`,
+    [
+      tenantId,
+      conversationId,
+      guestyMessageId,
+      messageBody,
+      sentLanguage ? rawBody : null,
+      sentLanguage,
+      `${reviewedBy} via Friday`,
+      reviewedBy,
+      moduleType,
+    ],
+  ).catch((e) => console.warn('[outbound] guest direct message insert failed:', e.message));
+
+  await query(
+    `UPDATE conversations
+        SET last_message_at = NOW(), updated_at = NOW(), next_steps = NULL
+      WHERE id = $1`,
+    [conversationId],
+  ).catch(() => {});
+  await query(
+    `UPDATE drafts
+        SET state = 'superseded', updated_at = NOW()
+      WHERE conversation_id = $1
+        AND state IN ('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')`,
+    [conversationId],
+  ).catch((e) => console.warn('[outbound] guest direct stale draft supersede failed:', e.message));
+
+  publishFadEvent({
+    tenantId,
+    type: 'inbox.message_sent',
+    payload: {
+      conversationId,
+      guestyMessageId,
+      channel: outboundChannel,
+      source: 'outbound',
+    },
+  }).catch(() => {});
+
+  if (!ACTION_DETECTOR_DISABLED) {
+    detectActions({
+      draftBody: messageBody,
+      conversationId,
+      guestName: conversation.guest_name || null,
+      propertyCode: conversation.property_name || null,
+    }).catch((e) => console.error('[outbound] guest direct action-detector failed:', e.message));
+  }
+  if (!AUTO_RESOLVE_DISABLED) {
+    checkAutoResolve(conversationId, messageBody)
+      .catch((e) => console.error('[outbound] guest direct auto-resolve failed:', e.message));
+  }
+
+  return {
+    ok: true,
+    messageId: guestyMessageId,
+    sentAt: new Date().toISOString(),
+    upstream: guestySendResult,
+  };
+}
 
 module.exports = { router };
