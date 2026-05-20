@@ -2003,6 +2003,12 @@ html.fad-dark .fad-feedback-tab.is-active {
   .fad-utilities .fad-util-btn[title="Help"],
   .fad-utilities .fad-util-btn[title="Notifications"] { display: none; }
 
+  /* Dev-only / low-frequency controls were crowding the phone header.
+     Keep them available on tablet/desktop and move mobile attention to
+     navigation, search, Ask Friday, notifications, and account. */
+  .fad-role-switcher,
+  .fad-theme-toggle { display: none !important; }
+
   /* Module header — column-stack on mobile so title is always on top, then
      tabs / actions in clean rows below. Avoids overlap when actions wrap. */
   .fad-module-header {
@@ -3187,6 +3193,39 @@ html.fad-dark .fad-modal-overlay { background: rgba(0,0,0,0.6); }
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-md);
   outline: none;
+}
+
+@media (max-width: 768px) {
+  .friday-fs-header {
+    height: 44px;
+    padding: 0 16px;
+    gap: 6px;
+  }
+  .friday-fs-header .chip { display: none; }
+  .friday-fs-collapse {
+    width: 32px;
+    min-width: 32px;
+    padding: 0 !important;
+    justify-content: center;
+    font-size: 0 !important;
+  }
+  .friday-fs-collapse svg { width: 12px; height: 12px; }
+  .friday-fs-body { padding: 24px 16px; }
+  .friday-fs-title {
+    font-size: 30px;
+    line-height: 1.08;
+    margin-bottom: 8px;
+  }
+  .friday-fs-sub {
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .friday-fs-grid { gap: 18px; }
+  .friday-fs-input { padding: 10px 14px 12px; }
+}
+
+@media (max-width: 480px) {
+  .friday-fs-title { font-size: 28px; }
 }
 
 /* ───────────────────── FINANCE MODULE ───────────────────── */
@@ -5937,6 +5976,8 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .prop-row:last-child td {
   border-bottom: 0;
 }
+.prop-mobile-list { display: none; }
+.design-project-mobile-list { display: none; }
 
 /* Properties · Overview — needs-attention row */
 .prop-attn-row {
@@ -5958,10 +5999,151 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 @media (max-width: 768px) {
-  /* Compact table on narrow screens */
-  .prop-table th, .prop-table td {
-    padding: 8px 8px;
+  /* Mobile gets scannable property cards instead of a clipped 12-column table. */
+  .prop-table-wrap { display: none; }
+  .prop-mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .prop-mobile-card {
+    padding: 12px;
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+  }
+  .prop-mobile-card-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .prop-mobile-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .prop-mobile-title .mono {
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+  }
+  .prop-mobile-title strong {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+  .prop-mobile-meta,
+  .prop-mobile-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+  }
+  .prop-mobile-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .prop-mobile-stats span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-background-secondary);
     font-size: 12px;
+    font-weight: 500;
+  }
+  .prop-mobile-stats small {
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .prop-mobile-foot {
+    justify-content: space-between;
+    border-top: 0.5px solid var(--color-border-tertiary);
+    padding-top: 8px;
+  }
+  .prop-mobile-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+  }
+  .design-projects-table-wrap { display: none; }
+  .design-project-mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .design-project-mobile-card {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    text-align: left;
+  }
+  .design-project-mobile-top,
+  .design-project-mobile-stage,
+  .design-project-mobile-foot {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .design-project-mobile-top strong {
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.25;
+  }
+  .design-project-mobile-top > span,
+  .design-project-mobile-stage > span:last-child {
+    flex: 0 0 auto;
+    font-family: var(--font-mono-fad);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+  }
+  .design-project-mobile-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+  }
+  .design-project-mobile-stage {
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-background-secondary);
+    font-size: 12px;
+  }
+  .design-project-mobile-stage > span:first-child {
+    color: var(--color-text-info);
+    font-weight: 500;
+  }
+  .design-project-mobile-foot {
+    border-top: 0.5px solid var(--color-border-tertiary);
+    padding-top: 8px;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+  }
+  .design-project-mobile-foot > span:first-child {
+    min-width: 0;
+    line-height: 1.35;
   }
   .prop-attn-row {
     flex-wrap: wrap;

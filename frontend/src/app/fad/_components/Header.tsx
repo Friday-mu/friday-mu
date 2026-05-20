@@ -142,7 +142,7 @@ export function Header({
           {helpOpen && <HelpDropdown />}
         </div>
         <button
-          className="fad-util-btn"
+          className="fad-util-btn fad-theme-toggle"
           onClick={onToggleTheme}
           title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
         >

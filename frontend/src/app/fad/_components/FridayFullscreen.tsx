@@ -35,7 +35,12 @@ export function FridayFullscreen({ onNavigate, onExit }: Props) {
         <span className="chip" style={{ marginLeft: 8 }}>
           scope · all of FAD
         </span>
-        <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onExit}>
+        <button
+          className="btn ghost sm friday-fs-collapse"
+          style={{ marginLeft: 'auto' }}
+          onClick={onExit}
+          title="Collapse to panel"
+        >
           Collapse to panel <IconChevron size={10} />
         </button>
       </div>

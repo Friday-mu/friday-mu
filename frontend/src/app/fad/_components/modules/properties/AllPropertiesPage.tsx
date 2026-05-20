@@ -195,6 +195,54 @@ export function AllPropertiesPage({ onOpen }: Props) {
         </table>
       </div>
 
+      <div className="prop-mobile-list">
+        {filtered.map((p) => {
+          const badge = lifecycleBadge(p);
+          const channels = p.listings.map((l) => l.channel).join(', ') || 'No channels';
+          return (
+            <article
+              key={p.code}
+              className="prop-mobile-card"
+              onClick={() => onOpen(p.code)}
+            >
+              <div className="prop-mobile-card-top">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(p.id)}
+                  onChange={() => toggleRow(p.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  title={selectedIds.has(p.id) ? 'Deselect property' : 'Select property'}
+                />
+                <div className="prop-mobile-title">
+                  <span className="mono">{p.code}</span>
+                  <strong>{p.name}</strong>
+                </div>
+                <span className={`chip sm ${badge.tone === 'success' ? 'info' : badge.tone === 'warning' ? 'warn' : ''}`}>
+                  {badge.label}
+                </span>
+              </div>
+              <div className="prop-mobile-meta">
+                <span>{COHORT_LABEL[p.region]}</span>
+                <span>{p.bedrooms === 0 ? 'Studio' : `${p.bedrooms} bed`}</span>
+                <span>{ownerName(p.primaryOwnerId)}</span>
+              </div>
+              <div className="prop-mobile-stats">
+                <span><small>Occ</small>{p.occupancy90d > 0 ? `${Math.round(p.occupancy90d * 100)}%` : '—'}</span>
+                <span><small>ADR</small>{p.adr > 0 ? `€${p.adr}` : '—'}</span>
+                <span><small>Rating</small>{p.rating > 0 ? `★ ${p.rating.toFixed(2)}` : '—'}</span>
+              </div>
+              <div className="prop-mobile-foot">
+                <span>{channels}</span>
+                <span>{p.lastActivityAt}</span>
+              </div>
+            </article>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="prop-mobile-empty">No properties match.</div>
+        )}
+      </div>
+
       {bulkOpen && (
         <BulkEditDrawer
           selectedIds={selectedArray}

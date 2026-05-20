@@ -101,7 +101,7 @@ export function RoleSwitcher() {
   const isViewingAsOther = role !== realRole;
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="fad-role-switcher" style={{ position: 'relative' }}>
       <button
         className="fad-util-btn"
         onClick={(e) => {

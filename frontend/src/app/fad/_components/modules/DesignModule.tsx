@@ -614,59 +614,93 @@ function ProjectsTable({ projects, onOpenProject }: { projects: DesignProject[];
     );
   }
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            <SortHeader label="Project" k="name" sort={sort} onClick={onHeader} />
-            <SortHeader label="Counterparty" k="counterparty" sort={sort} onClick={onHeader} />
-            <th style={cellStyle('left')}>Property</th>
-            <SortHeader label="Class." k="classification" sort={sort} onClick={onHeader} />
-            <SortHeader label="Tier" k="tier" sort={sort} onClick={onHeader} />
-            <SortHeader label="Stage" k="stage" sort={sort} onClick={onHeader} />
-            <th style={cellStyle('left')}>Next action</th>
-            <th style={cellStyle('left')}>Signals</th>
-            <SortHeader label="Updated" k="updated" sort={sort} onClick={onHeader} align="right" />
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((p) => {
-            const cp = designClient.counterparties.get(p.counterpartyId);
-            const prop = designClient.properties.get(p.propertyId);
-            const signals = computeProjectSignals(p);
-            return (
-              <tr
-                key={p.id}
-                onClick={() => onOpenProject(p.id)}
-                style={{ cursor: 'pointer', borderTop: '0.5px solid var(--color-border-tertiary)', opacity: p.lifecycleStatus === 'cancelled' ? 0.55 : 1 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-brand-accent-softer)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <td style={cellStyle('left')}><strong>{p.name}</strong></td>
-                <td style={cellStyle('left')}>{cp?.fullName ?? '—'}</td>
-                <td style={cellStyle('left')}>{prop?.name ?? '—'}</td>
-                <td style={cellStyle('left')}>{p.classification}</td>
-                <td style={cellStyle('left')}>{p.tier ? `T${p.tier}` : '—'}</td>
-                <td style={cellStyle('left')}>
-                  <span style={{ color: 'var(--color-text-info)', fontWeight: 500 }}>{p.currentStage}</span>{' '}
-                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>({stageStatusLabel(p.stageStatus)})</span>
-                  <span style={{ color: signals.daysInStage > 14 ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)', fontSize: 10, fontFamily: 'var(--font-mono-fad)', marginLeft: 6 }}>
-                    · {signals.daysInStage}d
-                  </span>
-                </td>
-                <td style={cellStyle('left')}>{p.nextAction ?? '—'}</td>
-                <td style={cellStyle('left')}>
-                  <ProjectSignalChips project={p} signals={signals} />
-                </td>
-                <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
-                  {p.updatedAt.slice(0, 10)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="design-projects-table-wrap" style={{ overflowX: 'auto' }}>
+        <table className="design-projects-table" style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              <SortHeader label="Project" k="name" sort={sort} onClick={onHeader} />
+              <SortHeader label="Counterparty" k="counterparty" sort={sort} onClick={onHeader} />
+              <th style={cellStyle('left')}>Property</th>
+              <SortHeader label="Class." k="classification" sort={sort} onClick={onHeader} />
+              <SortHeader label="Tier" k="tier" sort={sort} onClick={onHeader} />
+              <SortHeader label="Stage" k="stage" sort={sort} onClick={onHeader} />
+              <th style={cellStyle('left')}>Next action</th>
+              <th style={cellStyle('left')}>Signals</th>
+              <SortHeader label="Updated" k="updated" sort={sort} onClick={onHeader} align="right" />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((p) => {
+              const cp = designClient.counterparties.get(p.counterpartyId);
+              const prop = designClient.properties.get(p.propertyId);
+              const signals = computeProjectSignals(p);
+              return (
+                <tr
+                  key={p.id}
+                  onClick={() => onOpenProject(p.id)}
+                  style={{ cursor: 'pointer', borderTop: '0.5px solid var(--color-border-tertiary)', opacity: p.lifecycleStatus === 'cancelled' ? 0.55 : 1 }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-brand-accent-softer)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <td style={cellStyle('left')}><strong>{p.name}</strong></td>
+                  <td style={cellStyle('left')}>{cp?.fullName ?? '—'}</td>
+                  <td style={cellStyle('left')}>{prop?.name ?? '—'}</td>
+                  <td style={cellStyle('left')}>{p.classification}</td>
+                  <td style={cellStyle('left')}>{p.tier ? `T${p.tier}` : '—'}</td>
+                  <td style={cellStyle('left')}>
+                    <span style={{ color: 'var(--color-text-info)', fontWeight: 500 }}>{p.currentStage}</span>{' '}
+                    <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>({stageStatusLabel(p.stageStatus)})</span>
+                    <span style={{ color: signals.daysInStage > 14 ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)', fontSize: 10, fontFamily: 'var(--font-mono-fad)', marginLeft: 6 }}>
+                      · {signals.daysInStage}d
+                    </span>
+                  </td>
+                  <td style={cellStyle('left')}>{p.nextAction ?? '—'}</td>
+                  <td style={cellStyle('left')}>
+                    <ProjectSignalChips project={p} signals={signals} />
+                  </td>
+                  <td style={{ ...cellStyle('right'), fontFamily: 'var(--font-mono-fad)', color: 'var(--color-text-tertiary)' }}>
+                    {p.updatedAt.slice(0, 10)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="design-project-mobile-list">
+        {sorted.map((p) => {
+          const cp = designClient.counterparties.get(p.counterpartyId);
+          const prop = designClient.properties.get(p.propertyId);
+          const signals = computeProjectSignals(p);
+          return (
+            <button
+              type="button"
+              key={p.id}
+              className="design-project-mobile-card"
+              onClick={() => onOpenProject(p.id)}
+            >
+              <span className="design-project-mobile-top">
+                <strong>{p.name}</strong>
+                <span>{p.updatedAt.slice(0, 10)}</span>
+              </span>
+              <span className="design-project-mobile-meta">
+                <span>{cp?.fullName ?? 'No counterparty'}</span>
+                <span>{prop?.name ?? 'No property'}</span>
+              </span>
+              <span className="design-project-mobile-stage">
+                <span>{p.currentStage}</span>
+                <span>{stageStatusLabel(p.stageStatus)} · {signals.daysInStage}d</span>
+              </span>
+              <span className="design-project-mobile-foot">
+                <span>{p.nextAction ?? 'No next action'}</span>
+                <span><ProjectSignalChips project={p} signals={signals} /></span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -3288,4 +3322,3 @@ function FeeSummaryRow({
     </div>
   );
 }
-
