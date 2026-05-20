@@ -8,6 +8,7 @@ import {
   checklistProgress,
   lifecycleBadge,
 } from '../../../_data/properties';
+import { useFixtureRev } from '../../../_data/fixtureRev';
 import { FIN_OWNERS } from '../../../_data/finance';
 
 interface Props {
@@ -23,13 +24,14 @@ interface Alert {
 }
 
 export function OverviewPage({ onOpen }: Props) {
+  const fixtureRev = useFixtureRev();
   const counts = useMemo(() => ({
     live: PROPERTIES.filter((p) => p.lifecycleStatus === 'live').length,
     onboarding: PROPERTIES.filter((p) => p.lifecycleStatus === 'onboarding').length,
     paused: PROPERTIES.filter((p) => p.lifecycleStatus === 'paused').length,
     offBoarded: PROPERTIES.filter((p) => p.lifecycleStatus === 'off_boarded').length,
     activePending: PROPERTIES.filter((p) => p.lifecycleStatus === 'live' && !isOnboardingComplete(p)).length,
-  }), []);
+  }), [fixtureRev]);
 
   const ownerName = (id: string) => FIN_OWNERS.find((o) => o.id === id)?.name ?? id;
 
@@ -51,13 +53,13 @@ export function OverviewPage({ onOpen }: Props) {
       }
     });
     return out;
-  }, []);
+  }, [fixtureRev]);
 
   const recentActivity = useMemo(() =>
     [...PROPERTIES]
       .sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1))
       .slice(0, 6),
-  []);
+  [fixtureRev]);
 
   return (
     <div className="fad-module-body" style={{ flex: 1, overflowY: 'auto' }}>

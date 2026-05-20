@@ -129,6 +129,19 @@ function dayIndexFor(iso: string, days: ViewDay[]): number {
   return days.findIndex((d) => d.isoDate === iso.slice(0, 10));
 }
 
+function eventHour(iso: string, fallback: number): number {
+  if (!iso || /^\d{4}-\d{2}-\d{2}$/.test(iso)) return fallback;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.getHours();
+}
+
+function previousISODate(iso: string): string {
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  d.setDate(d.getDate() - 1);
+  return isoDay(d);
+}
+
 function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
   // Used by mobile day-list and DayView to surface check-in / check-out events at
   // their precise hour. WeekView renders these as continuous bars instead.
@@ -136,7 +149,7 @@ function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
   const inIdx = dayIndexFor(rsv.checkIn, days);
   const outIdx = dayIndexFor(rsv.checkOut, days);
   if (inIdx >= 0) {
-    const hour = new Date(rsv.checkIn).getHours();
+    const hour = eventHour(rsv.checkIn, 15);
     events.push({
       day: inIdx,
       start: hour,
@@ -146,7 +159,7 @@ function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
     });
   }
   if (outIdx >= 0) {
-    const hour = new Date(rsv.checkOut).getHours();
+    const hour = eventHour(rsv.checkOut, 11);
     events.push({
       day: outIdx,
       start: hour,
@@ -185,19 +198,24 @@ function computeStaysInWindow(days: ViewDay[], reservations: Reservation[]): Sta
       if (r.status === 'cancelled') return false;
       const inISO = r.checkIn.slice(0, 10);
       const outISO = r.checkOut.slice(0, 10);
-      return outISO >= firstISO && inISO <= lastISO;
+      return outISO > firstISO && inISO <= lastISO;
     })
     .map((r) => {
-      const inIdx = days.findIndex((d) => d.isoDate === r.checkIn.slice(0, 10));
-      const outIdx = days.findIndex((d) => d.isoDate === r.checkOut.slice(0, 10));
+      const inISO = r.checkIn.slice(0, 10);
+      const outISO = r.checkOut.slice(0, 10);
+      const lastNightISO = previousISODate(outISO);
+      const inIdx = days.findIndex((d) => d.isoDate === inISO);
+      const lastNightIdx = days.findIndex((d) => d.isoDate === lastNightISO);
+      const outIdx = days.findIndex((d) => d.isoDate === outISO);
       return {
         rsv: r,
         startIdx: inIdx >= 0 ? inIdx : 0,
-        endIdx: outIdx >= 0 ? outIdx : days.length - 1,
+        endIdx: lastNightIdx >= 0 ? lastNightIdx : days.length - 1,
         startsThisWeek: inIdx >= 0,
         endsThisWeek: outIdx >= 0,
       };
     })
+    .filter((s) => s.endIdx >= s.startIdx)
     .sort((a, b) => a.startIdx - b.startIdx || a.endIdx - b.endIdx);
 }
 

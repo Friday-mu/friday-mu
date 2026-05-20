@@ -8,6 +8,7 @@ import {
   type Property,
   lifecycleBadge,
 } from '../../../_data/properties';
+import { useFixtureRev } from '../../../_data/fixtureRev';
 import { COHORT_LABEL, type Cohort } from '../../../_data/reviews';
 import { FIN_OWNERS } from '../../../_data/finance';
 import { BulkEditDrawer } from './BulkEditDrawer';
@@ -20,6 +21,7 @@ type LifecycleFilter = 'all_active' | LifecycleStatus | 'archived';
 type SortKey = 'code' | 'name' | 'lifecycle' | 'region' | 'bedrooms' | 'occ' | 'adr' | 'rating' | 'lastActivity';
 
 export function AllPropertiesPage({ onOpen }: Props) {
+  const fixtureRev = useFixtureRev();
   const [search, setSearch] = useState('');
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>('all_active');
   const [region, setRegion] = useState<'all' | Cohort>('all');
@@ -66,7 +68,7 @@ export function AllPropertiesPage({ onOpen }: Props) {
     };
 
     return rows.sort(compare);
-  }, [search, lifecycle, region, sort]);
+  }, [search, lifecycle, region, sort, fixtureRev]);
 
   const toggleSort = (key: SortKey) => {
     setSort((s) => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });

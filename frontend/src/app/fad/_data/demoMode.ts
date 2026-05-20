@@ -17,12 +17,20 @@ export function liveOnlyMode(): boolean {
 
 export const LIVE_WIRED_MODULE_IDS = new Set([
   'inbox',
+  'operations',
   'calendar',
   'properties',
   'reservations',
+  'reviews',
+  'hr',
+  'design',
   'tenant-settings',
   'billing',
   'admin-analytics',
   'notifications',
   'settings',
+  // Teaser modules have no row-level demo data; keep them visible in live-only
+  // mode so FR can see the product surface without re-enabling fixtures.
+  'syndic',
+  'agency',
 ]);

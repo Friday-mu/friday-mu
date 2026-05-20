@@ -6,6 +6,7 @@ import {
   checklistProgress,
   type Property,
 } from '../../../_data/properties';
+import { useFixtureRev } from '../../../_data/fixtureRev';
 import { FIN_OWNERS } from '../../../_data/finance';
 import { OnboardingArtifacts, ChecklistRollup } from './OnboardingArtifacts';
 
@@ -14,7 +15,8 @@ interface Props {
 }
 
 export function OnboardingPage({ onOpen }: Props) {
-  const onboarding = useMemo(() => PROPERTIES.filter((p) => p.lifecycleStatus === 'onboarding'), []);
+  const fixtureRev = useFixtureRev();
+  const onboarding = useMemo(() => PROPERTIES.filter((p) => p.lifecycleStatus === 'onboarding'), [fixtureRev]);
   const ownerName = (id: string) => FIN_OWNERS.find((o) => o.id === id)?.name ?? id;
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
 

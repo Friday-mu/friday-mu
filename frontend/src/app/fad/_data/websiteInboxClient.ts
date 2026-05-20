@@ -17,13 +17,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import type { InboxThread } from './fixtures';
 
+export type WebsiteThreadStatus = 'open' | 'in_progress' | 'paid' | 'closed';
+
 interface RawWebsiteThread {
   id: string;
   guest_email?: string | null;
   guest_email_raw?: string | null;
   guest_name?: string | null;
   guest_phone?: string | null;
-  status: 'open' | 'in_progress' | 'paid' | 'closed';
+  status: WebsiteThreadStatus;
   last_event_type?: string | null;
   last_event_at?: string | null;
   guesty_reservation_id?: string | null;
@@ -31,6 +33,21 @@ interface RawWebsiteThread {
   guesty_reservation_status?: string | null;
   notes?: string | null;
   event_count?: number | string;
+}
+
+export interface WebsiteInquiryThread {
+  id: string;
+  status: WebsiteThreadStatus;
+  guestName: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  propertyCode?: string;
+  reservationId?: string;
+  subject: string;
+  notes?: string;
+  lastEventType?: string;
+  updatedAt: string;
+  eventCount: number;
 }
 
 function mapWebsiteToInboxThread(r: RawWebsiteThread): InboxThread {
@@ -61,9 +78,32 @@ function mapWebsiteToInboxThread(r: RawWebsiteThread): InboxThread {
   };
 }
 
+function mapWebsiteToInquiryThread(r: RawWebsiteThread): WebsiteInquiryThread {
+  const guestName = r.guest_name || r.guest_email_raw || r.guest_email || 'Anonymous';
+  return {
+    id: r.id,
+    status: r.status,
+    guestName,
+    guestEmail: r.guest_email_raw || r.guest_email || undefined,
+    guestPhone: r.guest_phone || undefined,
+    propertyCode: r.guesty_listing_id || undefined,
+    reservationId: r.guesty_reservation_id || undefined,
+    subject: r.last_event_type ? `${r.last_event_type} from ${guestName}` : 'Website inquiry',
+    notes: r.notes || undefined,
+    lastEventType: r.last_event_type || undefined,
+    updatedAt: r.last_event_at || new Date().toISOString(),
+    eventCount: Number(r.event_count || 0),
+  };
+}
+
 export async function loadWebsiteThreads(): Promise<InboxThread[]> {
   const data = await apiFetch('/api/inbox/website/threads') as { results?: RawWebsiteThread[] };
   return (data?.results || []).map(mapWebsiteToInboxThread);
+}
+
+export async function loadWebsiteInquiryThreads(): Promise<WebsiteInquiryThread[]> {
+  const data = await apiFetch('/api/inbox/website/threads') as { results?: RawWebsiteThread[] };
+  return (data?.results || []).map(mapWebsiteToInquiryThread);
 }
 
 export interface UseWebsiteThreadsResult {
@@ -84,6 +124,32 @@ export function useWebsiteThreads(): UseWebsiteThreadsResult {
     loadWebsiteThreads()
       .then(setThreads)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load website inbox'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  return { threads, loading, error, refetch };
+}
+
+export interface UseWebsiteInquiryThreadsResult {
+  threads: WebsiteInquiryThread[] | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+}
+
+export function useWebsiteInquiryThreads(): UseWebsiteInquiryThreadsResult {
+  const [threads, setThreads] = useState<WebsiteInquiryThread[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    loadWebsiteInquiryThreads()
+      .then(setThreads)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load website inquiries'))
       .finally(() => setLoading(false));
   }, []);
 
