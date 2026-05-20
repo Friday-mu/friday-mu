@@ -752,8 +752,10 @@ html.fad-dark .inbox-collapse-btn { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
   background: var(--color-background-primary);
 }
 .inbox-chip {
+  flex: 0 0 auto;
   padding: 4px 10px;
   font-size: 11px;
+  white-space: nowrap;
   background: transparent;
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-full);

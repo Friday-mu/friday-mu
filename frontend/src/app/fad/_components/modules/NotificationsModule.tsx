@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useCurrentRole, useCurrentUserId } from '../usePermissions';
 import { TASK_USERS } from '../../_data/tasks';
@@ -312,10 +312,19 @@ function ListRow({ notif, selected, showAi, onSelect, onToggleRead }: {
   const read = isRead(notif.id);
   const ctx = getContext(notif.id);
   const snoozed = isSnoozedNow(ctx);
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onSelect();
+    }
+  };
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={handleKeyDown}
       className={'notif-list-row' + (read ? ' read' : '') + (selected ? ' selected' : '') + (snoozed ? ' snoozed' : '')}
       title={showAi && notif.aiReason ? `Ranked: ${notif.aiReason}` : notif.title}
     >
@@ -343,7 +352,7 @@ function ListRow({ notif, selected, showAi, onSelect, onToggleRead }: {
       <button onClick={(e) => { e.stopPropagation(); onToggleRead(); }} className="fad-notif-toggle" title={read ? 'Mark unread' : 'Mark read'}>
         {read ? '○' : '●'}
       </button>
-    </button>
+    </div>
   );
 }
 

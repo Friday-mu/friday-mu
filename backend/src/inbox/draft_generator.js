@@ -426,6 +426,7 @@ ${taskDirective}`;
 async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
   const { revisionInstruction, revisionNumber = 1 } = opts;
   let draftId = null;
+  let conversationRow = null;
 
   try {
     // Defensive direction recheck — at trigger time the row is already
@@ -499,6 +500,7 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
     if (!messageRows.rows[0] || !convRows.rows[0]) {
       throw new Error(`message ${messageId} or conversation ${conversationId} not found`);
     }
+    conversationRow = convRows.rows[0];
 
     // Previous draft body — only fetched on revision so the revision
     // prompt can show what's being rewritten.
@@ -587,6 +589,26 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
           WHERE id = $2 AND state = $3`,
         [DRAFT_FAILED_STATE, draftId, DRAFT_INITIAL_STATE],
       ).catch((err) => console.warn(`[draft-gen] failed-state UPDATE errored: ${err.message}`));
+      const tenantId = conversationRow?.tenant_id;
+      if (tenantId) {
+        resolveGmWatchers(conversationId, tenantId).then((watchers) => {
+          if (watchers.length === 0) return null;
+          return notifyUsers({
+            tenantId,
+            userIds: watchers,
+            type: 'inbox_draft_generation_failed',
+            title: 'Draft generation failed',
+            body: conversationRow?.guest_name
+              ? `Friday could not generate a reply for ${conversationRow.guest_name}.`
+              : 'Friday could not generate a guest reply.',
+            url: `/fad?m=inbox&thread=${conversationId}`,
+            source: 'inbox',
+            sourceId: draftId,
+            priority: 'high',
+            data: { conversationId, draftId, messageId },
+          });
+        }).catch(() => {});
+      }
     }
     return { error: e.message, draftId };
   }

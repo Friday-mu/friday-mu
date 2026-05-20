@@ -59,6 +59,7 @@ export interface InternalNote {
 
 export type DraftState =
   | 'friday_drafting'
+  | 'generation_failed'
   | 'draft_ready'
   | 'under_review'
   | 'approved'

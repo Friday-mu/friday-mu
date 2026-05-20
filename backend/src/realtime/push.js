@@ -1,14 +1,40 @@
 'use strict';
 
 const express = require('express');
+const webpush = require('web-push');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 
 const router = express.Router();
 
+function vapidPublicKey() {
+  return process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+}
+
+function vapidPrivateKey() {
+  return process.env.VAPID_PRIVATE_KEY || '';
+}
+
+function vapidSubject() {
+  return process.env.VAPID_SUBJECT || process.env.VAPID_EMAIL || 'mailto:ops@friday.mu';
+}
+
+function configureWebPush() {
+  const publicKey = vapidPublicKey();
+  const privateKey = vapidPrivateKey();
+  if (!publicKey || !privateKey) return false;
+  try {
+    webpush.setVapidDetails(vapidSubject(), publicKey, privateKey);
+    return true;
+  } catch (e) {
+    console.warn('[push] invalid VAPID configuration:', e.message);
+    return false;
+  }
+}
+
 router.get('/vapid-key', (_req, res) => {
   res.json({
-    publicKey: process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '',
+    publicKey: vapidPublicKey(),
   });
 });
 
@@ -50,4 +76,40 @@ router.post('/subscribe', attachIdentity, async (req, res) => {
   }
 });
 
-module.exports = { router };
+async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fad', tag = undefined, data = {} }) {
+  const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
+  if (!tenantId || ids.length === 0 || !configureWebPush()) return { sent: 0, skipped: true };
+  const { rows } = await query(
+    `SELECT id, endpoint, subscription
+       FROM push_subscriptions
+      WHERE tenant_id = $1
+        AND user_id = ANY($2::uuid[])
+        AND subscription IS NOT NULL`,
+    [tenantId, ids],
+  );
+  let sent = 0;
+  await Promise.all(rows.map(async (row) => {
+    const payload = JSON.stringify({
+      title,
+      body,
+      url,
+      tag,
+      data,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+    });
+    try {
+      await webpush.sendNotification(row.subscription, payload, { TTL: 60 * 60 * 6 });
+      sent += 1;
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        await query(`DELETE FROM push_subscriptions WHERE id = $1`, [row.id]).catch(() => {});
+      } else {
+        console.warn('[push] delivery failed:', e.statusCode || '', e.message);
+      }
+    }
+  }));
+  return { sent, skipped: false };
+}
+
+module.exports = { router, sendPushToUsers };

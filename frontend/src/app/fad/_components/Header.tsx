@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import {
   IconBell,
   IconBook,
@@ -24,6 +24,7 @@ import {
   unreadCount,
   isRead,
   markRead,
+  markUnread,
   markAllRead,
   allNotifications,
   subscribeNotifications,
@@ -248,14 +249,16 @@ function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
       window.location.href = notif.href;
     }
   };
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  };
   const handleToggleRead = (e: MouseEvent) => {
     e.stopPropagation();
     if (read) {
-      // Re-mark as unread
-      const set = new Set([...JSON.parse(localStorage.getItem('fad:notif-read') || '[]')]);
-      set.delete(notif.id);
-      localStorage.setItem('fad:notif-read', JSON.stringify([...set]));
-      window.dispatchEvent(new Event('storage'));
+      markUnread(notif.id);
     } else {
       markRead(notif.id);
     }
@@ -264,9 +267,12 @@ function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
   const tone = notif.severity === 'urgent' ? 'urgent' : notif.severity === 'warn' ? 'warn' : '';
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       className={'fad-notif-row' + (read ? ' read' : '') + ` ${tone}`}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       title={aiSort && notif.aiReason ? `Ranked: ${notif.aiReason}` : notif.title}
     >
       <span className={'fad-notif-dot ' + tone} />
@@ -292,7 +298,7 @@ function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
       >
         {read ? '○' : '●'}
       </button>
-    </button>
+    </div>
   );
 }
 

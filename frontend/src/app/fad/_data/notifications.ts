@@ -18,6 +18,7 @@ import { FIN_EXPENSES } from './finance';
 import { PROPERTIES, portfolioInsights } from './properties';
 import { REVIEWS } from './reviews';
 import { ROSTERS } from './roster';
+import { API_BASE, apiFetch, getToken } from '../../../components/types';
 
 // @demo:logic — Tag: PROD-LOGIC-7 — see frontend/DEMO_CRUFT.md. Replace with real Date.now() / server now().
 const TODAY = '2026-04-27';
@@ -45,6 +46,8 @@ export interface Notification {
   aiPriority?: number;
   /** AI ranking explanation surfaced on hover. */
   aiReason?: string;
+  /** True when the backend notification row has read_at set. */
+  serverRead?: boolean;
 }
 
 type Role = TaskUser['role'];
@@ -115,6 +118,7 @@ export function isSnoozedNow(ctx: UserContext): boolean {
 // ───────────────── Read-state (localStorage Phase 1) ─────────────────
 
 const READ_KEY = 'fad:notif-read';
+const UNREAD_OVERRIDE_KEY = 'fad:notif-unread';
 
 function readSet(): Set<string> {
   if (typeof window === 'undefined') return new Set();
@@ -137,6 +141,9 @@ function writeSet(s: Set<string>): void {
 }
 
 export function isRead(id: string): boolean {
+  if (readOverrideSet().has(id)) return false;
+  const live = liveNotifications?.find((n) => n.id === id);
+  if (live?.serverRead) return true;
   return readSet().has(id);
 }
 
@@ -144,6 +151,11 @@ export function markRead(id: string): void {
   const s = readSet();
   s.add(id);
   writeSet(s);
+  const unread = readOverrideSet();
+  unread.delete(id);
+  writeUnreadOverrideSet(unread);
+  updateLiveReadState([id], true);
+  void postReadState([id], true);
   bumpNotificationsRev();
 }
 
@@ -151,6 +163,11 @@ export function markUnread(id: string): void {
   const s = readSet();
   s.delete(id);
   writeSet(s);
+  const unread = readOverrideSet();
+  unread.add(id);
+  writeUnreadOverrideSet(unread);
+  updateLiveReadState([id], false);
+  void postReadState([id], false);
   bumpNotificationsRev();
 }
 
@@ -158,7 +175,33 @@ export function markAllRead(notifications: Notification[]): void {
   const s = readSet();
   notifications.forEach((n) => s.add(n.id));
   writeSet(s);
+  const ids = notifications.map((n) => n.id);
+  const unread = readOverrideSet();
+  ids.forEach((id) => unread.delete(id));
+  writeUnreadOverrideSet(unread);
+  updateLiveReadState(ids, true);
+  void postReadState(ids, true);
   bumpNotificationsRev();
+}
+
+function readOverrideSet(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(UNREAD_OVERRIDE_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeUnreadOverrideSet(s: Set<string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(UNREAD_OVERRIDE_KEY, JSON.stringify([...s]));
+  } catch {
+    // ignore
+  }
 }
 
 // ───────────────── Per-module contributions ─────────────────
@@ -362,10 +405,151 @@ const SEEDED_NOTIFICATIONS: Notification[] = [
   },
 ];
 
+// ───────────────── Live backend notifications ─────────────────
+
+interface BackendNotificationRow {
+  id: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  url?: string | null;
+  source?: string | null;
+  source_id?: string | null;
+  priority?: 'low' | 'normal' | 'high' | 'urgent' | string | null;
+  data?: Record<string, unknown> | null;
+  read_at?: string | null;
+  created_at: string;
+}
+
+let liveNotifications: Notification[] | null = null;
+let liveLoadStarted = false;
+let liveLoadInFlight = false;
+let liveEventSource: EventSource | null = null;
+
+function normalizeModule(row: BackendNotificationRow): ModuleId {
+  const dataModule = typeof row.data?.module === 'string' ? row.data.module : '';
+  const source = String(row.source || '').toLowerCase();
+  const type = String(row.type || '').toLowerCase();
+  const raw = dataModule || source || type.split('.')[0] || 'inbox';
+  if (raw.includes('team') || raw.includes('inbox') || raw.includes('guest') || raw.includes('website')) return 'inbox';
+  if (raw.includes('operation') || raw.includes('task') || raw.includes('action')) return 'operations';
+  if (raw.includes('calendar')) return 'calendar';
+  if (raw.includes('reservation')) return 'reservations';
+  if (raw.includes('property')) return 'properties';
+  if (raw.includes('review')) return 'reviews';
+  if (raw.includes('finance') || raw.includes('billing')) return 'finance';
+  if (raw.includes('hr') || raw.includes('roster')) return 'hr';
+  if (raw.includes('friday') || raw.includes('consult') || raw.includes('draft')) return 'friday';
+  return 'inbox';
+}
+
+function normalizeSeverity(priority?: string | null): Severity {
+  if (priority === 'urgent') return 'urgent';
+  if (priority === 'high') return 'warn';
+  return 'info';
+}
+
+function mapBackendNotification(row: BackendNotificationRow): Notification {
+  const data = row.data || {};
+  const priority = row.priority || 'normal';
+  const isMention = Boolean(data.isMention)
+    || String(row.type || '').toLowerCase().includes('mention')
+    || String(row.title || '').includes('@');
+  return {
+    id: row.id,
+    title: row.title,
+    body: row.body || '',
+    ts: row.created_at,
+    severity: normalizeSeverity(priority),
+    module: normalizeModule(row),
+    sourceId: row.source_id || undefined,
+    href: row.url || undefined,
+    isMention,
+    serverRead: Boolean(row.read_at),
+  };
+}
+
+function mergeLiveNotifications(rows: BackendNotificationRow[] | Notification[]): void {
+  const incoming = rows.map((row) => ('ts' in row ? row : mapBackendNotification(row as BackendNotificationRow)));
+  const byId = new Map<string, Notification>();
+  [...(liveNotifications || []), ...incoming].forEach((n) => byId.set(n.id, n));
+  liveNotifications = [...byId.values()].sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  bumpNotificationsRev();
+}
+
+function updateLiveReadState(ids: string[], read: boolean): void {
+  if (!liveNotifications || ids.length === 0) return;
+  const idSet = new Set(ids);
+  liveNotifications = liveNotifications.map((n) => idSet.has(n.id) ? { ...n, serverRead: read } : n);
+}
+
+async function postReadState(ids: string[], read: boolean): Promise<void> {
+  if (!liveNotifications || ids.length === 0) return;
+  try {
+    await apiFetch('/api/events/notifications/mark-read', {
+      method: 'POST',
+      body: JSON.stringify({ ids, read }),
+    });
+  } catch {
+    // Keep optimistic local state; the next successful load will reconcile.
+  }
+}
+
+async function loadLiveNotifications(): Promise<void> {
+  if (liveLoadInFlight) return;
+  liveLoadInFlight = true;
+  try {
+    const data = await apiFetch('/api/events/notifications') as { notifications?: BackendNotificationRow[] };
+    liveNotifications = (data.notifications || [])
+      .map(mapBackendNotification)
+      .sort((a, b) => (a.ts < b.ts ? 1 : -1));
+    bumpNotificationsRev();
+  } catch {
+    // Backend may be absent in local fixture-only preview. Keep seeded fallback.
+  } finally {
+    liveLoadInFlight = false;
+  }
+}
+
+function connectLiveNotifications(): void {
+  if (typeof window === 'undefined' || liveEventSource) return;
+  const token = getToken();
+  if (!token || typeof EventSource === 'undefined') return;
+  liveEventSource = new EventSource(`${API_BASE}/api/events/stream?token=${encodeURIComponent(token)}`);
+  liveEventSource.addEventListener('notification.created', (event) => {
+    try {
+      const parsed = JSON.parse((event as MessageEvent).data || '{}');
+      const rows = parsed?.payload?.notifications;
+      if (Array.isArray(rows)) mergeLiveNotifications(rows);
+    } catch {
+      // Ignore malformed event payloads; EventSource will keep running.
+    }
+  });
+  liveEventSource.onerror = () => {
+    // Let the browser retry; keep the last known notification set rendered.
+  };
+}
+
+function ensureLiveNotificationsStarted(): void {
+  if (typeof window === 'undefined' || liveLoadStarted) return;
+  liveLoadStarted = true;
+  void loadLiveNotifications();
+  connectLiveNotifications();
+}
+
 // ───────────────── Aggregator + ranking ─────────────────
 
 export function allNotifications(role: Role, userId: string): Notification[] {
   if (role === 'external') return [];
+  ensureLiveNotificationsStarted();
+  if (liveNotifications) {
+    const visible = liveNotifications.filter((n) => {
+      const ctx = getContext(n.id);
+      if (ctx.forwardedTo && ctx.forwardedTo !== userId) return false;
+      return true;
+    });
+    return rankNotifications(visible);
+  }
   const merged = [...SEEDED_NOTIFICATIONS, ...moduleNotifications(role, userId)];
   // Dedupe by id
   const seen = new Set<string>();
@@ -459,6 +643,7 @@ export function bumpNotificationsRev(): void {
 }
 
 export function subscribeNotifications(cb: (rev: number) => void): () => void {
+  ensureLiveNotificationsStarted();
   subs.add(cb);
   return () => subs.delete(cb);
 }

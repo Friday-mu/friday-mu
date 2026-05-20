@@ -32,7 +32,7 @@ const { translateText, getConversationLanguageFallback } = require('../ai/transl
 const { guestyRequest } = require('../website_inbox/guesty');
 const { detectActions } = require('./action_detector');
 const { checkAutoResolve } = require('./auto_resolve');
-const { publishFadEvent } = require('../realtime');
+const { publishFadEvent, notifyUsers, resolveGmWatchers } = require('../realtime');
 
 // Feature flag — set FAD_ACTION_DETECTOR_DISABLED=true on the backend
 // env to stop post-send commitment detection. Rollback handle for
@@ -222,6 +222,7 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
       `UPDATE drafts SET state = 'send_failed', updated_at = NOW() WHERE id = $1`,
       [draftId],
     ).catch(() => {});
+    notifySendFailed(draftRow.tenant_id, draftRow.conversation_id, draftId, e.message).catch(() => {});
     return res.status(502).json({
       error: 'guesty_send_failed',
       message: e.message || 'upstream send error',
@@ -479,6 +480,7 @@ router.post('/:id/retry', attachIdentity, async (req, res) => {
         // Revert to send_failed so the user can try again after the
         // guest replies (or via template).
         await query(`UPDATE drafts SET state = 'send_failed', updated_at = NOW() WHERE id = $1`, [draftId]);
+        notifySendFailed(draft.tenant_id, draft.conversation_id, draftId, 'WhatsApp 24h window closed').catch(() => {});
         return res.status(409).json({
           error: 'whatsapp_window_expired',
           message: 'WhatsApp 24h window closed — guest must message first',
@@ -491,6 +493,7 @@ router.post('/:id/retry', attachIdentity, async (req, res) => {
     const messageBody = stripProtocolTags(draft.translated_content || draft.draft_body || '');
     if (!messageBody.trim()) {
       await query(`UPDATE drafts SET state = 'send_failed', updated_at = NOW() WHERE id = $1`, [draftId]);
+      notifySendFailed(draft.tenant_id, draft.conversation_id, draftId, 'Empty draft body').catch(() => {});
       return res.status(400).json({ error: 'empty_body' });
     }
 
@@ -499,6 +502,7 @@ router.post('/:id/retry', attachIdentity, async (req, res) => {
       sendResult = await sendViaGuesty(draft.guesty_conversation_id, messageBody, channel);
     } catch (e) {
       await query(`UPDATE drafts SET state = 'send_failed', updated_at = NOW() WHERE id = $1`, [draftId]).catch(() => {});
+      notifySendFailed(draft.tenant_id, draft.conversation_id, draftId, e.message).catch(() => {});
       return res.status(502).json({ error: 'guesty_send_failed', message: e.message });
     }
     const guestyMessageId =
@@ -609,7 +613,7 @@ router.post('/:id/dismiss', attachIdentity, async (req, res) => {
       `UPDATE drafts
          SET state = 'dismissed', next_retry_at = NULL, updated_at = NOW()
        WHERE id = $1
-         AND state = 'send_failed'
+         AND state IN ('send_failed', 'generation_failed')
        RETURNING *`,
       [draftId],
     );
@@ -622,5 +626,23 @@ router.post('/:id/dismiss', attachIdentity, async (req, res) => {
     res.status(500).json({ error: 'dismiss_failed', message: e.message });
   }
 });
+
+async function notifySendFailed(tenantId, conversationId, draftId, reason) {
+  if (!tenantId || !conversationId) return;
+  const watchers = await resolveGmWatchers(conversationId, tenantId);
+  if (watchers.length === 0) return;
+  await notifyUsers({
+    tenantId,
+    userIds: watchers,
+    type: 'inbox_send_failed',
+    title: 'Guest reply failed to send',
+    body: reason ? `A guest reply needs attention: ${reason}` : 'A guest reply needs attention.',
+    url: `/fad?m=inbox&thread=${conversationId}`,
+    source: 'inbox',
+    sourceId: draftId,
+    priority: 'urgent',
+    data: { conversationId, draftId },
+  });
+}
 
 module.exports = router;

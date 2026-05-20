@@ -66,6 +66,7 @@ const { randomUUID } = require('crypto');
 const multer = require('multer');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
+const { notifyUsers, publishFadEvent } = require('../realtime');
 
 const router = express.Router();
 
@@ -282,6 +283,24 @@ function shapeUser(row) {
     email: row.email,
     role: row.role,
   };
+}
+
+async function notifyTeamMessage({ tenantId, actorUserId, recipientUserIds, type, title, body, url, sourceId, data = {} }) {
+  const ids = [...new Set((recipientUserIds || []).filter(Boolean).map(String))]
+    .filter((id) => id !== String(actorUserId));
+  if (ids.length === 0) return;
+  await notifyUsers({
+    tenantId,
+    userIds: ids,
+    type,
+    title,
+    body,
+    url,
+    source: 'team_inbox',
+    sourceId,
+    priority: type.includes('mention') || type.includes('dm') ? 'high' : 'normal',
+    data: { module: 'inbox', ...data },
+  });
 }
 
 // ─── Channels ───────────────────────────────────────────────────────
@@ -640,7 +659,7 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
   }
   try {
     const { rows: chRows } = await query(
-      `SELECT id, visibility FROM team_channels WHERE id = $1 AND tenant_id = $2`,
+      `SELECT id, visibility, channel_key, name FROM team_channels WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.tenantId],
     );
     if (chRows.length === 0) return res.status(404).json({ error: 'Channel not found' });
@@ -688,6 +707,22 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
       const attachmentMap = await loadAttachmentsForMessages([insRows[0].id], 'channel');
       insRows[0]._attachments = attachmentMap.get(insRows[0].id) || [];
     }
+    publishFadEvent({
+      tenantId: req.tenantId,
+      type: 'team.channel_message',
+      payload: { channelId: ch.id, messageId: insRows[0].id, authorUserId: userId },
+    }).catch(() => {});
+    notifyTeamMessage({
+      tenantId: req.tenantId,
+      actorUserId: userId,
+      recipientUserIds: mentions,
+      type: 'team_channel_mention',
+      title: `${req.identity?.displayName || req.identity?.username || 'Someone'} mentioned you in #${ch.channel_key || ch.name || 'team'}`,
+      body: text.slice(0, 180),
+      url: `/fad?m=inbox&team=channel:${ch.id}`,
+      sourceId: insRows[0].id,
+      data: { channelId: ch.id, messageId: insRows[0].id, isMention: true, emailNotification: true },
+    }).catch(() => {});
     res.json({ message: shapeMessage(insRows[0], 'channel') });
   } catch (e) {
     console.error('[team_inbox] channel send error:', e.message);
@@ -946,6 +981,22 @@ router.post('/dms/:id/messages', attachIdentity, async (req, res) => {
       `UPDATE team_dms SET last_message_at = NOW() WHERE id = $1`,
       [dm.id],
     );
+    publishFadEvent({
+      tenantId: req.tenantId,
+      type: 'team.dm_message',
+      payload: { dmId: dm.id, messageId: ins[0].id, authorUserId: userId },
+    }).catch(() => {});
+    notifyTeamMessage({
+      tenantId: req.tenantId,
+      actorUserId: userId,
+      recipientUserIds: dm.participant_user_ids,
+      type: 'team_dm_message',
+      title: `DM from ${req.identity?.displayName || req.identity?.username || 'Friday team'}`,
+      body: text.slice(0, 180),
+      url: `/fad?m=inbox&team=dm:${dm.id}`,
+      sourceId: ins[0].id,
+      data: { dmId: dm.id, messageId: ins[0].id, emailNotification: true },
+    }).catch(() => {});
     res.json({ message: shapeMessage({ ...ins[0], dm_id: dm.id }, 'dm') });
   } catch (e) {
     console.error('[team_inbox] dm send error:', e.message);

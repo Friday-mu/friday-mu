@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   INBOX_INTERNAL_NOTES,
   type InboxEntity,
+  type InboxDraft,
   type InboxMessage,
   type InboxThread,
   type InternalNote,
@@ -17,6 +18,9 @@ import {
   reviseDraft,
   sendCompose,
   sendWhatsAppTemplate,
+  retryDraft,
+  failDraft,
+  dismissDraft,
   isReviewReady,
   markRead,
 } from '../../_data/draftsClient';
@@ -71,6 +75,7 @@ import {
   IconBell,
   IconCheck,
   IconChevron,
+  IconClose,
   IconClock,
   IconFilter,
   IconGlobe,
@@ -79,6 +84,7 @@ import {
   IconPaperclip,
   IconPin,
   IconPlus,
+  IconRefresh,
   IconSend,
   IconSparkle,
   IconUsers,
@@ -253,6 +259,9 @@ export function InboxModule({ onAskFriday }: Props) {
   // send_failed surface differently (queued-draft retry cards inline in
   // the thread, not in DraftPanel) — out of scope for v1.
   const activeDraft = thread?.drafts?.find((d) => isReviewReady(d.state));
+  const problemDraft = thread?.drafts?.find((d) =>
+    d.state === 'send_failed' || d.state === 'send_queued' || d.state === 'generation_failed',
+  );
   const prevDraftRevRef = useRef<number | undefined>(undefined);
 
   // Action wiring. The parent owns the API calls + the 5s undo; DraftPanel
@@ -416,6 +425,47 @@ export function InboxModule({ onAskFriday }: Props) {
         setDraftError(msg);
         fireToast(msg);
       })
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleRetryProblemDraft = (draft: InboxDraft) => {
+    setDraftBusy(true);
+    setDraftError(null);
+    retryDraft(draft.id)
+      .then(() => {
+        fireToast('Retrying send');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Retry failed';
+        setDraftError(msg);
+        fireToast(msg);
+      })
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleFailQueuedDraft = (draft: InboxDraft) => {
+    setDraftBusy(true);
+    failDraft(draft.id)
+      .then(() => {
+        fireToast('Marked as failed');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => fireToast(e?.message || 'Could not mark failed'))
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleDismissProblemDraft = (draft: InboxDraft) => {
+    setDraftBusy(true);
+    dismissDraft(draft.id)
+      .then(() => {
+        fireToast('Dismissed');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => fireToast(e?.message || 'Dismiss failed'))
       .finally(() => setDraftBusy(false));
   };
 
@@ -995,6 +1045,16 @@ export function InboxModule({ onAskFriday }: Props) {
                 user was actually drafting; the compose textarea below
                 already exposes the draft surface. */}
           </div>
+          {problemDraft && (
+            <DraftProblemCard
+              draft={problemDraft}
+              busy={draftBusy}
+              error={draftError}
+              onRetry={() => handleRetryProblemDraft(problemDraft)}
+              onMarkFailed={() => handleFailQueuedDraft(problemDraft)}
+              onDismiss={() => handleDismissProblemDraft(problemDraft)}
+            />
+          )}
           {/* Friday Consult — when open, this becomes the primary surface
               for both reviewing AI drafts AND composing manual replies.
               The DraftPanel + compose box collapse so the operator has
@@ -1816,6 +1876,90 @@ function InternalNoteBubble({ note }: { note: InternalNote }) {
       </div>
       <div style={{ color: 'var(--color-text-primary)', lineHeight: 1.5 }}>
         {renderNoteWithMentions(note.body)}
+      </div>
+    </div>
+  );
+}
+
+function DraftProblemCard({
+  draft,
+  busy,
+  error,
+  onRetry,
+  onMarkFailed,
+  onDismiss,
+}: {
+  draft: InboxDraft;
+  busy: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onMarkFailed: () => void;
+  onDismiss: () => void;
+}) {
+  const isQueued = draft.state === 'send_queued';
+  const isGenerationFailed = draft.state === 'generation_failed';
+  const title = isQueued
+    ? 'Reply queued'
+    : isGenerationFailed
+      ? 'Draft generation failed'
+      : 'Reply failed to send';
+  const body = isQueued
+    ? 'Friday has not confirmed this reply was sent yet. Keep an eye on the thread or mark it failed if the queue is stuck.'
+    : isGenerationFailed
+      ? 'Friday could not generate a reply for this guest message. Ask Friday manually or dismiss the failed draft.'
+      : 'The guest reply did not go out. Retry when the channel is available, or dismiss after handling it manually.';
+
+  return (
+    <div
+      style={{
+        margin: '0 12px 8px',
+        padding: '10px 12px',
+        borderRadius: 'var(--radius-md)',
+        background: isQueued ? 'rgba(245, 158, 11, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+        border: `0.5px solid ${isQueued ? 'rgba(245, 158, 11, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start',
+      }}
+      role="status"
+    >
+      <IconBell size={14} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{title}</div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>{body}</div>
+        {draft.body && !isGenerationFailed && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: 8,
+              fontSize: 12,
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-background-primary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              maxHeight: 80,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {draft.body}
+          </div>
+        )}
+        {error && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--color-text-danger)' }}>{error}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        {isQueued ? (
+          <button className="btn ghost sm" disabled={busy} onClick={onMarkFailed}>
+            <IconClose size={12} /> Mark failed
+          </button>
+        ) : !isGenerationFailed ? (
+          <button className="btn primary sm" disabled={busy} onClick={onRetry}>
+            <IconRefresh size={12} /> Retry
+          </button>
+        ) : null}
+        <button className="btn ghost sm" disabled={busy} onClick={onDismiss}>
+          Dismiss
+        </button>
       </div>
     </div>
   );

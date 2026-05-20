@@ -46,6 +46,7 @@ import { Toaster } from './Toaster';
 import { useEnabledModules } from '../_data/useEnabledModules';
 import { useAnnexA } from '../_data/useAnnexA';
 import { useTenantCurrency } from '../_data/useTenantCurrency';
+import { apiFetch } from '../../../components/types';
 
 type Theme = 'light' | 'dark';
 
@@ -122,13 +123,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
     // hard block — the modal renders over everything until they reset.
     (async () => {
       try {
-        const res = await fetch('/api/auth/me', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('gms_token')}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.must_change_password) setMustChangePassword(true);
-        }
+        const data = await apiFetch('/api/auth/me');
+        if (data?.must_change_password) setMustChangePassword(true);
       } catch (_e) {
         // Non-fatal — worst case they reset later.
       }

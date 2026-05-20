@@ -3,6 +3,8 @@
 const express = require('express');
 const { pool, query } = require('../database/client');
 const { attachIdentity, decodeJwt } = require('../design/auth');
+const { sendPushToUsers } = require('./push');
+const { sendEmail } = require('../website_inbox/resend');
 
 const router = express.Router();
 const clients = new Map();
@@ -113,18 +115,19 @@ router.get('/notifications', attachIdentity, async (req, res) => {
 
 router.post('/notifications/mark-read', attachIdentity, async (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const read = req.body?.read !== false;
   try {
     if (ids.length === 0) {
       await query(
         `UPDATE fad_notifications
-            SET read_at = NOW()
-          WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL`,
+            SET read_at = ${read ? 'NOW()' : 'NULL'}
+          WHERE tenant_id = $1 AND user_id = $2`,
         [req.tenantId, req.identity.userId],
       );
     } else {
       await query(
         `UPDATE fad_notifications
-            SET read_at = NOW()
+            SET read_at = ${read ? 'NOW()' : 'NULL'}
           WHERE tenant_id = $1 AND user_id = $2 AND id = ANY($3::uuid[])`,
         [req.tenantId, req.identity.userId, ids],
       );
@@ -192,7 +195,73 @@ async function notifyUsers({ tenantId, userIds, type, title, body = null, url = 
     type: 'notification.created',
     payload: { notifications: inserted },
   });
+  sendPushToUsers({
+    tenantId,
+    userIds: ids,
+    title,
+    body: body || '',
+    url: url || '/fad',
+    tag: type,
+    data: { source, sourceId, type, ...data },
+  }).catch((e) => {
+    console.warn('[realtime] push fan-out failed:', e.message);
+  });
+  sendEmailNotifications({
+    tenantId,
+    userIds: ids,
+    type,
+    title,
+    body,
+    url,
+    data,
+  }).catch((e) => {
+    console.warn('[realtime] email fan-out failed:', e.message);
+  });
   return inserted;
+}
+
+function shouldEmailNotification(type, data = {}) {
+  const t = String(type || '').toLowerCase();
+  if (t === 'inbox_new_message' || t === 'inbox.message_received') return true;
+  if (t.includes('team') && (t.includes('mention') || t.includes('dm'))) return true;
+  if (data.emailNotification === true) return true;
+  return false;
+}
+
+async function sendEmailNotifications({ tenantId, userIds, type, title, body = '', url = null, data = {} }) {
+  if (!shouldEmailNotification(type, data)) return { sent: 0, skipped: true };
+  const { rows } = await query(
+    `SELECT id, email, display_name
+       FROM users
+      WHERE tenant_id = $1
+        AND id = ANY($2::uuid[])
+        AND is_active = TRUE
+        AND email IS NOT NULL
+        AND email <> ''`,
+    [tenantId, userIds],
+  );
+  let sent = 0;
+  await Promise.all(rows.map(async (user) => {
+    try {
+      await sendEmail({
+        to: user.email,
+        toName: user.display_name || null,
+        subject: `[Friday] ${title}`,
+        body: `${body || title}\n\nOpen in FAD: ${absoluteFadUrl(url)}`,
+      });
+      sent += 1;
+    } catch (e) {
+      console.warn(`[realtime] email notification failed for ${user.id}:`, e.message);
+    }
+  }));
+  return { sent, skipped: false };
+}
+
+function absoluteFadUrl(url) {
+  const base = process.env.FAD_PUBLIC_URL || process.env.PUBLIC_APP_URL || 'https://admin.friday.mu';
+  if (!url) return base;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${base.replace(/\/$/, '')}/${String(url).replace(/^\//, '')}`;
 }
 
 async function resolveGmWatchers(conversationId, tenantId) {
