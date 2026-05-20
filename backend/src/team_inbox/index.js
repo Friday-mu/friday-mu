@@ -625,7 +625,9 @@ router.post(
   },
 );
 
-// Send a channel message. Validates @mentions are channel members.
+// Send a channel message. Validates @mentions are real tenant users.
+// Private channels remain member-only; public channels may mention any
+// active tenant user because public membership is lazily backfilled.
 router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
   const userId = req.identity?.userId;
   if (!userId) return res.status(401).json({ error: 'No user context' });
@@ -680,13 +682,21 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
         return res.status(400).json({ error: 'Parent message not found in this channel, or is itself a reply' });
       }
     }
-    // Drop mentions of non-members (channel might be private and the
-    // mentioned user isn't in it; silently drop rather than 400).
+    // Drop invalid mentions silently rather than blocking the message.
+    // Private channels only keep members; public channels keep active
+    // tenant users even if their public-channel membership has not been
+    // autojoined yet.
     if (mentions.length > 0) {
-      const { rows: valid } = await query(
-        `SELECT user_id FROM team_channel_members WHERE channel_id = $1 AND user_id = ANY($2::uuid[])`,
-        [ch.id, mentions],
-      );
+      const { rows: valid } = ch.visibility === 'private'
+        ? await query(
+          `SELECT user_id FROM team_channel_members WHERE channel_id = $1 AND user_id = ANY($2::uuid[])`,
+          [ch.id, mentions],
+        )
+        : await query(
+          `SELECT id AS user_id FROM users
+           WHERE tenant_id = $1 AND is_active = TRUE AND id = ANY($2::uuid[])`,
+          [req.tenantId, mentions],
+        );
       const validSet = new Set(valid.map((v) => v.user_id));
       mentions = mentions.filter((m) => validSet.has(m));
     }

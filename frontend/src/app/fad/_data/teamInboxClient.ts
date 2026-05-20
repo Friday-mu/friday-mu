@@ -541,25 +541,60 @@ export function useTenantTeamUsers(): {
 
 // ─── @mention text-parsing helpers (client-side) ────────────────────
 
-/** Naive mention parser: matches `@<displayName-or-username>` tokens.
- *  Returns the matched substrings + the resolved user IDs. The mention
- *  text stays in the body verbatim; the server validates the IDs are
- *  channel members (and silently drops anyone who isn't). */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function mentionBoundaryRe(alias: string): RegExp {
+  const escaped = escapeRegExp(alias.trim()).replace(/\s+/g, '\\s+');
+  return new RegExp(`^${escaped}(?=$|[\\s.,;:!?()[\\]{}<>])`, 'i');
+}
+
+/** Resolve typed @mentions to live user UUIDs.
+ *  Supports @username, @Display Name, @DisplayName, and unique @FirstName.
+ *  The text stays verbatim; the server still validates mention IDs. */
 export function parseMentions(text: string, users: LiveUser[]): { mentions: string[]; matches: string[] } {
-  const mentions: string[] = [];
+  const mentions = new Set<string>();
   const matches: string[] = [];
-  const re = /@(\w[\w.-]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const handle = m[1].toLowerCase();
-    const u = users.find(
-      (u) => u.username.toLowerCase() === handle
-        || u.displayName.toLowerCase().replace(/\s+/g, '') === handle.replace(/\s+/g, ''),
-    );
-    if (u) {
-      mentions.push(u.id);
-      matches.push(m[0]);
+
+  const firstNameCounts = new Map<string, number>();
+  for (const user of users) {
+    const first = user.displayName.trim().split(/\s+/)[0]?.toLowerCase();
+    if (first) firstNameCounts.set(first, (firstNameCounts.get(first) ?? 0) + 1);
+  }
+
+  const aliases: Array<{ userId: string; alias: string; re: RegExp }> = [];
+  const seenAliases = new Set<string>();
+  for (const user of users) {
+    const candidates = [
+      user.username,
+      user.displayName,
+      user.displayName.replace(/\s+/g, ''),
+    ];
+    const first = user.displayName.trim().split(/\s+/)[0];
+    if (first && firstNameCounts.get(first.toLowerCase()) === 1) candidates.push(first);
+
+    for (const raw of candidates) {
+      const alias = raw.trim();
+      if (!alias) continue;
+      const key = `${user.id}:${alias.toLowerCase()}`;
+      if (seenAliases.has(key)) continue;
+      seenAliases.add(key);
+      aliases.push({ userId: user.id, alias, re: mentionBoundaryRe(alias) });
     }
   }
-  return { mentions: [...new Set(mentions)], matches };
+  aliases.sort((a, b) => b.alias.length - a.alias.length);
+
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== '@') continue;
+    if (i > 0 && /[\w.-]/.test(text[i - 1])) continue;
+    const tail = text.slice(i + 1);
+    const hit = aliases.find((a) => a.re.test(tail));
+    if (hit) {
+      const matched = tail.match(hit.re)?.[0] ?? hit.alias;
+      mentions.add(hit.userId);
+      matches.push(`@${matched}`);
+    }
+  }
+  return { mentions: [...mentions], matches };
 }
