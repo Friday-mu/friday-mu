@@ -131,6 +131,7 @@ function dayIndexFor(iso: string, days: ViewDay[]): number {
 
 function eventHour(iso: string, fallback: number): number {
   if (!iso || /^\d{4}-\d{2}-\d{2}$/.test(iso)) return fallback;
+  if (/T00:00:00(?:\.000)?Z?$/.test(iso)) return fallback;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return fallback;
   return d.getHours();

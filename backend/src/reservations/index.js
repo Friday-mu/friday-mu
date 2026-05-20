@@ -86,7 +86,22 @@ router.get('/', attachIdentity, async (req, res) => {
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 200;
     const { rows } = await query(
-      `SELECT r.*, l.nickname AS listing_nickname,
+      `WITH ranked AS (
+         SELECT r.*,
+                ROW_NUMBER() OVER (
+                  PARTITION BY r.tenant_id, COALESCE(NULLIF(r.confirmation_code, ''), r.guesty_id)
+                  ORDER BY
+                    CASE
+                      WHEN r.source = 'scrape-l3' OR r.guesty_id LIKE 'scrape:%' THEN 1
+                      ELSE 0
+                    END,
+                    r.updated_at DESC NULLS LAST,
+                    r.created_at DESC NULLS LAST
+                ) AS reservation_rank
+           FROM guesty_reservations r
+          WHERE ${filters.join(' AND ')}
+       )
+       SELECT r.*, l.nickname AS listing_nickname,
               cal.nights_cached AS calendar_nights_cached,
               cal.blocked_nights AS calendar_blocked_nights,
               cal.total_minor AS calendar_total_minor,
@@ -94,7 +109,7 @@ router.get('/', attachIdentity, async (req, res) => {
               cal.max_price_minor AS calendar_max_price_minor,
               cal.currency_code AS calendar_currency_code,
               cal.synced_at AS calendar_synced_at
-       FROM guesty_reservations r
+       FROM ranked r
        LEFT JOIN guesty_listings l
          ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
        LEFT JOIN LATERAL (
@@ -113,7 +128,7 @@ router.get('/', attachIdentity, async (req, res) => {
             AND gc.date >= r.check_in_date
             AND gc.date < r.check_out_date
        ) cal ON TRUE
-       WHERE ${filters.join(' AND ')}
+       WHERE r.reservation_rank = 1
        ORDER BY r.check_in_date ASC NULLS LAST, r.created_at ASC
        LIMIT ${limit}`,
       params,
