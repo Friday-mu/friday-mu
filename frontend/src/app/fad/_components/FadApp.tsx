@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type MouseEvent } from 'react';
-import { MODULES, type ModuleDef } from '../_data/modules';
+import { MODULES, visibleSubPagesForModuleRole, type ModuleDef } from '../_data/modules';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { CommandPalette } from './CommandPalette';
@@ -40,18 +40,68 @@ import { DesignModule } from './modules/DesignModule';
 import { TenantSettingsModule } from './modules/TenantSettingsModule';
 import { BillingModule } from './modules/BillingModule';
 import { AdminAnalyticsModule } from './modules/AdminAnalyticsModule';
-import { MODULE_RESOURCE, PermissionsProvider } from './usePermissions';
+import { canSeeModule, MODULE_RESOURCE, PermissionsProvider, useCurrentRole } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
 import { useEnabledModules } from '../_data/useEnabledModules';
 import { useAnnexA } from '../_data/useAnnexA';
 import { useTenantCurrency } from '../_data/useTenantCurrency';
 import { apiFetch } from '../../../components/types';
+import { FR_TENANT_ID, useCurrentTenantId } from '../_data/useTenantIdentity';
+import { demoDataEnabled, liveOnlyMode, LIVE_WIRED_MODULE_IDS } from '../_data/demoMode';
 
 type Theme = 'light' | 'dark';
 
 interface FadAppProps {
   initialFridayFs?: boolean;
+}
+
+interface FadQaSnapshot {
+  activeModule: string;
+  subPage: string | null;
+  screenLabel: string;
+  fridayFullscreen: boolean;
+  fridayDrawerOpen: boolean;
+  commandPaletteOpen: boolean;
+  mobileNavOpen: boolean;
+  sidebarCollapsed: boolean;
+  theme: Theme;
+  hydrated: boolean;
+  role: ReturnType<typeof useCurrentRole>;
+  tenantId: string | null;
+  isFrTenant: boolean;
+  liveOnly: boolean;
+  demoDataEnabled: boolean;
+  enabledModulesLoaded: boolean;
+  enabledModules: string[] | null;
+  viewport: {
+    width: number;
+    height: number;
+    isMobile: boolean;
+  };
+  pwa: {
+    displayModeStandalone: boolean;
+    serviceWorkerController: boolean;
+    notificationPermission: NotificationPermission | 'unsupported';
+  };
+}
+
+interface FadQaApi {
+  version: 1;
+  snapshot: () => FadQaSnapshot;
+  navigate: (moduleId: string, subPage?: string | null) => boolean;
+  closeOverlays: () => void;
+  openFriday: () => void;
+  closeFriday: () => void;
+  openSidebar: () => void;
+  closeSidebar: () => void;
+  setDemoData: (enabled: boolean) => void;
+}
+
+declare global {
+  interface Window {
+    __FAD_QA__?: FadQaApi;
+  }
 }
 
 export default function FadApp(props: FadAppProps = {}) {
@@ -63,7 +113,10 @@ export default function FadApp(props: FadAppProps = {}) {
 }
 
 function FadAppInner({ initialFridayFs = true }: FadAppProps) {
+  const role = useCurrentRole();
   const { enabledSet } = useEnabledModules();
+  const tenantId = useCurrentTenantId();
+  const isFrTenant = tenantId === FR_TENANT_ID;
   // Side-effect only: hot-patches ANNEX_A_DEFAULT.vatRate (and any future
   // per-tenant constants) on first fetch. The return value is unused —
   // helpers like withVAT/vatOf read ANNEX_A_DEFAULT directly. See
@@ -85,8 +138,13 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   // with "Tourist tax MRA registration" instead of the generic module+sub-page).
   // Cleared when the drawer closes or the user switches modules.
   const [fridayScopeOverride, setFridayScopeOverride] = useState<string | null>(null);
-  // Default landing = Friday fullscreen. The mount effect below flips this to false if the URL has ?m=<module>.
-  const [fridayFs, setFridayFs] = useState(initialFridayFs);
+  // Default landing = Friday fullscreen unless the URL deep-links to a module.
+  // Initialize from the browser URL so the URL sync effect cannot erase ?m=...
+  // before the mount parser applies it.
+  const [fridayFs, setFridayFs] = useState(() => {
+    if (typeof window === 'undefined') return initialFridayFs;
+    return initialFridayFs && !new URLSearchParams(window.location.search).has('m');
+  });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>('light');
   const [bellOpen, setBellOpen] = useState(false);
@@ -143,10 +201,11 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       setActive(urlMod);
       setFridayFs(false);
       const modDef = MODULES.find((m) => m.id === urlMod);
-      if (urlSub && modDef?.subPages?.some((s) => s.id === urlSub)) {
+      const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+      if (urlSub && visibleSubPages.some((s) => s.id === urlSub)) {
         setSubPage(urlSub);
-      } else if (modDef?.subPages?.length) {
-        setSubPage(modDef.subPages[0].id);
+      } else if (visibleSubPages.length) {
+        setSubPage(visibleSubPages[0].id);
       }
     }
     setCollapsed(localStorage.getItem('fad:collapsed') === '1');
@@ -157,7 +216,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       setTheme('dark');
     }
     setHydrated(true);
-  }, []);
+  }, [role]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('fad-dark', theme === 'dark');
@@ -256,8 +315,137 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
     setFridayScopeOverride(null);
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || process.env.NEXT_PUBLIC_FAD_QA === '0') return;
+
+    const readPwaState = () => {
+      const nav = window.navigator as Navigator & { standalone?: boolean };
+      const displayModeStandalone =
+        Boolean(window.matchMedia?.('(display-mode: standalone)').matches) ||
+        nav.standalone === true;
+      return {
+        displayModeStandalone,
+        serviceWorkerController: Boolean(window.navigator.serviceWorker?.controller),
+        notificationPermission:
+          typeof Notification === 'undefined' ? 'unsupported' as const : Notification.permission,
+      };
+    };
+
+    const closeOverlays = () => {
+      setBellOpen(false);
+      setHelpOpen(false);
+      setAvatarOpen(false);
+      setPaletteOpen(false);
+      setFridayOpen(false);
+      setMobileNavOpen(false);
+      setFridayScopeOverride(null);
+    };
+
+    const api: FadQaApi = {
+      version: 1,
+      snapshot: () => ({
+        activeModule: active,
+        subPage,
+        screenLabel: fridayFs ? 'Friday Fullscreen' : mod.label,
+        fridayFullscreen: fridayFs,
+        fridayDrawerOpen: fridayOpen && !fridayFs,
+        commandPaletteOpen: paletteOpen,
+        mobileNavOpen,
+        sidebarCollapsed: collapsed,
+        theme,
+        hydrated,
+        role,
+        tenantId,
+        isFrTenant,
+        liveOnly: liveOnlyMode(),
+        demoDataEnabled: demoDataEnabled(),
+        enabledModulesLoaded: Boolean(enabledSet),
+        enabledModules: enabledSet ? Array.from(enabledSet).sort() : null,
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          isMobile: window.innerWidth <= 768,
+        },
+        pwa: readPwaState(),
+      }),
+      navigate: (moduleId, requestedSubPage = null) => {
+        const target = MODULES.find((m) => m.id === moduleId);
+        if (!target) return false;
+        if (!canSeeModule(role, target.id)) return false;
+        if (enabledSet && !enabledSet.has(target.id)) return false;
+        if (target.id === 'admin-analytics' && !isFrTenant) return false;
+
+        const visibleSubPages = visibleSubPagesForModuleRole(target, role);
+        const nextSubPage =
+          requestedSubPage && visibleSubPages.some((s) => s.id === requestedSubPage)
+            ? requestedSubPage
+            : visibleSubPages[0]?.id ?? null;
+
+        setActive(target.id);
+        setSubPage(nextSubPage);
+        setFridayFs(false);
+        closeOverlays();
+        return true;
+      },
+      closeOverlays,
+      openFriday: () => {
+        setFridayFs(false);
+        closeOverlays();
+        setFridayOpen(true);
+      },
+      closeFriday,
+      openSidebar: () => setMobileNavOpen(true),
+      closeSidebar: () => setMobileNavOpen(false),
+      setDemoData: (enabled) => {
+        window.localStorage.setItem('fad:demo-data', enabled ? '1' : '0');
+        window.location.reload();
+      },
+    };
+
+    window.__FAD_QA__ = api;
+    document.documentElement.dataset.fadQaReady = 'true';
+    return () => {
+      if (window.__FAD_QA__ === api) delete window.__FAD_QA__;
+      delete document.documentElement.dataset.fadQaReady;
+    };
+  }, [
+    active,
+    avatarOpen,
+    bellOpen,
+    collapsed,
+    enabledSet,
+    fridayFs,
+    fridayOpen,
+    helpOpen,
+    hydrated,
+    isFrTenant,
+    mobileNavOpen,
+    mod.label,
+    paletteOpen,
+    role,
+    subPage,
+    tenantId,
+    theme,
+  ]);
+
   return (
-    <div className="fad-app">
+    <div
+      className="fad-app"
+      data-qa="fad-app"
+      data-qa-ready={hydrated ? 'true' : 'false'}
+      data-qa-active-module={active}
+      data-qa-sub-page={subPage || ''}
+      data-qa-role={role}
+      data-qa-tenant={tenantId || ''}
+      data-qa-live-only={liveOnlyMode() ? 'true' : 'false'}
+      data-qa-demo-data={demoDataEnabled() ? 'true' : 'false'}
+      data-qa-theme={theme}
+      data-qa-friday-fs={fridayFs ? 'true' : 'false'}
+      data-qa-friday-drawer-open={fridayOpen && !fridayFs ? 'true' : 'false'}
+      data-qa-command-palette-open={paletteOpen ? 'true' : 'false'}
+      data-qa-mobile-nav-open={mobileNavOpen ? 'true' : 'false'}
+      data-qa-sidebar-collapsed={collapsed ? 'true' : 'false'}
+    >
       <UpdateBanner />
       <Header
         onOpenPalette={() => setPaletteOpen(true)}
@@ -293,7 +481,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
           onSelect={(id) => {
             setActive(id);
             const modDef = MODULES.find((m) => m.id === id);
-            setSubPage(modDef?.subPages?.length ? modDef.subPages[0].id : null);
+            const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+            setSubPage(visibleSubPages.length ? visibleSubPages[0].id : null);
             setFridayFs(false);
           }}
           onSelectSub={(modId, sub) => {
@@ -314,19 +503,25 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
           className="fad-main"
           key={fridayFs ? 'fs' : active + ':' + (subPage || '')}
           data-screen-label={fridayFs ? 'Friday Fullscreen' : mod.label}
+          data-qa="fad-main"
+          data-qa-screen-label={fridayFs ? 'Friday Fullscreen' : mod.label}
+          data-qa-module={fridayFs ? 'friday-fullscreen' : active}
+          data-qa-sub-page={fridayFs ? '' : subPage || ''}
+          data-qa-friday-fs={fridayFs ? 'true' : 'false'}
         >
           {fridayFs ? (
             <FridayFullscreen
               onNavigate={(m) => {
                 setActive(m);
                 const modDef = MODULES.find((md) => md.id === m);
-                setSubPage(modDef?.subPages?.length ? modDef.subPages[0].id : null);
+                const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+                setSubPage(visibleSubPages.length ? visibleSubPages[0].id : null);
                 setFridayFs(false);
               }}
               onExit={() => setFridayFs(false)}
             />
           ) : (
-            renderModule(mod, subPage, { theme, toggleTheme, openFriday, finRole, setFinRole, setSubPage, enabledSet })
+            renderModule(mod, subPage, { theme, toggleTheme, openFriday, finRole, setFinRole, setSubPage, enabledSet, isFrTenant })
           )}
         </main>
       </div>
@@ -365,6 +560,7 @@ interface RenderCtx {
   setSubPage: (sub: string) => void;
   /** Tenant-enabled modules. null until /api/tenants/me/modules resolves. */
   enabledSet: Set<string> | null;
+  isFrTenant: boolean;
 }
 
 function renderModule(
@@ -398,11 +594,27 @@ function ModuleNotEnabled({ label }: { label: string }) {
   );
 }
 
+function ModuleLiveOnlyPlaceholder({ label }: { label: string }) {
+  return (
+    <div className="fad-module-body">
+      <div className="card" style={{ padding: 24, maxWidth: 600, margin: '40px auto', textAlign: 'center' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 500 }}>{label} has no live data wiring yet</h3>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
+          Demo data is disabled, so this module is intentionally blank until its backend source is live.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function renderModuleInner(
   mod: ModuleDef,
   subPage: string | null,
   ctx: RenderCtx
 ) {
+  if (liveOnlyMode() && !LIVE_WIRED_MODULE_IDS.has(mod.id)) {
+    return <ModuleLiveOnlyPlaceholder label={mod.label} />;
+  }
   switch (mod.id) {
     case 'inbox':
       return <InboxModule onAskFriday={ctx.openFriday} />;
@@ -456,6 +668,9 @@ function renderModuleInner(
     case 'billing':
       return <BillingModule />;
     case 'admin-analytics':
+      if (!ctx.isFrTenant) {
+        return <ModuleNotEnabled label="Admin Analytics" />;
+      }
       return <AdminAnalyticsModule />;
     case 'syndic':
     case 'agency':

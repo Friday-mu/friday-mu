@@ -40,6 +40,15 @@ function shapeReservation(row) {
     },
     total_amount_minor: row.total_amount_minor != null ? Number(row.total_amount_minor) : null,
     currency_code: row.currency_code,
+    calendar_pricing: {
+      nights_cached: row.calendar_nights_cached != null ? Number(row.calendar_nights_cached) : 0,
+      blocked_nights: row.calendar_blocked_nights != null ? Number(row.calendar_blocked_nights) : 0,
+      total_minor: row.calendar_total_minor != null ? Number(row.calendar_total_minor) : null,
+      min_price_minor: row.calendar_min_price_minor != null ? Number(row.calendar_min_price_minor) : null,
+      max_price_minor: row.calendar_max_price_minor != null ? Number(row.calendar_max_price_minor) : null,
+      currency_code: row.calendar_currency_code || row.currency_code,
+      synced_at: row.calendar_synced_at || null,
+    },
     synced_at: row.synced_at,
   };
 }
@@ -77,10 +86,33 @@ router.get('/', attachIdentity, async (req, res) => {
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 200;
     const { rows } = await query(
-      `SELECT r.*, l.nickname AS listing_nickname
+      `SELECT r.*, l.nickname AS listing_nickname,
+              cal.nights_cached AS calendar_nights_cached,
+              cal.blocked_nights AS calendar_blocked_nights,
+              cal.total_minor AS calendar_total_minor,
+              cal.min_price_minor AS calendar_min_price_minor,
+              cal.max_price_minor AS calendar_max_price_minor,
+              cal.currency_code AS calendar_currency_code,
+              cal.synced_at AS calendar_synced_at
        FROM guesty_reservations r
        LEFT JOIN guesty_listings l
          ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS nights_cached,
+                COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_nights,
+                SUM(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS total_minor,
+                MIN(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS min_price_minor,
+                MAX(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS max_price_minor,
+                COALESCE(MIN(gc.currency_code) FILTER (WHERE gc.currency_code IS NOT NULL), r.currency_code) AS currency_code,
+                MAX(gc.fetched_at) AS synced_at
+           FROM guesty_calendar gc
+          WHERE gc.tenant_id = r.tenant_id
+            AND gc.listing_guesty_id = r.listing_guesty_id
+            AND r.check_in_date IS NOT NULL
+            AND r.check_out_date IS NOT NULL
+            AND gc.date >= r.check_in_date
+            AND gc.date < r.check_out_date
+       ) cal ON TRUE
        WHERE ${filters.join(' AND ')}
        ORDER BY r.check_in_date ASC NULLS LAST, r.created_at ASC
        LIMIT ${limit}`,
@@ -96,10 +128,33 @@ router.get('/', attachIdentity, async (req, res) => {
 router.get('/:guestyId', attachIdentity, async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT r.*, l.nickname AS listing_nickname
+      `SELECT r.*, l.nickname AS listing_nickname,
+              cal.nights_cached AS calendar_nights_cached,
+              cal.blocked_nights AS calendar_blocked_nights,
+              cal.total_minor AS calendar_total_minor,
+              cal.min_price_minor AS calendar_min_price_minor,
+              cal.max_price_minor AS calendar_max_price_minor,
+              cal.currency_code AS calendar_currency_code,
+              cal.synced_at AS calendar_synced_at
        FROM guesty_reservations r
        LEFT JOIN guesty_listings l
          ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS nights_cached,
+                COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_nights,
+                SUM(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS total_minor,
+                MIN(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS min_price_minor,
+                MAX(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS max_price_minor,
+                COALESCE(MIN(gc.currency_code) FILTER (WHERE gc.currency_code IS NOT NULL), r.currency_code) AS currency_code,
+                MAX(gc.fetched_at) AS synced_at
+           FROM guesty_calendar gc
+          WHERE gc.tenant_id = r.tenant_id
+            AND gc.listing_guesty_id = r.listing_guesty_id
+            AND r.check_in_date IS NOT NULL
+            AND r.check_out_date IS NOT NULL
+            AND gc.date >= r.check_in_date
+            AND gc.date < r.check_out_date
+       ) cal ON TRUE
        WHERE r.tenant_id = $1 AND r.guesty_id = $2`,
       [req.tenantId, req.params.guestyId],
     );

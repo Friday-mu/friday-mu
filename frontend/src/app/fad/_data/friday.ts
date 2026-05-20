@@ -1,6 +1,8 @@
 // @demo:data — Friday-the-AI cards + prompts — GET /api/friday/*
 // Tag: PROD-DATA-13 — see frontend/DEMO_CRUFT.md
 
+import type { Resource } from './permissions';
+
 export interface FridayStep {
   type: 'tool';
   name: string;
@@ -46,6 +48,8 @@ export interface FridayReply {
 
 export interface FridayScript {
   match: (q: string) => boolean;
+  /** Permission resource required before this scripted answer may disclose data. */
+  resource?: Resource;
   steps: FridayStep[];
   reply: FridayReply;
 }
@@ -95,6 +99,7 @@ export const FRIDAY_SCRIPTS: FridayScript[] = [
   },
   {
     match: (q) => /tourist tax|mra/i.test(q),
+    resource: 'finance',
     steps: [
       { type: 'tool', name: 'query.finance', args: 'table=tourist_tax, period=Apr 2026', ms: 380 },
       { type: 'tool', name: 'compute.net', args: 'collected - refunded', ms: 200 },
@@ -122,6 +127,7 @@ export const FRIDAY_SCRIPTS: FridayScript[] = [
   },
   {
     match: (q) => /nitzana|ytd|owner statement/i.test(q),
+    resource: 'owners',
     steps: [
       { type: 'tool', name: 'search.owners', args: "name~'Nitzana'", ms: 280 },
       { type: 'tool', name: 'query.finance', args: 'payouts WHERE owner=Nitzana, ytd=2026', ms: 420 },
@@ -152,6 +158,7 @@ export const FRIDAY_SCRIPTS: FridayScript[] = [
   },
   {
     match: (q) => /check.?in|arriving|this week|who's coming/i.test(q),
+    resource: 'reservations',
     steps: [
       { type: 'tool', name: 'query.calendar', args: 'range=Apr 14..20, type=checkin', ms: 300 },
       { type: 'tool', name: 'enrich.guests', args: 'profile lookups', ms: 220 },
@@ -175,6 +182,7 @@ export const FRIDAY_SCRIPTS: FridayScript[] = [
   },
   {
     match: (q) => /draft.*repl|reply|marchand/i.test(q),
+    resource: 'inbox_guest',
     steps: [
       { type: 'tool', name: 'read.thread', args: 'Marchand · Airbnb', ms: 260 },
       { type: 'tool', name: 'read.guest', args: 'Marchand profile · FR, 2nd stay', ms: 180 },
@@ -197,6 +205,7 @@ export const FRIDAY_SCRIPTS: FridayScript[] = [
   },
   {
     match: (q) => /occupancy|north|south|compare/i.test(q),
+    resource: 'owners',
     steps: [{ type: 'tool', name: 'query.intelligence', args: 'occ, GROUP BY area, period=MTD', ms: 420 }],
     reply: {
       text: 'South is leading at 84% MTD; North is 76%. Blue Bay House (South) is the single driver of the gap.',
@@ -219,15 +228,15 @@ export const FRIDAY_SCRIPTS: FridayScript[] = [
   },
 ];
 
-export const DEFAULT_REPLY: { steps: FridayStep[]; reply: FridayReply } = {
+export const DEFAULT_REPLY: { resource?: Resource; steps: FridayStep[]; reply: FridayReply } = {
   steps: [{ type: 'tool', name: 'search.modules', args: 'scanning all', ms: 300 }],
   reply: {
-    text: 'This demo ships with scripted responses — try one of the suggestions below to see Friday tool-call through Inbox, Finance, Calendar or Intelligence.',
+    text: 'This demo ships with scripted responses — try one of the suggestions below to see Friday work through the modules available to your role.',
     cards: [],
     followups: [
       'What needs my attention today?',
-      'How much tourist tax do we owe?',
       "Who's checking in this week?",
+      'Any overdue tasks?',
     ],
   },
 };

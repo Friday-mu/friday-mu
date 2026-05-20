@@ -33,6 +33,7 @@ export const MODULES: ModuleDef[] = [
   // route stub in FadApp.tsx briefly for any deep-linked bookmarks
   // but no sidebar entry.
   { id: 'operations', label: 'Operations', group: 'Today', tier: 'live', ship: 'live', icon: 'IconTasks', path: '/fad/operations', subPages: [
+    { id: 'my', label: 'My tasks' },
     { id: 'overview', label: 'Overview' },
     { id: 'all', label: 'All tasks' },
     { id: 'issues', label: 'Reported issues' },
@@ -116,3 +117,13 @@ export const GROUPS: GroupDef[] = [
   { id: 'Manage', label: 'Manage', tier: 'manage' },
   { id: 'System', label: 'System', tier: 'manage' },
 ];
+
+export function visibleSubPagesForModuleRole(mod: ModuleDef, role: string): SubPage[] {
+  const subPages = mod.subPages ?? [];
+  if (mod.id !== 'operations') return subPages;
+  if (role === 'field') {
+    const allowed = new Set(['my', 'all', 'issues', 'roster']);
+    return subPages.filter((sp) => allowed.has(sp.id));
+  }
+  return subPages.filter((sp) => sp.id !== 'my');
+}

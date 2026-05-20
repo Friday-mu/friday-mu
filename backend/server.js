@@ -914,6 +914,10 @@ app.use('/api/auth/token', apiClientsAuth.router);
 // rather than by the user-session identity.
 const publicListingsRoutes = require('./src/public/listings');
 app.use('/api/public/listings', publicListingsRoutes);
+const publicAvailabilityRoutes = require('./src/public/availability');
+app.use('/api/public/availability', publicAvailabilityRoutes.router);
+const publicReturningGuestRoutes = require('./src/public/returning_guest');
+app.use('/api/public/returning-guest', publicReturningGuestRoutes.router);
 
 // /api/public/chat — multi-provider chat-completions proxy. Replaces
 // the website's three direct LLM integrations (Ask Friday hero,

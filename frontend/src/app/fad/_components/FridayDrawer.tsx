@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FridayCard, FridayStep } from '../_data/friday';
 import { FRIDAY_PROMPTS_HOME, pickScript } from '../_data/friday';
+import { getScope, type Resource } from '../_data/permissions';
 import { aiAsk, type AiAskCitation } from '../_data/designClient';
 import { FCard } from './FridayCards';
 import { IconCheck, IconClose, IconExpand, IconSend, IconSparkle } from './icons';
 import { canSeeFridayCard, useCurrentRole, useCurrentUserId } from './usePermissions';
-import { TASK_USER_BY_ID } from '../_data/tasks';
+import { TASK_USER_BY_ID, type TaskUser } from '../_data/tasks';
 
 interface AIMessage {
   role: 'ai';
@@ -30,6 +31,43 @@ interface AIMessage {
 type UserMessage = { role: 'user'; body: string };
 type Message = UserMessage | AIMessage;
 
+const PROMPT_RESOURCE_BY_CATEGORY: Record<string, Resource | null> = {
+  Today: null,
+  Finance: 'finance',
+  Guests: 'inbox_guest',
+  Ops: 'tasks',
+};
+
+function resourceForPrompt(category: string, prompt: string): Resource | null {
+  if (/tourist tax|Nitzana|refund/i.test(prompt)) return 'finance';
+  if (/Marchand|returning guests|Villa Azur reviews/i.test(prompt)) return 'inbox_guest';
+  if (/occupancy|North vs South/i.test(prompt)) return 'owners';
+  return PROMPT_RESOURCE_BY_CATEGORY[category] ?? null;
+}
+
+export function visibleFridayPromptGroupsForRole(role: TaskUser['role']) {
+  return FRIDAY_PROMPTS_HOME.map((group) => ({
+    ...group,
+    prompts: group.prompts.filter((prompt) => {
+      const resource = resourceForPrompt(group.cat, prompt);
+      return !resource || getScope(role, resource, 'read') !== 'none';
+    }),
+  })).filter((group) => group.prompts.length > 0);
+}
+
+function deniedFridayReply(resource: Resource): AIMessage {
+  return {
+    role: 'ai',
+    scope: '',
+    steps: [],
+    stepsDone: 0,
+    ready: true,
+    text: `That request needs ${resource.replace(/_/g, ' ')} access. I can't pull or summarize it for your current role.`,
+    cards: [],
+    followups: [],
+  };
+}
+
 // Detect the active design project from the URL at submit-time. The
 // header drawer is mounted at the FAD shell level, so its hook
 // doesn't get re-rendered on project navigation — but the URL is
@@ -44,6 +82,7 @@ function activeDesignProjectId(): string | null {
 }
 
 export function useFridayChat(scope: string) {
+  const role = useCurrentRole();
   const [msgs, setMsgs] = useState<Message[]>([]);
 
   const submit = (q: string) => {
@@ -111,6 +150,10 @@ export function useFridayChat(scope: string) {
     // surface (Inbox, Finance, Calendar, etc.) until those modules
     // get their own R-class endpoints.
     const script = pickScript(q);
+    if (script.resource && getScope(role, script.resource, 'read') === 'none') {
+      setMsgs((m) => [...m, user, { ...deniedFridayReply(script.resource!), scope }]);
+      return;
+    }
     const ai: AIMessage = {
       role: 'ai',
       scope,
@@ -310,8 +353,10 @@ export function FridayDrawer({ open, onClose, scope, onNavigate, onExpand }: Pro
   const { msgs, submit } = useFridayChat(scope);
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+  const role = useCurrentRole();
   const currentUserId = useCurrentUserId();
   const greetName = TASK_USER_BY_ID[currentUserId]?.name.split(' ')[0] ?? 'there';
+  const promptGroups = visibleFridayPromptGroupsForRole(role).slice(0, 2);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -332,8 +377,19 @@ export function FridayDrawer({ open, onClose, scope, onNavigate, onExpand }: Pro
 
   return (
     <>
-      <div className={'fad-drawer-overlay' + (open ? ' open' : '')} onClick={onClose} />
-      <aside className={'fad-drawer' + (open ? ' open' : '')} aria-hidden={!open}>
+      <div
+        className={'fad-drawer-overlay' + (open ? ' open' : '')}
+        onClick={onClose}
+        data-qa="fad-friday-drawer-overlay"
+        data-qa-open={open ? 'true' : 'false'}
+      />
+      <aside
+        className={'fad-drawer' + (open ? ' open' : '')}
+        aria-hidden={!open}
+        data-qa="fad-friday-drawer"
+        data-qa-open={open ? 'true' : 'false'}
+        data-qa-scope={scope}
+      >
         <div className="fad-drawer-header">
           <IconSparkle />
           <div className="fad-drawer-title">Ask Friday</div>
@@ -345,27 +401,33 @@ export function FridayDrawer({ open, onClose, scope, onNavigate, onExpand }: Pro
             style={{ marginLeft: 'auto' }}
             title="Fullscreen"
             onClick={onExpand}
+            data-qa="fad-friday-expand"
           >
             <IconExpand />
           </button>
-          <button className="fad-util-btn" onClick={onClose} title="Close">
+          <button className="fad-util-btn" onClick={onClose} title="Close" data-qa="fad-friday-close">
             <IconClose />
           </button>
         </div>
-        <div className="fad-drawer-body friday-body">
+        <div className="fad-drawer-body friday-body" data-qa="fad-friday-drawer-body">
           {msgs.length === 0 && (
             <div className="friday-empty">
               <div className="friday-empty-title">Hi {greetName} — ask me anything.</div>
               <div className="friday-empty-sub">
-                I&apos;ll pull from Inbox, Finance, Calendar, Operations, and the module you&apos;re
-                viewing.
+                I&apos;ll pull only from the modules available to your role.
               </div>
               <div className="friday-prompt-grid">
-                {FRIDAY_PROMPTS_HOME.slice(0, 2).map((g, i) => (
+                {promptGroups.map((g, i) => (
                   <div key={i}>
                     <div className="friday-prompt-cat">{g.cat}</div>
                     {g.prompts.map((p, j) => (
-                      <button key={j} className="friday-prompt-btn" onClick={() => submit(p)}>
+                      <button
+                        key={j}
+                        className="friday-prompt-btn"
+                        onClick={() => submit(p)}
+                        data-qa="fad-friday-prompt"
+                        data-qa-category={g.cat}
+                      >
                         {p}
                       </button>
                     ))}
@@ -379,14 +441,15 @@ export function FridayDrawer({ open, onClose, scope, onNavigate, onExpand }: Pro
           ))}
           <div ref={endRef} />
         </div>
-        <form className="fad-drawer-input" onSubmit={onSubmit}>
+        <form className="fad-drawer-input" onSubmit={onSubmit} data-qa="fad-friday-input-form">
           <input
             placeholder={`Ask about ${scope.toLowerCase()}, or anything else…`}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             autoFocus={open}
+            data-qa="fad-friday-input"
           />
-          <button type="submit" className="btn primary" title="Send">
+          <button type="submit" className="btn primary" title="Send" data-qa="fad-friday-send">
             <IconSend size={14} />
           </button>
         </form>

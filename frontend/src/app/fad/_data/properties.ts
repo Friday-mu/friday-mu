@@ -9,6 +9,7 @@
 // during the migration; full retirement happens in commit 4.
 
 import type { Cohort } from './reviews';
+import { liveOnlyMode } from './demoMode';
 
 // ───────────────── Lifecycle ─────────────────
 
@@ -878,6 +879,10 @@ export const PROPERTIES: Property[] = [
     occupancyYTD: 0.81, occupancy90d: 0.84, adr: 450, rating: 4.84, ratingCount: 33, lastActivityAt: '2026-04-26',
   },
 ];
+
+if (liveOnlyMode()) {
+  PROPERTIES.length = 0;
+}
 
 // ───────────────── Lookups + helpers ─────────────────
 

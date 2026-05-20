@@ -318,6 +318,29 @@ interface ConvDetailResp {
   recommended_channel?: string;
 }
 
+function websiteEventBody(eventType: string, payload?: Record<string, unknown>): string {
+  if (!payload) return eventType;
+  const body = payload.body || payload.message;
+  if (typeof body === 'string' && body.trim()) return body.trim();
+  if (eventType === 'booking.request_submitted') {
+    return [
+      'Booking request submitted.',
+      payload.residence_slug ? `Residence: ${payload.residence_slug}` : null,
+      payload.check_in && payload.check_out ? `Dates: ${payload.check_in} - ${payload.check_out}` : null,
+      payload.party_size ? `Guests: ${payload.party_size}` : null,
+      payload.reference ? `Reference: ${payload.reference}` : null,
+    ].filter(Boolean).join('\n');
+  }
+  if (eventType === 'booking.proof_uploaded') {
+    return [
+      'Payment proof uploaded.',
+      payload.proof_url ? `Proof: ${payload.proof_url}` : null,
+      payload.reference ? `Reference: ${payload.reference}` : null,
+    ].filter(Boolean).join('\n');
+  }
+  return `${eventType}\n${JSON.stringify(payload, null, 2).slice(0, 400)}`;
+}
+
 export async function loadConversations(): Promise<InboxThread[]> {
   const data = await apiFetch('/api/inbox/conversations') as ConvListResp;
   const raw = (data?.conversations || []) as Record<string, unknown>[];
@@ -341,17 +364,32 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
         notes?: string | null;
         last_event_at?: string | null;
       };
-      events?: Array<{ id: string; type: string; ts: string; payload?: Record<string, unknown> }>;
+      events?: Array<{
+        id: string;
+        event_type?: string;
+        type?: string;
+        source?: string;
+        created_at?: string;
+        ts?: string;
+        payload?: Record<string, unknown>;
+      }>;
     };
     const t = data?.thread;
     const events = data?.events || [];
     const guest = t?.guest_name || t?.guest_email_raw || t?.guest_email || 'Anonymous';
-    const messages: InboxMessage[] = events.map((e) => ({
-      from: 'them' as const,
-      name: guest,
-      time: e.ts,
-      body: `${e.type}${e.payload ? `\n${JSON.stringify(e.payload, null, 2).slice(0, 400)}` : ''}`,
-    }));
+    const messages: InboxMessage[] = events.map((e) => {
+      const eventType = String(e.event_type || e.type || 'website.event');
+      const fromUs = e.source === 'fad' || eventType.startsWith('staff.');
+      return {
+        from: fromUs ? 'us' as const : 'them' as const,
+        name: fromUs ? 'Friday' : guest,
+        time: e.created_at || e.ts || new Date().toISOString(),
+        body: websiteEventBody(eventType, e.payload),
+        via: fromUs ? 'Email' : 'Website',
+        viaSystem: fromUs ? 'FAD' : 'Website',
+        viaChannel: fromUs ? 'Email' : 'Website',
+      };
+    });
     return {
       id,
       unread: t?.status === 'open',

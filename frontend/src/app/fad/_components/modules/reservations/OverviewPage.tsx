@@ -8,6 +8,7 @@ import {
   type Reservation,
 } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
+import { liveOnlyMode } from '../../../_data/demoMode';
 
 interface Props {
   onOpen: (reservationId: string) => void;
@@ -38,7 +39,7 @@ export function OverviewPage({ onOpen }: Props) {
   const thirtyDaysOut = dayOffsetISO(today, 30);
 
   const { reservations: liveReservations } = useLiveReservations();
-  const sourceReservations = liveReservations ?? RESERVATIONS;
+  const sourceReservations = liveReservations ?? (liveOnlyMode() ? [] : RESERVATIONS);
 
   const arrivingToday = useMemo(
     () => sourceReservations.filter((r) => r.status !== 'cancelled' && isoDay(r.checkIn) === today),

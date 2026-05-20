@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const { upsertReservationById } = require('./sync');
 const { FR_TENANT_ID } = require('./worker');
 const { isMessageEvent, handleMessageEvent } = require('../inbox/guesty_message_webhook');
+const { refreshCalendarForListing } = require('../guesty_calendar');
 
 const SVIX_SECRET = process.env.GUESTY_SVIX_SECRET;        // whsec_…
 const LEGACY_SECRET = process.env.GUESTY_WEBHOOK_SECRET;   // for scraper
@@ -136,9 +137,19 @@ async function handleWebhook(req, res) {
     return res.json({ ok: true, ignored: 'no reservation id in payload' });
   }
   res.json({ ok: true, queued: reservationId, via: verifiedAs });
-  upsertReservationById(FR_TENANT_ID, reservationId).catch((e) => {
-    console.error(`[guesty/webhook] upsert ${reservationId} failed:`, e.message);
-  });
+  upsertReservationById(FR_TENANT_ID, reservationId)
+    .then((summary) => {
+      if (!summary?.listingId || !summary?.checkInDate || !summary?.checkOutDate) return null;
+      return refreshCalendarForListing({
+        tenantId: FR_TENANT_ID,
+        listingId: summary.listingId,
+        fromIso: summary.checkInDate,
+        toIso: summary.checkOutDate,
+      });
+    })
+    .catch((e) => {
+      console.error(`[guesty/webhook] upsert/calendar refresh ${reservationId} failed:`, e.message);
+    });
 }
 
 module.exports = { handleWebhook };

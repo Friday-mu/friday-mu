@@ -75,13 +75,22 @@ export function Header({
   const dotTone = counts.urgent > 0 ? 'urgent' : counts.total > 0 ? 'unread' : 'none';
 
   return (
-    <header className="fad-header">
-      <div className="fad-brand">
+    <header
+      className="fad-header"
+      data-qa="fad-header"
+      data-qa-role={role}
+      data-qa-user-id={currentUserId}
+      data-qa-bell-open={bellOpen ? 'true' : 'false'}
+      data-qa-help-open={helpOpen ? 'true' : 'false'}
+      data-qa-avatar-open={avatarOpen ? 'true' : 'false'}
+    >
+      <div className="fad-brand" data-qa="fad-brand">
         <button
           className="fad-util-btn"
           onClick={onToggleSidebar}
           title="Toggle sidebar"
           style={{ marginRight: 4 }}
+          data-qa="fad-sidebar-toggle"
         >
           <IconSidebar />
         </button>
@@ -89,13 +98,14 @@ export function Header({
           className="fad-brand-link"
           onClick={onGoHome}
           title="Home · Inbox"
+          data-qa="fad-home"
         >
           <span className="fad-brand-wordmark">fridayOS</span>
         </button>
       </div>
 
-      <div className="fad-ask-wrap">
-        <button className="fad-ask-pill" onClick={onOpenPalette}>
+      <div className="fad-ask-wrap" data-qa="fad-search-wrap">
+        <button className="fad-ask-pill" onClick={onOpenPalette} data-qa="fad-search">
           <IconSearch size={14} />
           <span className="ask-label">
             Search or <span className="ask-friday">Ask Friday</span>…
@@ -104,20 +114,26 @@ export function Header({
         </button>
       </div>
 
-      <div className="fad-utilities">
+      <div className="fad-utilities" data-qa="fad-utilities">
         <RoleSwitcher />
         <button
           className={'fad-util-btn' + (fridayOpen ? ' active' : '')}
           onClick={onOpenFriday}
           title="Ask Friday  ⌘/"
+          data-qa="fad-friday-drawer-toggle"
+          data-qa-active={fridayOpen ? 'true' : 'false'}
         >
           <IconSparkle />
         </button>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-qa="fad-notifications-wrap">
           <button
             className={'fad-util-btn' + (bellOpen ? ' active' : '')}
             onClick={onOpenBell}
             title={counts.total > 0 ? `Notifications · ${counts.total} unread${counts.urgent > 0 ? ` · ${counts.urgent} urgent` : ''}` : 'Notifications'}
+            data-qa="fad-notifications-toggle"
+            data-qa-active={bellOpen ? 'true' : 'false'}
+            data-qa-unread-count={String(counts.total)}
+            data-qa-urgent-count={String(counts.urgent)}
           >
             <IconBell />
             {dotTone !== 'none' && (
@@ -131,11 +147,13 @@ export function Header({
           </button>
           {bellOpen && <NotificationsDropdown role={role} userId={currentUserId} />}
         </div>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-qa="fad-help-wrap">
           <button
             className={'fad-util-btn' + (helpOpen ? ' active' : '')}
             onClick={onOpenHelp}
             title="Help"
+            data-qa="fad-help-toggle"
+            data-qa-active={helpOpen ? 'true' : 'false'}
           >
             <IconHelp />
           </button>
@@ -145,15 +163,19 @@ export function Header({
           className="fad-util-btn fad-theme-toggle"
           onClick={onToggleTheme}
           title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          data-qa="fad-theme-toggle"
+          data-qa-theme={theme}
         >
           {theme === 'dark' ? <IconSun /> : <IconMoon />}
         </button>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-qa="fad-avatar-wrap">
           <button
             onClick={onOpenAvatar}
             className="fad-avatar"
             title="Account"
             style={{ background: currentUser.avatarColor }}
+            data-qa="fad-avatar-toggle"
+            data-qa-active={avatarOpen ? 'true' : 'false'}
           >
             {currentUser.initials}
           </button>

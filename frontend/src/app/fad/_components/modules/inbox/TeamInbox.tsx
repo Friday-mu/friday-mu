@@ -17,6 +17,9 @@ import {
   openDm,
   markChannelRead,
   markDmRead,
+  createChannel,
+  archiveChannel,
+  deleteChannel,
   uploadChannelAttachment,
   uploadDmAttachment,
   addReaction,
@@ -56,7 +59,7 @@ export function TeamInbox({
   // because other surfaces (compose toolbar, send permissions) may need
   // them in follow-ups.
   const _perms = usePermissions();
-  void _perms;
+  const canManageChannels = _perms.role !== 'field' && _perms.role !== 'external';
   // Real DB user ID from JWT — used for matching against backend data
   // (DM participants, reaction "I reacted", message author "is this me?").
   // The role-switcher fixture id from useCurrentUserId() never matches
@@ -237,6 +240,7 @@ export function TeamInbox({
       attachmentList: m.attachments,
       // Pass-through extras when present in meta (call/task-link fixtures).
       callMeta: (m.meta as { call?: TeamCallMeta })?.call,
+      designProject: readDesignProjectMeta(m.meta),
     }));
     if (mentionsOnly) {
       msgs = msgs.filter((m) => m.mentions?.includes(currentUserId));
@@ -326,6 +330,48 @@ export function TeamInbox({
     setPendingAttachments([]);
   };
 
+  const handleCreateChannel = async () => {
+    const name = window.prompt('Channel name');
+    if (!name?.trim()) return;
+    const purpose = window.prompt('Purpose (optional)') || '';
+    try {
+      const channel = await createChannel({ name: name.trim(), purpose: purpose.trim(), visibility: 'public' });
+      await refetchChannels();
+      openSelection({ kind: 'channel', channelKey: channel.key });
+      trackEvent('team_channel_create', { channel_id: channel.id, channel_key: channel.key });
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Failed to create channel');
+    }
+  };
+
+  const handleArchiveSelectedChannel = async () => {
+    if (!selectedChannel) return;
+    if (!window.confirm(`Archive #${selectedChannel.name}?`)) return;
+    try {
+      await archiveChannel(selectedChannel.id);
+      await refetchChannels();
+      const next = visibleChannels.find((c) => c.id !== selectedChannel.id && c.isMember);
+      setSelection(next ? { kind: 'channel', channelKey: next.key } : visibleDms[0] ? { kind: 'dm', dm: visibleDms[0] } : null);
+      trackEvent('team_channel_archive', { channel_id: selectedChannel.id, channel_key: selectedChannel.key });
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Failed to archive channel');
+    }
+  };
+
+  const handleDeleteSelectedChannel = async () => {
+    if (!selectedChannel) return;
+    if (!window.confirm(`Delete #${selectedChannel.name} and its message history? This cannot be undone.`)) return;
+    try {
+      await deleteChannel(selectedChannel.id);
+      await refetchChannels();
+      const next = visibleChannels.find((c) => c.id !== selectedChannel.id && c.isMember);
+      setSelection(next ? { kind: 'channel', channelKey: next.key } : visibleDms[0] ? { kind: 'dm', dm: visibleDms[0] } : null);
+      trackEvent('team_channel_delete', { channel_id: selectedChannel.id, channel_key: selectedChannel.key });
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Failed to delete channel');
+    }
+  };
+
   const targetTitle = selection?.kind === 'channel'
     ? selectedChannel?.name ?? '#unknown'
     : selection?.kind === 'dm' ? dmTitleFromUsers(selection.dm, currentUserId, tenantUserById) : '';
@@ -351,7 +397,8 @@ export function TeamInbox({
   // No channels and no DMs visible → render a single empty state instead of
   // showing the chrome around an "#unknown" placeholder channel. Demo
   // fixtures were purged 2026-05-13 (design-be-19); the live team-channels
-  // surface lands with Tier E (bw-7/8/9).
+  // surface is now real, so keep this state truthful when the tenant simply
+  // has no visible channels or DMs yet.
   if (visibleChannels.length === 0 && visibleDms.length === 0) {
     return (
       <div
@@ -371,7 +418,7 @@ export function TeamInbox({
           No team channels or DMs yet.
           <br />
           <span style={{ fontSize: 12 }}>
-            Internal team chat lands with the next inbox sprint.
+            Ask an admin to add you to a channel, or start a DM once teammates sync.
           </span>
         </div>
       </div>
@@ -424,6 +471,28 @@ export function TeamInbox({
             }}
           >
             Channels
+            {canManageChannels && (
+              <button
+                type="button"
+                onClick={handleCreateChannel}
+                title="Add channel"
+                style={{
+                  float: 'right',
+                  marginTop: -4,
+                  width: 24,
+                  height: 24,
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-background-primary)',
+                  color: 'var(--color-text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: 15,
+                  lineHeight: '20px',
+                }}
+              >
+                +
+              </button>
+            )}
           </div>
           {visibleChannels.filter((c) => c.isMember).map((c) => {
             const isSel = selection.kind === 'channel' && selection.channelKey === c.key;
@@ -635,6 +704,48 @@ export function TeamInbox({
                     <IconUsers size={11} />{' '}
                     {selectedChannel.visibility === 'private' ? 'Private · members' : 'Members'}
                   </button>
+                  {canManageChannels && (
+                    <>
+                      <span className="sep">·</span>
+                      <button
+                        type="button"
+                        onClick={handleArchiveSelectedChannel}
+                        title="Archive this channel"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'inherit',
+                          fontSize: 'inherit',
+                          padding: 0,
+                          textDecoration: 'underline',
+                          textDecorationStyle: 'dotted',
+                          textUnderlineOffset: 2,
+                        }}
+                      >
+                        Archive
+                      </button>
+                      <span className="sep">·</span>
+                      <button
+                        type="button"
+                        onClick={handleDeleteSelectedChannel}
+                        title="Delete this channel"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--color-danger, #b42318)',
+                          fontSize: 'inherit',
+                          padding: 0,
+                          textDecoration: 'underline',
+                          textDecorationStyle: 'dotted',
+                          textUnderlineOffset: 2,
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -1037,6 +1148,64 @@ function MessageAttachments({ attachments }: { attachments: TeamMessage['attachm
   );
 }
 
+function readDesignProjectMeta(meta: Record<string, unknown> | null): TeamMessage['designProject'] {
+  const project = meta?.designProject;
+  if (!project || typeof project !== 'object' || Array.isArray(project)) return undefined;
+  const row = project as Record<string, unknown>;
+  if (typeof row.id !== 'string' || typeof row.name !== 'string') return undefined;
+  return {
+    id: row.id,
+    name: row.name,
+    slug: typeof row.slug === 'string' ? row.slug : null,
+    source: typeof row.source === 'string' ? row.source : undefined,
+    confidence: typeof row.confidence === 'number' ? row.confidence : undefined,
+  };
+}
+
+function DesignProjectChip({ project }: { project?: TeamMessage['designProject'] }) {
+  if (!project) return null;
+  const href = `/fad?m=design&pid=${encodeURIComponent(project.id)}`;
+  const title = project.source === 'inferred'
+    ? 'Design project inferred from this message'
+    : project.source === 'inherited'
+      ? 'Design project inherited from the parent thread'
+      : 'Open linked design project';
+  return (
+    <a
+      href={href}
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        maxWidth: '100%',
+        marginTop: 6,
+        padding: '3px 7px',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+        background: 'var(--color-background-secondary)',
+        color: 'var(--color-text-secondary)',
+        fontSize: 11,
+        lineHeight: 1.3,
+        textDecoration: 'none',
+      }}
+    >
+      <span style={{ fontWeight: 600 }}>Design</span>
+      <span
+        style={{
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {project.name}
+      </span>
+      {project.source === 'inferred' && <span style={{ color: 'var(--color-text-tertiary)' }}>auto</span>}
+    </a>
+  );
+}
+
 // ───────────────── Message components ─────────────────
 
 // Semantic reaction set per Ishant 2026-05-17:
@@ -1129,6 +1298,7 @@ function TextMessage({
       <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>
         {renderMentions(message.text, message.mentions, usersById)}
       </div>
+      <DesignProjectChip project={message.designProject} />
       <MessageAttachments attachments={message.attachmentList} />
       {/* Aggregated reactions — one chip per emoji with count.
           Operator clicks their own chip to remove; clicks others to add. */}

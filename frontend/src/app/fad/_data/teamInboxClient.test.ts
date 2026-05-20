@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseMentions, type LiveUser } from './teamInboxClient';
+
+const outboundSendMock = vi.fn();
+
+vi.mock('./outboundClient', () => ({
+  outboundSend: outboundSendMock,
+}));
 
 const users: LiveUser[] = [
   {
@@ -69,5 +75,78 @@ describe('parseMentions', () => {
       mentions: [],
       matches: [],
     });
+  });
+});
+
+describe('TeamInbox send contracts', () => {
+  beforeEach(() => {
+    outboundSendMock.mockReset();
+  });
+
+  it('sends channel messages through outbound with parsed mention UUIDs', async () => {
+    outboundSendMock.mockResolvedValue({
+      ok: true,
+      upstream: {
+        message: {
+          id: 'msg-channel',
+          text: '@mary please check',
+          mentions: ['22222222-2222-4222-8222-222222222222'],
+        },
+      },
+    });
+
+    const { sendChannelMessage } = await import('./teamInboxClient');
+    const message = await sendChannelMessage('channel-uuid', {
+      text: '@mary please check',
+      mentions: ['22222222-2222-4222-8222-222222222222'],
+      attachmentIds: ['att-1'],
+      meta: { designProjectId: 'project-1' },
+    });
+
+    expect(outboundSendMock).toHaveBeenCalledWith({
+      audience: 'team',
+      channel: 'team-channel',
+      contextId: 'channel-uuid',
+      body: '@mary please check',
+      meta: {
+        designProjectId: 'project-1',
+        mentions: ['22222222-2222-4222-8222-222222222222'],
+        attachmentIds: ['att-1'],
+      },
+    });
+    expect(message.id).toBe('msg-channel');
+  });
+
+  it('sends DM thread replies through outbound with parent message and mention UUIDs', async () => {
+    outboundSendMock.mockResolvedValue({
+      ok: true,
+      upstream: {
+        message: {
+          id: 'msg-reply',
+          text: '@Ishant done',
+          parentMessageId: 'parent-1',
+          mentions: ['11111111-1111-4111-8111-111111111111'],
+        },
+      },
+    });
+
+    const { sendDmMessage } = await import('./teamInboxClient');
+    const message = await sendDmMessage('dm-uuid', {
+      text: '@Ishant done',
+      mentions: ['11111111-1111-4111-8111-111111111111'],
+      parentMessageId: 'parent-1',
+    });
+
+    expect(outboundSendMock).toHaveBeenCalledWith({
+      audience: 'team',
+      channel: 'team-dm',
+      contextId: 'dm-uuid',
+      body: '@Ishant done',
+      meta: {
+        mentions: ['11111111-1111-4111-8111-111111111111'],
+        parentMessageId: 'parent-1',
+      },
+    });
+    expect(message.id).toBe('msg-reply');
   });
 });

@@ -123,6 +123,41 @@ export async function loadChannels(): Promise<LiveChannel[]> {
   return data?.channels ?? [];
 }
 
+export async function createChannel(body: {
+  name: string;
+  purpose?: string;
+  visibility?: 'public' | 'private';
+}): Promise<LiveChannel> {
+  const data = await apiFetch('/api/team/channels', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as { channel: LiveChannel };
+  return data.channel;
+}
+
+export async function updateChannel(channelId: string, body: {
+  name?: string;
+  purpose?: string;
+  visibility?: 'public' | 'private';
+}): Promise<LiveChannel> {
+  const data = await apiFetch(`/api/team/channels/${channelId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }) as { channel: LiveChannel };
+  return data.channel;
+}
+
+export async function archiveChannel(channelId: string): Promise<LiveChannel> {
+  const data = await apiFetch(`/api/team/channels/${channelId}/archive`, {
+    method: 'POST',
+  }) as { channel: LiveChannel };
+  return data.channel;
+}
+
+export async function deleteChannel(channelId: string): Promise<void> {
+  await apiFetch(`/api/team/channels/${channelId}`, { method: 'DELETE' });
+}
+
 export async function loadChannelDetail(channelId: string): Promise<{
   channel: LiveChannel;
   members: Array<LiveUser & { channelRole: 'admin' | 'member'; joinedAt: string }>;
@@ -154,7 +189,7 @@ export async function sendChannelMessage(channelId: string, body: {
   // 2026-05-17). Backend's team branch loops back to
   // /api/team/channels/:id/messages — same downstream as legacy.
   const { outboundSend } = await import('./outboundClient');
-  const meta: Record<string, unknown> = {};
+  const meta: Record<string, unknown> = { ...(body.meta ?? {}) };
   if (body.mentions) meta.mentions = body.mentions;
   if (body.parentMessageId) meta.parentMessageId = body.parentMessageId;
   if (body.attachmentIds) meta.attachmentIds = body.attachmentIds;
@@ -228,7 +263,7 @@ export async function sendDmMessage(dmId: string, body: {
   // 2026-05-17). Backend's team branch loops back to
   // /api/team/dms/:id/messages — same downstream as legacy.
   const { outboundSend } = await import('./outboundClient');
-  const meta: Record<string, unknown> = {};
+  const meta: Record<string, unknown> = { ...(body.meta ?? {}) };
   if (body.mentions) meta.mentions = body.mentions;
   if (body.parentMessageId) meta.parentMessageId = body.parentMessageId;
   if (body.attachmentIds) meta.attachmentIds = body.attachmentIds;

@@ -19,6 +19,7 @@ import { PROPERTIES, portfolioInsights } from './properties';
 import { REVIEWS } from './reviews';
 import { ROSTERS } from './roster';
 import { API_BASE, apiFetch, getToken } from '../../../components/types';
+import { getScope, type Resource } from './permissions';
 
 // @demo:logic — Tag: PROD-LOGIC-7 — see frontend/DEMO_CRUFT.md. Replace with real Date.now() / server now().
 const TODAY = '2026-04-27';
@@ -51,6 +52,26 @@ export interface Notification {
 }
 
 type Role = TaskUser['role'];
+
+const NOTIFICATION_MODULE_RESOURCES: Partial<Record<ModuleId, Resource[]>> = {
+  inbox: ['inbox_guest', 'inbox_team', 'inbox_group', 'inbox_syndic'],
+  operations: ['tasks'],
+  calendar: ['reservations'],
+  reservations: ['reservations'],
+  properties: ['properties'],
+  reviews: ['owners'],
+  finance: ['finance'],
+  hr: ['hr_staff', 'hr_roster', 'hr_time_off', 'hr_stats'],
+};
+
+function canSeeNotification(role: Role, notification: Notification): boolean {
+  if (role === 'external') return false;
+  if (role === 'director') return true;
+  if (notification.module === 'friday') return true;
+  const resources = NOTIFICATION_MODULE_RESOURCES[notification.module];
+  if (!resources || resources.length === 0) return true;
+  return resources.some((resource) => getScope(role, resource, 'read') !== 'none');
+}
 
 // ───────────────── User context: notes, snooze, waiting-on, forward ─────────────────
 
@@ -544,13 +565,15 @@ export function allNotifications(role: Role, userId: string): Notification[] {
   ensureLiveNotificationsStarted();
   if (liveNotifications) {
     const visible = liveNotifications.filter((n) => {
+      if (!canSeeNotification(role, n)) return false;
       const ctx = getContext(n.id);
       if (ctx.forwardedTo && ctx.forwardedTo !== userId) return false;
       return true;
     });
     return rankNotifications(visible);
   }
-  const merged = [...SEEDED_NOTIFICATIONS, ...moduleNotifications(role, userId)];
+  const merged = [...SEEDED_NOTIFICATIONS, ...moduleNotifications(role, userId)]
+    .filter((n) => canSeeNotification(role, n));
   // Dedupe by id
   const seen = new Set<string>();
   const unique = merged.filter((n) => {

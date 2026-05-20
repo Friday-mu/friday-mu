@@ -189,12 +189,18 @@ router.post('/send', attachIdentity, async (req, res) => {
       const path = channel === 'team-channel'
         ? `/api/team/channels/${encodeURIComponent(contextId)}/messages`
         : `/api/team/dms/${encodeURIComponent(contextId)}/messages`;
+      const messageMeta = meta && typeof meta === 'object' && !Array.isArray(meta) ? { ...meta } : {};
+      delete messageMeta.mentions;
+      delete messageMeta.parentMessageId;
+      delete messageMeta.attachmentIds;
+      delete messageMeta.kind;
       const teamBody = {
         text: body,
         ...(Array.isArray(meta.mentions)        ? { mentions:        meta.mentions } : {}),
         ...(meta.parentMessageId                ? { parentMessageId: meta.parentMessageId } : {}),
         ...(Array.isArray(meta.attachmentIds)   ? { attachmentIds:   meta.attachmentIds } : {}),
         ...(meta.kind                           ? { kind:            meta.kind } : {}),
+        ...(Object.keys(messageMeta).length > 0 ? { meta:            messageMeta } : {}),
       };
       const { data } = await axios.post(`${FAD_BACKEND_INTERNAL_URL}${path}`, teamBody, {
         timeout: 15_000,

@@ -10,7 +10,7 @@
 //   node scripts/issue-api-client.js \
 //     --name=friday-website \
 //     --tenant=00000000-0000-0000-0000-000000000001 \
-//     --scopes=listings:read,availability:read,reservations:write,email:send,ai:chat,events:read \
+//     --scopes=listings:read,availability:read,reservations:read,reservations:write,email:send,ai:chat,events:read \
 //     --description="Vercel-hosted friday.mu marketing site"
 //
 //   # Rotate an existing client's secret (everything but the secret

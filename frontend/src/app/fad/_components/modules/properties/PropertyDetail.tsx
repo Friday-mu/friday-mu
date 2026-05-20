@@ -19,7 +19,9 @@ import {
 } from '../../../_data/properties';
 import { COHORT_LABEL } from '../../../_data/reviews';
 import { FIN_OWNERS } from '../../../_data/finance';
-import { RESERVATIONS } from '../../../_data/reservations';
+import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
+import { useLiveReservations } from '../../../_data/reservationsClient';
+import { liveOnlyMode } from '../../../_data/demoMode';
 import { useCurrentRole } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { PhotoGallery } from './PhotoGallery';
@@ -776,9 +778,11 @@ function DescriptionEditor({
 // ───────────────── Tab: Reservations ─────────────────
 
 function ReservationsTab({ property }: { property: Property }) {
+  const { reservations: liveReservations } = useLiveReservations();
+  const sourceReservations = liveReservations ?? (liveOnlyMode() ? [] : RESERVATIONS);
   const reservations = useMemo(
-    () => RESERVATIONS.filter((r) => r.propertyCode === property.code).slice(0, 20),
-    [property.code],
+    () => sourceReservations.filter((r) => r.propertyCode === property.code).slice(0, 20),
+    [property.code, sourceReservations],
   );
 
   if (reservations.length === 0) {
@@ -789,8 +793,9 @@ function ReservationsTab({ property }: { property: Property }) {
     );
   }
 
-  const upcoming = reservations.filter((r) => r.checkIn >= '2026-04-27');
-  const past = reservations.filter((r) => r.checkIn < '2026-04-27');
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = reservations.filter((r) => r.checkIn.slice(0, 10) >= today);
+  const past = reservations.filter((r) => r.checkIn.slice(0, 10) < today);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -812,7 +817,7 @@ function ReservationsTab({ property }: { property: Property }) {
   );
 }
 
-function RsvRow({ reservation }: { reservation: typeof RESERVATIONS[number] }) {
+function RsvRow({ reservation }: { reservation: Reservation }) {
   return (
     <button
       onClick={() => { window.location.href = `/fad?m=reservations&sub=overview&rsv=${reservation.id}`; }}

@@ -35,6 +35,15 @@ interface RawReservation {
   };
   total_amount_minor?: number | null;
   currency_code?: string | null;
+  calendar_pricing?: {
+    nights_cached?: number | null;
+    blocked_nights?: number | null;
+    total_minor?: number | null;
+    min_price_minor?: number | null;
+    max_price_minor?: number | null;
+    currency_code?: string | null;
+    synced_at?: string | null;
+  };
   synced_at?: string | null;
 }
 
@@ -63,6 +72,8 @@ export function transformReservation(r: RawReservation): Reservation {
   const guestName = [r.guest?.first_name, r.guest?.last_name].filter(Boolean).join(' ').trim()
     || (r.guest?.email ? r.guest.email.split('@')[0] : 'Guest');
   const total = r.total_amount_minor != null ? r.total_amount_minor / 100 : 0;
+  const calendarTotal = r.calendar_pricing?.total_minor != null ? r.calendar_pricing.total_minor / 100 : undefined;
+  const nightsCached = r.calendar_pricing?.nights_cached ?? 0;
   const adults = r.party?.adults ?? 0;
   const children = r.party?.children ?? 0;
   const infants = r.party?.infants ?? 0;
@@ -91,6 +102,16 @@ export function transformReservation(r: RawReservation): Reservation {
     guestEmail: r.guest?.email || undefined,
     guestPhone: r.guest?.phone || undefined,
     totalAmount: total,
+    calendarPricing: {
+      nightsCached,
+      blockedNights: r.calendar_pricing?.blocked_nights ?? 0,
+      totalAmount: calendarTotal,
+      nightlyAverage: calendarTotal != null && nightsCached > 0 ? Math.round(calendarTotal / nightsCached) : undefined,
+      minNightly: r.calendar_pricing?.min_price_minor != null ? r.calendar_pricing.min_price_minor / 100 : undefined,
+      maxNightly: r.calendar_pricing?.max_price_minor != null ? r.calendar_pricing.max_price_minor / 100 : undefined,
+      currency: (r.calendar_pricing?.currency_code || r.currency_code || 'EUR') as Reservation['currency'],
+      syncedAt: r.calendar_pricing?.synced_at || undefined,
+    },
     touristTax: 0,
     balanceDue: 0,
     payoutStatus: 'pending',
@@ -106,8 +127,8 @@ export function transformReservation(r: RawReservation): Reservation {
 export async function loadReservations(): Promise<Reservation[]> {
   // Backend returns { reservations: [...] } (see backend/src/reservations/index.js
   // shapeReservation). Earlier wiring read `data.results` and silently fell back
-  // to the empty array → consumers either showed nothing or kept rendering the
-  // RESERVATIONS fixture via `liveReservations ?? RESERVATIONS`.
+  // to the empty array. Consumers now stay live-only by default instead of
+  // falling back to the RESERVATIONS fixture.
   const data = await apiFetch('/api/reservations?limit=500') as { reservations?: RawReservation[] };
   return (data?.reservations || []).map(transformReservation);
 }

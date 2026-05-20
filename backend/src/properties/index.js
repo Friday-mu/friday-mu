@@ -45,6 +45,12 @@ function shapeListing(row) {
     currency_code: row.currency_code,
     is_active: row.is_active,
     synced_at: row.synced_at,
+    availability: {
+      blocked_30d: row.blocked_30d != null ? Number(row.blocked_30d) : 0,
+      min_price_minor_30d: row.min_price_minor_30d != null ? Number(row.min_price_minor_30d) : null,
+      max_price_minor_30d: row.max_price_minor_30d != null ? Number(row.max_price_minor_30d) : null,
+      calendar_synced_at: row.calendar_synced_at || null,
+    },
   };
 }
 
@@ -53,22 +59,38 @@ function shapeListing(row) {
 //   ?active=true|false      filter (default: any)
 router.get('/', attachIdentity, async (req, res) => {
   try {
-    const filters = ['tenant_id = $1'];
+    const filters = ['gl.tenant_id = $1'];
     const params = [req.tenantId];
     let i = 2;
     if (typeof req.query.cohort === 'string' && req.query.cohort.length > 0) {
-      filters.push(`cohort = $${i++}`);
+      filters.push(`gl.cohort = $${i++}`);
       params.push(req.query.cohort);
     }
     if (req.query.active === 'true') {
-      filters.push('is_active = TRUE');
+      filters.push('gl.is_active = TRUE');
     } else if (req.query.active === 'false') {
-      filters.push('is_active = FALSE');
+      filters.push('gl.is_active = FALSE');
     }
     const { rows } = await query(
-      `SELECT * FROM guesty_listings
+      `SELECT gl.*,
+              cal.blocked_30d,
+              cal.min_price_minor_30d,
+              cal.max_price_minor_30d,
+              cal.calendar_synced_at
+       FROM guesty_listings gl
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_30d,
+                MIN(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS min_price_minor_30d,
+                MAX(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS max_price_minor_30d,
+                MAX(gc.fetched_at) AS calendar_synced_at
+           FROM guesty_calendar gc
+          WHERE gc.tenant_id = gl.tenant_id
+            AND gc.listing_guesty_id = gl.guesty_id
+            AND gc.date >= CURRENT_DATE
+            AND gc.date < CURRENT_DATE + INTERVAL '30 days'
+       ) cal ON TRUE
        WHERE ${filters.join(' AND ')}
-       ORDER BY COALESCE(nickname, title) ASC NULLS LAST`,
+       ORDER BY COALESCE(gl.nickname, gl.title) ASC NULLS LAST`,
       params,
     );
     res.json({ listings: rows.map(shapeListing) });
@@ -84,8 +106,24 @@ router.get('/', attachIdentity, async (req, res) => {
 router.get('/:guestyId', attachIdentity, async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT * FROM guesty_listings
-       WHERE tenant_id = $1 AND guesty_id = $2`,
+      `SELECT gl.*,
+              cal.blocked_30d,
+              cal.min_price_minor_30d,
+              cal.max_price_minor_30d,
+              cal.calendar_synced_at
+       FROM guesty_listings gl
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_30d,
+                MIN(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS min_price_minor_30d,
+                MAX(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS max_price_minor_30d,
+                MAX(gc.fetched_at) AS calendar_synced_at
+           FROM guesty_calendar gc
+          WHERE gc.tenant_id = gl.tenant_id
+            AND gc.listing_guesty_id = gl.guesty_id
+            AND gc.date >= CURRENT_DATE
+            AND gc.date < CURRENT_DATE + INTERVAL '30 days'
+       ) cal ON TRUE
+       WHERE gl.tenant_id = $1 AND gl.guesty_id = $2`,
       [req.tenantId, req.params.guestyId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Listing not found' });

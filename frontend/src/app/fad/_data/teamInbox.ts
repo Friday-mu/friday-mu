@@ -17,6 +17,7 @@ export type ChannelKey =
   | 'agency'         // agency work
   | 'marketing'      // marketing campaigns + content
   | 'photoshoot'     // FULL-quality image storage; compression bypassed
+  | 'design'         // interior design projects + owner approvals
   // Private channels (explicit membership)
   | 'finance'        // finance + accounting
   | 'admin'          // Stripe, bank accounts, legal-ops, accountant comms
@@ -89,6 +90,14 @@ export interface TeamMessage {
   callMeta?: TeamCallMeta;
   /** for kind: 'finance_escalation' — see FinanceEscalationMeta */
   financeEscalation?: FinanceEscalationMeta;
+  /** Optional Design project link inferred or selected at send time. */
+  designProject?: {
+    id: string;
+    name: string;
+    slug?: string | null;
+    source?: 'manual' | 'inferred' | 'inherited' | string;
+    confidence?: number;
+  };
   attachments?: number;
   /** Attached files / images on this message. */
   attachmentList?: Array<{

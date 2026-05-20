@@ -7,6 +7,8 @@
  * and Reviews. Phase 1 fixtures; Phase 2 wires real Guesty pull.
  */
 
+import { liveOnlyMode } from './demoMode';
+
 export type ReservationStatus =
   | 'confirmed'
   | 'checked_in'
@@ -44,6 +46,8 @@ export interface Reservation {
   confirmationCode: string;
   propertyCode: string;
   guestName: string;
+  guestEmail?: string;
+  guestPhone?: string;
   /** ISO datetime — local Mauritius time */
   checkIn: string;
   /** ISO datetime — local Mauritius time */
@@ -54,6 +58,17 @@ export interface Reservation {
   status: ReservationStatus;
   /** Total booking amount, gross. */
   totalAmount: number;
+  /** Guesty calendar cache for this stay window, when FAD has synced nightly availability/pricing. */
+  calendarPricing?: {
+    nightsCached: number;
+    blockedNights: number;
+    totalAmount?: number;
+    nightlyAverage?: number;
+    minNightly?: number;
+    maxNightly?: number;
+    currency?: 'MUR' | 'EUR' | 'USD';
+    syncedAt?: string;
+  };
   currency: 'MUR' | 'EUR' | 'USD';
   /** Tourist tax owed to MRA — included in totalAmount. */
   touristTax: number;
@@ -394,6 +409,10 @@ export const RESERVATIONS: Reservation[] = [
     createdAt: '2026-04-22T08:30:00',
   },
 ];
+
+if (liveOnlyMode()) {
+  RESERVATIONS.length = 0;
+}
 
 export const RESERVATION_BY_ID: Record<string, Reservation> = Object.fromEntries(
   RESERVATIONS.map((r) => [r.id, r]),

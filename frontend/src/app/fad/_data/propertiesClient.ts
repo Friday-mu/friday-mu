@@ -44,6 +44,12 @@ interface GuestyListing {
   currency_code: string | null;
   is_active: boolean;
   synced_at: string | null;
+  availability?: {
+    blocked_30d?: number | null;
+    min_price_minor_30d?: number | null;
+    max_price_minor_30d?: number | null;
+    calendar_synced_at?: string | null;
+  };
 }
 
 interface GuestyListingsResponse {
@@ -143,7 +149,9 @@ export function guestyListingToProperty(l: GuestyListing): Property {
     tags: [],
     occupancyYTD: 0,
     occupancy90d: 0,
-    adr: 0,
+    adr: typeof l.availability?.min_price_minor_30d === 'number'
+      ? Math.round(l.availability.min_price_minor_30d / 100)
+      : 0,
     rating: 0,
     ratingCount: 0,
     lastActivityAt: l.synced_at ?? '',

@@ -83,14 +83,20 @@ const FAD_USER_BY_EMAIL: Record<string, string> = {
   'catherine@friday.mu': 'u-catherine',
 };
 
-/** Decode the JWT and return { email, role, userId } from its claims.
- *  Returns nulls when token is missing / malformed. */
-function readJwtClaims(): { email: string | null; dbRole: string | null; userId: string | null } {
-  if (typeof window === 'undefined') return { email: null, dbRole: null, userId: null };
-  const token = localStorage.getItem('gms_token');
+function decodeBase64Url(value: string): string {
+  const b64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+  if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+    return window.atob(b64 + pad);
+  }
+  return Buffer.from(b64 + pad, 'base64').toString('utf-8');
+}
+
+export function decodeJwtClaimsForPermissions(token: string | null): { email: string | null; dbRole: string | null; userId: string | null } {
   if (!token) return { email: null, dbRole: null, userId: null };
   try {
-    const payload = JSON.parse(atob(token.split('.')[1] || ''));
+    const payloadPart = token.split('.')[1] || '';
+    const payload = JSON.parse(decodeBase64Url(payloadPart));
     return {
       email: (payload?.username || payload?.email || '').toLowerCase() || null,
       dbRole: payload?.role || null,
@@ -99,6 +105,14 @@ function readJwtClaims(): { email: string | null; dbRole: string | null; userId:
   } catch {
     return { email: null, dbRole: null, userId: null };
   }
+}
+
+/** Decode the JWT and return { email, role, userId } from its claims.
+ *  Returns nulls when token is missing / malformed. */
+function readJwtClaims(): { email: string | null; dbRole: string | null; userId: string | null } {
+  if (typeof window === 'undefined') return { email: null, dbRole: null, userId: null };
+  const token = localStorage.getItem('gms_token');
+  return decodeJwtClaimsForPermissions(token);
 }
 
 /** Resolve the real fad_role for the logged-in user from the JWT. */
@@ -319,14 +333,16 @@ export const MODULE_RESOURCE: Record<string, Resource[]> = {
   agency: ['owners'],
   training: ['owners'],
   settings: ['settings'],
-  // SaaS surfaces — admin-only. Gated on `settings` resource (same as system Settings)
-  // so Field roles don't see them. Tenant module-enable gate runs on top.
-  'tenant-settings': ['settings'],
-  billing: ['settings'],
+  // SaaS tenant-admin surfaces. Do not gate these on `settings`: Field
+  // has self-scoped personal settings, but must not see tenant-wide
+  // workspace configuration, billing, or other-tenant admin surfaces.
+  'tenant-settings': ['tenant_admin'],
+  billing: ['tenant_admin'],
   // FR-only platform admin view. Tenant-id gate runs in Sidebar.tsx on
   // top of this resource check (FR admin = settings-resource holder AND
   // tenant_id === FR_TENANT_ID).
-  'admin-analytics': ['settings'],
+  'admin-analytics': ['tenant_admin'],
+  notifications: ['tenant_admin'],
   hr: ['hr_staff'],
 };
 

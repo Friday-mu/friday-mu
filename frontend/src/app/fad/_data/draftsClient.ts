@@ -151,6 +151,21 @@ export interface ComposeResp {
 }
 
 export async function sendCompose(conversationId: string, opts: ComposeOpts): Promise<ComposeResp> {
+  if (conversationId.startsWith('web-')) {
+    const webId = conversationId.slice(4);
+    const r = await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(webId)}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({
+        body: opts.body || opts.instruction || '',
+        channel: opts.channel || 'email',
+      }),
+    }) as { ok?: boolean; message_id?: string };
+    return {
+      ok: !!r.ok,
+      message_id: r.message_id,
+    };
+  }
+
   // Routes through the unified /api/outbound/send abstraction per
   // locked decision §2 (2026-05-17). Backend's guest branch hits GMS
   // /api/conversations/:id/compose — same downstream as legacy.

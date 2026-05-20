@@ -16,6 +16,7 @@
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { confirmReservation } = require('./guesty');
+const { sendEmail } = require('./resend');
 
 function mountThreads(router) {
   // ── LIST ──────────────────────────────────────────────────────
@@ -127,6 +128,80 @@ function mountThreads(router) {
       res.json(rows[0]);
     } catch (err) {
       console.error('[website_inbox/threads] patch error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── REPLY BY EMAIL ─────────────────────────────────────────────────
+  // Website-originated threads do not have a Guesty conversation id yet.
+  // The truthful continuation path is email to the submitted contact
+  // address, then append a staff.reply_sent event so the unified Inbox
+  // history shows what the team actually sent.
+  router.post('/threads/:id/reply', attachIdentity, async (req, res) => {
+    try {
+      const body = String(req.body?.body || '').trim();
+      const channel = String(req.body?.channel || 'email').toLowerCase();
+      if (!body) return res.status(400).json({ error: 'body is required' });
+      if (channel !== 'email' && channel !== 'website') {
+        return res.status(409).json({
+          error: 'channel_not_available',
+          message: 'Website enquiries can be continued by email until a Guesty/WhatsApp conversation exists.',
+          state: 'blocked',
+        });
+      }
+
+      const threadRes = await query(
+        `SELECT * FROM inbox_threads WHERE id = $1`,
+        [req.params.id],
+      );
+      if (threadRes.rows.length === 0) return res.status(404).json({ error: 'Thread not found' });
+      const t = threadRes.rows[0];
+      const toEmail = t.guest_email_raw || t.guest_email;
+      if (!toEmail) return res.status(409).json({ error: 'missing_guest_email' });
+
+      const subject = String(req.body?.subject || 'Re: Your Friday enquiry').slice(0, 200);
+      const result = await sendEmail({
+        to: toEmail,
+        toName: t.guest_name || undefined,
+        subject,
+        body,
+      });
+
+      const eventRes = await query(
+        `INSERT INTO inbox_events (thread_id, event_type, source, payload)
+         VALUES ($1, 'staff.reply_sent', 'fad', $2::jsonb)
+         RETURNING id, created_at`,
+        [req.params.id, JSON.stringify({
+          channel: 'email',
+          body,
+          subject,
+          to: toEmail,
+          sent_by: {
+            user_id: req.identity?.userId || null,
+            display_name: req.identity?.displayName || req.identity?.username || null,
+          },
+          provider: result || null,
+        })],
+      );
+
+      await query(
+        `UPDATE inbox_threads
+         SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+             last_event_type = 'staff.reply_sent',
+             last_event_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [req.params.id],
+      );
+
+      res.json({
+        ok: true,
+        message_id: eventRes.rows[0]?.id,
+        sent_at: eventRes.rows[0]?.created_at,
+        sent_via: 'email',
+      });
+    } catch (err) {
+      console.error('[website_inbox/threads] reply error:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

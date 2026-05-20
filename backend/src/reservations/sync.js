@@ -212,7 +212,12 @@ async function upsertReservationById(tenantId, reservationId) {
       JSON.stringify(r),
     ],
   );
-  return { inserted: !!result.rows[0]?.inserted };
+  return {
+    inserted: !!result.rows[0]?.inserted,
+    listingId: String(listingId),
+    checkInDate: isoDateOnly(r.checkInDateLocalized || r.checkIn),
+    checkOutDate: isoDateOnly(r.checkOutDateLocalized || r.checkOut),
+  };
 }
 
 module.exports = {

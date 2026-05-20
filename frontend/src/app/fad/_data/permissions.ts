@@ -23,7 +23,8 @@ export type Resource =
   | 'hr_time_off'
   | 'hr_stats'
   | 'hr_permissions'
-  | 'settings';
+  | 'settings'
+  | 'tenant_admin';
 
 export type Action = 'read' | 'write' | 'approve' | 'delete';
 
@@ -83,6 +84,7 @@ const DIRECTOR_PERMS: RolePermissions = {
   hr_stats: FULL_ACCESS,
   hr_permissions: FULL_ACCESS,
   settings: FULL_ACCESS,
+  tenant_admin: FULL_ACCESS,
 };
 
 const COMMERCIAL_MARKETING_PERMS: RolePermissions = {
@@ -106,6 +108,7 @@ const COMMERCIAL_MARKETING_PERMS: RolePermissions = {
   // with Ishant.
   hr_permissions: {},
   settings: { read: 'all', write: 'self', approve: 'none', delete: 'none' },
+  tenant_admin: {},
 };
 
 const OPS_MANAGER_PERMS: RolePermissions = {
@@ -128,6 +131,7 @@ const OPS_MANAGER_PERMS: RolePermissions = {
   reservations: FULL_ACCESS,
   properties: FULL_ACCESS,
   settings: { read: 'all', write: 'self', approve: 'none', delete: 'none' },
+  tenant_admin: {},
 };
 
 const FIELD_PERMS: RolePermissions = {
@@ -152,6 +156,7 @@ const FIELD_PERMS: RolePermissions = {
   // Field gets a slimmed Settings (Appearance + Account only — section gating in
   // SettingsModule). SELF_ONLY here unlocks the module; sections handle the rest.
   settings: SELF_ONLY,
+  tenant_admin: {},
 };
 
 const EXTERNAL_PERMS: RolePermissions = {
@@ -183,6 +188,7 @@ export const RESOURCE_LABEL: Record<Resource, string> = {
   hr_stats: 'HR · Stats',
   hr_permissions: 'HR · Permissions',
   settings: 'Settings',
+  tenant_admin: 'Tenant Admin',
 };
 
 export const ROLE_LABEL: Record<TaskUser['role'], string> = {

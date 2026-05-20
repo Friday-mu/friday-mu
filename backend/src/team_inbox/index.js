@@ -67,6 +67,11 @@ const multer = require('multer');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { notifyUsers, publishFadEvent } = require('../realtime');
+const {
+  isUuid,
+  matchDesignProjectFromText,
+  normalizeProjectForMeta,
+} = require('./design_project_linker');
 
 const router = express.Router();
 
@@ -123,9 +128,36 @@ const VALID_REACTIONS = new Set(['👀', '✅', '🙋']);
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
+const REQUIRED_PUBLIC_CHANNELS = [
+  {
+    key: 'design',
+    name: 'Design',
+    purpose: 'Interior design projects, selections, owner approvals, procurement, and execution coordination',
+    preserveUploadQuality: false,
+  },
+];
+
 /** Sorted UUID list joined by '|' — deterministic key for DM dedup. */
 function dmSignature(userIds) {
   return [...new Set(userIds)].sort().join('|');
+}
+
+async function ensureRequiredPublicChannels(tenantId) {
+  if (!tenantId) return;
+  for (const ch of REQUIRED_PUBLIC_CHANNELS) {
+    await query(
+      `INSERT INTO team_channels (tenant_id, channel_key, name, purpose, visibility, preserve_upload_quality)
+       VALUES ($1, $2, $3, $4, 'public', $5)
+       ON CONFLICT (tenant_id, channel_key) DO UPDATE
+         SET name = EXCLUDED.name,
+             purpose = EXCLUDED.purpose,
+             visibility = 'public',
+             preserve_upload_quality = EXCLUDED.preserve_upload_quality,
+             archived_at = NULL,
+             updated_at = NOW()`,
+      [tenantId, ch.key, ch.name, ch.purpose, ch.preserveUploadQuality],
+    );
+  }
 }
 
 /** Best-effort join of the caller to every public channel they're
@@ -135,6 +167,7 @@ function dmSignature(userIds) {
 async function autojoinPublicChannels(tenantId, userId) {
   if (!tenantId || !userId) return;
   try {
+    await ensureRequiredPublicChannels(tenantId);
     await query(
       `INSERT INTO team_channel_members (channel_id, user_id, role)
        SELECT c.id, $2, 'member'
@@ -188,6 +221,23 @@ function shapeChannel(row, unreadCount = 0) {
     // into "Private channels (join to participate)".
     isMember: row.is_member !== undefined ? !!row.is_member : true,
   };
+}
+
+function channelKeyFromName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+function canManageChannels(identity) {
+  const role = String(identity?.userRole || '').toLowerCase();
+  const username = String(identity?.username || '').toLowerCase();
+  if (role === 'field' || role === 'external') return false;
+  if (username === 'bryan@friday.mu' || username === 'catherine@friday.mu') return false;
+  return true;
 }
 
 function shapeMessage(row, kind) {
@@ -303,6 +353,62 @@ async function notifyTeamMessage({ tenantId, actorUserId, recipientUserIds, type
   });
 }
 
+function normalizeMessageMeta(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  return { ...input };
+}
+
+async function resolveDesignProjectMeta({ tenantId, channelId, channelKey, text, meta, parentMessageId }) {
+  let nextMeta = normalizeMessageMeta(meta);
+  const explicitProjectId = nextMeta?.designProjectId
+    || nextMeta?.design_project_id
+    || nextMeta?.designProject?.id;
+
+  if (isUuid(explicitProjectId)) {
+    const { rows } = await query(
+      `SELECT id, name, slug
+         FROM design_projects
+        WHERE tenant_id = $1 AND id = $2
+        LIMIT 1`,
+      [tenantId, explicitProjectId],
+    );
+    if (rows[0]) {
+      const linked = normalizeProjectForMeta(rows[0], 'manual', 1);
+      return { ...(nextMeta || {}), designProjectId: linked.id, designProject: linked };
+    }
+  }
+
+  if (parentMessageId) {
+    const { rows } = await query(
+      `SELECT meta
+         FROM team_channel_messages
+        WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL
+        LIMIT 1`,
+      [parentMessageId, channelId],
+    );
+    const parentProject = rows[0]?.meta?.designProject;
+    if (parentProject?.id && parentProject?.name) {
+      const linked = normalizeProjectForMeta(parentProject, 'inherited', 1);
+      return { ...(nextMeta || {}), designProjectId: linked.id, designProject: linked };
+    }
+  }
+
+  if (channelKey !== 'design') return nextMeta;
+
+  const { rows } = await query(
+    `SELECT id, name, slug
+       FROM design_projects
+      WHERE tenant_id = $1
+        AND lifecycle_status <> 'cancelled'
+      ORDER BY updated_at DESC
+      LIMIT 250`,
+    [tenantId],
+  );
+  const linked = matchDesignProjectFromText(text, rows);
+  if (!linked) return nextMeta;
+  return { ...(nextMeta || {}), designProjectId: linked.id, designProject: linked };
+}
+
 // ─── Channels ───────────────────────────────────────────────────────
 
 // List channels visible to caller:
@@ -349,6 +455,146 @@ router.get('/channels', attachIdentity, async (req, res) => {
     res.json({ channels: rows.map((r) => shapeChannel(r, r.unread_cnt)) });
   } catch (e) {
     console.error('[team_inbox] list channels error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/channels', attachIdentity, async (req, res) => {
+  if (!canManageChannels(req.identity)) {
+    return res.status(403).json({ error: 'Field staff cannot create channels' });
+  }
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const channelKey = channelKeyFromName(req.body?.key || name);
+  if (!channelKey) return res.status(400).json({ error: 'valid channel key required' });
+  const visibility = req.body?.visibility === 'private' ? 'private' : 'public';
+  const purpose = String(req.body?.purpose || '').trim() || null;
+  try {
+    const { rows } = await query(
+      `INSERT INTO team_channels (tenant_id, channel_key, name, purpose, visibility, preserve_upload_quality)
+       VALUES ($1, $2, $3, $4, $5, FALSE)
+       RETURNING *`,
+      [req.tenantId, channelKey, name, purpose, visibility],
+    );
+    const channel = rows[0];
+    if (visibility === 'public') {
+      await query(
+        `INSERT INTO team_channel_members (channel_id, user_id, role)
+         SELECT $1, u.id, CASE WHEN u.id = $2 THEN 'admin' ELSE 'member' END
+         FROM users u
+         WHERE u.tenant_id = $3 AND u.is_active = TRUE
+         ON CONFLICT (channel_id, user_id) DO NOTHING`,
+        [channel.id, req.identity.userId, req.tenantId],
+      );
+    } else {
+      await query(
+        `INSERT INTO team_channel_members (channel_id, user_id, role)
+         VALUES ($1, $2, 'admin')
+         ON CONFLICT (channel_id, user_id) DO UPDATE SET role = 'admin'`,
+        [channel.id, req.identity.userId],
+      );
+    }
+    publishFadEvent({
+      tenantId: req.tenantId,
+      type: 'team.channel_created',
+      payload: { channelId: channel.id, channelKey: channel.channel_key, actorUserId: req.identity.userId },
+    }).catch(() => {});
+    res.status(201).json({ channel: shapeChannel(channel) });
+  } catch (e) {
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'Channel key already exists' });
+    }
+    console.error('[team_inbox] create channel error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/channels/:id', attachIdentity, async (req, res) => {
+  if (!canManageChannels(req.identity)) {
+    return res.status(403).json({ error: 'Field staff cannot edit channels' });
+  }
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : null;
+  const purpose = typeof req.body?.purpose === 'string' ? req.body.purpose.trim() : undefined;
+  const visibility = req.body?.visibility === 'private' || req.body?.visibility === 'public' ? req.body.visibility : null;
+  if (!name && purpose === undefined && !visibility) return res.status(400).json({ error: 'No channel fields provided' });
+  try {
+    const sets = [];
+    const params = [req.params.id, req.tenantId];
+    let i = 3;
+    if (name) { sets.push(`name = $${i++}`); params.push(name); }
+    if (purpose !== undefined) { sets.push(`purpose = $${i++}`); params.push(purpose || null); }
+    if (visibility) { sets.push(`visibility = $${i++}`); params.push(visibility); }
+    sets.push('updated_at = NOW()');
+    const { rows } = await query(
+      `UPDATE team_channels
+          SET ${sets.join(', ')}
+        WHERE id = $1 AND tenant_id = $2 AND archived_at IS NULL
+        RETURNING *`,
+      params,
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Channel not found' });
+    if (visibility === 'public') {
+      await query(
+        `INSERT INTO team_channel_members (channel_id, user_id, role)
+         SELECT $1, u.id, 'member'
+         FROM users u
+         WHERE u.tenant_id = $2 AND u.is_active = TRUE
+         ON CONFLICT (channel_id, user_id) DO NOTHING`,
+        [rows[0].id, req.tenantId],
+      );
+    }
+    res.json({ channel: shapeChannel(rows[0]) });
+  } catch (e) {
+    console.error('[team_inbox] update channel error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/channels/:id/archive', attachIdentity, async (req, res) => {
+  if (!canManageChannels(req.identity)) {
+    return res.status(403).json({ error: 'Field staff cannot archive channels' });
+  }
+  try {
+    const { rows } = await query(
+      `UPDATE team_channels
+          SET archived_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND tenant_id = $2 AND archived_at IS NULL
+        RETURNING *`,
+      [req.params.id, req.tenantId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Channel not found' });
+    publishFadEvent({
+      tenantId: req.tenantId,
+      type: 'team.channel_archived',
+      payload: { channelId: rows[0].id, channelKey: rows[0].channel_key, actorUserId: req.identity.userId },
+    }).catch(() => {});
+    res.json({ channel: shapeChannel(rows[0]) });
+  } catch (e) {
+    console.error('[team_inbox] archive channel error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/channels/:id', attachIdentity, async (req, res) => {
+  if (!canManageChannels(req.identity)) {
+    return res.status(403).json({ error: 'Field staff cannot delete channels' });
+  }
+  try {
+    const { rows } = await query(
+      `DELETE FROM team_channels
+        WHERE id = $1 AND tenant_id = $2
+        RETURNING id, channel_key`,
+      [req.params.id, req.tenantId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Channel not found' });
+    publishFadEvent({
+      tenantId: req.tenantId,
+      type: 'team.channel_deleted',
+      payload: { channelId: rows[0].id, channelKey: rows[0].channel_key, actorUserId: req.identity.userId },
+    }).catch(() => {});
+    res.json({ ok: true, channelId: rows[0].id });
+  } catch (e) {
+    console.error('[team_inbox] delete channel error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -639,7 +885,7 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
     return res.status(400).json({ error: 'text or attachmentIds required' });
   }
   const kind = req.body?.kind || 'text';
-  const meta = req.body?.meta || null;
+  let meta = normalizeMessageMeta(req.body?.meta);
   const parentMessageId = req.body?.parentMessageId || null;
   let mentions = Array.isArray(req.body?.mentions) ? req.body.mentions : [];
   // Cap mention count and dedup. Validate they're real channel members.
@@ -682,6 +928,14 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
         return res.status(400).json({ error: 'Parent message not found in this channel, or is itself a reply' });
       }
     }
+    meta = await resolveDesignProjectMeta({
+      tenantId: req.tenantId,
+      channelId: ch.id,
+      channelKey: ch.channel_key,
+      text,
+      meta,
+      parentMessageId,
+    });
     // Drop invalid mentions silently rather than blocking the message.
     // Private channels only keep members; public channels keep active
     // tenant users even if their public-channel membership has not been
@@ -720,7 +974,12 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
     publishFadEvent({
       tenantId: req.tenantId,
       type: 'team.channel_message',
-      payload: { channelId: ch.id, messageId: insRows[0].id, authorUserId: userId },
+      payload: {
+        channelId: ch.id,
+        messageId: insRows[0].id,
+        authorUserId: userId,
+        designProject: meta?.designProject || null,
+      },
     }).catch(() => {});
     notifyTeamMessage({
       tenantId: req.tenantId,
@@ -731,7 +990,13 @@ router.post('/channels/:id/messages', attachIdentity, async (req, res) => {
       body: text.slice(0, 180),
       url: `/fad?m=inbox&team=channel:${ch.id}`,
       sourceId: insRows[0].id,
-      data: { channelId: ch.id, messageId: insRows[0].id, isMention: true, emailNotification: true },
+      data: {
+        channelId: ch.id,
+        messageId: insRows[0].id,
+        isMention: true,
+        emailNotification: true,
+        designProject: meta?.designProject || null,
+      },
     }).catch(() => {});
     res.json({ message: shapeMessage(insRows[0], 'channel') });
   } catch (e) {

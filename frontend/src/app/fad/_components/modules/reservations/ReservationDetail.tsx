@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  RESERVATIONS,
   RESERVATION_BY_ID,
   CHANNEL_LABEL,
   STATUS_LABEL,
@@ -16,7 +17,6 @@ import {
   notesForReservation,
   activityForReservation,
   paymentsForReservation,
-  priorReservationsForGuest,
   recordManualPayment,
   folioLinesForReservation,
   addFolioLine,
@@ -28,6 +28,8 @@ import {
   type FolioLine,
   type FolioLineKind,
 } from '../../../_data/reservations';
+import { useLiveReservations } from '../../../_data/reservationsClient';
+import { liveOnlyMode } from '../../../_data/demoMode';
 import { INBOX_THREADS } from '../../../_data/fixtures';
 import { TASKS, TASK_USER_BY_ID, TASK_USERS, type Task } from '../../../_data/tasks';
 import { addReservationNote, updateReservationTimes } from '../../../_data/breezeway';
@@ -79,7 +81,12 @@ function statusToneClass(s: Reservation['status']): string {
 }
 
 export function ReservationDetail({ reservationId, onClose, onCreateTask }: Props) {
-  const r = RESERVATION_BY_ID[reservationId];
+  const { reservations: liveReservations } = useLiveReservations();
+  const sourceReservations = liveReservations ?? (liveOnlyMode() ? [] : RESERVATIONS);
+  const r = useMemo(
+    () => sourceReservations.find((candidate) => candidate.id === reservationId) || (liveOnlyMode() ? undefined : RESERVATION_BY_ID[reservationId]),
+    [reservationId, sourceReservations],
+  );
   const role = useCurrentRole();
   const currentUserId = useCurrentUserId();
   const finAccess = financialAccessFor(role);
@@ -199,7 +206,7 @@ export function ReservationDetail({ reservationId, onClose, onCreateTask }: Prop
             />
           )}
           {tab === 'booking' && <BookingDetailsTab r={r} />}
-          {tab === 'guests' && <GuestsTab r={r} />}
+          {tab === 'guests' && <GuestsTab r={r} reservations={sourceReservations} />}
           {tab === 'operations' && <OperationsTab r={r} />}
           {tab === 'folio' && <FolioTab r={r} access={finAccess} />}
           {tab === 'accounting' && <AccountingTab r={r} />}
@@ -587,6 +594,29 @@ function BookingDetailsTab({ r }: { r: Reservation }) {
           <Field label="Confirmation"><span className="mono">{r.confirmationCode}</span></Field>
           <Field label="Channel">{CHANNEL_LABEL[r.channel]}</Field>
           <Field label="Created"><span className="mono">{r.createdAt ? r.createdAt.slice(0, 10) : '—'}</span></Field>
+          <Field label="Guesty calendar">
+            <span className="mono">
+              {r.calendarPricing?.syncedAt
+                ? `${r.calendarPricing.nightsCached}/${r.nights} nights · ${r.calendarPricing.syncedAt.slice(0, 10)}`
+                : 'Not synced'}
+            </span>
+          </Field>
+          {r.calendarPricing?.totalAmount != null && (
+            <Field label="Calendar rate">
+              <span className="mono">
+                {formatMoney(r.calendarPricing.totalAmount, r.calendarPricing.currency || r.currency)}
+              </span>
+            </Field>
+          )}
+          {r.calendarPricing?.minNightly != null && r.calendarPricing?.maxNightly != null && (
+            <Field label="Nightly range">
+              <span className="mono">
+                {formatMoney(r.calendarPricing.minNightly, r.calendarPricing.currency || r.currency)}
+                {' - '}
+                {formatMoney(r.calendarPricing.maxNightly, r.calendarPricing.currency || r.currency)}
+              </span>
+            </Field>
+          )}
           {r.extensionOf && (
             <Field label="Extension of"><span className="mono">{r.extensionOf}</span></Field>
           )}
@@ -635,9 +665,22 @@ function BookingDetailsTab({ r }: { r: Reservation }) {
   );
 }
 
-function GuestsTab({ r }: { r: Reservation }) {
+function GuestsTab({ r, reservations }: { r: Reservation; reservations: Reservation[] }) {
   const profile = GUEST_PROFILES[r.guestName];
-  const priorStays = priorReservationsForGuest(r.guestName, r.id);
+  const guestEmail = r.guestEmail?.trim().toLowerCase();
+  const guestName = r.guestName.trim().toLowerCase();
+  const priorStays = useMemo(
+    () =>
+      reservations
+        .filter((candidate) => candidate.id !== r.id)
+        .filter((candidate) => {
+          const candidateEmail = candidate.guestEmail?.trim().toLowerCase();
+          if (guestEmail && candidateEmail) return candidateEmail === guestEmail;
+          return candidate.guestName.trim().toLowerCase() === guestName;
+        })
+        .sort((a, b) => b.checkOut.localeCompare(a.checkOut)),
+    [guestEmail, guestName, r.id, reservations],
+  );
 
   if (!profile) {
     return (
