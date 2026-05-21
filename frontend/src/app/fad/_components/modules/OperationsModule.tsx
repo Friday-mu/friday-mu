@@ -30,6 +30,13 @@ import { DAILY_BRIEF_POOL, pickDifferent, pickFromPool } from '../../_data/aiFix
 import { useAITelemetry } from '../ai/useAITelemetry';
 import { AIBadge, AIRegenerateButton } from '../ai/AIComponents';
 import { priorityTone, taskSourceTone, taskStatusTone, toneStyle } from '../palette';
+import {
+  buildManagerWorkbenchSignals,
+  type ManagerWorkbenchSignals,
+  type StaffLoadSignal,
+  type StaleOpenTaskSignal,
+  type SupplyPrepSignal,
+} from '../../_data/managerWorkbench';
 
 interface Props {
   subPage: string;
@@ -236,7 +243,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       case 'history':
         return <MyHistoryPage onOpenTask={setDetailTaskId} />;
       case 'overview':
-        return <OverviewPage onOpenTask={setDetailTaskId} />;
+        return <OverviewPage onOpenTask={setDetailTaskId} onChangeSubPage={onChangeSubPage} canSeeRoster={canSeeRoster} />;
       case 'all':
         return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
       case 'issues':
@@ -312,7 +319,15 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 
 // ───────────────── Overview ─────────────────
 
-function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+function OverviewPage({
+  onOpenTask,
+  onChangeSubPage,
+  canSeeRoster,
+}: {
+  onOpenTask: (id: string) => void;
+  onChangeSubPage: (id: string) => void;
+  canSeeRoster: boolean;
+}) {
   const { role } = usePermissions();
   const currentUserId = useCurrentUserId();
   const { tasks: TASKS, loading, error, refetch } = useApiTasks();
@@ -371,6 +386,11 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
     });
     return { open, total: dayTasks.length, counts };
   }, [scopedTasks, dashboardDate]);
+
+  const managerSignals = useMemo(
+    () => buildManagerWorkbenchSignals(scopedTasks, { today: TODAY }),
+    [scopedTasks],
+  );
 
   const updateDueTime = async (task: Task, dueTime: string) => {
     if (role === 'field') return;
@@ -455,6 +475,14 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
             </button>
           ))}
         </div>
+        {role !== 'field' && (
+          <ManagerWorkbenchPanel
+            signals={managerSignals}
+            onOpenTask={onOpenTask}
+            onChangeSubPage={onChangeSubPage}
+            canSeeRoster={canSeeRoster}
+          />
+        )}
         <div className="ops-agenda-list">
           {dashboardByProperty.map(([propertyCode, tasks]) => (
             <div className="ops-agenda-property" key={propertyCode}>
@@ -573,6 +601,181 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
       </div>
     </div>
   );
+}
+
+function ManagerWorkbenchPanel({
+  signals,
+  onOpenTask,
+  onChangeSubPage,
+  canSeeRoster,
+}: {
+  signals: ManagerWorkbenchSignals;
+  onOpenTask: (id: string) => void;
+  onChangeSubPage: (id: string) => void;
+  canSeeRoster: boolean;
+}) {
+  const staleOpen = signals.staleOpen.slice(0, 3);
+  const supplyPrep = signals.supplyPrep.slice(0, 3);
+  const staffLoad = signals.staffLoad.slice(0, 5);
+  const exceptionCount =
+    signals.staleOpen.length +
+    signals.openReportedIssues.length +
+    signals.inboxAiReported.length +
+    signals.supplyPrep.length +
+    signals.unassignedOpen.length;
+
+  return (
+    <section className="ops-manager-workbench" aria-labelledby="ops-manager-workbench-title">
+      <div className="ops-workbench-head">
+        <div>
+          <div className="ops-mobile-kicker">Manager workbench</div>
+          <h3 id="ops-manager-workbench-title">Fix today</h3>
+        </div>
+        <div className="ops-workbench-counts" role="status" aria-live="polite">
+          <span><strong>{signals.staleOpen.length}</strong> stale open</span>
+          <span><strong>{signals.openReportedIssues.length}</strong> issues</span>
+          <span><strong>{signals.inboxAiReported.length}</strong> Inbox AI</span>
+          <span><strong>{signals.supplyPrep.length}</strong> supply prep</span>
+        </div>
+      </div>
+
+      <div className="ops-workbench-lanes">
+        <WorkbenchLane
+          title={`Stale-open reminders · ${signals.staleOpen.length}`}
+          actionLabel="All tasks"
+          onAction={() => onChangeSubPage('all')}
+        >
+          {staleOpen.map((signal) => (
+            <StaleOpenRow key={signal.task.id} signal={signal} onOpenTask={onOpenTask} />
+          ))}
+          {signals.staleOpen.length === 0 && <WorkbenchEmpty>No stale open work.</WorkbenchEmpty>}
+        </WorkbenchLane>
+
+        <WorkbenchLane title={`Manager triage · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}>
+          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('issues')}>
+            <span>
+              <strong>Reported property issues</strong>
+              <small>{signals.openReportedIssues.length} waiting for manager scheduling</small>
+            </span>
+            <span className="ops-workbench-badge">{signals.openReportedIssues.length}</span>
+          </button>
+          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('inbox-ai')}>
+            <span>
+              <strong>Inbox AI task proposals</strong>
+              <small>{signals.inboxAiReported.length} real task records need accept/dismiss/link</small>
+            </span>
+            <span className="ops-workbench-badge">{signals.inboxAiReported.length}</span>
+          </button>
+          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('all')}>
+            <span>
+              <strong>Unassigned open tasks</strong>
+              <small>{signals.unassignedOpen.length} should be assigned or scheduled</small>
+            </span>
+            <span className="ops-workbench-badge">{signals.unassignedOpen.length}</span>
+          </button>
+        </WorkbenchLane>
+
+        <WorkbenchLane
+          title={`Supplies and loadouts · ${signals.supplyPrep.length}`}
+          actionLabel="Review tasks"
+          onAction={() => onChangeSubPage('all')}
+        >
+          {supplyPrep.map((signal) => (
+            <SupplyPrepRow key={signal.task.id} signal={signal} onOpenTask={onOpenTask} />
+          ))}
+          {signals.supplyPrep.length === 0 && <WorkbenchEmpty>No supply prep flags.</WorkbenchEmpty>}
+        </WorkbenchLane>
+
+        <WorkbenchLane
+          title={`Staff load · ${staffLoad.length}`}
+          actionLabel={canSeeRoster ? 'Roster' : undefined}
+          onAction={canSeeRoster ? () => onChangeSubPage('roster') : undefined}
+        >
+          {staffLoad.map((signal) => (
+            <StaffLoadRow key={signal.assigneeId} signal={signal} />
+          ))}
+          {staffLoad.length === 0 && <WorkbenchEmpty>No open staff load.</WorkbenchEmpty>}
+        </WorkbenchLane>
+      </div>
+
+      {exceptionCount === 0 && (
+        <div className="ops-workbench-clear">No manager exceptions detected for the selected Operations queue.</div>
+      )}
+    </section>
+  );
+}
+
+function WorkbenchLane({
+  title,
+  actionLabel,
+  onAction,
+  children,
+}: {
+  title: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="ops-workbench-lane">
+      <div className="ops-workbench-lane-head">
+        <h4>{title}</h4>
+        {actionLabel && onAction && (
+          <button type="button" onClick={onAction}>
+            {actionLabel}
+          </button>
+        )}
+      </div>
+      <div className="ops-workbench-list">{children}</div>
+    </div>
+  );
+}
+
+function StaleOpenRow({ signal, onOpenTask }: { signal: StaleOpenTaskSignal; onOpenTask: (id: string) => void }) {
+  return (
+    <button type="button" className="ops-workbench-row urgent" onClick={() => onOpenTask(signal.task.id)}>
+      <span>
+        <strong>{signal.task.title}</strong>
+        <small>{signal.task.propertyCode} · {STATUS_LABEL[signal.task.status]} · {signal.reason}</small>
+      </span>
+      <span className="ops-workbench-badge">{signal.task.priority}</span>
+    </button>
+  );
+}
+
+function SupplyPrepRow({ signal, onOpenTask }: { signal: SupplyPrepSignal; onOpenTask: (id: string) => void }) {
+  const supplyLabel = signal.suggestedCount > 0
+    ? `${signal.suggestedCount} suggested item${signal.suggestedCount === 1 ? '' : 's'}`
+    : 'Supply capture required';
+
+  return (
+    <button type="button" className="ops-workbench-row" onClick={() => onOpenTask(signal.task.id)}>
+      <span>
+        <strong>{signal.task.propertyCode} · {signal.task.title}</strong>
+        <small>{supplyLabel} · {signal.reason}</small>
+      </span>
+      <span className="ops-workbench-badge">{signal.task.dueDate === TODAY ? 'today' : formatShortDate(signal.task.dueDate)}</span>
+    </button>
+  );
+}
+
+function StaffLoadRow({ signal }: { signal: StaffLoadSignal }) {
+  const user = signal.assigneeId === 'unassigned' ? null : TASK_USER_BY_ID[signal.assigneeId];
+  const label = user?.name ?? (signal.assigneeId === 'unassigned' ? 'Unassigned' : signal.assigneeId);
+
+  return (
+    <div className={'ops-workbench-row static' + (signal.staleCount > 0 ? ' urgent' : '')}>
+      <span>
+        <strong>{label}</strong>
+        <small>{signal.urgentCount} high/urgent · {signal.staleCount} stale</small>
+      </span>
+      <span className="ops-workbench-badge">{signal.openCount}</span>
+    </div>
+  );
+}
+
+function WorkbenchEmpty({ children }: { children: React.ReactNode }) {
+  return <div className="ops-workbench-empty">{children}</div>;
 }
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {

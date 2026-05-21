@@ -164,3 +164,29 @@
 - Browser QA with mock task API: opened task, used suggested Bath towel loadout, marked it owner-billable, verified supply row, linked cost row, requirements `3/3`, and task completion to `completed`.
 - Responsive screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave6/`; 320/375/430/768/1440 checks showed no visible horizontal overflow or clipped primary controls.
 - Verification passed: backend task-service syntax check, frontend typecheck, frontend build, restored `next-env.d.ts`, rerun typecheck, and `git diff --check`.
+
+## 2026-05-21 Wave 7 Mini-Research
+
+- Current `fad-rebuild` already has manager Overview, All Tasks, Reported Issues, Inbox AI triage, Approvals, Roster, and Insights; Wave 7 should connect these into one manager workbench instead of creating a parallel Operations dashboard.
+- Current task data exposes status, source, due date, risk flags, assignees, elapsed/estimated minutes, requirements, and supplies; this is enough for stale-open, open issue, Inbox AI, staff load, and supply-readiness signals without backend churn.
+- `origin/fad-design-os-v01-frontend` has no better manager workbench primitive to port; its Operations files mainly overlap with the current task foundation.
+- Feature Catalog confirms the dashboard shell is hardcoded module routing on `fad-rebuild`; this slice should pass subpage navigation through the existing Operations module boundary.
+- Notion Mobile UX Doctrine keeps the phone rule: one hierarchy per screen, frequent actions visible, persistent labels, and 320/375/430/768/desktop verification.
+- Breezeway mobile evidence shows a property-grouped daily dashboard with status counts, due-time slots, issue/comment/attachment indicators, and quick task creation; FAD should add manager-only exception lanes above the agenda without exposing field create/schedule controls.
+- W3C WCAG 2.2 target-size guidance supports maintaining at least 24px targets with spacing, while FAD doctrine keeps manager mobile actions at the existing 44px control rhythm.
+- MDN `role=status` guidance is relevant for non-interrupting reminder/count updates, but this slice stays visible/in-app rather than adding push notifications.
+- Wave 7 decision: add manager workbench signals and actions to Overview, with stale-open reminders, reported issues, Inbox AI reported tasks, supply-readiness flags, and staff load/reassignment shortcuts wired to existing subpages.
+
+## 2026-05-21 Wave 7 Checkpoint
+
+- Added a pure `managerWorkbench` signal helper for stale-open reminders, reported issue triage, Inbox AI reported tasks, supply-prep flags, unassigned tasks, and staff load.
+- Added a manager-only `Fix today` workbench to Operations Overview; field users still route only to My Tasks/My History and do not get manager scheduling or triage controls.
+- Workbench actions route into existing Operations surfaces: stale task opens the task drawer, reported issues opens Reported Issues, Inbox AI opens the Ops-owned triage queue, and Roster opens staff context when permitted.
+- Stale-open logic stays in-app for this slice: blocked, over-estimate, old in-progress, paused, and past-due tasks are visible reminders without adding push notifications yet.
+- Supply-prep flags reuse Wave 6 supply loadout/requirements data and do not create a second inventory system.
+- Mobile utility buttons in the shell brand/utility area now keep 44px targets at phone widths after the 320px QA pass found squeezed icon buttons.
+- Browser QA used mock `/api/tasks` data covering stale, blocked, reported issue, Inbox AI, supply, unassigned, and staff-load cases; console errors/warnings were 0 in the Browser run.
+- Field role-gate smoke forced `sub=overview` while switched to Field and rendered assigned-only My Tasks with no manager workbench.
+- Responsive screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave7/`; 320/375/430/768/1440 showed 0 horizontal overflow and 0 small targets inside the manager workbench.
+- Residual shell note: the global Ask Friday search input itself measures 21px high at 768/desktop, but it sits inside the larger header search pill and was not changed in this Operations slice.
+- Verification passed: frontend typecheck, frontend build, restored `next-env.d.ts`, rerun typecheck, and `git diff --check`.

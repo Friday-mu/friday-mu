@@ -1,0 +1,85 @@
+[
+  {
+    "width": 320,
+    "height": 900,
+    "screenshotPath": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave7/manager-workbench-320.png",
+    "clientWidth": 320,
+    "innerWidth": 320,
+    "managerText": "Manager workbenchFix today2 stale open1 issues1 Inbox AI4 supply prepStale-open reminders · 2All tasksDirty Stove escalationGBH-C3 · In progress · 75 min over estimateurgentAccess code missing for turnoverBS-1 · Blocked · Blocked and needs manager actionhighManager triage · 2Reported property issues",
+    "overflowX": 0,
+    "scrollWidth": 320,
+    "small24": 0,
+    "small44Workbench": 0,
+    "smallGlobal": []
+  },
+  {
+    "width": 375,
+    "height": 900,
+    "screenshotPath": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave7/manager-workbench-375.png",
+    "clientWidth": 375,
+    "innerWidth": 375,
+    "managerText": "Manager workbenchFix today2 stale open1 issues1 Inbox AI4 supply prepStale-open reminders · 2All tasksDirty Stove escalationGBH-C3 · In progress · 75 min over estimateurgentAccess code missing for turnoverBS-1 · Blocked · Blocked and needs manager actionhighManager triage · 2Reported property issues",
+    "overflowX": 0,
+    "scrollWidth": 375,
+    "small24": 0,
+    "small44Workbench": 0,
+    "smallGlobal": []
+  },
+  {
+    "width": 430,
+    "height": 900,
+    "screenshotPath": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave7/manager-workbench-430.png",
+    "clientWidth": 430,
+    "innerWidth": 430,
+    "managerText": "Manager workbenchFix today2 stale open1 issues1 Inbox AI4 supply prepStale-open reminders · 2All tasksDirty Stove escalationGBH-C3 · In progress · 75 min over estimateurgentAccess code missing for turnoverBS-1 · Blocked · Blocked and needs manager actionhighManager triage · 2Reported property issues",
+    "overflowX": 0,
+    "scrollWidth": 430,
+    "small24": 0,
+    "small44Workbench": 0,
+    "smallGlobal": []
+  },
+  {
+    "width": 768,
+    "height": 920,
+    "screenshotPath": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave7/manager-workbench-768.png",
+    "clientWidth": 768,
+    "innerWidth": 768,
+    "managerText": "Manager workbenchFix today2 stale open1 issues1 Inbox AI4 supply prepStale-open reminders · 2All tasksDirty Stove escalationGBH-C3 · In progress · 75 min over estimateurgentAccess code missing for turnoverBS-1 · Blocked · Blocked and needs manager actionhighManager triage · 2Reported property issues",
+    "overflowX": 0,
+    "scrollWidth": 768,
+    "small24": 1,
+    "small44Workbench": 0,
+    "smallGlobal": [
+      {
+        "cls": "",
+        "h": 21,
+        "tag": "INPUT",
+        "text": "",
+        "title": null,
+        "w": 470
+      }
+    ]
+  },
+  {
+    "width": 1440,
+    "height": 920,
+    "screenshotPath": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave7/manager-workbench-1440.png",
+    "clientWidth": 1440,
+    "innerWidth": 1440,
+    "managerText": "Manager workbenchFix today2 stale open1 issues1 Inbox AI4 supply prepStale-open reminders · 2All tasksDirty Stove escalationGBH-C3 · In progress · 75 min over estimateurgentAccess code missing for turnoverBS-1 · Blocked · Blocked and needs manager actionhighManager triage · 2Reported property issues",
+    "overflowX": 0,
+    "scrollWidth": 1440,
+    "small24": 1,
+    "small44Workbench": 0,
+    "smallGlobal": [
+      {
+        "cls": "",
+        "h": 21,
+        "tag": "INPUT",
+        "text": "",
+        "title": null,
+        "w": 470
+      }
+    ]
+  }
+]
