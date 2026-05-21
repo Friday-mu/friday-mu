@@ -31,6 +31,7 @@ export interface SupplyPrepSignal {
 
 export interface StaffLoadSignal {
   assigneeId: string;
+  assigneeName?: string;
   openCount: number;
   urgentCount: number;
   staleCount: number;
@@ -80,7 +81,7 @@ export function detectStaleOpenTasks(
       if (typeof minutesSinceUpdate === 'number' && minutesSinceUpdate >= staleAfterHours * 60) {
         return { task, reason: `No update for ${formatElapsed(minutesSinceUpdate)}`, minutesSinceUpdate, overEstimateMinutes };
       }
-      if (task.dueDate < today) {
+      if (task.dueDate && task.dueDate < today) {
         return { task, reason: 'Open past due date', minutesSinceUpdate, overEstimateMinutes };
       }
       return null;
@@ -109,7 +110,7 @@ export function buildManagerWorkbenchSignals(
     .sort(sortTasks);
 
   const supplyPrep = activeTasks
-    .filter((task) => task.dueDate <= tomorrow)
+    .filter((task) => task.dueDate && task.dueDate <= tomorrow)
     .map((task): SupplyPrepSignal | null => {
       const hasSupplyRequirement = task.requirements?.some((requirement) => requirement.kind === 'supply') ?? false;
       const suggested = suggestSupplyLoadout(task);
@@ -128,13 +129,17 @@ export function buildManagerWorkbenchSignals(
   const loadByAssignee = new Map<string, StaffLoadSignal>();
   activeTasks.forEach((task) => {
     const assigneeIds = task.assigneeIds.length ? task.assigneeIds : ['unassigned'];
-    assigneeIds.forEach((assigneeId) => {
+    assigneeIds.forEach((assigneeId, index) => {
       const current = loadByAssignee.get(assigneeId) ?? {
         assigneeId,
+        assigneeName: task.assigneeNames?.[index],
         openCount: 0,
         urgentCount: 0,
         staleCount: 0,
       };
+      if (!current.assigneeName && task.assigneeNames?.[index]) {
+        current.assigneeName = task.assigneeNames[index];
+      }
       current.openCount += 1;
       if (task.priority === 'urgent' || task.priority === 'high') current.urgentCount += 1;
       if (staleIds.has(task.id)) current.staleCount += 1;
@@ -147,7 +152,7 @@ export function buildManagerWorkbenchSignals(
       b.staleCount - a.staleCount ||
       b.urgentCount - a.urgentCount ||
       b.openCount - a.openCount ||
-      a.assigneeId.localeCompare(b.assigneeId)
+      (a.assigneeName || a.assigneeId).localeCompare(b.assigneeName || b.assigneeId)
     ));
 
   return {

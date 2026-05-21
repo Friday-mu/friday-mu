@@ -409,3 +409,4 @@
 - Current Reported Issues has no production `source = reported_issue` / `status = reported` rows; historical accepted issues need a clean reported-issues export or API marker rather than title-text inference.
 - Safe display decision: keep Breezeway provenance as `Imported`, do not expose the provider as a permanent runtime label, and replace redacted imported titles in the UI with `Sensitive imported task` without unredacting the source data.
 - First fix slice: normalize due dates at the adapter boundary, remove the parent-level and Overview full-history task fetches, default task pages/API to 50 rows, add an animated F loader, and make status visually stronger while priority becomes quieter.
+- Live Overview QA also found UUID staff labels and `NO DATE` supply prep rows; workbench signals should use backend assignee display names and ignore unscheduled tasks for due-date prep/stale signals.

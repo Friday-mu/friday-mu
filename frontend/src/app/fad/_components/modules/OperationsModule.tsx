@@ -833,7 +833,9 @@ function SupplyPrepRow({ signal, onOpenTask }: { signal: SupplyPrepSignal; onOpe
 
 function StaffLoadRow({ signal }: { signal: StaffLoadSignal }) {
   const user = signal.assigneeId === 'unassigned' ? null : TASK_USER_BY_ID[signal.assigneeId];
-  const label = user?.name ?? (signal.assigneeId === 'unassigned' ? 'Unassigned' : signal.assigneeId);
+  const label = signal.assigneeId === 'unassigned'
+    ? 'Unassigned'
+    : signal.assigneeName || user?.name || 'Assigned user';
 
   return (
     <div className={'ops-workbench-row static' + (signal.staleCount > 0 ? ' urgent' : '')}>
