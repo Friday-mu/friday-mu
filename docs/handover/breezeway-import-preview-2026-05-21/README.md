@@ -27,7 +27,8 @@ This is preview-only. No production task rows were inserted or updated.
 - Cost export: 5,186 rows, 5,171 unique task IDs, 208 cost/supply-like line rows, 0 task IDs missing from summary, 3 summary task IDs missing from cost export.
 - Payroll export: 5,791 rows, 4,995 unique task IDs, 796 duplicate task rows, 0 task IDs missing from summary, 179 summary task IDs missing from payroll export.
 - Supplies export: 1 row, 1 unique task ID, joins to summary.
-- Custom export: 5,174 rows but no `Task ID` column, so it is not safe to join deterministically for apply mode.
+- Custom export: 5,174 rows, no `Task ID` column, but row-order validation against the summary export passes on title, due date, created date, and updated date for all 5,174 rows.
+- Custom export property labels include extractable property codes on 4,483 rows and task report links on all 5,174 rows.
 
 ## Current Apply Readiness
 
@@ -39,11 +40,10 @@ Blockers:
 - Review/approve user mapping for Breezeway assignee names to FAD users, or keep imported historical tasks unassigned.
 - Decide how to map priority `Watch`.
 - Implement child-row apply for cost/payroll/supply exports if those should become `task_costs` / `task_supplies` / inventory rows.
-- Re-export the custom file with `Task ID` if its custom fields must be preserved.
 
 Recommended next apply path:
 
-1. Import summary export as base historical `source = breezeway` task records after mappings are accepted.
-2. Keep historical open rows unassigned unless the user map is explicitly approved.
-3. Import cost/payroll/supply child rows in a second pass joined by `Task ID`.
-4. Do not use the custom export for writes until it includes `Task ID`.
+1. Import summary export as base historical `source = breezeway` task records after mappings are accepted, preserving `external_ref = breezeway:<Task ID>`.
+2. Enrich those base rows from the custom export by validated row order, especially property display labels, issue/comment counts, guest-arrival rating, report link, and custom status labels.
+3. Keep historical open rows unassigned unless the user map is explicitly approved.
+4. Import cost/payroll/supply child rows in a second pass joined by `Task ID`.

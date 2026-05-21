@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-21T15:32:48.921Z",
+  "generatedAt": "2026-05-21T15:35:28.521Z",
   "sourceDirectory": "/Users/judith/Desktop/Friday/Friday OS/Ops Module",
   "tenantId": "00000000-0000-0000-0000-000000000001",
   "mode": "preview_only",
@@ -1278,19 +1278,26 @@
         "Task report link",
         "Property Time Zone"
       ],
-      "joinable": false,
-      "reason": "custom_export_has_no_task_id_column",
+      "taskIdColumnPresent": false,
+      "joinable": true,
+      "joinStrategy": "row_order_with_summary_task_id",
+      "rowOrderValidation": {
+        "comparedRows": 5174,
+        "summaryRows": 5174,
+        "customRows": 5174,
+        "mismatches": []
+      },
+      "propertyCodeRows": 4483,
       "taskReportLinkRows": 5174,
-      "note": "Do not join this file heuristically for apply mode. Re-export with Task ID if these custom fields are required."
+      "note": "Custom export has useful property labels and report links but no Task ID. Use it to enrich summary rows only after row-order validation passes; keep summary Task ID for external_ref idempotency."
     }
   },
   "applyReadiness": {
     "readyToApply": false,
     "blockers": [
       "review_unknown_properties_and_assignees",
-      "supplemental_cost_payroll_supply_apply_not_implemented_yet",
-      "custom_export_has_no_task_id_column"
+      "supplemental_cost_payroll_supply_apply_not_implemented_yet"
     ],
-    "recommendation": "Use summary export as the base task import only after property/user mappings are accepted. Treat cost/payroll/supply imports as follow-up child-row migrations joined by Task ID."
+    "recommendation": "Use summary export as the base task import after property/user mappings are accepted, enriched by custom export row order while preserving summary Task ID for idempotency. Treat cost/payroll/supply imports as follow-up child-row migrations joined by Task ID."
   }
 }

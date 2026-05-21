@@ -6,7 +6,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const { pool } = require('../src/database/client');
-const { parseCsv, previewBreezewayCsv } = require('../src/tasks/breezewayImport');
+const { parseCsv, previewBreezewayCsv, extractPropertyCode } = require('../src/tasks/breezewayImport');
 
 const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID || '00000000-0000-0000-0000-000000000001';
 
@@ -198,14 +198,51 @@ function analyzeTaskIdFile({ kind, parsed, summaryByTaskId }) {
   };
 }
 
-function analyzeCustomFile(parsed) {
+function analyzeCustomFile(parsed, summaryRows) {
+  const rowOrderMismatches = [];
+  let propertyCodeRows = 0;
+  let taskReportLinkRows = 0;
+
+  for (let i = 0; i < Math.min(parsed.rows.length, summaryRows.length); i += 1) {
+    const customRow = parsed.rows[i];
+    const summaryRow = summaryRows[i];
+    const titleMatches = String(customRow['Task title'] || '').trim() === String(summaryRow['Task title'] || '').trim();
+    const dueMatches = String(customRow['Due date'] || '').trim() === String(summaryRow['Due date'] || '').trim();
+    const createdMatches = String(customRow['Created date'] || '').trim() === String(summaryRow['Created date'] || '').trim();
+    const updatedMatches = String(customRow['Last updated date'] || '').trim() === String(summaryRow['Last updated date'] || '').trim();
+    if (!(titleMatches && dueMatches && createdMatches && updatedMatches) && rowOrderMismatches.length < 25) {
+      rowOrderMismatches.push({
+        rowNumber: customRow.__rowNumber,
+        summaryTaskId: summaryRow['Task ID'] || null,
+        summaryTitle: summaryRow['Task title'] || null,
+        customTitle: customRow['Task title'] || null,
+        summaryDueDate: summaryRow['Due date'] || null,
+        customDueDate: customRow['Due date'] || null,
+        summaryCreatedDate: summaryRow['Created date'] || null,
+        customCreatedDate: customRow['Created date'] || null,
+      });
+    }
+    if (extractPropertyCode(customRow.Property)) propertyCodeRows += 1;
+    if (/\/task\/report\/[0-9a-f-]{36}/i.test(String(customRow['Task report link'] || ''))) {
+      taskReportLinkRows += 1;
+    }
+  }
+
   return {
     rows: parsed.rows.length,
     headers: parsed.headers,
-    joinable: false,
-    reason: 'custom_export_has_no_task_id_column',
-    taskReportLinkRows: parsed.rows.filter((row) => String(row['Task report link'] || '').trim()).length,
-    note: 'Do not join this file heuristically for apply mode. Re-export with Task ID if these custom fields are required.',
+    taskIdColumnPresent: false,
+    joinable: rowOrderMismatches.length === 0 && parsed.rows.length === summaryRows.length,
+    joinStrategy: 'row_order_with_summary_task_id',
+    rowOrderValidation: {
+      comparedRows: Math.min(parsed.rows.length, summaryRows.length),
+      summaryRows: summaryRows.length,
+      customRows: parsed.rows.length,
+      mismatches: rowOrderMismatches,
+    },
+    propertyCodeRows,
+    taskReportLinkRows,
+    note: 'Custom export has useful property labels and report links but no Task ID. Use it to enrich summary rows only after row-order validation passes; keep summary Task ID for external_ref idempotency.',
   };
 }
 
@@ -253,16 +290,15 @@ async function main() {
       cost: analyzeTaskIdFile({ kind: 'cost', parsed: parsed.cost, summaryByTaskId }),
       payroll: analyzeTaskIdFile({ kind: 'payroll', parsed: parsed.payroll, summaryByTaskId }),
       supplies: analyzeTaskIdFile({ kind: 'supplies', parsed: parsed.supplies, summaryByTaskId }),
-      custom: analyzeCustomFile(parsed.custom),
+      custom: analyzeCustomFile(parsed.custom, parsed.summary.rows),
     },
     applyReadiness: {
       readyToApply: false,
       blockers: [
         'review_unknown_properties_and_assignees',
         'supplemental_cost_payroll_supply_apply_not_implemented_yet',
-        'custom_export_has_no_task_id_column',
       ],
-      recommendation: 'Use summary export as the base task import only after property/user mappings are accepted. Treat cost/payroll/supply imports as follow-up child-row migrations joined by Task ID.',
+      recommendation: 'Use summary export as the base task import after property/user mappings are accepted, enriched by custom export row order while preserving summary Task ID for idempotency. Treat cost/payroll/supply imports as follow-up child-row migrations joined by Task ID.',
     },
   };
 

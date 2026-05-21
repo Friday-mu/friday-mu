@@ -281,9 +281,9 @@
 ## 2026-05-21 Breezeway Real CSV Bundle Preview
 
 - Real exports are in `/Users/judith/Desktop/Friday/Friday OS/Ops Module`; old Desktop sample CSVs were not used.
-- Added a preview-only bundle script for the five-file Breezeway export set, joining summary/cost/payroll/supplies by `Task ID` and flagging the custom export as non-joinable because it lacks `Task ID`.
+- Added a preview-only bundle script for the five-file Breezeway export set, joining summary/cost/payroll/supplies by `Task ID` and validating custom export enrichment by row order.
 - Improved property-code extraction so property values like `VA-4`, `SD-10`, and `GBH-B4 - ...` resolve without a manual map.
 - Generated `docs/handover/breezeway-import-preview-2026-05-21/bundle-preview.json` and a README summary.
 - Summary export preview: 5,174/5,174 valid rows, 0 existing `external_ref` matches, 2 unresolved property groups, 24 unresolved assignee groups, one unknown priority value (`Watch` on 12 rows).
-- Supplemental join preview: cost export has 208 cost/supply-like line rows; payroll has 5,791 assignee/payroll rows; supplies has 1 row; custom export has 5,174 rows but cannot be safely applied without `Task ID`.
+- Supplemental join preview: cost export has 208 cost/supply-like line rows; payroll has 5,791 assignee/payroll rows; supplies has 1 row; custom export has 5,174 row-order matches, property-code labels on 4,483 rows, and task report links on all rows.
 - No production import/apply was run.
