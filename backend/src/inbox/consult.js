@@ -104,6 +104,25 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, Math.max(0, maxLength - 18)).trimEnd()}\n[truncated]`;
 }
 
+function stripFullThreadEnvelope(value) {
+  const text = String(value || '');
+  if (!text.startsWith('[Operator requested FULL conversation context')) return text;
+  const match = text.match(/\n\nMy question:\s*([\s\S]*)$/i);
+  return match ? match[1].trim() : text;
+}
+
+function sanitizeConsultHistoryEntry(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  const next = { ...entry };
+  if (typeof next.content === 'string') next.content = stripFullThreadEnvelope(next.content);
+  if (typeof next.text === 'string') next.text = stripFullThreadEnvelope(next.text);
+  return next;
+}
+
+function sanitizeConsultHistory(history) {
+  return Array.isArray(history) ? history.map(sanitizeConsultHistoryEntry) : [];
+}
+
 function isTransientConsultFailure(result) {
   if (!result || result.ok) return false;
   if (result.finishReason === 'length') return true;
@@ -234,7 +253,7 @@ function buildConsultUserMessage({
     parts.push(`[Previous compacted Consult context]\n${currentSessionSummary}`);
   }
   if (sessionHistory && sessionHistory.length > 0) {
-    const recent = sessionHistory.slice(-10).map((m) => {
+    const recent = sanitizeConsultHistory(sessionHistory).slice(-10).map((m) => {
       const role = m.role === 'assistant' ? 'Friday' : (m.sender || 'Operator');
       return `${role}: ${m.content || m.text || ''}`;
     }).join('\n\n');
@@ -292,7 +311,7 @@ function buildCompactConsultUserMessage({
     parts.push(`[Previous Consult summary]\n${truncateText(currentSessionSummary, 1200)}`);
   }
   const recentTurns = Array.isArray(sessionHistory)
-    ? sessionHistory.slice(-4).map((m) => {
+    ? sanitizeConsultHistory(sessionHistory).slice(-4).map((m) => {
       const role = m.role === 'assistant' ? 'Friday' : (m.sender || 'Operator');
       return `${role}: ${truncateText(m.content || m.text || '', 900)}`;
     }).filter((line) => line.trim())
@@ -560,7 +579,7 @@ router.post('/', attachIdentity, async (req, res) => {
       activeSessionId = session.id;
 
       const sessionHistory = Array.isArray(session.conversation_history)
-        ? session.conversation_history
+        ? sanitizeConsultHistory(session.conversation_history)
         : (Array.isArray(req.body?.history) ? req.body.history : []);
 
       const [{ block: teachingsBlock, teachingIdMap }, actionFeedbackBlock] = await Promise.all([
@@ -689,7 +708,7 @@ router.post('/', attachIdentity, async (req, res) => {
 
       const userHistory = {
         role: 'user',
-        content: instruction,
+        content: stripFullThreadEnvelope(instruction),
         sender: actorName(req),
         senderId: actorId(req),
       };
@@ -826,7 +845,7 @@ router.get('/history/:conversationId', attachIdentity, async (req, res) => {
       sessions: rows.map((s) => ({
         id: s.id,
         userName: s.user_name,
-        messages: s.conversation_history || [],
+        messages: sanitizeConsultHistory(s.conversation_history || []),
         summary: s.summary,
         status: s.status,
         context: s.context,
@@ -900,4 +919,6 @@ module.exports._test = {
   compactConsultSystemPrompt,
   buildConsultUserMessage,
   composeSystemPrompt,
+  stripFullThreadEnvelope,
+  sanitizeConsultHistory,
 };

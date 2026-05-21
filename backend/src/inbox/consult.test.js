@@ -10,6 +10,8 @@ const {
   compactConsultSystemPrompt,
   conversationIdForSession,
   isTransientConsultFailure,
+  stripFullThreadEnvelope,
+  sanitizeConsultHistory,
 } = require('./consult')._test;
 
 describe('FAD-native Consult helpers', () => {
@@ -161,6 +163,26 @@ describe('FAD-native Consult helpers', () => {
     expect(message).toContain('Consult turn 4');
     expect(message).toContain('Consult turn 7');
     expect(message).toContain('Please make the draft warmer');
+  });
+
+  test('sanitizes legacy full-thread envelopes before reusing Consult history', () => {
+    const bloated = [
+      '[Operator requested FULL conversation context — 41 messages]',
+      '[20/05/2026, 16:42:53] Friday: Thanks for confirming.',
+      '[21/05/2026, 17:55:33] Guest: Please make me a realistic offer.',
+      '',
+      'My question: the cleaner did not come earlier than agreed',
+    ].join('\n');
+
+    expect(stripFullThreadEnvelope(bloated)).toBe('the cleaner did not come earlier than agreed');
+
+    const sanitized = sanitizeConsultHistory([
+      { role: 'user', content: bloated, sender: 'Ishant' },
+      { role: 'assistant', content: 'Noted.' },
+    ]);
+    expect(sanitized[0].content).toBe('the cleaner did not come earlier than agreed');
+    expect(JSON.stringify(sanitized)).not.toContain('41 messages');
+    expect(JSON.stringify(sanitized)).not.toContain('Please make me a realistic offer');
   });
 
   test('compact fallback system prompt preserves Consult draft protocol', () => {
