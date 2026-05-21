@@ -31,6 +31,9 @@ interface CacheState {
 let cache: CacheState = { tasks: [], loading: false, error: null, loaded: false };
 let inFlight: Promise<void> | null = null;
 const subscribers = new Set<() => void>();
+const filteredCache = new Map<string, CacheState>();
+const filteredInFlight = new Map<string, Promise<void>>();
+const filteredSubscribers = new Set<() => void>();
 
 interface PageCacheState extends FetchTasksPageResult {
   loading: boolean;
@@ -54,6 +57,10 @@ function notify(): void {
   subscribers.forEach((fn) => fn());
 }
 
+function notifyFiltered(): void {
+  filteredSubscribers.forEach((fn) => fn());
+}
+
 function notifyPages(): void {
   pageSubscribers.forEach((fn) => fn());
 }
@@ -61,6 +68,11 @@ function notifyPages(): void {
 function invalidatePageCache(): void {
   pageCache.clear();
   notifyPages();
+}
+
+function invalidateFilteredCache(): void {
+  filteredCache.clear();
+  notifyFiltered();
 }
 
 async function load(): Promise<void> {
@@ -90,10 +102,47 @@ export interface UseApiTasksResult {
   refetch: () => void;
 }
 
-export function useApiTasks(): UseApiTasksResult {
+async function loadFiltered(key: string, filter: FetchTasksPageInput): Promise<void> {
+  const current = filteredCache.get(key) || { tasks: [], loading: false, error: null, loaded: false };
+  const existing = filteredInFlight.get(key);
+  if (existing) return existing;
+  filteredCache.set(key, { ...current, loading: true, error: null });
+  notifyFiltered();
+  const promise = (async () => {
+    try {
+      const tasks = await fetchTasks(filter);
+      filteredCache.set(key, { tasks, loading: false, error: null, loaded: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      filteredCache.set(key, { ...current, loading: false, error: msg, loaded: true });
+    } finally {
+      filteredInFlight.delete(key);
+      notifyFiltered();
+    }
+  })();
+  filteredInFlight.set(key, promise);
+  return promise;
+}
+
+export function useApiTasks(filter?: FetchTasksPageInput): UseApiTasksResult {
   const [, force] = useState(0);
+  const key = filter ? pageKey(filter) : '';
 
   useEffect(() => {
+    if (!filter) return undefined;
+    const sub = () => force((v) => v + 1);
+    filteredSubscribers.add(sub);
+    const cached = filteredCache.get(key);
+    if (!cached?.loaded && !cached?.loading) {
+      void loadFiltered(key, filter);
+    }
+    return () => {
+      filteredSubscribers.delete(sub);
+    };
+  }, [filter, key]);
+
+  useEffect(() => {
+    if (filter) return undefined;
     const sub = () => force((v) => v + 1);
     subscribers.add(sub);
     if (!cache.loaded && !cache.loading) {
@@ -102,7 +151,18 @@ export function useApiTasks(): UseApiTasksResult {
     return () => {
       subscribers.delete(sub);
     };
-  }, []);
+  }, [filter]);
+
+  if (filter) {
+    const state = filteredCache.get(key) || { tasks: [], loading: false, error: null, loaded: false };
+    return {
+      ...state,
+      refetch: () => {
+        filteredCache.delete(key);
+        void loadFiltered(key, filter);
+      },
+    };
+  }
 
   return {
     tasks: cache.tasks,
@@ -187,6 +247,7 @@ export function replaceTaskInCache(updated: Task): void {
     ...cache,
     tasks: cache.tasks.map((t) => (t.id === updated.id ? updated : t)),
   };
+  invalidateFilteredCache();
   invalidatePageCache();
   notify();
 }
@@ -198,6 +259,7 @@ export function addTaskToCache(created: Task): void {
     // legitimately return an existing task. Keep the local list unique.
     tasks: [created, ...cache.tasks.filter((t) => t.id !== created.id)],
   };
+  invalidateFilteredCache();
   invalidatePageCache();
   notify();
 }
@@ -207,6 +269,7 @@ export function removeTaskFromCache(taskId: string): void {
     ...cache,
     tasks: cache.tasks.filter((t) => t.id !== taskId),
   };
+  invalidateFilteredCache();
   invalidatePageCache();
   notify();
 }
@@ -215,6 +278,8 @@ export function removeTaskFromCache(taskId: string): void {
 export function _resetTasksCacheForTests(): void {
   cache = { tasks: [], loading: false, error: null, loaded: false };
   inFlight = null;
+  filteredCache.clear();
+  filteredInFlight.clear();
   pageCache.clear();
   pageInFlight.clear();
 }

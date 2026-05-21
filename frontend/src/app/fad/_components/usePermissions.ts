@@ -68,6 +68,11 @@ function decodeJwtUserId(token: string | null): string | null {
   }
 }
 
+function readJwtUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return decodeJwtUserId(localStorage.getItem('gms_token'));
+}
+
 interface ProviderProps {
   children: ReactNode;
   /** Override for tests / SSR. Skipped when localStorage has a value. */
@@ -82,6 +87,7 @@ export function PermissionsProvider({ children, initialRole }: ProviderProps) {
 
   useEffect(() => {
     try {
+      const jwtUserId = readJwtUserId();
       const stored = localStorage.getItem(STORAGE_KEY) as Role | null;
       const storedUser = localStorage.getItem(STORAGE_USER_KEY);
       const storedReal = localStorage.getItem(STORAGE_REAL_ROLE_KEY) as Role | null;
@@ -95,9 +101,9 @@ export function PermissionsProvider({ children, initialRole }: ProviderProps) {
       }
       if (stored && stored in PERMISSIONS) {
         setRoleState(stored);
-        setCurrentUserId(storedUser ?? pickUserForRole(stored));
+        setCurrentUserId(jwtUserId ?? storedUser ?? pickUserForRole(stored));
       } else {
-        setCurrentUserId(pickUserForRole(initialRole ?? DEFAULT_ROLE));
+        setCurrentUserId(jwtUserId ?? pickUserForRole(initialRole ?? DEFAULT_ROLE));
       }
     } catch {
       // localStorage unavailable; keep defaults
@@ -107,7 +113,7 @@ export function PermissionsProvider({ children, initialRole }: ProviderProps) {
 
   const setRole = useCallback((next: Role) => {
     setRoleState(next);
-    const userId = pickUserForRole(next);
+    const userId = readJwtUserId() ?? pickUserForRole(next);
     setCurrentUserId(userId);
     try {
       localStorage.setItem(STORAGE_KEY, next);
@@ -159,8 +165,7 @@ export function useCurrentUserId(): string {
 
 export function useJwtUserId(): string | null {
   return useMemo(() => {
-    if (typeof window === 'undefined') return null;
-    return decodeJwtUserId(localStorage.getItem('gms_token'));
+    return readJwtUserId();
   }, []);
 }
 

@@ -753,6 +753,45 @@ async function loadKnownPropertyCodes(db, tenantId) {
   return codes;
 }
 
+function addUserMapEntry(map, key, userId) {
+  const cleaned = String(key || '').trim();
+  if (!cleaned || !UUID_RE.test(String(userId || ''))) return;
+  map[cleaned] = userId;
+  map[normalizeKey(cleaned)] = userId;
+}
+
+async function loadKnownUserMap(db, tenantId) {
+  const map = {};
+  if (!db || !tenantId) return map;
+  try {
+    const { rows } = await db.query(
+      `SELECT
+         u.id,
+         u.username,
+         u.email,
+         u.display_name,
+         h.name AS staff_name,
+         h.email AS staff_email
+       FROM users u
+       LEFT JOIN hr_staff h
+         ON h.tenant_id = u.tenant_id
+        AND (h.user_id = u.id OR LOWER(h.email) = LOWER(u.email))
+       WHERE u.tenant_id = $1`,
+      [tenantId],
+    );
+    rows.forEach((row) => {
+      addUserMapEntry(map, row.display_name, row.id);
+      addUserMapEntry(map, row.username, row.id);
+      addUserMapEntry(map, row.email, row.id);
+      addUserMapEntry(map, row.staff_name, row.id);
+      addUserMapEntry(map, row.staff_email, row.id);
+    });
+  } catch (_) {
+    // CSV preview/apply should still work when HR/users tables are absent.
+  }
+  return map;
+}
+
 async function insertImportedCostLine(client, tenantId, taskId, actorUserId, line) {
   const existing = await client.query(
     `SELECT id FROM task_costs
@@ -919,6 +958,10 @@ async function previewBreezewayCsv(options) {
     ...[...(options.knownPropertyCodes || [])].map((code) => String(code).toUpperCase()),
     ...[...(await loadKnownPropertyCodes(options.db, options.tenantId))],
   ]);
+  const userMap = {
+    ...(await loadKnownUserMap(options.db, options.tenantId)),
+    ...(options.userMap || {}),
+  };
 
   const records = [];
   const seenTaskIds = new Set();
@@ -928,6 +971,7 @@ async function previewBreezewayCsv(options) {
     ...options,
     importBatchId,
     knownPropertyCodes,
+    userMap,
   };
 
   for (const row of parsed.rows) {

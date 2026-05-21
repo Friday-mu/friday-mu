@@ -359,13 +359,14 @@ function OverviewPage({
 }) {
   const { role } = usePermissions();
   const currentUserId = useCurrentUserId();
-  const { tasks: TASKS, loading, error, refetch } = useApiTasks();
+  const overviewTaskFilter = useMemo(() => (
+    role === 'field' ? { assignee: 'me' as const } : undefined
+  ), [role]);
+  const { tasks: TASKS, loading, error, refetch } = useApiTasks(overviewTaskFilter);
   const [dashboardDate, setDashboardDate] = useState(TODAY);
   const [dashboardStatus, setDashboardStatus] = useState<DashboardStatusFilter>('open');
   const [savingTimeId, setSavingTimeId] = useState<string | null>(null);
-  const scopedTasks = useMemo(() => (
-    role === 'field' ? TASKS.filter((t) => t.assigneeIds.includes(currentUserId)) : TASKS
-  ), [TASKS, role, currentUserId]);
+  const scopedTasks = TASKS;
   const kpis = useMemo(() => {
     const openToday = scopedTasks.filter((t) => t.dueDate === TODAY && !CLOSED_STATUS.has(t.status)).length;
     const overdue = scopedTasks.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
@@ -1290,7 +1291,8 @@ function MyTasksPage({
 }) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
-  const { tasks: TASKS, loading, error, refetch } = useApiTasks();
+  const myTaskFilter = useMemo(() => ({ assignee: 'me' as const }), []);
+  const { tasks: assignedTasks, loading, error, refetch } = useApiTasks(myTaskFilter);
   const [dateTab, setDateTab] = useState<TaskDateTab>('today');
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState<Department | 'all'>('all');
@@ -1300,10 +1302,6 @@ function MyTasksPage({
   const [startDate, setStartDate] = useState(TODAY);
   const [endDate, setEndDate] = useState(addDays(TODAY, 13));
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-
-  const assignedTasks = useMemo(() => (
-    TASKS.filter((task) => task.assigneeIds.includes(currentUserId))
-  ), [TASKS, currentUserId]);
 
   const visibleTasks = useMemo(() => {
     const tasks = assignedTasks
@@ -1386,7 +1384,7 @@ function MyTasksPage({
           Live tasks could not load: {error}. Offline queue is not enabled yet, so failed actions stay visible here instead of disappearing.
         </div>
       )}
-      {loading && TASKS.length === 0 && <Empty>Loading assigned tasks...</Empty>}
+      {loading && assignedTasks.length === 0 && <Empty>Loading assigned tasks...</Empty>}
 
       <div className="ops-my-tabs" role="tablist" aria-label="Task date range">
         {[
@@ -1587,8 +1585,8 @@ function MyTaskCard({
 }
 
 function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
-  const currentUserId = useCurrentUserId();
-  const { tasks: TASKS, loading, error } = useApiTasks();
+  const myTaskFilter = useMemo(() => ({ assignee: 'me' as const }), []);
+  const { tasks: TASKS, loading, error } = useApiTasks(myTaskFilter);
   const [search, setSearch] = useState('');
   const [range, setRange] = useState<'week' | 'month' | 'all'>('month');
 
@@ -1598,7 +1596,6 @@ function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
       range === 'month' ? addDays(TODAY, -31) :
       '0000-01-01';
     return TASKS
-      .filter((task) => task.assigneeIds.includes(currentUserId))
       .filter((task) => task.status === 'completed' || task.status === 'closed')
       .filter((task) => {
         const done = (task.completedAt ?? task.updatedAt).slice(0, 10);
@@ -1606,7 +1603,7 @@ function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
       })
       .filter((task) => taskMatchesSearch(task, search))
       .sort((a, b) => (b.completedAt ?? b.updatedAt).localeCompare(a.completedAt ?? a.updatedAt));
-  }, [TASKS, currentUserId, range, search]);
+  }, [TASKS, range, search]);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, Task[]>();

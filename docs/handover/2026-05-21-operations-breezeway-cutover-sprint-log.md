@@ -374,6 +374,7 @@
 - Current `fad-rebuild` has the roster UI backed by `/api/hr/staff` and `/api/tasks`, but weekly availability edits still live only in React state and the publish button is intentionally disabled.
 - Existing HR backend style is direct Express + `pg`, with JWT permission gates in `backend/src/hr/auth.js` and FAD schema migrations tracked by `fad_schema_migrations`.
 - The roster model should remain HR/Ops-owned availability by staff/date; it should not become the future desktop task-calendar scheduling system, and it should not depend on Breezeway.
+
 - Existing frontend permission config already names `hr_roster`; the backend permission matrix needs matching `hr_roster:read/write/approve` permissions.
 - Field staff should be able to read their own published roster rows; manager draft roster edits should stay manager-only until publish.
 - Use HR `staff_id` as the durable roster key because some staff may not have login/user IDs; task assignment remains tied to users where possible.
@@ -389,3 +390,12 @@
 - Fixed the roster mobile split-pane regression found during QA: mobile now shows the day pager instead of hiding the roster content or showing the desktop table.
 - Browser QA used a local mock API for `/api/hr/staff`, `/api/hr/roster`, `/api/hr/roster/publish`, and `/api/tasks`; save draft and publish interactions updated the rendered state with no console warnings/errors.
 - Responsive QA screenshots: `docs/handover/qa-screenshots-2026-05-22-roster-persistence/`; 320/375/430/1440 checks stayed at viewport width with no horizontal overflow.
+
+## 2026-05-22 Live Ops Assignment Regression Mini-Research
+
+- Live `admin.friday.mu` schedule loads, but every imported task is grouped as Unassigned and My Tasks is empty for the current Director session.
+- Production DB confirms the import wrote 4,483 Breezeway tasks with preserved `source_payload.people.assignees`, but 0 rows have `tasks.assignee_user_ids`.
+- Current importer only resolves assignees when an explicit `userMap` is passed; the production apply ran CSV-first without promoting known HR/user identities.
+- HR staff and `users` are partially disconnected: Bryan/Catherine have user rows but null `hr_staff.user_id`; Hans is HR staff with no user row; several Breezeway assignees are external vendors/historical people.
+- Frontend `usePermissions` still defaults self-scope to fixture IDs (`u-ishant`), so client-side My Tasks filters cannot match live UUID assignees even after backfill.
+- Decision: fix the data, not just the UI. Backfill Breezeway assignees idempotently from preserved source payload, create inactive shadow assignee identities only where no FAD user/staff identity exists, link HR by email, and make future imports auto-resolve known identities.
