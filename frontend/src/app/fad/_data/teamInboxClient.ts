@@ -528,7 +528,7 @@ export function useMessageReplies(target: { kind: 'channel' | 'dm'; parentId: st
   loading: boolean;
   error: string | null;
   refetch: () => void;
-  send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind }) => Promise<LiveTeamMessage | null>;
+  send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind; attachmentIds?: string[] }) => Promise<LiveTeamMessage | null>;
 } {
   const [replies, setReplies] = useState<LiveTeamMessage[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -554,9 +554,10 @@ export function useMessageReplies(target: { kind: 'channel' | 'dm'; parentId: st
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.kind, target?.parentId, target?.targetId]);
 
-  const send = useCallback(async (text: string, opts: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind } = {}) => {
+  const send = useCallback(async (text: string, opts: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind; attachmentIds?: string[] } = {}) => {
     const t = targetRef.current;
-    if (!t || !text.trim()) return null;
+    const hasAttachments = (opts.attachmentIds?.length ?? 0) > 0;
+    if (!t || (!text.trim() && !hasAttachments)) return null;
     try {
       const msg = t.kind === 'channel'
         ? await sendChannelMessage(t.targetId, { text: text.trim(), ...opts, parentMessageId: t.parentId })

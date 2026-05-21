@@ -816,6 +816,7 @@ export function TeamInbox({
                   />
                   {threadOpen && (
                     <ThreadSurface
+                      target={threadTarget}
                       parentId={m.id}
                       replies={threadReplies ?? []}
                       currentUserId={currentUserId}
@@ -823,13 +824,14 @@ export function TeamInbox({
                       usersById={tenantUserById}
                       onPreviewAttachment={setPreviewAttachment}
                       onDownloadAttachment={handleAttachmentDownload}
-                      onSend={async (text) => {
+                      onSend={async (text, attachmentIds = []) => {
                         const parsedMentions = parseMentions(text, tenantUsers ?? []);
-                        const msg = await sendThreadReply(text, { mentions: parsedMentions.mentions });
+                        const msg = await sendThreadReply(text, { mentions: parsedMentions.mentions, attachmentIds });
                         if (msg) {
                           trackEvent('team_thread_reply', {
                             kind: messageKind,
                             parent_id: m.id,
+                            attachment_count: attachmentIds.length,
                           });
                           // Bump the parent's threadCount badge without
                           // waiting for the 15s poll cycle.
@@ -1750,6 +1752,7 @@ function TextMessage({
 // Day 2-3 polish item); reply-to-reply nesting is disallowed by the
 // backend (flat threads only).
 function ThreadSurface({
+  target,
   parentId: _parentId,
   replies,
   currentUserId,
@@ -1760,6 +1763,7 @@ function ThreadSurface({
   onSend,
   onClose,
 }: {
+  target: { kind: 'channel' | 'dm'; parentId: string; targetId: string } | null;
   parentId: string;
   replies: LiveTeamMessage[];
   currentUserId: string;
@@ -1767,11 +1771,14 @@ function ThreadSurface({
   usersById: Map<string, LiveUser>;
   onPreviewAttachment: (attachment: TeamAttachment) => void;
   onDownloadAttachment: (attachment: TeamAttachment) => void;
-  onSend: (text: string) => Promise<boolean>;
+  onSend: (text: string, attachmentIds?: string[]) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<LiveAttachment[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const mention = useMentionAutocomplete({
     value: draft,
@@ -1779,13 +1786,40 @@ function ThreadSurface({
     users,
     textareaRef,
   });
+  const uploadFiles = useCallback(async (files: FileList | File[]) => {
+    if (!target) return;
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    setUploadingCount((count) => count + arr.length);
+    await Promise.all(arr.map(async (file) => {
+      try {
+        const attachment = target.kind === 'channel'
+          ? await uploadChannelAttachment(target.targetId, file)
+          : await uploadDmAttachment(target.targetId, file);
+        setPendingAttachments((prev) => [...prev, attachment]);
+        trackEvent('team_thread_attachment_upload', {
+          kind: target.kind,
+          size_bytes: file.size,
+          mime_type: file.type || null,
+        });
+      } catch (e) {
+        fireToast(e instanceof Error ? `${file.name}: ${e.message}` : 'Upload failed');
+      } finally {
+        setUploadingCount((count) => count - 1);
+      }
+    }));
+  }, [target]);
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    const attachmentIds = pendingAttachments.map((attachment) => attachment.id);
+    if ((!text && attachmentIds.length === 0) || sending || uploadingCount > 0) return;
     setSending(true);
-    const ok = await onSend(text);
+    const ok = await onSend(text, attachmentIds);
     setSending(false);
-    if (ok) setDraft('');
+    if (ok) {
+      setDraft('');
+      setPendingAttachments([]);
+    }
     else fireToast('Reply failed — try again');
   };
   return (
@@ -1861,7 +1895,33 @@ function ThreadSurface({
           />
         );
       })}
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files?.length) void uploadFiles(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      {(pendingAttachments.length > 0 || uploadingCount > 0) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {pendingAttachments.map((att) => (
+            <PendingAttachmentChip
+              key={att.id}
+              attachment={att}
+              onRemove={() => setPendingAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+            />
+          ))}
+          {uploadingCount > 0 && (
+            <span className="chip" style={{ fontSize: 11, padding: '4px 8px', color: 'var(--color-text-tertiary)' }}>
+              Uploading {uploadingCount} file{uploadingCount === 1 ? '' : 's'}…
+            </span>
+          )}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'flex-end' }}>
         <div style={{ position: 'relative', flex: 1 }}>
           <MentionPicker
             open={mention.open}
@@ -1882,6 +1942,13 @@ function ThreadSurface({
                 send();
               }
             }}
+            onPaste={(e) => {
+              const files = Array.from(e.clipboardData?.files || []);
+              if (files.length > 0) {
+                e.preventDefault();
+                void uploadFiles(files);
+              }
+            }}
             placeholder="Reply in thread…"
             rows={2}
             style={{
@@ -1896,10 +1963,20 @@ function ThreadSurface({
           />
         </div>
         <button
+          className="btn ghost sm"
+          type="button"
+          title="Attach a file"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={!target || uploadingCount > 0}
+          style={{ flex: '0 0 auto' }}
+        >
+          <IconPaperclip size={11} />
+        </button>
+        <button
           className="btn primary sm"
           onClick={send}
-          disabled={!draft.trim() || sending}
-          style={{ alignSelf: 'flex-end' }}
+          disabled={(!draft.trim() && pendingAttachments.length === 0) || sending || uploadingCount > 0}
+          style={{ flex: '0 0 auto' }}
         >
           <IconSend size={11} /> Reply
         </button>
