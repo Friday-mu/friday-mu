@@ -307,10 +307,10 @@ export function FridayConsult({
     return () => { cancelled = true; };
   }, [conversationId, context, currentDraft?.id]);
 
-  // Full-thread context toggle. When on, the operator's next consult
-  // query is prepended with the full guest↔team thread so Friday has
-  // more than the default 10-msg cap. Resets on thread switch (the
-  // parent's key={selected} remounts FC).
+  // Full-thread context toggle. The backend already loads the guest↔team
+  // thread for Consult. Keep the toggle as an operator intent signal,
+  // but do not paste the full thread into the user message; doing so
+  // duplicates context, bloats prompts, and pollutes Consult history.
   const [useFullThread, setUseFullThread] = useState(false);
 
   // Operator-resizable FC height. Default = AUTO (wraps content up to
@@ -444,38 +444,12 @@ export function FridayConsult({
     setThinking(true);
 
     try {
-      // If the operator turned on "Use full thread", fetch every guest↔
-      // team message for this conversation and prepend it to the user
-      // query. The backend also loads recent thread messages, but this
-      // lets the operator explicitly force full-thread context.
-      let queryText = q;
-      if (useFullThread && conversationId) {
-        try {
-          const detail = await apiFetch(`/api/inbox/conversations/${conversationId}`) as {
-            messages?: Array<{ direction: string; body: string; translated_body?: string; created_at: string; sender_name?: string }>;
-          };
-          const msgs = detail?.messages || [];
-          if (msgs.length > 0) {
-            const formatted = msgs.map((m) => {
-              const who = m.direction === 'inbound' ? 'Guest' : (m.sender_name || 'Team');
-              const ts = new Date(m.created_at).toLocaleString('en-GB');
-              return `[${ts}] ${who}: ${m.translated_body || m.body}`;
-            }).join('\n');
-            queryText =
-              `[Operator requested FULL conversation context — ${msgs.length} messages]\n` +
-              `${formatted}\n\n` +
-              `My question: ${q}`;
-          }
-        } catch (e) {
-          console.warn('[FC] full-thread fetch failed, sending without:', (e as Error).message);
-        }
-      }
-
       const body: Record<string, unknown> = {
-        text: queryText,
+        text: q,
         context,
       };
       if (conversationId) body.conversationId = conversationId;
+      if (useFullThread) body.fullThread = true;
       if (currentDraft?.id) body.draftId = currentDraft.id;
       // Always send the CURRENT working body so Friday operates on the
       // operator's latest edits, not the stale original draft.

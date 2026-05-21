@@ -213,3 +213,25 @@
 - Apply mode inserts only non-existing `external_ref = breezeway:<Task ID>` records; historical open rows remain unassigned by default to avoid field-staff-visible stale work.
 - Fixed a legacy `backend/src/server.ts` TypeScript shorthand bug so backend `npm run build` is green.
 - Live coordination note: after Ops `87b26bc` was deployed, another session deployed frontend `35d86ef` from `origin/fad-design-os-v01-frontend`; do not overwrite it without merging/coordination.
+
+## 2026-05-21 Inbox Frontend/Ops Backend Coordination Mini-Research
+
+- `origin/fad-rebuild` is clean at `45e12f9`; the selected Inbox frontend files now match paused Inbox branch `e8e7a84`.
+- Full `origin/fad-design-os-v01-frontend` merge is still unsafe: it deletes Ops Wave 5/6/Import files and replaces task/backend migrations.
+- The live symptom to fix in this Ops worktree is `/api/inbox/*` and `/api/team/*` returning 404 after the Inbox frontend port.
+- Existing `backend/server.js` already has a GMS-backed `/api/conversations` adapter, so Inbox guest read routes should reuse that shape instead of importing the design backend wholesale.
+- TeamInbox persistence tables are not present on `fad-rebuild`; Team read routes should return truthful empty compatibility payloads while mutating/send routes fail explicitly.
+- Keep send/draft/teaching actions guarded as not implemented until the Inbox backend can be integrated without risking false live sends.
+- Preserve Operations ownership of `/api/tasks`, migrations 052-054, Breezeway import tooling, and manager/field task execution surfaces.
+
+## 2026-05-21 Inbox Frontend/Ops Backend Coordination Checkpoint
+
+- Added an authenticated `/api` Inbox compatibility router without touching Ops task execution code.
+- Ported the latest Inbox-owned `FridayConsult.tsx` frontend fix from `e8e7a84`, keeping full-thread intent as a backend flag instead of duplicating the entire thread into the prompt.
+- `/api/inbox/conversations` and detail reads now reuse the existing GMS `/pending` bridge and return the shape expected by the ported Inbox frontend.
+- `/api/team/*`, `/api/inbox/website/threads`, consult history/session reads, and read/unread calls now return non-404 compatibility payloads so the UI can render cleanly.
+- Mutating/send routes for drafts, outbound send, Friday Consult, Team creation/uploads/reactions, and website replies return explicit `501 not_implemented` responses to avoid false live sends or fake persistence.
+- Kept TeamInbox persistence as a later backend slice because `fad-rebuild` has no team/website inbox tables and the design branch backend conflicts with Ops migrations.
+- Raised the global Express rate-limit default to 1000 requests per 15 minutes via `API_RATE_LIMIT_MAX` after browser QA hit 429s during normal Inbox reload/poll bursts.
+- Mock-GMS route QA confirmed no `/api/inbox/*` or `/api/team/*` 404s and no bad statuses across 80 requests in 320/375/430/768/1440 width sweeps.
+- QA screenshot: `docs/handover/qa-screenshots-2026-05-21-inbox-compat/fad-inbox-compat-375.png`.

@@ -16,9 +16,10 @@ const io = socketIo(server, {
 });
 
 // Rate limiting
+const rateLimitMax = Number(process.env.API_RATE_LIMIT_MAX || 1000);
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: Number.isFinite(rateLimitMax) ? rateLimitMax : 1000 // admin UI polling can legitimately burst during module switches
 });
 
 app.use(cors());
@@ -126,6 +127,11 @@ app.get('/health', (req, res) => {
 // execution records; Inbox pending_actions remain proposals until converted
 // into tasks through this API with an idempotent external_ref.
 app.use('/api/tasks', require('./src/tasks'));
+
+// Compatibility routes for the paused Inbox frontend port. This keeps the
+// selected frontend files on fad-rebuild from 404ing without importing the
+// design-branch backend over Ops-owned task migrations and services.
+app.use('/api', require('./src/inboxCompat')({ gmsAPI }));
 
 // ====================================================================
 // Frontend Compatibility Layer
