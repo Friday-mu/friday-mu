@@ -117,9 +117,9 @@ function daysBetween(from: string, to: string): number {
 }
 
 function withinDateTab(task: Task, tab: TaskDateTab, startDate: string, endDate: string): boolean {
-  if (tab === 'today') return task.dueDate === TODAY;
+  if (tab === 'today') return task.dueDate <= TODAY;
   if (tab === 'tomorrow') return task.dueDate === addDays(TODAY, 1);
-  if (tab === 'week') return task.dueDate >= TODAY && task.dueDate <= addDays(TODAY, 6);
+  if (tab === 'week') return task.dueDate <= addDays(TODAY, 6);
   return task.dueDate >= startDate && task.dueDate <= endDate;
 }
 
