@@ -31,6 +31,7 @@ export const MODULES: ModuleDef[] = [
     { id: 'my', label: 'My tasks' },
     { id: 'all', label: 'All tasks' },
     { id: 'issues', label: 'Reported issues' },
+    { id: 'inbox-ai', label: 'Inbox AI' },
     { id: 'history', label: 'My history' },
     { id: 'approvals', label: 'Approvals' },
     { id: 'roster', label: 'Roster' },

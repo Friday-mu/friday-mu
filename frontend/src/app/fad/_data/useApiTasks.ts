@@ -99,7 +99,9 @@ export function replaceTaskInCache(updated: Task): void {
 export function addTaskToCache(created: Task): void {
   cache = {
     ...cache,
-    tasks: [created, ...cache.tasks],
+    // Idempotent create calls (for example pending_action:<id>) can
+    // legitimately return an existing task. Keep the local list unique.
+    tasks: [created, ...cache.tasks.filter((t) => t.id !== created.id)],
   };
   notify();
 }

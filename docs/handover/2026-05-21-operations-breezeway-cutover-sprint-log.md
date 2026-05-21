@@ -94,3 +94,28 @@
 - Fixed the notification row nested-button hydration warning by making rows keyboard-accessible containers while keeping Archive/Read as real buttons.
 - Visual QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave4/`; 320/375/430/768/1440 checks showed no horizontal overflow, and the remaining tiny checkbox is inside a larger label target.
 - Typecheck, frontend build, backend task-service syntax check, and browser console rerun passed after the row-container fix.
+
+## 2026-05-21 Wave 4B Mini-Research
+
+- Current `fad-rebuild` already has the backend contract this slice needs: `POST /api/tasks` accepts `external_ref`, returns the active existing task for repeat calls, and defaults `source = inbox_ai` to `status = reported`.
+- Current frontend task client passes `externalRef`, but repeated idempotent creates still prepend duplicate cache rows locally; fix that before adding any Inbox AI conversion helper.
+- `origin/fad-design-os-v01-frontend` only has the older `createTask` task client shape for this area, so the rebuilt adapter should be extended in place instead of branch-merging.
+- The cutover plan is explicit: Inbox owns pending-action detection/proposal/UI; Operations owns only the idempotent conversion into real tasks and manager triage of those task records.
+- Notion sprint scope confirms pending actions should not become a standalone Inbox task panel; action resolution belongs in Operations/Reported Issues while TeamInbox remains internal comms.
+- Breezeway mobile evidence supports property-first, priority-visible triage and notification/comment backlinks, but FAD must keep field staff out of pending-action creation/scheduling paths.
+- Feature Catalog reuse is the idempotent/shared-state write-safety mindset plus the existing viewport audit harness; no more specific pending-action component exists.
+- OWASP API guidance keeps object-level authorization central for ID-bearing APIs, so this slice stays tenant-scoped and does not expose a broad pending-action lookup surface.
+- IETF/MDN idempotency guidance supports deterministic retry keys for unsafe methods; FAD uses `external_ref = pending_action:<id>` as the task-domain idempotency key rather than a generic header.
+- Wave 4B decision: add an Ops-owned pending-action-to-task mapper, upsert idempotent create results in the task cache, and add a manager-only Inbox AI task triage queue without editing Inbox-owned files.
+
+## 2026-05-21 Wave 4B Checkpoint
+
+- Added `pendingActionToTaskInput` / `createTaskFromPendingAction` in the Operations task client, mapping pending action IDs to `external_ref = pending_action:<id>`, `source = inbox_ai`, and `status = reported`.
+- Fixed the API task cache so idempotent create retries replace existing task rows instead of duplicating them locally.
+- Added a manager-only Operations `Inbox AI` tab backed by live `/api/tasks` records filtered to `source = inbox_ai` and `status = reported`.
+- Manager triage now supports accept, dismiss, stale, duplicate, and link-existing actions on converted Inbox AI task records, including bulk accept/dismiss/stale.
+- Field role routing remains assigned-only: forcing `sub=inbox-ai` lands field users on `My tasks`; no Inbox AI triage or All Tasks surface is visible.
+- No Inbox-owned pending-action detector/proposal/UI files were touched; Inbox can call the exported conversion helper or send the equivalent `POST /api/tasks` payload.
+- Visual QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave4b/`; 320/375/430/768/1440 checks showed 0 document overflow, 0 triage-pane overflow, and 0 triage-pane small targets.
+- Browser interaction check passed with a local mock API: page identity, nonblank render, no console errors, checkbox selection, bulk accept, and manager source/detail controls.
+- Typecheck, frontend build, backend task-service syntax check, and field role-gate smoke passed.

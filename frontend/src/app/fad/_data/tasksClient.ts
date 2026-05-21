@@ -251,6 +251,116 @@ export interface CreateTaskInput {
   externalRef?: string;
 }
 
+export interface PendingActionTaskProposal {
+  id: string;
+  actionText?: string | null;
+  action_text?: string | null;
+  originalText?: string | null;
+  original_text?: string | null;
+  summary?: string | null;
+  sourceSummary?: string | null;
+  source_summary?: string | null;
+  conversationId?: string | null;
+  conversation_id?: string | null;
+  inboxThreadId?: string | null;
+  inbox_thread_id?: string | null;
+  propertyCode?: string | null;
+  property_code?: string | null;
+  propertyName?: string | null;
+  property_name?: string | null;
+  reservationId?: string | null;
+  reservation_guesty_id?: string | null;
+  guestName?: string | null;
+  guest_name?: string | null;
+  urgency?: string | null;
+  category?: string | null;
+  detectedAt?: string | null;
+  detected_at?: string | null;
+  dueBy?: string | null;
+  due_by?: string | null;
+  confidence?: number | null;
+}
+
+function firstString(...values: Array<string | null | undefined>): string | undefined {
+  return values.find((v): v is string => typeof v === 'string' && v.trim().length > 0)?.trim();
+}
+
+function cleanPendingActionTitle(raw: string | undefined): string {
+  const cleaned = (raw || 'Review Inbox AI action')
+    .replace(/\s+/g, ' ')
+    .replace(/^(please|pls|todo|to do|action)\s*[:,-]?\s*/i, '')
+    .trim();
+  if (cleaned.length <= 120) return cleaned;
+  return cleaned.slice(0, 117).trimEnd() + '...';
+}
+
+function priorityFromPendingActionUrgency(urgency: string | undefined): TaskPriority {
+  const normalized = (urgency || '').toLowerCase();
+  if (normalized === 'critical' || normalized === 'urgent') return 'urgent';
+  if (normalized === 'high') return 'high';
+  if (normalized === 'low' || normalized === 'lowest') return 'low';
+  return 'medium';
+}
+
+function datePart(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : undefined;
+}
+
+function compactLines(lines: Array<string | null | undefined>): string {
+  return lines.filter((line): line is string => Boolean(line && line.trim())).join('\n');
+}
+
+export function pendingActionToTaskInput(action: PendingActionTaskProposal): CreateTaskInput {
+  const actionText = firstString(action.actionText, action.action_text, action.originalText, action.original_text);
+  const originalText = firstString(action.originalText, action.original_text, actionText);
+  const summary = firstString(action.sourceSummary, action.source_summary, action.summary);
+  const conversationId = firstString(action.conversationId, action.conversation_id);
+  const inboxThreadId = firstString(action.inboxThreadId, action.inbox_thread_id, conversationId);
+  const propertyCode = firstString(action.propertyCode, action.property_code);
+  const propertyName = firstString(action.propertyName, action.property_name);
+  const reservationId = firstString(action.reservationId, action.reservation_guesty_id);
+  const guestName = firstString(action.guestName, action.guest_name);
+  const category = firstString(action.category);
+  const detectedAt = firstString(action.detectedAt, action.detected_at);
+  const dueBy = datePart(firstString(action.dueBy, action.due_by));
+  const tagSeed = ['inbox-ai', 'pending-action', category].filter((tag): tag is string => Boolean(tag));
+
+  return {
+    title: cleanPendingActionTitle(actionText),
+    description: compactLines([
+      'Source: Inbox AI pending action',
+      `Pending action: ${action.id}`,
+      conversationId ? `Conversation: ${conversationId}` : undefined,
+      propertyName ? `Property: ${propertyName}` : undefined,
+      guestName ? `Guest: ${guestName}` : undefined,
+      detectedAt ? `Detected: ${detectedAt}` : undefined,
+      typeof action.confidence === 'number' ? `Detector confidence: ${Math.round(action.confidence * 100)}%` : undefined,
+      summary ? `Summary: ${summary}` : undefined,
+      originalText ? `Original action text: ${originalText}` : undefined,
+    ]),
+    propertyCode,
+    reservationId,
+    inboxThreadId,
+    department: 'office',
+    subdepartment: 'guest_services',
+    priority: priorityFromPendingActionUrgency(firstString(action.urgency)),
+    source: 'inbox_ai',
+    visibility: 'team',
+    status: 'reported',
+    dueDate: dueBy,
+    assigneeIds: [],
+    tags: Array.from(new Set(tagSeed)),
+    category,
+    externalRef: `pending_action:${action.id}`,
+  };
+}
+
+export async function createTaskFromPendingAction(action: PendingActionTaskProposal): Promise<Task> {
+  return createTask(pendingActionToTaskInput(action));
+}
+
 export async function createTask(input: CreateTaskInput): Promise<Task> {
   const res = (await apiFetch('/api/tasks', {
     method: 'POST',

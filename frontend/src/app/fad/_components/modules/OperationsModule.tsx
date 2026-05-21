@@ -164,6 +164,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
           { id: 'my', label: 'My tasks' },
           { id: 'all', label: 'All tasks' },
           { id: 'issues', label: 'Reported issues' },
+          { id: 'inbox-ai', label: 'Inbox AI' },
           { id: 'history', label: 'My history' },
           canSeeApprovals && { id: 'approvals', label: 'Approvals' },
           canSeeRoster && { id: 'roster', label: 'Roster' },
@@ -240,6 +241,8 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
       case 'issues':
         return <ReportedIssuesPage onCreated={(t) => { bumpRev(); setDetailTaskId(t.id); }} />;
+      case 'inbox-ai':
+        return <InboxAiTriagePage onOpenTask={setDetailTaskId} />;
       case 'approvals':
         return canSeeApprovals ? <ApprovalsPage onAfter={bumpRev} /> : null;
       case 'roster':
@@ -1657,6 +1660,420 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
         </div>
       </div>
     </button>
+  );
+}
+
+// ───────────────── Inbox AI Triage ─────────────────
+
+type InboxAiTriageAction = 'accept' | 'dismiss' | 'duplicate' | 'stale' | 'link';
+
+const TRIAGE_CHIP_STYLE: React.CSSProperties = {
+  fontSize: 10,
+  padding: '2px 6px',
+  borderRadius: 4,
+  fontWeight: 500,
+  textTransform: 'uppercase',
+  letterSpacing: 0,
+  whiteSpace: 'nowrap',
+};
+
+function addTags(existing: string[], ...next: string[]): string[] {
+  return Array.from(new Set([...existing, ...next].filter(Boolean)));
+}
+
+function pendingActionLabel(task: Task): string {
+  if (task.externalRef?.startsWith('pending_action:')) {
+    return task.externalRef.replace('pending_action:', '');
+  }
+  return task.externalRef || 'No pending-action ref';
+}
+
+function appendTriageNote(task: Task, note: string): string {
+  return [task.description, `Triage: ${note}`].filter(Boolean).join('\n\n');
+}
+
+function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+  const currentUserId = useCurrentUserId();
+  const { tasks: TASKS, loading, error, refetch } = useApiTasks();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [linkTargetId, setLinkTargetId] = useState('');
+
+  const inboxAiTasks = useMemo(() => (
+    TASKS
+      .filter((task) => task.source === 'inbox_ai' && task.status === 'reported')
+      .sort((a, b) =>
+        PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+        (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99') ||
+        b.createdAt.localeCompare(a.createdAt)
+      )
+  ), [TASKS]);
+
+  const selectedTask = inboxAiTasks.find((task) => task.id === selectedId) ?? inboxAiTasks[0] ?? null;
+
+  useEffect(() => {
+    const available = new Set(inboxAiTasks.map((task) => task.id));
+    setSelectedIds((ids) => ids.filter((id) => available.has(id)));
+    if (selectedId && !available.has(selectedId)) {
+      setSelectedId(inboxAiTasks[0]?.id ?? null);
+      setDetailOpen(Boolean(inboxAiTasks[0]));
+    }
+  }, [inboxAiTasks, selectedId]);
+
+  const linkTargets = useMemo(() => (
+    TASKS
+      .filter((task) => task.id !== selectedTask?.id && !CLOSED_STATUS.has(task.status))
+      .sort((a, b) => (a.propertyCode || '').localeCompare(b.propertyCode || '') || a.title.localeCompare(b.title))
+      .slice(0, 40)
+  ), [TASKS, selectedTask?.id]);
+
+  const toggleSelected = (taskId: string) => {
+    setSelectedIds((ids) => (
+      ids.includes(taskId) ? ids.filter((id) => id !== taskId) : [...ids, taskId]
+    ));
+  };
+
+  const applyTriage = async (
+    task: Task,
+    action: InboxAiTriageAction,
+    options?: { linkTarget?: string; silent?: boolean },
+  ) => {
+    const linkedTask = options?.linkTarget ? TASKS.find((t) => t.id === options.linkTarget) : undefined;
+    const patch: Partial<{
+      status: TaskStatus;
+      tags: string[];
+      description: string;
+    }> = {};
+
+    if (action === 'accept') {
+      patch.status = 'scheduled';
+      patch.tags = addTags(task.tags, 'inbox-ai:accepted');
+    } else if (action === 'dismiss') {
+      patch.status = 'cancelled';
+      patch.tags = addTags(task.tags, 'inbox-ai:dismissed');
+      patch.description = appendTriageNote(task, `Dismissed by ${currentUserId}.`);
+    } else if (action === 'duplicate') {
+      patch.status = 'cancelled';
+      patch.tags = addTags(task.tags, 'inbox-ai:duplicate');
+      patch.description = appendTriageNote(task, `Marked duplicate by ${currentUserId}.`);
+    } else if (action === 'stale') {
+      patch.status = 'cancelled';
+      patch.tags = addTags(task.tags, 'inbox-ai:stale');
+      patch.description = appendTriageNote(task, `Marked stale by ${currentUserId}.`);
+    } else if (action === 'link' && linkedTask) {
+      patch.status = 'cancelled';
+      patch.tags = addTags(task.tags, 'inbox-ai:linked-existing', `linked-existing:${linkedTask.id}`);
+      patch.description = appendTriageNote(task, `Linked to existing task ${linkedTask.id} (${linkedTask.title}) by ${currentUserId}.`);
+    }
+
+    if (!patch.status) return;
+    await updateTask({ taskId: task.id, patch, actorId: currentUserId });
+    if (!options?.silent) {
+      fireToast(action === 'accept' ? 'Inbox AI task accepted' : 'Inbox AI task triaged');
+    }
+  };
+
+  const runSingle = async (task: Task, action: InboxAiTriageAction, linkTarget?: string) => {
+    if (action === 'link' && !linkTarget) {
+      fireToast('Choose an existing task to link');
+      return;
+    }
+    setBusyKey(`${action}:${task.id}`);
+    try {
+      await applyTriage(task, action, { linkTarget });
+      setSelectedIds((ids) => ids.filter((id) => id !== task.id));
+      refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Inbox AI triage failed');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const runBulk = async (action: Extract<InboxAiTriageAction, 'accept' | 'dismiss' | 'stale'>) => {
+    const tasks = inboxAiTasks.filter((task) => selectedIds.includes(task.id));
+    if (tasks.length === 0) return;
+    setBusyKey(`bulk:${action}`);
+    try {
+      for (const task of tasks) {
+        await applyTriage(task, action, { silent: true });
+      }
+      fireToast(`${tasks.length} Inbox AI task${tasks.length === 1 ? '' : 's'} triaged`);
+      setSelectedIds([]);
+      refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Bulk triage failed');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  return (
+    <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
+      <div className="fad-split-list" style={{ width: 400, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+          {error && (
+            <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
+              Inbox AI tasks could not load: {error}
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0 }}>
+                Source = Inbox AI
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{inboxAiTasks.length} reported</div>
+            </div>
+            <button
+              className="btn ghost sm"
+              type="button"
+              style={{ minHeight: 44 }}
+              onClick={() => {
+                if (selectedIds.length === inboxAiTasks.length) setSelectedIds([]);
+                else setSelectedIds(inboxAiTasks.map((task) => task.id));
+              }}
+              disabled={inboxAiTasks.length === 0}
+            >
+              {selectedIds.length === inboxAiTasks.length && inboxAiTasks.length > 0 ? 'Clear' : 'Select all'}
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button className="btn secondary sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('accept')}>
+              Accept
+            </button>
+            <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('dismiss')}>
+              Dismiss
+            </button>
+            <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('stale')}>
+              Stale
+            </button>
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {loading && inboxAiTasks.length === 0 && <Empty>Loading Inbox AI tasks...</Empty>}
+          {inboxAiTasks.map((task) => {
+            const isSelected = selectedTask?.id === task.id;
+            const statusSwatch = toneStyle(taskStatusTone(task.status));
+            return (
+              <div
+                key={task.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '44px minmax(0, 1fr)',
+                  gap: 6,
+                  padding: '10px 12px',
+                  borderBottom: '0.5px solid var(--color-border-tertiary)',
+                  background: isSelected ? 'var(--color-background-tertiary)' : 'transparent',
+                }}
+              >
+                <label style={{ minHeight: 44, width: 44, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 2, cursor: 'pointer', position: 'relative' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(task.id)}
+                    onChange={() => toggleSelected(task.id)}
+                    aria-label={`Select ${task.title}`}
+                    style={{ position: 'absolute', inset: 0, width: 44, height: 44, margin: 0, opacity: 0, cursor: 'pointer' }}
+                  />
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 4,
+                      border: '1px solid var(--color-border-secondary)',
+                      background: selectedIds.includes(task.id) ? 'var(--color-brand-accent)' : 'var(--color-background-primary)',
+                      color: 'white',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 14,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {selectedIds.includes(task.id) ? '✓' : ''}
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedId(task.id); setDetailOpen(true); }}
+                  style={{
+                    border: 0,
+                    background: 'transparent',
+                    textAlign: 'left',
+                    padding: 0,
+                    minWidth: 0,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{task.propertyCode || 'No property'}</span>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{formatRelative(task.createdAt)}</span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{task.title}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{task.priority}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{pendingActionLabel(task)}</span>
+                  </div>
+                </button>
+              </div>
+            );
+          })}
+          {!loading && inboxAiTasks.length === 0 && <Empty>No Inbox AI reported tasks.</Empty>}
+        </div>
+      </div>
+
+      <div className="fad-split-detail" style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
+        <button
+          type="button"
+          className="btn ghost sm fad-split-back"
+          style={{ minHeight: 44 }}
+          onClick={() => setDetailOpen(false)}
+        >
+          ← Back to Inbox AI
+        </button>
+        {selectedTask ? (
+          <div style={{ maxWidth: 720 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
+                  {selectedTask.propertyCode || 'No property'} · {pendingActionLabel(selectedTask)}
+                </div>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{selectedTask.title}</h2>
+              </div>
+              <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} onClick={() => onOpenTask(selectedTask.id)}>
+                Open task
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+              <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(selectedTask.source)).background, color: toneStyle(taskSourceTone(selectedTask.source)).color }}>
+                {SOURCE_LABEL[selectedTask.source]}
+              </span>
+              <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskStatusTone(selectedTask.status)).background, color: toneStyle(taskStatusTone(selectedTask.status)).color }}>
+                {STATUS_LABEL[selectedTask.status]}
+              </span>
+              <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
+                {selectedTask.priority}
+              </span>
+              {selectedTask.reservationId && (
+                <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
+                  reservation linked
+                </span>
+              )}
+              {selectedTask.inboxThreadId && (
+                <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
+                  conversation linked
+                </span>
+              )}
+            </div>
+
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 6,
+                background: 'var(--color-background-secondary)',
+                border: '0.5px solid var(--color-border-tertiary)',
+                fontSize: 13,
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                marginBottom: 16,
+              }}
+            >
+              {selectedTask.description || 'No source summary attached.'}
+            </div>
+
+            <div className="ops-inbox-ai-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+              <button
+                className="btn primary"
+                type="button"
+                style={{ minHeight: 44 }}
+                disabled={Boolean(busyKey)}
+                onClick={() => runSingle(selectedTask, 'accept')}
+              >
+                Accept task
+              </button>
+              <button
+                className="btn ghost"
+                type="button"
+                style={{ minHeight: 44 }}
+                disabled={Boolean(busyKey)}
+                onClick={() => runSingle(selectedTask, 'duplicate')}
+              >
+                Duplicate
+              </button>
+              <button
+                className="btn ghost"
+                type="button"
+                style={{ minHeight: 44 }}
+                disabled={Boolean(busyKey)}
+                onClick={() => runSingle(selectedTask, 'stale')}
+              >
+                Stale
+              </button>
+              <button
+                className="btn ghost"
+                type="button"
+                style={{ minHeight: 44 }}
+                disabled={Boolean(busyKey)}
+                onClick={() => runSingle(selectedTask, 'dismiss')}
+              >
+                Dismiss
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto',
+                gap: 8,
+                alignItems: 'end',
+                maxWidth: 620,
+              }}
+            >
+              <label style={{ display: 'grid', gap: 5, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                Link existing task
+                <select
+                  value={linkTargetId}
+                  onChange={(e) => setLinkTargetId(e.target.value)}
+                  style={{
+                    minHeight: 42,
+                    borderRadius: 6,
+                    border: '1px solid var(--color-border-secondary)',
+                    background: 'var(--color-background-primary)',
+                    color: 'var(--color-text-primary)',
+                    padding: '0 10px',
+                    minWidth: 0,
+                  }}
+                >
+                  <option value="">Choose task</option>
+                  {linkTargets.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.propertyCode || 'No property'} · {task.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="btn secondary"
+                type="button"
+                style={{ minHeight: 44 }}
+                disabled={!linkTargetId || Boolean(busyKey)}
+                onClick={() => runSingle(selectedTask, 'link', linkTargetId)}
+              >
+                Link
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Empty>Select an Inbox AI task to triage.</Empty>
+        )}
+      </div>
+    </div>
   );
 }
 
