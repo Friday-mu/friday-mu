@@ -35,6 +35,7 @@ import { HRModule } from './modules/HRModule';
 import { MODULE_RESOURCE, PermissionsProvider } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
+import { getToken } from '../../../components/types';
 
 type Theme = 'light' | 'dark';
 
@@ -69,8 +70,15 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
+    if (!getToken()) {
+      window.location.replace('/');
+      return;
+    }
+    setAuthChecked(true);
+
     const params = new URLSearchParams(window.location.search);
     let urlMod = params.get('m');
     const urlSub = params.get('sub');
@@ -136,6 +144,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
         e.preventDefault();
         setFridayOpen((o) => !o);
       } else if (e.key === 'Escape') {
+        setPaletteOpen(false);
         setBellOpen(false);
         setHelpOpen(false);
         setAvatarOpen(false);
@@ -192,6 +201,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
     setFridayOpen(false);
     setFridayScopeOverride(null);
   };
+
+  if (!authChecked) return null;
 
   return (
     <div className="fad-app">

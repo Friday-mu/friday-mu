@@ -34,7 +34,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_BYTES = 32;
 const TOKEN_TTL_HOURS = 1;
 const RESET_URL_BASE =
-  process.env.PASSWORD_RESET_URL_BASE || 'https://gms.friday.mu/reset-password';
+  process.env.PASSWORD_RESET_URL_BASE || 'https://admin.friday.mu/reset-password';
 
 // POST /api/auth/password-reset/request
 // Public. Always 200. Body: { email }.

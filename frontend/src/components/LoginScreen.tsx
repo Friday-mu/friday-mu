@@ -1,23 +1,14 @@
 'use client'
 
-// @demo:auth — ENTIRE FILE is fake authentication. Accepts any input,
-// fakes a "Welcome" flash, navigates to /fad. No real auth flow.
-// Tag: PROD-AUTH-1 — see frontend/DEMO_CRUFT.md
-// Replace with real OAuth/JWT flow. handleSubmit → POST /api/auth/login,
-// store token, redirect on success.
-
-// Demo-mode login screen. No real authentication — clicking a name (or any
-// manual Sign-in path) simply navigates to /fad. The FAD shell manages its
-// own role + identity state independently, so no localStorage writes are
-// required here. Pure UI: wordmark, greeting, name chips, cycling tip.
-
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
+import { API_BASE, setToken } from './types'
 
 type Theme = 'light' | 'dark'
 
 // ─────────────────────────────── Team roster ───────────────────────────────
-// Drives the chip selector. Edit when team membership changes.
-const TEAM = [
+// Fallback only. The login screen prefers /api/auth/login-roster so the chips
+// match active Friday accounts on the shared auth database.
+const FALLBACK_TEAM = [
   { firstName: 'Ishant',    email: 'ishant@friday.mu' },
   { firstName: 'Mathias',   email: 'mathias@friday.mu' },
   { firstName: 'Franny',    email: 'franny@friday.mu' },
@@ -27,47 +18,13 @@ const TEAM = [
   { firstName: 'Catherine', email: 'catherine@friday.mu' },
 ] as const
 
-// ─────────────────────────────── Greetings ─────────────────────────────────
-// One pulled at random per page load. Friday's voice trends curious + dry.
-// @demo:ui — Tag: PROD-UI-2 — see frontend/DEMO_CRUFT.md
-// Optional keep: drop for a conventional production login, or keep if
-// Friday's voice on a real login screen is still playful.
-const FUNNY_GREETINGS = [
-  "Wait a second… who are you? 0.0",
-  "Hark, traveler. Identify thyself.",
-  "Friday squints. Who goes there?",
-  "🤨 Suspicious. Name?",
-  "Beep boop. Authentication required.",
-  "Knock knock. Who's there?",
-  "Hello hello. Which one of you is it?",
-  "Halt! Whomst arrives?",
-  "*peers over glasses* And you are?",
-  "Ahem. Speak, mortal.",
-  "Friday wakes up. Mumbles. Who's this?",
-  "Identify yourself or the AI gets it.",
-  "Right then. Which one of you scallywags is it?",
-  "Knockety knock. State your business.",
-]
+type LoginRosterMember = {
+  firstName: string
+  email: string
+}
 
-// ─────────────────────────────── Tip pool ──────────────────────────────────
-// One shown below the form, in tertiary text. Random per page load.
-// 'admin' = FAD product knowledge (✦), 'str' = hospitality stats (💡).
-// @demo:ui — Tag: PROD-UI-3 — see frontend/DEMO_CRUFT.md
-// Optional keep: could become GET /api/login-tips, or drop entirely.
-const TIPS = [
-  { kind: 'admin', text: "Cmd+K opens the command palette anywhere in the FAD." },
-  { kind: 'admin', text: "Sub-pages keep their filter state when you deep-link." },
-  { kind: 'admin', text: "Sidebar badges are role-aware — what you see is what's actionable for you." },
-  { kind: 'admin', text: "Bell icon → AI priority toggle reorders by what'll bite next." },
-  { kind: 'admin', text: "Notifications can be snoozed per-item — 1h / 4h / Tomorrow." },
-  { kind: 'admin', text: "Property chips are clickable everywhere — quick-view popover, no nav reset." },
-  { kind: 'str',   text: "First-reply under 1 hour lifts review scores ~0.3 stars." },
-  { kind: 'str',   text: "Listings with 30+ reviews convert ~2× better than fewer." },
-  { kind: 'str',   text: "Cleaning-fee transparency cuts booking abandonment by ~8%." },
-  { kind: 'str',   text: "Saturday check-ins outperform on stays longer than 5 nights." },
-  { kind: 'str',   text: "Video tours raise click-through ~10%." },
-  { kind: 'str',   text: "Same-day bookings tend to be your highest-margin segment." },
-] as const
+const LOGIN_SUBTITLE = 'Sign in with your approved Friday account.'
+const LOGIN_NOTE = 'Use your Friday email. Password reset links are sent only to that address.'
 
 // ─────────────────────────────── Design tokens ─────────────────────────────
 // Mirrors src/app/fad/fad.css :root + html.fad-dark blocks. Inlined here
@@ -121,20 +78,46 @@ function useFadTheme(): Theme {
   return theme
 }
 
-function pickOnce<T>(pool: readonly T[]): T {
-  return pool[Math.floor(Math.random() * pool.length)]
-}
-
 // ─────────────────────────────── Component ─────────────────────────────────
 
-// Prop kept for backward compatibility with app/page.tsx — never invoked in
-// demo mode (we navigate away instead of upgrading the parent's auth state).
-export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: string) => void }) {
+function mapAuthRoleToFadRole(role: string | null | undefined): string | null {
+  switch ((role || '').toLowerCase()) {
+    case 'admin':
+    case 'director':
+      return 'director'
+    case 'manager':
+    case 'ops_manager':
+    case 'operations':
+    case 'agent':
+      return 'ops_manager'
+    case 'commercial':
+    case 'commercial_marketing':
+    case 'marketing':
+      return 'commercial_marketing'
+    case 'field':
+    case 'staff':
+      return 'field'
+    case 'external':
+    case 'vendor':
+      return 'external'
+    default:
+      return null
+  }
+}
+
+type LoginResponse = {
+  token?: string
+  user_id?: string
+  username?: string
+  display_name?: string
+  role?: string
+  must_change_password?: boolean
+  error?: string
+}
+
+export default function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
   const theme = useFadTheme()
   const t = TOKENS[theme]
-
-  const greeting = useMemo(() => pickOnce(FUNNY_GREETINGS), [])
-  const tip = useMemo(() => pickOnce(TIPS), [])
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
@@ -142,22 +125,54 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     return () => cancelAnimationFrame(id)
   }, [])
 
-  // Form state — fields are always rendered and accept anything (or nothing).
-  // Chip click pre-fills email + focuses password. Sign-in succeeds regardless
-  // of what's typed — the screen is the production layout, the auth is fake.
+  // Form state.
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [welcomeName, setWelcomeName] = useState<string | null>(null)
   const [lastEmail, setLastEmail] = useState<string | null>(null)
+  const [team, setTeam] = useState<readonly LoginRosterMember[]>(FALLBACK_TEAM)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [resetSending, setResetSending] = useState(false)
 
   useEffect(() => {
     setLastEmail(localStorage.getItem('fad:last-email'))
   }, [])
 
-  // Demo "sign in" — write the email so chip auto-highlights next visit, flash
-  // a welcome, then navigate to the FAD shell. No tokens, no API, no auth.
-  const enterAs = (firstName: string, emailUsed: string) => {
-    try { localStorage.setItem('fad:last-email', emailUsed) } catch {}
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API_BASE}/api/auth/login-roster`)
+      .then((res) => res.ok ? res.json() : Promise.reject(new Error('roster unavailable')))
+      .then((data) => {
+        if (cancelled || !Array.isArray(data?.users) || data.users.length === 0) return
+        setTeam(data.users)
+      })
+      .catch(() => {
+        // Non-critical. Manual login still works if the roster is unavailable.
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const finishLogin = (data: LoginResponse, emailUsed: string) => {
+    if (!data.token) throw new Error('Login did not return a token')
+    const displayName = data.display_name || emailUsed.split('@')[0] || 'Friday'
+    const firstName = displayName.split(/\s+/)[0] || 'Friday'
+    const fadRole = mapAuthRoleToFadRole(data.role)
+
+    setToken(data.token)
+    try {
+      localStorage.setItem('gms_display_name', displayName)
+      localStorage.setItem('gms_username', data.username || emailUsed)
+      localStorage.setItem('gms_role', data.role || '')
+      if (data.user_id) localStorage.setItem('gms_user_id', data.user_id)
+      if (fadRole) localStorage.setItem('fad:real-role', fadRole)
+      localStorage.removeItem('fad:dev-role')
+      localStorage.removeItem('fad:dev-user')
+      localStorage.setItem('fad:last-email', emailUsed)
+    } catch {}
+
+    onLogin(data.token)
     setWelcomeName(firstName)
     setTimeout(() => {
       window.location.href = FAD_DESTINATION
@@ -166,7 +181,7 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
 
   // Click a chip → fill email, focus password (mirrors the production flow
   // where the OS password manager would now pop in the saved password).
-  const pickMember = (m: typeof TEAM[number]) => {
+  const pickMember = (m: LoginRosterMember) => {
     setEmail(m.email)
     setTimeout(() => {
       const pw = document.querySelector('input[name="password"]') as HTMLInputElement | null
@@ -174,24 +189,61 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     }, 30)
   }
 
-  // Form submit — accept anything. Resolve a display name in best-effort order:
-  //   1. Match against TEAM by exact email
-  //   2. Fall back to the email-prefix (Capitalized)
-  //   3. Final fallback "Demo"
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const trimmed = email.trim()
-    const matched = TEAM.find((m) => m.email === trimmed)
-    let niceName: string
-    if (matched) {
-      niceName = matched.firstName
-    } else if (trimmed) {
-      const stub = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed
-      niceName = stub.charAt(0).toUpperCase() + stub.slice(1)
-    } else {
-      niceName = 'Demo'
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed || !password) {
+      setError('Email and password are required')
+      return
     }
-    enterAs(niceName, trimmed || 'demo@friday.mu')
+
+    setSubmitting(true)
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: trimmed, password }),
+      })
+      const data: LoginResponse = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Login failed')
+      if (data.must_change_password) {
+        await fetch(`${API_BASE}/api/auth/password-reset/request`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: trimmed }),
+        }).catch(() => undefined)
+        throw new Error('Password change is required. We sent a reset link to your Friday email.')
+      }
+      finishLogin(data, trimmed)
+    } catch (err: any) {
+      setError(err?.message || 'Login failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed) {
+      setError('Enter your Friday email first')
+      return
+    }
+    setResetSending(true)
+    setError('')
+    setNotice('')
+    try {
+      await fetch(`${API_BASE}/api/auth/password-reset/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmed }),
+      })
+      setNotice('If that account is active, a reset link has been sent to its Friday email.')
+    } catch {
+      setNotice('If that account is active, a reset link has been sent to its Friday email.')
+    } finally {
+      setResetSending(false)
+    }
   }
 
   // ─────────────────────── Style objects ───────────────────────
@@ -225,7 +277,7 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     fontFamily: FONT_FRIDAY,
     fontSize: 28,
     fontWeight: 500,
-    letterSpacing: '-0.01em',
+    letterSpacing: 0,
     color: t.textPrimary,
     margin: 0,
     marginBottom: 4,
@@ -331,19 +383,17 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
 
   // ─────────────────────── Default: sign-in screen ───────────────────────
 
-  const tipIcon = tip.kind === 'admin' ? '✦' : '💡'
-
   return (
     <div data-testid="container-login-screen" style={pageStyle}>
       <div style={cardStyle}>
         {/* @demo:ui — Tag: PROD-UI-1 — see frontend/DEMO_CRUFT.md
-            Remove when real auth lands. Indicates demo mode at a glance. */}
-        <span style={demoPillStyle}>Simulated · Demo</span>
+            Kept as a small environment label, no demo auth behavior remains. */}
+        <span style={demoPillStyle}>Secure sign-in</span>
         <h1 style={titleStyle}>Friday Admin</h1>
-        <p style={subtitleStyle}>{greeting}</p>
+        <p style={subtitleStyle}>{LOGIN_SUBTITLE}</p>
 
         <div style={chipsRowStyle}>
-          {TEAM.map((m) => {
+          {team.map((m) => {
             // Prefer "picked now" over "last-used"; only fall back to last-used
             // when no email is currently set.
             const isPicked = m.email === email
@@ -364,6 +414,38 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
         </div>
 
         <form onSubmit={handleSubmit} noValidate>
+          {error && (
+            <div
+              role="alert"
+              style={{
+                color: '#b91c1c',
+                background: 'rgba(185, 28, 28, 0.08)',
+                border: '0.5px solid rgba(185, 28, 28, 0.18)',
+                borderRadius: 6,
+                padding: '8px 10px',
+                fontSize: 12,
+                marginBottom: 12,
+              }}
+            >
+              {error}
+            </div>
+          )}
+          {notice && (
+            <div
+              role="status"
+              style={{
+                color: '#166534',
+                background: 'rgba(22, 101, 52, 0.08)',
+                border: '0.5px solid rgba(22, 101, 52, 0.18)',
+                borderRadius: 6,
+                padding: '8px 10px',
+                fontSize: 12,
+                marginBottom: 12,
+              }}
+            >
+              {notice}
+            </div>
+          )}
           <input
             type="text"
             name="email"
@@ -387,15 +469,33 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
           <button
             type="submit"
             data-testid="btn-login"
-            style={primaryBtnStyle}
+            disabled={submitting}
+            style={{ ...primaryBtnStyle, opacity: submitting ? 0.65 : 1, cursor: submitting ? 'wait' : 'pointer' }}
           >
-            Sign in
+            {submitting ? 'Signing in...' : 'Sign in'}
+          </button>
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            disabled={resetSending}
+            style={{
+              marginTop: 10,
+              width: '100%',
+              border: 'none',
+              background: 'transparent',
+              color: t.brandAccent,
+              fontSize: 12,
+              fontFamily: 'inherit',
+              cursor: resetSending ? 'wait' : 'pointer',
+            }}
+          >
+            {resetSending ? 'Sending reset link...' : 'Forgot password?'}
           </button>
         </form>
 
         <p style={tipStyle}>
-          <span aria-hidden="true" style={{ color: t.brandAccent, fontSize: 11, lineHeight: '18px' }}>{tipIcon}</span>
-          <span>{tip.text}</span>
+          <span aria-hidden="true" style={{ color: t.brandAccent, fontSize: 11, lineHeight: '18px' }}>✦</span>
+          <span>{LOGIN_NOTE}</span>
         </p>
       </div>
     </div>

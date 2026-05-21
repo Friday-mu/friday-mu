@@ -19,6 +19,7 @@ import { RoleSwitcher } from './PermissionGate';
 import { usePermissions, useCurrentUserId } from './usePermissions';
 import { TASK_USER_BY_ID } from '../_data/tasks';
 import { ROLE_LABEL } from '../_data/permissions';
+import { clearToken } from '../../../components/types';
 import {
   topNotifications,
   unreadCount,
@@ -337,6 +338,7 @@ function AvatarDropdown() {
   // Keep the localStorage cleanup for client-side hygiene.
   const handleLogout = () => {
     try {
+      clearToken();
       // Clear FAD identity state. Keeps preferences (theme, sidebar collapsed)
       // so the user lands back at /login with their visual settings intact.
       localStorage.removeItem('fad:dev-role');

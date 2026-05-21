@@ -899,7 +899,9 @@ app.use('/api/tenants', tenantDeletionExportRoutes);
 // because they're explicitly cross-tenant (the email→user lookup
 // resolves whichever tenant the user belongs to).
 const passwordResetRoutes = require('./src/auth/password_reset');
+const sessionAuthRoutes = require('./src/auth/session');
 app.use('/api/auth', passwordResetRoutes);
+app.use('/api/auth', sessionAuthRoutes);
 
 // OAuth 2.0 client_credentials token issuer for the /api/public/*
 // surface. Mounted at /api/auth/token; sibling of the password-reset
