@@ -6,6 +6,7 @@ const {
   parseTeachingActions,
   selectConsultSurface,
   buildConsultUserMessage,
+  conversationIdForSession,
 } = require('./consult')._test;
 
 describe('FAD-native Consult helpers', () => {
@@ -34,6 +35,11 @@ describe('FAD-native Consult helpers', () => {
     expect(selectConsultSurface('pending_action')).toBe('pending-actions');
     expect(selectConsultSurface('message_review')).toBe('inbox-advisory');
     expect(selectConsultSurface('learning_candidate')).toBe('learning-analyzer');
+  });
+
+  test('only UUID conversation ids are persisted on consult sessions', () => {
+    expect(conversationIdForSession('6844ad5c-1e74-45e1-95d0-f2ad4e290bca')).toBe('6844ad5c-1e74-45e1-95d0-f2ad4e290bca');
+    expect(conversationIdForSession('web-a76f8a9d-fea8-4214-88ed-912dc91e6fb9')).toBeNull();
   });
 
   test('builds a conversation-bound user prompt with draft and session context', () => {

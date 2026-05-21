@@ -46,6 +46,14 @@ const CONTEXT_TO_SURFACE = {
 
 const conversationLocks = new Map();
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function conversationIdForSession(value) {
+  return isUuid(value) ? value : null;
+}
+
 function withConversationLock(conversationId, fn) {
   const key = conversationId || '__global__';
   const prev = conversationLocks.get(key) || Promise.resolve();
@@ -242,6 +250,7 @@ Be concise. Surface missing knowledge honestly. Do not invent prices, availabili
 
 async function loadConversationBundle(conversationId, tenantId) {
   if (!conversationId) return { conversation: null, messages: [] };
+  if (!isUuid(conversationId)) return { conversation: null, messages: [] };
   const [convResult, messagesResult] = await Promise.all([
     query('SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2', [conversationId, tenantId]),
     query(
@@ -376,6 +385,7 @@ router.post('/', attachIdentity, async (req, res) => {
     const context = req.body?.context;
     const instruction = cleanInstruction(req.body?.text || req.body?.instruction);
     const conversationId = req.body?.conversationId || null;
+    const sessionConversationId = conversationIdForSession(conversationId);
     const draftId = req.body?.draftId || null;
     const draftBody = cleanInstruction(req.body?.draftBody);
 
@@ -395,7 +405,7 @@ router.post('/', attachIdentity, async (req, res) => {
       const session = await getOrCreateSession({
         req,
         sessionId: activeSessionId,
-        conversationId,
+        conversationId: sessionConversationId,
         context,
         draftId,
         propertyCode,
@@ -526,9 +536,11 @@ router.post('/', attachIdentity, async (req, res) => {
 
 router.get('/session/active', attachIdentity, async (req, res) => {
   const conversationId = typeof req.query.conversationId === 'string' ? req.query.conversationId : '';
+  const sessionConversationId = conversationIdForSession(conversationId);
   const context = typeof req.query.context === 'string' ? req.query.context : 'compose';
   const draftId = typeof req.query.draftId === 'string' ? req.query.draftId : null;
   if (!conversationId) return res.status(400).json({ error: 'conversationId query parameter required' });
+  if (!sessionConversationId) return res.json({ session: null, sessionId: null });
 
   try {
     const { rows } = await query(
@@ -541,7 +553,7 @@ router.get('/session/active', attachIdentity, async (req, res) => {
           AND status IN ('active', 'compacted')
         ORDER BY last_activity_at DESC
         LIMIT 1`,
-      [req.tenantId, conversationId, context, draftId],
+      [req.tenantId, sessionConversationId, context, draftId],
     );
     const session = rows[0];
     if (!session) return res.json({ session: null, sessionId: null });
@@ -562,6 +574,8 @@ router.get('/session/active', attachIdentity, async (req, res) => {
 });
 
 router.get('/history/:conversationId', attachIdentity, async (req, res) => {
+  const sessionConversationId = conversationIdForSession(req.params.conversationId);
+  if (!sessionConversationId) return res.json({ sessions: [] });
   try {
     const { rows } = await query(
       `SELECT id, user_name, conversation_history, summary, status, context,
@@ -569,7 +583,7 @@ router.get('/history/:conversationId', attachIdentity, async (req, res) => {
          FROM consult_sessions
         WHERE tenant_id = $1 AND conversation_id = $2
         ORDER BY created_at ASC`,
-      [req.tenantId, req.params.conversationId],
+      [req.tenantId, sessionConversationId],
     );
     res.json({
       sessions: rows.map((s) => ({
@@ -637,6 +651,8 @@ router.post('/:sessionId/summarize', attachIdentity, async (req, res) => {
 module.exports = router;
 
 module.exports._test = {
+  isUuid,
+  conversationIdForSession,
   stripProtocolTags,
   parseDraftUpdate,
   parseTeachingActions,
