@@ -410,3 +410,12 @@
 - Safe display decision: keep Breezeway provenance as `Imported`, do not expose the provider as a permanent runtime label, and replace redacted imported titles in the UI with `Sensitive imported task` without unredacting the source data.
 - First fix slice: normalize due dates at the adapter boundary, remove the parent-level and Overview full-history task fetches, default task pages/API to 50 rows, add an animated F loader, and make status visually stronger while priority becomes quieter.
 - Live Overview QA also found UUID staff labels and `NO DATE` supply prep rows; workbench signals should use backend assignee display names and ignore unscheduled tasks for due-date prep/stale signals.
+
+## 2026-05-22 Breezeway Reported-Issues Marking Mini-Research
+
+- Judith/Ishant provided a new reported-issues export bundle at `/Users/judith/Desktop/Friday/Friday OS/Ops Module/Reported Issues`; this is not the old sample export.
+- The summary export has 1,984 rows with Breezeway `Task ID`, status, priority, property, lifecycle dates, assignees, description, summary, tags, cost, and requester fields.
+- These rows represent historical Breezeway reported issues that were already accepted into tasks, so FAD should not change their lifecycle status back to `reported`.
+- Existing Ops imported tasks are idempotently keyed as `external_ref = breezeway:<Task ID>`; the update should only mark matching existing tasks and never create field-visible work.
+- Preserve `source = breezeway` as import provenance; add explicit accepted reported-issue tags and source-payload metadata so future UI/reporting can distinguish them from routine imported tasks.
+- Apply must be preview-first with counts for total rows, unique IDs, duplicates, missing existing tasks, already-marked tasks, candidate updates, and status/source breakdown.
