@@ -646,7 +646,7 @@ export function InboxModule({ onAskFriday }: Props) {
     { key: 'guest', label: 'Guest', count: counts.byEntity.guest },
     { key: 'owner', label: 'Owner', count: counts.byEntity.owner },
     { key: 'vendor', label: 'Vendor', count: counts.byEntity.vendor },
-    { key: 'unclassified', label: 'Other', count: counts.byEntity.unclassified || 0 },
+    { key: 'unclassified', label: 'Others', count: counts.byEntity.unclassified || 0 },
   ];
 
   const teamUnread =
@@ -655,6 +655,28 @@ export function InboxModule({ onAskFriday }: Props) {
 
   const chipsRow = (
     <div className="inbox-chips-row">
+      {canSeeGuest && (
+        <button
+          className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}
+          onClick={() => {
+            setEntityFilter('all');
+            setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
+          }}
+          title="Threads with an AI draft awaiting your approval (per old GMS 'in review' section)"
+          style={{
+            // Subtle accent so this stands out from the entity chips
+            // — it's a triage filter, not an entity filter.
+            color: triageFilter === 'review' ? '#fff' : 'var(--color-brand-accent)',
+            borderColor: 'var(--color-brand-accent)',
+            background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'transparent',
+          }}
+        >
+          ● Awaiting reply{' '}
+          <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.85 }}>
+            {reviewCount}
+          </span>
+        </button>
+      )}
       {canSeeGuest && externalChips.map((c) => (
         <button
           key={c.key}
@@ -676,25 +698,6 @@ export function InboxModule({ onAskFriday }: Props) {
           Team{' '}
           <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>
             {teamUnread}
-          </span>
-        </button>
-      )}
-      {!onTeam && canSeeGuest && (
-        <button
-          className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}
-          onClick={() => setTriageFilter(triageFilter === 'review' ? 'all' : 'review')}
-          title="Threads with an AI draft awaiting your approval (per old GMS 'in review' section)"
-          style={{
-            // Subtle accent so this stands out from the entity chips
-            // — it's a triage filter, not an entity filter.
-            color: triageFilter === 'review' ? '#fff' : 'var(--color-brand-accent)',
-            borderColor: 'var(--color-brand-accent)',
-            background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'transparent',
-          }}
-        >
-          ● Awaiting reply{' '}
-          <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.85 }}>
-            {reviewCount}
           </span>
         </button>
       )}

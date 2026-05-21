@@ -2227,9 +2227,13 @@ html.fad-dark .fad-feedback-tab.is-active {
   /* Hide send split desc on very narrow */
   .send-split-menu { min-width: calc(100vw - 48px); right: -24px; }
 
-  /* Mobile/PWA work surfaces reserve the bottom edge for task, compose,
-     calendar, and expense actions. Feedback stays reachable from Help. */
-  .bug-fab { display: none; }
+  .bug-fab {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    left: max(env(safe-area-inset-left, 0px), 12px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  }
 }
 
 /* Small phones */

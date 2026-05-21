@@ -258,6 +258,7 @@ export function BugReportFab({ currentModuleLabel }: Props) {
       {!open && (
         <button
           className={'bug-fab' + (capturing ? ' is-capturing' : '')}
+          data-qa="feedback-fab"
           title={capturing ? 'Capturing…' : `Send feedback — bug · feature · suggestion  ·  ${modSym}${modSym} for voice`}
           onClick={handleClick}
           aria-label="Send feedback"
