@@ -235,3 +235,11 @@
 - Raised the global Express rate-limit default to 1000 requests per 15 minutes via `API_RATE_LIMIT_MAX` after browser QA hit 429s during normal Inbox reload/poll bursts.
 - Mock-GMS route QA confirmed no `/api/inbox/*` or `/api/team/*` 404s and no bad statuses across 80 requests in 320/375/430/768/1440 width sweeps.
 - QA screenshot: `docs/handover/qa-screenshots-2026-05-21-inbox-compat/fad-inbox-compat-375.png`.
+
+## 2026-05-21 Production Reconciliation
+
+- `origin/fad-rebuild` is pushed through `51de64c`.
+- `admin.friday.mu/fad` is live and returns 200; `/var/www/fad/version.json` reports frontend version `e8e7a84`, which includes the latest paused Inbox frontend fix ported here.
+- Live `fad-backend` is an rsynced runtime tree, not a git checkout; it already has full `/api/inbox/*`, `/api/team/*`, `/api/outbound/send`, and `/api/tasks` routes mounted.
+- Live unauthenticated route smoke for `/api/inbox/conversations`, `/api/team/channels`, and `/api/inbox/website/threads` returns `401 Missing authorization header`, not `404`.
+- I did not overwrite `/var/www/fad-backend` with this `fad-rebuild` backend tree because live currently contains the fuller Inbox backend; doing a blind backend deploy from this branch would be a regression.
