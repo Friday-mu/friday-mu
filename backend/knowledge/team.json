@@ -1,0 +1,266 @@
+{
+  "_meta": {
+    "purpose": "Single source of truth for Friday team data. Loaded into AI prompt context by draft-generator.ts. Replaces duplicated team sections in ops-knowledge.json, discount-negotiation.json, refund-metrics.json.",
+    "version": 3,
+    "last_updated": "2026-04-28",
+    "owner": "ishant"
+  },
+  "people": {
+    "ishant": {
+      "name": "Ishant",
+      "full_name": "Ishant Ayadassen",
+      "role": "CEO / Founder",
+      "status": "active",
+      "primary_region": null,
+      "flex_regions": [],
+      "ground_capable": false,
+      "field_capabilities": [],
+      "responsibilities": [
+        "Final authority on all decisions",
+        "Owner relationship management — handles owner complaints directly",
+        "Strategic decisions",
+        "Approvals above team authority caps",
+        "Tax / legal / admin / accounting (post-Mary departure)"
+      ],
+      "authority": {
+        "refund": "unlimited",
+        "discount": "unlimited (VIP comps, influencer barter, below-floor rates, new policy)",
+        "maintenance_spending": "unlimited"
+      }
+    },
+    "mathias": {
+      "name": "Mathias",
+      "full_name": "Mathias Duval",
+      "role": "Guest Services Lead",
+      "status": "active",
+      "primary_region": "north",
+      "flex_regions": [],
+      "ground_capable": false,
+      "field_capabilities": [],
+      "responsibilities": [
+        "Guest communication and complaint resolution",
+        "Discount negotiation and deal closing",
+        "Refund assessment and approval within authority",
+        "Marketing and sales",
+        "Automations and data"
+      ],
+      "response_times": {
+        "guest_inquiry": "1 hour",
+        "complaint_first_reply": "15 minutes",
+        "complaint_resolution": "2 hours"
+      },
+      "authority": {
+        "refund": "Up to 30% of reservation total. Hard cap €200 if reservation value unavailable.",
+        "discount": "Up to €30 (~<10% of typical stay)",
+        "maintenance_spending": "Up to Rs 20,000 (~€400) only when Ishant is unavailable"
+      },
+      "notification_rule": "Always notify Ishant on Slack on any discount or refund offered, even when within authority"
+    },
+    "franny": {
+      "name": "Franny",
+      "full_name": "Franny Henri",
+      "role": "Operations Manager",
+      "status": "active",
+      "primary_region": "north",
+      "flex_regions": [],
+      "ground_capable": true,
+      "field_capabilities": [],
+      "responsibilities": [
+        "Scheduling and roster management",
+        "Property issue coordination",
+        "Maintenance dispatching via Bryan",
+        "West property coordination via Alexandra",
+        "Can go on the ground when needed (decision-maker / coordinator, not specialist executor)"
+      ],
+      "authority": {
+        "refund": null,
+        "discount": null,
+        "maintenance_spending": "Up to Rs 5,000 (~€100). Escalate to Ishant above this."
+      }
+    },
+    "mary": {
+      "name": "Mary",
+      "full_name": "Mary Oladimeji",
+      "role": "Guest Services / Legal / Admin / Accounting",
+      "status": "departing",
+      "departure_date": "2026-05-31",
+      "replaced_by": "ishant",
+      "primary_region": "north",
+      "flex_regions": [],
+      "ground_capable": false,
+      "field_capabilities": [],
+      "responsibilities": [
+        "Guest services support",
+        "Legal and admin tasks",
+        "Accounting"
+      ],
+      "authority": {
+        "refund": "Up to 30% of reservation total. Hard cap €200 if reservation value unavailable. (Until May 2026.)",
+        "discount": "Up to €30 (~<10% of typical stay). (Until May 2026.)",
+        "maintenance_spending": null
+      },
+      "transition_note": "After May 2026, guest services duties absorbed by Mathias. Tax / legal / admin / accounting becomes Ishant's direct responsibility (financial-system concern, not a team escalation chain)."
+    },
+    "bryan": {
+      "name": "Bryan",
+      "full_name": "Bryan Henri",
+      "role": "Maintenance Specialist (North)",
+      "status": "active",
+      "primary_region": "north",
+      "flex_regions": ["west"],
+      "ground_capable": true,
+      "field_capabilities": ["full_maintenance", "cleaning", "inspections"],
+      "specialty": "full_maintenance",
+      "responsibilities": [
+        "Full maintenance for north and west properties (specialty)",
+        "Property inspections",
+        "Cleaning when assigned",
+        "Emergency repair response",
+        "Mostly north, flexes to west when needed"
+      ],
+      "authority": {
+        "maintenance_spending": null,
+        "note": "Executes maintenance, inspections, and cleaning assignments — does not approve spending"
+      }
+    },
+    "alexandra": {
+      "name": "Alexandra",
+      "common_name": "Alex",
+      "full_name": "Alexandra Legentil",
+      "role": "West Properties",
+      "status": "active",
+      "primary_region": "west",
+      "flex_regions": [],
+      "ground_capable": true,
+      "field_capabilities": ["minor_maintenance", "cleaning", "inspections"],
+      "responsibilities": [
+        "West region property management and on-site coordination",
+        "Minor maintenance (escalate full maintenance to Bryan)",
+        "Property inspections",
+        "Cleaning when assigned"
+      ],
+      "authority": {
+        "maintenance_spending": null,
+        "note": "On-site coordination + minor maintenance + cleaning. Does not approve spending."
+      }
+    },
+    "catherine": {
+      "name": "Catherine",
+      "full_name": "Catherine Henry",
+      "role": "Cleaner",
+      "status": "active",
+      "primary_region": "north",
+      "flex_regions": ["west"],
+      "ground_capable": true,
+      "field_capabilities": ["cleaning", "basic_checks"],
+      "responsibilities": [
+        "Grand Baie Heights syndic — exteriors and gardening",
+        "Apartment cleaning in north and west when needed",
+        "Basic property checks"
+      ],
+      "authority": {
+        "maintenance_spending": null,
+        "note": "Cleaning and basic checks only. No maintenance work."
+      }
+    },
+    "trevon": {
+      "name": "Trevon",
+      "role": "Stanford Intern",
+      "status": "incoming",
+      "start_date": "2026-08-01",
+      "end_date": "2026-10-31",
+      "reports_to": "ishant",
+      "responsibilities": [
+        "FridayOS development (primary)",
+        "Fractional investing research (secondary)"
+      ]
+    }
+  },
+  "field_capability_definitions": {
+    "full_maintenance": "Complete maintenance work including plumbing, electrical, structural repairs",
+    "minor_maintenance": "Light maintenance only — bulb changes, minor fixes; escalate complex jobs to Bryan",
+    "cleaning": "Apartment cleaning, including turnover cleaning between guests",
+    "inspections": "Property condition inspections, pre/post-stay checks",
+    "basic_checks": "Basic property checks (visual condition, key handover, simple verifications). Not formal inspections."
+  },
+  "escalation_chains": {
+    "guest_complaint_or_refund": {
+      "chain": ["mathias", "ishant"],
+      "after_may_2026": ["mathias", "ishant"],
+      "notification_rule": "Always notify Ishant on Slack even if within Mathias's approval authority"
+    },
+    "maintenance_emergency_north": {
+      "chain": ["franny", "bryan", "ishant"],
+      "note": "Notification immediate. Intervention timing based on planning + urgency."
+    },
+    "maintenance_emergency_west": {
+      "chain": ["franny", "alexandra", "bryan", "ishant"],
+      "note": "Alexandra handles minor maintenance directly; Bryan flexes to west for full maintenance."
+    },
+    "scheduling_or_roster": {
+      "chain": ["franny", "ishant"]
+    },
+    "owner_complaint": {
+      "chain": ["ishant"],
+      "note": "Owner relationships handled personally by Ishant. Team should not attempt to resolve owner complaints independently."
+    },
+    "cleaning_issue": {
+      "decision_makers": ["franny", "mathias", "ishant"],
+      "executors": ["alexandra", "catherine", "bryan"],
+      "note": "Decision makers assess the cleaning issue and assign to one of the executors based on region and availability. Catherine is the primary cleaner; Alexandra and Bryan execute cleaning when needed."
+    }
+  },
+  "compensation_tools": {
+    "available": [
+      "Percentage discount on reservation",
+      "Partial or full refund (within authority cap)",
+      "Free early check-in (if calendar allows)",
+      "Free late checkout (if calendar allows)",
+      "Free extra night (if calendar allows)",
+      "Cleaning fee waiver (where applicable, margin allows)",
+      "Future stay credit (offered at 120% of cash value)"
+    ],
+    "not_available": [
+      "Dinners or restaurant vouchers",
+      "Welcome baskets or gift packages",
+      "Airport transfers",
+      "Private chef experiences",
+      "Welcome wine or bottles of wine",
+      "Romance packs",
+      "Beach gear or equipment rentals",
+      "Kids' fun packs",
+      "Partner vouchers",
+      "Any perk requiring out-of-pocket spend that creates complex owner accounting splits"
+    ],
+    "future_stay_credit_strategy": {
+      "rate": "120% of cash value",
+      "rationale": "75% are never redeemed, making them cost-effective. 22% of recipients book again, building loyalty."
+    },
+    "perk_details": {
+      "late_checkout": {
+        "condition": "Calendar must be clear (no same-day check-in)",
+        "host_cost": "€0",
+        "guest_perceived_value": "€40",
+        "best_for": "Gap days, off-season, closing hesitant guests"
+      },
+      "early_checkin": {
+        "condition": "Calendar must be clear (no same-day checkout) or early-prep fee applies",
+        "host_cost": "€0 if naturally available",
+        "guest_perceived_value": "€25-40",
+        "best_for": "Guests arriving on early flights, families with children"
+      },
+      "free_extra_night": {
+        "condition": "Low season or gap night available",
+        "host_cost": "Cleaning cost only (~€20)",
+        "guest_perceived_value": "Full nightly rate (€140 avg)",
+        "best_for": "Near checkout, long-stay sweetener, loyalty reward"
+      },
+      "cleaning_fee_waiver": {
+        "condition": "Where applicable and margin allows",
+        "host_cost": "€20-40 (actual cleaning cost)",
+        "guest_perceived_value": "€30-60 (listed fee)",
+        "best_for": "Gap-night bookings, multi-unit deals"
+      }
+    }
+  }
+}

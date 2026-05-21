@@ -1,0 +1,149 @@
+{
+  "schema_version": "v2.0.1",
+  "schema_status": "LOCKED",
+  "last_updated": "2026-05-13",
+  "source_analysis": "Sprint 8 Phase 6 pending_actions audit (2,025 records over 47 days, action_feedback 369 records, stratified sample 200 records). Full decision history in sprint8-pending-actions-redesign-decisions-LOCKED.md.",
+  "applies_to": "GMS analyzer signal-generation pipeline. Rules enforced at Layer 2 (pre-creation gate) before any signal is written to the reported_issues table.",
+  "_change_log_from_v2_0": [
+    "OP-8 directive + when_it_applies enriched: (a) property-anchor on multi-property threads (lock to named code), (b) property-card refresh on rename/code-change events, (c) L1/L2/L3 team-schedule progression scope notes, (d) mitigation library exposure for BV-10 support, (e) cross-thread context anchored to critical-3 PII boundary"
+  ],
+  "_format_note": "Rules OP-1 through OP-7 carry rich-form (rationale + examples). OP-8 carries compact form (directive + when_it_applies only) pending Phase 7 enrichment. Runtime reads directive + name + when_it_applies; rationale + examples are for audit/editorial.",
+  "rules": [
+    {
+      "id": "OP-1",
+      "name": "semantic-deduplication",
+      "directive": "Surface one signal per discrete need per conversation. Before creating a candidate signal, check for a semantically similar open or recently-closed (within 6 hours) signal in the same conversation. If a match exists, update the existing signal's context rather than create a new one.",
+      "rationale": "Action_feedback analysis showed duplicate was 24% of explicit rejections (28 of 119). Within-conversation duplication is the largest single source of waste motion: Eleanor Dray at RC-15 generated 14 actions over 6 days for one incident. Current MD5-exact dedup catches only verbatim matches and only on the suggested tier.",
+      "when_it_applies": "Every candidate signal at Layer 2 pre-creation gate.",
+      "examples": {
+        "suppress": [
+          "Send check-in instructions on May 1 at 10 AM (when an open or recently-closed signal already exists for 'Send check-in instructions to guest 24 hours before May 1 check-in')",
+          "Follow up with Kerrie about early check-in (when 'Coordinate early check-in with Kerrie Gobindram' was created 2 hours earlier)"
+        ],
+        "permit": [
+          "First-time signal in a conversation",
+          "Materially different signal type in same conversation (e.g., payment collection AND check-in instructions are different needs)"
+        ]
+      }
+    },
+    {
+      "id": "OP-2",
+      "name": "team-activity-aware-suppression",
+      "directive": "Defer signal creation when the team has posted to the thread within 10 minutes of the analyzer firing. Re-check team activity at write time, not after creation.",
+      "rationale": "Of 51 validly-rejected active-tier records analyzed, 31 (61%) were rejected for the team having already handled the message. The existing team_responded auto-rule fires post-hoc, catches the noise but only after the team has triaged it. Moving the check pre-creation eliminates ~50% of human-rejected workload at source.",
+      "when_it_applies": "Every candidate signal at Layer 2 pre-creation gate, on every action_type.",
+      "examples": {
+        "suppress": [
+          "Active issue with Kirsty Thorne at RC-15 (when team posted a reply to the thread 7 minutes before analyzer firing)",
+          "Send check-in confirmation to guest (when team manually sent confirmation 4 minutes ago)"
+        ],
+        "permit": [
+          "Signal where the most recent thread post is from the guest, not the team",
+          "Signal where the most recent team post was >10 minutes ago AND the latest message is from the guest"
+        ]
+      }
+    },
+    {
+      "id": "OP-3",
+      "name": "no-conditional-or-passive-state-as-task",
+      "directive": "Action text describes an immediate, executable next step. Conditional candidates ('if X then Y'), future-dependent candidates ('once guest confirms'), and passive-state candidates ('await guest reply', 'monitor for response') are suppressed. The conversation thread itself is the state record for what we are awaiting.",
+      "rationale": "Speculative future commitments showed 36% representation in active-tier silent dismissals. 'Await' patterns appear in 35 of 206 accepted records, accepted as informational, not as work, confirming they are state markers, not tasks. Surfacing them as task rows duplicates inbox-visible state.",
+      "when_it_applies": "Layer 2 pre-creation gate. Note: conditional logic remains valid in the analyzer's INTERNAL reasoning (e.g., 'don't generate follow-up reminder yet'); it just doesn't get surfaced as a task to the team.",
+      "examples": {
+        "suppress": [
+          "If guest confirms email change, resend check-in instructions",
+          "Await company name, billing address, and VAT number from Emmeline",
+          "Once guest replies, prepare alternative property details",
+          "Monitor thread for confirmation"
+        ],
+        "permit": [
+          "Send check-in instructions on May 1 at 10 AM (concrete next step)",
+          "Process EUR 30 goodwill refund through Airbnb today (concrete next step)",
+          "Confirm BBQ availability with property team for May 5 (concrete next step)"
+        ]
+      }
+    },
+    {
+      "id": "OP-4",
+      "name": "no-embedded-assignment",
+      "directive": "Candidate text describes WHAT to do, never WHO. Names of team members do not appear as leading words or as embedded assignees in action text. Assignment is a workflow property of the task, captured in the task record's assignee field, not in the action description.",
+      "rationale": "7 of dismissed commitments led with team-member names (Mathias / Bryan / Ishant / Mary). Each was an unilateral assignment by the AI that the team rejected. Separating WHAT from WHO lets the workflow assign correctly without locking it into the text.",
+      "when_it_applies": "Layer 2 pre-creation gate. Validation pass at signal generation in the analyzer.",
+      "examples": {
+        "suppress": [
+          "Mathias: call the guest about availability",
+          "Bryan to inspect the AC unit",
+          "Ishant should approve the refund"
+        ],
+        "permit": [
+          "Call the guest about availability (assignee handled by workflow)",
+          "Inspect the AC unit (routed to maintenance assignee)",
+          "Approve the refund (routed to financial-approval assignee)"
+        ]
+      }
+    },
+    {
+      "id": "OP-5",
+      "name": "reservation-and-availability-aware-inquiry-followup",
+      "directive": "inquiry_followup signals are surfaced for unconfirmed reservations where conversion is still possible. Auto-dismiss applies only when (the inquiry's intended check-in date has passed) OR (the calendar is no longer available for those dates because another guest booked or the owner blocked the period).",
+      "rationale": "5% completion rate on inquiry_followup is a team-behavior signal, not a noise signal. Dismissed inquiry follow-ups are uncaptured direct-booking conversion opportunities. The existing auto-dismiss-stale-inquiry-followups rule is too aggressive: it kills opportunities still convertible. Conditioning on conversion-feasibility preserves the opportunity surface while still cleaning genuinely moot inquiries.",
+      "when_it_applies": "Layer 2 pre-creation gate AND Layer 5 lifecycle review for active inquiry_followup signals.",
+      "examples": {
+        "auto_dismiss": [
+          "Inquiry from Nichola at GBH-B4 for May 15 check-in, when today's date is May 20 (check-in passed)",
+          "Inquiry from Ibra at RC-15 for July 1-7, when those dates were booked by another guest on June 1 (calendar unavailable)"
+        ],
+        "keep_active": [
+          "Inquiry from a guest 5 days ago, check-in date still 2 weeks away, calendar still open",
+          "Inquiry where the team has not yet replied AND the requested dates remain bookable"
+        ]
+      }
+    },
+    {
+      "id": "OP-6",
+      "name": "task-only-classification",
+      "directive": "The analyzer classifies every candidate as task, observation, or watch-list signal. Only tasks pass through Layer 2 to reach the team workflow. Observations (guest feedback, policy ideas, learnings) and watch-list signals feed the learning loop or are stored as property-card revisions; they do not appear as team tasks.",
+      "rationale": "14% of active-tier silent dismissals were AI-confused observations or learnings ('Look into improving beach chairs and rooftop based on guest feedback', 'Document maintenance visit coordination policy update'). These are valuable inputs to the property knowledge base or operational SOPs, but they are not work for a team member to do. Collapsing them all into pending_actions polluted the task surface.",
+      "when_it_applies": "Layer 1 (analyzer) outputs the classification. Layer 2 routes accordingly.",
+      "examples": {
+        "task": [
+          "Send the EUR 96 refund through Airbnb today",
+          "Call Mauricio to schedule the AC repair tomorrow morning"
+        ],
+        "observation": [
+          "Guest feedback: rooftop seating could be improved",
+          "Process learning: coordinate maintenance visit times with guests in advance"
+        ],
+        "watch_list": [
+          "Recurring complaint pattern at LB-C about ventilation across 3 stays in 2 weeks"
+        ]
+      }
+    },
+    {
+      "id": "OP-7",
+      "name": "str-voice-discipline",
+      "directive": "The AI uses professional short-term-rental industry voice in all generated action text. Team-internal idiom is not used: 'do the needful', 'needful', bare pronouns without antecedent (leading 'she'/'he'), and informal team-Slack abbreviations are banned. The vocabulary, register, and structure follow STR best practices (see brand-voice.json for the positive specification).",
+      "rationale": "Action_feedback accepted-cohort analysis showed the AI was mimicking team Slack vocabulary ('needful' as leading word in 5 records, 'she/he' as bare pronoun in 5 records, 'done'/'team' fragments). Accepted because team trusts familiar phrasing, but it weakens the action as an artifact of work and propagates internal idiom into a system meant to scale. Discipline now prevents drift later.",
+      "when_it_applies": "Layer 1 analyzer prompt directive AND validation pass at signal generation. Cross-references brand-voice.json for the positive voice specification.",
+      "examples": {
+        "suppress": [
+          "Do the needful follow-up with the guest",
+          "She has booked till the 19th of April",
+          "Team take care of it"
+        ],
+        "permit": [
+          "Send follow-up message to the guest about the early check-in request",
+          "The guest has extended her stay until April 19",
+          "Coordinate the maintenance visit with property operations"
+        ]
+      }
+    },
+    {
+      "id": "OP-8",
+      "name": "data-context-integrity",
+      "directive": "Before drafting any guest-facing reply, the analyzer verifies it has fresh, accurate ground-truth context across all relevant dimensions: (a) reservation context, re-query Guesty for ALL reservations linked to the guest, resolve which one the message refers to based on explicit message content (dates, property names, property codes), when the message names a specific property code, lock all pricing and specs to THAT code, not the most-recently-discussed property in thread; (b) pricing, pull from canonical pricing tables, never infer or invent rates; refresh property-card data on rename or code-change events; (c) team availability, consult team-schedule integration before committing to operational windows; (d) property capabilities, pull equipment/fixture specifics from property card, never invent valves, switches, or DIY solutions; (e) cross-thread context, recent team notes, prior incident records, and adjacent conversations at the property level (operational signal only, never PII per critical-3). When any required context is unavailable, defer to team via Mechanism B (deferral language plus paired task) rather than draft. Every draft annotated with which data sources were consulted for team-side visibility.",
+      "when_it_applies": "Layer 1 analyzer pre-draft check. Paired Sprint 9 system work: (a) reservation-context re-query on every message-receive with property-anchor discipline for multi-property threads (when guest names a code, lock to that code); (b) pricing-table data context with property-card refresh on rename or code-change events; (c) team-schedule integration scoped in three levels, L1 = team hours policy exposed to analyzer (buildable Sprint 9), L2 = per-region per-day staff capacity + commitments + skill matching (gated on FAD Operations Breezeway-replacement live), L3 = autonomous commitment based on real-time schedule with confidence routing (gated on multi-dim confidence Sprint 9 ship #12 + per-class accuracy >85%); (d) property-card capabilities exposure to analyzer including mitigation library for BV-10 support; (e) recent-notes thread linkage at property level with critical-3 PII isolation enforced.",
+      "_phase7_enrichment": "rationale + examples (suppress / permit) to be added during Phase 7 card-migration session"
+    }
+  ]
+}

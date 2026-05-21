@@ -1,0 +1,175 @@
+{
+  "card_type": "independent",
+  "parent_complex_code": null,
+  "code": "MV-1",
+  "name": "Private 3BR Villa with Pool & Garden",
+  "property_id": "69f4a0d9a67b3700144a98c9",
+  "location": {
+    "area": "Grand Baie",
+    "region": "north",
+    "address": "Chemin 20 Pieds, La Mare Ronde, 30513 Grand Baie, Mauritius",
+    "floor": null,
+    "coordinates": {
+      "lat": -20.011525385200237,
+      "lng": 57.5962198152982
+    }
+  },
+  "type": {
+    "property_type": "villa",
+    "unit_type": "3br",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [],
+  "capacity": {
+    "adults": 6,
+    "children": 0,
+    "total_max": 6,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "double"
+      ],
+      "ac": true
+    },
+    {
+      "id": 2,
+      "beds": [
+        "double"
+      ],
+      "ac": true
+    },
+    {
+      "id": 3,
+      "beds": [
+        "single",
+        "single"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 2,
+    "ensuite_count": 1,
+    "half_baths": 1
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": true,
+    "gym": false,
+    "elevator": false,
+    "garage": false,
+    "view": [
+      "garden",
+      "pool"
+    ],
+    "power_backup": null,
+    "pool_access": {
+      "type": "private",
+      "location": "Private pool in the villa garden.",
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [
+        "bedrooms"
+      ],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": null,
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": null,
+      "password": "***",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": "Mahogany Villas",
+    "complex_code": null,
+    "electrical_authority": "CEB",
+    "shared_facilities": [],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "Private 3-bedroom villa in a quiet lane in Grand Baie / La Mare Ronde, designed for families or groups needing privacy, garden space, and a private pool."
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": null
+    },
+    "nearest_beach": {
+      "minutes_walk": null,
+      "name": "Grand Baie beaches"
+    },
+    "nearby_landmarks": [
+      {
+        "name": "Grand Baie shopping centres and restaurants",
+        "minutes_walk": null,
+        "notes": "Guesty description says shopping centres, restaurants, and popular beaches are within a short walk."
+      }
+    ]
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": 70,
+    "minimum_stay_nights": 3
+  },
+  "operational_notes": [
+    "Villa includes a master bedroom overlooking the pool with its own bathroom featuring double sinks.",
+    "Outdoor area includes garden, private pool, kiosk with barbecue setup, outdoor kitchen, outdoor shower, and outdoor toilet.",
+    "Pool and garden maintenance is scheduled twice a week.",
+    "Beach-distance wording: Guesty says popular beaches are within a short walk, but no exact walking time is confirmed. Do not invent a minute count; say the villa is in Grand Baie and popular beaches are a short walk away."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": "https://www.airbnb.com/rooms/1678744831084778040",
+    "booking": null,
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_guesty_cache": "backend/.guesty-listings-cache.json",
+    "migration_timestamp": "2026-05-19T00:00:00+04:00",
+    "mapping_status": "guesty_backfill"
+  },
+  "_editorial_review_needed": [
+    "Confirm exact walking distances to nearest beach, shopping centres, and restaurants.",
+    "Confirm bed sizes, access details, WiFi credentials, and parking instructions before using this card for access replies."
+  ],
+  "_rename_log": []
+}

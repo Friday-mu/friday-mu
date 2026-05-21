@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   REVIEWS,
   REVIEW_TAGS,
@@ -15,8 +15,10 @@ import {
   tagAggregate,
   lowRatedReviews,
   type Cohort,
+  type Review,
   type TagSentiment,
 } from '../../../_data/reviews';
+import { useLiveReviews } from '../../../_data/reviewsClient';
 import { TASK_PROPERTY_BY_CODE } from '../../../_data/tasks';
 import { IconAI } from '../../icons';
 
@@ -24,6 +26,12 @@ type TrendTab = 'cohort' | 'tags' | 'tagsByUnit' | 'lowRated' | 'avgByUnit' | 'm
 
 export function TrendsPage() {
   const [tab, setTab] = useState<TrendTab>('cohort');
+
+  // Live Guesty data via useLiveReviews; falls back to fixture REVIEWS (empty
+  // post-strip) during initial load or on backend failure. Matches the pattern
+  // established by OverviewPage + AllReviewsPage.
+  const { reviews: liveReviews } = useLiveReviews();
+  const reviewSource = liveReviews ?? REVIEWS;
 
   const tabs: { id: TrendTab; label: string }[] = [
     { id: 'cohort', label: 'Cohort summaries' },
@@ -49,31 +57,31 @@ export function TrendsPage() {
         ))}
       </div>
 
-      {tab === 'cohort' && <CohortSummaries />}
-      {tab === 'tags' && <TrendingTags />}
-      {tab === 'tagsByUnit' && <TagsByUnit />}
-      {tab === 'lowRated' && <LowRatedDrilldown />}
-      {tab === 'avgByUnit' && <AvgByUnit />}
-      {tab === 'mom' && <MoMGrid />}
+      {tab === 'cohort' && <CohortSummaries reviews={reviewSource} />}
+      {tab === 'tags' && <TrendingTags reviews={reviewSource} />}
+      {tab === 'tagsByUnit' && <TagsByUnit reviews={reviewSource} />}
+      {tab === 'lowRated' && <LowRatedDrilldown reviews={reviewSource} />}
+      {tab === 'avgByUnit' && <AvgByUnit reviews={reviewSource} />}
+      {tab === 'mom' && <MoMGrid reviews={reviewSource} />}
     </div>
   );
 }
 
 // ───────────────── Cohort Summaries ─────────────────
 
-function CohortSummaries() {
-  const byCohort = reviewsByCohort();
-  const last90 = reviewsInWindow(90);
-  const last90ByCohort: Record<Cohort, typeof REVIEWS> = {
-    flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
+function CohortSummaries({ reviews }: { reviews: Review[] }) {
+  const byCohort = reviewsByCohort(reviews);
+  const last90 = reviewsInWindow(90, reviews);
+  const last90ByCohort: Record<Cohort, Review[]> = {
+    flic_en_flac: [], grand_baie: [], west: [], pereybere: [], bel_ombre: [], other: [],
   };
   for (const rv of last90) last90ByCohort[rv.cohort].push(rv);
-  const prior90 = REVIEWS.filter((rv) => {
+  const prior90 = reviews.filter((rv) => {
     const days = Math.round((new Date('2026-04-27').getTime() - new Date(rv.submittedAt).getTime()) / (86400000));
     return days > 90 && days <= 180;
   });
-  const prior90ByCohort: Record<Cohort, typeof REVIEWS> = {
-    flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
+  const prior90ByCohort: Record<Cohort, Review[]> = {
+    flic_en_flac: [], grand_baie: [], west: [], pereybere: [], bel_ombre: [], other: [],
   };
   for (const rv of prior90) prior90ByCohort[rv.cohort].push(rv);
 
@@ -146,7 +154,7 @@ function CohortSummaries() {
               <tr key={c} style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
                 <td style={{ padding: '8px' }}>{COHORT_LABEL[c]}</td>
                 {([30, 60, 90, 180] as const).map((d) => {
-                  const w = reviewsInWindow(d).filter((rv) => rv.cohort === c);
+                  const w = reviewsInWindow(d, reviews).filter((rv) => rv.cohort === c);
                   const avg = avgRating(w);
                   return (
                     <td key={d} className="mono" style={{ textAlign: 'right', padding: '8px', color: avg < 4 && w.length > 0 ? 'var(--color-text-warning)' : 'inherit' }}>
@@ -165,9 +173,9 @@ function CohortSummaries() {
 
 // ───────────────── Trending Tags ─────────────────
 
-function TrendingTags() {
-  const all = tagAggregate('all');
-  const last30 = tagAggregate(30);
+function TrendingTags({ reviews }: { reviews: Review[] }) {
+  const all = tagAggregate('all', reviews);
+  const last30 = tagAggregate(30, reviews);
 
   const positives = all.filter((t) => t.sentiment === 'positive').slice(0, 8);
   const negatives = all.filter((t) => t.sentiment === 'negative').slice(0, 8);
@@ -234,9 +242,9 @@ function TagColumn({
 
 // ───────────────── Tags By Unit ─────────────────
 
-function TagsByUnit() {
-  const byProp = reviewsByProperty();
-  const propTags = (props: typeof REVIEWS) => {
+function TagsByUnit({ reviews }: { reviews: Review[] }) {
+  const byProp = reviewsByProperty(reviews);
+  const propTags = (props: Review[]) => {
     const ids = new Set(props.map((p) => p.id));
     const tags = REVIEW_TAGS.filter((tg) => ids.has(tg.reviewId));
     const positive = Array.from(new Set(tags.filter((tg) => tg.sentiment === 'positive').map((tg) => tg.tag))).slice(0, 5);
@@ -257,8 +265,8 @@ function TagsByUnit() {
         </thead>
         <tbody>
           {Object.keys(byProp).sort().map((code) => {
-            const reviews = byProp[code];
-            const t = propTags(reviews);
+            const propReviews = byProp[code];
+            const t = propTags(propReviews);
             const prop = TASK_PROPERTY_BY_CODE[code];
             return (
               <tr key={code} style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
@@ -280,7 +288,7 @@ function TagsByUnit() {
                     ))}
                   </div>
                 </td>
-                <td className="mono" style={{ padding: '8px', textAlign: 'right', color: 'var(--color-text-tertiary)' }}>{reviews.length}</td>
+                <td className="mono" style={{ padding: '8px', textAlign: 'right', color: 'var(--color-text-tertiary)' }}>{propReviews.length}</td>
               </tr>
             );
           })}
@@ -292,8 +300,8 @@ function TagsByUnit() {
 
 // ───────────────── Low-Rated Drilldown ─────────────────
 
-function LowRatedDrilldown() {
-  const lows = lowRatedReviews();
+function LowRatedDrilldown({ reviews }: { reviews: Review[] }) {
+  const lows = lowRatedReviews(reviews);
   const negTags = REVIEW_TAGS.filter((tg) => tg.sentiment === 'negative' && lows.some((rv) => rv.id === tg.reviewId));
   const negTagCounts: Record<string, number> = {};
   for (const tg of negTags) negTagCounts[tg.tag] = (negTagCounts[tg.tag] || 0) + 1;
@@ -409,15 +417,15 @@ function LowRatedDrilldown() {
 
 // ───────────────── Avg Rating by Unit ─────────────────
 
-function AvgByUnit() {
-  const byProp = reviewsByProperty();
+function AvgByUnit({ reviews }: { reviews: Review[] }) {
+  const byProp = reviewsByProperty(reviews);
   const rows = Object.entries(byProp)
-    .map(([code, reviews]) => ({
+    .map(([code, propReviews]) => ({
       code,
       name: TASK_PROPERTY_BY_CODE[code]?.name ?? code,
       cohort: PROPERTY_COHORT[code],
-      avg: avgRating(reviews),
-      count: reviews.length,
+      avg: avgRating(propReviews),
+      count: propReviews.length,
     }))
     .sort((a, b) => b.count - a.count);
 
@@ -454,7 +462,7 @@ function AvgByUnit() {
 
 // ───────────────── MoM Grid ─────────────────
 
-function MoMGrid() {
+function MoMGrid({ reviews }: { reviews: Review[] }) {
   // Build last 12 months (Apr 2026 going back). Find avg rating per month across all reviews.
   const months: { label: string; iso: string }[] = [];
   const today = new Date('2026-04-27');
@@ -464,11 +472,11 @@ function MoMGrid() {
     months.push({ label: d.toLocaleDateString('en-GB', { month: 'short' }), iso });
   }
   const monthAvgs = months.map((m) => {
-    const reviews = REVIEWS.filter((rv) => rv.submittedAt.startsWith(m.iso));
-    return { ...m, avg: avgRating(reviews), count: reviews.length };
+    const monthReviews = reviews.filter((rv) => rv.submittedAt.startsWith(m.iso));
+    return { ...m, avg: avgRating(monthReviews), count: monthReviews.length };
   });
 
-  const ttm = avgRating(REVIEWS);
+  const ttm = avgRating(reviews);
 
   return (
     <div className="card" style={{ padding: 14, overflowX: 'auto' }}>

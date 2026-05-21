@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import {
   IconBell,
   IconBook,
@@ -17,13 +17,14 @@ import {
 } from './icons';
 import { RoleSwitcher } from './PermissionGate';
 import { usePermissions, useCurrentUserId } from './usePermissions';
-import { TASK_USER_BY_ID } from '../_data/tasks';
 import { ROLE_LABEL } from '../_data/permissions';
+import { useDisplayedUser } from '../_data/useDisplayedUser';
 import {
   topNotifications,
   unreadCount,
   isRead,
   markRead,
+  markUnread,
   markAllRead,
   allNotifications,
   subscribeNotifications,
@@ -62,7 +63,9 @@ export function Header({
   avatarOpen,
 }: Props) {
   const { currentUserId, role } = usePermissions();
-  const currentUser = TASK_USER_BY_ID[currentUserId];
+  // Branches on tenant: FR keeps the role-switcher-driven fixture
+  // identity, SaaS tenants read display_name + username from the JWT.
+  const currentUser = useDisplayedUser();
 
   // Subscribe to notifications-rev so the bell dot updates reactively
   const [, setNotifRev] = useState(0);
@@ -72,13 +75,22 @@ export function Header({
   const dotTone = counts.urgent > 0 ? 'urgent' : counts.total > 0 ? 'unread' : 'none';
 
   return (
-    <header className="fad-header">
-      <div className="fad-brand">
+    <header
+      className="fad-header"
+      data-qa="fad-header"
+      data-qa-role={role}
+      data-qa-user-id={currentUserId}
+      data-qa-bell-open={bellOpen ? 'true' : 'false'}
+      data-qa-help-open={helpOpen ? 'true' : 'false'}
+      data-qa-avatar-open={avatarOpen ? 'true' : 'false'}
+    >
+      <div className="fad-brand" data-qa="fad-brand">
         <button
           className="fad-util-btn"
           onClick={onToggleSidebar}
           title="Toggle sidebar"
           style={{ marginRight: 4 }}
+          data-qa="fad-sidebar-toggle"
         >
           <IconSidebar />
         </button>
@@ -86,24 +98,14 @@ export function Header({
           className="fad-brand-link"
           onClick={onGoHome}
           title="Home · Inbox"
+          data-qa="fad-home"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/friday-logo.jpg"
-            alt="Friday"
-            className="fad-brand-logo"
-            width={32}
-            height={32}
-          />
-          <span className="fad-brand-name">
-            friday.mu
-            <span className="fad-brand-sub">Admin</span>
-          </span>
+          <span className="fad-brand-wordmark">fridayOS</span>
         </button>
       </div>
 
-      <div className="fad-ask-wrap">
-        <button className="fad-ask-pill" onClick={onOpenPalette}>
+      <div className="fad-ask-wrap" data-qa="fad-search-wrap">
+        <button className="fad-ask-pill" onClick={onOpenPalette} data-qa="fad-search">
           <IconSearch size={14} />
           <span className="ask-label">
             Search or <span className="ask-friday">Ask Friday</span>…
@@ -112,20 +114,26 @@ export function Header({
         </button>
       </div>
 
-      <div className="fad-utilities">
+      <div className="fad-utilities" data-qa="fad-utilities">
         <RoleSwitcher />
         <button
           className={'fad-util-btn' + (fridayOpen ? ' active' : '')}
           onClick={onOpenFriday}
           title="Ask Friday  ⌘/"
+          data-qa="fad-friday-drawer-toggle"
+          data-qa-active={fridayOpen ? 'true' : 'false'}
         >
           <IconSparkle />
         </button>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-qa="fad-notifications-wrap">
           <button
             className={'fad-util-btn' + (bellOpen ? ' active' : '')}
             onClick={onOpenBell}
             title={counts.total > 0 ? `Notifications · ${counts.total} unread${counts.urgent > 0 ? ` · ${counts.urgent} urgent` : ''}` : 'Notifications'}
+            data-qa="fad-notifications-toggle"
+            data-qa-active={bellOpen ? 'true' : 'false'}
+            data-qa-unread-count={String(counts.total)}
+            data-qa-urgent-count={String(counts.urgent)}
           >
             <IconBell />
             {dotTone !== 'none' && (
@@ -139,31 +147,37 @@ export function Header({
           </button>
           {bellOpen && <NotificationsDropdown role={role} userId={currentUserId} />}
         </div>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-qa="fad-help-wrap">
           <button
             className={'fad-util-btn' + (helpOpen ? ' active' : '')}
             onClick={onOpenHelp}
             title="Help"
+            data-qa="fad-help-toggle"
+            data-qa-active={helpOpen ? 'true' : 'false'}
           >
             <IconHelp />
           </button>
           {helpOpen && <HelpDropdown />}
         </div>
         <button
-          className="fad-util-btn"
+          className="fad-util-btn fad-theme-toggle"
           onClick={onToggleTheme}
           title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          data-qa="fad-theme-toggle"
+          data-qa-theme={theme}
         >
           {theme === 'dark' ? <IconSun /> : <IconMoon />}
         </button>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-qa="fad-avatar-wrap">
           <button
             onClick={onOpenAvatar}
             className="fad-avatar"
             title="Account"
-            style={currentUser ? { background: currentUser.avatarColor } : undefined}
+            style={{ background: currentUser.avatarColor }}
+            data-qa="fad-avatar-toggle"
+            data-qa-active={avatarOpen ? 'true' : 'false'}
           >
-            {currentUser?.initials ?? 'IS'}
+            {currentUser.initials}
           </button>
           {avatarOpen && <AvatarDropdown />}
         </div>
@@ -257,14 +271,16 @@ function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
       window.location.href = notif.href;
     }
   };
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  };
   const handleToggleRead = (e: MouseEvent) => {
     e.stopPropagation();
     if (read) {
-      // Re-mark as unread
-      const set = new Set([...JSON.parse(localStorage.getItem('fad:notif-read') || '[]')]);
-      set.delete(notif.id);
-      localStorage.setItem('fad:notif-read', JSON.stringify([...set]));
-      window.dispatchEvent(new Event('storage'));
+      markUnread(notif.id);
     } else {
       markRead(notif.id);
     }
@@ -273,9 +289,12 @@ function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
   const tone = notif.severity === 'urgent' ? 'urgent' : notif.severity === 'warn' ? 'warn' : '';
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       className={'fad-notif-row' + (read ? ' read' : '') + ` ${tone}`}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       title={aiSort && notif.aiReason ? `Ranked: ${notif.aiReason}` : notif.title}
     >
       <span className={'fad-notif-dot ' + tone} />
@@ -301,7 +320,7 @@ function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
       >
         {read ? '○' : '●'}
       </button>
-    </button>
+    </div>
   );
 }
 
@@ -329,20 +348,30 @@ function HelpDropdown() {
 }
 
 function AvatarDropdown() {
-  const { currentUserId, role } = usePermissions();
-  const user = TASK_USER_BY_ID[currentUserId];
+  const { role } = usePermissions();
+  const user = useDisplayedUser();
+  // Email domain ("friday.mu") in the subtitle was hardcoded — derive
+  // from the live email if present so SaaS tenants see their own
+  // domain. Falls back to friday.mu only when we genuinely have no
+  // email (FR fixture users have user.email populated).
+  const domain = user.email && user.email.includes('@')
+    ? user.email.split('@')[1]
+    : 'friday.mu';
 
   // @demo:auth — Tag: PROD-AUTH-2 — see frontend/DEMO_CRUFT.md
   // Replace with: POST /api/auth/logout to invalidate session server-side.
   // Keep the localStorage cleanup for client-side hygiene.
   const handleLogout = () => {
     try {
-      // Clear FAD identity state. Keeps preferences (theme, sidebar collapsed)
-      // so the user lands back at /login with their visual settings intact.
+      // Clear FAD + GMS identity state. Keeps preferences (theme,
+      // sidebar collapsed) so the user lands back at /login with their
+      // visual settings intact.
       localStorage.removeItem('fad:dev-role');
       localStorage.removeItem('fad:dev-user');
       localStorage.removeItem('fad:real-role');
       localStorage.removeItem('fad:last-email');
+      localStorage.removeItem('gms_token');
+      localStorage.removeItem('gms_role');
     } catch {
       /* localStorage unavailable — proceed to navigate anyway */
     }
@@ -352,9 +381,9 @@ function AvatarDropdown() {
   return (
     <div className="fad-dropdown" style={{ width: 220 }}>
       <div style={{ padding: '10px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-        <div style={{ fontWeight: 500, fontSize: 13 }}>{user?.name ?? 'Unknown user'}</div>
+        <div style={{ fontWeight: 500, fontSize: 13 }}>{user.name}</div>
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          {ROLE_LABEL[role]} · friday.mu
+          {ROLE_LABEL[role]} · {domain}
         </div>
       </div>
       <button className="fad-dropdown-item">Profile</button>

@@ -1,12 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Children, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import {
   AI_TASK_DRAFTS,
   APPROVAL_REQUESTS,
   REPORTED_ISSUES,
-  TASKS,
   TASK_INSIGHTS,
   TASK_PROPERTIES,
   TASK_USER_BY_ID,
@@ -21,7 +20,8 @@ import {
 } from '../../_data/tasks';
 import { useCanSee, useCurrentUserId, usePermissions } from '../usePermissions';
 import { fireToast } from '../Toaster';
-import { createTask, updateTask } from '../../_data/breezeway';
+import { createTask, updateTask } from '../../_data/tasksClient';
+import { useApiTasks } from '../../_data/useApiTasks';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
@@ -74,31 +74,45 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 };
 
 export function OperationsModule({ subPage, onChangeSubPage }: Props) {
+  const { role } = usePermissions();
   const canSeeApprovals = useCanSee('tasks', 'approve');
   const canSeeRoster = useCanSee('hr_roster', 'read');
   const canSeeSettings = useCanSee('settings');
+  const isField = role === 'field';
 
-  const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'all', label: 'All tasks' },
-    { id: 'issues', label: 'Reported issues' },
-    canSeeApprovals && { id: 'approvals', label: 'Approvals' },
-    canSeeRoster && { id: 'roster', label: 'Roster' },
-    { id: 'insights', label: 'Insights' },
-    canSeeSettings && { id: 'settings', label: 'Settings' },
-  ].filter((t): t is { id: string; label: string } => Boolean(t));
+  const tabs = (
+    isField
+      ? [
+          { id: 'my', label: 'My tasks' },
+          { id: 'all', label: 'All tasks' },
+          { id: 'issues', label: 'Reported issues' },
+          canSeeRoster && { id: 'roster', label: 'Roster' },
+        ]
+      : [
+          { id: 'overview', label: 'Overview' },
+          { id: 'all', label: 'All tasks' },
+          { id: 'issues', label: 'Reported issues' },
+          canSeeApprovals && { id: 'approvals', label: 'Approvals' },
+          canSeeRoster && { id: 'roster', label: 'Roster' },
+          { id: 'insights', label: 'Insights' },
+          canSeeSettings && { id: 'settings', label: 'Settings' },
+        ]
+  ).filter((t): t is { id: string; label: string } => Boolean(t));
 
-  const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
+  const active = tabs.find((t) => t.id === subPage)?.id ?? (isField ? 'my' : 'overview');
 
   const [, setRev] = useState(0);
   const bumpRev = () => setRev((n) => n + 1);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const { tasks: TASKS } = useApiTasks();
   const detailTask = detailTaskId ? TASKS.find((t) => t.id === detailTaskId) : null;
 
   const renderSub = () => {
     switch (active) {
+      case 'my':
+        return <MyTasksPage onOpenTask={setDetailTaskId} />;
       case 'overview':
         return <OverviewPage onOpenTask={setDetailTaskId} />;
       case 'all':
@@ -122,15 +136,15 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
         title="Operations"
-        subtitle="Tasks · reported issues · approvals · roster · insights"
+        subtitle={isField ? 'My tasks · photos · comments · expenses' : 'Tasks · reported issues · approvals · roster · insights'}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}
-        actions={
+        actions={!isField ? (
           <button className="btn primary sm" onClick={() => setCreateOpen(true)}>
             <IconPlus size={12} /> New task
           </button>
-        }
+        ) : undefined}
       />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {renderSub()}
@@ -167,6 +181,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 // ───────────────── Overview ─────────────────
 
 function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+  const { tasks: TASKS } = useApiTasks();
   const kpis = useMemo(() => {
     const openToday = TASKS.filter((t) => t.dueDate === TODAY && t.status !== 'completed' && t.status !== 'cancelled').length;
     const overdue = TASKS.filter((t) => t.dueDate < TODAY && t.status !== 'completed' && t.status !== 'cancelled').length;
@@ -174,7 +189,7 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
     const awaitingApproval = TASKS.filter((t) => t.status === 'awaiting_approval' || t.awaitingHumanApproval).length;
     const reportedToday = REPORTED_ISSUES.filter((i) => i.reportedAt.slice(0, 10) === TODAY && i.status === 'new').length;
     return { openToday, overdue, urgent, awaitingApproval, reportedToday };
-  }, []);
+  }, [TASKS]);
 
   const escalations = TASKS.filter(
     (t) => t.riskFlags.includes('overdue') || t.riskFlags.includes('blocked_access') || t.priority === 'urgent',
@@ -190,7 +205,7 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
     )
       .sort((a, b) => b.entry.ts.localeCompare(a.entry.ts))
       .slice(0, 6);
-  }, []);
+  }, [TASKS]);
 
   const telemetry = useAITelemetry();
   const [briefIndex, setBriefIndex] = useState(() => new Date().getHours() % DAILY_BRIEF_POOL.length);
@@ -302,6 +317,205 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
   );
 }
 
+// ───────────────── My Tasks ─────────────────
+
+function MyTasksPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+  const currentUserId = useCurrentUserId();
+  const { tasks: TASKS, loading, error, refetch } = useApiTasks();
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const myTasks = useMemo(() => {
+    return TASKS
+      .filter((t) => t.assigneeIds.includes(currentUserId))
+      .filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
+      .sort((a, b) => {
+        const activeA = a.status === 'in_progress' ? 0 : 1;
+        const activeB = b.status === 'in_progress' ? 0 : 1;
+        return activeA - activeB
+          || a.dueDate.localeCompare(b.dueDate)
+          || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+      });
+  }, [TASKS, currentUserId]);
+
+  const activeNow = myTasks.filter((t) => t.status === 'in_progress');
+  const dueNow = myTasks.filter((t) => t.status !== 'in_progress' && t.dueDate <= TODAY);
+  const upcoming = myTasks.filter((t) => t.dueDate > TODAY).slice(0, 8);
+
+  const setTaskStatus = async (task: Task, status: TaskStatus) => {
+    setUpdatingId(task.id);
+    try {
+      await updateTask({ taskId: task.id, patch: { status }, actorId: currentUserId });
+      fireToast(status === 'completed' ? 'Task marked complete' : `Task moved to ${STATUS_LABEL[status].toLowerCase()}`);
+      refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Task update failed');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  return (
+    <div className="ops-my-tasks">
+      <div className="ops-my-tasks-hero">
+        <div>
+          <div className="ops-my-tasks-kicker">Today</div>
+          <h2>My tasks</h2>
+          <p>
+            Start work, add task notes or expenses, and close the job from the task detail.
+          </p>
+        </div>
+        <div className="ops-my-tasks-counts" aria-label="Task counts">
+          <span><strong>{activeNow.length}</strong> active</span>
+          <span><strong>{dueNow.length}</strong> due</span>
+          <span><strong>{upcoming.length}</strong> next</span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="ops-my-tasks-alert">
+          Live tasks could not load. Showing an empty work queue until the backend responds.
+        </div>
+      )}
+      {loading && myTasks.length === 0 && <Empty>Loading assigned tasks…</Empty>}
+
+      <MyTasksSection title="Active now" empty="No task is currently started.">
+        {activeNow.map((task) => (
+          <MyTaskCard
+            key={task.id}
+            task={task}
+            busy={updatingId === task.id}
+            onOpen={() => onOpenTask(task.id)}
+            onSetStatus={(status) => setTaskStatus(task, status)}
+          />
+        ))}
+      </MyTasksSection>
+
+      <MyTasksSection title="Due now" empty="Nothing assigned for today or overdue.">
+        {dueNow.map((task) => (
+          <MyTaskCard
+            key={task.id}
+            task={task}
+            busy={updatingId === task.id}
+            onOpen={() => onOpenTask(task.id)}
+            onSetStatus={(status) => setTaskStatus(task, status)}
+          />
+        ))}
+      </MyTasksSection>
+
+      <MyTasksSection title="Upcoming" empty="No upcoming assigned tasks.">
+        {upcoming.map((task) => (
+          <MyTaskCard
+            key={task.id}
+            task={task}
+            busy={updatingId === task.id}
+            onOpen={() => onOpenTask(task.id)}
+            onSetStatus={(status) => setTaskStatus(task, status)}
+          />
+        ))}
+      </MyTasksSection>
+    </div>
+  );
+}
+
+function MyTasksSection({
+  title,
+  empty,
+  children,
+}: {
+  title: string;
+  empty: string;
+  children: ReactNode;
+}) {
+  const count = Children.count(children);
+  return (
+    <section className="ops-my-tasks-section">
+      <div className="ops-my-tasks-section-title">
+        <h3>{title}</h3>
+        <span>{count}</span>
+      </div>
+      {count > 0 ? <div className="ops-my-tasks-list">{children}</div> : <Empty>{empty}</Empty>}
+    </section>
+  );
+}
+
+function MyTaskCard({
+  task,
+  busy,
+  onOpen,
+  onSetStatus,
+}: {
+  task: Task;
+  busy: boolean;
+  onOpen: () => void;
+  onSetStatus: (status: TaskStatus) => void;
+}) {
+  const statusSwatch = toneStyle(taskStatusTone(task.status));
+  const prioSwatch = toneStyle(priorityTone(task.priority));
+  const primaryAction =
+    task.status === 'todo'
+      ? { label: 'Start', status: 'in_progress' as TaskStatus }
+      : task.status === 'in_progress'
+        ? { label: 'Pause', status: 'paused' as TaskStatus }
+        : task.status === 'paused'
+          ? { label: 'Resume', status: 'in_progress' as TaskStatus }
+          : null;
+
+  const stop = (e: MouseEvent) => e.stopPropagation();
+
+  return (
+    <article className="ops-my-task-card" onClick={onOpen}>
+      <div className="ops-my-task-top">
+        <span className="mono ops-my-task-property">{task.propertyCode}</span>
+        <span className="ops-my-task-due">{formatTaskDue(task.dueDate, task.dueTime)}</span>
+      </div>
+      <h4>{task.title}</h4>
+      {task.description && <p>{task.description}</p>}
+      <div className="ops-my-task-meta">
+        <span style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
+        <span style={{ background: prioSwatch.background, color: prioSwatch.color }}>{task.priority}</span>
+        <span>{task.estimatedMinutes ? `${task.estimatedMinutes}m est.` : task.subdepartment.replace(/_/g, ' ')}</span>
+      </div>
+      <div className="ops-my-task-tools">
+        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
+          Details
+        </button>
+        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
+          Comment
+        </button>
+        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
+          Expense
+        </button>
+        {primaryAction && (
+          <button
+            type="button"
+            className="btn primary sm"
+            disabled={busy}
+            onClick={(e) => {
+              stop(e);
+              onSetStatus(primaryAction.status);
+            }}
+          >
+            {busy ? 'Saving…' : primaryAction.label}
+          </button>
+        )}
+        {task.status !== 'completed' && (
+          <button
+            type="button"
+            className="btn primary sm"
+            disabled={busy}
+            onClick={(e) => {
+              stop(e);
+              onSetStatus('completed');
+            }}
+          >
+            Complete
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function TaskRowMini({ task, onClick }: { task: Task; onClick: () => void }) {
   return (
     <div
@@ -390,6 +604,7 @@ function compareTasks(a: Task, b: Task, key: TaskSortKey): number {
 function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => void; onCreate: () => void }) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
+  const { tasks: TASKS } = useApiTasks();
 
   const [filters, setFilters] = useState<AllTasksFilters>({
     department: 'all',
@@ -437,7 +652,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
       tasks.sort((a, b) => sign * compareTasks(a, b, sort.key));
     }
     return tasks;
-  }, [filters, search, role, currentUserId, sort]);
+  }, [TASKS, filters, search, role, currentUserId, sort]);
 
   const activeFilterCount =
     (filters.department !== 'all' ? 1 : 0) +

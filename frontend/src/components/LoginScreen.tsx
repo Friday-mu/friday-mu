@@ -1,37 +1,31 @@
 'use client'
 
-// @demo:auth — ENTIRE FILE is fake authentication. Accepts any input,
-// fakes a "Welcome" flash, navigates to /fad. No real auth flow.
-// Tag: PROD-AUTH-1 — see frontend/DEMO_CRUFT.md
-// Replace with real OAuth/JWT flow. handleSubmit → POST /api/auth/login,
-// store token, redirect on success.
-
-// Demo-mode login screen. No real authentication — clicking a name (or any
-// manual Sign-in path) simply navigates to /fad. The FAD shell manages its
-// own role + identity state independently, so no localStorage writes are
-// required here. Pure UI: wordmark, greeting, name chips, cycling tip.
+// Login screen wired to FAD backend (/api/auth/login → proxies to GMS).
+// Stores JWT in localStorage on success; the FAD shell guards itself on mount.
+// UI keeps the team-chip pre-fill + cycling greeting tone — that's Friday's voice,
+// not a demo crutch.
 
 import React, { useState, useEffect, useMemo } from 'react'
+import { API_BASE, setToken } from './types'
 
 type Theme = 'light' | 'dark'
 
 // ─────────────────────────────── Team roster ───────────────────────────────
-// Drives the chip selector. Edit when team membership changes.
-const TEAM = [
+// Fallback roster — used only when /api/auth/login-roster is
+// unreachable (offline, backend down). The live chip selector below
+// fetches the canonical list from the users table at mount.
+const TEAM_FALLBACK = [
   { firstName: 'Ishant',    email: 'ishant@friday.mu' },
   { firstName: 'Mathias',   email: 'mathias@friday.mu' },
   { firstName: 'Franny',    email: 'franny@friday.mu' },
   { firstName: 'Mary',      email: 'mary@friday.mu' },
   { firstName: 'Bryan',     email: 'bryan@friday.mu' },
-  { firstName: 'Alexandra', email: 'alexandra@friday.mu' },
   { firstName: 'Catherine', email: 'catherine@friday.mu' },
 ] as const
+type Member = { firstName: string; email: string }
 
 // ─────────────────────────────── Greetings ─────────────────────────────────
 // One pulled at random per page load. Friday's voice trends curious + dry.
-// @demo:ui — Tag: PROD-UI-2 — see frontend/DEMO_CRUFT.md
-// Optional keep: drop for a conventional production login, or keep if
-// Friday's voice on a real login screen is still playful.
 const FUNNY_GREETINGS = [
   "Wait a second… who are you? 0.0",
   "Hark, traveler. Identify thyself.",
@@ -52,8 +46,6 @@ const FUNNY_GREETINGS = [
 // ─────────────────────────────── Tip pool ──────────────────────────────────
 // One shown below the form, in tertiary text. Random per page load.
 // 'admin' = FAD product knowledge (✦), 'str' = hospitality stats (💡).
-// @demo:ui — Tag: PROD-UI-3 — see frontend/DEMO_CRUFT.md
-// Optional keep: could become GET /api/login-tips, or drop entirely.
 const TIPS = [
   { kind: 'admin', text: "Cmd+K opens the command palette anywhere in the FAD." },
   { kind: 'admin', text: "Sub-pages keep their filter state when you deep-link." },
@@ -142,20 +134,44 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     return () => cancelAnimationFrame(id)
   }, [])
 
-  // Form state — fields are always rendered and accept anything (or nothing).
-  // Chip click pre-fills email + focuses password. Sign-in succeeds regardless
-  // of what's typed — the screen is the production layout, the auth is fake.
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [welcomeName, setWelcomeName] = useState<string | null>(null)
   const [lastEmail, setLastEmail] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Live roster from /api/auth/login-roster — falls back to a static
+  // list only if the fetch fails (backend down / offline). Reflects
+  // users.is_active in the FR tenant, so HR additions/removals show
+  // here without code changes.
+  const [team, setTeam] = useState<readonly Member[]>(TEAM_FALLBACK);
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/auth/login-roster')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (cancelled) return
+        if (Array.isArray(d?.users) && d.users.length > 0) setTeam(d.users)
+      })
+      .catch(() => { /* keep fallback */ })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     setLastEmail(localStorage.getItem('fad:last-email'))
   }, [])
 
-  // Demo "sign in" — write the email so chip auto-highlights next visit, flash
-  // a welcome, then navigate to the FAD shell. No tokens, no API, no auth.
+  // Resolve a friendly name for the welcome flash. Prefers the backend-returned
+  // user.name; falls back to TEAM-by-email or email-prefix.
+  const resolveDisplayName = (apiName: string | undefined, emailUsed: string): string => {
+    if (apiName && apiName.trim()) return apiName.trim().split(/\s+/)[0]
+    const matched = team.find((m) => m.email === emailUsed)
+    if (matched) return matched.firstName
+    const stub = emailUsed.includes('@') ? emailUsed.split('@')[0] : emailUsed
+    return stub ? stub.charAt(0).toUpperCase() + stub.slice(1) : 'There'
+  }
+
   const enterAs = (firstName: string, emailUsed: string) => {
     try { localStorage.setItem('fad:last-email', emailUsed) } catch {}
     setWelcomeName(firstName)
@@ -164,9 +180,8 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     }, 700)
   }
 
-  // Click a chip → fill email, focus password (mirrors the production flow
-  // where the OS password manager would now pop in the saved password).
-  const pickMember = (m: typeof TEAM[number]) => {
+  // Click a chip → fill email, focus password (matches OS-password-manager UX).
+  const pickMember = (m: Member) => {
     setEmail(m.email)
     setTimeout(() => {
       const pw = document.querySelector('input[name="password"]') as HTMLInputElement | null
@@ -174,24 +189,41 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     }, 30)
   }
 
-  // Form submit — accept anything. Resolve a display name in best-effort order:
-  //   1. Match against TEAM by exact email
-  //   2. Fall back to the email-prefix (Capitalized)
-  //   3. Final fallback "Demo"
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
     const trimmed = email.trim()
-    const matched = TEAM.find((m) => m.email === trimmed)
-    let niceName: string
-    if (matched) {
-      niceName = matched.firstName
-    } else if (trimmed) {
-      const stub = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed
-      niceName = stub.charAt(0).toUpperCase() + stub.slice(1)
-    } else {
-      niceName = 'Demo'
+    if (!trimmed || !password) {
+      setError('Email and password required')
+      return
     }
-    enterAs(niceName, trimmed || 'demo@friday.mu')
+    setSubmitting(true)
+    setError(null)
+    try {
+      // GMS auth contract expects `username` (free-form — email works fine as
+      // the value). Sending `email` instead returns 400 "Username and password
+      // required". Pre-rebuild page.tsx had this right; the rewrite drifted.
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: trimmed, password }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.token) {
+        throw new Error(data?.error || `Sign-in failed (${res.status})`)
+      }
+      setToken(data.token)
+      const displayName = data.user?.name || data.user?.email || trimmed
+      try {
+        localStorage.setItem('gms_display_name', displayName)
+        if (data.user?.role) localStorage.setItem('gms_role', data.user.role)
+      } catch {}
+      const niceName = resolveDisplayName(data.user?.name, trimmed)
+      enterAs(niceName, trimmed)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed')
+      setSubmitting(false)
+    }
   }
 
   // ─────────────────────── Style objects ───────────────────────
@@ -300,20 +332,6 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
     gap: 6,
   }
 
-  const demoPillStyle: React.CSSProperties = {
-    display: 'inline-block',
-    padding: '2px 8px',
-    fontSize: 10,
-    fontWeight: 500,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    color: t.textTertiary,
-    background: t.brandAccentSoft,
-    border: `0.5px solid ${t.border}`,
-    borderRadius: 999,
-    marginBottom: 12,
-  }
-
   // ─────────────────────── Welcome flash ───────────────────────
 
   if (welcomeName) {
@@ -336,14 +354,11 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
   return (
     <div data-testid="container-login-screen" style={pageStyle}>
       <div style={cardStyle}>
-        {/* @demo:ui — Tag: PROD-UI-1 — see frontend/DEMO_CRUFT.md
-            Remove when real auth lands. Indicates demo mode at a glance. */}
-        <span style={demoPillStyle}>Simulated · Demo</span>
         <h1 style={titleStyle}>Friday Admin</h1>
         <p style={subtitleStyle}>{greeting}</p>
 
         <div style={chipsRowStyle}>
-          {TEAM.map((m) => {
+          {team.map((m) => {
             // Prefer "picked now" over "last-used"; only fall back to last-used
             // when no email is currently set.
             const isPicked = m.email === email
@@ -387,10 +402,20 @@ export default function LoginScreen({ onLogin: _onLogin }: { onLogin: (token: st
           <button
             type="submit"
             data-testid="btn-login"
-            style={primaryBtnStyle}
+            disabled={submitting}
+            style={{ ...primaryBtnStyle, opacity: submitting ? 0.5 : 1, cursor: submitting ? 'wait' : 'pointer' }}
           >
-            Sign in
+            {submitting ? 'Signing in…' : 'Sign in'}
           </button>
+          {error && (
+            <p
+              data-testid="login-error"
+              role="alert"
+              style={{ fontSize: 12, color: '#c0392b', marginTop: 10, marginBottom: 0, textAlign: 'center' }}
+            >
+              {error}
+            </p>
+          )}
         </form>
 
         <p style={tipStyle}>

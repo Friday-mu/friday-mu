@@ -4,10 +4,16 @@ import { useState } from 'react';
 import { type TaskUser } from '../../../_data/tasks';
 import { TASK_USER_BY_ID } from '../../../_data/tasks';
 import { ROLE_LABEL } from '../../../_data/permissions';
-import { createStaff, updateStaff } from '../../../_data/breezeway';
+import {
+  createStaff as apiCreateStaff,
+  updateStaff as apiUpdateStaff,
+  staffToTaskUserLike,
+  fixtureRoleToApi,
+} from '../../../_data/hrClient';
+import { fireToast } from '../../Toaster';
 import { IconClose } from '../../icons';
 
-type Mode = { kind: 'create' } | { kind: 'edit'; userId: string };
+type Mode = { kind: 'create' } | { kind: 'edit'; userId: string; initial?: Partial<TaskUser> };
 
 interface Props {
   mode: Mode;
@@ -31,7 +37,10 @@ const SKILL_OPTIONS = [
 ];
 
 export function StaffDrawer({ mode, onClose, onSaved }: Props) {
-  const existing = mode.kind === 'edit' ? TASK_USER_BY_ID[mode.userId] : undefined;
+  // Prefer initial values handed in by the parent (live hr_staff record);
+  // fall back to TASK_USER_BY_ID for legacy fixture-based callers.
+  const existing: Partial<TaskUser> | undefined =
+    mode.kind === 'edit' ? (mode.initial ?? TASK_USER_BY_ID[mode.userId]) : undefined;
 
   const [name, setName] = useState(existing?.name ?? '');
   const [email, setEmail] = useState(existing?.email ?? '');
@@ -52,25 +61,31 @@ export function StaffDrawer({ mode, onClose, onSaved }: Props) {
   };
 
   const submit = async () => {
-    const payload = {
+    // Map drawer form to the FAD HR API shape. Skills / weeklyConstraints /
+    // notificationChannel aren't in the API schema yet — they're dropped on
+    // create; the detail page surfaces them as undefined. Extending the
+    // hr_staff schema with those columns is a follow-up slice.
+    const apiPayload = {
       name,
       email: email || undefined,
-      role,
-      homeZone: homeZone || null,
-      skills,
-      weeklyConstraints: neverWorks.length > 0 ? { neverWorks: neverWorks as never } : undefined,
-      notificationChannel,
-      startDate,
-      endDate: endDate || undefined,
+      role: fixtureRoleToApi(role),
+      zone: homeZone || undefined,
+      hire_date: startDate || undefined,
     };
 
-    let user: TaskUser | undefined;
-    if (mode.kind === 'create') {
-      user = await createStaff(payload as Parameters<typeof createStaff>[0]);
-    } else {
-      user = await updateStaff(mode.userId, payload as Partial<TaskUser>);
+    try {
+      let saved;
+      if (mode.kind === 'create') {
+        saved = await apiCreateStaff(apiPayload);
+        fireToast(`Staff added · ${saved.name}`);
+      } else {
+        saved = await apiUpdateStaff(mode.userId, apiPayload);
+        fireToast(`Staff updated · ${saved.name}`);
+      }
+      onSaved(staffToTaskUserLike(saved));
+    } catch (e) {
+      fireToast(`Save failed · ${e instanceof Error ? e.message : 'unknown error'}`);
     }
-    if (user) onSaved(user);
   };
 
   return (

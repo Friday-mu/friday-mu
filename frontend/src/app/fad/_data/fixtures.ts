@@ -1,19 +1,39 @@
-// @demo:data — Inbox threads, KPIs, calendar — split into multiple endpoints
-// Tag: PROD-DATA-1 — see frontend/DEMO_CRUFT.md
+// Inbox + KPIs + calendar wire types. Inbox fixture arrays purged 2026-05-13
+// (design-be-19); inbox should render real GMS data only — see Tier E
+// roadmap items bw-7/bw-8/bw-9. Other arrays in this file (TASKS, KPIs etc)
+// are out of scope for design-be-19 and still ship as fixtures.
 
 export interface InboxMessage {
   from: 'them' | 'us';
   name: string;
   time: string;
+  /** Displayed body. When the message arrived in a non-English language and
+   *  GMS translated it, this is the English translation. */
   body: string;
+  /** Original (untranslated) body when GMS detected a non-English source
+   *  and produced a translation. Undefined when no translation exists
+   *  (text was already English, or pre-translation rows). */
+  bodyOriginal?: string;
+  /** ISO 639-1 source-language code from GMS's detectLanguage(). */
+  bodyLang?: string;
+  /** How the message was sent — human-readable channel/system label
+   *  (e.g. "WhatsApp", "Airbnb", "Guesty"). Used in the bubble meta
+   *  line to show provenance for outbound messages. Undefined when
+   *  we don't know (older rows without module_type / sent_via_system). */
+  via?: string;
+  /** Explicit system provenance for the tri-tag meta row. */
+  viaSystem?: string;
+  /** Guest-visible channel for the tri-tag meta row. */
+  viaChannel?: string;
 }
 
-export type InboxEntity = 'guest' | 'owner' | 'vendor';
+export type InboxEntity = 'guest' | 'owner' | 'vendor' | 'unclassified';
 export type InboxChannel =
   | 'airbnb'
   | 'booking'
   | 'whatsapp'
   | 'email'
+  | 'website'
   | 'owner_email'
   | 'owner_whatsapp'
   | 'vendor_breezeway'
@@ -35,6 +55,46 @@ export interface InternalNote {
   /** TaskUser ids @mentioned in the note. */
   mentions: string[];
   createdAt: string;
+}
+
+export type DraftState =
+  | 'friday_drafting'
+  | 'generation_failed'
+  | 'draft_ready'
+  | 'under_review'
+  | 'approved'
+  | 'sending'
+  | 'sent'
+  | 'rejected'
+  | 'revision_requested'
+  | 'superseded'
+  | 'send_queued'
+  | 'send_failed'
+  | 'dismissed';
+
+/** AI-generated draft from GMS, bundled in the thread-detail response. */
+export interface InboxDraft {
+  id: string;
+  state: DraftState;
+  /** English-language draft body (the canonical version GMS authored). */
+  body: string;
+  /** Translated body when guest's original language is not English.
+   *  Translation happens at send-time in GMS; this is the version that
+   *  will go on the wire if approved. */
+  bodyTranslated?: string;
+  /** 0..1; UI thresholds: ≥0.8 green, ≥0.6 amber, else red. */
+  confidence?: number;
+  /** 1 for the original draft; ++1 each time the operator revises. */
+  revisionNumber?: number;
+  /** Last revision request (for revision_requested state). */
+  revisionInstruction?: string;
+  modelUsed?: string;
+  createdAt: string;
+  /** Send-queue retry metadata for send_queued / send_failed states. */
+  retryCount?: number;
+  nextRetryAt?: string;
+  /** Why this draft was rejected (for rejected state). */
+  rejectionReason?: string;
 }
 
 export interface InboxThread {
@@ -61,218 +121,62 @@ export interface InboxThread {
   summary?: string;
   sentiment?: 'positive' | 'neutral' | 'negative' | 'urgent';
   language?: 'EN' | 'FR' | 'PT' | 'IT' | 'NL';
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
+  /** Reservation context bundled in the thread-detail response. Optional —
+   *  list view doesn't carry it, only the detail fetch does. */
+  reservation?: InboxReservation;
+  /** AI drafts from GMS. Detail view only (list doesn't carry them).
+   *  Most-recent-first; DraftPanel renders the first one with state in
+   *  {draft_ready, under_review}. */
+  drafts?: InboxDraft[];
+  /** Channel options for outbound send, from the detail bundle. Used by
+   *  the send confirmation modal's channel selector. */
+  availableChannels?: string[];
+  /** Recommended channel for the next outbound message — usually matches
+   *  the inbound channel unless the WA window is closed. */
+  recommendedChannel?: string;
+  /** Latest draft state — convenience field also surfaced on list rows
+   *  (the list response returns this without bundling the full drafts
+   *  array). Powers the Review tab filter. */
+  latestDraftState?: DraftState;
+  /** Latest draft confidence (0..1) — surfaced on list rows for the
+   *  confidence pill in the list item. */
+  latestDraftConfidence?: number;
 }
 
-export const INBOX_THREADS: InboxThread[] = [
-  {
-    id: 't1', unread: true, urgent: 'amber', entity: 'guest', channelKey: 'airbnb',
-    guest: 'Thibault Marchand', subject: 'Arrival transfer from Plaisance — pls confirm',
-    preview: 'Hi Friday team, our flight lands at 15:20 on Thursday. Can you confirm the driver will meet us at…',
-    channel: 'Airbnb', time: '08:14', property: 'Villa Azur · Bel Ombre',
-    language: 'FR',
-    triageStatus: 'open', stayStatus: 'booked',
-    reservationId: 'rsv-vaz-marchand',
-    summary: 'Guest arriving Thu 15:20 on MK 47 · confirms driver and requests early check-in 14:30 · kids under 5.',
-    sentiment: 'neutral',
-    messages: [
-      { from: 'them', name: 'Thibault', time: 'Thu 08:14', body: "Hi Friday team — our flight lands at 15:20 on Thursday (MK 47 from Paris). Can you confirm the driver will meet us at arrivals? Also, any chance of an earlier check-in around 14:30? We'll be with two young kids, so anything helps." },
-    ],
-  },
-  {
-    id: 't2', unread: true, entity: 'guest', channelKey: 'whatsapp',
-    guest: 'Sophia Linde', subject: 'Question about the chef for Saturday night',
-    preview: "Hi! We booked the chef service add-on for Saturday. Do we pick the menu or does the chef suggest?…",
-    channel: 'WhatsApp', time: '07:52', property: 'Blue Bay House · Blue Bay',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'currently_staying',
-    reservationId: 'rsv-bbh-linde',
-    summary: 'Guest asks whether chef proposes menu or they choose · 6-guest party · dietary shellfish-free.',
-    sentiment: 'positive',
-    whatsappWindow: { open: true, expiresInMinutes: 222 },
-  },
-  {
-    id: 't3', unread: false, entity: 'guest', channelKey: 'booking',
-    guest: 'James Okonkwo', subject: 'Re: welcome pack',
-    preview: 'Brilliant — thank you. See you Friday.', channel: 'Booking', time: 'Wed',
-    property: 'Sable Noir Retreat · Tamarin',
-    language: 'EN',
-    triageStatus: 'done', stayStatus: 'checked_out',
-    reservationId: 'rsv-sbn-okonkwo',
-    sentiment: 'positive',
-  },
-  {
-    id: 't4', unread: false, entity: 'guest', channelKey: 'email',
-    guest: 'Marianne Beaumont', subject: 'Invoice for pre-arrival groceries',
-    preview: 'Could you share the receipt? My employer needs it for reimbursement.', channel: 'Email', time: 'Tue',
-    property: 'Villa Azur · Bel Ombre',
-    language: 'FR',
-    triageStatus: 'review', stayStatus: 'booked', mentionsMe: true,
-    reservationId: 'rsv-vaz-beaumont',
-    sentiment: 'neutral',
-  },
-  {
-    id: 't5', unread: true, urgent: 'red', entity: 'guest', channelKey: 'whatsapp',
-    guest: 'Henrik Solheim', subject: 'AC not working — hot tonight',
-    preview: 'The AC in the master bedroom stopped 20 min ago. Kids can\'t sleep. Please help urgently.',
-    channel: 'WhatsApp', time: '23:18', property: 'Coral Reef Bungalow',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'currently_staying', mentionsMe: true,
-    reservationId: 'rsv-cor-solheim',
-    summary: 'AC failure master bedroom · active guest complaint · kids impacted · needs urgent dispatch.',
-    sentiment: 'urgent',
-    whatsappWindow: { open: true, expiresInMinutes: 38 },
-  },
-  {
-    id: 't6', unread: false, entity: 'guest', channelKey: 'email',
-    guest: 'Greta Larsson', subject: 'Inquiry — July dates for family of 8?',
-    preview: 'Hi, looking for a 4-bedroom villa for a family of 8 (4 adults, 4 kids) for last 2 weeks of July…',
-    channel: 'Email', time: 'Mon', property: 'Looking · 4BR + pool',
-    language: 'EN',
-    triageStatus: 'review', stayStatus: 'inquiry',
-    sentiment: 'positive',
-    summary: 'Pre-booking inquiry · July 18-31 · 4 adults + 4 kids · 4-bedroom needed · pool important.',
-  },
-  {
-    id: 't7', unread: false, entity: 'guest', channelKey: 'airbnb',
-    guest: 'Yuki Sato', subject: 'Cancellation request — change of plans',
-    preview: 'Unfortunately we need to cancel our June stay. Family emergency. Please advise on refund policy.',
-    channel: 'Airbnb', time: 'Mon', property: 'Sable Noir Retreat · Tamarin',
-    language: 'EN',
-    triageStatus: 'review', stayStatus: 'cancelled',
-    reservationId: 'rsv-sbn-sato-cancelled',
-    sentiment: 'negative',
-  },
-  {
-    id: 'o1', unread: true, entity: 'owner', channelKey: 'owner_email',
-    guest: 'David Cohen (Nitzana)', subject: 'May calendar — which units open when?',
-    preview: 'Bonjour, could you send the final May opening schedule for Orchidée / Jacaranda / Dauphin?',
-    channel: 'Owner email', time: '09:40', property: 'Nitzana · Orchidée + 2 more',
-    language: 'FR',
-    triageStatus: 'open', stayStatus: 'na',
-    summary: 'Owner asks for final May calendar for 3 Nitzana villas · soft-launch sequence decision needed.',
-    sentiment: 'neutral',
-  },
-  {
-    id: 'o2', unread: false, entity: 'owner', channelKey: 'owner_whatsapp',
-    guest: 'Anouk Harrington', subject: 'Quick question on the April statement',
-    preview: 'Got the statement — can you explain the Breezeway line please?',
-    channel: 'Owner WhatsApp', time: 'Wed', property: 'Blue Bay House',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'na',
-    sentiment: 'neutral',
-    whatsappWindow: { open: false },
-  },
-  {
-    id: 'v1', unread: true, entity: 'vendor', channelKey: 'vendor_breezeway',
-    guest: 'Priya · Breezeway', subject: 'Tomorrow\'s Villa Azur turnover — team short',
-    preview: 'Renuka out sick tomorrow. I can cover VAZ solo but will be 90min late starting BBH. OK?',
-    channel: 'Breezeway', time: '22:05', property: 'Villa Azur · Blue Bay House',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'na', mentionsMe: true,
-    sentiment: 'neutral',
-    summary: 'Housekeeping understaffed Thu · proposes solo coverage with 90min delay on 2nd property.',
-  },
-  {
-    id: 'v2', unread: false, entity: 'vendor', channelKey: 'vendor_driver',
-    guest: 'Ravi (driver)', subject: 'MK 47 arrival — I\'m at SSR',
-    preview: 'Just confirming I\'ve got the Friday sign ready. Will text when they clear customs.',
-    channel: 'Driver', time: '14:55', property: 'Villa Azur · Marchand',
-    language: 'EN',
-    triageStatus: 'done', stayStatus: 'na',
-    sentiment: 'positive',
-  },
-  {
-    id: 'v3', unread: false, entity: 'vendor', channelKey: 'vendor_chef',
-    guest: 'Chef Aarav', subject: 'Saturday menu for Linde party',
-    preview: 'Proposed 4-course tasting attached — pescatarian alt for guest 3. €85pp × 6.',
-    channel: 'Chef', time: 'Wed', property: 'Blue Bay House',
-    language: 'EN',
-    triageStatus: 'review', stayStatus: 'na',
-    sentiment: 'neutral',
-  },
+/** Reservation detail flattened from GMS's bundled response. Only the fields
+ *  the Inbox right panel needs are surfaced; the full Guesty reservation has
+ *  many more, fetched on-demand from the Reservations module. */
+export interface InboxReservation {
+  id: string;
+  guestyReservationId?: string;
+  listingName?: string;
+  status?: string;
+  channel?: string;
+  checkIn?: string;
+  checkOut?: string;
+  numberOfNights?: number;
+  numGuests?: number;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  totalPrice?: number;
+  currency?: string;
+  cleaningFee?: number;
+  nightlyRate?: number;
+  specialRequests?: string;
+}
 
-  // ───── Threads referenced by tasks/issues for click-through demo ─────
-  {
-    id: 'inb-lb2-guest-22', unread: false, urgent: 'red', entity: 'guest', channelKey: 'whatsapp',
-    guest: 'Lukas Bauer', subject: 'AC bedroom not working — kids hot',
-    preview: 'AC in master bedroom died around 22:00. Tried the remote, breaker, nothing. Two kids under 6 — please help.',
-    channel: 'WhatsApp', time: 'Wed', property: 'Lagon Bleu 2 · Trou aux Biches',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'currently_staying',
-    summary: 'AC compressor failure master bedroom · escalated to Mathias · parts ETA 14:00 · spend Rs 4,800.',
-    sentiment: 'urgent',
-    whatsappWindow: { open: true, expiresInMinutes: 540 },
-    messages: [
-      { from: 'them', name: 'Lukas', time: 'Wed 22:18', body: 'AC in master bedroom died around 22:00. Tried the remote, breaker, nothing. Two kids under 6 — please help.' },
-      { from: 'us', name: 'Franny', time: 'Wed 22:30', body: "So sorry Lukas — escalating to maintenance now. Mathias is on call and will be in touch. Two portable fans dropping off in 30 min." },
-      { from: 'them', name: 'Lukas', time: 'Wed 22:42', body: 'Thanks. Fans would help a lot.' },
-    ],
-  },
-  {
-    id: 'inb-lv10-guest-04', unread: true, urgent: 'amber', entity: 'guest', channelKey: 'whatsapp',
-    guest: 'Mariana Costa', subject: 'Smell from the kitchen sink',
-    preview: "There's a sulphur-like smell coming from around the kitchen sink. Pretty strong this morning.",
-    channel: 'WhatsApp', time: '07:42', property: 'Le Vivier 10 · Pereybere',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'currently_staying',
-    summary: 'Sulphur smell at kitchen sink · likely dry drain trap · maintenance/plumbing routing.',
-    sentiment: 'neutral',
-    whatsappWindow: { open: true, expiresInMinutes: 1320 },
-    messages: [
-      { from: 'them', name: 'Mariana', time: 'Thu 07:42', body: "Hi! There's a sulphur-like smell coming from around the kitchen sink. Pretty strong this morning. Otherwise everything's been great." },
-    ],
-  },
-  {
-    id: 'inb-bs1-wang-late', unread: true, entity: 'guest', channelKey: 'whatsapp',
-    guest: 'Hua Wang', subject: 'Late checkout request — flight at 19:00',
-    preview: "Our flight isn't until evening — could we keep the villa until 14:00 instead of 11:00?",
-    channel: 'WhatsApp', time: '08:02', property: 'Bois Sec 1 · Bel Ombre',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'currently_staying',
-    summary: 'Wang asks 14:00 checkout (4h late) · no incoming guest until 18:00 · Rs 1,500 fee applies.',
-    sentiment: 'positive',
-    whatsappWindow: { open: true, expiresInMinutes: 1380 },
-    messages: [
-      { from: 'them', name: 'Hua', time: 'Thu 08:02', body: "Hi Friday team — our flight isn't until 19:00 tonight. Could we keep the villa until 14:00 instead of 11:00? Happy to pay a fee if needed." },
-    ],
-  },
-  {
-    id: 'inb-rc15-kanarski', unread: true, entity: 'guest', channelKey: 'whatsapp',
-    guest: 'Aleks Kanarski', subject: 'Welcome basket — chocolates missing?',
-    preview: "Just arrived — the welcome basket is lovely, just noticed there are no chocolates inside. Are they coming separately?",
-    channel: 'WhatsApp', time: '09:30', property: 'Reflet de Corail 15 · Flic en Flac',
-    language: 'EN',
-    triageStatus: 'open', stayStatus: 'currently_staying',
-    summary: 'Welcome basket missing chocolates · Alex on-site (pre-arrival inspection) · drop chocolates 15 min.',
-    sentiment: 'neutral',
-    whatsappWindow: { open: true, expiresInMinutes: 1410 },
-    messages: [
-      { from: 'them', name: 'Aleks', time: 'Thu 09:30', body: "Hi! Just arrived — the welcome basket is lovely, just noticed there are no chocolates inside. Are they coming separately?" },
-    ],
-  },
-];
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9. Live data
+// flows through useLiveConversations()/useThreadDetail() in inboxClient.ts.
+export const INBOX_THREADS: InboxThread[] = [];
 
-export const INBOX_INTERNAL_NOTES: InternalNote[] = [
-  {
-    id: 'note-001',
-    threadId: 't1',
-    authorId: 'u-judith',
-    authorName: 'Judith Friday',
-    body: '@Bryan Henri — please confirm Ravi has the Friday sign + flight number before 9am. The guest is anxious because of the kids.',
-    mentions: ['u-bryan'],
-    createdAt: '2026-04-26T18:30:00',
-  },
-  {
-    id: 'note-002',
-    threadId: 't5',
-    authorId: 'u-franny',
-    authorName: 'Franny Henri',
-    body: '@Mathias David Coolbreeze parts ETA 14:00 — can you do the install or should I send Bryan?',
-    mentions: ['u-mathias'],
-    createdAt: '2026-04-26T23:25:00',
-  },
-];
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9. Internal notes
+// will be wired through POST /api/inbox/threads/:id/notes (see comment in
+// InboxModule.tsx::InternalNoteCompose).
+export const INBOX_INTERNAL_NOTES: InternalNote[] = [];
 
 export const INBOX_CHANNEL_TREE = {
   guest: [

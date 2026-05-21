@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MODULES } from '../_data/modules';
 import { iconFor, IconSearch } from './icons';
 import { canSeeModule, useCurrentRole } from './usePermissions';
+import { useEnabledModules } from '../_data/useEnabledModules';
+import { FR_TENANT_ID, useCurrentTenantId } from '../_data/useTenantIdentity';
 
 interface ResultItem {
   type: 'module' | 'cmd';
@@ -35,9 +37,19 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
   }, [open]);
 
   const role = useCurrentRole();
+  // Also gate by tenant module subscription so non-FR tenants can't
+  // see (and 403 themselves into) modules they haven't bought.
+  // While the fetch is in flight (`enabledSet === null`) we don't
+  // filter — same pattern as Sidebar, lets the palette render
+  // immediately without flashing empty.
+  const { enabledSet } = useEnabledModules();
+  const tenantId = useCurrentTenantId();
+  const isFrTenant = tenantId === FR_TENANT_ID;
   const results: ResultItem[] = useMemo(() => {
     const modItems: ResultItem[] = MODULES
       .filter((m) => canSeeModule(role, m.id))
+      .filter((m) => enabledSet === null || enabledSet.has(m.id))
+      .filter((m) => m.id !== 'admin-analytics' || isFrTenant)
       .map((m) => ({
         type: 'module',
         id: m.id,
@@ -57,7 +69,7 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
     return all.filter(
       (x) => x.label.toLowerCase().includes(lc) || x.hint.toLowerCase().includes(lc)
     );
-  }, [q, role]);
+  }, [q, role, enabledSet, isFrTenant]);
 
   useEffect(() => {
     if (idx >= results.length) setIdx(0);
@@ -95,9 +107,14 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
   };
 
   return (
-    <div className={'fad-palette-overlay' + (open ? ' open' : '')} onClick={onClose}>
-      <div className="fad-palette" onClick={(e) => e.stopPropagation()}>
-        <div className="fad-palette-input-wrap">
+    <div
+      className={'fad-palette-overlay' + (open ? ' open' : '')}
+      onClick={onClose}
+      data-qa="fad-command-palette-overlay"
+      data-qa-open={open ? 'true' : 'false'}
+    >
+      <div className="fad-palette" onClick={(e) => e.stopPropagation()} data-qa="fad-command-palette">
+        <div className="fad-palette-input-wrap" data-qa="fad-command-palette-search-wrap">
           <IconSearch />
           <input
             ref={inputRef}
@@ -108,6 +125,7 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
               setIdx(0);
             }}
             onKeyDown={keyHandler}
+            data-qa="fad-command-palette-input"
           />
           <span
             className="kbd"
@@ -116,7 +134,7 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
             esc
           </span>
         </div>
-        <div className="fad-palette-results">
+        <div className="fad-palette-results" data-qa="fad-command-palette-results">
           <div className="fad-palette-section-label">Results</div>
           {results.map((r, i) => {
             const I = iconFor(r.icon);
@@ -126,6 +144,10 @@ export function CommandPalette({ open, onClose, onNavigate, onAskFriday, onToggl
                 className={'fad-palette-item' + (i === idx ? ' highlight' : '')}
                 onClick={() => runItem(r)}
                 onMouseEnter={() => setIdx(i)}
+                data-qa="fad-command-palette-item"
+                data-qa-item-type={r.type}
+                data-qa-item-id={r.id}
+                data-qa-highlighted={i === idx ? 'true' : 'false'}
               >
                 <I size={14} />
                 <span>{r.label}</span>

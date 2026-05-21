@@ -3,13 +3,13 @@
 import { useMemo, useState } from 'react';
 import {
   PROPERTIES,
-  PROPERTY_BY_CODE,
   portfolioInsights,
   listingRecommendations,
   type PortfolioInsight,
   type ListingRecommendation,
   type Property,
 } from '../../../_data/properties';
+import { useFixtureRev } from '../../../_data/fixtureRev';
 import { fireToast } from '../../Toaster';
 
 interface Props {
@@ -24,7 +24,8 @@ interface PropertyRecBundle {
 }
 
 export function InsightsPage({ onOpen }: Props) {
-  const portfolio = useMemo(() => portfolioInsights(), []);
+  const fixtureRev = useFixtureRev();
+  const portfolio = useMemo(() => portfolioInsights(), [fixtureRev]);
 
   const propertyBundles = useMemo<PropertyRecBundle[]>(() => {
     return PROPERTIES
@@ -36,7 +37,7 @@ export function InsightsPage({ onOpen }: Props) {
         if (aHigh !== bHigh) return bHigh - aHigh;
         return b.recs.length - a.recs.length;
       });
-  }, []);
+  }, [fixtureRev]);
 
   const counts = useMemo(() => {
     const all = [...portfolio.map((i) => i.severity), ...propertyBundles.flatMap((b) => b.recs.map((r) => r.severity))];

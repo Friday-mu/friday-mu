@@ -5,7 +5,12 @@
   "scripts": {
     "dev": "NODE_OPTIONS='--max-old-space-size=4096' next dev --webpack",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}"
+    "prebuild:prod": "node scripts/write-version.mjs",
+    "build:prod": "NEXT_PUBLIC_API_URL= NEXT_PUBLIC_WS_URL= NEXT_PUBLIC_ENV=production next build",
+    "deploy": "npm run build:prod && rsync -avz --delete -e \"ssh -i $HOME/.ssh/do_friday_admin\" out/ root@gms.friday.mu:/var/www/fad/",
+    "start": "next start -p ${PORT:-3000}",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@heroicons/react": "^2.0.18",
@@ -26,11 +31,16 @@
     "tailwindcss": "4.2.2"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "25.5.0",
     "@types/react": "19.2.14",
+    "@vitejs/plugin-react": "^4.7.0",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.1",
+    "jsdom": "^25.0.1",
     "sharp": "^0.34.5",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^2.1.9"
   }
 }

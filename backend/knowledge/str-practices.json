@@ -1,0 +1,1144 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-04-03",
+  "sources": "Consolidated from 15 STR knowledge files: guest-communication, guest-experience, property-management, crisis-management, legal-compliance, pricing-strategy, staff-training, marketing-channels, technology-tools, financial-management, sustainability, future-trends, mauritius-real-estate, mauritius-tourism, str-mauritius",
+
+  "guestCommunication": {
+    "responseTiming": {
+      "byPlatform": {
+        "airbnb": {
+          "requirement": "90% within 24 hours for Superhost status",
+          "optimal": "Under 1 hour for 116% booking increase",
+          "algorithmImpact": "24-hour response rate directly impacts search visibility"
+        },
+        "bookingCom": {
+          "requirement": "Under 4 hours for Quick Response badge",
+          "impact": "Preferred ranking boost with consistent sub-4hr average"
+        },
+        "vrbo": {
+          "tip": "Template responses increase efficiency 40-60%"
+        },
+        "directBooking": {
+          "standard": "Professional email management with CRM tracking"
+        },
+        "whatsapp": {
+          "standard": "Same-day response, immediate for emergencies",
+          "note": "Preferred local messaging platform in Mauritius"
+        }
+      },
+      "byUrgency": {
+        "emergency": {
+          "target": "Under 15 minutes",
+          "standard": "Global hospitality emergency standard",
+          "examples": ["Medical emergency", "Security threat", "Fire/flood", "Cyclone warning Class III/IV"]
+        },
+        "bookingInquiry": {
+          "target": "Under 1 hour during business hours",
+          "impact": "116% booking increase vs slower responses"
+        },
+        "generalQuestion": {
+          "target": "Under 2 hours during business hours",
+          "acceptable": "Same-day response"
+        },
+        "serviceRequest": {
+          "target": "Under 4 hours or next business day",
+          "note": "Acknowledge immediately, resolve within timeline"
+        },
+        "maintenanceIssue": {
+          "target": "Immediate acknowledgment, 24-hour resolution",
+          "escalation": "If unresolved in 4 hours, offer compensation or alternative"
+        }
+      },
+      "mauritiusAdvantage": {
+        "localMarketAverage": "8-12 hours response time",
+        "fridayRetreatsTarget": "1-2 hours",
+        "competitiveDifferentiation": "4-6x faster than local competition"
+      }
+    },
+
+    "toneGuidelines": {
+      "defaultTone": "Warm, professional, culturally aware - blend international standards with Mauritian hospitality",
+      "principles": [
+        "Use guest's name in every communication",
+        "Reference their specific booking details",
+        "Match formality level to guest's nationality and communication style",
+        "Be proactive, not just reactive",
+        "Show genuine local knowledge, not generic tourist info"
+      ],
+      "escalationLadder": [
+        {
+          "level": 1,
+          "name": "Friendly & Welcoming",
+          "when": "Standard communications, happy guests, routine inquiries",
+          "tone": "Warm, enthusiastic, personal",
+          "example": "We're so excited to host you! Here's a little insider tip for your first evening..."
+        },
+        {
+          "level": 2,
+          "name": "Concerned & Attentive",
+          "when": "Minor issues reported, mild dissatisfaction signals, maintenance requests",
+          "tone": "Empathetic, solution-focused, reassuring",
+          "example": "I'm sorry to hear about that. I've already contacted our maintenance team and they'll be there within the hour. In the meantime, here's what you can do..."
+        },
+        {
+          "level": 3,
+          "name": "Firm & Professional",
+          "when": "Repeated issues, house rule violations, unreasonable demands, noise complaints from neighbors",
+          "tone": "Direct but respectful, clear boundaries, documented",
+          "example": "I understand your perspective and I want to find a solution that works. However, our house rules clearly state... I'd appreciate your cooperation so we can ensure a great experience for everyone."
+        },
+        {
+          "level": 4,
+          "name": "Final & Documented",
+          "when": "Serious violations, safety concerns, potential eviction, legal matters",
+          "tone": "Formal, factual, legally protective",
+          "example": "This is a formal notice regarding [specific violation]. As outlined in our rental agreement, [specific clause]. We require immediate compliance. If this continues, we will need to [specific consequence]. This communication is being documented."
+        }
+      ]
+    },
+
+    "multilingualHandling": {
+      "primaryLanguages": {
+        "english": {
+          "coverage": "60%+ of global visitors",
+          "style": "Varies by nationality - formal for German/Indian, casual for UK/SA"
+        },
+        "french": {
+          "coverage": "21% of visitors (French, Belgian, Swiss, Reunion)",
+          "advantage": "30% higher satisfaction vs English-only properties",
+          "style": "Formal address (vous), detailed information, cultural appreciation",
+          "keyPhrases": {
+            "welcome": "Bienvenue a votre propriete de vacances",
+            "emergency": "En cas d'urgence, appelez le 999",
+            "checkout": "Depart avant 10h00, merci",
+            "wifi": "Reseau WiFi: [nom] Mot de passe: [mot de passe]",
+            "contact": "Contactez-nous: WhatsApp +230 [numero]"
+          }
+        }
+      },
+      "secondaryLanguages": ["German basics", "Hindi basics", "Italian", "Spanish"],
+      "bestPractices": [
+        "Detect guest language from booking platform and initial messages",
+        "Send key documents (check-in instructions, emergency info, house rules) in guest's language",
+        "Use professional translation for legal and safety documents, AI translation for casual messages",
+        "Include visual aids (icons, photos, diagrams) to supplement text for language barriers",
+        "QR codes linking to translated versions of property guides",
+        "Kreol phrases as cultural touch points enhance authenticity"
+      ],
+      "mauritiusAdvantage": "English-French bilingual capability serves 80%+ of visitor demographics"
+    },
+
+    "culturalCommunication": {
+      "french": {
+        "shareOfVisitors": "21%",
+        "communicationStyle": "Formal address, detailed information, cultural appreciation",
+        "preferences": "Later dining recommendations (8-9 PM), wine knowledge, sophisticated cultural recommendations",
+        "responsePattern": "Prefer comprehensive responses vs brief acknowledgments",
+        "tips": ["Appreciate local Mauritian-French cultural connections", "Fine dining and art recommendations valued"]
+      },
+      "german": {
+        "shareOfVisitors": "Major European segment",
+        "communicationStyle": "Direct, precise, information-rich",
+        "preferences": "Detailed guides, clear instructions, punctuality emphasis, efficiency",
+        "bookingBehavior": "Research-heavy, appreciate comprehensive pre-arrival information",
+        "tips": ["Provide detailed maps and transport info", "Nature/hiking recommendations", "Sustainability credentials matter"]
+      },
+      "british": {
+        "shareOfVisitors": "Traditional strong market",
+        "communicationStyle": "Polite, appreciates subtle humor, traditional hospitality",
+        "preferences": "Beach-centric, sun/shade balance, familiar food options alongside local cuisine",
+        "serviceStyle": "Proactive but non-intrusive, respect for privacy",
+        "tips": ["Currency guidance helpful", "Tea/coffee facilities important", "Weather-focused seasonal content"]
+      },
+      "indian": {
+        "shareOfVisitors": "+33.5% growth - emerging priority",
+        "communicationStyle": "Respectful, family-oriented, visual aids helpful",
+        "preferences": "Vegetarian options critical, multi-generational travel needs, religious considerations",
+        "culturalNote": "Guest as god cultural expectation = elevated service standards",
+        "tips": ["Dietary restrictions understanding essential", "Prayer space awareness", "Family group accommodation needs"]
+      },
+      "southAfrican": {
+        "shareOfVisitors": "Growing regional market",
+        "communicationStyle": "Informal English, practical focus",
+        "preferences": "Outdoor adventures, water sports, value-for-money emphasis",
+        "advantage": "Same timezone enables real-time communication",
+        "tips": ["Currency exchange guidance", "Similar cultural understanding", "Budget-conscious messaging"]
+      }
+    },
+
+    "difficultGuestScenarios": [
+      {
+        "scenario": "Guest complains about cleanliness on arrival",
+        "response": "Apologize immediately and sincerely. Send cleaning team within 1 hour. Offer 10-20% service credit. Follow up within 2 hours to confirm satisfaction. Document with photos for quality improvement.",
+        "prevention": "2-hour pre-arrival inspection window, photo documentation, white sock test on floors"
+      },
+      {
+        "scenario": "Guest demands early check-in (property not ready)",
+        "response": "Acknowledge request warmly. Explain turnaround timing honestly. Offer luggage storage or recommend nearby cafe/beach. If possible, expedite cleaning. Never promise what you can't deliver.",
+        "prevention": "Set clear check-in windows in pre-arrival messaging (3-8 PM). Offer early check-in as paid upgrade when available."
+      },
+      {
+        "scenario": "Noise complaint from neighbors about guests",
+        "response": "Contact guest immediately with friendly but firm reminder of quiet hours. Reference house rules. If persistent, escalate to Level 3 tone. Document all communications for potential platform dispute.",
+        "prevention": "Install privacy-compliant noise monitoring (Minut/NoiseAware). Include noise rules prominently in welcome materials."
+      },
+      {
+        "scenario": "Guest threatens negative review to get discount",
+        "response": "Stay professional and documented. Acknowledge their concerns genuinely. Offer reasonable resolution based on actual service failure. Do not cave to threats - document the extortion attempt for platform dispute resolution.",
+        "prevention": "Proactive mid-stay check-ins catch issues before they become review threats."
+      },
+      {
+        "scenario": "Guest reports maintenance failure (AC, hot water, WiFi)",
+        "response": "Acknowledge within 15 minutes. Provide temporary workaround (fans, towels, mobile hotspot). Dispatch maintenance with clear ETA. Offer compensation proportional to disruption. Follow up after fix.",
+        "prevention": "Monthly preventive maintenance checks on all systems. Backup internet connection. Spare parts inventory."
+      },
+      {
+        "scenario": "Guest locked out of property",
+        "response": "Respond immediately via WhatsApp/phone. Talk through smart lock troubleshooting. If unresolved in 10 minutes, dispatch local team with backup access. Apologize for inconvenience.",
+        "prevention": "Smart locks with temporary codes. Backup physical key with trusted neighbor or local team. Clear lock instructions in check-in guide."
+      },
+      {
+        "scenario": "Guest wants to extend stay but property is booked",
+        "response": "Thank them enthusiastically (great sign!). Check other properties in portfolio. Offer to rebook for future dates with return guest discount. Suggest similar properties if available.",
+        "prevention": "Build multi-property portfolio. Return guest program with 10% discount."
+      },
+      {
+        "scenario": "Guest reports feeling unsafe (break-in attempt, suspicious activity)",
+        "response": "Take every report seriously. Contact Tourist Police immediately (+230 number). Offer to relocate guest to alternative accommodation. Stay in contact until resolved. File formal incident report.",
+        "prevention": "Smart locks, motion-activated lighting, security cameras (exterior only), alarm system."
+      },
+      {
+        "scenario": "Guest arrives during cyclone warning",
+        "response": "Send detailed safety briefing 72 hours before arrival if warning active. Include property-specific cyclone preparation steps. Emergency supply locations. 24/7 contact available. Offer flexible rebooking if Class III/IV warning.",
+        "prevention": "Cyclone season (Nov-Apr) booking confirmations include emergency protocols. Emergency supply kits stocked per property."
+      },
+      {
+        "scenario": "Guest leaves negative review despite good experience signals",
+        "response": "Respond publicly with professionalism and grace. Address specific concerns factually. Thank them for feedback. Highlight improvements made. Do not be defensive or argue.",
+        "prevention": "Pre-departure message asking for honest feedback privately first. Address issues before checkout."
+      }
+    ],
+
+    "commonCorrectionPatterns": [
+      {
+        "mistake": "Generic copy-paste responses that don't reference the guest's specific situation",
+        "correction": "Always personalize: mention guest name, dates, property name, specific question asked",
+        "why": "Guests immediately detect template responses - kills trust and premium positioning"
+      },
+      {
+        "mistake": "Over-promising on timing (We'll fix it right away!)",
+        "correction": "Give honest ETAs with buffer. Under-promise, over-deliver. 'Our team will be there within 2 hours' when you expect 1 hour.",
+        "why": "Broken promises destroy trust faster than slow service"
+      },
+      {
+        "mistake": "Ignoring the emotional component of complaints",
+        "correction": "Acknowledge the feeling before jumping to the solution. 'I completely understand how frustrating that must be' before 'Here's what we're doing about it'",
+        "why": "Guests need to feel heard, not just serviced"
+      },
+      {
+        "mistake": "Sending check-in instructions too early or too late",
+        "correction": "48 hours before arrival is the sweet spot. Too early = forgotten. Too late = anxiety.",
+        "why": "Timing affects whether guests actually read and follow instructions"
+      },
+      {
+        "mistake": "Not following up after resolving an issue",
+        "correction": "Always close the loop: 'Just checking - is everything working well now?' within 2-4 hours of fix",
+        "why": "Follow-up turns a negative into a positive review mention"
+      },
+      {
+        "mistake": "Using informal tone with cultures that expect formality (and vice versa)",
+        "correction": "Match the guest's communication style. French guests get 'vous' until they switch to 'tu'. German guests get precise, detailed responses.",
+        "why": "Cultural mismatch undermines the premium experience you're selling"
+      },
+      {
+        "mistake": "Sending too many messages (over-communication)",
+        "correction": "Limit to: confirmation, pre-arrival (48h), welcome (arrival day), mid-stay check (3+ nights), pre-departure, review request. No daily messages.",
+        "why": "Excessive messaging feels intrusive and gets guests to tune out important info"
+      },
+      {
+        "mistake": "Not mentioning the tourist tax upfront",
+        "correction": "Include tourist tax (EUR 3/person/night, 12+) in booking confirmation. No surprises at check-in.",
+        "why": "Undisclosed fees trigger instant negative reviews"
+      }
+    ],
+
+    "proactiveCommunication": {
+      "preArrival": {
+        "timing": "48-72 hours before check-in",
+        "contents": [
+          "Full address with Google Maps link",
+          "Check-in time window (3-8 PM) and access instructions",
+          "WiFi name and password",
+          "Local contact WhatsApp number",
+          "Weather update and packing recommendations",
+          "Airport transfer details if arranged",
+          "Nearest pharmacy and supermarket",
+          "Tourist tax reminder (EUR 3/person/night, 12+)",
+          "Digital guidebook link"
+        ],
+        "seasonalAdditions": {
+          "peakSeason": ["Beach conditions", "UV protection advice", "Popular restaurant booking recommendations", "Crowd avoidance tips"],
+          "cycloneSeason": ["Current weather outlook", "Emergency procedures if warning issued", "Safety supply locations in property"],
+          "shoulderSeason": ["Extended stay benefits", "Work-friendly setup details", "Local cultural events during stay"],
+          "lowSeason": ["Authentic local experience recommendations", "Monthly rate offers", "Best weather activities"]
+        }
+      },
+      "welcomeDay": {
+        "timing": "Check-in day, sent by 3 PM or upon confirmed arrival",
+        "contents": [
+          "Personal welcome with property-specific tips",
+          "Tonight's dinner recommendations (2-3 options with distance)",
+          "Sunset viewing spot",
+          "Tomorrow's activity suggestions",
+          "Emergency contact reminder",
+          "Quick cultural tip or local insight"
+        ]
+      },
+      "midStay": {
+        "timing": "Day 3 for stays of 5+ nights",
+        "contents": [
+          "Satisfaction check - everything working?",
+          "3-day weather forecast",
+          "This week's local events or highlights",
+          "Mid-stay cleaning offer (24hr notice)",
+          "Fresh towels/linens available",
+          "Popular guest-recommended activities"
+        ]
+      },
+      "preDeparture": {
+        "timing": "Day before checkout",
+        "contents": [
+          "Checkout time (10 AM) and procedure",
+          "Key/access card return instructions",
+          "Checkout checklist (belongings, windows, AC off)",
+          "Late checkout option if available (MUR 500 until 2 PM)",
+          "Airport transfer confirmation",
+          "Luggage storage if needed",
+          "Gentle preview of review request"
+        ]
+      },
+      "postStay": {
+        "timing": "24 hours after checkout",
+        "contents": [
+          "Thank you message",
+          "Direct review link for the booking platform used",
+          "Return guest discount offer (10%)",
+          "Referral program (15% for friends)",
+          "Lost item return process (7-day window)",
+          "Social media tags (@fridayretreats)"
+        ]
+      }
+    },
+
+    "automatedMessaging": {
+      "schedule": [
+        {"trigger": "Booking confirmed", "message": "Booking confirmation with key details", "timing": "Immediate"},
+        {"trigger": "48 hours before arrival", "message": "Pre-arrival instructions and local guide", "timing": "Automated"},
+        {"trigger": "Check-in day", "message": "Welcome message with first-day tips", "timing": "3 PM or on arrival"},
+        {"trigger": "Day 3 of 5+ night stay", "message": "Mid-stay satisfaction check", "timing": "10 AM"},
+        {"trigger": "Day before checkout", "message": "Checkout procedures and thank you", "timing": "10 AM"},
+        {"trigger": "24 hours post-checkout", "message": "Review request and return offers", "timing": "Automated"}
+      ],
+      "automationRate": "75% of routine communications can be automated",
+      "humanOverride": "Complex issues, complaints, emergencies, and culturally sensitive situations always require human response"
+    },
+
+    "emergencyCommunication": {
+      "fiveStageProtocol": [
+        "Acknowledge: Immediate response within 15 minutes",
+        "Assess: Gather all relevant information from guest",
+        "Act: Implement solution with clear timeline communicated",
+        "Arrange: Alternative accommodations if needed",
+        "Analyze: Document for prevention and insurance"
+      ],
+      "emergencyContacts": {
+        "localEmergency": "999 (Police, Fire, Medical)",
+        "touristPolice": "+230 [number]",
+        "hospitals": ["Dr. Jeetoo Hospital", "Clinique Darne"],
+        "embassies": ["British", "French", "German", "Indian diplomatic support"],
+        "meteorological": "Meteo Mauritius for cyclone warnings"
+      },
+      "cycloneClassifications": {
+        "classI": "36-48 hours warning - prepare supplies, secure property, notify guests",
+        "classII": "12-24 hours warning - complete preparations, detailed guest communication",
+        "classIII": "6-12 hours warning - final preparations, shelter in place instructions",
+        "classIV": "Immediate danger - emergency shelter, no movement permitted"
+      }
+    },
+
+    "performanceMetrics": {
+      "responseRate": "95%+ within 24 hours",
+      "averageResponseTime": "Under 2 hours (target 1 hour)",
+      "guestSatisfaction": "4.9+ communication rating",
+      "reviewConversion": "50%+ of guests leave reviews",
+      "repeatBookingRate": "25%+ return guests"
+    }
+  },
+
+  "guestExperience": {
+    "satisfactionDrivers": {
+      "primary": [
+        {"factor": "Cleanliness", "importance": "98%", "standard": "Spotless, exceeding hotel standards"},
+        {"factor": "Communication", "importance": "94%", "standard": "Responsive, helpful, culturally aware"},
+        {"factor": "Accuracy", "importance": "92%", "standard": "Property matches listing exactly"},
+        {"factor": "Location", "importance": "90%", "standard": "Safe, convenient, well-connected"},
+        {"factor": "Value", "importance": "88%", "standard": "Fair pricing for quality provided"}
+      ],
+      "delightFactors": [
+        "Personalized welcome messages referencing their occasion (birthday, anniversary, honeymoon)",
+        "Insider local recommendations beyond tourist guides",
+        "Surprise amenities (local fruits, personalized welcome note)",
+        "Proactive service (weather-adjusted activity suggestions)",
+        "Memorable cultural connections (market tour tips, cooking class referrals)"
+      ]
+    },
+    "amenityChecklist": {
+      "bedroom": {
+        "essential": ["300+ thread count sheets", "Multiple pillow options", "Blackout curtains", "Bedside charging stations", "Extra blankets"],
+        "premium": ["Individual room temperature control", "Quality mattress", "Reading lights"]
+      },
+      "kitchen": {
+        "essential": ["Full-size refrigerator", "Stove/oven", "Microwave", "Complete cookware set", "Service for 8+ guests"],
+        "premium": ["Coffee maker", "Toaster", "Blender", "Kettle", "Basic spices/oil/coffee/tea"]
+      },
+      "bathroom": {
+        "essential": ["3 luxury towels per guest", "Bath mats", "Premium toiletries", "Hair dryer", "Extra toilet paper"],
+        "premium": ["Magnifying mirror", "First aid kit", "Quality shampoo/conditioner/body wash"]
+      },
+      "living": {
+        "essential": ["Comfortable seating for all guests", "Smart TV with streaming", "High-speed WiFi 50+ Mbps", "Quality lighting"],
+        "premium": ["Sound system", "Multiple device WiFi support", "Welcome book with local guides"]
+      },
+      "outdoor": {
+        "essential": ["Clean pool with proper chemicals", "Quality patio furniture", "Beach towels"],
+        "premium": ["BBQ/grill with supplies", "Beach chairs/umbrellas", "Outdoor dining table", "Garden lighting"]
+      }
+    },
+    "localExperiences": {
+      "cultural": ["Port Louis Central Market", "Aapravasi Ghat", "Le Morne Cultural Landscape", "Ganga Talao", "Pere Laval Shrine", "Local artisan workshops"],
+      "adventure": ["Snorkeling/diving", "Deep-sea fishing", "Catamaran trips", "Le Morne hiking", "Chamarel Seven Coloured Earth", "Casela Nature Park", "Zip-lining", "Kite surfing"],
+      "culinary": ["Street food tours", "Traditional cooking classes", "Rum distillery tours", "Fresh produce markets", "Spice buying guides"],
+      "relaxation": ["In-villa massage services", "Beach yoga sessions", "Golf courses", "Sunset viewing spots", "Professional photo sessions"]
+    },
+    "serviceRecovery": {
+      "compensationGuidelines": {
+        "_note": "Friday-specific bands per refund-metrics.json take precedence over generic STR industry rates below",
+        "minorIssue": "Up to 5% of nightly rate per affected night (per refund-metrics.json)",
+        "moderateIssue": "10-30% of nightly rate per affected night (per refund-metrics.json)",
+        "severeIssue": "100% of affected nights' rate + relocation if needed (per refund-metrics.json)",
+        "safetyIssue": "Immediate relocation + full refund + additional compensation"
+      },
+      "protocol": [
+        "Listen actively - understand the full concern",
+        "Apologize sincerely - take responsibility regardless of cause",
+        "Act quickly - implement solution ASAP",
+        "Compensate fairly - match compensation to actual impact",
+        "Follow up - confirm satisfaction within 2-4 hours"
+      ]
+    },
+    "seasonalOptimization": {
+      "peakSeason": {
+        "period": "November-March",
+        "focus": "Premium service, water sports, beach experiences, advance restaurant bookings",
+        "preparation": "Sun protection supplies, beach equipment, hydration stations"
+      },
+      "shoulderSeason": {
+        "period": "April-May, September-October",
+        "focus": "Value enhancement, local cultural experiences, extended stay packages",
+        "advantage": "Less crowded attractions, personalized attention, superior weather vs Europe"
+      },
+      "lowSeason": {
+        "period": "June-August",
+        "focus": "Indoor comfort, cultural immersion, cooking classes, authentic local experiences",
+        "positioning": "South African winter escape, work-from-paradise packages, monthly rates"
+      }
+    }
+  },
+
+  "propertyManagement": {
+    "cleaningProtocols": {
+      "standards": {
+        "timePerBedroom": "90 minutes (tropical climate consideration)",
+        "qualityControl": "Multi-level: cleaning team self-check, supervisor review, final QC",
+        "documentation": "Before/after photos with timestamp/GPS",
+        "guestReadyVerification": "Final walkthrough 2 hours before check-in",
+        "cleanlinessTest": "White sock test on all floors"
+      },
+      "tropicalAdaptations": {
+        "moldPrevention": "Enhanced bathroom ventilation, daily moisture management, exhaust fan verification",
+        "humidityControl": "AC continuous operation in storage, dehumidifiers, humidity-resistant cleaners",
+        "insectManagement": "Year-round pest control, sealed food storage protocols",
+        "sandManagement": "High-powered vacuum, entrance cleaning stations, specialized mat systems",
+        "saltAirCleaning": "Accelerated fixture cleaning schedule, protective coating maintenance"
+      },
+      "areas": {
+        "kitchen": ["Clean inside/outside all appliances", "Sanitize all surfaces", "Restock dishes/utensils/spices/supplies", "Extra dehumidification", "Sealed container verification"],
+        "bathroom": ["EPA-approved disinfectants on all surfaces", "Mold prevention grout cleaning", "Fresh towels/mats/shower curtain", "Restock all supplies", "Ventilation system check"],
+        "bedroom": ["Fresh linens every guest", "Dust all surfaces with anti-static", "Humidity-appropriate floor cleaning", "Check drawers/closets for forgotten items", "Test electronics and charging stations"],
+        "outdoor": ["Pool chemical balance test", "Deck non-slip cleaning", "Garden debris removal", "BBQ cleaning and gas check", "Hurricane securing systems check"]
+      }
+    },
+    "maintenanceSchedule": {
+      "monthly": [
+        "HVAC filter replacement (2x normal frequency for tropical climate)",
+        "Water pressure test and leak detection",
+        "Electrical GFCI testing and moisture damage check",
+        "Appliance coil cleaning and salt residue removal",
+        "Fire extinguisher and emergency supply inspection"
+      ],
+      "quarterly": [
+        "Professional HVAC service and mold prevention",
+        "Water heater service and pipe corrosion assessment",
+        "Electrical panel inspection and ground fault testing",
+        "Roof inspection, gutter cleaning, pressure washing",
+        "Pool equipment comprehensive service"
+      ],
+      "semiAnnual": [
+        "Storm preparation: window protection, outdoor furniture securing",
+        "Deep systems check on all major systems",
+        "Professional pest control treatment",
+        "Smoke/CO detector replacement, first aid kit updates",
+        "Professional carpet, upholstery, window cleaning"
+      ],
+      "annual": [
+        "Complete HVAC overhaul and duct cleaning",
+        "Structural foundation and roofing assessment",
+        "Licensed electrician full system inspection",
+        "Complete plumbing inspection and water quality testing",
+        "Comprehensive hurricane readiness assessment"
+      ]
+    },
+    "emergencyClassification": {
+      "level1Critical": {
+        "examples": ["Fire", "Flood", "Electrical hazard", "Structural damage"],
+        "response": "Under 15 minutes acknowledgment, emergency services contact",
+        "guestImpact": "Immediate evacuation or relocation required"
+      },
+      "level2Urgent": {
+        "examples": ["HVAC failure", "Major plumbing", "Electrical outage"],
+        "response": "Under 1 hour acknowledgment, same-day resolution attempt",
+        "guestImpact": "Significant comfort disruption, possible relocation"
+      },
+      "level3Standard": {
+        "examples": ["Appliance failure", "Cosmetic damage", "Minor maintenance"],
+        "response": "Under 4 hours acknowledgment, scheduled repair",
+        "guestImpact": "Minor inconvenience, workable conditions"
+      },
+      "level4Routine": {
+        "examples": ["Preventive maintenance", "Upgrades", "Cosmetic improvements"],
+        "response": "Scheduled during property availability",
+        "guestImpact": "None - no current guests"
+      }
+    },
+    "tropicalClimate": {
+      "challenges": {
+        "humidity": "80%+ year-round requires enhanced ventilation and dehumidification",
+        "saltAir": "Accelerates appliance/fixture wear - 2x replacement frequency near coast",
+        "cycloneSeason": "Nov-Apr requires specialized protection and guest safety protocols",
+        "insects": "Year-round pest control vs seasonal approaches elsewhere",
+        "sand": "Beach properties need HVAC filter changes at 3x normal frequency"
+      },
+      "infrastructure": {
+        "power": "CEB outages require backup generators and UPS for essential systems",
+        "water": "Municipal pressure inconsistent - booster pump recommended",
+        "internet": "Fiber expanding but multiple backup solutions needed",
+        "waste": "Limited collection frequency - larger capacity planning required"
+      }
+    },
+    "staffManagement": {
+      "costStructure": {
+        "entryLevel": "MUR 15,000-20,000/month",
+        "experienced": "MUR 20,000-25,000/month",
+        "supervisory": "MUR 25,000-35,000/month",
+        "management": "MUR 35,000-50,000/month",
+        "comparison": "40-60% of European equivalent costs"
+      },
+      "competitiveAdvantage": [
+        "Bilingual French-English staff available",
+        "Strong hospitality culture tradition",
+        "Lower turnover with proper treatment",
+        "Tourism-trained workforce pool from hotel sector"
+      ]
+    }
+  },
+
+  "crisisManagement": {
+    "framework": {
+      "philosophy": "Guest safety first, rapid response, clear communication, preparedness over reaction, every crisis teaches",
+      "lifecycle": ["Pre-Crisis: prevention and planning", "Crisis Onset: recognition and immediate response", "Crisis Response: active management", "Recovery: restore operations", "Post-Crisis: learn and improve"]
+    },
+    "naturalDisasters": {
+      "cyclone": {
+        "season": "November to April (peak January-March)",
+        "warningSystem": "Mauritius Meteorological Services",
+        "classifications": {
+          "classI": {"warning": "36-48 hours", "action": "Prepare supplies, secure property, notify guests"},
+          "classII": {"warning": "12-24 hours", "action": "Complete preparations, full guest communication"},
+          "classIII": {"warning": "6-12 hours", "action": "Final preparations, shelter in place"},
+          "classIV": {"warning": "Immediate danger", "action": "Emergency shelter, no movement"}
+        },
+        "propertyPreparation": [
+          "Secure outdoor furniture and potential projectiles",
+          "Emergency supply kit (3 days water, food, flashlights, batteries, radio, first aid, cash)",
+          "Window protection systems",
+          "Generator for essential systems",
+          "Drainage clearance"
+        ],
+        "guestCommunication": [
+          "72-hour advance notification when warning issued",
+          "Property-specific safety procedures",
+          "Alternative accommodation coordination if evacuation needed",
+          "Regular updates every 6-12 hours during event",
+          "Post-storm damage assessment and restoration timeline"
+        ]
+      },
+      "flood": {
+        "riskAreas": "Low-lying areas, riverine locations, coastal properties",
+        "response": ["Evacuate if water levels pose danger", "Shut off electricity and gas", "Move valuables to higher levels", "Contact water damage professionals", "Photo/video documentation for insurance"]
+      }
+    },
+    "propertyEmergencies": {
+      "fire": {
+        "prevention": ["Interconnected smoke alarms in all rooms", "Appropriate fire extinguishers", "Clear marked exit routes", "Fire blankets in kitchen", "Posted evacuation procedures"],
+        "response": ["Alert all occupants and call 999", "Follow evacuation routes", "Account for all guests", "Use extinguishers only if safe and trained", "No re-entry until cleared"]
+      },
+      "utilities": {
+        "gasLeak": "Immediate evacuation, no ignition sources, shut off at meter, call emergency",
+        "electrical": "Backup power systems, never use water on electrical fires, maintain flashlights",
+        "plumbing": "Main water shutoff clearly marked, 24/7 plumber contact, water extraction equipment"
+      }
+    },
+    "securityIncidents": {
+      "breakIn": ["Ensure guest safety first", "Call police 999", "Preserve evidence", "Provide emotional support", "Detailed incident report", "Insurance notification"],
+      "propertyMeasures": ["Smart locks with temporary codes", "Strategic exterior cameras (privacy compliant)", "Motion-activated lighting", "Alarm system with monitoring", "Emergency communication system"]
+    },
+    "businessContinuity": {
+      "essentials": ["3-6 months operating expenses in reserve", "Pre-approved credit lines", "Cloud-based systems for remote management", "Vendor redundancy for critical services", "Staff cross-trained for multiple roles"],
+      "insuranceCoverage": {
+        "required": ["General liability MUR 25M+ minimum", "Property full replacement cost", "Contents insurance", "Business interruption", "Natural disaster specific"],
+        "claims": "Report within 24 hours, comprehensive photo/video evidence, preserve damaged items, professional assessment"
+      }
+    },
+    "mauritiusAdvantages": [
+      "Compact geography enables 15-45 minute emergency response",
+      "Well-established cyclone early warning systems",
+      "Tourism-prioritized government emergency response",
+      "Quality healthcare with medical evacuation capability",
+      "Low crime rates and stable political system"
+    ]
+  },
+
+  "legalCompliance": {
+    "licensingRequirements": {
+      "tourismEnterpriseLicence": {
+        "authority": "Mauritius Tourism Authority (MTA)",
+        "mandatory": "All properties rented for less than 90 days",
+        "duration": "1 year, renewable",
+        "processingTime": "4-6 weeks",
+        "requiredDocuments": [
+          "Property ownership proof (title deed or 5+ year lease)",
+          "Detailed floor plans (professional architectural)",
+          "Fire safety certificate",
+          "Liability insurance proof",
+          "Tax clearance certificates",
+          "Valid Business Registration Number (BRN)"
+        ],
+        "propertyStandards": ["Fire extinguishers", "Smoke detectors", "Emergency exits", "Clean water supply", "Proper sanitation", "Structural soundness", "Electrical safety"]
+      },
+      "businessRegistration": {
+        "type": "Business Registration Number (BRN)",
+        "authority": "Registrar of Companies",
+        "processing": "Half-day typically",
+        "renewal": "Annual"
+      }
+    },
+    "taxObligations": {
+      "touristFee": {
+        "rate": "EUR 3 per person per night",
+        "ageExemption": "Children under 12",
+        "effectiveDate": "October 1, 2025",
+        "collection": "At check-in or check-out (operator choice)",
+        "remittance": "Monthly to MRA by 15th of following month",
+        "registration": "Must register with MRA within 14 days of starting operations",
+        "currency": "Collected in EUR or MUR equivalent",
+        "penalties": "Interest and penalties for delayed remittance"
+      },
+      "incomeTax": {
+        "rate": "15% flat rate on rental income",
+        "filing": "Annual tax return to MRA",
+        "payments": "Quarterly advance payments required",
+        "allowableDeductions": [
+          "Professional management fees",
+          "Maintenance and repairs",
+          "Utilities (electricity, water, internet, cable)",
+          "Marketing and platform fees",
+          "Insurance premiums",
+          "Depreciation (furniture, appliances, improvements)",
+          "Professional services (legal, accounting)"
+        ]
+      },
+      "vat": {
+        "threshold": "Annual turnover exceeds Rs 6 million",
+        "rate": "15% on accommodation services",
+        "filing": "Monthly or quarterly returns",
+        "inputTax": "Can claim VAT on business expenses"
+      },
+      "comparisonAdvantage": "15% income tax + EUR 3 tourist fee vs 25-40% tax + EUR 5-15 tourist tax in European destinations"
+    },
+    "dataProtection": {
+      "framework": "Data Protection Act 2017, aligned with EU GDPR",
+      "requirements": [
+        "Only collect data necessary for booking and safety",
+        "Clear consent for marketing communications",
+        "Delete data when no longer needed",
+        "Appropriate security measures (encryption, access controls)",
+        "Report significant breaches to authorities",
+        "Inform guests of privacy rights"
+      ],
+      "recordRetention": "Guest records minimum 7 years"
+    },
+    "employmentLaw": {
+      "framework": "Employment Relations Act 2008",
+      "workingHours": "Standard 45-hour work week",
+      "mandatoryBenefits": ["National Pension Scheme contributions", "Healthcare coverage", "Workplace injury protection", "Skills development levy", "Paid maternity leave"],
+      "categories": ["Full-time staff", "Part-time staff", "Independent contractors", "Work permits required for non-residents"]
+    },
+    "penalties": {
+      "licenseViolations": "Rs 50,000 - Rs 200,000 fines, possible criminal prosecution",
+      "safetyViolations": "Immediate closure orders",
+      "dataProtection": "Up to Rs 10 million or 4% of turnover",
+      "taxEvasion": "Criminal prosecution for serious cases"
+    },
+    "complianceCosts": {
+      "initial": {
+        "telApplication": "Rs 10,000 - Rs 25,000",
+        "professionalSetup": "Rs 250,000 through service providers",
+        "insurance": "Rs 50,000 - Rs 200,000 annually",
+        "legalAndTax": "Rs 50,000 - Rs 150,000",
+        "safetyEquipment": "Rs 25,000 - Rs 75,000"
+      },
+      "ongoing": {
+        "annualLicenseRenewal": "Rs 10,000 - Rs 25,000",
+        "taxPreparation": "Rs 25,000 - Rs 75,000 annually",
+        "insurancePremiums": "Annual renewal"
+      },
+      "advantage": "$200-500 annual compliance vs $2,000-5,000+ in major global markets"
+    }
+  },
+
+  "pricingStrategy": {
+    "marketPosition": {
+      "currentADR": "Rs 4,409 (~$100 USD)",
+      "currentOccupancy": "66% national average",
+      "pricingGap": "30-50% below comparable Caribbean/Mediterranean destinations",
+      "opportunity": "Target $150-200 ADR for premium properties (international parity)"
+    },
+    "dynamicPricing": {
+      "principles": ["Supply & demand based adjustments", "Competitive intelligence monitoring", "Seasonal pattern application", "Event-based surcharges", "Last-minute optimization"],
+      "tools": ["PriceLabs (market leader, 100+ PMS integrations)", "Wheelhouse (AI-powered)", "Beyond Pricing (pioneer platform)", "AirDNA Smart Rates"],
+      "impact": "15-25% revenue improvement typical with proper implementation"
+    },
+    "seasonalRates": {
+      "peakSeason": {
+        "period": "November-March",
+        "premium": "40-60% above base (room for increase to 60-80% matching international)",
+        "minimumStay": "5-7 nights during holidays",
+        "holidaySurcharge": "20-30% for Christmas/New Year (international benchmark: 50-100%)"
+      },
+      "shoulderSeason": {
+        "period": "April-May, September-October",
+        "premium": "10-20% above base",
+        "minimumStay": "3-4 nights",
+        "focus": "Extended stay segments, digital nomads"
+      },
+      "lowSeason": {
+        "period": "June-August",
+        "pricing": "Base rate or 10-20% below peak",
+        "minimumStay": "2-3 nights",
+        "strategy": "Regional market appeal, monthly rates, work-from-paradise packages",
+        "lowestOccupancy": "September at 41%"
+      }
+    },
+    "lastMinutePricing": {
+      "30plusDays": "Premium rates, full minimum stays",
+      "14to30days": "5-10% discount, flexible minimums",
+      "7to14days": "10-20% discount, reduced minimums",
+      "3to7days": "15-25% discount, 2-3 night minimum",
+      "1to3days": "20-30% discount, any length stay"
+    },
+    "revenueOptimization": {
+      "upselling": ["Late checkout (MUR 500 until 2 PM)", "Early check-in", "Airport transfers", "Grocery pre-stocking"],
+      "crossSelling": ["Local experience partnerships", "Restaurant reservations", "Activity bookings"],
+      "directBooking": "5-10% discount still more profitable than 15-20% OTA commission",
+      "loyaltyProgram": {"returnGuest": "10% discount", "referral": "15% for friends", "extendedStay": "20% off 7+ nights"}
+    },
+    "performanceTargets": {
+      "occupancy": "65-75% annually",
+      "adrGrowth": "5-10% year-over-year",
+      "revparImprovement": "8-15% annually with optimization",
+      "bookingLeadTime": "30-45 days average",
+      "lengthOfStay": "4-6 nights average (luxury properties)",
+      "profitMargins": "40-60% net margin target"
+    }
+  },
+
+  "checkInOut": {
+    "checkIn": {
+      "standardTime": "3:00 PM - 8:00 PM",
+      "process": [
+        "Smart lock code sent 48 hours before (or at property with key exchange)",
+        "Pre-arrival message with address, directions, parking details",
+        "Welcome message sent at 3 PM or on confirmed arrival",
+        "Digital guidebook link with WiFi, house rules, local info",
+        "Local team contact available for questions"
+      ],
+      "welcomePackage": ["Local snacks or fruit", "Bottled water", "Emergency contacts card", "Quick-start property guide", "SRL items (shampoo, body gel, soap, laundry detergent, chocolate, water, Coke, Fanta, sugar, salt)"]
+    },
+    "checkOut": {
+      "standardTime": "10:00 AM",
+      "lateCheckout": "Available until 2 PM for MUR 500 (subject to next booking)",
+      "checklist": [
+        "All personal belongings collected",
+        "Keys/access cards returned",
+        "WiFi devices unplugged",
+        "Doors and windows secured",
+        "Air conditioning turned off"
+      ],
+      "preDepartureMessage": "Sent day before with checkout details, airport transfer confirmation, review request preview"
+    },
+    "lateArrival": {
+      "protocol": "Self-check-in via smart lock after 8 PM",
+      "communication": "Text/WhatsApp instructions with simplified essentials",
+      "requirement": "Guest must notify of late arrival in advance"
+    },
+    "earlyCheckout": {
+      "policy": "No refund for early departure",
+      "assistance": "Help with rebooking transport, luggage storage if needed"
+    }
+  },
+
+  "damageAndSecurity": {
+    "preventionMeasures": [
+      "Security deposit collected through platform",
+      "Smart locks with temporary guest codes",
+      "Exterior security cameras (disclosed in listing)",
+      "Motion-activated exterior lighting",
+      "Noise monitoring devices (Minut/NoiseAware - privacy compliant)",
+      "Guest identity verification through platform"
+    ],
+    "damageProtocol": [
+      "Document with photos/video immediately upon discovery",
+      "Contact guest professionally about damage",
+      "File platform damage claim within required timeframe",
+      "Get professional repair estimates",
+      "Contact insurance for significant damage",
+      "Update inventory and replace damaged items"
+    ],
+    "securityIncident": [
+      "Ensure guest physical safety first",
+      "Call Tourist Police immediately",
+      "Secure scene and preserve evidence",
+      "Support guest with emotional needs and logistics",
+      "Detailed incident report with photos",
+      "Insurance notification within 24 hours"
+    ]
+  },
+
+  "noiseAndNeighbors": {
+    "quietHours": "10 PM - 8 AM (standard, adjust per local rules)",
+    "monitoring": "Privacy-compliant noise monitors (Minut, NoiseAware, Roomonitor) - decibel only, no recording",
+    "preventionMeasures": [
+      "Clear noise policy in house rules and welcome materials",
+      "Maximum occupancy strictly enforced",
+      "No parties/events policy clearly stated",
+      "Automated alerts when noise thresholds exceeded"
+    ],
+    "escalationProcess": [
+      "First alert: Friendly automated message reminding of quiet hours",
+      "Second alert: Personal call/message from host with firm reminder",
+      "Third alert: Final warning with consequences stated",
+      "Continued violation: Contact authorities if needed, document for platform"
+    ],
+    "neighborRelations": "Maintain positive relationships with neighbors - they are early warning systems and community ambassadors"
+  },
+
+  "reviewManagement": {
+    "strategy": {
+      "targetRating": "4.9+ stars across all platforms",
+      "reviewConversion": "Target 50%+ of guests leaving reviews (vs 20-30% local average)",
+      "responsePolicy": "Respond professionally to ALL reviews - positive and negative"
+    },
+    "gettingReviews": [
+      "Pre-departure hint: 'We'd love to hear about your experience'",
+      "Post-stay (24h): Direct review link for the specific platform used",
+      "Make it easy: One-click direct link, not generic 'leave a review'",
+      "Timing matters: 24 hours post-checkout when memories are fresh"
+    ],
+    "respondingToNegative": [
+      "Wait 24 hours before responding (avoid emotional reaction)",
+      "Thank the guest for their feedback",
+      "Address specific concerns factually without being defensive",
+      "Explain what you've done to prevent recurrence",
+      "Invite them back to experience the improvement",
+      "Keep it concise - long responses look desperate"
+    ],
+    "respondingToPositive": [
+      "Thank them genuinely and specifically",
+      "Reference something unique about their stay",
+      "Invite them back with return guest benefits",
+      "Keep it warm and brief"
+    ]
+  },
+
+  "mauritiusSpecific": {
+    "tourism": {
+      "annualVisitors": "1.2M+ projected",
+      "hotelOccupancy": "78% average (above global 65-75%)",
+      "recoveryStatus": "97% of pre-pandemic levels (above global 85-95%)",
+      "gdpContribution": "9.0%",
+      "touristSpend": "~$2,000 per visitor"
+    },
+    "sourceMarkets": {
+      "france": {"share": "21%", "growth": "+8%", "profile": "Cultural, sophisticated, formal"},
+      "germany": {"share": "Major", "growth": "-1.3%", "profile": "Precise, nature-loving, long stays"},
+      "uk": {"share": "Major", "growth": "-2.0%", "profile": "Beach-focused, humor-appreciating"},
+      "india": {"share": "Fast growing", "growth": "+33.5%", "profile": "Family-oriented, value-conscious"},
+      "southAfrica": {"share": "Regional", "growth": "+3.5%", "profile": "Adventure-seeking, budget-aware"},
+      "reunion": {"share": "Regional leader", "growth": "+3.1%", "profile": "Regular leisure/business"},
+      "emergingGrowth": {"italy": "+18.2%", "spain": "+19.0%", "czechRepublic": "+13.2%"}
+    },
+    "seasonality": {
+      "highSeason": "November-March (Southern Hemisphere summer + European winter escape)",
+      "peakMonth": "December",
+      "lowSeason": "June-August (May-September for lower European demand)",
+      "lowestMonth": "September (41% occupancy)",
+      "seasonalSwing": "35 points (manageable vs 50+ Caribbean)",
+      "dualPeakAdvantage": "Southern summer + European winter escape"
+    },
+    "realEstate": {
+      "averageApartment": "MUR 21.7M (USD $457K), +23.3% YoY",
+      "pricingAdvantage": "30-50% below comparable Caribbean/Mediterranean",
+      "strYields": "7-12% ROI for well-managed properties (above global 3-8%)",
+      "investmentSchemes": {
+        "irs": "USD $375K minimum in approved resort schemes, includes residency",
+        "res": "No minimum for property, USD $500K+ for residence permit",
+        "pds": "MUR 25K application fee, USD $375K+ for residency",
+        "smartCity": "Mixed-use with tax incentives, targeting digital nomads"
+      },
+      "foreignOwnership": "Only in approved schemes (IRS/RES/PDS/Smart City), 85% MUR + 15% foreign currency",
+      "premiumLocations": {
+        "grandBaie": "Highest pricing, $1.0M average, 4-6% luxury yields",
+        "flicEnFlac": "15-20% below Grand Baie, 6-8% yields, strong value play",
+        "tamarin": "Emerging, double-digit appreciation, early-stage opportunity",
+        "blackRiver": "Western growth leader, premium demand rising"
+      }
+    },
+    "strMarket": {
+      "airbnbListings": "4,590+ active properties",
+      "vrboListings": "1,914+ vacation rentals",
+      "marketShare": "Airbnb grew from 28% (2019) to 44% (2024)",
+      "averageOccupancy": "66% (above global 58-65%)",
+      "averageADR": "Rs 4,409 (~$100 USD)",
+      "regulatoryEnvironment": "Lenient classification on global index"
+    },
+    "competitivePosition": {
+      "vsMaldives": "$2,000 vs $4,500+ per visitor (50% cost advantage) - more cultural diversity and land activities",
+      "vsSeychelles": "$2,000 vs $3,200+ (35% cost advantage) - better infrastructure and scale",
+      "vsSriLanka": "$2,000 vs $1,100 - political stability, luxury infrastructure, safety premium",
+      "uniqueAdvantages": [
+        "Political stability and safety",
+        "English-French-Creole multilingual society",
+        "Complete destination (beach + culture + adventure + business)",
+        "Property-residency integration pathways",
+        "Year-round tropical appeal with manageable seasonality"
+      ]
+    },
+    "governmentStrategy2025_2029": {
+      "priorities": ["Sustainable growth with mandatory green certifications", "Eco-tourism and community-based travel", "Smart tourism technology investments", "Renewable energy mandatory for new hotels", "Public-private partnerships"],
+      "implications": "Compliance-first operations create competitive advantage as standards tighten"
+    },
+    "emergencyInfrastructure": {
+      "emergency": "999",
+      "touristPolice": "Specialized unit for visitor assistance",
+      "hospitals": ["Dr. Jeetoo Hospital", "Clinique Darne"],
+      "meteorological": "Meteo Mauritius for cyclone early warning",
+      "airportDisruptions": "Sir Seewoosagur Ramgoolam International protocols"
+    }
+  },
+
+  "technologyTools": {
+    "propertyManagementSystems": {
+      "enterprise": ["Guesty (10+ properties, comprehensive automation)", "Hostaway (growth-focused, deep OTA integrations)", "Avantio (agency focus, all-in-one)"],
+      "midSize": ["Hostfully (5-25 properties, digital guidebooks)", "Lodgify (website + PMS + channel manager)", "OwnerRez (feature-rich, customizable)"],
+      "starter": ["Hospitable (AI-powered messaging)", "Boom (AI-first approach)"]
+    },
+    "dynamicPricingTools": ["PriceLabs (customizable, 100+ integrations)", "Wheelhouse (AI-powered, cleaning fee optimization)", "Beyond Pricing (search data integration)", "Airbnb Smart Pricing (free, Airbnb only)"],
+    "smartHome": {
+      "locks": "August, Schlage, Yale, Kwikset - keyless entry with temporary codes",
+      "thermostats": "Nest, Ecobee, Honeywell - 10-20% energy savings",
+      "noiseMonitoring": "Minut, NoiseAware, Roomonitor - decibel only, privacy compliant",
+      "security": "Ring/Nest doorbells, motion sensors, alarm systems",
+      "lighting": "Philips Hue, LIFX, TP-Link Kasa - automated and energy efficient"
+    },
+    "guestCommunication": {
+      "unifiedInbox": "Consolidate all platform messages in one system",
+      "aiMessaging": "Automated responses to common inquiries with human handoff",
+      "digitalGuidebooks": "GoGuidebook, Hostfully, TouchStay - interactive, multilingual, offline access",
+      "voiceAssistants": "Amazon Alexa, Google Home for property control and local info"
+    },
+    "operationsAutomation": {
+      "cleaning": "Breezeway (task scheduling, photo verification), TIDY (AI workflows)",
+      "inventory": "IoT sensors for supply monitoring, automated reordering",
+      "integration": "Zapier for no-code automation between systems"
+    },
+    "analytics": {
+      "marketIntelligence": "AirDNA (10M+ properties worldwide)",
+      "businessIntelligence": "Key Data Dashboard for STR-specific metrics",
+      "guestSentiment": "AI-powered review analysis and sentiment tracking"
+    },
+    "mauritiusConsiderations": {
+      "infrastructure": "Fiber island-wide, stable power, complete 4G/5G coverage",
+      "importCosts": "International technology products 20-30% higher due to import duties",
+      "localSupport": "Growing IT services sector for business technology",
+      "competitiveGap": "Most local operators lack sophisticated technology - first mover advantage"
+    }
+  },
+
+  "financialManagement": {
+    "keyMetrics": {
+      "roi": {"excellent": "20%+", "good": "12-20%", "marginal": "Below 12%"},
+      "cashOnCash": {"target": "8-12% leveraged properties", "excellent": "15%+"},
+      "capRate": {"excellent": "7%+", "good": "5-7%", "marginal": "Below 5%"},
+      "grossRentalYield": {"average": "8-15%", "high": "15%+"},
+      "netRentalYield": {"target": "6-12%"}
+    },
+    "expenseCategories": {
+      "variable": ["Cleaning costs per turnover", "Laundry services", "Supplies/toiletries", "Platform commissions (15-20%)", "Credit card processing"],
+      "fixedMonthly": ["Property management fees", "Insurance premiums", "Utilities (electricity, water, internet)", "Regular maintenance", "Marketing costs"],
+      "periodic": ["Property improvements/upgrades", "Equipment replacement", "Professional services (legal, accounting)", "License renewals", "Major repairs"]
+    },
+    "cashFlowManagement": {
+      "peakSeason": "Nov-Mar: Maximum cash generation, build reserves",
+      "shoulderSeason": "Apr-May, Sep-Oct: Moderate, stable cash flow",
+      "lowSeason": "Jun-Aug: Reduced income, use reserves for maintenance/improvements",
+      "reserve": "Maintain 3-6 months operating expenses",
+      "strategy": "Schedule major expenses during high-income periods"
+    },
+    "mauritiusAdvantages": {
+      "taxRate": "15% income tax vs 25-40% global rates",
+      "complianceCosts": "$200-500 annually vs $2,000-5,000+ major markets",
+      "laborCosts": "MUR 300,000-450,000 annually vs EUR 35,000-60,000 European equivalent",
+      "targetMargins": "50-70% gross margins achievable (vs 40-60% global)",
+      "targetROI": "15-25% annual vs 8-15% international benchmarks"
+    }
+  },
+
+  "sustainability": {
+    "guestPreference": "73% of international travelers prefer eco-friendly accommodations",
+    "ratePremium": "5-15% premium for certified sustainable properties",
+    "energyEfficiency": {
+      "quickWins": ["LED lighting (75% energy reduction)", "Smart thermostats (10-20% savings)", "Energy Star appliances"],
+      "advanced": ["Solar panels (5-8 year payback in Mauritius)", "Battery storage", "Automated energy management"],
+      "target": "30-50% reduction vs baseline consumption"
+    },
+    "waterConservation": {
+      "measures": ["Low-flow showerheads (2.0 GPM)", "Dual-flush toilets", "Faucet aerators", "Smart irrigation", "Rainwater harvesting"],
+      "guestPrograms": ["Towel reuse program", "Conservation information in guidebook"],
+      "target": "15-30% reduction in water usage"
+    },
+    "wasteManagement": {
+      "measures": ["Multi-stream recycling (paper, plastic, glass, metals)", "Composting organic waste", "Refillable dispensers for toiletries", "Bulk purchasing to reduce packaging", "Digital communications to reduce paper"],
+      "target": "50%+ diversion from landfills"
+    },
+    "certifications": ["Green Key Global", "LEED", "EarthCheck"],
+    "mauritiusAdvantage": "Year-round sunshine optimal for solar, government carbon neutrality commitment, tourism preservation alignment"
+  },
+
+  "marketingChannels": {
+    "platforms": {
+      "airbnb": {"listings": "4,590 in Mauritius", "optimization": "15+ professional photos, 500+ word descriptions, French translations, cultural positioning"},
+      "bookingCom": {"strategy": "Business travel targeting, flexible weather policies, group booking emphasis, sustainability badges"},
+      "vrbo": {"opportunity": "Limited competition, whole-home family focus, premium positioning"},
+      "direct": {"target": "25-40% direct bookings", "advantages": "15-20% commission savings, guest data ownership, loyalty building"}
+    },
+    "socialMedia": {
+      "instagram": {"strategy": "Unique geography, cultural diversity, sunset photography, pool paradise", "engagement": "Target 5%+ (vs 1-2% industry)"},
+      "tiktok": {"content": "Beach reveals, cultural experiences, trending audio, local secrets"},
+      "youtube": {"content": "Property tours, destination guides, guest testimonials"},
+      "hashtags": {
+        "location": ["#GrandBaie", "#FlicEnFlac", "#IleAuxCerfs", "#TrouAuxBiches"],
+        "experience": ["#MauritiusLife", "#IslandLife", "#TropicalParadise", "#IndianOcean"],
+        "french": ["#VacancesMaurice", "#ParadisTropical", "#OceanIndien"]
+      }
+    },
+    "contentStrategy": {
+      "frequency": "3-5 social posts/week, 2-4 blog posts/month",
+      "mix": "80% visual content, 30% user-generated",
+      "themes": ["Beach & water", "Cultural experiences", "Adventure & nature", "Culinary stories", "Guest testimonials"],
+      "professionalPhotography": "40-60% booking increase with professional photos"
+    },
+    "localCompetitiveAdvantage": "Limited professional digital marketing among local STR operators - first mover opportunity"
+  },
+
+  "futureTrends": {
+    "globalMarket": {
+      "size": "$131.45B (2025) to $222.70B (2030) at 11.12% CAGR",
+      "aiAdoption": "61% current, projected 85%+ by 2030",
+      "professionalManagement": "70%+ of successful operations by professional companies",
+      "smartHospitality": "$13.6B to $49.9B by 2027"
+    },
+    "guestExpectations": {
+      "current": ["Contactless operations (91% prefer)", "Instant communication", "Personalization", "Sustainability as booking factor", "Seamless technology"],
+      "emerging": ["AI concierge throughout stay", "Predictive service before guest asks", "Hyper-personalization", "Wellness-optimized properties", "Work-life integration spaces"]
+    },
+    "technologyEvolution": {
+      "ai": ["Advanced pricing copilots", "Predictive maintenance", "Natural language multilingual communication", "Computer vision for property inspection", "Automated operational decisions"],
+      "iot": ["Every property component monitored", "Properties adapting to individual guest preferences", "Predictive energy optimization"],
+      "emerging": ["VR property tours as standard marketing", "AR-enhanced local exploration", "Blockchain identity verification"]
+    },
+    "mauritiusProjections": {
+      "visitorTarget": "1.2M+ annual visitors by 2030",
+      "marketDiversification": "Growth beyond traditional European markets toward Asian outbound",
+      "digitalNomads": "Growing attraction for remote workers",
+      "sustainability": "Stricter environmental requirements expected",
+      "competition": "Hotel chains entering STR, local platforms emerging"
+    },
+    "strategicImplication": "Early technology adoption and professional standards create sustainable competitive advantage before market maturation"
+  },
+
+  "staffTraining": {
+    "trainingPhilosophy": "Guest-centric focus, continuous learning, practical application, cultural alignment, career development",
+    "onboardingProgram": {
+      "duration": "80 hours (4 weeks)",
+      "week1": "International hospitality standards, guest service excellence",
+      "week2": "Property-specific procedures, cleaning protocols, quality control",
+      "week3": "Technology systems, mobile apps, communication protocols",
+      "week4": "Cultural competency, emergency procedures, practical certification"
+    },
+    "ongoingDevelopment": {
+      "monthly": ["Technology updates", "Quality enhancement from guest feedback", "Cultural training for international guests", "Safety protocol refresher", "Career development discussion"],
+      "annual": "Crisis management training, first aid/CPR recertification, comprehensive performance review"
+    },
+    "performanceMetrics": {
+      "guestSatisfaction": "4.9+ star ratings",
+      "responseTime": "Average response to guest communications",
+      "issueResolution": "Percentage resolved on first contact",
+      "trainingCompletion": "100% participation in programs",
+      "attendance": "Punctuality and reliability"
+    },
+    "careerPathway": [
+      "Entry: Cleaner/Maintenance Assistant (MUR 15,000-20,000)",
+      "Experienced: Senior Cleaner/Technician (MUR 20,000-25,000)",
+      "Supervisory: Team Leader/Quality Inspector (MUR 25,000-35,000)",
+      "Management: Property Manager/Operations Director (MUR 35,000-50,000)",
+      "Leadership: Regional Manager/Training Director (MUR 50,000+)"
+    ],
+    "mauritiusAdvantages": [
+      "Natural hospitality culture reduces training time",
+      "Multilingual workforce (English/French/Creole)",
+      "Large pool of hotel-trained professionals",
+      "Lower training costs with higher cultural service foundation",
+      "Strong work ethic and loyalty with proper treatment"
+    ]
+  }
+}

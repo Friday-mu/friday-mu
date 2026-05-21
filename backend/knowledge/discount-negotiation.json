@@ -1,0 +1,329 @@
+{
+  "version": "2.0",
+  "lastUpdated": "2026-05-13",
+  "schema_status": "LOCKED",
+  "source": "Friday Retreats Discount & Upsell Playbook v1.3 + v2.0.1 KB anchors (critical-4 pricing-within-bounds, critical-6 defer-on-commercial-policy-scope). Updated for AI envelope alignment with team envelope. Editorial sweep per drafting-discipline v2.0.1 + brand-voice v2.0.1.",
+  "aiEnvelope": {
+    "schemaVersion": "v2.0",
+    "anchoredIn": "critical-4 (pricing-within-bounds), critical-6 (defer-on-commercial-policy-scope)",
+    "principle": "AI operates within the same envelope as the human team. Every draft is human-reviewed before send (Sprint 8-9 state). The team-review gate IS the autonomous-send guard. When SP9-12 multi-dim confidence + Sprint 10+ adaptive auto-creation graduation logic ships, autoSendAutonomousTier will be populated (narrower than team envelope) defining what AI sends without team review.",
+    "handlingMechanisms": {
+      "A_autonomous_draft": "AI drafts within team envelope (dealEvaluation.actionGuidelines, discountBands defaults). Team-review-before-send is the gate.",
+      "B_defer_with_paired_task": "AI draft uses 'check with management' deferral language. Analyzer auto-creates paired team-approval task per SP9-10.",
+      "C_ask_guest_clarification": "AI asks guest to clarify when the question is ambiguous (e.g., dates not specified, party size unclear)."
+    },
+    "boundsReference": {
+      "discount": "dealEvaluation.actionGuidelines (strongCase up to 30 EUR, moderateCase up to 15 EUR, weakCase perks-only) plus discountBands per-scenario defaults. Above strong-case absolute cap (30 EUR) OR direct long-stay >1000 EUR GBV requiring additional discount: Mechanism B."
+    },
+    "hardBlocks": [
+      "Discount that would cross Guesty floor price",
+      "Net revenue would be negative after all costs",
+      "Direct booking long-stay above 1000 EUR GBV requiring discount beyond platform auto-applied (see longStayDiscounts)"
+    ],
+    "behaviorTilt": "Perks before cash discount when perk cost < 1/3 of cash ask. Discount only when dealEvaluation signals strong case, close-the-deal moment, never opener. Conservative on stacked auto-discount scenarios (last-minute, gap, long-stay) where displayed rate is already reduced.",
+    "pairedTaskContract": {
+      "discount_within_envelope": "No paired task required (Mechanism A, team-review-before-send is the gate)",
+      "discount_above_envelope": "Auto-create task: 'Approve discount above autonomous range for reservation [id], guest asked [X], AI proposed [Y] via [scenario], dealEvaluation signal: [strong/moderate/weak]'",
+      "hard_blocks": "Auto-create task with 'HARD_BLOCK' flag. No commercial draft to guest, only management-check acknowledgment."
+    },
+    "autoSendAutonomousTier": {
+      "_status": "EMPTY, populated when SP9-12 multi-dim confidence + Sprint 10+ adaptive graduation logic ships. Will define narrower envelope for auto-send classes graduated >85%/4-week per-class accuracy.",
+      "_likely_when_populated": "Discount: probably perks-only autonomous (no cash discount auto-send). Refund: probably none autonomous. Subject to per-class data."
+    }
+  },
+  "overview": {
+    "goal": "Convert guest inquiries while maximising revenue (ADR 140 EUR, 70 bookings/mo, +10% MoM) and 4.8 star guest satisfaction.",
+    "currency": "1 EUR = approx 50 MUR. All examples in EUR.",
+    "floorPriceRule": "Guesty floor price covering variable cost + 15% margin. Never cross the floor price.",
+    "pricingAutomation": "Guesty pricing rules dynamically adjust base prices based on demand, seasonality, lead time, and gap analysis. Guests see the adjusted rate as the straight price (no strikethrough). Any manual discount offered is ON TOP of the already-adjusted Guesty rate. Manual discounts should be conservative, the base price has already been optimized."
+  },
+  "glossary": {
+    "ADR": "Average Daily Rate (Revenue / nights sold)",
+    "OCC": "Forward Occupancy (% nights booked next 14 days, below 70% means we get flexible)",
+    "LOS": "Length of Stay",
+    "GBV": "Gross Booking Value (total reservation amount)",
+    "floorPrice": "Guesty floor price covering variable cost + 15% margin. Never cross."
+  },
+  "platformPricingAutomation": {
+    "description": "All platforms (Airbnb, Booking, direct website friday.mu) use Guesty pricing rules. Auto-discounts are baked into the displayed rate across channels. Any manual discount stacks on top of already-reduced rates.",
+    "lastMinuteAutoDiscounts": {
+      "description": "Auto-reductions applied to base price based on lead time. Guests see the reduced price as the straight rate, no strikethrough or visible discount.",
+      "bands": [
+        { "leadTimeDays": "0-3", "autoReduction": "-40%" },
+        { "leadTimeDays": "4-7", "autoReduction": "-30%" },
+        { "leadTimeDays": "8-15", "autoReduction": "-20%" },
+        { "leadTimeDays": "16-20", "autoReduction": "-10%" },
+        { "leadTimeDays": "21-25", "autoReduction": "-5%" }
+      ],
+      "implication": "Base prices already include automatic last-minute reductions. Any additional manual discount is on top of an already-reduced rate. Manual last-minute discounts should be very small (5-10% max) or perk-only."
+    },
+    "gapAutoDiscounts": {
+      "description": "Automatic reductions for orphan gap nights to increase fill rate.",
+      "bands": [
+        { "gapSize": "<=4 nights", "autoReduction": "-30%" },
+        { "gapSize": "<=7 nights", "autoReduction": "-15%" }
+      ],
+      "implication": "Gap nights are already discounted. Manual gap-filler discounts stack on top of already-reduced rates. Be conservative. Cleaning fee waiver or free extra night is often better than additional percentage off."
+    },
+    "longStayAutoDiscounts": {
+      "description": "Weekly and monthly auto-discounts applied uniformly across Airbnb AND friday.mu direct site (via Guesty automation).",
+      "bands": [
+        { "stayLength": "7+ nights (weekly)", "autoReduction": "-15%" },
+        { "stayLength": "28+ nights (monthly)", "autoReduction": "-35%" }
+      ],
+      "implication": "Long-stay displayed rates are already discounted by 15% (weekly) or 35% (monthly) on both Airbnb and direct site. AI does not need to manually apply weekly/monthly equivalents. Any additional manual discount stacks on top of an already-discounted rate. Direct long-stay bookings above 1000 EUR GBV requiring additional discount: Mechanism B."
+    }
+  },
+  "dealEvaluation": {
+    "description": "Evaluate each discount request using these qualitative dimensions to determine the appropriate response. Consider all factors together, do NOT assign numeric scores.",
+    "dimensions": [
+      { "name": "Forward Occupancy", "question": "Is occupancy below 70% for the next 14 days?", "impact": "Low occupancy = more flexibility. Empty beds earn 0 EUR.", "weight": "High" },
+      { "name": "Lead Time", "question": "How soon is the check-in date?", "impact": "3 days or less = fewer chances to resell. BUT Guesty has already applied automatic lead-time discounts (up to -40% at 0-3 days). Additional manual discount should be minimal.", "weight": "High" },
+      { "name": "Gross Booking Value", "question": "What is the total reservation value?", "impact": "Higher GBV (1500 EUR+) = more profit margin even with discount. Worth protecting.", "weight": "High" },
+      { "name": "Length of Stay", "question": "How many nights?", "impact": "14+ nights saves 2+ cleaning turnovers. Long stays are operationally cheaper.", "weight": "Medium-High" },
+      { "name": "Repeat Guest", "question": "Has this guest stayed with us before?", "impact": "Higher lifetime value. Worth investing in loyalty. Direct them to FRIDAY10 coupon on friday.mu for 10% off.", "weight": "Medium" },
+      { "name": "Channel", "question": "Direct booking or OTA?", "impact": "Direct = no commission, more margin to work with. OTA >15% fee = less wiggle room.", "weight": "Medium" },
+      { "name": "Guest Rating", "question": "What is the guest's platform rating?", "impact": "Below 4.5 = higher risk of issues. Proceed with caution.", "weight": "Medium" }
+    ],
+    "blockConditions": [
+      "Rate would fall below floor price",
+      "Net revenue would be negative after all costs"
+    ],
+    "actionGuidelines": {
+      "strongCase": {
+        "criteria": "Multiple positive factors: low occupancy, high GBV, long stay, repeat guest, direct channel",
+        "action": "Up to 30 EUR discount or available perks",
+        "mechanism": "A_autonomous_draft"
+      },
+      "moderateCase": {
+        "criteria": "Mixed factors",
+        "action": "Available perks or small discount (up to 15 EUR)",
+        "mechanism": "A_autonomous_draft",
+        "ifGuestPushesForMore": "B_defer_with_paired_task"
+      },
+      "weakCase": {
+        "criteria": "Few positive factors or guest rating concerns",
+        "action": "Perk-only offer. No cash discount.",
+        "mechanism": "A_autonomous_draft (perks only)"
+      },
+      "blocked": {
+        "criteria": "Below floor price or net revenue negative",
+        "action": "Hard block. No commercial draft, management-check acknowledgment only.",
+        "mechanism": "B_hard_block"
+      }
+    }
+  },
+  "_discountBands_envelopeRule": "Each scenario band is a typical range for human team decision-making. The AI envelope per aiEnvelope.boundsReference applies on top: if the band-suggested discount falls within team envelope (<=30 EUR absolute, perks always allowed), Mechanism A. If band-suggested discount exceeds 30 EUR absolute, Mechanism B with band range cited as guidance in the paired team-approval task. Direct long-stay >1000 EUR GBV requiring additional discount above platform auto-applied: always Mechanism B.",
+  "discountBands": [
+    {
+      "scenario": "Early-bird (>90 days before check-in)",
+      "defaultRange": "5-8%",
+      "pros": "Locks future cashflow, reduces uncertainty",
+      "cons": "Far-out guests may cancel",
+      "notes": "Good for securing calendar blocks. No platform auto-discount this far out."
+    },
+    {
+      "scenario": "Gap-filler (1-2 night orphan gaps)",
+      "defaultRange": "Perks preferred over % discount (see preference order)",
+      "pros": "Turns 0 EUR into cash, fills dead inventory",
+      "cons": "Watch cleaning cost, may eat into margin",
+      "compensationPreferenceOrder": [
+        "Late checkout (costs 0 EUR if no same-day check-in)",
+        "Early check-in (costs 0 EUR if no same-day checkout)",
+        "Cleaning fee waiver (costs 20-40 EUR)",
+        "Free extra night (costs cleaning only ~20 EUR, but blocks calendar)"
+      ],
+      "notes": "Gap nights are already auto-discounted (<=4 nights = -30%, <=7 nights = -15%) on platforms and direct site. Manual discounts stack on top. Always prefer zero-cost perks (late checkout, early check-in) before spending-based perks (cleaning waiver, free night), and all perks before additional percentage discounts.",
+      "platformContext": "Gap prices are already reduced. Use zero-cost perks first, then cleaning fee waiver, then free extra night. Additional percentage discounts should be a last resort on already-reduced gap rates."
+    },
+    {
+      "scenario": "Last-minute (3 days or less to check-in)",
+      "defaultRange": "5-10% manual max (on top of platform auto-reduction)",
+      "pros": "Better than vacancy",
+      "cons": "Can train bargain hunters to wait",
+      "notes": "Platform auto-reduction is -30% to -40% at this lead time. Additional manual discount should be very conservative (5-10% max). Prefer perk-only offers (early check-in, late checkout) over further cash discounts.",
+      "platformContext": "At 0-3 days lead time, displayed rate is already reduced by up to 40%. Guest is seeing a significantly reduced rate. Additional manual discount risks crossing floor."
+    },
+    {
+      "scenario": "Repeat Guest",
+      "defaultRange": "FRIDAY10 coupon (10% off on friday.mu) for direct bookings",
+      "pros": "Builds loyalty and drives reviews, encourages direct bookings",
+      "cons": "Ensure still above floor price",
+      "notes": "Friday has a FRIDAY10 coupon code giving 10% off for returning guests on friday.mu. Direct repeat guests to this instead of ad-hoc discounts. For OTA repeat guests, offer comparable value through perks (late checkout, free extra night) rather than rate reductions that don't translate across platforms.",
+      "couponCode": "FRIDAY10",
+      "couponValue": "10% off on friday.mu direct bookings",
+      "whenToOffer": "Given to every guest after first stay regardless of platform"
+    },
+    {
+      "scenario": "Activity Discount (All Guests)",
+      "defaultRange": "10% off at mauritiusattractions.com",
+      "pros": "Adds value to every stay, encourages local experiences",
+      "cons": "None, partner code, no cost to Friday",
+      "couponCode": "FRIDAYMU",
+      "couponValue": "10% off transfers and activities at mauritiusattractions.com",
+      "whenToOffer": "Mentioned in pre-arrival messages for all guests"
+    },
+    {
+      "scenario": "Long Stay (14+ nights)",
+      "defaultRange": "12-20% (band guidance for team approval, typically exceeds AI envelope)",
+      "envelopeBehavior": "Default mechanism is B (band exceeds 30 EUR cap on most stays). AI defers with management-check language, paired task cites band range as suggested team approval. Direct site already auto-applies 15% weekly / 35% monthly (see platformPricingAutomation.longStayAutoDiscounts), so manual discount is on top of an already-discounted rate.",
+      "pros": "Saves 2+ cleaning turnovers, steady income",
+      "cons": "Blocks calendar if wrong guest",
+      "notes": "AI handles inquiry exchange, language matching, and bundling suggestions. Discount approval routes through team via paired task. Direct bookings >1000 EUR GBV requiring additional discount on top of auto-applied: always Mechanism B."
+    },
+    {
+      "scenario": "Multi-unit / Group",
+      "defaultRange": "5% + waive 1 cleaning fee",
+      "pros": "High GBV, simple math",
+      "cons": "Must coordinate ops across properties",
+      "notes": "Multi-property logistics requires ops coordination. AI defers to team for the discount approval AND ops sequencing via paired task, Mechanism B."
+    }
+  ],
+  "bundlingTactics": {
+    "coreRule": "If perk cost is less than 1/3 of the extra discount the guest is requesting, offer the perk instead of a bigger cash cut.",
+    "tactics": [
+      { "name": "Anchored Bundle", "description": "Small cash discount + free perk", "example": "Was 200 EUR/night, now 190 EUR plus complimentary late checkout at 1pm." },
+      { "name": "Decoy Pricing", "description": "3-tier options, make middle most attractive", "example": "Option A: Standard rate. Option B: 5% off + late checkout. Option C: 10% off, no extras." },
+      { "name": "Urgency Overlay", "description": "24-hour Special Offer or scarcity framing", "example": "Happy to hold these dates until tonight, another guest is inquiring about the same week." },
+      { "name": "Gift Framing", "description": "I'd love to include phrasing triggers reciprocity", "example": "I'd love to include a complimentary late checkout for you as a welcome gesture." }
+    ],
+    "talkTrack": "I can't stretch to the full 10% you asked, but here's something our guests love: 5% off the total plus complimentary late checkout at 1pm. That way you save on the rate and enjoy a relaxed departure."
+  },
+  "inquiryWorkflow": {
+    "steps": [
+      { "step": 1, "action": "Instant Acknowledge", "timing": "Under 15 minutes", "detail": "Acknowledge the inquiry warmly. Speed is critical, this is a hot lead." },
+      { "step": 2, "action": "Evaluate the Deal", "timing": "During compose", "detail": "Assess using the qualitative dimensions: occupancy, lead time, GBV, LOS, repeat guest, channel, guest rating. Check current Guesty rate to understand what auto-adjustments have already been applied." },
+      { "step": 3, "action": "Check Envelope and Mechanism", "timing": "Before drafting", "detail": "Within team envelope (<=30 EUR absolute or perks-only per actionGuidelines): Mechanism A, draft offer directly, team-review-before-send is the gate. Above team envelope, below floor price, or direct long-stay >1000 EUR GBV: Mechanism B, draft 'check with management' deferral and auto-create paired team-approval task. Apply behaviorTilt: perks before cash discount when perk cost < 1/3 of cash ask." },
+      { "step": 4, "action": "Compose Offer", "timing": "With acknowledgment or shortly after", "detail": "Use appropriate macro. If evaluation is strong, provide two options (choice doubles commitment rate). For repeat guests, mention FRIDAY10 coupon for direct bookings." },
+      { "step": 5, "action": "Send Offer", "timing": "ASAP after team-review", "detail": "Airbnb: Special Offer feature. Direct: Custom quote." },
+      { "step": 6, "action": "Follow-Up", "timing": "12 hours later", "detail": "Friendly nudge. Sweeten or remind of expiry if needed." },
+      { "step": 7, "action": "Final Nudge", "timing": "24 hours later", "detail": "Scarcity reminder: offer expires tonight, dates reopen to others." },
+      { "step": 8, "action": "Log Result", "timing": "After outcome", "detail": "Record in reservation notes. Tag any perks offered." }
+    ]
+  },
+  "macroLibrary": [
+    {
+      "id": "price_shopper",
+      "description": "Standard rate with 24h booking incentive",
+      "template": "Normal rate [X] EUR/night, [X-10] EUR if you book within 24 hours.",
+      "mechanism": "A_autonomous_draft"
+    },
+    {
+      "id": "long_stay_corporate",
+      "description": "Long stay with percentage discount (typically Mechanism B for above-envelope cases)",
+      "template": "[N] nights totals [X] EUR. Rate: [Y] EUR ([Z]% off) plus mid-stay linen refresh.",
+      "mechanism": "Context-dependent, within team envelope (30 EUR): A. Above envelope: B, draft above-envelope macro instead."
+    },
+    {
+      "id": "gap_night_booster",
+      "description": "Adjacent night with cleaning fee waiver",
+      "template": "Add the adjacent [Nth] night and we'll waive the [X] EUR cleaning fee.",
+      "mechanism": "A_autonomous_draft"
+    },
+    {
+      "id": "last_minute_flash",
+      "description": "Last-minute arrival with early check-in perk (conservative, displayed rate already reduced)",
+      "template": "Arriving tomorrow? We'd love to include early check-in for you. The rate at [X] EUR/night is already very competitive.",
+      "mechanism": "A_autonomous_draft (perk-led)",
+      "_v2_change": "Em-dash replaced with period split per drafting-discipline-2 (punctuation-discipline)."
+    },
+    {
+      "id": "repeat_guest_direct",
+      "description": "Repeat guest directed to FRIDAY10 coupon",
+      "template": "So glad you're coming back! For your next stay, use code FRIDAY10 on friday.mu for 10% off your booking. We'd also love to include late checkout as a welcome-back gesture.",
+      "mechanism": "A_autonomous_draft"
+    },
+    {
+      "id": "repeat_guest_ota",
+      "description": "Repeat guest on OTA, perk-based loyalty",
+      "template": "Welcome back! As a returning guest, we'd love to include complimentary late checkout and early check-in for you.",
+      "mechanism": "A_autonomous_draft"
+    },
+    {
+      "id": "peak_season_perk",
+      "description": "Peak season firm rate with free perk",
+      "template": "[Month] is [X] EUR/night. Rate is firm, but we'd love to include complimentary late checkout.",
+      "mechanism": "A_autonomous_draft (perk-only)"
+    },
+    {
+      "id": "multi_unit_deal",
+      "description": "Multi-property discount + cleaning fee waiver",
+      "template": "Book both properties and get 5% off plus one cleaning fee waived.",
+      "mechanism": "B_defer_with_paired_task (multi-property ops coordination required)",
+      "_v2_change": "Replaced ampersand with 'and' for register; this template surfaces in paired-task suggestion text, not as an AI direct draft."
+    },
+    {
+      "id": "abandoned_inquiry",
+      "description": "Inquiry follow-up with urgency",
+      "template": "Happy to hold these dates until tonight, just let us know.",
+      "mechanism": "A_autonomous_draft",
+      "_v2_change": "Em-dash replaced with comma per drafting-discipline-2."
+    },
+    {
+      "id": "early_checkin",
+      "description": "Early check-in offer (perk, no cash discount)",
+      "template": "We can arrange early check-in at [time] if you confirm today.",
+      "mechanism": "A_autonomous_draft"
+    },
+    {
+      "id": "late_checkout",
+      "description": "Late checkout offer (perk, no cash discount)",
+      "template": "Stay until [time] complimentary if you confirm today.",
+      "mechanism": "A_autonomous_draft"
+    }
+  ],
+  "aboveEnvelopeMacros": {
+    "_description": "Canonized Mechanism B phrasings for above-envelope discount cases. Pair each with auto-created team-approval task per pairedTaskContract.discount_above_envelope.",
+    "discount_above_cap": "Let me check this with our management team and come back to you on the rate shortly.",
+    "discount_floor_protection": "I'd like to check on the best rate we can offer for these dates with our management team. They'll come back to you shortly.",
+    "long_stay_direct_above_1000": "For a stay this length, I'd like to run the rate by our management team to make sure we offer you the best price. I'll come back to you shortly.",
+    "multi_unit_deferral": "For a multi-property booking, I'd like to coordinate with our management team to lock in the best rate and arrangements. I'll come back to you shortly."
+  },
+  "longStayDiscounts": {
+    "platformAutoDiscounts": "See platformPricingAutomation.longStayAutoDiscounts. 15% weekly / 35% monthly applied uniformly across Airbnb and friday.mu direct site via Guesty automation.",
+    "directBookings": {
+      "note": "Direct site displays the same long-stay auto-discounts as OTAs. AI does not manually apply weekly/monthly, those are baked in.",
+      "additionalDiscountThreshold": "Direct long-stay bookings over 1000 EUR GBV requiring additional discount above platform auto-applied: Mechanism B (management-check + paired task)."
+    }
+  },
+  "kpis": {
+    "inquiryToBooking": ">=2.5% conversion rate",
+    "averageManualDiscount": "<=20 EUR",
+    "bundleAdoption": ">=40% of negotiated bookings include a perk bundle",
+    "medianResponseTime": "<30 minutes",
+    "ratingTargets": {
+      "airbnb": ">=4.8 stars",
+      "bookingCom": ">=9.0 score"
+    }
+  },
+  "industryContext": {
+    "perkVsDiscount": "VRM Labs 2024: '30 EUR off + perk' converted 15% better than '50 EUR off' alone across 6,000 bookings",
+    "priceSensitivity": "5% lower price in crowded market = +12-18% conversion (AirDNA 2024)",
+    "ratingValue": "Every +0.1 star adds approximately 4% future bookings",
+    "serviceRecovery": "+12% chance of 5-star review after effective service recovery"
+  },
+  "changeLog": [
+    {
+      "version": "2.0",
+      "date": "2026-05-13",
+      "changes": [
+        "Added aiEnvelope top-level block: AI = team envelope principle, handlingMechanisms A/B/C reference, pairedTaskContract spec, autoSendAutonomousTier slot reserved for Sprint 10+",
+        "actionGuidelines reframed as structured object with mechanism field per case",
+        "_discountBands_envelopeRule added explaining AI envelope overlay on existing bands",
+        "Long Stay band: defaultRange annotated with envelopeBehavior, typically Mechanism B given 30 EUR cap",
+        "Multi-unit band: mechanism tagged B given ops coordination requirement",
+        "platformPricingAutomation renamed from guestyPricingAutomation, added longStayAutoDiscounts band (15% weekly / 35% monthly applied uniformly on Airbnb AND direct site)",
+        "longStayDiscounts.directBookings reframed: auto-discounts are baked in, AI does not manually apply",
+        "inquiryWorkflow.step3 renamed Check Envelope and Mechanism, updated detail with Mechanism A/B routing",
+        "Macro editorial sweep per drafting-discipline v2.0.1: em-dash fixes in last_minute_flash and abandoned_inquiry; ampersand replaced with 'and' in multi_unit_deal; all macros tagged with mechanism",
+        "New aboveEnvelopeMacros section: 4 canonized Mechanism B phrasings (discount_above_cap, discount_floor_protection, long_stay_direct_above_1000, multi_unit_deferral)",
+        "Names removed from canonized action text per OP-4 (Mathias, Franny references in v1.0 notes generalized to 'team' or 'ops'; Ishant retained in documentation context per refund-metrics corePrinciples pattern)"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2026-04-03",
+      "changes": ["Initial version, adapted from Friday Retreats Discount & Upsell Playbook v1.3 for current team structure with Guesty pricing automation context"]
+    }
+  ]
+}

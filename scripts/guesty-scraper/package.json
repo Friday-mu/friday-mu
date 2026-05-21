@@ -1,0 +1,19 @@
+{
+  "name": "guesty-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Layer-3 fallback ingestion path. Logs into Guesty's web UI via persistent Chromium profile, scrapes the unified inbox, and posts scraped messages to fad-backend's webhook endpoint with a valid HMAC signature. Used only when the Guesty Open API is rate-limited and webhooks are not flowing.",
+  "scripts": {
+    "auth": "node scrape.mjs --auth-only",
+    "scrape": "node scrape.mjs",
+    "scrape:dry": "node scrape.mjs --dry-run",
+    "scrape:peek": "node scrape.mjs --use-peekaboo",
+    "scrape:reservations": "node scrape-reservations.mjs",
+    "scrape:listings": "node scrape-listings.mjs",
+    "scrape:all": "node scrape-all.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

@@ -1,0 +1,115 @@
+'use strict';
+
+const express = require('express');
+const webpush = require('web-push');
+const { query } = require('../database/client');
+const { attachIdentity } = require('../design/auth');
+
+const router = express.Router();
+
+function vapidPublicKey() {
+  return process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+}
+
+function vapidPrivateKey() {
+  return process.env.VAPID_PRIVATE_KEY || '';
+}
+
+function vapidSubject() {
+  return process.env.VAPID_SUBJECT || process.env.VAPID_EMAIL || 'mailto:ops@friday.mu';
+}
+
+function configureWebPush() {
+  const publicKey = vapidPublicKey();
+  const privateKey = vapidPrivateKey();
+  if (!publicKey || !privateKey) return false;
+  try {
+    webpush.setVapidDetails(vapidSubject(), publicKey, privateKey);
+    return true;
+  } catch (e) {
+    console.warn('[push] invalid VAPID configuration:', e.message);
+    return false;
+  }
+}
+
+router.get('/vapid-key', (_req, res) => {
+  res.json({
+    publicKey: vapidPublicKey(),
+  });
+});
+
+router.post('/subscribe', attachIdentity, async (req, res) => {
+  const subscription = req.body?.subscription || req.body;
+  const endpoint = typeof subscription?.endpoint === 'string' ? subscription.endpoint : '';
+  const keys = subscription?.keys || {};
+  if (!endpoint) {
+    return res.status(400).json({ error: 'subscription.endpoint required' });
+  }
+  try {
+    const { rows } = await query(
+      `INSERT INTO push_subscriptions (
+         tenant_id, user_id, endpoint, p256dh_key, auth_key, subscription, user_agent,
+         last_seen_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, NOW(), NOW())
+       ON CONFLICT (user_id, endpoint) DO UPDATE
+         SET p256dh_key = EXCLUDED.p256dh_key,
+             auth_key = EXCLUDED.auth_key,
+             subscription = EXCLUDED.subscription,
+             user_agent = EXCLUDED.user_agent,
+             last_seen_at = NOW(),
+             updated_at = NOW()
+       RETURNING id, last_seen_at`,
+      [
+        req.tenantId,
+        req.identity.userId,
+        endpoint,
+        typeof keys.p256dh === 'string' ? keys.p256dh : null,
+        typeof keys.auth === 'string' ? keys.auth : null,
+        JSON.stringify(subscription),
+        req.get('user-agent') || null,
+      ],
+    );
+    res.json({ ok: true, subscriptionId: rows[0]?.id, lastSeenAt: rows[0]?.last_seen_at });
+  } catch (e) {
+    console.error('[push] subscribe error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fad', tag = undefined, data = {} }) {
+  const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
+  if (!tenantId || ids.length === 0 || !configureWebPush()) return { sent: 0, skipped: true };
+  const { rows } = await query(
+    `SELECT id, endpoint, subscription
+       FROM push_subscriptions
+      WHERE tenant_id = $1
+        AND user_id = ANY($2::uuid[])
+        AND subscription IS NOT NULL`,
+    [tenantId, ids],
+  );
+  let sent = 0;
+  await Promise.all(rows.map(async (row) => {
+    const payload = JSON.stringify({
+      title,
+      body,
+      url,
+      tag,
+      data,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+    });
+    try {
+      await webpush.sendNotification(row.subscription, payload, { TTL: 60 * 60 * 6 });
+      sent += 1;
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        await query(`DELETE FROM push_subscriptions WHERE id = $1`, [row.id]).catch(() => {});
+      } else {
+        console.warn('[push] delivery failed:', e.statusCode || '', e.message);
+      }
+    }
+  }));
+  return { sent, skipped: false };
+}
+
+module.exports = { router, sendPushToUsers };

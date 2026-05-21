@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import {
   TASK_PROPERTIES,
-  TASK_USERS,
   SUBDEPT_BY_DEPT,
   type Department,
   type Subdepartment,
@@ -11,7 +10,8 @@ import {
   type TaskPriority,
   type TaskSource,
 } from '../../../_data/tasks';
-import { createTask } from '../../../_data/breezeway';
+import { createTask } from '../../../_data/tasksClient';
+import { useTenantUsers } from '../../../_data/useTenantUsers';
 import { useCurrentUserId } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconSparkle } from '../../icons';
@@ -52,7 +52,8 @@ export function CreateTaskDrawer({ open, onClose, onCreated, prefill }: Props) {
   const [dueDate, setDueDate] = useState('2026-04-28');
 
   const subOptions = SUBDEPT_BY_DEPT[department];
-  const candidateAssignees = TASK_USERS.filter((u) => u.role !== 'external' && u.active);
+  const { users: tenantUsers } = useTenantUsers();
+  const candidateAssignees = tenantUsers.filter((u) => u.role !== 'external' && u.active);
 
   const parseNl = () => {
     if (!nl.trim()) return;

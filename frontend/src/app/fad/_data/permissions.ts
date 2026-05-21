@@ -23,7 +23,8 @@ export type Resource =
   | 'hr_time_off'
   | 'hr_stats'
   | 'hr_permissions'
-  | 'settings';
+  | 'settings'
+  | 'tenant_admin';
 
 export type Action = 'read' | 'write' | 'approve' | 'delete';
 
@@ -83,6 +84,7 @@ const DIRECTOR_PERMS: RolePermissions = {
   hr_stats: FULL_ACCESS,
   hr_permissions: FULL_ACCESS,
   settings: FULL_ACCESS,
+  tenant_admin: FULL_ACCESS,
 };
 
 const COMMERCIAL_MARKETING_PERMS: RolePermissions = {
@@ -93,15 +95,20 @@ const COMMERCIAL_MARKETING_PERMS: RolePermissions = {
   inbox_team: FULL_ACCESS,
   crm: FULL_ACCESS,
   owners: READ_ONLY,
-  finance: { read: 'all', write: 'all', approve: 'none', delete: 'none' },
+  // Finance locked to director per Ishant 2026-05-18 — "nobody should
+  // see finance" (besides director).
+  finance: {},
   reservations: FULL_ACCESS,
   properties: FULL_ACCESS,
   hr_staff: SELF_ONLY,
   hr_roster: SELF_ONLY,
   hr_time_off: SELF_ONLY,
   hr_stats: {},
+  // hr_permissions: director-only — approving app permissions stays
+  // with Ishant.
   hr_permissions: {},
   settings: { read: 'all', write: 'self', approve: 'none', delete: 'none' },
+  tenant_admin: {},
 };
 
 const OPS_MANAGER_PERMS: RolePermissions = {
@@ -112,15 +119,19 @@ const OPS_MANAGER_PERMS: RolePermissions = {
   inbox_team: FULL_ACCESS,
   hr_staff: FULL_ACCESS,
   hr_roster: FULL_ACCESS,
-  hr_time_off: FULL_ACCESS,
+  // Ops manager can SEE time-off but can't APPROVE — approval stays
+  // with director per Ishant 2026-05-18.
+  hr_time_off: { read: 'all', write: 'all', approve: 'none', delete: 'none' },
   hr_stats: FULL_ACCESS,
   hr_permissions: {},
   crm: READ_ONLY,
   owners: READ_ONLY,
-  finance: { read: 'all', write: 'all', approve: 'none', delete: 'none' },
+  // Finance locked to director per Ishant 2026-05-18.
+  finance: {},
   reservations: FULL_ACCESS,
   properties: FULL_ACCESS,
   settings: { read: 'all', write: 'self', approve: 'none', delete: 'none' },
+  tenant_admin: {},
 };
 
 const FIELD_PERMS: RolePermissions = {
@@ -145,6 +156,7 @@ const FIELD_PERMS: RolePermissions = {
   // Field gets a slimmed Settings (Appearance + Account only — section gating in
   // SettingsModule). SELF_ONLY here unlocks the module; sections handle the rest.
   settings: SELF_ONLY,
+  tenant_admin: {},
 };
 
 const EXTERNAL_PERMS: RolePermissions = {
@@ -176,6 +188,7 @@ export const RESOURCE_LABEL: Record<Resource, string> = {
   hr_stats: 'HR · Stats',
   hr_permissions: 'HR · Permissions',
   settings: 'Settings',
+  tenant_admin: 'Tenant Admin',
 };
 
 export const ROLE_LABEL: Record<TaskUser['role'], string> = {

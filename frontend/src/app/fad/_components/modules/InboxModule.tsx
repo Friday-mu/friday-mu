@@ -1,16 +1,66 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   INBOX_INTERNAL_NOTES,
-  INBOX_THREADS,
   type InboxEntity,
+  type InboxDraft,
+  type InboxMessage,
   type InboxThread,
   type InternalNote,
   type StayStatus,
 } from '../../_data/fixtures';
+import { useLiveConversations, useThreadDetail } from '../../_data/inboxClient';
+import { useWebsiteThreads } from '../../_data/websiteInboxClient';
+import {
+  approveDraft,
+  rejectDraft,
+  reviseDraft,
+  sendCompose,
+  sendWhatsAppTemplate,
+  retryDraft,
+  failDraft,
+  dismissDraft,
+  isReviewReady,
+  markRead,
+  markUnread,
+} from '../../_data/draftsClient';
+import { DraftPanel } from './inbox/DraftPanel';
+import { SendPreflightModal } from './inbox/SendPreflightModal';
+import { apiFetch } from '../../../../components/types';
+
+// Human-readable relative time. Used in list rows + message bubbles.
+// Returns "now", "5m", "2h", "yesterday", "Mar 14" depending on age.
+function formatStayDates(checkIn?: string, checkOut?: string): string {
+  if (!checkIn) return '';
+  const fmt = (s?: string) => {
+    if (!s) return '';
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+  const cin = fmt(checkIn);
+  const cout = fmt(checkOut);
+  return cout ? `${cin} → ${cout}` : cin;
+}
+
+function formatRelative(iso: string): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  const diffMs = Date.now() - t;
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return 'now';
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return 'yesterday';
+  if (diffD < 7) return `${diffD}d`;
+  return new Date(t).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
 import { TASK_USERS, TASK_USER_BY_ID } from '../../_data/tasks';
-import { TEAM_CHANNELS, TEAM_DMS } from '../../_data/teamInbox';
+import { useChannels, useDms } from '../../_data/teamInboxClient';
 import {
   RESERVATION_BY_ID,
   CHANNEL_LABEL,
@@ -26,6 +76,7 @@ import {
   IconBell,
   IconCheck,
   IconChevron,
+  IconClose,
   IconClock,
   IconFilter,
   IconGlobe,
@@ -34,6 +85,7 @@ import {
   IconPaperclip,
   IconPin,
   IconPlus,
+  IconRefresh,
   IconSend,
   IconSparkle,
   IconUsers,
@@ -74,25 +126,45 @@ export function InboxModule({ onAskFriday }: Props) {
   const [noteMentions, setNoteMentions] = useState<string[]>([]);
   const [, setNotesRev] = useState(0);
   const currentUserId = useCurrentUserId();
-  const [consultOpen, setConsultOpen] = useState(false);
+  // Friday Consult is now the default reply surface — every inbound
+   // Default-COLLAPSED per Ishant 2026-05-18 ("space for the actual
+   // text conversation"). Auto-opens when an AI draft lands so the
+   // operator immediately sees the draft to review. The unified
+   // compose at the bottom stays visible regardless — no duplicate
+   // "Write a reply" surface flickers in/out when consult toggles.
+  // FridayConsult is now the SOLE compose surface. Always open when a
+  // thread is selected (no toggle). Decision 2026-05-17.
+  const consultOpen = true;
+  const setConsultOpen = (_v: boolean | ((v: boolean) => boolean)) => { /* noop */ };
+  // Track which draft id we've auto-opened consult for, so we don't
+  // fight the operator after they explicitly close — only auto-opens
+  // again when a NEW draft replaces the current one (revision).
+  const autoOpenedDraftRef = useRef<string | null>(null);
+  // "Ask Friday" from the SendByMenu drops the typed text here, which
+  // FridayConsult reads via its pendingQuery prop, submits, then calls
+  // onPendingQueryConsumed to clear. Survives a brief gap when consult
+  // wasn't mounted yet (we setConsultOpen(true) at the same time).
+  const [pendingConsultQuery, setPendingConsultQuery] = useState<string | null>(null);
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
   const [listCollapsed, setListCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [aiToolbarExpanded, setAiToolbarExpanded] = useState(false);
-  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+  // Collapsed-by-default. Operator clicks the label to expand when
+  // they want the summary; otherwise it's wasted vertical space.
+  // Per Ishant 2026-05-17.
+  const [summaryCollapsed, setSummaryCollapsed] = useState(true);
   const [composeCollapsed, setComposeCollapsed] = useState(false);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const manualUnreadThreadRef = useRef<string | null>(null);
 
   useEffect(() => {
     setListCollapsed(localStorage.getItem('fad:inbox:list') === '1');
     setRightCollapsed(localStorage.getItem('fad:inbox:right') === '1');
     const mobile = window.innerWidth <= 768;
     setIsMobile(mobile);
-    // On mobile, default collapse chatter-heavy panels
     if (mobile) {
-      setSummaryCollapsed(true);
       setComposeCollapsed(true);
     }
     const onResize = () => setIsMobile(window.innerWidth <= 768);
@@ -104,6 +176,7 @@ export function InboxModule({ onAskFriday }: Props) {
   // Switching entity (Team ↔ Guest/Owner/Vendor/All) resets the mobile slide-over
   // so the user lands on the list of the new entity, not deep in a stale thread.
   useEffect(() => {
+    manualUnreadThreadRef.current = null;
     setMobileThreadOpen(false);
   }, [entityFilter]);
 
@@ -115,29 +188,435 @@ export function InboxModule({ onAskFriday }: Props) {
   }, [rightCollapsed, hydrated]);
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
   const [summaryOn, setSummaryOn] = useState(true);
-  const [translateOn, setTranslateOn] = useState(false);
+  // Translate toggle removed — translation happens automatically at
+  // send-time (compose.ts:199 + drafts.ts:180) into the guest's last-
+  // detected language. Per-message "Show original" toggle is on each
+  // bubble. No need for a top-level toggle. Per Ishant 2026-05-17.
+
+  // Live GMS data via FAD backend proxy. The fixture INBOX_THREADS is
+  // an empty array today, so a previous "silent fallback to fixtures"
+  // pattern was hiding real load failures behind a blank list — see
+  // inboxError surfaced below so the failure is now visible.
+  const { threads: liveThreads, loading: inboxLoading, error: inboxError, refetch: refetchConversations } = useLiveConversations();
+  const { channels: liveTeamChannels } = useChannels();
+  const { dms: liveTeamDms } = useDms();
+
+  // Website-inbox fold (locked decision §L, 2026-05-17). friday.mu
+  // inquiries appear alongside Guesty conversations in the unified
+  // list, with entity='unclassified' so operators triage them per row.
+  const { threads: websiteThreads } = useWebsiteThreads();
+  const sourceThreads = useMemo(() => {
+    const guesty = liveThreads ?? [];
+    if (!websiteThreads || websiteThreads.length === 0) return guesty;
+    const merged = [...guesty, ...websiteThreads];
+    // Sort by last activity descending so newest activity bubbles up
+    // regardless of source.
+    merged.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    return merged;
+  }, [liveThreads, websiteThreads]);
 
   const counts = useMemo(() => {
-    const byEntity: Record<string, number> = { guest: 0, owner: 0, vendor: 0, all: INBOX_THREADS.length };
-    for (const t of INBOX_THREADS) {
+    const byEntity: Record<string, number> = { guest: 0, owner: 0, vendor: 0, unclassified: 0, all: sourceThreads.length };
+    for (const t of sourceThreads) {
       byEntity[t.entity] = (byEntity[t.entity] || 0) + 1;
     }
     return { byEntity };
-  }, []);
+  }, [sourceThreads]);
 
-  const filtered = INBOX_THREADS.filter((t) => {
+  const filtered = sourceThreads.filter((t) => {
     if (entityFilter !== 'all' && entityFilter !== 'team' && t.entity !== entityFilter) return false;
     if (triageFilter === 'unread' && !t.unread) return false;
-    if (triageFilter === 'review' && t.triageStatus !== 'review') return false;
+    // 'review' now means "an AI draft is awaiting my approval" — the
+    // operational definition operators actually want. GMS's
+    // triageStatus 'review' (snoozed) is rare and was confusingly
+    // overloading the same chip name. Match on latestDraftState
+    // directly (data lands on every list row via the API).
+    if (triageFilter === 'review' && t.latestDraftState !== 'draft_ready' && t.latestDraftState !== 'under_review') return false;
     if (triageFilter === 'open' && t.triageStatus !== 'open') return false;
     if (triageFilter === 'done' && t.triageStatus !== 'done') return false;
     if (stayFilter !== 'all' && t.stayStatus !== stayFilter) return false;
     if (mentionsOnly && !t.mentionsMe) return false;
     return true;
   });
+  // Review tab badge count — surfaced in the FilterButton chip so
+  // operators see "Review (3)" at a glance.
+  const reviewCount = useMemo(
+    () => sourceThreads.filter(
+      (t) => t.latestDraftState === 'draft_ready' || t.latestDraftState === 'under_review',
+    ).length,
+    [sourceThreads],
+  );
 
-  const thread = filtered.find((t) => t.id === selected) || filtered[0] || INBOX_THREADS[0];
-  const unread = INBOX_THREADS.filter((t) => t.unread).length;
+  // Thread shown in the detail pane. List response gives summary metadata only;
+  // useThreadDetail lazily fetches full messages + reservation when selection
+  // changes. Falls back to the list-version while detail loads so the pane
+  // doesn't blank between selections.
+  const listThread = filtered.find((t) => t.id === selected) || filtered[0] || sourceThreads[0];
+  const { thread: detailThread, refetch: refetchDetail } = useThreadDetail(listThread?.id ?? null);
+  const thread = detailThread || listThread;
+
+  // ─── Draft review state ────────────────────────────────────────────────
+  // The active draft is the most-recent one in a review-ready state. GMS
+  // returns drafts newest-first in the detail bundle; we just take the
+  // first one whose state is draft_ready / under_review. send_queued and
+  // send_failed surface differently (queued-draft retry cards inline in
+  // the thread, not in DraftPanel) — out of scope for v1.
+  const activeDraft = thread?.drafts?.find((d) => isReviewReady(d.state));
+  const problemDraft = thread?.drafts?.find((d) =>
+    d.state === 'send_failed' || d.state === 'send_queued' || d.state === 'generation_failed',
+  );
+  const prevDraftRevRef = useRef<number | undefined>(undefined);
+
+  // Action wiring. The parent owns the API calls + the 5s undo; DraftPanel
+  // is a controlled view.
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftRevising, setDraftRevising] = useState(false);
+
+  // Pending-send state for the 5s undo. When non-null, a "Sending in Xs"
+  // banner renders at the bottom; cancel restores the draft.
+  type PendingSend = {
+    draftId: string;
+    draftBody?: string;   // edited body if operator edited inline
+    sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email';
+    countdown: number;
+  };
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+
+  // Countdown ticker for pending send. Decrements every second; at 0,
+  // fires the actual approveDraft call.
+  useEffect(() => {
+    if (!pendingSend) return;
+    if (pendingSend.countdown <= 0) {
+      // Fire the send.
+      const { draftId, draftBody, sentVia } = pendingSend;
+      setPendingSend(null);
+      setDraftBusy(true);
+      setDraftError(null);
+      approveDraft(draftId, { draftBody, sentVia })
+        .then(() => {
+          import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_approve', { sent_via: sentVia })).catch(() => {});
+          fireToast('Sent ✓');
+          refetchDetail();
+          refetchConversations();
+        })
+        .catch((e: Error) => {
+          const msg = e?.message || 'Send failed';
+          // WhatsApp 24h window expired — surface the special toast.
+          if (msg.includes('whatsapp_window_expired')) {
+            fireToast('WhatsApp 24h window expired — use a template');
+          } else {
+            setDraftError(msg);
+            fireToast(msg);
+          }
+        })
+        .finally(() => setDraftBusy(false));
+      return;
+    }
+    const t = setTimeout(() => {
+      setPendingSend((p) => p ? { ...p, countdown: p.countdown - 1 } : null);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [pendingSend, refetchDetail]);
+
+  // Detect a new draft after a revise. When activeDraft.revisionNumber
+  // increases past prevDraftRevRef, clear the revising spinner.
+  useEffect(() => {
+    if (!activeDraft) return;
+    if (draftRevising && typeof activeDraft.revisionNumber === 'number') {
+      const prev = prevDraftRevRef.current;
+      if (prev === undefined || activeDraft.revisionNumber > prev) {
+        setDraftRevising(false);
+      }
+    }
+    prevDraftRevRef.current = activeDraft.revisionNumber;
+  }, [activeDraft, draftRevising]);
+
+  // While a revise is pending, poll the detail every 3s. friday-gms
+  // generates drafts async — we'd see the new one via SSE in OLD UI, but
+  // FAD doesn't have an SSE consumer yet. Polling is the MVP path.
+  useEffect(() => {
+    if (!draftRevising) return;
+    const interval = setInterval(refetchDetail, 3000);
+    const safety = setTimeout(() => setDraftRevising(false), 30_000);
+    return () => { clearInterval(interval); clearTimeout(safety); };
+  }, [draftRevising, refetchDetail]);
+
+  // Auto-open Friday Consult when a NEW AI draft lands so the operator
+  // sees it without an extra click. Tracks the most recent draft id we
+  // opened for; the operator can manually close after that, and we
+  // won't re-open until a different draft replaces it.
+  useEffect(() => {
+    if (!activeDraft) return;
+    if (autoOpenedDraftRef.current === activeDraft.id) return;
+    setConsultOpen(true);
+    autoOpenedDraftRef.current = activeDraft.id;
+  }, [activeDraft]);
+
+  // Reset the auto-open memory when the operator switches conversations
+  // so the next conversation's draft gets the same first-time treatment.
+  useEffect(() => {
+    autoOpenedDraftRef.current = null;
+  }, [selected]);
+
+  // ── Action handlers ──────────────────────────────────────────────────
+
+  const handleApprove = (opts: { draftBody?: string; learnMode?: 'learn' }) => {
+    if (!activeDraft) return;
+    setDraftError(null);
+    // Phase 2: open preflight modal first (channel selector, body
+    // preview, teachables review, learnMode). Modal Confirm → 5s undo
+    // countdown. Modal Cancel → no send.
+    const body = opts.draftBody ?? activeDraft.body;
+    if (!body.trim()) return;
+    setPreflight({ bodyToSend: body, fromDraft: true });
+  };
+
+  // Modal Confirm → kick off the actual send. For from-draft sends this
+  // is the 5s undo + /api/inbox/drafts/:id/approve path. For manual
+  // compose it's a direct sendCompose call without the 5s undo (modal
+  // already provided the confirmation step; double-confirmation = friction).
+  const confirmPreflight = (opts: { channel: string; learnMode?: 'learn' | 'no_learn' | 'normal' }) => {
+    if (!preflight || !thread) return;
+    const { bodyToSend, fromDraft } = preflight;
+    setPreflight(null);
+    const channel = opts.channel as 'whatsapp' | 'airbnb' | 'booking' | 'email';
+
+    if (fromDraft && activeDraft) {
+      setPendingSend({
+        draftId: activeDraft.id,
+        draftBody: bodyToSend !== activeDraft.body ? bodyToSend : undefined,
+        sentVia: channel,
+        countdown: 5,
+      });
+      return;
+    }
+    // Manual compose path — fire directly. Preflight modal IS the
+    // confirmation step; no second undo.
+    setComposeBusy(true);
+    sendCompose(thread.id, { mode: 'manual', body: bodyToSend, channel })
+      .then(() => {
+        fireToast('Sent ✓');
+        setReplyBody('');
+        setConsultOpen(false);
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Send failed';
+        if (msg.includes('whatsapp_window_expired')) {
+          fireToast('WhatsApp 24h window expired — use a template');
+        } else {
+          fireToast(msg);
+        }
+      })
+      .finally(() => setComposeBusy(false));
+  };
+
+  const handleRevise = (instruction: string, mode: 'standard' | 'teach') => {
+    if (!activeDraft) return;
+    setDraftBusy(true);
+    setDraftError(null);
+    reviseDraft(activeDraft.id, instruction, { mode })
+      .then(() => {
+        import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_revise', { mode })).catch(() => {});
+        setDraftRevising(true);
+        refetchDetail();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Revise failed';
+        setDraftError(msg);
+        fireToast(msg);
+      })
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleRetryProblemDraft = (draft: InboxDraft) => {
+    setDraftBusy(true);
+    setDraftError(null);
+    retryDraft(draft.id)
+      .then(() => {
+        fireToast('Retrying send');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Retry failed';
+        setDraftError(msg);
+        fireToast(msg);
+      })
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleFailQueuedDraft = (draft: InboxDraft) => {
+    setDraftBusy(true);
+    failDraft(draft.id)
+      .then(() => {
+        fireToast('Marked as failed');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => fireToast(e?.message || 'Could not mark failed'))
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleDismissProblemDraft = (draft: InboxDraft) => {
+    setDraftBusy(true);
+    dismissDraft(draft.id)
+      .then(() => {
+        fireToast('Dismissed');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => fireToast(e?.message || 'Dismiss failed'))
+      .finally(() => setDraftBusy(false));
+  };
+
+  const handleReject = (reason?: string) => {
+    if (!activeDraft) return;
+    setDraftBusy(true);
+    setDraftError(null);
+    rejectDraft(activeDraft.id, reason)
+      .then(() => {
+        import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_reject', { has_reason: !!reason })).catch(() => {});
+        fireToast(reason ? 'Draft rejected — Friday will learn from this' : 'Draft dismissed');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Reject failed';
+        setDraftError(msg);
+        fireToast(msg);
+      })
+      .finally(() => setDraftBusy(false));
+  };
+
+  const cancelPendingSend = () => setPendingSend(null);
+
+  // Friday Consult may emit a draft rewrite via the [DRAFT_UPDATE] protocol.
+  // We stash it here and pass to DraftPanel on the next render — DraftPanel
+  // jumps into edit mode pre-filled with this body, then calls back to
+  // clear it so we don't re-trigger on subsequent renders.
+  const [pendingRewrite, setPendingRewrite] = useState<string | null>(null);
+
+  // ─── Send preflight modal ────────────────────────────────────────────
+  // Phase 2 of the guest inbox: a preflight check between Approve & Send
+  // and the 5s undo countdown. Modal lets the operator confirm channel,
+  // review the body + translated version, see pending teachables, set
+  // learnMode. Confirm → countdown → POST. Cancel → no send.
+  //
+  // Why both modal AND countdown: preflight catches "wrong channel /
+  // wrong body / forgot to commit a teach". Countdown catches "I just
+  // typed an obvious typo and clicked too fast". Different concerns.
+  type Preflight = {
+    bodyToSend: string;
+    fromDraft: boolean;
+  };
+  const [preflight, setPreflight] = useState<Preflight | null>(null);
+
+  // ─── Compose state ─────────────────────────────────────────────────────
+  // Operator-initiated manual reply (vs. draft-review path which goes
+  // through DraftPanel). Posts to /api/inbox/conversations/:id/compose
+  // mode=manual. "Polish with Friday" hits /api/inbox/consult to rewrite
+  // the current body. Reset when the active thread changes.
+  const [replyBody, setReplyBody] = useState('');
+  const [composeBusy, setComposeBusy] = useState(false);
+  const [polishBusy, setPolishBusy] = useState(false);
+
+  useEffect(() => {
+    setReplyBody('');
+    setComposeMode('reply');
+  }, [selected]);
+
+  // Mark conversation as read when the operator opens it (Mary bug
+  // 2026-05-17: "Messages do not update to read"). Fire-and-forget —
+  // the optimistic refetchConversations() right after picks up the
+  // new unread state.
+  useEffect(() => {
+    if (!thread?.id) return;
+    if (!thread.unread) return;
+    if (manualUnreadThreadRef.current === thread.id) return;
+    markRead(thread.id)
+      .then(() => { refetchConversations(); })
+      .catch(() => { /* swallow — read state is best-effort */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread?.id, thread?.unread]);
+
+  const handleMarkUnread = () => {
+    if (!thread?.id) return;
+    manualUnreadThreadRef.current = thread.id;
+    markUnread(thread.id)
+      .then(() => {
+        fireToast('Marked unread');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => fireToast(e?.message || 'Could not mark unread'));
+  };
+
+  const handleComposeSend = () => {
+    if (!thread || !replyBody.trim() || composeBusy) return;
+    setComposeBusy(true);
+    const channel = (thread.recommendedChannel || thread.channelKey) as
+      | 'whatsapp' | 'airbnb' | 'booking' | 'email' | undefined;
+    sendCompose(thread.id, {
+      mode: 'manual',
+      body: replyBody.trim(),
+      channel,
+    })
+      .then(() => {
+        fireToast('Sent ✓');
+        setReplyBody('');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Send failed';
+        if (msg.includes('whatsapp_window_expired')) {
+          fireToast('WhatsApp 24h window expired — use a template');
+        } else {
+          fireToast(msg);
+        }
+      })
+      .finally(() => setComposeBusy(false));
+  };
+
+  const handleTemplateSend = (templateId = 'guest_reply_window_closed') => {
+    if (!thread?.id) return;
+    sendWhatsAppTemplate(thread.id, { templateId })
+      .then((r) => {
+        if (r.state === 'blocked') {
+          fireToast(r.message || 'Template send blocked — use Guesty manually');
+          return;
+        }
+        fireToast('WhatsApp template sent ✓');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => {
+        const msg = e?.message || 'Template send failed';
+        if (msg.includes('template_send_not_configured')) {
+          fireToast('Template sender not configured — send manually in Guesty/WhatsApp');
+        } else {
+          fireToast(msg);
+        }
+      });
+  };
+
+  // 'Polish with Friday' removed from this module 2026-05-17 — FC is
+  // the polish surface now (operator types 'polish this' in FC chat).
+  // The button remains in TeamInbox + AllReviewsPage, where FC isn't
+  // available.
+
+  // Auto-scroll to the latest message when the thread changes or its messages
+  // load. Otherwise the pane lands at the top of long threads and the user
+  // has to scroll down every time.
+  const threadBodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = threadBodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [selected, thread?.messages?.length]);
+  const unread = sourceThreads.filter((t) => t.unread).length;
 
   const activeFilterCount =
     (triageFilter !== 'all' ? 1 : 0) +
@@ -157,9 +636,9 @@ export function InboxModule({ onAskFriday }: Props) {
         setOpen={setFilterOpen}
         activeCount={activeFilterCount}
       />
-      <button className="btn primary sm">
-        <IconPlus size={12} /> Compose
-      </button>
+      {/* + Compose removed 2026-05-17: new conversations flow through
+          FridayConsult ("Friday, compose a message to <guest> about X").
+          No dedicated button needed. */}
     </>
   );
 
@@ -170,11 +649,12 @@ export function InboxModule({ onAskFriday }: Props) {
     { key: 'guest', label: 'Guest', count: counts.byEntity.guest },
     { key: 'owner', label: 'Owner', count: counts.byEntity.owner },
     { key: 'vendor', label: 'Vendor', count: counts.byEntity.vendor },
+    { key: 'unclassified', label: 'Other', count: counts.byEntity.unclassified || 0 },
   ];
 
   const teamUnread =
-    TEAM_CHANNELS.reduce((acc, c) => acc + (c.unread ?? 0), 0) +
-    TEAM_DMS.reduce((acc, d) => acc + (d.unread ?? 0), 0);
+    (liveTeamChannels ?? []).reduce((acc, c) => acc + (c.unread ?? 0), 0) +
+    (liveTeamDms ?? []).reduce((acc, d) => acc + (d.unread ?? 0), 0);
 
   const chipsRow = (
     <div className="inbox-chips-row">
@@ -202,6 +682,25 @@ export function InboxModule({ onAskFriday }: Props) {
           </span>
         </button>
       )}
+      {!onTeam && canSeeGuest && (
+        <button
+          className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}
+          onClick={() => setTriageFilter(triageFilter === 'review' ? 'all' : 'review')}
+          title="Threads with an AI draft awaiting your approval (per old GMS 'in review' section)"
+          style={{
+            // Subtle accent so this stands out from the entity chips
+            // — it's a triage filter, not an entity filter.
+            color: triageFilter === 'review' ? '#fff' : 'var(--color-brand-accent)',
+            borderColor: 'var(--color-brand-accent)',
+            background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'transparent',
+          }}
+        >
+          ● Awaiting reply{' '}
+          <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.85 }}>
+            {reviewCount}
+          </span>
+        </button>
+      )}
       <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
         {onTeam ? 'Channels · DMs · calls' : `${unread} unread across all channels`}
       </span>
@@ -216,7 +715,6 @@ export function InboxModule({ onAskFriday }: Props) {
       >
         <ModuleHeader
           title="Inbox"
-          subtitle="Team channels · DMs · scheduled calls"
           actions={actions}
         />
         {chipsRow}
@@ -237,7 +735,6 @@ export function InboxModule({ onAskFriday }: Props) {
     >
       <ModuleHeader
         title="Inbox"
-        subtitle="Guest · owner · vendor threads across Airbnb, Booking, WhatsApp, Email"
         actions={actions}
       />
       {chipsRow}
@@ -259,7 +756,52 @@ export function InboxModule({ onAskFriday }: Props) {
               <span>Threads · {filtered.length}</span>
             </div>
           )}
-          {filtered.length === 0 && (
+          {inboxError && (
+            <div
+              role="alert"
+              style={{
+                margin: '12px 16px',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-bg-danger)',
+                color: 'var(--color-text-danger)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ marginBottom: 6 }}>
+                Inbox failed to load: <strong>{inboxError}</strong>
+              </div>
+              <button
+                type="button"
+                onClick={refetchConversations}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid currentColor',
+                  background: 'transparent',
+                  color: 'inherit',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!inboxError && inboxLoading && liveThreads === null && (
+            <div
+              style={{
+                padding: 24,
+                textAlign: 'center',
+                fontSize: 12,
+                color: 'var(--color-text-tertiary)',
+              }}
+            >
+              Loading conversations…
+            </div>
+          )}
+          {!inboxError && !inboxLoading && filtered.length === 0 && (
             <div
               style={{
                 padding: 24,
@@ -278,6 +820,7 @@ export function InboxModule({ onAskFriday }: Props) {
                 'row' + (t.unread ? ' unread' : '') + (t.id === selected ? ' selected' : '')
               }
               onClick={() => {
+                if (selected !== t.id) manualUnreadThreadRef.current = null;
                 setSelected(t.id);
                 setMobileThreadOpen(true);
               }}
@@ -318,6 +861,24 @@ export function InboxModule({ onAskFriday }: Props) {
                   >
                     {t.guest}
                   </span>
+                  {(t.latestDraftState === 'draft_ready' || t.latestDraftState === 'under_review') && (
+                    <span
+                      title="Friday drafted a reply — awaiting your approval"
+                      style={{
+                        fontSize: 9,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        color: '#fff',
+                        padding: '1px 5px',
+                        background: 'var(--color-brand-accent)',
+                        borderRadius: 4,
+                        flexShrink: 0,
+                        fontWeight: 600,
+                      }}
+                    >
+                      ● reply
+                    </span>
+                  )}
                   {t.entity !== 'guest' && (
                     <span
                       style={{
@@ -353,7 +914,7 @@ export function InboxModule({ onAskFriday }: Props) {
                   <span>{t.property}</span>
                 </div>
               </div>
-              <span className="row-time">{t.time}</span>
+              <span className="row-time">{formatRelative(t.time)}</span>
             </div>
           ))}
         </div>
@@ -375,9 +936,12 @@ export function InboxModule({ onAskFriday }: Props) {
             >
               ← Back to inbox
             </button>
-            <div className="inbox-thread-subject">
-              <span style={{ flex: 1, minWidth: 0 }}>{thread.subject}</span>
-              {isMobile && (
+            {/* Conversation 'subject' line stripped 2026-05-17 per Ishant —
+                the AI summary or first-line preview was big + redundant.
+                Start with the meta row: name, property, channel, dates,
+                guests, price — everything you need to triage at a glance. */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
                 <button
                   type="button"
                   className={'btn ghost sm' + (mobileDetailsOpen ? ' active' : '')}
@@ -387,15 +951,51 @@ export function InboxModule({ onAskFriday }: Props) {
                 >
                   {mobileDetailsOpen ? 'Hide details ▴' : 'Details ▾'}
                 </button>
-              )}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={handleMarkUnread}
+                disabled={thread.unread}
+                title={thread.unread ? 'This thread is already unread' : 'Put this thread back in the unread queue'}
+                style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
+              >
+                Mark unread
+              </button>
             </div>
             <div className={'inbox-thread-details' + (isMobile && !mobileDetailsOpen ? ' mobile-hidden' : '')}>
-            <div className="inbox-thread-meta" style={{ marginBottom: 8 }}>
-              <span>{thread.guest}</span>
+            <div className="inbox-thread-meta" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{thread.guest}</span>
+              <span className="sep">·</span>
+              <span>{thread.property || '—'}</span>
               <span className="sep">·</span>
               <span>{thread.channel}</span>
-              <span className="sep">·</span>
-              <span>{thread.property}</span>
+              {thread.reservation?.checkIn && (
+                <>
+                  <span className="sep">·</span>
+                  <span>
+                    {formatStayDates(thread.reservation.checkIn, thread.reservation.checkOut)}
+                    {typeof thread.reservation.numberOfNights === 'number' ? ` · ${thread.reservation.numberOfNights}n` : ''}
+                  </span>
+                </>
+              )}
+              {typeof thread.reservation?.numGuests === 'number' && (
+                <>
+                  <span className="sep">·</span>
+                  <span>{thread.reservation.numGuests} {thread.reservation.numGuests === 1 ? 'guest' : 'guests'}</span>
+                </>
+              )}
+              {typeof thread.reservation?.totalPrice === 'number' && (
+                <>
+                  <span className="sep">·</span>
+                  <span>
+                    {thread.reservation.currency || ''}{thread.reservation.currency ? ' ' : ''}
+                    {Math.round(thread.reservation.totalPrice).toLocaleString()}
+                  </span>
+                </>
+              )}
               {thread.language && (
                 <>
                   <span className="sep">·</span>
@@ -403,36 +1003,16 @@ export function InboxModule({ onAskFriday }: Props) {
                 </>
               )}
             </div>
-            {thread.whatsappWindow && <WhatsAppTimer window={thread.whatsappWindow} />}
-            <div
-              className={
-                'inbox-ai-toolbar' +
-                (isMobile && !aiToolbarExpanded ? ' mobile-collapsed' : '')
-              }
-            >
-              <span className="inbox-ai-toolbar-label">Friday</span>
-              {isMobile && (
-                <button
-                  className="inbox-ai-chip ai-toggle"
-                  onClick={() => setAiToolbarExpanded((v) => !v)}
-                >
-                  <IconSparkle size={10} />
-                  {aiToolbarExpanded ? 'Hide AI' : 'AI tools'}
-                </button>
-              )}
-              <button
-                className={'inbox-ai-chip' + (summaryOn ? ' on' : '')}
-                onClick={() => setSummaryOn((v) => !v)}
-              >
-                <IconSparkle size={10} /> Summary
-              </button>
-              <button
-                className={'inbox-ai-chip' + (translateOn ? ' on' : '')}
-                onClick={() => setTranslateOn((v) => !v)}
-              >
-                <IconGlobe size={10} /> Translate
-              </button>
-              {thread.sentiment === 'urgent' && (
+            {thread.whatsappWindow && <WhatsAppTimer window={thread.whatsappWindow} onPickTemplate={() => handleTemplateSend()} />}
+            {/* AI toolbar + Summary chip + auto-summary panel removed
+                2026-05-17 per Ishant — the GMS-side auto-summary was
+                wasted AI compute (most operators didn't read it) AND
+                duplicated work that Friday Consult does on demand.
+                Operators now click 'Summarise this thread' in the FC
+                chips (or just ask Friday) when they want a summary.
+                Urgent badge folded into the meta strip below if needed. */}
+            {thread.sentiment === 'urgent' && (
+              <div style={{ marginTop: 4 }}>
                 <span
                   className="inbox-ai-chip"
                   style={{
@@ -442,25 +1022,9 @@ export function InboxModule({ onAskFriday }: Props) {
                 >
                   <IconBell size={10} /> Urgent
                 </span>
-              )}
-            </div>
-            {summaryOn && thread.summary && (
-              <div
-                className={
-                  'inbox-ai-summary' + (isMobile && summaryCollapsed ? ' collapsed' : '')
-                }
-              >
-                <div
-                  className="inbox-ai-summary-label"
-                  style={{ cursor: isMobile ? 'pointer' : 'default' }}
-                  onClick={() => isMobile && setSummaryCollapsed((v) => !v)}
-                >
-                  Summary · auto
-                </div>
-                {thread.summary}
               </div>
             )}
-            {summaryOn && thread.summary && isMobile && summaryCollapsed && (
+            {summaryOn && thread.summary && false && summaryCollapsed && (
               <button
                 onClick={() => setSummaryCollapsed(false)}
                 style={{
@@ -482,140 +1046,186 @@ export function InboxModule({ onAskFriday }: Props) {
             )}
             </div>
           </div>
-          <div className="inbox-thread-body">
-            <div className="msg-bubble them">
-              <div className="msg-meta">
-                {thread.guest} · {thread.time}
-                {translateOn && thread.language && thread.language !== 'EN' && (
-                  <span style={{ marginLeft: 8, color: 'var(--color-brand-accent)' }}>
-                    translated from {thread.language}
-                  </span>
-                )}
+          <div className="inbox-thread-body" ref={threadBodyRef}>
+            {/* Render full message thread when available (live data path). Falls
+                back to a single preview bubble for fixture/empty states.
+                Sent drafts merged inline as outbound bubbles with reviewer
+                attribution — operators see what Friday + the team actually
+                sent without leaving the conversation. Per-message
+                Show-original toggle when GMS detected a non-EN source. */}
+            {thread.messages && thread.messages.length > 0 ? (
+              <UnifiedTimeline thread={thread} />
+            ) : (
+              <div className="msg-bubble them">
+                <div className="msg-meta">
+                  {thread.guest} · {formatRelative(thread.time)}
+                </div>
+                <div className="msg-body">{thread.preview}</div>
               </div>
-              <div className="msg-body">{thread.messages?.[0]?.body || thread.preview}</div>
-            </div>
+            )}
 
             {/* Internal notes — visible to team only, not to the guest */}
             {INBOX_INTERNAL_NOTES.filter((n) => n.threadId === thread.id).map((n) => (
               <InternalNoteBubble key={n.id} note={n} />
             ))}
-
-            <div className="msg-bubble us">
-              <div className="msg-meta">You · draft</div>
-              <div className="msg-body" style={{ fontStyle: 'italic', opacity: 0.85 }}>
-                Drafting a reply… use <span className="mono">⌘K</span> to ask Friday to draft.
-              </div>
-            </div>
+            {/* The fake "Drafting a reply… use ⌘K" placeholder bubble was
+                purged 2026-05-13 (design-be-19). It was a fixture-era hint
+                that rendered for every thread regardless of whether the
+                user was actually drafting; the compose textarea below
+                already exposes the draft surface. */}
           </div>
+          {problemDraft && (
+            <DraftProblemCard
+              draft={problemDraft}
+              busy={draftBusy}
+              error={draftError}
+              onRetry={() => handleRetryProblemDraft(problemDraft)}
+              onMarkFailed={() => handleFailQueuedDraft(problemDraft)}
+              onDismiss={() => handleDismissProblemDraft(problemDraft)}
+            />
+          )}
+          {/* Friday Consult — when open, this becomes the primary surface
+              for both reviewing AI drafts AND composing manual replies.
+              The DraftPanel + compose box collapse so the operator has
+              one unified place to draft + iterate + send. The 5-second
+              undo banner stays visible below regardless. */}
           {consultOpen && (
             <FridayConsult
               key={selected}
+              pendingQuery={pendingConsultQuery}
+              onPendingQueryConsumed={() => setPendingConsultQuery(null)}
               threadScope={thread.guest}
-              autoPrompt="Summarize what this guest is asking and suggest a reply angle"
+              conversationId={thread.id}
+              currentDraft={activeDraft ?? null}
+              initialBody={activeDraft ? undefined : replyBody}
+              context={activeDraft ? 'draft_review' : 'compose'}
+              channelLabel={thread.channel}
+              whatsappWindow={thread.whatsappWindow}
+              sendBusy={draftBusy || composeBusy || !!pendingSend || !!preflight}
+              onApproveDraft={(body) => {
+                // Open preflight instead of going straight to 5s undo.
+                // Modal confirms channel + learnMode + lets operator
+                // review teachables; then countdown fires.
+                if (!body.trim()) return;
+                setPreflight({ bodyToSend: body, fromDraft: true });
+              }}
+              onRejectDraft={handleReject}
+              onSendManual={(body) => {
+                // Manual compose path also funnels through preflight.
+                // Different downstream API (mode=manual via compose),
+                // same preflight UX.
+                if (!body.trim()) return;
+                setPreflight({ bodyToSend: body, fromDraft: false });
+              }}
+              onBodyChanged={(body) => {
+                // Mirror Friday Consult's working body into the compose
+                // textarea so the operator's edits persist when they
+                // close the panel without sending.
+                if (!activeDraft) setReplyBody(body);
+              }}
+              onSwitchToNote={() => {
+                // Switch to internal-note mode. Close consult so the
+                // note compose surface (different audience) becomes
+                // visible. composeMode resets to 'reply' on thread
+                // switch (see useEffect on [selected]).
+                setComposeMode('note');
+                setConsultOpen(false);
+              }}
               onClose={() => setConsultOpen(false)}
             />
           )}
-          <div
-            className={
-              'inbox-compose' + (isMobile && composeCollapsed ? ' mobile-collapsed' : '')
-            }
-          >
-            {isMobile && composeCollapsed && (
-              <div
-                className="inbox-compose-collapsed-bar"
-                onClick={() => setComposeCollapsed(false)}
-              >
-                <IconSend size={12} />
-                <span style={{ flex: 1, marginLeft: 8 }}>Tap to reply to {thread.guest}</span>
-                <IconChevron size={10} />
-              </div>
-            )}
-            {isMobile && !composeCollapsed && (
-              <button
-                className="inbox-compose-collapse-btn"
-                onClick={() => setComposeCollapsed(true)}
-                title="Minimize"
-                style={{ float: 'right', marginBottom: -24 }}
-              >
-                ×
-              </button>
-            )}
-            {composeMode === 'reply' ? (
-              <>
-                <div className="inbox-compose-toolbar">
-                  <button
-                    className={'btn ghost sm' + (consultOpen ? ' primary' : '')}
-                    onClick={() => setConsultOpen((v) => !v)}
-                  >
-                    <IconSparkle size={12} /> Friday Consult
-                  </button>
-                  <button className="btn ghost sm">
-                    <IconPaperclip size={12} /> Attach
-                  </button>
-                </div>
-                <textarea
-                  className="inbox-compose-textarea"
-                  placeholder="Write a reply…"
-                  defaultValue={
-                    thread.id === 't1'
-                      ? 'Bonjour Thibault — confirming Ravi will meet you at SSR arrivals at 15:20 with a Friday sign. Early check-in 14:30 approved. À tout bientôt, Friday team.'
-                      : ''
-                  }
-                />
-                <div
-                  className="inbox-compose-actions"
-                  style={{ position: 'relative', justifyContent: 'space-between' }}
-                >
-                  <button className="btn ghost">
-                    <IconAI size={12} /> Polish with Friday
-                  </button>
-                  <div className="send-split">
-                    <button className="send-split-main" onClick={() => setSendMenuOpen(false)}>
-                      <IconSend size={12} /> Send
-                    </button>
-                    <button
-                      className="send-split-caret"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSendMenuOpen((v) => !v);
-                      }}
-                      aria-haspopup="menu"
-                      aria-expanded={sendMenuOpen}
-                    >
-                      ▾
-                    </button>
-                    {sendMenuOpen && (
-                      <SendByMenu
-                        channel={thread.channel}
-                        entity={thread.entity}
-                        onSwitchToNote={() => {
-                          setComposeMode('note');
-                          setSendMenuOpen(false);
-                        }}
-                        onClose={() => setSendMenuOpen(false)}
-                      />
-                    )}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <InternalNoteCompose
-                threadId={thread.id}
-                draft={noteDraft}
-                setDraft={setNoteDraft}
-                mentions={noteMentions}
-                setMentions={setNoteMentions}
-                onPosted={() => {
-                  setNoteDraft('');
-                  setNoteMentions([]);
-                  setNotesRev((n) => n + 1);
-                }}
-                onSwitchToReply={() => setComposeMode('reply')}
-                replyEntity={thread.entity}
-                authorId={currentUserId}
+          {/* AI draft review panel — shown when consult is CLOSED and GMS
+              has an active draft. When consult is open, the draft is
+              embedded inside the consult panel instead. */}
+          {!consultOpen && activeDraft && (
+            <div style={{ padding: '0 12px' }}>
+              <DraftPanel
+                draft={activeDraft}
+                busy={draftBusy || !!pendingSend}
+                revising={draftRevising}
+                error={draftError}
+                onApprove={handleApprove}
+                onRevise={handleRevise}
+                onReject={handleReject}
+                onOpenConsult={() => setConsultOpen(true)}
+                pendingRewrite={pendingRewrite}
+                onPendingRewriteConsumed={() => setPendingRewrite(null)}
               />
-            )}
-          </div>
+            </div>
+          )}
+          {/* Send preflight modal — opens on Approve & Send from
+              FridayConsult or DraftPanel. Confirm → 5s undo banner +
+              POST. Cancel → no send, modal closes. */}
+          {preflight && thread && (
+            <SendPreflightModal
+              currentDraft={activeDraft ?? null}
+              liveConfidence={null}
+              bodyToSend={preflight.bodyToSend}
+              recipientLabel={`${thread.guest} on ${thread.channel}`}
+              availableChannels={thread.availableChannels ?? []}
+              defaultChannel={(thread.recommendedChannel || thread.channelKey || 'whatsapp')}
+              pendingTeachingCount={0}
+              whatsappWindow={thread.whatsappWindow}
+              onConfirm={confirmPreflight}
+              onCancel={() => setPreflight(null)}
+              onReviewTeachings={() => {
+                // Close modal so operator can scroll FridayConsult and
+                // confirm/dismiss the cards. Re-opening Approve & Send
+                // brings the modal back.
+                setPreflight(null);
+              }}
+            />
+          )}
+          {/* 5-second undo banner — visible during the countdown after
+              Approve & Send. Cancel restores the DraftPanel without
+              actually firing the send to GMS. */}
+          {pendingSend && (
+            <div
+              style={{
+                margin: '0 12px 8px',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.1))',
+                border: '0.5px solid var(--color-brand-accent)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: 12,
+                color: 'var(--color-text-primary)',
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <IconSend size={12} />
+              <span style={{ flex: 1 }}>
+                Sending in <strong>{pendingSend.countdown}s</strong>
+                {pendingSend.sentVia ? ` via ${pendingSend.sentVia}` : ''}
+                {pendingSend.draftBody ? ' (edited)' : ''}…
+              </span>
+              <button
+                type="button"
+                onClick={cancelPendingSend}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--color-brand-accent)',
+                  background: 'transparent',
+                  border: '0.5px solid var(--color-brand-accent)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {/* Inbox-compose REMOVED 2026-05-17 per Ishant: FridayConsult
+              is the single compose surface (Reply, Note, Ask Friday all
+              flow through FC). Old block deleted in full — toolbar,
+              textarea, send-split, SendByMenu, InternalNoteCompose. The
+              note-compose component is still defined below for re-mount
+              from a future FC header button. */}
         </div>
         )}
 
@@ -633,69 +1243,319 @@ export function InboxModule({ onAskFriday }: Props) {
               <span>Reservation</span>
             </div>
           )}
-          <div className="inbox-right-section">
-            <h4>Reservation</h4>
-            <div className="inbox-right-row">
-              <span className="label">Property</span>
-              <span className="value">VAZ</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Check-in</span>
-              <span className="value">Apr 17</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Check-out</span>
-              <span className="value">Apr 24</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Guests</span>
-              <span className="value">2A + 2C</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Total</span>
-              <span className="value">€ 2,940</span>
-            </div>
-          </div>
-          <div className="inbox-right-section">
-            <h4>Guest</h4>
-            <div className="inbox-right-row">
-              <span className="label">Stays with us</span>
-              <span className="value">2nd</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Language</span>
-              <span className="value">FR</span>
-            </div>
-            <div className="inbox-right-row">
-              <span className="label">Prev rating</span>
-              <span className="value">5.0</span>
-            </div>
-          </div>
-          <div className="inbox-right-section">
-            <h4>Suggested actions</h4>
-            <button
-              className="btn sm"
-              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 6 }}
-            >
-              <IconCheck size={12} /> Confirm airport transfer
-            </button>
-            <button
-              className="btn sm"
-              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 6 }}
-            >
-              <IconCheck size={12} /> Approve 14:30 early check-in
-            </button>
-            <button
-              className="btn sm"
-              style={{ width: '100%', justifyContent: 'flex-start' }}
-              onClick={onAskFriday}
-            >
-              <IconSparkle size={12} /> Ask Friday to draft reply
-            </button>
-          </div>
+          <ReservationRightPanel
+            thread={thread}
+            onAskFriday={onAskFriday}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+// Right-side reservation panel — wired to thread.reservation from the
+// bundled detail response. Falls back to an empty state when the detail
+// fetch hasn't landed yet or the conversation has no linked reservation.
+// Single message bubble. When GMS translated an inbound message
+// (m.bodyOriginal present, different from m.body), shows the translated
+// version with a "Show original · {lang}" toggle. Outbound messages
+// never carry a translation; the toggle is hidden for them.
+// Unified message + sent-draft timeline. Merges thread.messages (inbound
+// + outbound conversation events) with thread.drafts in 'sent' state
+// (AI drafts approved + sent by the team). Sorted chronologically so
+// the operator sees the conversation in order, with sent drafts
+// rendered as outbound bubbles carrying reviewer attribution
+// ("Sent by Mathias via Friday").
+//
+// Why merge here rather than at the API: the bundled detail response
+// is two arrays (messages + drafts); the timeline view is a derived
+// shape with date separators + interleaving. Keeping the merge
+// client-side means GMS doesn't need to change.
+function UnifiedTimeline({ thread }: { thread: InboxThread }) {
+  const items = useMemo(() => {
+    type Item =
+      | { kind: 'msg'; key: string; ts: string; m: InboxMessage }
+      | { kind: 'sent-draft'; key: string; ts: string; body: string; bodyTranslated?: string; reviewer?: string };
+
+    const out: Item[] = [];
+    (thread.messages || []).forEach((m, idx) => {
+      out.push({ kind: 'msg', key: `m-${idx}`, ts: m.time, m });
+    });
+    // Only sent drafts get rendered — draft_ready / under_review live
+    // in the DraftPanel/Friday Consult, not in the thread timeline.
+    // Failed/queued sends could surface later as retry cards.
+    (thread.drafts || []).forEach((d) => {
+      if (d.state !== 'sent') return;
+      out.push({
+        kind: 'sent-draft',
+        key: `d-${d.id}`,
+        ts: d.createdAt,
+        body: d.body,
+        bodyTranslated: d.bodyTranslated && d.bodyTranslated !== d.body ? d.bodyTranslated : undefined,
+        // For v1 we don't have reviewer-name on the draft row; GMS
+        // returns reviewed_by which we'd surface here if the
+        // transformer captured it. For now show generic attribution.
+      });
+    });
+    // Sort ascending by ts so thread reads top-to-bottom chronologically.
+    out.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+    return out;
+  }, [thread.messages, thread.drafts]);
+
+  // Date separator helper — "Today / Yesterday / Mon May 12".
+  let lastDateLabel = '';
+  const dateLabelFor = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const sameDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (sameDay(d, now)) return 'Today';
+    if (sameDay(d, yesterday)) return 'Yesterday';
+    return d.toLocaleDateString('en-GB', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <>
+      {items.map((it) => {
+        const dateLabel = dateLabelFor(it.ts);
+        const showSeparator = dateLabel !== lastDateLabel;
+        lastDateLabel = dateLabel;
+        return (
+          <React.Fragment key={it.key}>
+            {showSeparator && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  margin: '12px 0 6px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  color: 'var(--color-text-tertiary)',
+                }}
+              >
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border-tertiary)' }} />
+                <span>{dateLabel}</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--color-border-tertiary)' }} />
+              </div>
+            )}
+            {it.kind === 'msg' ? (
+              <MessageBubble m={it.m} threadGuest={thread.guest} />
+            ) : (
+              <SentDraftBubble body={it.body} bodyTranslated={it.bodyTranslated} ts={it.ts} channel={thread.channel} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+function SentDraftBubble({
+  body,
+  bodyTranslated,
+  ts,
+  channel,
+}: {
+  body: string;
+  bodyTranslated?: string;
+  ts: string;
+  channel: string;
+}) {
+  const [showTranslated, setShowTranslated] = useState(false);
+  const visible = showTranslated && bodyTranslated ? bodyTranslated : body;
+  return (
+    <div className="msg-bubble us">
+      <div className="msg-meta">
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          padding: '1px 4px',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--color-text-success)',
+          color: '#fff',
+          marginRight: 4,
+        }}>
+          Sent
+        </span>
+        Friday on {channel} · {formatRelative(ts)}
+      </div>
+      <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{visible}</div>
+      {bodyTranslated && (
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => setShowTranslated((v) => !v)}
+          style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}
+        >
+          {showTranslated ? 'Show English' : 'Show what was sent'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: string }) {
+  const [showOriginal, setShowOriginal] = useState(false);
+  const hasTranslation = !!(m.bodyOriginal && m.bodyOriginal !== m.body);
+  const body = hasTranslation && showOriginal ? m.bodyOriginal! : m.body;
+  const displayName = m.from === 'them'
+    ? (m.name && m.name !== 'Guest' ? m.name : threadGuest)
+    : (m.name || 'Friday');
+  return (
+    <div className={`msg-bubble ${m.from}`}>
+      <div className="msg-meta" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
+        <span>{formatRelative(m.time)}</span>
+        <span className="msg-provenance-chip">{displayName}</span>
+        {m.viaSystem && <span className="msg-provenance-chip">{m.viaSystem}</span>}
+        {(m.viaChannel || m.via) && <span className="msg-provenance-chip">{m.viaChannel || m.via}</span>}
+      </div>
+      <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{body}</div>
+      {hasTranslation && (
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => setShowOriginal((v) => !v)}
+          style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}
+        >
+          {showOriginal ? 'Show translated' : 'Show original'}
+          {m.bodyLang ? ` · ${m.bodyLang}` : ''}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ReservationRightPanel({
+  thread,
+  onAskFriday,
+}: {
+  thread: InboxThread | undefined;
+  onAskFriday: () => void;
+}) {
+  // thread can be undefined briefly before the conversation list resolves.
+  if (!thread) return null;
+  const r = thread.reservation;
+
+  const fmtDate = (iso?: string): string => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  };
+
+  // Currency-aware total. GMS stores numeric prices + ISO currency codes.
+  // Falls back to MUR when currency missing (FR's home market).
+  const fmtMoney = (amount?: number, currency?: string): string => {
+    if (amount == null || !Number.isFinite(amount)) return '—';
+    try {
+      return new Intl.NumberFormat('en-GB', {
+        style: 'currency',
+        currency: currency || 'MUR',
+        maximumFractionDigits: 0,
+      }).format(amount);
+    } catch {
+      return `${amount} ${currency ?? ''}`.trim();
+    }
+  };
+
+  const statusLabel = (s?: string): string => {
+    if (!s) return '—';
+    return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
+  };
+
+  return (
+    <>
+      <div className="inbox-right-section">
+        <h4>Reservation</h4>
+        {!r ? (
+          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            No reservation linked.
+          </div>
+        ) : (
+          <>
+            <div className="inbox-right-row">
+              <span className="label">Property</span>
+              <span className="value">{r.listingName || thread.property || '—'}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Status</span>
+              <span className="value">{statusLabel(r.status)}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Check-in</span>
+              <span className="value">{fmtDate(r.checkIn)}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Check-out</span>
+              <span className="value">
+                {fmtDate(r.checkOut)}
+                {r.numberOfNights ? (
+                  <span style={{ color: 'var(--color-text-tertiary)', marginLeft: 4 }}>
+                    · {r.numberOfNights}n
+                  </span>
+                ) : null}
+              </span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Guests</span>
+              <span className="value">{r.numGuests ?? '—'}</span>
+            </div>
+            <div className="inbox-right-row">
+              <span className="label">Total</span>
+              <span className="value">{fmtMoney(r.totalPrice, r.currency)}</span>
+            </div>
+            {r.specialRequests && (
+              <div className="inbox-right-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                <span className="label">Special requests</span>
+                <span className="value" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                  {r.specialRequests}
+                </span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="inbox-right-section">
+        <h4>Guest</h4>
+        <div className="inbox-right-row">
+          <span className="label">Name</span>
+          <span className="value">{r?.guestName || thread.guest || '—'}</span>
+        </div>
+        <div className="inbox-right-row">
+          <span className="label">Language</span>
+          <span className="value">{thread.language || '—'}</span>
+        </div>
+        {r?.guestEmail && (
+          <div className="inbox-right-row">
+            <span className="label">Email</span>
+            <span className="value" style={{ fontSize: 11 }}>{r.guestEmail}</span>
+          </div>
+        )}
+        {r?.guestPhone && (
+          <div className="inbox-right-row">
+            <span className="label">Phone</span>
+            <span className="value" style={{ fontSize: 11 }}>{r.guestPhone}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="inbox-right-section">
+        <h4>Actions</h4>
+        <button
+          className="btn sm"
+          style={{ width: '100%', justifyContent: 'flex-start' }}
+          onClick={onAskFriday}
+        >
+          <IconSparkle size={12} /> Ask Friday to draft reply
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -752,10 +1612,35 @@ function ThreadReservationChip({ reservation }: { reservation: Reservation }) {
 
 function WhatsAppTimer({
   window,
+  onPickTemplate,
 }: {
-  window: { open: boolean; expiresInMinutes?: number };
+  window: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
+  onPickTemplate: () => void;
 }) {
-  if (!window.open) {
+  const [state, setState] = useState<{ open: boolean; minutes: number }>({
+    open: window.open,
+    minutes: window.expiresInMinutes ?? 0,
+  });
+
+  useEffect(() => {
+    const update = () => {
+      if (!window.open) {
+        setState({ open: false, minutes: 0 });
+        return;
+      }
+      if (!window.expiresAt) {
+        setState({ open: true, minutes: window.expiresInMinutes ?? 0 });
+        return;
+      }
+      const minutes = Math.max(0, Math.round((new Date(window.expiresAt).getTime() - Date.now()) / 60_000));
+      setState({ open: minutes > 0, minutes });
+    };
+    update();
+    const interval = globalThis.setInterval(update, 30_000);
+    return () => globalThis.clearInterval(interval);
+  }, [window.expiresAt, window.expiresInMinutes, window.open]);
+
+  if (!state.open) {
     return (
       <div
         style={{
@@ -770,6 +1655,8 @@ function WhatsAppTimer({
           <IconClock size={10} /> Window closed · template required
         </span>
         <button
+          type="button"
+          onClick={onPickTemplate}
           style={{
             fontSize: 11,
             color: 'var(--color-brand-accent)',
@@ -784,7 +1671,7 @@ function WhatsAppTimer({
       </div>
     );
   }
-  const mins = window.expiresInMinutes || 0;
+  const mins = state.minutes;
   const low = mins < 60;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -1023,6 +1910,90 @@ function InternalNoteBubble({ note }: { note: InternalNote }) {
   );
 }
 
+function DraftProblemCard({
+  draft,
+  busy,
+  error,
+  onRetry,
+  onMarkFailed,
+  onDismiss,
+}: {
+  draft: InboxDraft;
+  busy: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onMarkFailed: () => void;
+  onDismiss: () => void;
+}) {
+  const isQueued = draft.state === 'send_queued';
+  const isGenerationFailed = draft.state === 'generation_failed';
+  const title = isQueued
+    ? 'Reply queued'
+    : isGenerationFailed
+      ? 'Draft generation failed'
+      : 'Reply failed to send';
+  const body = isQueued
+    ? 'Friday has not confirmed this reply was sent yet. Keep an eye on the thread or mark it failed if the queue is stuck.'
+    : isGenerationFailed
+      ? 'Friday could not generate a reply for this guest message. Ask Friday manually or dismiss the failed draft.'
+      : 'The guest reply did not go out. Retry when the channel is available, or dismiss after handling it manually.';
+
+  return (
+    <div
+      style={{
+        margin: '0 12px 8px',
+        padding: '10px 12px',
+        borderRadius: 'var(--radius-md)',
+        background: isQueued ? 'rgba(245, 158, 11, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+        border: `0.5px solid ${isQueued ? 'rgba(245, 158, 11, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start',
+      }}
+      role="status"
+    >
+      <IconBell size={14} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{title}</div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>{body}</div>
+        {draft.body && !isGenerationFailed && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: 8,
+              fontSize: 12,
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-background-primary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              maxHeight: 80,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {draft.body}
+          </div>
+        )}
+        {error && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--color-text-danger)' }}>{error}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        {isQueued ? (
+          <button className="btn ghost sm" disabled={busy} onClick={onMarkFailed}>
+            <IconClose size={12} /> Mark failed
+          </button>
+        ) : !isGenerationFailed ? (
+          <button className="btn primary sm" disabled={busy} onClick={onRetry}>
+            <IconRefresh size={12} /> Retry
+          </button>
+        ) : null}
+        <button className="btn ghost sm" disabled={busy} onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function InternalNoteCompose({
   threadId,
   draft,
@@ -1068,8 +2039,10 @@ function InternalNoteCompose({
       mentions,
       createdAt: new Date().toISOString(),
     };
-    // @demo:logic — Tag: PROD-LOGIC-10 — see frontend/DEMO_CRUFT.md
-    // Mock mutation. Replace with: POST /api/inbox/threads/:id/notes.
+    // Local-only optimistic write until POST /api/inbox/threads/:id/notes
+    // ships in Tier E. Fixture array purged 2026-05-13 (design-be-19),
+    // so the push starts from an empty list each session — fine for now;
+    // notes don't persist anywhere yet.
     INBOX_INTERNAL_NOTES.push(note);
     fireToast(
       mentions.length > 0
@@ -1085,7 +2058,7 @@ function InternalNoteCompose({
         <span style={{ fontSize: 11, color: 'var(--color-text-warning)', fontWeight: 500 }}>
           🔒 Internal note · only your team can see this
         </span>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
           <button
             type="button"
             className="btn ghost sm"
@@ -1093,6 +2066,28 @@ function InternalNoteCompose({
             title="Tag a teammate"
           >
             @ Mention
+          </button>
+          {/* Explicit X close — discoverable affordance to drop the note
+              and go back to replying to the guest. The "← Switch to reply"
+              link at the bottom row does the same but isn't obviously a
+              close. */}
+          <button
+            type="button"
+            onClick={onSwitchToReply}
+            title="Close internal note and go back to reply"
+            aria-label="Close internal note"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              fontSize: 16,
+              lineHeight: 1,
+              color: 'var(--color-text-warning)',
+              marginLeft: 4,
+            }}
+          >
+            ×
           </button>
         </span>
         {mentionPickerOpen && (
@@ -1233,11 +2228,15 @@ function formatNoteTime(iso: string): string {
 function SendByMenu({
   channel,
   entity,
+  canAskFriday,
+  onAskFriday,
   onSwitchToNote,
   onClose,
 }: {
   channel: string;
   entity: InboxEntity;
+  canAskFriday: boolean;
+  onAskFriday: () => void;
   onSwitchToNote: () => void;
   onClose: () => void;
 }) {
@@ -1249,18 +2248,51 @@ function SendByMenu({
         onClick={onClose}
       />
       <div className="send-split-menu" onClick={(e) => e.stopPropagation()}>
-        <button className="send-split-item" onClick={onClose}>
+        {/* Ask Friday — typed text goes to consult instead of the guest.
+            Disabled when the textarea is empty; we need something to
+            ask. Top of the menu because it's the most common
+            non-default action. */}
+        <button
+          className="send-split-item"
+          onClick={canAskFriday ? onAskFriday : undefined}
+          disabled={!canAskFriday}
+          style={canAskFriday ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+        >
+          <IconSparkle size={14} />
+          <div className="lab">
+            Ask Friday
+            <div className="desc">{canAskFriday ? 'Open Friday Consult with this text' : 'Type something first'}</div>
+          </div>
+        </button>
+        <div className="send-split-divider" />
+        <button
+          className="send-split-item"
+          onClick={() => { onClose(); fireToast('Schedule send lands in a follow-up sprint'); }}
+        >
           <IconClock size={14} />
           <div className="lab">
             Schedule send
-            <div className="desc">Pick a date + time</div>
+            <div className="desc">Pick a date + time · coming soon</div>
           </div>
         </button>
-        <button className="send-split-item" onClick={onClose}>
+        <button
+          className="send-split-item"
+          onClick={() => { onClose(); fireToast('WhatsApp template picker lands in a follow-up sprint'); }}
+        >
+          <span style={{ width: 14, textAlign: 'center', fontSize: 12 }}>💬</span>
+          <div className="lab">
+            Send WhatsApp template
+            <div className="desc">Pre-approved templates · coming soon</div>
+          </div>
+        </button>
+        <button
+          className="send-split-item"
+          onClick={() => { onClose(); fireToast(`"Send when ${entity} is awake" lands in a follow-up sprint`); }}
+        >
           <IconSparkle size={14} />
           <div className="lab">
             Send when {entity} is awake
-            <div className="desc">8am–10pm local time</div>
+            <div className="desc">8am–10pm local time · coming soon</div>
           </div>
         </button>
         <div className="send-split-divider" />

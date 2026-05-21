@@ -1,0 +1,148 @@
+{
+  "card_type": "subunit",
+  "parent_complex_code": "VA-C",
+  "code": "VA-2",
+  "name": "Spacious Apartment, 10 Mins Walk to Beach",
+  "property_id": "69ce4cee41cd7800130879d5",
+  "location": {
+    "area": "Grand Baie",
+    "region": "north",
+    "address": "Geranium Lane, 30525 Grand Baie, Mauritius",
+    "floor": null,
+    "coordinates": {
+      "lat": null,
+      "lng": null
+    }
+  },
+  "type": {
+    "property_type": "apartment",
+    "unit_type": "2br",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [],
+  "capacity": {
+    "adults": 4,
+    "children": 0,
+    "total_max": 4,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "double"
+      ],
+      "ac": true
+    },
+    {
+      "id": 2,
+      "beds": [
+        "double"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 1,
+    "ensuite_count": 0,
+    "half_baths": 0
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": true,
+    "gym": false,
+    "elevator": false,
+    "garage": false,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": null,
+      "location": null,
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": null,
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": null,
+      "password": "***",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": null,
+    "complex_code": null,
+    "electrical_authority": "CEB",
+    "shared_facilities": [],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "Grand Baie building with 4 units: 2 studios, 1 two-bedroom apartment on the first floor, and 1 two-bedroom apartment on the ground floor."
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": null
+    },
+    "nearest_beach": {
+      "minutes_walk": null,
+      "name": null
+    },
+    "nearby_landmarks": []
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": null,
+    "minimum_stay_nights": null
+  },
+  "operational_notes": [],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": null,
+    "booking": null,
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_v1_path": "/Users/judith/repos/friday-gms/knowledge/VA-2.json",
+    "migration_timestamp": "2026-05-14T10:16:31.970725+00:00",
+    "mapping_status": "locked"
+  },
+  "_editorial_review_needed": [],
+  "_rename_log": []
+}

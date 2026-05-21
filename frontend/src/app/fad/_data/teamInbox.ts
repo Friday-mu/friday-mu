@@ -1,16 +1,31 @@
-// @demo:data — Team-internal threads — GET /api/inbox/team-threads
-// Tag: PROD-DATA-11 — see frontend/DEMO_CRUFT.md
-
-// Team Inbox fixtures — channels + DMs + messages + scheduled calls.
-// Phase 1 fixture-only with optimistic local state (T3 wires UI).
-// Replaces internal Slack at the FAD level.
+// Team-internal threads — channels + DMs + messages + scheduled calls.
+// Real data source TBD (live wiring is part of Tier E roadmap items
+// bw-7/bw-8/bw-9). Until then this file exposes empty arrays with the
+// production type shapes so consumers compile and render empty states.
+//
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9.
 
 export type ChannelKey =
-  | 'general'
-  | 'ops'
-  | 'finance'
-  | 'syndic'
-  | 'marketing';
+  // Public channels (everyone in tenant)
+  | 'gm'             // daily good morning check-in
+  | 'announce'       // company announcements + updates from Judith
+  | 'random'         // non-work / miscellaneous
+  | 'ops'            // operations (incl. guest comms execution)
+  | 'reservations'   // listings / OTAs / pricing / website / new bookings
+  | 'syndic'         // syndic work
+  | 'agency'         // agency work
+  | 'marketing'      // marketing campaigns + content
+  | 'photoshoot'     // FULL-quality image storage; compression bypassed
+  | 'design'         // interior design projects + owner approvals
+  // Private channels (explicit membership)
+  | 'finance'        // finance + accounting
+  | 'admin'          // Stripe, bank accounts, legal-ops, accountant comms
+  | 'refunds'        // refund decisions + paper trail
+  | 'adjustments'    // pricing / reservation adjustments
+  // Legacy — kept so older fixtures don't break the type check during
+  // the rollout window. Backend never emits this; consumers can prune.
+  | 'general';
 
 export interface TeamChannel {
   id: string;
@@ -21,45 +36,9 @@ export interface TeamChannel {
   unread?: number;
 }
 
-export const TEAM_CHANNELS: TeamChannel[] = [
-  {
-    id: 'tc-general',
-    key: 'general',
-    name: '#general',
-    purpose: 'Whole-team announcements + watercooler.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny', 'u-mathias', 'u-mary', 'u-bryan', 'u-alex', 'u-catherine'],
-    unread: 1,
-  },
-  {
-    id: 'tc-ops',
-    key: 'ops',
-    name: '#ops',
-    purpose: 'Daily ops coordination · roster posts · field-PM updates.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny', 'u-mary', 'u-bryan', 'u-alex', 'u-catherine'],
-    unread: 3,
-  },
-  {
-    id: 'tc-finance',
-    key: 'finance',
-    name: '#finance',
-    purpose: 'Period close · approvals · reconciliation.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny', 'u-mathias', 'u-mary'],
-  },
-  {
-    id: 'tc-syndic',
-    key: 'syndic',
-    name: '#syndic',
-    purpose: 'GBH building syndic matters.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny'],
-  },
-  {
-    id: 'tc-marketing',
-    key: 'marketing',
-    name: '#marketing',
-    purpose: 'Listings · campaigns · brand work.',
-    memberIds: ['u-judith', 'u-ishant', 'u-mathias'],
-  },
-];
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9.
+export const TEAM_CHANNELS: TeamChannel[] = [];
 
 export interface TeamDM {
   id: string;
@@ -67,13 +46,9 @@ export interface TeamDM {
   unread?: number;
 }
 
-export const TEAM_DMS: TeamDM[] = [
-  { id: 'dm-judith-franny', participantIds: ['u-judith', 'u-franny'], unread: 1 },
-  { id: 'dm-judith-ishant', participantIds: ['u-judith', 'u-ishant'] },
-  { id: 'dm-franny-bryan', participantIds: ['u-franny', 'u-bryan'] },
-  { id: 'dm-franny-alex', participantIds: ['u-franny', 'u-alex'] },
-  { id: 'dm-judith-franny-ishant', participantIds: ['u-judith', 'u-franny', 'u-ishant'], unread: 2 },
-];
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9.
+export const TEAM_DMS: TeamDM[] = [];
 
 export type TeamMessageKind = 'text' | 'system' | 'call_scheduled' | 'task_link' | 'roster_publish' | 'finance_escalation';
 
@@ -101,6 +76,10 @@ export interface TeamMessage {
   channelKey?: ChannelKey;     // present for channel posts
   dmId?: string;               // present for DMs
   authorId: string;
+  /** Backend-captured display name (users.display_name at write time).
+   *  Used when TASK_USER_BY_ID lookup misses — real DB users aren't in
+   *  the fixture, so the author chip falls back to this value. */
+  authorName?: string;
   text: string;
   ts: string;
   mentions?: string[];         // user ids
@@ -111,7 +90,28 @@ export interface TeamMessage {
   callMeta?: TeamCallMeta;
   /** for kind: 'finance_escalation' — see FinanceEscalationMeta */
   financeEscalation?: FinanceEscalationMeta;
+  /** Optional Design project link inferred or selected at send time. */
+  designProject?: {
+    id: string;
+    name: string;
+    slug?: string | null;
+    source?: 'manual' | 'inferred' | 'inherited' | string;
+    confidence?: number;
+  };
   attachments?: number;
+  /** Attached files / images on this message. */
+  attachmentList?: Array<{
+    id: string;
+    filename: string;
+    mimeType: string | null;
+    sizeBytes: number;
+    url: string;
+    width: number | null;
+    height: number | null;
+  }>;
+  /** Slack-style flat threading. Set on replies; top-level messages are null. */
+  parentMessageId?: string | null;
+  /** Reply count for top-level messages (replies themselves report 0). */
   threadCount?: number;
 }
 
@@ -125,161 +125,14 @@ export interface TeamCallMeta {
   organizerId: string;
 }
 
-export const TEAM_MESSAGES: TeamMessage[] = [
-  // #general
-  {
-    id: 'tm-001',
-    channelKey: 'general',
-    authorId: 'u-judith',
-    text: 'New FAD modules landing this week — HR, Team Inbox, Tasks rebuild. Ping if anything looks off.',
-    ts: '2026-04-27T08:30:00',
-    kind: 'text',
-  },
-  {
-    id: 'tm-002',
-    channelKey: 'general',
-    authorId: 'u-ishant',
-    text: '🎉',
-    ts: '2026-04-27T08:32:00',
-    kind: 'text',
-  },
-
-  // #ops
-  {
-    id: 'tm-010',
-    channelKey: 'ops',
-    authorId: 'u-bryan',
-    text: 'A/C at LB-2 is dead — guest reported overnight. @Mathias David heading there now, parts ETA from Coolbreeze 14:00.',
-    ts: '2026-04-27T08:15:00',
-    mentions: ['u-mathias'],
-    kind: 'text',
-    threadCount: 4,
-  },
-  {
-    id: 'tm-011',
-    channelKey: 'ops',
-    authorId: 'u-franny',
-    text: 'Roster published for week of Apr 27 — May 3. Bryan kept on north all week (7 maintenance jobs).',
-    ts: '2026-04-26T18:30:00',
-    kind: 'roster_publish',
-  },
-  {
-    id: 'tm-012',
-    channelKey: 'ops',
-    authorId: 'u-alex',
-    text: 'Welcome basket missing chocolates at RC-15. Drop now or wait for Kanarski check-in?',
-    ts: '2026-04-27T09:38:00',
-    kind: 'text',
-    threadCount: 2,
-  },
-  {
-    id: 'tm-013',
-    channelKey: 'ops',
-    authorId: 'u-franny',
-    text: 'Drop now. Guest in 4hr.',
-    ts: '2026-04-27T09:40:00',
-    kind: 'text',
-  },
-
-  // #finance
-  {
-    id: 'tm-020',
-    channelKey: 'finance',
-    authorId: 'u-mary',
-    text: 'Apr period close at Stage 5/8. MauBank PDF still missing — chasing Sumesh today.',
-    ts: '2026-04-27T07:45:00',
-    kind: 'text',
-  },
-  {
-    id: 'tm-021',
-    channelKey: 'finance',
-    authorId: 'u-judith',
-    text: 'LC-9 roof: Rs 22.5k pending owner approval. Marchand replied "je regarde demain matin" — should land in inbox today.',
-    ts: '2026-04-27T08:10:00',
-    kind: 'text',
-  },
-
-  // #syndic
-  {
-    id: 'tm-030',
-    channelKey: 'syndic',
-    authorId: 'u-franny',
-    text: 'GBH AGM scheduled May 12. Agenda draft incoming.',
-    ts: '2026-04-26T15:00:00',
-    kind: 'text',
-  },
-
-  // #marketing
-  {
-    id: 'tm-040',
-    channelKey: 'marketing',
-    authorId: 'u-mathias',
-    text: 'BL-12 listing photos refresh tomorrow 09:00. Need Bryan to clear the deck and stage cushions.',
-    ts: '2026-04-27T07:30:00',
-    mentions: ['u-bryan'],
-    kind: 'text',
-  },
-
-  // DM samples
-  {
-    id: 'tm-100',
-    dmId: 'dm-judith-franny',
-    authorId: 'u-franny',
-    text: 'Catherine submitted PTO for May 4 — single day. Approving.',
-    ts: '2026-04-27T07:55:00',
-    kind: 'text',
-  },
-  {
-    id: 'tm-101',
-    dmId: 'dm-judith-franny',
-    authorId: 'u-judith',
-    text: '👍',
-    ts: '2026-04-27T07:56:00',
-    kind: 'text',
-  },
-  {
-    id: 'tm-110',
-    dmId: 'dm-franny-alex',
-    authorId: 'u-franny',
-    text: 'Glass quote for LB-2 looks fine — pushing approval through.',
-    ts: '2026-04-26T16:30:00',
-    kind: 'text',
-  },
-  {
-    id: 'tm-120',
-    dmId: 'dm-judith-franny-ishant',
-    authorId: 'u-ishant',
-    text: 'Owner walkthrough VV-47 Saturday 10am. Confirmed with Smith.',
-    ts: '2026-04-26T11:00:00',
-    kind: 'text',
-  },
-  {
-    id: 'tm-121',
-    dmId: 'dm-judith-franny-ishant',
-    authorId: 'u-franny',
-    text: 'Will pull together garden + pool service log beforehand.',
-    ts: '2026-04-26T11:05:00',
-    kind: 'text',
-  },
-
-  // Scheduled call sample (in #ops)
-  {
-    id: 'tm-200',
-    channelKey: 'ops',
-    authorId: 'u-franny',
-    text: '📅 Call scheduled: Weekly ops sync — Mon 09:00',
-    ts: '2026-04-27T07:00:00',
-    kind: 'call_scheduled',
-    callMeta: {
-      id: 'call-001',
-      title: 'Weekly ops sync',
-      startAt: '2026-04-27T09:00:00',
-      meetUrl: 'https://meet.google.com/fixture-abc-defg',
-      inviteeIds: ['u-judith', 'u-franny', 'u-ishant', 'u-bryan', 'u-alex'],
-      organizerId: 'u-franny',
-    },
-  },
-];
+// fixture data purged 2026-05-13 (design-be-19); inbox should render real
+// GMS data only — see Tier E roadmap items bw-7/bw-8/bw-9.
+//
+// Kept as `let` (not `const`) because Phase-1 mutators in breezeway.ts and
+// ScheduleCallDrawer.tsx still call TEAM_MESSAGES.push(). Once the live
+// wiring lands they become no-ops over an immutable wire-shape and the
+// `let` can revert to `const [] as const`.
+export const TEAM_MESSAGES: TeamMessage[] = [];
 
 /** All scheduled calls extracted for any future "Upcoming calls" surface. */
 export const SCHEDULED_CALLS: TeamCallMeta[] = TEAM_MESSAGES

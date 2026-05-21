@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { MODULES, GROUPS, type ModuleDef } from '../_data/modules';
+import { MODULES, GROUPS, visibleSubPagesForModuleRole, type ModuleDef } from '../_data/modules';
 import { iconFor, IconExpand, IconSparkle } from './icons';
 import { canSeeModule, useCurrentRole, useCurrentUserId } from './usePermissions';
 import { pendingCountFor, pendingCountForSubpage, subscribePendingRev, type PendingCount } from '../_data/pendingCounts';
+import { useEnabledModules } from '../_data/useEnabledModules';
+import { useCurrentTenantId, FR_TENANT_ID } from '../_data/useTenantIdentity';
 
 interface Props {
   active: string;
@@ -34,6 +36,9 @@ export function Sidebar({
 }: Props) {
   const role = useCurrentRole();
   const userId = useCurrentUserId();
+  const { enabledSet } = useEnabledModules();
+  const tenantId = useCurrentTenantId();
+  const isFrTenant = tenantId === FR_TENANT_ID;
 
   // Subscribe to fixture-mutation bumps so badges re-compute reactively
   const [pendingRev, setPendingRev] = useState(0);
@@ -43,10 +48,17 @@ export function Sidebar({
     const m: Record<string, ModuleDef[]> = {};
     MODULES.forEach((mod) => {
       if (!canSeeModule(role, mod.id)) return;
+      // SaaS module gate — when enabledSet has loaded, only show modules the
+      // tenant has enabled. Before it loads (null), show everything to avoid
+      // a flash of empty sidebar.
+      if (enabledSet && !enabledSet.has(mod.id)) return;
+      // FR-only modules — hide for non-FR tenants regardless of role/enabledSet.
+      // Backend endpoints behind these modules also gate on _isFrAdmin().
+      if (mod.id === 'admin-analytics' && !isFrTenant) return;
       (m[mod.group] = m[mod.group] || []).push(mod);
     });
     return m;
-  }, [role]);
+  }, [role, enabledSet, isFrTenant]);
 
   // Allow re-clicking the active module to collapse its sub-pages.
   // Resets when the user navigates to a different module.
@@ -73,6 +85,8 @@ export function Sidebar({
       <div
         className={'fad-sidebar-backdrop' + (mobileOpen ? ' mobile-open' : '')}
         onClick={onMobileClose}
+        data-qa="fad-sidebar-backdrop"
+        data-qa-mobile-open={mobileOpen ? 'true' : 'false'}
       />
       <aside
         className={
@@ -80,8 +94,13 @@ export function Sidebar({
           (collapsed ? ' collapsed' : '') +
           (mobileOpen ? ' mobile-open' : '')
         }
+        data-qa="fad-sidebar"
+        data-qa-active-module={active}
+        data-qa-sub-page={subPage || ''}
+        data-qa-collapsed={collapsed ? 'true' : 'false'}
+        data-qa-mobile-open={mobileOpen ? 'true' : 'false'}
       >
-      <div className="fad-sidebar-inner">
+      <div className="fad-sidebar-inner" data-qa="fad-sidebar-inner">
         {onOpenFridayFs && (
           <>
             <button
@@ -92,6 +111,8 @@ export function Sidebar({
               }}
               title="Ask Friday — fullscreen"
               aria-pressed={fridayFs}
+              data-qa="fad-nav-friday"
+              data-qa-active={fridayFs ? 'true' : 'false'}
             >
               <span className="fad-nav-icon">
                 <IconSparkle />
@@ -113,6 +134,9 @@ export function Sidebar({
             <div
               className={'fad-sidebar-group fad-sidebar-group-' + g.tier}
               key={g.id}
+              data-qa="fad-nav-group"
+              data-qa-group-id={g.id}
+              data-qa-tier={g.tier}
             >
               {tierChanged && g.tier === 'manage' && (
                 <div className="fad-sidebar-tier-label">Manage</div>
@@ -124,7 +148,8 @@ export function Sidebar({
                 const IconComp = iconFor(mod.icon);
                 const isActive = mod.id === active;
                 const isExpanded = expandedModuleId === mod.id;
-                const hasSubs = !!mod.subPages?.length;
+                const visibleSubPages = visibleSubPagesForModuleRole(mod, role);
+                const hasSubs = visibleSubPages.length > 0;
                 const showSubs =
                   hasSubs &&
                   !collapsed &&
@@ -155,6 +180,12 @@ export function Sidebar({
                         onMobileClose?.();
                       }}
                       title={moduleCount.total > 0 ? `${mod.label} · ${moduleCount.total} pending` : mod.label}
+                      data-qa="fad-nav-item"
+                      data-qa-module-id={mod.id}
+                      data-qa-active={isActive ? 'true' : 'false'}
+                      data-qa-expanded={showSubs ? 'true' : 'false'}
+                      data-qa-pending-count={String(moduleCount.total)}
+                      data-qa-pending-tone={moduleCount.tone}
                     >
                       <span className="fad-nav-icon">
                         <IconComp />
@@ -164,7 +195,7 @@ export function Sidebar({
                     </button>
                     {showSubs && (
                       <div className="fad-nav-subs">
-                        {mod.subPages!.map((sp) => {
+                        {visibleSubPages.map((sp) => {
                           const isLocked = lockedSubs?.[mod.id]?.has(sp.id);
                           const subCount = pendingCountForSubpage(role, userId, mod.id, sp.id);
                           return (
@@ -178,6 +209,13 @@ export function Sidebar({
                                 onMobileClose?.();
                               }}
                               title={isLocked ? `${sp.label} · admin only` : sp.label}
+                              data-qa="fad-nav-sub"
+                              data-qa-module-id={mod.id}
+                              data-qa-sub-page={sp.id}
+                              data-qa-active={subPage === sp.id ? 'true' : 'false'}
+                              data-qa-locked={isLocked ? 'true' : 'false'}
+                              data-qa-pending-count={String(subCount.total)}
+                              data-qa-pending-tone={subCount.tone}
                             >
                               <span className="fad-nav-sub-label">{sp.label}</span>
                               {subCount.total > 0 && <PendingChip count={subCount} collapsed={false} />}

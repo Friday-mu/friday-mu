@@ -1,0 +1,208 @@
+{
+  "property_id": "gb_heights_c7",
+  "display_name": "Grand Baie Heights C7",
+  "full_name": "Sea View 2-Bedroom Apt, 10mins Walk to Beach",
+  "location": "Grand Baie, Mauritius",
+  "property_type": "apartment",
+  "bedrooms": 2,
+  "guest_capacity": 4,
+  "priority_level": "high",
+  "message_volume": {
+    "monthly_average": 45,
+    "peak_season": 65,
+    "low_season": 25
+  },
+  "quick_responses": {
+    "wifi": {
+      "trigger_keywords": [
+        "wifi",
+        "internet",
+        "password",
+        "connection"
+      ],
+      "response": "WiFi Network: HUAWEI_B612_9FEC | Password: J181A26H9G4 | Speed: Suitable for remote work and streaming",
+      "priority": "high"
+    },
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "lockbox",
+        "key",
+        "entrance",
+        "door"
+      ],
+      "response": "Building: Grand Baie Heights | Apartment C7 (4th floor) | Gate Code: *012012# | Lockbox Code: 1812 | Take elevator, press 4, second door on right",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return"
+      ],
+      "response": "Check-out: 10:00 AM | Turn off ACs/lights | Close windows/doors | Leave keys in lockbox | Scramble code | Thank you for staying!",
+      "priority": "high"
+    },
+    "location": {
+      "trigger_keywords": [
+        "trash",
+        "bins",
+        "garbage",
+        "beach",
+        "directions"
+      ],
+      "response": "Trash: Ground floor bin area | Beach: 10min walk via main road | Address: Geranium Lane, Grand Bay | Maps: https://maps.app.goo.gl/YUDcJpNPD7pu1fUX7",
+      "priority": "medium"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck"
+      ],
+      "response": "🚨 URGENT: Call +230 4084119 immediately | Available 24/7 | For door issues: verify lockbox code 1812 | We're here to help!",
+      "priority": "critical"
+    }
+  },
+  "property_details": {
+    "address": "Geranium Lane, Grand Bay, Apt C7",
+    "building": "Grand Baie Heights",
+    "floor": "4th",
+    "map_link": "https://maps.app.goo.gl/YUDcJpNPD7pu1fUX7",
+    "parking": "Available with gate access",
+    "amenities": [
+      "Sea View",
+      "Air Conditioning",
+      "WiFi",
+      "Parking",
+      "Building Pool"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00"
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Lockbox access confusion",
+    "Waste disposal location",
+    "Door access problems",
+    "Beach directions"
+  ],
+  "conversation_intelligence": {
+    "common_guest_questions": [
+      {
+        "category": "wifi",
+        "frequency": "very_high",
+        "questions": [
+          "WiFi password?",
+          "Internet speed for remote work?"
+        ]
+      },
+      {
+        "category": "access",
+        "frequency": "high",
+        "questions": [
+          "Check-in procedure?",
+          "Where to put the key?",
+          "Lockbox code?"
+        ]
+      },
+      {
+        "category": "location",
+        "frequency": "high",
+        "questions": [
+          "Where is the trash?",
+          "Where are the bins?",
+          "Beach directions?"
+        ]
+      },
+      {
+        "category": "amenities",
+        "frequency": "medium",
+        "questions": [
+          "Pool access?",
+          "Parking available?"
+        ]
+      },
+      {
+        "category": "emergency",
+        "frequency": "medium",
+        "questions": [
+          "Door won't open",
+          "Key issues"
+        ]
+      }
+    ],
+    "complaint_patterns": [
+      "WiFi password confusion",
+      "Lockbox code uncertainty",
+      "Waste disposal location unclear"
+    ],
+    "things_to_avoid": [
+      "Don't mention that beach is 10min walk uphill in summer heat",
+      "Avoid promising \"sea view from every room\" — only visible from balcony"
+    ],
+    "operational_notes": [
+      "Gate code frequently changes — verify before each check-in",
+      "Elevator sometimes slow — mention stairs as alternative for 4th floor",
+      "Parking spots are shared — first come first served"
+    ],
+    "response_templates": {
+      "pre_arrival": "Welcome! Check-in instructions will be sent at 10 AM on your arrival day. Please confirm your estimated arrival time.",
+      "post_checkout": "Thank you for staying at Grand Baie Heights! We hope you enjoyed the sea views. Safe travels!"
+    }
+  },
+  "building_intelligence": {
+    "building_notes": "Grand Baie Heights complex — shared pool, gym, elevator, parking",
+    "common_questions": [
+      "Pool hours?",
+      "Gym access?",
+      "Parking location?",
+      "Elevator?"
+    ],
+    "area_info": "Grand Baie — 2 min to La Croisette shopping, 10 min walk to beach, vibrant nightlife nearby",
+    "things_to_avoid": [
+      "Don't promise specific parking spot — first come first served"
+    ]
+  },
+  "general_intelligence": {
+    "peak_message_times": [
+      "Check-in day morning",
+      "During stay evening",
+      "Check-out day"
+    ],
+    "common_pain_points": [
+      "WiFi password confusion (most common)",
+      "Lockbox/door code uncertainty",
+      "Waste disposal location unclear",
+      "Emergency contact not immediately visible"
+    ],
+    "successful_patterns": [
+      "Quick WiFi credential provision",
+      "Clear step-by-step access instructions",
+      "Immediate emergency response availability",
+      "Proactive information sharing before check-in"
+    ],
+    "brand_voice_reminders": [
+      "Always use we/our/us (not I/my)",
+      "Sign off: \"Warm regards, Friday Retreats\"",
+      "No em dashes",
+      "Paragraphs over bullet points in guest messages",
+      "Empathy without fault admission"
+    ],
+    "services_to_mention": {
+      "transfers": "Airport transfers via mauritiusattractions.com (code FRIDAYMU for 10% off)",
+      "car_rental": "Car rental services available on request",
+      "luggage": "Luggage drop-off available for early arrivals / late departures",
+      "activities": "Local tours and activities bookable through our partners"
+    },
+    "language_distribution": {
+      "english": 70,
+      "french": 25,
+      "mixed": 5
+    }
+  }
+}

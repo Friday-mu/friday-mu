@@ -15,7 +15,8 @@ import {
   type RosterWeek,
   type Zone,
 } from '../../../_data/roster';
-import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
+import { type TaskUser } from '../../../_data/tasks';
+import { useTenantUsers } from '../../../_data/useTenantUsers';
 import { TASKS } from '../../../_data/tasks';
 import { ROLE_LABEL } from '../../../_data/permissions';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
@@ -71,15 +72,16 @@ export function RosterPage() {
     }
   }, []);
 
+  const { byId: usersById } = useTenantUsers();
   const visibleUsers: TaskUser[] = useMemo(() => {
     const all = ROSTER_USERS_ORDER
-      .map((id) => TASK_USER_BY_ID[id])
+      .map((id) => usersById.get(id))
       .filter((u): u is TaskUser => Boolean(u));
     if (role === 'field' || role === 'commercial_marketing') {
       return all.filter((u) => u.id === currentUserId);
     }
     return all;
-  }, [role, currentUserId]);
+  }, [role, currentUserId, usersById]);
 
   const dates = week.days
     .filter((d) => d.userId === ROSTER_USERS_ORDER[0])
@@ -671,7 +673,8 @@ function PublishDrawer({
   onPublished: () => void;
   publisherId: string;
 }) {
-  const checks = useMemo(() => runConstraintChecks(week), [week]);
+  const { byId: usersById } = useTenantUsers();
+  const checks = useMemo(() => runConstraintChecks(week, usersById), [week, usersById]);
   const blocking = checks.filter((c) => c.severity === 'block');
   const warnings = checks.filter((c) => c.severity === 'warn');
   const passes = checks.filter((c) => c.severity === 'pass');
@@ -684,7 +687,7 @@ function PublishDrawer({
 
     await publishRosterToBreezeway(week.id, publisherId);
 
-    const publisher = TASK_USER_BY_ID[publisherId];
+    const publisher = usersById.get(publisherId);
     postToTeamChannel(
       'ops',
       `Roster published · week of ${formatDay(week.weekStart)} - ${formatDay(week.weekEnd)}.`,
@@ -742,7 +745,7 @@ interface ConstraintCheck {
   detail?: string;
 }
 
-function runConstraintChecks(week: RosterWeek): ConstraintCheck[] {
+function runConstraintChecks(week: RosterWeek, usersById: Map<string, TaskUser>): ConstraintCheck[] {
   const checks: ConstraintCheck[] = [];
 
   // Hard: zone coverage — each day should have ≥1 person in each zone
@@ -772,7 +775,7 @@ function runConstraintChecks(week: RosterWeek): ConstraintCheck[] {
   });
   let violations = 0;
   Object.keys(userDays).forEach((userId) => {
-    const user = TASK_USER_BY_ID[userId];
+    const user = usersById.get(userId);
     if (user?.role !== 'field') return;
     const days: RosterDay[] = userDays[userId];
     const onCount = days.filter((d: RosterDay) => d.availability === 'on').length;

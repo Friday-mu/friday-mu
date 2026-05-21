@@ -1,0 +1,7 @@
+node_modules/
+.profile/
+.state.json
+.peek-*.png
+*.log
+.debug/
+.mfa-code

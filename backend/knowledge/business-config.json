@@ -1,0 +1,149 @@
+{
+  "schema_version": "v2.0.1",
+  "schema_status": "LOCKED",
+  "last_updated": "2026-05-13",
+  "_lock_notes": "v2.0.1 patch over v2.0. operational_policies block added (scheduled_operational_work + urgent_after_hours). All other fields unchanged from v2.0.",
+  "_change_log_from_v2_0": [
+    "operational_policies.scheduled_operational_work added: before-5pm only, no override path, reason captured (no on-ground staff after 5pm)",
+    "operational_policies.urgent_after_hours added: case-by-case structure, 24/7 line for guests, AI commits to nothing specific about dispatch"
+  ],
+
+  "company": {
+    "legal_name": "Friday Retreats Ltd",
+    "brn": "C24206082",
+    "vat_number": "28238154",
+    "registered_address": "Octopus Building, Pointe aux Canonniers, Grand Baie, Mauritius",
+    "trading_name": "Friday Retreats"
+  },
+
+  "contact": {
+    "general_email": "info@friday.mu",
+    "guest_support_email": "info@friday.mu",
+    "phone_24_7": "+230 4084119",
+    "whatsapp_business_number": "PENDING - number approval in progress",
+    "website": "https://friday.mu"
+  },
+
+  "whatsapp_messaging": {
+    "templates_approved": true,
+    "number_approval_status": "pending",
+    "session_window_rules": "After a guest replies to a WhatsApp message, a 24-hour session window opens during which Friday can send free-form messages. After 24 hours of guest silence, only WhatsApp-approved template messages may be sent until the guest replies again.",
+    "first_outreach_requires_template": true
+  },
+
+  "banking": {
+    "accounts": [
+      {
+        "label": "MCB_MUR_GENERAL",
+        "purpose": "Mauritian-rupee operating account",
+        "bank_name": "Mauritius Commercial Bank",
+        "account_holder": "Friday Retreats Ltd",
+        "account_number": "000453205860",
+        "iban": null,
+        "swift_bic": "MCBLMUMU",
+        "currency": "MUR"
+      },
+      {
+        "label": "MCB_EUR_OPERATING",
+        "purpose": "EUR operating account, primary direct-booking receipts (international guests)",
+        "bank_name": "Mauritius Commercial Bank",
+        "account_holder": "Friday Retreats Ltd",
+        "account_number": "000453205828",
+        "iban": "MU76MCBL0901000453205828000EUR",
+        "swift_bic": "MCBLMUMU",
+        "currency": "EUR"
+      },
+      {
+        "label": "MCB_USD_OPERATING",
+        "purpose": "USD operating account, alternative direct-booking receipts",
+        "bank_name": "Mauritius Commercial Bank",
+        "account_holder": "Friday Retreats Ltd",
+        "account_number": "000453390927",
+        "iban": "MU17MCBL0944000453390927000USD",
+        "swift_bic": "MCBLMUMU",
+        "currency": "USD"
+      },
+      {
+        "label": "MCB_MUR_SYNDIC",
+        "purpose": "Syndic operations. Mandate currently informal as of 2026-05-13; formal management contract + live fee flows pending post-Sprint 8.",
+        "bank_name": "Mauritius Commercial Bank",
+        "account_holder": "Friday Retreats Ltd",
+        "account_number": "000455293805",
+        "iban": null,
+        "swift_bic": "MCBLMUMU",
+        "currency": "MUR"
+      },
+      {
+        "label": "MCB_MUR_INTERIOR_DESIGN",
+        "purpose": "Interior design division operating account",
+        "bank_name": "Mauritius Commercial Bank",
+        "account_holder": "Friday Retreats Ltd",
+        "account_number": "000453205836",
+        "iban": null,
+        "swift_bic": "MCBLMUMU",
+        "currency": "MUR"
+      }
+    ],
+    "direct_booking_payment_communication": {
+      "current_practice": "Direct-booking inquiries from the current website trigger an automated message containing EUR, USD, and MUR account details. Guest chooses currency.",
+      "ai_drafting_guidance": "Do not inline bank account details in any guest-facing draft. If a direct-booking guest asks where or how to pay, defer to the automated payment-details message already sent at inquiry time, or defer to the team."
+    }
+  },
+
+  "fees_and_pricing": {
+    "tourist_tax": {
+      "guest_facing_communication": "If a guest asks about tourist tax: respond that it is already included in the price and cannot be removed. Do not proactively raise tourist tax in messages."
+    },
+    "cleaning_fee": {
+      "treatment": "Net pass-through (VAT optimization). Disclosed to owner; not marked up.",
+      "guest_facing_communication": "Cleaning fee is disclosed at booking. Do not propose to waive."
+    },
+    "linen_fee": {
+      "current_rate_eur_per_guest_per_night": 2.50,
+      "rate_after_transition": 1.25,
+      "transition_date": "2026-07-01",
+      "transition_status": "Notice already sent to owners. Public T&C remains at EUR 2.50 until July 1, 2026.",
+      "owner_facing_communication": "Until July 1, 2026, linen fee is EUR 2.50 per guest per night. From July 1, 2026 onwards, linen fee is EUR 1.25 per guest per night."
+    },
+    "minimum_stay": {
+      "default_nights": 3,
+      "peak_period_nights": 4,
+      "exception_policy": "Exceptions for 1-2 night stays are case-by-case. Exception-handling logic lives in operational-rules.json (Phase 6)."
+    }
+  },
+
+  "cancellation_policies": {
+    "direct_booking": {
+      "current_policy": "30 days before check-in date: full refund. Inside 30 days: no refund. Mirrors Airbnb strict tier.",
+      "proposed_change_status": "Two-tier structure (installments at base price vs. paid-in-full upfront at non-refundable discount) is under consideration as a Sprint 9 commercial decision. NOT current policy. Do not reference in messages."
+    },
+    "airbnb": {
+      "policy_source": "Airbnb platform strict cancellation policy applies."
+    },
+    "booking_com": {
+      "policy_source": "Booking.com platform cancellation policy applies. Defer to platform terms."
+    }
+  },
+
+  "operational_policies": {
+    "scheduled_operational_work": {
+      "available_hours": "Before 5 PM only.",
+      "reason": "No on-ground staff available for interventions after 5 PM.",
+      "ai_drafting_guidance": "Propose only before-5-PM times for scheduled operational requests (check-in flexes, maintenance windows, in-property coordination). Do not imply flexibility on this. The team handles after-hours urgent matters case-by-case, not as a structured override."
+    },
+    "urgent_after_hours": {
+      "structure": "No formal on-call rotation. Handled case-by-case by whoever takes the call.",
+      "guest_facing_channel": "+230 4084119 (24/7 line)",
+      "ai_drafting_guidance": "For urgent matters after hours, the AI directs the guest to the 24/7 line and commits to nothing specific about response time or dispatch. The AI never says 'we'll send someone' for after-hours urgent, that's a human decision at call time. The AI may offer grounded temporary mitigation per BV-10 when canonical property data supports it (framed as 'in the meantime, until our team can reach you')."
+    }
+  },
+
+  "services_offered": {
+    "property_management": true,
+    "guest_services": true,
+    "interior_design": true,
+    "maintenance": true,
+    "syndic_services": true,
+    "real_estate_advisory": true
+  }
+}

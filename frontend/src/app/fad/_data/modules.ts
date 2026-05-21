@@ -26,7 +26,14 @@ export interface GroupDef {
 
 export const MODULES: ModuleDef[] = [
   { id: 'inbox', label: 'Inbox', group: 'Today', tier: 'live', ship: 'live', icon: 'IconInbox', path: '/gms/inbox' },
+  // Website-inbox is now folded into the unified Inbox above (Phase 1
+  // landed in f1717fd, 2026-05-17). The standalone /fad/website-inbox
+  // route + WebsiteInboxModule are retired — website threads appear
+  // alongside Guesty conversations in the Inbox list. Keeping the
+  // route stub in FadApp.tsx briefly for any deep-linked bookmarks
+  // but no sidebar entry.
   { id: 'operations', label: 'Operations', group: 'Today', tier: 'live', ship: 'live', icon: 'IconTasks', path: '/fad/operations', subPages: [
+    { id: 'my', label: 'My tasks' },
     { id: 'overview', label: 'Overview' },
     { id: 'all', label: 'All tasks' },
     { id: 'issues', label: 'Reported issues' },
@@ -79,8 +86,22 @@ export const MODULES: ModuleDef[] = [
   { id: 'analytics', label: 'Analytics', group: 'Growth', tier: 'preview', ship: "Jun '26", icon: 'IconChart', path: '/gms/analytics' },
   { id: 'intelligence', label: 'Intelligence', group: 'Growth', tier: 'pitch', ship: "Aug '26", icon: 'IconIntel', path: '/gms/intelligence' },
   { id: 'syndic', label: 'Syndic', group: 'Units', tier: 'tease', ship: "Q1 '27", icon: 'IconSyndic', path: '/gms/syndic' },
-  { id: 'interior', label: 'Interior', group: 'Units', tier: 'tease', ship: "Q2 '27", icon: 'IconInterior', path: '/gms/interior' },
+  { id: 'design', label: 'Design', group: 'Units', tier: 'preview', warning: true, ship: "May '26", icon: 'IconInterior', path: '/fad/design', subPages: [
+    { id: 'overview', label: 'Overview' },
+    { id: 'projects', label: 'Projects' },
+    { id: 'leads', label: 'Leads' },
+    { id: 'vendors', label: 'Vendors' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'settings', label: 'Settings' },
+  ] },
   { id: 'agency', label: 'Agency', group: 'Units', tier: 'tease', ship: 'TBD', icon: 'IconAgency', path: '/gms/agency' },
+  { id: 'tenant-settings', label: 'Settings', group: 'Manage', tier: 'live', ship: 'live', icon: 'IconSettings', path: '/fad/tenant-settings', subPages: [
+    { id: 'general', label: 'General' },
+    { id: 'brand', label: 'Brand' },
+    { id: 'vendors', label: 'Vendor defaults' },
+  ] },
+  { id: 'billing', label: 'Billing', group: 'Manage', tier: 'live', ship: 'live', icon: 'IconFinance', path: '/fad/billing' },
+  { id: 'admin-analytics', label: 'Admin Analytics', group: 'Manage', tier: 'live', ship: 'live', icon: 'IconChart', path: '/fad/admin-analytics' },
   { id: 'notifications', label: 'Notifications', group: 'System', tier: 'live', ship: 'live', icon: 'IconBell', path: '/fad/notifications' },
   { id: 'training', label: 'Training', group: 'System', tier: 'preview', ship: "May '26", icon: 'IconAI', path: '/gms/training' },
   { id: 'settings', label: 'Settings', group: 'System', tier: 'live', ship: 'live', icon: 'IconSettings', path: '/gms/settings' },
@@ -93,5 +114,16 @@ export const GROUPS: GroupDef[] = [
   { id: 'People', label: 'People', tier: 'manage' },
   { id: 'Growth', label: 'Growth', tier: 'manage' },
   { id: 'Units', label: 'Business Units', tier: 'manage' },
+  { id: 'Manage', label: 'Manage', tier: 'manage' },
   { id: 'System', label: 'System', tier: 'manage' },
 ];
+
+export function visibleSubPagesForModuleRole(mod: ModuleDef, role: string): SubPage[] {
+  const subPages = mod.subPages ?? [];
+  if (mod.id !== 'operations') return subPages;
+  if (role === 'field') {
+    const allowed = new Set(['my', 'all', 'issues', 'roster']);
+    return subPages.filter((sp) => allowed.has(sp.id));
+  }
+  return subPages.filter((sp) => sp.id !== 'my');
+}

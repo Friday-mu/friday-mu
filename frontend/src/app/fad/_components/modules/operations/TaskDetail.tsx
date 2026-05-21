@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from 'react';
 import {
-  TASK_USER_BY_ID,
   type ActivityEntry,
   type Task,
   type TaskComment,
   type TaskCost,
 } from '../../../_data/tasks';
-import { addComment, updateTask } from '../../../_data/breezeway';
+import { addComment, updateTask } from '../../../_data/tasksClient';
+import { useTenantUsers } from '../../../_data/useTenantUsers';
 import { FIN_EXPENSES } from '../../../_data/finance';
 import { useCurrentUserId, useCanAccess, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
@@ -198,7 +198,12 @@ function Body({
   canSeeFinance: boolean;
   onAddCost: () => void;
 }) {
-  const assignees = task.assigneeIds.map((id) => TASK_USER_BY_ID[id]).filter(Boolean);
+  const { byId: usersById } = useTenantUsers();
+  // Narrow to non-undefined via type predicate — Map.get returns T | undefined.
+  type AssigneeUser = NonNullable<ReturnType<typeof usersById.get>>;
+  const assignees = task.assigneeIds
+    .map((id) => usersById.get(id))
+    .filter((u): u is AssigneeUser => Boolean(u));
   return (
     <>
       {task.description && (
@@ -352,7 +357,8 @@ function CostLines({
 }
 
 function CostRow({ cost, task, canSeeFinance }: { cost: TaskCost; task: Task; canSeeFinance: boolean }) {
-  const addedBy = TASK_USER_BY_ID[cost.addedBy];
+  const { byId: usersById } = useTenantUsers();
+  const addedBy = usersById.get(cost.addedBy);
   // Find the linked FinExpense — either by direct id or by sourceTaskId match.
   const linkedExpense = useMemo(() => {
     if (cost.flowedToFinanceExpenseId) {
@@ -508,6 +514,7 @@ function AISuggestionRow({ suggestion }: { suggestion: Task['aiSuggestions'][num
 }
 
 function ActivityLog({ entries }: { entries: ActivityEntry[] }) {
+  const { byId: usersById } = useTenantUsers();
   if (entries.length === 0) {
     return <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>No activity yet.</div>;
   }
@@ -515,7 +522,7 @@ function ActivityLog({ entries }: { entries: ActivityEntry[] }) {
   return (
     <div>
       {sorted.map((e) => {
-        const actor = TASK_USER_BY_ID[e.actorId];
+        const actor = usersById.get(e.actorId);
         return (
           <div
             key={e.id}
@@ -559,6 +566,7 @@ function Comments({
   onSend?: () => void;
 }) {
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const { byId: usersById } = useTenantUsers();
   const sortedComments = useMemo(() => [...task.comments].sort((a, b) => a.ts.localeCompare(b.ts)), [task]);
 
   return (
@@ -583,7 +591,7 @@ function Comments({
                 lineHeight: 1.5,
               }}
             >
-              {generateThreadSummary(task)}
+              {generateThreadSummary(task, usersById)}
             </div>
           )}
         </div>
@@ -614,7 +622,8 @@ function Comments({
 }
 
 function CommentRow({ comment }: { comment: TaskComment }) {
-  const author = TASK_USER_BY_ID[comment.authorId];
+  const { byId: usersById } = useTenantUsers();
+  const author = usersById.get(comment.authorId);
   return (
     <div style={{ display: 'flex', gap: 10, marginBottom: 10, padding: '8px 0', borderBottom: '0.5px dashed var(--color-border-tertiary)' }}>
       <span
@@ -680,12 +689,12 @@ function formatActivityTime(ts: string): string {
   return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 }
 
-function generateThreadSummary(task: Task): string {
+function generateThreadSummary(task: Task, usersById: Map<string, { name: string }>): string {
   // Phase 1 canned summary built from the comment metadata.
   const decisions = task.aiSuggestions.find((s) => s.kind === 'thread_summary');
   if (decisions) return decisions.message;
   const lastComment = task.comments[task.comments.length - 1];
-  const author = lastComment ? TASK_USER_BY_ID[lastComment.authorId] : undefined;
+  const author = lastComment ? usersById.get(lastComment.authorId) : undefined;
   return `${task.comments.length} comments · last update from ${author?.name.split(' ')[0] ?? 'someone'}: "${lastComment?.text ?? ''}".`;
 }
 

@@ -1,3 +1,19 @@
 node_modules/
 .next/
 .vercel
+
+# backend secrets (tracked legacy — moved to gitignore 2026-05-12 after Guesty creds added)
+backend/.env
+
+# Guesty listings disk cache (dev convenience)
+backend/.guesty-listings-cache.json
+
+# Translation cache (dev convenience)
+backend/.translations-cache.json
+
+# Nanobanana image-gen cache (dev convenience)
+backend/.nanobanana-cache.json
+
+# Dev caches
+backend/.promptbuilder-cache.json
+backend/.nanobanana-cache.json

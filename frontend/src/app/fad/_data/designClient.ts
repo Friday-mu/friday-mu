@@ -1,0 +1,2346 @@
+'use client';
+
+// Design module client — live data from /api/design/* backed by the
+// FAD-owned design_* tables in gmsdb. Mirrors the hrClient.ts pattern:
+// snake_case API types, typed fetchers, React hooks with refetch, and
+// adapters that convert API shape → fixture shape for callers that
+// still render against the fixture types.
+//
+// Hydration strategy: the legacy designClient (in _data/design.ts) is
+// synchronous and read-from-fixture-arrays. Rather than rewrite every
+// one of the 32+ consumer files to async, this client mutates the
+// fixture arrays IN PLACE on hydration so synchronous consumers
+// automatically see live data on the next render. useHydrateDesign*
+// hooks trigger the hydration + force a re-render via state increment.
+//
+// Owner portal endpoints are NOT covered here — they live in
+// portalClient.ts because they use magic-link auth, not the staff JWT.
+
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { apiFetch, API_BASE, getToken, clearToken } from '../../../components/types';
+import { bumpFixtureRev } from './fixtureRev';
+import {
+  PROJECTS as FIXTURE_PROJECTS,
+  LEADS as FIXTURE_LEADS,
+  COUNTERPARTIES as FIXTURE_COUNTERPARTIES,
+  PROPERTIES as FIXTURE_PROPERTIES,
+  VENDORS as FIXTURE_VENDORS,
+  MOODBOARDS as FIXTURE_MOODBOARDS,
+  DESIGN_PACKS as FIXTURE_PACKS,
+  AGREEMENTS as FIXTURE_AGREEMENTS,
+  PAYMENT_GATES as FIXTURE_PAYMENT_GATES,
+  SELECTIONS as FIXTURE_SELECTIONS,
+  CHANGE_ORDERS as FIXTURE_CHANGE_ORDERS,
+  BUDGET_ITEMS as FIXTURE_BUDGET_ITEMS,
+  ACTIVITY as FIXTURE_ACTIVITY,
+  APPROVALS as FIXTURE_APPROVALS,
+  ROOMS as FIXTURE_ROOMS,
+  SITE_VISITS as FIXTURE_SITE_VISITS,
+  ROUGH_BUDGETS as FIXTURE_ROUGH_BUDGETS,
+  PHOTOS as FIXTURE_PHOTOS,
+  tierForEpc,
+  designFeeForTier,
+  procurementFeeForTier,
+} from './design';
+import type {
+  DesignProject as FixtureProject,
+  DesignLead as FixtureLead,
+  Counterparty as FixtureCounterparty,
+  DesignProperty as FixtureProperty,
+  Vendor as FixtureVendor,
+  MoodboardVersion as FixtureMoodboard,
+  DesignPackVersion as FixturePack,
+  Agreement as FixtureAgreement,
+  PaymentGate as FixturePayment,
+  ActivityLogEntry as FixtureActivity,
+  DesignApproval as FixtureApproval,
+  Room as FixtureRoom,
+  DesignSelection as FixtureSelection,
+  ChangeOrder as FixtureChangeOrder,
+  SiteVisit as FixtureSiteVisit,
+  RoughBudget as FixtureRoughBudget,
+  Photo as FixturePhoto,
+  PhotoKind,
+  BudgetCategory,
+  StageId,
+  StageStatus,
+  LifecycleStatus,
+  DesignTier,
+  ProjectClassification,
+  LeadSource,
+  EngagementScope,
+} from './design';
+
+// ════════════════════════════════════════════════════════════════════
+// API TYPES (snake_case — match the backend exactly)
+// ════════════════════════════════════════════════════════════════════
+
+export interface ApiCounterparty {
+  id: string;
+  entity_id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiProperty {
+  id: string;
+  entity_id: string;
+  counterparty_id: string | null;
+  guesty_listing_id?: string | null;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipcode?: string | null;
+  sqft?: number | null;
+  construction_type?: string | null;
+  year_built?: number | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiVendor {
+  id: string;
+  entity_id: string;
+  name: string;
+  category?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiLead {
+  id: string;
+  entity_id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  source?: string | null;
+  status: 'lead' | 'qualified' | 'converted' | 'lost';
+  owner_user_id?: string | null;
+  converted_project_id?: string | null;
+  staleness_days?: number | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiProject {
+  id: string;
+  entity_id: string;
+  name: string;
+  slug: string;
+  counterparty_id: string | null;
+  property_id: string | null;
+  classification?: string | null;
+  tier?: number | null;
+  lead_source?: string | null;
+  epc_minor?: number | null;
+  design_fee_minor?: number | null;
+  procurement_fee_minor?: number | null;
+  /**
+   * Director-set override. When non-null, apiProjectToFixture uses this
+   * instead of the tier-derived fee. NULL = no override → derive via
+   * designFeeForTier(tier, epcMinor).
+   */
+  design_fee_minor_override?: number | null;
+  /**
+   * Director-set override for procurement fee. Same semantics as
+   * design_fee_minor_override — when non-null bypasses the derivation
+   * via procurementFeeForTier(tier, classification, epcMinor).
+   */
+  procurement_fee_minor_override?: number | null;
+  budget_expectation_minor?: number | null;
+  goals: string[];
+  outcomes: string[];
+  urgency?: string | null;
+  pm_link?: string | null;
+  design_lead_user_id?: string | null;
+  current_stage: string;
+  stage_status: string;
+  blocker?: string | null;
+  next_action?: string | null;
+  /**
+   * design-be-23: project-level engagement fork.
+   *   'design_and_execution' — full project (default)
+   *   'design_only' — moodboard + design pack only; owner buys + installs
+   *
+   * When 'design_only', apiProjectToFixture forces procurementFeeMinor to
+   * 0 (regardless of any override) and stages 14-17 render out-of-scope.
+   * Backed by design_projects.engagement_scope (migration 018).
+   */
+  engagement_scope?: 'design_only' | 'design_and_execution';
+  /**
+   * Migration 027 — CIA Mauritius compliance state. Projects above
+   * Rs 1M EPC (and/or any T1 renovation) require Construction Industry
+   * Authority registration before execution starts.
+   *
+   * DEPRECATED in favour of regional_compliance JSONB (migration 043).
+   * Still emitted by the API for backward compat; new readers should
+   * pull from regional_compliance.
+   */
+  cia_registration_status?: 'unknown' | 'not_required' | 'pending' | 'registered' | 'exempt';
+  cia_registration_ref?: string | null;
+  cia_notes?: string | null;
+  /**
+   * Migration 043 — region-specific compliance JSONB. MU tenants store
+   * `{ cia_registration_status, cia_registration_ref, cia_notes }`
+   * here. Future regions store their own keys (UAE RERA, FR Loi ALUR,
+   * etc.). Frontend rendering is gated on `tenant.country`.
+   */
+  regional_compliance?: Record<string, unknown>;
+  lifecycle_status: 'active' | 'paused' | 'cancelled';
+  paused_at?: string | null;
+  paused_reason?: string | null;
+  paused_by_user_id?: string | null;
+  cancelled_at?: string | null;
+  cancelled_reason?: string | null;
+  cancelled_by_user_id?: string | null;
+  cancel_transfer_to_inventory?: boolean | null;
+  start_date?: string | null;
+  estimated_completion?: string | null;
+  // sha256 of the canonical clean floor plan for this project. Set by
+  // POST /api/design/ai_images/generate-floor-plan with
+  // set_as_project_plan: true. Resolve to the asset row via
+  // loadProjectFloorPlan(projectId).
+  floor_plan_image_id?: string | null;
+  // sha256 of the second-stage furnished floor plan (clean plan +
+  // furniture overlay in the approved moodboard's aesthetic). Set by
+  // POST /api/design/ai_images/generate-furnished-floor-plan with
+  // set_as_project_plan: true. Resolve via
+  // loadProjectFurnishedFloorPlan(projectId).
+  floor_plan_furnished_image_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiStage {
+  id: string;
+  project_id: string;
+  stage_key: string;
+  status: 'pending' | 'in-progress' | 'waiting-on-owner' | 'blocked' | 'done' | 'skipped';
+  entered_at?: string | null;
+  completed_at?: string | null;
+  owner_user_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiActivity {
+  id: string;
+  project_id: string;
+  actor_user_id?: string | null;
+  actor_name?: string | null;
+  action: string;
+  payload: Record<string, unknown>;
+  visibility: 'internal' | 'portal';
+  created_at: string;
+}
+
+// Migration 028 — moodboard variants.
+export interface ApiMoodboardVariantsResponse {
+  group_id: string;
+  variants: ApiMoodboard[];
+}
+export const createMoodboardVariants = (payload: {
+  project_id: string;
+  variants: Array<{ name?: string; links?: Array<Record<string, unknown>>; notes?: string | null }>;
+}) =>
+  apiFetch('/api/design/moodboards/variants', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiMoodboardVariantsResponse>;
+
+export interface ApiMoodboard {
+  id: string;
+  project_id: string;
+  version_number: number;
+  status: 'draft' | 'sent' | 'approved' | 'changes_requested';
+  name?: string | null;
+  links: Array<{ url: string; caption?: string; image_id?: string }>;
+  notes?: string | null;
+  // Migration 028 — variant grouping. When variant_group_id is non-
+  // null, this moodboard was produced as part of an N-variant batch
+  // (Tier A #5). variant_index is 1-based.
+  variant_group_id?: string | null;
+  variant_index?: number | null;
+  // Migration 034 — soft delete. Archived rows are filtered out of
+  // the default list response; clients only see these when calling
+  // with ?include_archived=1 (admin recovery view) or right after
+  // an archive call returns the row.
+  is_archived?: boolean;
+  archived_at?: string | null;
+  archived_by?: string | null;
+  sent_at?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiPack {
+  id: string;
+  project_id: string;
+  version_number: number;
+  status: 'draft' | 'sent' | 'approved' | 'changes_requested';
+  room_label?: string | null;
+  pdf_url?: string | null;
+  image_ids: string[];
+  sent_at?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiAgreement {
+  project_id: string;
+  status: 'draft' | 'sent' | 'signed' | 'voided';
+  sent_at?: string | null;
+  signed_at?: string | null;
+  signed_by?: string | null;
+  design_fee_percent?: number | null;
+  procurement_fee_percent?: number | null;
+  contingency_percent?: number | null;
+  annex_b: Record<string, unknown>;
+  updated_at?: string | null;
+}
+
+export interface ApiPaymentGate {
+  id: string;
+  project_id: string;
+  gate_id: string;
+  status: 'pending' | 'received' | 'waived';
+  amount_minor?: number | null;
+  due_date?: string | null;
+  received_at?: string | null;
+  received_amount_minor?: number | null;
+  received_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiSelection {
+  id: string;
+  project_id: string;
+  pack_id?: string | null;
+  // Migration 020: room_id + category_code align with the frontend fixture
+  // shape so a Selection always knows which room it belongs to and which
+  // budget category bucket it rolls up under.
+  room_id?: string | null;
+  category_code?: string | null;
+  title: string;
+  status: 'draft' | 'sent' | 'picked' | 'changes_requested';
+  options: Array<Record<string, unknown>>;
+  picked_option_id?: string | null;
+  change_request_comment?: string | null;
+  sent_at?: string | null;
+  picked_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiChangeOrder {
+  id: string;
+  project_id: string;
+  // Migration 021: title + co_number bring the API in line with the
+  // frontend ChangeOrder fixture. co_number is server-assigned per
+  // project (1, 2, 3 …); the frontend renders it as "CO-001".
+  title: string | null;
+  co_number: number | null;
+  status: 'draft' | 'sent' | 'approved' | 'rejected';
+  line_items: Array<Record<string, unknown>>;
+  reason?: string | null;
+  sent_at?: string | null;
+  decided_at?: string | null;
+  decided_by?: string | null;
+  decision_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBudgetItem {
+  id: string;
+  project_id: string;
+  stage_key?: string | null;
+  category_code?: string | null;
+  description?: string | null;
+  unit_cost_minor?: number | null;
+  quantity?: number | null;
+  /**
+   * design-be-24: realised cash-out for the item. Populated by the
+   * expense-capture stage; consumed by the bank reconciliation matcher.
+   */
+  actual_paid_minor?: number | null;
+  retail_cost_minor?: number | null;
+  negotiated_cost_minor?: number | null;
+  internal_work?: boolean;
+  vendor_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ─────────────────────────── design-be-24: bank reconciliation ───────────────────────────
+
+export type BankCode = 'mcb' | 'maubank';
+export type BankParseStatus = 'pending' | 'parsed' | 'failed';
+export type BankMatchStatus = 'suggested' | 'confirmed' | 'rejected';
+
+export interface ApiBankStatement {
+  id: string;
+  project_id: string;
+  account_label: string;
+  bank_code: BankCode;
+  statement_period_start: string;
+  statement_period_end: string;
+  uploaded_at: string;
+  uploaded_by_user_id: string | null;
+  raw_source_url: string | null;
+  parse_status: BankParseStatus;
+  parse_error: string | null;
+  txn_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBankTransaction {
+  id: string;
+  statement_id: string;
+  project_id: string;
+  posted_date: string;
+  value_date: string | null;
+  amount_minor: number;
+  descriptor: string;
+  reference: string | null;
+  balance_minor: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBankMatch {
+  id: string;
+  project_id: string;
+  budget_item_id: string;
+  transaction_id: string;
+  status: BankMatchStatus;
+  confidence: number | null;
+  match_reason: string | null;
+  confirmed_at: string | null;
+  confirmed_by_user_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Raw parsed-CSV transaction shape the backend accepts on POST. */
+export interface BankTransactionInput {
+  posted_date: string;
+  value_date?: string | null;
+  amount_minor: number;
+  descriptor: string;
+  reference?: string | null;
+  balance_minor?: number | null;
+}
+
+export interface CreateBankStatementPayload {
+  account_label: string;
+  bank_code?: BankCode;
+  statement_period_start: string;
+  statement_period_end: string;
+  raw_source_url?: string | null;
+  transactions: BankTransactionInput[];
+}
+
+export interface CreateBankStatementResult {
+  statement: ApiBankStatement;
+  transactions: ApiBankTransaction[];
+  matches: ApiBankMatch[];
+}
+
+export interface ApiCloseoutBinder {
+  project_id: string;
+  status: 'draft' | 'sent' | 'signed';
+  warranties: Array<Record<string, unknown>>;
+  maintenance: Array<Record<string, unknown>>;
+  snags: Array<Record<string, unknown>>;
+  sent_at?: string | null;
+  sign_off_at?: string | null;
+  signed_by?: string | null;
+  updated_at?: string | null;
+}
+
+export type ApiTaskCategory = 'general' | 'blocker' | 'next_action';
+
+export interface ApiTask {
+  id: string;
+  project_id: string;
+  stage_key?: string | null;
+  title: string;
+  assignee_user_id?: string | null;
+  due_date?: string | null;
+  status: 'todo' | 'in_progress' | 'blocked' | 'done';
+  notes?: string | null;
+  completed_at?: string | null;
+  /**
+   * design-be-18: discriminator. 'general' is the default; 'blocker' /
+   * 'next_action' are surfaced as the two top-of-overview panels.
+   */
+  category: ApiTaskCategory;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiApproval {
+  id: string;
+  project_id: string;
+  type: 'selection' | 'change_order' | 'agreement' | 'moodboard' | 'design_pack' | 'closeout';
+  target_id: string;
+  sent_at: string;
+  respondent_user_id?: string | null;
+  respondent_name?: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  events?: Array<{
+    id: string;
+    approval_id: string;
+    respondent_user_id?: string | null;
+    respondent_name?: string | null;
+    decision: 'approved' | 'rejected';
+    comment?: string | null;
+    responded_at: string;
+  }>;
+}
+
+export interface ApiMagicLink {
+  id: string;
+  project_id: string;
+  issued_at: string;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  last_used_at?: string | null;
+  issued_by_user_id?: string | null;
+  delivery_channel?: string | null;
+}
+
+export interface ApiAnnexA {
+  tenant_id: string;
+  annex_a: Record<string, unknown>;
+  updated_at?: string | null;
+  updated_by_user_id?: string | null;
+}
+
+// Shared asset shape returned by /api/design/ai_images/* and the
+// /api/design/projects/:id/floor-plan join. Mirrors the backend
+// `shapeAsset` adapter (sha256-keyed, source = 'upload' | 'nanobanana' |
+// 'external'). Floor-plan responses additionally carry `kind: 'floor_plan'`
+// and the generate-floor-plan endpoint stamps `project_updated` +
+// `original_input_sha256`.
+export interface ApiAsset {
+  sha256: string;
+  mime_type: string | null;
+  byte_size: number | null;
+  storage_url: string | null;
+  source: 'upload' | 'nanobanana' | 'external' | null;
+  generator_prompt: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  kind?: string | null;
+}
+
+export interface FloorPlanGenerationResult extends ApiAsset {
+  stub?: boolean;
+  duration_ms?: number | null;
+  cached?: boolean;
+  project_updated?: boolean;
+  original_input_sha256?: string;
+}
+
+export interface GenerateFloorPlanPayload {
+  project_id: string;
+  source_image: { mimeType: string; base64: string };
+  prompt_hint?: string;
+  set_as_project_plan?: boolean;
+}
+
+// Second-stage floor-plan pass — furniture/fixtures overlaid on the clean
+// plan in the approved moodboard's aesthetic. The endpoint resolves both
+// source images server-side from sha256 / moodboard_id, so the caller
+// only supplies references, not bytes.
+export interface FurnishedFloorPlanGenerationResult extends ApiAsset {
+  stub?: boolean;
+  duration_ms?: number | null;
+  cached?: boolean;
+  project_updated?: boolean;
+  source_floor_plan_sha256?: string;
+  source_moodboard_id?: string;
+  used_prompt?: string;
+  prompt_source?: 'kimi' | 'template-fallback' | 'override' | string;
+  prompt_style_notes?: string[];
+  suggested_aspect_ratio?: string | null;
+}
+
+export interface GenerateFurnishedFloorPlanPayload {
+  project_id: string;
+  source_floor_plan_sha256?: string;
+  moodboard_id?: string;
+  prompt_hint?: string;
+  set_as_project_plan?: boolean;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// FETCHERS
+// ════════════════════════════════════════════════════════════════════
+
+const unwrap = <T,>(r: { results: T[] }): T[] => r.results || [];
+
+export const loadProjects = async (filters: { lifecycle_status?: string; current_stage?: string; counterparty_id?: string } = {}) => {
+  const qs = new URLSearchParams();
+  if (filters.lifecycle_status) qs.set('lifecycle_status', filters.lifecycle_status);
+  if (filters.current_stage) qs.set('current_stage', filters.current_stage);
+  if (filters.counterparty_id) qs.set('counterparty_id', filters.counterparty_id);
+  const path = qs.toString() ? `/api/design/projects?${qs}` : '/api/design/projects';
+  return unwrap(await apiFetch(path) as { results: ApiProject[] });
+};
+
+export const loadProject = (id: string) => apiFetch(`/api/design/projects/${id}`) as Promise<ApiProject>;
+export const loadProjectBySlug = (slug: string) => apiFetch(`/api/design/projects/by-slug/${encodeURIComponent(slug)}`) as Promise<ApiProject>;
+
+export const loadLeads = async (status?: string) => {
+  const path = status ? `/api/design/leads?status=${status}` : '/api/design/leads';
+  return unwrap(await apiFetch(path) as { results: ApiLead[] });
+};
+export const loadLead = (id: string) => apiFetch(`/api/design/leads/${id}`) as Promise<ApiLead>;
+
+export const loadCounterparties = async () =>
+  unwrap(await apiFetch('/api/design/counterparties') as { results: ApiCounterparty[] });
+export const loadCounterparty = (id: string) => apiFetch(`/api/design/counterparties/${id}`) as Promise<ApiCounterparty>;
+
+export const loadProperties = async (counterpartyId?: string) => {
+  const path = counterpartyId ? `/api/design/properties?counterparty_id=${counterpartyId}` : '/api/design/properties';
+  return unwrap(await apiFetch(path) as { results: ApiProperty[] });
+};
+export const loadProperty = (id: string) => apiFetch(`/api/design/properties/${id}`) as Promise<ApiProperty>;
+
+export const loadVendors = async (category?: string) => {
+  const path = category ? `/api/design/vendors?category=${encodeURIComponent(category)}` : '/api/design/vendors';
+  return unwrap(await apiFetch(path) as { results: ApiVendor[] });
+};
+export const loadVendor = (id: string) => apiFetch(`/api/design/vendors/${id}`) as Promise<ApiVendor>;
+
+export const loadStages = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/stages?project_id=${projectId}`) as { results: ApiStage[] });
+
+export const loadActivities = async (projectId: string, visibility?: 'portal' | 'internal') => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (visibility) qs.set('visibility', visibility);
+  return unwrap(await apiFetch(`/api/design/activities?${qs}`) as { results: ApiActivity[] });
+};
+
+export const loadMoodboards = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/moodboards?project_id=${projectId}`) as { results: ApiMoodboard[] });
+
+export const loadPacks = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/packs?project_id=${projectId}`) as { results: ApiPack[] });
+
+export const loadAgreement = (projectId: string) =>
+  apiFetch(`/api/design/agreements/${projectId}`) as Promise<ApiAgreement>;
+
+export const loadPayments = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/payment_gates?project_id=${projectId}`) as { results: ApiPaymentGate[] });
+
+export const loadSelections = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/selections?project_id=${projectId}`) as { results: ApiSelection[] });
+
+export const loadChangeOrders = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/change_orders?project_id=${projectId}`) as { results: ApiChangeOrder[] });
+
+export const loadBudgetItems = async (projectId: string, filters: { category_code?: string; vendor_id?: string } = {}) => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (filters.category_code) qs.set('category_code', filters.category_code);
+  if (filters.vendor_id) qs.set('vendor_id', filters.vendor_id);
+  return unwrap(await apiFetch(`/api/design/budget_items?${qs}`) as { results: ApiBudgetItem[] });
+};
+
+export const loadCloseoutBinder = (projectId: string) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}`) as Promise<ApiCloseoutBinder>;
+
+export const loadTasks = async (
+  projectId: string,
+  filters: { status?: string; assignee_user_id?: string; category?: ApiTaskCategory } = {},
+) => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (filters.status) qs.set('status', filters.status);
+  if (filters.assignee_user_id) qs.set('assignee_user_id', filters.assignee_user_id);
+  if (filters.category) qs.set('category', filters.category);
+  return unwrap(await apiFetch(`/api/design/tasks?${qs}`) as { results: ApiTask[] });
+};
+
+/**
+ * design-be-18: convenience wrapper for the BlockersPanel /
+ * NextActionsPanel — one panel per category, single call site.
+ */
+export const listTasksByCategory = (projectId: string, category: ApiTaskCategory) =>
+  loadTasks(projectId, { category });
+
+// Live-tasks store — module-level Map keyed by `${projectId}:${category}`.
+// TaskItemsPanel writes through on every state change; other surfaces
+// (NeedsAttentionQueue, "stale stage" nudges) read synchronously and
+// subscribe to useFixtureRev for re-renders. The previous design left
+// blockers / next-actions stranded in panel-local useState — siblings
+// couldn't see them and the "Needs attention" dashboard still pulled
+// from the legacy project.blocker text field.
+const _liveTasksByKey = new Map<string, ApiTask[]>();
+export function setLiveTasks(projectId: string, category: ApiTaskCategory, tasks: ApiTask[]): void {
+  _liveTasksByKey.set(`${projectId}:${category}`, tasks);
+}
+export function getLiveTasks(projectId: string, category: ApiTaskCategory): ApiTask[] {
+  return _liveTasksByKey.get(`${projectId}:${category}`) || [];
+}
+
+export const loadApprovals = async (projectId: string, filters: { status?: string; type?: string } = {}) => {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (filters.status) qs.set('status', filters.status);
+  if (filters.type) qs.set('type', filters.type);
+  return unwrap(await apiFetch(`/api/design/approvals?${qs}`) as { results: ApiApproval[] });
+};
+export const loadApproval = (id: string) => apiFetch(`/api/design/approvals/${id}`) as Promise<ApiApproval>;
+
+export const loadMagicLinks = async (projectId: string) =>
+  unwrap(await apiFetch(`/api/design/magic_links?project_id=${projectId}`) as { results: ApiMagicLink[] });
+
+export const loadAnnexA = () => apiFetch('/api/design/annex_a') as Promise<ApiAnnexA>;
+
+// ── Bank reconciliation (design-be-24) ──
+//
+// All routes are project-scoped except confirm / reject / delete which take
+// the match id directly. List endpoints return { results: [...] }; the
+// helpers unwrap to the array shape consumers actually use.
+
+export const listBankStatements = async (projectId: string): Promise<ApiBankStatement[]> =>
+  unwrap(await apiFetch(`/api/design/projects/${projectId}/bank-statements`) as { results: ApiBankStatement[] });
+
+export const createBankStatement = (projectId: string, payload: CreateBankStatementPayload) =>
+  apiFetch(`/api/design/projects/${projectId}/bank-statements`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<CreateBankStatementResult>;
+
+export const listBankTransactions = async (projectId: string, opts: { statement_id?: string } = {}): Promise<ApiBankTransaction[]> => {
+  const qs = opts.statement_id ? `?statement_id=${encodeURIComponent(opts.statement_id)}` : '';
+  return unwrap(await apiFetch(`/api/design/projects/${projectId}/bank-transactions${qs}`) as { results: ApiBankTransaction[] });
+};
+
+export const listBankMatches = async (projectId: string, opts: { status?: BankMatchStatus } = {}): Promise<ApiBankMatch[]> => {
+  const qs = opts.status ? `?status=${encodeURIComponent(opts.status)}` : '';
+  return unwrap(await apiFetch(`/api/design/projects/${projectId}/bank-matches${qs}`) as { results: ApiBankMatch[] });
+};
+
+export const confirmBankMatch = (id: string) =>
+  apiFetch(`/api/design/bank-matches/${id}/confirm`, { method: 'POST' }) as Promise<ApiBankMatch>;
+
+export const rejectBankMatch = (id: string) =>
+  apiFetch(`/api/design/bank-matches/${id}/reject`, { method: 'POST' }) as Promise<ApiBankMatch>;
+
+export const createManualBankMatch = (projectId: string, payload: { budget_item_id: string; transaction_id: string; notes?: string | null }) =>
+  apiFetch(`/api/design/projects/${projectId}/bank-matches`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<ApiBankMatch>;
+
+export const deleteBankMatch = (id: string) =>
+  apiFetch(`/api/design/bank-matches/${id}`, { method: 'DELETE' }) as Promise<{ ok: true; id: string }>;
+
+export const loadTimeInStage = (days = 90) =>
+  apiFetch(`/api/design/analytics/time-in-stage?days=${days}`) as Promise<{ window_days: number; results: Array<{ stage_key: string; completed_count: number; mean_days: number }> }>;
+
+export const loadFunnel = () =>
+  apiFetch('/api/design/analytics/funnel') as Promise<{ leads_by_status: Record<string, number>; projects_by_lifecycle: Record<string, number>; projects_by_stage: Record<string, number> }>;
+
+export const loadSpendCurve = (days = 90) =>
+  apiFetch(`/api/design/analytics/spend-curve?days=${days}`) as Promise<{ window_days: number; results: Array<{ day: string; spend_minor: number }> }>;
+
+export const loadRevenueCurve = (days = 180) =>
+  apiFetch(`/api/design/analytics/revenue-curve?days=${days}`) as Promise<{ window_days: number; results: Array<{ day: string; revenue_minor: number }> }>;
+
+export const loadVendorPerformance = () =>
+  apiFetch('/api/design/analytics/vendor-performance') as Promise<{ results: Array<{ vendor_id: string; vendor_name: string; category: string; item_count: number; total_spend_minor: number; internal_work_count: number }> }>;
+
+// ════════════════════════════════════════════════════════════════════
+// MUTATIONS
+// ════════════════════════════════════════════════════════════════════
+
+export const createProject = (payload: Partial<ApiProject> & { name: string; slug: string }) =>
+  apiFetch('/api/design/projects', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiProject>;
+export const updateProject = (id: string, patch: Partial<ApiProject>) =>
+  apiFetch(`/api/design/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiProject>;
+export const pauseProject = (id: string, reason?: string) =>
+  apiFetch(`/api/design/projects/${id}/pause`, { method: 'POST', body: JSON.stringify({ reason }) }) as Promise<ApiProject>;
+export const resumeProject = (id: string) =>
+  apiFetch(`/api/design/projects/${id}/resume`, { method: 'POST' }) as Promise<ApiProject>;
+export const cancelProject = (id: string, payload: { reason?: string; transfer_to_inventory?: boolean }) =>
+  apiFetch(`/api/design/projects/${id}/cancel`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiProject>;
+
+export const createLead = (payload: Partial<ApiLead> & { name: string }) =>
+  apiFetch('/api/design/leads', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiLead>;
+export const updateLead = (id: string, patch: Partial<ApiLead>) =>
+  apiFetch(`/api/design/leads/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiLead>;
+export const convertLeadToProject = (id: string, projectPayload: { name?: string; slug?: string } = {}) =>
+  apiFetch(`/api/design/leads/${id}/convert`, { method: 'POST', body: JSON.stringify(projectPayload) }) as Promise<{ lead: ApiLead; project: ApiProject }>;
+export const deleteLead = (id: string) =>
+  apiFetch(`/api/design/leads/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+// ─────────────────────────── Rooms ───────────────────────────
+// Rooms attach to properties (not directly to projects). The Site Visit
+// stage uses these to anchor photos + measurements + design-pack layouts.
+// Backend schema: design_rooms { id, property_id, name, sqft, usage_kind }.
+export interface ApiRoom {
+  id: string;
+  property_id: string;
+  name: string;
+  sqft?: number | null;
+  usage_kind?: string | null;
+  // Migration 031 — Site Visit detail fields. snake_case to match the
+  // backend column names; the fixture mapper converts to camelCase.
+  length_m?: number | null;
+  width_m?: number | null;
+  height_m?: number | null;
+  windows?: number | null;
+  doors?: number | null;
+  condition_notes?: string | null;
+  issues?: string | null;
+  keep_furniture?: string | null;
+  remove_furniture?: string | null;
+  design_opportunity?: string | null;
+  access_notes?: string | null;
+  utilities_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+// Per-field patches send only the changed key. PATCH /api/design/rooms/:id.
+export interface ApiRoomPatch {
+  name?: string;
+  sqft?: number | null;
+  usage_kind?: string | null;
+  length_m?: number | null;
+  width_m?: number | null;
+  height_m?: number | null;
+  windows?: number | null;
+  doors?: number | null;
+  condition_notes?: string | null;
+  issues?: string | null;
+  keep_furniture?: string | null;
+  remove_furniture?: string | null;
+  design_opportunity?: string | null;
+  access_notes?: string | null;
+  utilities_notes?: string | null;
+}
+export const listRooms = (propertyId: string) =>
+  apiFetch(`/api/design/rooms?property_id=${encodeURIComponent(propertyId)}`)
+    .then((r) => (r as { results: ApiRoom[] }).results);
+export const createRoom = (payload: { property_id: string; name: string; sqft?: number | null; usage_kind?: string | null }) =>
+  apiFetch('/api/design/rooms', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoom>;
+export const updateRoom = (id: string, patch: ApiRoomPatch) =>
+  apiFetch(`/api/design/rooms/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }) as Promise<ApiRoom>;
+// DELETE /api/design/rooms/:id — backend returns 204. apiFetch parses the
+// body as JSON, which would throw on the empty 204 body, so we use raw
+// fetch here (same pattern the photo upload + stage reopen below use).
+export const deleteRoom = async (id: string): Promise<void> => {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/api/design/rooms/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(detail.error || `Failed to delete room (HTTP ${res.status})`);
+  }
+};
+
+// ─────────────────────────── Budget items ───────────────────────────
+export const updateBudgetItem = (id: string, patch: Partial<ApiBudgetItem>) =>
+  apiFetch(`/api/design/budget_items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiBudgetItem>;
+
+// ─────────────────────────── Documents (doc-request) ───────────────────────────
+// Owner-supplied artifact tracker. Discovery / doc-request stage uses
+// this to record property title scans, EPC certificates, floor plans
+// supplied by the owner, etc. doc_type is a free-text string so the
+// frontend can introduce new categories without a backend migration.
+export interface ApiDocument {
+  id: string;
+  project_id: string;
+  doc_type: string;
+  name: string | null;
+  url: string | null;
+  version: number;
+  signed_by: string | null;
+  signed_at: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export const loadDocuments = (projectId: string, docType?: string) => {
+  const q = new URLSearchParams({ project_id: projectId });
+  if (docType) q.set('doc_type', docType);
+  return apiFetch(`/api/design/documents?${q.toString()}`).then((r) => (r as { results: ApiDocument[] }).results);
+};
+export const createDocument = (payload: { project_id: string; doc_type: string; name?: string | null; url?: string | null }) =>
+  apiFetch('/api/design/documents', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiDocument>;
+export const deleteDocument = (id: string) =>
+  apiFetch(`/api/design/documents/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+// ─────────────────────────── AI: rough budget estimator ───────────────────────────
+// AI Bet #1 — staff one-liner → line-item budget grounded in the 155-
+// entry FRIDAY_CATALOG_HISTORY + FRIDAY_STYLE_GUIDE + tier rules.
+// The frontend ships the sampled catalog so the backend doesn't need
+// to duplicate it; backend handles the Kimi call + JSON parsing +
+// template fallback. Every line carries sourceKeys for provenance —
+// the UI surfaces these as chips so any line can be challenged.
+export interface AiRoughBudgetLine {
+  room: string;
+  category: string;
+  item: string;
+  qty: number;
+  unitCostMinor: number;
+  sourceKeys: string[];
+  rationale: string;
+}
+export interface AiRoughBudgetResponse {
+  lines: AiRoughBudgetLine[];
+  lowMinor: number;
+  midMinor: number;
+  highMinor: number;
+  contingencyPct: number;
+  narrative: string;
+  source: 'kimi' | 'template-fallback';
+  model?: string;
+  error?: string | null;
+  durationMs: number;
+}
+export interface AiRoughBudgetRequest {
+  project_id: string;
+  brief: string;
+  target_tier?: 1 | 2 | 3 | null;
+  classification?: 'renovation' | 'furnishing' | 'mixed' | null;
+  project_context?: Record<string, unknown>;
+  catalog_sample?: Array<{
+    normalizedKey: string;
+    displayName: string;
+    category: string;
+    vendor: string | null;
+    unitCostMinor: number;
+    sourceProjectLabel: string;
+  }>;
+  style_guide?: {
+    notes: string;
+    priceRangesByCategory: Record<string, { p25: number; p50: number; p75: number; samples: number }>;
+    preferredVendors: Array<{ name: string; categories: string[]; sampleCount: number }>;
+  };
+  tier_rules?: Record<string, unknown>;
+}
+export const aiRoughBudgetEstimate = (req: AiRoughBudgetRequest) =>
+  apiFetch('/api/design/ai/rough-budget-estimate', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiRoughBudgetResponse>;
+
+// AI Bet #3 — Ask Friday R-class. project_id is optional; when null,
+// Kimi answers cross-project questions ("compare Ohana and Albion
+// procurement spend"). Returns markdown answer with [kind:refId]
+// citations the UI can render as clickable pills.
+export interface AiAskCitation {
+  kind: 'budget' | 'task' | 'moodboard' | 'payment' | 'activity' | 'approval' | 'signature' | 'site_visit' | string;
+  refId: string;
+  label: string;
+}
+export interface AiAskResponse {
+  answer: string;
+  citations: AiAskCitation[];
+  source: 'kimi' | 'template-fallback';
+  model?: string;
+  durationMs: number;
+}
+export const aiAsk = (req: { project_id?: string | null; query: string }) =>
+  apiFetch('/api/design/ai/ask', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiAskResponse>;
+
+// First W-class AI in the design module — proposes edits to the
+// project-specific Annex B fields based on a natural-language
+// instruction. The backend bounds the proposed mutation to a safe
+// subset (customInclusions + 2 boolean flags + 2 dates) and silently
+// drops anything else. Fees, EPC, tier, and classification are NEVER
+// AI-mutable. The frontend renders the proposal as a diff card with
+// Apply / Discard; nothing persists server-side from this call.
+export interface AiAnnexBEditRequest {
+  project_id: string;
+  current_annex_b: Record<string, unknown>;
+  instruction: string;
+}
+export interface AiAnnexBEditResponse {
+  proposed: Partial<{
+    customInclusions: string | null;
+    saleOfFurniture: boolean;
+    strWorkingCapital: boolean;
+    startDate: string | null;
+    estimatedCompletion: string | null;
+  }>;
+  reasoning: string;
+  confidence: 'high' | 'medium' | 'low';
+  source: 'kimi' | 'template-fallback' | 'kimi-error';
+  durationMs: number;
+}
+export const aiAnnexBEdit = (req: AiAnnexBEditRequest) =>
+  apiFetch('/api/design/ai/annex-b-edit', { method: 'POST', body: JSON.stringify(req) }) as Promise<AiAnnexBEditResponse>;
+
+// ─────────────────────────── Photos ───────────────────────────
+// Backend stores photo URL refs (blob lives external). v0.1 surface is
+// URL-based — staff paste a Drive / Imgur / direct-image URL with an
+// optional caption + room link. The proper file-upload pipeline
+// (Cloudinary / S3 presigned URL) is queued for a follow-up sprint.
+export interface ApiPhoto {
+  id: string;
+  project_id: string;
+  room_id: string | null;
+  kind: string;
+  caption: string | null;
+  url: string;
+  uploaded_at: string;
+}
+export const loadPhotos = (projectId: string) =>
+  apiFetch(`/api/design/photos?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiPhoto[] }).results);
+export const createPhoto = (payload: { project_id: string; url: string; kind: string; caption?: string | null; room_id?: string | null }) =>
+  apiFetch('/api/design/photos', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiPhoto>;
+export const deletePhoto = (id: string) =>
+  apiFetch(`/api/design/photos/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+// Direct file upload via multipart/form-data. Backend writes the file
+// to the VPS upload dir (served by nginx at /uploads/photos/...) and
+// inserts the design_photos row in one call.
+export async function uploadPhoto(payload: {
+  file: File;
+  project_id: string;
+  kind: string;
+  caption?: string | null;
+  room_id?: string | null;
+}): Promise<ApiPhoto> {
+  const fd = new FormData();
+  fd.append('file', payload.file);
+  fd.append('kind', payload.kind);
+  if (payload.caption) fd.append('caption', payload.caption);
+  if (payload.room_id) fd.append('room_id', payload.room_id);
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // project_id is in URL not body — multer destination function needs
+  // it before req.body is parsed.
+  const res = await fetch(`${API_BASE}/api/design/photos/upload/${encodeURIComponent(payload.project_id)}`, {
+    method: 'POST',
+    body: fd,
+    headers,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error || `Upload failed: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ─────────────────────────── Rough budget versions ───────────────────────────
+// Migration 023 split the rough-budget into per-version envelopes
+// (low/mid/high totals, tier, fee overrides, narrative fields) and
+// per-line-item rows that join to a version. POST accepts the full
+// envelope + optional line_items array as a one-shot "save new
+// version" — backend creates the version row, assigns next
+// version_number, and inserts the line items in a single call.
+export interface ApiRoughBudgetVersion {
+  id: string;
+  project_id: string;
+  version_number: number;
+  low_minor: number | null;
+  mid_minor: number | null;
+  high_minor: number | null;
+  tier: 'T1' | 'T2' | 'T3' | null;
+  classification_override: string | null;
+  design_fee_minor: number | null;
+  procurement_fee_minor: number | null;
+  assumptions: string | null;
+  exclusions: string | null;
+  risk_items: string | null;
+  next_steps: string | null;
+  status: 'draft' | 'sent' | 'accepted';
+  created_at: string;
+  updated_at: string;
+}
+export interface ApiRoughBudgetLineItemInput {
+  category_code?: string | null;
+  description?: string | null;
+  unit_cost_minor?: number | null;
+  quantity?: number | null;
+  notes?: string | null;
+  catalog_source_id?: string | null;
+}
+export const loadRoughBudgetVersions = (projectId: string) =>
+  apiFetch(`/api/design/rough_budget_versions?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiRoughBudgetVersion[] }).results);
+export const createRoughBudgetVersion = (payload: Partial<ApiRoughBudgetVersion> & { project_id: string; line_items?: ApiRoughBudgetLineItemInput[] }) =>
+  apiFetch('/api/design/rough_budget_versions', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiRoughBudgetVersion & { line_items_inserted: number }>;
+export const updateRoughBudgetVersion = (id: string, patch: Partial<ApiRoughBudgetVersion>) =>
+  apiFetch(`/api/design/rough_budget_versions/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiRoughBudgetVersion>;
+
+// Line items belonging to ANY rough-budget version in this project.
+// The caller filters by version_id client-side. Added 2026-05-14 for
+// the VersionInspectModal — Mathias wanted to see WHICH ITEMS made up
+// each saved version, not just the totals.
+export interface ApiRoughBudgetItem {
+  id: string;
+  project_id: string;
+  version_id: string | null;
+  category_code: string | null;
+  description: string | null;
+  unit_cost_minor: number | null;
+  quantity: number | null;
+  notes: string | null;
+  catalog_source_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export const listRoughBudgetItems = (projectId: string) =>
+  apiFetch(`/api/design/rough_budgets?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiRoughBudgetItem[] }).results);
+
+// ─────────────────────────── Site visits ───────────────────────────
+// Migration 022 added the metadata fields the SiteVisitStage form has
+// always rendered but never saved. The frontend treats site_visit as
+// "one active visit per project" (the most recent); the backend
+// stores a list to keep historical visits, and the API returns them
+// in visit_date DESC order.
+export interface ApiSiteVisit {
+  id: string;
+  project_id: string;
+  visit_date: string;
+  visited_at: string | null;
+  visited_by_user_id: string | null;
+  walkthrough_video_url: string | null;
+  marketing_photo_consent: boolean | null;
+  status: 'not_started' | 'in_progress' | 'closed';
+  duration_min: number | null;
+  attendees: string[];
+  notes: string | null;
+  photos_collected: number;
+  created_at: string;
+  updated_at: string;
+}
+export const loadSiteVisits = (projectId: string) =>
+  apiFetch(`/api/design/site_visits?project_id=${encodeURIComponent(projectId)}`)
+    .then((r) => (r as { results: ApiSiteVisit[] }).results);
+export const createSiteVisit = (payload: Partial<ApiSiteVisit> & { project_id: string }) =>
+  apiFetch('/api/design/site_visits', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiSiteVisit>;
+export const updateSiteVisit = (id: string, patch: Partial<ApiSiteVisit>) =>
+  apiFetch(`/api/design/site_visits/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiSiteVisit>;
+// Draft-only delete (status='not_started'). 409 if started.
+export const deleteSiteVisit = (id: string) =>
+  apiFetch(`/api/design/site_visits/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+// ─────────────────────────── Preferences ───────────────────────────
+// Single row per project, stored as opaque JSONB on the backend. The
+// frontend PreferenceProfile shape is preserved inside `preferences`.
+// GET / PUT only (no POST/DELETE) — server upserts on PUT.
+export interface ApiPreferences {
+  project_id: string;
+  preferences: Record<string, unknown>;
+  notes: string | null;
+  updated_at: string | null;
+}
+export const loadPreferences = (projectId: string) =>
+  apiFetch(`/api/design/preferences/${encodeURIComponent(projectId)}`) as Promise<ApiPreferences>;
+export const savePreferences = (projectId: string, preferences: Record<string, unknown>, notes: string | null = null) =>
+  apiFetch(`/api/design/preferences/${encodeURIComponent(projectId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ preferences, notes }),
+  }) as Promise<ApiPreferences>;
+
+export const createCounterparty = (payload: Partial<ApiCounterparty> & { name: string }) =>
+  apiFetch('/api/design/counterparties', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiCounterparty>;
+export const updateCounterparty = (id: string, patch: Partial<ApiCounterparty>) =>
+  apiFetch(`/api/design/counterparties/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiCounterparty>;
+
+export const createProperty = (payload: Partial<ApiProperty> & { name: string }) =>
+  apiFetch('/api/design/properties', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiProperty>;
+export const updateProperty = (id: string, patch: Partial<ApiProperty>) =>
+  apiFetch(`/api/design/properties/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiProperty>;
+
+export const createVendor = (payload: Partial<ApiVendor> & { name: string }) =>
+  apiFetch('/api/design/vendors', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiVendor>;
+export const updateVendor = (id: string, patch: Partial<ApiVendor>) =>
+  apiFetch(`/api/design/vendors/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiVendor>;
+// 409 with { references } if any budget_items reference this vendor.
+export const deleteVendor = (id: string) =>
+  apiFetch(`/api/design/vendors/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+// design-be-18: task CRUD. category is part of the create payload so
+// the BlockersPanel / NextActionsPanel can post tasks pre-categorised.
+export type ApiTaskCreatePayload = Partial<ApiTask> & {
+  project_id: string;
+  title: string;
+};
+export const createTask = (payload: ApiTaskCreatePayload) =>
+  apiFetch('/api/design/tasks', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiTask>;
+export const updateTask = (id: string, patch: Partial<ApiTask>) =>
+  apiFetch(`/api/design/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiTask>;
+export const deleteTask = (id: string) =>
+  apiFetch(`/api/design/tasks/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+export const upsertStage = (projectId: string, stageKey: string, patch: Partial<ApiStage>) =>
+  apiFetch(`/api/design/stages/${projectId}/${stageKey}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiStage>;
+
+// design-be-10: stage rewind. Backend returns 409 with { locked_by: [...] }
+// when a downstream document blocks the reopen — we surface that to the UI
+// via a typed error so the toast can list the blocking artifacts.
+export interface StageLockedItem { type: string; id: string; status: string }
+export class StageReopenLockedError extends Error {
+  readonly lockedBy: StageLockedItem[];
+  constructor(message: string, lockedBy: StageLockedItem[]) {
+    super(message);
+    this.name = 'StageReopenLockedError';
+    this.lockedBy = lockedBy;
+  }
+}
+export async function reopenStage(
+  projectId: string,
+  stageKey: string,
+): Promise<{ stage: ApiStage; project: ApiProject }> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/api/design/stages/${projectId}/${stageKey}/reopen`, {
+    method: 'POST',
+    headers,
+  });
+  if (res.status === 401) { clearToken(); throw new Error('Unauthorized'); }
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({})) as { error?: string; locked_by?: StageLockedItem[] };
+    throw new StageReopenLockedError(
+      body.error || 'Cannot reopen stage: downstream documents are locked',
+      Array.isArray(body.locked_by) ? body.locked_by : [],
+    );
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export const upsertAgreement = (projectId: string, patch: Partial<ApiAgreement>) =>
+  apiFetch(`/api/design/agreements/${projectId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiAgreement>;
+export const sendAgreement = (projectId: string) =>
+  apiFetch(`/api/design/agreements/${projectId}/send`, { method: 'POST' }) as Promise<ApiAgreement>;
+export const signAgreement = (projectId: string, signedBy?: string) =>
+  apiFetch(`/api/design/agreements/${projectId}/sign`, { method: 'POST', body: JSON.stringify({ signed_by: signedBy }) }) as Promise<ApiAgreement>;
+
+export const upsertPaymentGate = (projectId: string, gateId: string, patch: Partial<ApiPaymentGate>) =>
+  apiFetch(`/api/design/payment_gates/${projectId}/${gateId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiPaymentGate>;
+export const receivePayment = (projectId: string, gateId: string, payload: { amount_minor?: number; received_at?: string; note?: string }) =>
+  apiFetch(`/api/design/payment_gates/${projectId}/${gateId}/receive`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiPaymentGate>;
+export const waivePayment = (projectId: string, gateId: string, note?: string) =>
+  apiFetch(`/api/design/payment_gates/${projectId}/${gateId}/waive`, { method: 'POST', body: JSON.stringify({ note }) }) as Promise<ApiPaymentGate>;
+
+export const createMoodboard = (payload: Partial<ApiMoodboard> & { project_id: string }) =>
+  apiFetch('/api/design/moodboards', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiMoodboard>;
+export const updateMoodboard = (id: string, patch: Partial<ApiMoodboard>) =>
+  apiFetch(`/api/design/moodboards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiMoodboard>;
+export const sendMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}/send`, { method: 'POST' }) as Promise<ApiMoodboard>;
+export const approveMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}/approve`, { method: 'POST' }) as Promise<ApiMoodboard>;
+// Migration 034 — soft delete a moodboard variant. Backend flips
+// is_archived; archived rows disappear from the default list. The
+// promise resolves with the archived row (status visible via
+// is_archived) for optimistic UI confirmation.
+export const archiveMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}`, { method: 'DELETE' }) as Promise<ApiMoodboard>;
+export const restoreMoodboard = (id: string) =>
+  apiFetch(`/api/design/moodboards/${id}/restore`, { method: 'POST' }) as Promise<ApiMoodboard>;
+
+export const createPack = (payload: Partial<ApiPack> & { project_id: string }) =>
+  apiFetch('/api/design/packs', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiPack>;
+export const updatePack = (id: string, patch: Partial<ApiPack>) =>
+  apiFetch(`/api/design/packs/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiPack>;
+export const sendPack = (id: string) =>
+  apiFetch(`/api/design/packs/${id}/send`, { method: 'POST' }) as Promise<ApiPack>;
+export const approvePack = (id: string) =>
+  apiFetch(`/api/design/packs/${id}/approve`, { method: 'POST' }) as Promise<ApiPack>;
+
+export const createSelection = (payload: Partial<ApiSelection> & { project_id: string; title: string }) =>
+  apiFetch('/api/design/selections', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiSelection>;
+export const updateSelection = (id: string, patch: Partial<ApiSelection>) =>
+  apiFetch(`/api/design/selections/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiSelection>;
+export const sendSelection = (id: string) =>
+  apiFetch(`/api/design/selections/${id}/send`, { method: 'POST' }) as Promise<ApiSelection>;
+export const pickSelection = (id: string, pickedOptionId: string) =>
+  apiFetch(`/api/design/selections/${id}/pick`, { method: 'POST', body: JSON.stringify({ picked_option_id: pickedOptionId }) }) as Promise<ApiSelection>;
+export const requestSelectionChanges = (id: string, comment?: string) =>
+  apiFetch(`/api/design/selections/${id}/request-changes`, { method: 'POST', body: JSON.stringify({ comment }) }) as Promise<ApiSelection>;
+// Draft-only delete. 409 once sent/picked/changes_requested.
+export const deleteSelection = (id: string) =>
+  apiFetch(`/api/design/selections/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+export const createChangeOrder = (payload: Partial<ApiChangeOrder> & { project_id: string }) =>
+  apiFetch('/api/design/change_orders', { method: 'POST', body: JSON.stringify(payload) }) as Promise<ApiChangeOrder>;
+export const updateChangeOrder = (id: string, patch: Partial<ApiChangeOrder>) =>
+  apiFetch(`/api/design/change_orders/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) as Promise<ApiChangeOrder>;
+export const sendChangeOrder = (id: string) =>
+  apiFetch(`/api/design/change_orders/${id}/send`, { method: 'POST' }) as Promise<ApiChangeOrder>;
+export const approveChangeOrder = (id: string, note?: string) =>
+  apiFetch(`/api/design/change_orders/${id}/approve`, { method: 'POST', body: JSON.stringify({ decision_note: note }) }) as Promise<ApiChangeOrder>;
+export const rejectChangeOrder = (id: string, note?: string) =>
+  apiFetch(`/api/design/change_orders/${id}/reject`, { method: 'POST', body: JSON.stringify({ decision_note: note }) }) as Promise<ApiChangeOrder>;
+// Draft-only delete. 409 once sent/approved/rejected.
+export const deleteChangeOrder = (id: string) =>
+  apiFetch(`/api/design/change_orders/${id}`, { method: 'DELETE' }) as Promise<void>;
+
+export const upsertCloseoutBinder = (projectId: string, patch: Partial<ApiCloseoutBinder>) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}`, { method: 'PUT', body: JSON.stringify(patch) }) as Promise<ApiCloseoutBinder>;
+export const sendCloseoutBinder = (projectId: string) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}/send`, { method: 'POST' }) as Promise<ApiCloseoutBinder>;
+export const signOffCloseoutBinder = (projectId: string, signedBy?: string) =>
+  apiFetch(`/api/design/closeout_binders/${projectId}/sign-off`, { method: 'POST', body: JSON.stringify({ signed_by: signedBy }) }) as Promise<ApiCloseoutBinder>;
+
+export const respondToApproval = (id: string, decision: 'approved' | 'rejected', comment?: string) =>
+  apiFetch(`/api/design/approvals/${id}/respond`, { method: 'POST', body: JSON.stringify({ decision, comment }) }) as Promise<ApiApproval>;
+
+export const updateAnnexA = (annexA: Record<string, unknown>) =>
+  apiFetch('/api/design/annex_a', { method: 'PUT', body: JSON.stringify({ annex_a: annexA }) }) as Promise<ApiAnnexA>;
+
+export const mintMagicLink = (projectId: string, opts: { delivery_channel?: string; expires_in_seconds?: number } = {}) =>
+  apiFetch('/api/design/magic_links', { method: 'POST', body: JSON.stringify({ project_id: projectId, ...opts }) }) as Promise<ApiMagicLink & { token: string; portal_url: string }>;
+export const revokeMagicLink = (id: string) =>
+  apiFetch(`/api/design/magic_links/${id}/revoke`, { method: 'POST' }) as Promise<ApiMagicLink>;
+
+// ── Floor plan ──
+// loadProjectFloorPlan resolves the currently-pinned clean floor plan for
+// a project via the FK join. Returns null on 404 (no plan set) — callers
+// shouldn't need to special-case the missing-plan path with try/catch.
+export const loadProjectFloorPlan = async (projectId: string): Promise<ApiAsset | null> => {
+  try {
+    return await apiFetch(`/api/design/projects/${projectId}/floor-plan`) as ApiAsset;
+  } catch (e) {
+    // The backend returns 404 with `{ error: 'No floor plan set for this project' }`
+    // when floor_plan_image_id is null. apiFetch translates this into an
+    // Error whose message starts with the backend's error text.
+    if (e instanceof Error && /No floor plan|Project not found|HTTP 404/i.test(e.message)) return null;
+    throw e;
+  }
+};
+
+// generateFloorPlan POSTs the messy floor plan + optional hint to the
+// floor-plan-cleanup endpoint. Returns the asset row plus the metadata
+// the endpoint appends (project_updated, original_input_sha256, stub,
+// duration_ms, cached). Callers typically set set_as_project_plan: true
+// so the project's floor_plan_image_id is updated in the same call.
+export const generateFloorPlan = (payload: GenerateFloorPlanPayload) =>
+  apiFetch('/api/design/ai_images/generate-floor-plan', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<FloorPlanGenerationResult>;
+
+// loadProjectFurnishedFloorPlan resolves the second-stage furnished floor
+// plan via FK join. Returns null on 404 (no furnished plan pinned yet) so
+// callers can render the empty-state without try/catch.
+export const loadProjectFurnishedFloorPlan = async (projectId: string): Promise<ApiAsset | null> => {
+  try {
+    return await apiFetch(`/api/design/projects/${projectId}/floor-plan-furnished`) as ApiAsset;
+  } catch (e) {
+    if (e instanceof Error && /No furnished floor plan|Project not found|HTTP 404/i.test(e.message)) return null;
+    throw e;
+  }
+};
+
+// generateFurnishedFloorPlan kicks off the second-stage pass: backend
+// resolves the project's clean floor plan + the latest approved moodboard
+// (or the explicitly-passed override), runs Kimi to synthesise an
+// architectural furnishing prompt, then calls Nanobanana with both
+// images inline. Callers typically default set_as_project_plan: true so
+// the result is immediately surfaced in the project shell.
+export const generateFurnishedFloorPlan = (body: GenerateFurnishedFloorPlanPayload) =>
+  apiFetch('/api/design/ai_images/generate-furnished-floor-plan', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as Promise<FurnishedFloorPlanGenerationResult>;
+
+// ════════════════════════════════════════════════════════════════════
+// FLOOR PLANS (vector model) — sprint W2 backend
+// ════════════════════════════════════════════════════════════════════
+// CRUD wrappers around the W2 backend routes that persist the vector
+// FloorPlanModel produced by the tracing editor / Kimi op-applier. The
+// canonical shape lives in floorPlanTypes.ts — we re-export the API
+// types here so callers can import everything from this client.
+
+export type {
+  FloorPlanModel,
+  ApiFloorPlanVersion,
+  ApiFloorPlanChat,
+  FloorPlanOperation,
+} from './floorPlanTypes';
+
+import type { FloorPlanModel, ApiFloorPlanVersion, ApiFloorPlanChat, ApiFloorPlanFloor } from './floorPlanTypes';
+
+export const createFloorPlan = (payload: {
+  project_id: string;
+  source_image_url?: string;
+  model: FloorPlanModel;
+  label?: string;
+  /** Zero-indexed floor — defaults to 0 (ground) server-side. */
+  floor_index?: number;
+  /** Free-text floor label, persisted on the row. */
+  floor_label?: string;
+}) =>
+  apiFetch('/api/design/floor-plans', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<ApiFloorPlanVersion>;
+
+export const listFloorPlans = async (projectId: string, floorIndex?: number) => {
+  const params = new URLSearchParams({ project_id: projectId });
+  if (floorIndex != null) params.set('floor_index', String(floorIndex));
+  return unwrap(
+    await apiFetch(`/api/design/floor-plans?${params.toString()}`) as { results: ApiFloorPlanVersion[] },
+  );
+};
+
+/**
+ * Distinct floors for a project — used by the floor-tab bar in the
+ * studio. Each entry has the version count + latest version so the tab
+ * can show "Ground floor (v3)" without a second round-trip.
+ */
+export const listFloors = async (projectId: string): Promise<ApiFloorPlanFloor[]> => {
+  const r = await apiFetch(
+    `/api/design/floor-plans/floors?project_id=${encodeURIComponent(projectId)}`,
+  ) as { floors: ApiFloorPlanFloor[] };
+  return r.floors || [];
+};
+
+export const updateFloorPlan = (id: string, patch: { model?: FloorPlanModel; label?: string }) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }) as Promise<ApiFloorPlanVersion>;
+
+export const finalizeFloorPlan = (id: string) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(id)}/finalize`, { method: 'POST' }) as Promise<ApiFloorPlanVersion>;
+
+export const revertFloorPlan = (id: string) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(id)}/revert`, { method: 'POST' }) as Promise<ApiFloorPlanVersion>;
+
+// ── Chat (Phase 2D) ─────────────────────────────────────────────────
+// Conversational edits. Each POST sends a user message and gets back
+// the persisted chat turn + (on success) the new floor-plan version
+// produced by Kimi's operations. listFloorPlanChats returns the whole
+// transcript for a project, oldest-first.
+
+export const sendFloorPlanChat = (payload: { project_id: string; user_message: string }) =>
+  apiFetch('/api/design/floor-plan-chats', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<{ chat: ApiFloorPlanChat; version: ApiFloorPlanVersion | null }>;
+
+export const listFloorPlanChats = async (projectId: string) =>
+  unwrap(
+    await apiFetch(`/api/design/floor-plan-chats?project_id=${encodeURIComponent(projectId)}`) as { results: ApiFloorPlanChat[] },
+  );
+
+// loadFloorPlanRender hits the lazy-render endpoint and returns the
+// stylized raster URL for a version. The backend caches the result
+// against the model hash so subsequent calls are instant. When the
+// Gemini key is missing the renderer degrades to an SVG-as-data-URL
+// preview with stub: true so the UI can flag it.
+export const loadFloorPlanRender = (versionId: string) =>
+  apiFetch(`/api/design/floor-plans/${encodeURIComponent(versionId)}/render`, { method: 'GET' }) as Promise<{
+    url: string;
+    sha256?: string;
+    cached?: boolean;
+    stub?: boolean;
+  }>;
+
+// ════════════════════════════════════════════════════════════════════
+// HOOKS — simple list/detail wrappers around the fetchers above
+// ════════════════════════════════════════════════════════════════════
+
+function useResource<T>(loader: () => Promise<T>, deps: unknown[]): { data: T | null; loading: boolean; error: string | null; refetch: () => void } {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    loader()
+      .then(setData)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  useEffect(() => { refetch(); }, [refetch]);
+  return { data, loading, error, refetch };
+}
+
+export const useLiveDesignProjects = (filters: Parameters<typeof loadProjects>[0] = {}) =>
+  useResource(() => loadProjects(filters), [JSON.stringify(filters)]);
+
+export const useLiveDesignProject = (id: string | null) =>
+  useResource(() => id ? loadProject(id) : Promise.resolve(null), [id]);
+
+export const useLiveDesignProjectBySlug = (slug: string | null) =>
+  useResource(() => slug ? loadProjectBySlug(slug) : Promise.resolve(null), [slug]);
+
+export const useLiveDesignLeads = (status?: string) =>
+  useResource(() => loadLeads(status), [status]);
+
+export const useLiveDesignCounterparties = () =>
+  useResource(() => loadCounterparties(), []);
+
+export const useLiveDesignProperties = (counterpartyId?: string) =>
+  useResource(() => loadProperties(counterpartyId), [counterpartyId]);
+
+export const useLiveDesignVendors = (category?: string) =>
+  useResource(() => loadVendors(category), [category]);
+
+export const useLiveDesignStages = (projectId: string | null) =>
+  useResource(() => projectId ? loadStages(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignActivities = (projectId: string | null, visibility?: 'portal' | 'internal') =>
+  useResource(() => projectId ? loadActivities(projectId, visibility) : Promise.resolve([]), [projectId, visibility]);
+
+export const useLiveDesignMoodboards = (projectId: string | null) =>
+  useResource(() => projectId ? loadMoodboards(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignPacks = (projectId: string | null) =>
+  useResource(() => projectId ? loadPacks(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignAgreement = (projectId: string | null) =>
+  useResource(() => projectId ? loadAgreement(projectId) : Promise.resolve(null), [projectId]);
+
+export const useLiveDesignPayments = (projectId: string | null) =>
+  useResource(() => projectId ? loadPayments(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignSelections = (projectId: string | null) =>
+  useResource(() => projectId ? loadSelections(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignChangeOrders = (projectId: string | null) =>
+  useResource(() => projectId ? loadChangeOrders(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignBudgetItems = (projectId: string | null, filters: { category_code?: string; vendor_id?: string } = {}) =>
+  useResource(() => projectId ? loadBudgetItems(projectId, filters) : Promise.resolve([]), [projectId, filters.category_code, filters.vendor_id]);
+
+export const useLiveDesignCloseoutBinder = (projectId: string | null) =>
+  useResource(() => projectId ? loadCloseoutBinder(projectId) : Promise.resolve(null), [projectId]);
+
+export const useLiveDesignTasks = (projectId: string | null) =>
+  useResource(() => projectId ? loadTasks(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignApprovals = (projectId: string | null, status?: string) =>
+  useResource(() => projectId ? loadApprovals(projectId, { status }) : Promise.resolve([]), [projectId, status]);
+
+export const useLiveDesignMagicLinks = (projectId: string | null) =>
+  useResource(() => projectId ? loadMagicLinks(projectId) : Promise.resolve([]), [projectId]);
+
+export const useLiveDesignAnnexA = () => useResource(() => loadAnnexA(), []);
+
+// ════════════════════════════════════════════════════════════════════
+// ADAPTERS — API shape (snake_case) → fixture shape (camelCase)
+// Used by components that still render against the fixture types so the
+// live data drops in transparently. As consumers migrate to the API
+// types directly these adapters can shrink.
+// ════════════════════════════════════════════════════════════════════
+
+export function apiProjectToFixture(api: ApiProject): FixtureProject {
+  // Tier + fees derive from Annex A — the editable pricing schedule
+  // in _data/design.ts (ANNEX_A_DEFAULT). EPC drives both. When the
+  // backend hasn't persisted explicit values (common during onboarding)
+  // we fall back to budget_expectation_minor as the EPC proxy.
+  //
+  // Annex A locks (current schedule):
+  //   Tier 1 (EPC > Rs 1.5M):  3% of EPC for design
+  //   Tier 2 (Rs 500K–1.5M):   flat Rs 45,000 for design
+  //   Tier 3 (EPC < Rs 500K):  flat Rs 25,000 for design
+  //   Procurement (renovation): T1 12.5% · T2 15% · T3 17.5% of EPC
+  //   Procurement (furnishing): T1  7.5% · T2 10% · T3 12.5% of EPC
+  //
+  // Tier is derived from EPC each render — we deliberately ignore
+  // api.tier even when persisted so the math stays correct after a
+  // budget change. If you need to manually override tier (e.g. a
+  // Director downgrade) wire a separate tier_override column.
+  const classification = (api.classification as ProjectClassification) ?? 'mixed';
+  const persistedEpc = api.epc_minor ?? 0;
+  const budgetExpectation = api.budget_expectation_minor ?? 0;
+  const effectiveEpc = persistedEpc > 0 ? persistedEpc : budgetExpectation;
+  const tier: DesignTier = effectiveEpc > 0 ? tierForEpc(effectiveEpc) : ((api.tier as DesignTier) ?? 1);
+  // design-be-15: explicit Director override columns take precedence
+  // over tier derivation. Legacy design_fee_minor / procurement_fee_minor
+  // flow through the API for backward-compat but are no longer the
+  // override carrier — only the *_override columns drive the fixture.
+  const designFeeOverride = api.design_fee_minor_override;
+  const procurementFeeOverride = api.procurement_fee_minor_override;
+  const designFee = designFeeOverride != null
+    ? designFeeOverride
+    : (effectiveEpc > 0 ? designFeeForTier(tier, effectiveEpc) : 0);
+  // design-be-23: design-only engagements have no procurement scope, so
+  // the procurement fee is masked to 0 here regardless of any Director
+  // override. The helper (procurementFeeForTier) is preserved upstream
+  // so the simulator + "what would the full-scope quote look like"
+  // preview can still compute the hypothetical figure. Mask happens at
+  // the read path so the database stays clean if scope is toggled back
+  // to full.
+  const engagementScope: EngagementScope = api.engagement_scope ?? 'design_and_execution';
+  const procurementFee = engagementScope === 'design_only'
+    ? 0
+    : (procurementFeeOverride != null
+        ? procurementFeeOverride
+        : (effectiveEpc > 0 ? procurementFeeForTier(tier, classification, effectiveEpc) : 0));
+
+  return {
+    id: api.id,
+    entityId: 'FD',
+    name: api.name,
+    slug: api.slug,
+    counterpartyId: api.counterparty_id ?? '',
+    propertyId: api.property_id ?? '',
+    classification,
+    tier,
+    epcMinor: effectiveEpc,
+    designFeeMinor: designFee,
+    procurementFeeMinor: procurementFee,
+    goals: api.goals || [],
+    outcomes: api.outcomes || [],
+    budgetExpectationMinor: api.budget_expectation_minor ?? null,
+    urgency: api.urgency ?? null,
+    pmLink: api.pm_link ?? null,
+    designLeadUserId: api.design_lead_user_id ?? null,
+    currentStage: (api.current_stage as StageId) ?? 'lead',
+    stageStatus: (api.stage_status as StageStatus) ?? 'pending',
+    blocker: api.blocker ?? null,
+    nextAction: api.next_action ?? null,
+    leadSource: (api.lead_source as LeadSource) ?? 'other',
+    createdAt: api.created_at,
+    updatedAt: api.updated_at,
+    startDate: api.start_date ?? null,
+    estimatedCompletion: api.estimated_completion ?? null,
+    lifecycleStatus: api.lifecycle_status as LifecycleStatus,
+    pausedAt: api.paused_at ?? undefined,
+    pausedReason: api.paused_reason ?? undefined,
+    pausedByUserId: api.paused_by_user_id ?? undefined,
+    cancelledAt: api.cancelled_at ?? undefined,
+    cancelledReason: api.cancelled_reason ?? undefined,
+    cancelledByUserId: api.cancelled_by_user_id ?? undefined,
+    cancelTransferToInventory: api.cancel_transfer_to_inventory ?? undefined,
+    floorPlanImageId: api.floor_plan_image_id ?? null,
+    floorPlanFurnishedImageId: api.floor_plan_furnished_image_id ?? null,
+    designFeeMinorOverride: api.design_fee_minor_override ?? null,
+    procurementFeeMinorOverride: api.procurement_fee_minor_override ?? null,
+    engagementScope,
+    // Migration 027 — CIA Mauritius compliance state from the API.
+    // Prefer regional_compliance (migration 043); fall back to the
+    // legacy top-level fields for older API rows / older backends.
+    ciaRegistrationStatus:
+      ((api.regional_compliance?.cia_registration_status as string | undefined) ?? api.cia_registration_status ?? 'unknown') as
+        'unknown' | 'not_required' | 'pending' | 'registered' | 'exempt',
+    ciaRegistrationRef:
+      (api.regional_compliance?.cia_registration_ref as string | null | undefined)
+        ?? api.cia_registration_ref ?? null,
+    ciaNotes:
+      (api.regional_compliance?.cia_notes as string | null | undefined)
+        ?? api.cia_notes ?? null,
+    regionalCompliance: api.regional_compliance ?? {},
+    // design-be-23: pre-computed total fee. For design_only this is
+    // just the design fee (procurement is out of scope and already
+    // masked to 0 above). Components can read this directly without
+    // having to re-derive the math.
+    effectiveTotalFeeMinor: designFee + procurementFee,
+  } as FixtureProject;
+}
+
+export function apiLeadToFixture(api: ApiLead): FixtureLead {
+  // The legacy DesignLead fixture shape (counterpartyName, propertyHint, etc.)
+  // is no longer used at runtime. Hydration writes the API shape directly into
+  // the LEADS array and the Design Leads UI casts back to ApiLead. The
+  // 'as unknown as FixtureLead' cast is preserved so the legacy fixture
+  // typing on LEADS keeps compiling; the runtime shape mirrors ApiLead.
+  return {
+    id: api.id,
+    name: api.name,
+    email: api.email ?? null,
+    phone: api.phone ?? null,
+    source: (api.source as LeadSource) ?? 'other',
+    status: api.status,
+    staleness_days: typeof api.staleness_days === 'number' ? api.staleness_days : null,
+    owner_user_id: api.owner_user_id ?? null,
+    converted_project_id: api.converted_project_id ?? null,
+    notes: api.notes ?? null,
+    created_at: api.created_at,
+    updated_at: api.updated_at,
+  } as unknown as FixtureLead;
+}
+
+export function apiCounterpartyToFixture(api: ApiCounterparty): FixtureCounterparty {
+  // fixture Counterparty fields: id, fullName, nic, kind, email, phone, entity_id.
+  // The backend only stores name/email/phone — synthesize a reasonable kind
+  // and leave nic blank until the schema extension lands.
+  return {
+    id: api.id,
+    fullName: api.name,
+    nic: '',
+    kind: 'owner',
+    email: api.email ?? '',
+    phone: api.phone ?? '',
+    entity_id: api.entity_id,
+  } as unknown as FixtureCounterparty;
+}
+
+export function apiPropertyToFixture(api: ApiProperty): FixtureProperty {
+  // fixture DesignProperty fields: id, pmPropertyId, name, address, region,
+  // bedrooms, bathrooms. The backend doesn't track bedroom/bathroom counts
+  // yet — leave as 0/null so the UI renders "—" placeholders.
+  const region: 'North' | 'West' | 'South' | 'East' | 'Central' | null =
+    api.city === 'Albion' ? 'West'
+    : api.city === 'Grand Baie' || api.city === 'Mont Choisy' || api.city === 'Pereybere' ? 'North'
+    : api.city === 'Flic en Flac' || api.city === 'Tamarin' ? 'West'
+    : null;
+  return {
+    id: api.id,
+    pmPropertyId: api.guesty_listing_id ?? null,
+    name: api.name,
+    address: api.address ?? '',
+    region,
+    bedrooms: 0,
+    bathrooms: 0,
+  } as unknown as FixtureProperty;
+}
+
+export function apiVendorToFixture(api: ApiVendor): FixtureVendor {
+  // fixture Vendor: id, name, company, category, email, phone, paymentTerms,
+  // notes, engagements (cross-project history — derived, leave empty until
+  // the analytics endpoint feeds it back).
+  return {
+    id: api.id,
+    name: api.name,
+    company: api.name,
+    category: api.category ?? '',
+    email: api.email ?? '',
+    phone: api.phone ?? '',
+    paymentTerms: '',
+    notes: api.notes ?? '',
+    engagements: [],
+    entity_id: api.entity_id,
+  } as unknown as FixtureVendor;
+}
+
+export function apiMoodboardToFixture(api: ApiMoodboard): FixtureMoodboard {
+  // Backend returns `links` as `{}` (an empty object) when no links are
+  // attached, not `[]`. The previous `api.links || []` coalesce treated
+  // `{}` as truthy, so the subsequent `.map(...)` threw "t.map is not a
+  // function" — which silently killed hydrateDesignProject's bumpFixtureRev
+  // and left every other live fixture (agreement, payments, etc.) stuck
+  // at pre-hydration state. Found via console instrumentation during
+  // 2026-05-14 prod QA. Belt: Array.isArray gate. Braces: per-step
+  // try/catch in hydrateDesignProject keeps a bad row in one fixture
+  // from poisoning the others.
+  const links = Array.isArray(api.links) ? api.links : [];
+  // Surface the first image link as the fixture's coverImageUrl so the
+  // existing MoodboardStage cover renderer can display it without
+  // shape changes. The full `links` array is attached as an extra
+  // field for the gallery view (cast via unknown lets us add it).
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    versionNumber: api.version_number,
+    version: api.version_number,
+    status: api.status,
+    state: api.status === 'changes_requested' ? 'revision_requested' : api.status,
+    coverImageUrl: links[0]?.url ?? '',
+    narrative: api.notes ?? '',
+    inspiration: links.map((l) => ({ url: l.url, sourceLabel: l.caption ?? 'Image' })),
+    palette: [],
+    materials: [],
+    designerNotes: null,
+    sentAt: api.sent_at ?? null,
+    approvedAt: api.approved_at ?? null,
+    ownerComments: null,
+    createdAt: api.created_at,
+    links,
+    // W7 — variant grouping. UI uses these to render variants
+    // side-by-side and let the owner pick one in the portal.
+    variantGroupId: api.variant_group_id ?? null,
+    variantIndex: api.variant_index ?? null,
+  } as unknown as FixtureMoodboard;
+}
+
+// Rooms attach to properties on the backend (one room row per property),
+// but the fixture indexes by projectId since the synchronous consumers
+// (SiteVisitStage, DesignPackStage, RoomDetail) all key off the active
+// project. The mapping needs projectId from outside the API row.
+//
+// Fields the API doesn't yet expose (lengthM/widthM/heightM/windows/
+// doors/conditionNotes/etc.) default to null; the rendering code has
+// null guards so the panel renders even on a freshly-created row with
+// just a name + usage_kind.
+export function apiRoomToFixture(api: ApiRoom, projectId: string): FixtureRoom {
+  return {
+    id: api.id,
+    projectId,
+    name: api.name,
+    lengthM: api.length_m ?? null,
+    widthM: api.width_m ?? null,
+    heightM: api.height_m ?? null,
+    windows: api.windows ?? null,
+    doors: api.doors ?? null,
+    conditionNotes: api.condition_notes ?? null,
+    issues: api.issues ?? null,
+    keepFurniture: api.keep_furniture ?? null,
+    removeFurniture: api.remove_furniture ?? null,
+    designOpportunity: api.design_opportunity ?? null,
+    accessNotes: api.access_notes ?? null,
+    utilitiesNotes: api.utilities_notes ?? null,
+    photoCount: 0,
+  } as unknown as FixtureRoom;
+}
+
+// Photos — straight 1:1 shape mapping. ownerVisible defaults to true
+// (the backend has no column for it yet; the frontend uses it to gate
+// portal display, but for now every photo is owner-visible).
+const PHOTO_KIND_FALLBACK: PhotoKind = 'before';
+const VALID_PHOTO_KINDS: PhotoKind[] = ['before', 'context', 'reference', 'progress', 'after'];
+export function apiPhotoToFixture(api: ApiPhoto): FixturePhoto {
+  const kind: PhotoKind = (VALID_PHOTO_KINDS as readonly string[]).includes(api.kind) ? (api.kind as PhotoKind) : PHOTO_KIND_FALLBACK;
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    roomId: api.room_id,
+    kind,
+    url: api.url,
+    caption: api.caption,
+    ownerVisible: true,
+    uploadedAt: api.uploaded_at,
+  };
+}
+
+// Migration 023 — rough-budget version envelope adapter. Backend
+// snake_case → frontend camelCase. Tier is stored as 'T1'/'T2'/'T3'
+// in the backend but the frontend DesignTier is the numeric 1/2/3 —
+// translate at the boundary so callers don't need to know.
+//
+// Per-line-item rows are loaded separately via /rough_budgets and
+// joined client-side.
+function tierStringToNum(s: string | null): DesignTier | null {
+  if (s === 'T1') return 1;
+  if (s === 'T2') return 2;
+  if (s === 'T3') return 3;
+  return null;
+}
+export function tierNumToString(n: DesignTier | null): 'T1' | 'T2' | 'T3' | null {
+  if (n === 1) return 'T1';
+  if (n === 2) return 'T2';
+  if (n === 3) return 'T3';
+  return null;
+}
+export function apiRoughBudgetVersionToFixture(api: ApiRoughBudgetVersion): FixtureRoughBudget {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    version: api.version_number,
+    lowMinor: api.low_minor,
+    midMinor: api.mid_minor,
+    highMinor: api.high_minor,
+    tier: tierStringToNum(api.tier),
+    designFeeMinor: api.design_fee_minor,
+    procurementFeeMinor: api.procurement_fee_minor,
+    assumptions: api.assumptions,
+    exclusions: api.exclusions,
+    riskItems: api.risk_items,
+    nextSteps: api.next_steps,
+    status: api.status,
+    createdAt: api.created_at,
+  };
+}
+
+// Migration 022 — site visit metadata. The frontend SiteVisit fixture
+// type has 7 fields (projectId, visitedAt, visitedByUserId,
+// walkthroughVideoUrl, notes, marketingPhotoConsent, status); each
+// maps 1:1 to a backend column after migration 022.
+export function apiSiteVisitToFixture(api: ApiSiteVisit): FixtureSiteVisit {
+  return {
+    projectId: api.project_id,
+    visitedAt: api.visited_at ?? null,
+    visitedByUserId: api.visited_by_user_id ?? null,
+    walkthroughVideoUrl: api.walkthrough_video_url ?? null,
+    notes: api.notes ?? null,
+    marketingPhotoConsent: api.marketing_photo_consent ?? true,
+    status: api.status,
+  };
+}
+
+// Migration 020 added room_id + category_code so the API → fixture
+// adapter now produces a properly-typed fixture row (was previously
+// pushed through `as unknown as` in hydrateDesignProject — silently
+// stripping the room and category context).
+//
+// Field mapping (API ↔ fixture):
+//   project_id     ↔ projectId
+//   pack_id        ↔ packageId
+//   room_id        ↔ roomId
+//   category_code  ↔ category   (BudgetCategory)
+//   title          ↔ prompt     (owner-facing question text)
+//   status         ↔ state      (same enum values)
+//   change_request_comment ↔ comment
+// Migration 021 added title + co_number on the backend. The frontend
+// ChangeOrder fixture renders co_number as "CO-001" (zero-padded
+// 3-digit) — formatting lives in the adapter so consumers don't have
+// to duplicate it.
+//
+// Field mapping (API ↔ fixture):
+//   project_id    ↔ projectId
+//   title         ↔ title
+//   co_number     ↔ number       (formatted as "CO-NNN")
+//   status        ↔ state
+//   line_items    ↔ lineItems    (cast through unknown — option ids
+//                                  + budgetItemId etc. are fixture-
+//                                  rich and pass through opaquely)
+//   reason        ↔ reason
+//   sent_at       ↔ sentAt
+//   decided_at    ↔ decidedAt
+//   decision_note ↔ ownerComment (owner-facing approval comment)
+export function apiChangeOrderToFixture(api: ApiChangeOrder): FixtureChangeOrder {
+  const numLabel = api.co_number != null ? `CO-${String(api.co_number).padStart(3, '0')}` : 'CO-???';
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    number: numLabel,
+    title: api.title ?? '',
+    reason: api.reason ?? '',
+    lineItems: (api.line_items ?? []) as unknown as FixtureChangeOrder['lineItems'],
+    state: api.status,
+    ownerComment: api.decision_note ?? null,
+    createdAt: api.created_at,
+    sentAt: api.sent_at ?? null,
+    decidedAt: api.decided_at ?? null,
+  };
+}
+
+export function apiSelectionToFixture(api: ApiSelection): FixtureSelection {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    roomId: api.room_id ?? null,
+    packageId: api.pack_id ?? null,
+    category: (api.category_code as BudgetCategory) ?? 'furniture',
+    prompt: api.title,
+    options: (api.options ?? []) as unknown as FixtureSelection['options'],
+    pickedOptionId: api.picked_option_id ?? null,
+    pickedAt: api.picked_at ?? null,
+    comment: api.change_request_comment ?? null,
+    state: api.status,
+    sentAt: api.sent_at ?? null,
+    createdAt: api.created_at,
+  };
+}
+
+export function apiPackToFixture(api: ApiPack): FixturePack {
+  // Defensive defaults for fields the prod API doesn't yet populate.
+  // Without these, consumers like DesignPackStage hit
+  // "Cannot read properties of undefined (reading 'length')" on
+  // v.rooms.length and the React error boundary kills the page.
+  // Same root cause as the agreement events bug (see apiAgreementToFixture).
+  // TODO: when the design_packs schema gains rooms/pdf_url/cover/etc.,
+  // wire the real values + drop these fallbacks.
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    versionNumber: api.version_number,
+    version: api.version_number,
+    status: api.status,
+    state: api.status,
+    createdAt: api.created_at,
+    pdfUrl: null,
+    coverImageUrl: '',
+    narrative: '',
+    rooms: [],
+    sentAt: null,
+    approvedAt: null,
+  } as unknown as FixturePack;
+}
+
+export function apiAgreementToFixture(api: ApiAgreement): FixtureAgreement {
+  // Backend writes status='signed' (portal.js POST /portal/agreement/sign +
+  // agreements.js POST .../sign). The frontend AgreementStatus enum uses
+  // 'signed_by_client' (the descriptive label STATUS_LABEL keys off and the
+  // AgreementStage evidence-PDF + AgreementTab portal receipt gate on).
+  // Without this normalisation, every signed agreement falls through to the
+  // 'draft' fallback — owners see "still being finalised" and the evidence
+  // PDF button never renders. Until the backend column-rename lands, map
+  // here.
+  const status = api.status === 'signed' ? 'signed_by_client' : api.status;
+  return {
+    id: api.project_id,
+    projectId: api.project_id,
+    status,
+    sentAt: api.sent_at ?? null,
+    signedAt: api.signed_at ?? null,
+    signedBy: api.signed_by ?? null,
+    designFeePercent: api.design_fee_percent ?? 0,
+    procurementFeePercent: api.procurement_fee_percent ?? 0,
+    contingency: api.contingency_percent ?? 0,
+    annexB: api.annex_b,
+    // events array isn't in the prod schema yet (added by the in-portal
+    // signing feature, Tier A #3). Default to [] so consumers don't
+    // crash on .length / .map. Remove the fallback once the column lands.
+    events: [],
+  } as unknown as FixtureAgreement;
+}
+
+export function apiPaymentToFixture(api: ApiPaymentGate): FixturePayment {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    gateId: api.gate_id,
+    status: api.status,
+    amount: api.amount_minor ?? 0,
+    dueDate: api.due_date ?? null,
+    receivedAt: api.received_at ?? null,
+  } as unknown as FixturePayment;
+}
+
+// Fixture ActivityLogEntry.kind is a constrained enum; map the verb out of
+// our flexible API `action` string. Falls back to 'update' for anything
+// unrecognised so the renderer never crashes.
+const API_ACTION_TO_KIND: Record<string, FixtureActivity['kind']> = {
+  'project.created': 'create',
+  'project.updated': 'update',
+  'project.paused': 'pause',
+  'project.cancelled': 'cancel',
+  'project.resumed': 'resume',
+  'stage.entered': 'stage_transition',
+  'agreement.sent': 'send',
+  'agreement.signed': 'approve',
+  'payment.received': 'receive_payment',
+  'payment.waived': 'override',
+  'moodboard.sent': 'send',
+  'moodboard.approved': 'approve',
+  'design_pack.sent': 'send',
+  'design_pack.approved': 'approve',
+  'selection.sent': 'send',
+  'selection.picked': 'approve',
+  'selection.picked.by_owner': 'approve',
+  'selection.changes_requested': 'reject',
+  'selection.changes_requested.by_owner': 'reject',
+  'change_order.sent': 'send',
+  'change_order.approved': 'approve',
+  'change_order.rejected': 'reject',
+  'approval.approved': 'approve',
+  'approval.rejected': 'reject',
+  'approval.approved.by_owner': 'approve',
+  'approval.rejected.by_owner': 'reject',
+  'closeout_binder.sent': 'send',
+  'closeout_binder.signed': 'approve',
+  // W1c.3: task lifecycle events appended by backend/src/design/tasks.js.
+  'task.added': 'create',
+  'task.blocker.added': 'create',
+  'task.next_action.added': 'create',
+  'task.completed': 'approve',
+  'task.blocker.resolved': 'approve',
+  'task.next_action.resolved': 'approve',
+};
+
+function describeAction(action: string, payload: Record<string, unknown>): string {
+  // Light-weight summary derivation. Falls back to the action verb itself
+  // so the activity timeline always has something to render.
+  if (action === 'stage.entered' && typeof payload?.stage === 'string') return `Entered ${payload.stage} stage`;
+  if (action === 'payment.received' && typeof payload?.gate_id === 'string') return `Payment received: ${payload.gate_id}`;
+  if (action === 'moodboard.sent' && typeof payload?.version_number === 'number') return `Moodboard v${payload.version_number} sent`;
+  if (action === 'moodboard.approved' && typeof payload?.version_number === 'number') return `Moodboard v${payload.version_number} approved`;
+  if (action === 'design_pack.sent' && typeof payload?.version_number === 'number') return `Design pack v${payload.version_number} sent`;
+  if (action === 'design_pack.approved' && typeof payload?.version_number === 'number') return `Design pack v${payload.version_number} approved`;
+  if (action === 'agreement.sent') return 'Agreement sent for signature';
+  if (action === 'agreement.signed') return 'Agreement signed';
+  if (action === 'project.created') return 'Project created';
+  if (action === 'task.blocker.added' && typeof payload?.title === 'string') return `🚧 Blocker added: ${payload.title}`;
+  if (action === 'task.next_action.added' && typeof payload?.title === 'string') return `➡ Next action: ${payload.title}`;
+  if (action === 'task.added' && typeof payload?.title === 'string') return `Task added: ${payload.title}`;
+  if (action === 'task.blocker.resolved' && typeof payload?.title === 'string') return `✓ Blocker resolved: ${payload.title}`;
+  if (action === 'task.next_action.resolved' && typeof payload?.title === 'string') return `✓ Done: ${payload.title}`;
+  if (action === 'task.completed' && typeof payload?.title === 'string') return `Task completed: ${payload.title}`;
+  return action.replace(/[._]/g, ' ');
+}
+
+export function apiActivityToFixture(api: ApiActivity): FixtureActivity {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    at: api.created_at,
+    userId: api.actor_user_id ?? null,
+    kind: API_ACTION_TO_KIND[api.action] ?? 'update',
+    summary: describeAction(api.action, api.payload || {}),
+  } as unknown as FixtureActivity;
+}
+
+export function apiApprovalToFixture(api: ApiApproval): FixtureApproval {
+  return {
+    id: api.id,
+    projectId: api.project_id,
+    type: api.type,
+    targetId: api.target_id,
+    sentAt: api.sent_at,
+    status: api.status,
+    respondentUserId: api.respondent_user_id ?? null,
+    respondentName: api.respondent_name ?? null,
+  } as unknown as FixtureApproval;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// HYDRATION — splice live API data into the fixture arrays so the
+// existing synchronous designClient + 30+ component consumers see
+// real data without per-file rewrites.
+// ════════════════════════════════════════════════════════════════════
+
+function replaceArray<T>(target: T[], next: T[]): void {
+  target.length = 0;
+  target.push(...next);
+}
+
+function removeMatching<T>(target: T[], pred: (row: T) => boolean): void {
+  for (let i = target.length - 1; i >= 0; i--) {
+    if (pred(target[i])) target.splice(i, 1);
+  }
+}
+
+/** Hydrate the top-level reference + project fixtures from the API.
+ *  Per-project artifact arrays (moodboards, packs, payments, etc.) are
+ *  cleared so stale fixture rows don't survive alongside live projects;
+ *  per-project hydration (below) repopulates them on drill-down. */
+export async function hydrateDesignTopLevel(): Promise<void> {
+  const [projects, leads, counterparties, properties, vendors] = await Promise.all([
+    loadProjects().catch(() => []),
+    loadLeads().catch(() => []),
+    loadCounterparties().catch(() => []),
+    loadProperties().catch(() => []),
+    loadVendors().catch(() => []),
+  ]);
+
+  replaceArray(FIXTURE_PROJECTS, projects.map(apiProjectToFixture));
+  replaceArray(FIXTURE_LEADS, leads.map(apiLeadToFixture));
+  replaceArray(FIXTURE_COUNTERPARTIES, counterparties.map(apiCounterpartyToFixture));
+  replaceArray(FIXTURE_PROPERTIES, properties.map(apiPropertyToFixture));
+  replaceArray(FIXTURE_VENDORS, vendors.map(apiVendorToFixture));
+
+  // Clear all per-project fixture rows — they reference IDs from the
+  // old fixture and would be orphaned alongside the new live projects.
+  // hydrateDesignProject() repopulates per project on drill-down.
+  const liveIds = new Set(projects.map((p) => p.id));
+  removeMatching(FIXTURE_MOODBOARDS, (m) => !liveIds.has(m.projectId));
+  removeMatching(FIXTURE_PACKS, (p) => !liveIds.has(p.projectId));
+  removeMatching(FIXTURE_AGREEMENTS, (a) => !liveIds.has((a as { projectId: string }).projectId));
+  removeMatching(FIXTURE_PAYMENT_GATES, (g) => !liveIds.has((g as { projectId: string }).projectId));
+  removeMatching(FIXTURE_SELECTIONS, (s) => !liveIds.has((s as { projectId: string }).projectId));
+  removeMatching(FIXTURE_CHANGE_ORDERS, (c) => !liveIds.has((c as { projectId: string }).projectId));
+  removeMatching(FIXTURE_BUDGET_ITEMS, (b) => !liveIds.has((b as { projectId: string }).projectId));
+  removeMatching(FIXTURE_APPROVALS, (a) => !liveIds.has((a as { projectId: string }).projectId));
+  removeMatching(FIXTURE_ACTIVITY, (a) => !liveIds.has((a as { projectId: string }).projectId));
+
+  bumpFixtureRev();
+}
+
+/** Hydrate per-project artifact arrays for a single project. Splices
+ *  any existing rows for this project, then appends fresh live rows.
+ *  Called lazily when the user opens a project drill-down. */
+export async function hydrateDesignProject(projectId: string): Promise<void> {
+  // Rooms live on the property (one room row per property_id), so we
+  // need the project's propertyId. Earlier versions read from
+  // FIXTURE_PROJECTS, but useHydrateDesignTopLevel and
+  // useHydrateDesignProject fire in the same render pass — the
+  // top-level hydration may not have populated FIXTURE_PROJECTS yet,
+  // in which case the stale hardcoded fixture's propertyId is used
+  // and the listRooms() call queries the wrong property. Fetch the
+  // project fresh so we always have the live propertyId.
+  const projectApi = await loadProject(projectId).catch(() => null);
+  const propertyId = projectApi?.property_id ?? null;
+  // Splice the refetched project row into FIXTURE_PROJECTS so every
+  // surface that reads from designClient.projects (Summary, Annex B
+  // auto-fill, Overview list, Stage tracker, etc.) sees the latest
+  // server state when refetch() fires. Previously this loader pulled
+  // the row only for propertyId and threw the rest away, so the
+  // project list could stay stale even after an explicit refetch.
+  if (projectApi) {
+    const fxProject = apiProjectToFixture(projectApi);
+    const idx = FIXTURE_PROJECTS.findIndex((p) => p.id === projectId);
+    if (idx >= 0) FIXTURE_PROJECTS.splice(idx, 1, fxProject);
+    else FIXTURE_PROJECTS.push(fxProject);
+  }
+
+  const [moodboards, packs, agreement, payments, selections, changeOrders, budgetItems, activities, approvals, rooms, siteVisits, roughBudgetVersions, photos] = await Promise.all([
+    loadMoodboards(projectId).catch(() => []),
+    loadPacks(projectId).catch(() => []),
+    loadAgreement(projectId).catch(() => null as ApiAgreement | null),
+    loadPayments(projectId).catch(() => []),
+    loadSelections(projectId).catch(() => []),
+    loadChangeOrders(projectId).catch(() => []),
+    loadBudgetItems(projectId).catch(() => []),
+    loadActivities(projectId).catch(() => []),
+    loadApprovals(projectId).catch(() => []),
+    propertyId ? listRooms(propertyId).catch(() => [] as ApiRoom[]) : Promise.resolve([] as ApiRoom[]),
+    loadSiteVisits(projectId).catch(() => [] as ApiSiteVisit[]),
+    loadRoughBudgetVersions(projectId).catch(() => [] as ApiRoughBudgetVersion[]),
+    loadPhotos(projectId).catch(() => [] as ApiPhoto[]),
+  ]);
+
+  // Isolate each fixture push so one bad row doesn't poison the others
+  // and (critically) doesn't skip the bumpFixtureRev() call at the
+  // bottom. 2026-05-14 prod QA: an adapter on an unrelated fixture
+  // threw, hydrateDesignProject rejected silently, FIXTURE_AGREEMENTS
+  // stayed empty, and signed agreements rendered as "Draft" with no
+  // evidence-PDF button. The per-step try/catch also surfaces the
+  // offending adapter in the console so the next such mismatch is
+  // diagnosable without spelunking.
+  const _step = (name: string, fn: () => void) => {
+    try { fn(); } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[hydrateDesignProject] step "${name}" threw — continuing`, err);
+    }
+  };
+
+  _step('moodboards', () => {
+    removeMatching(FIXTURE_MOODBOARDS, (m) => m.projectId === projectId);
+    FIXTURE_MOODBOARDS.push(...moodboards.map(apiMoodboardToFixture));
+  });
+
+  _step('packs', () => {
+    removeMatching(FIXTURE_PACKS, (p) => p.projectId === projectId);
+    FIXTURE_PACKS.push(...packs.map(apiPackToFixture));
+  });
+
+  _step('agreement', () => {
+    removeMatching(FIXTURE_AGREEMENTS, (a) => (a as { projectId: string }).projectId === projectId);
+    if (agreement) FIXTURE_AGREEMENTS.push(apiAgreementToFixture(agreement));
+  });
+
+  _step('payment_gates', () => {
+    removeMatching(FIXTURE_PAYMENT_GATES, (g) => (g as { projectId: string }).projectId === projectId);
+    FIXTURE_PAYMENT_GATES.push(...payments.map(apiPaymentToFixture));
+  });
+
+  _step('selections', () => {
+    removeMatching(FIXTURE_SELECTIONS, (s) => (s as { projectId: string }).projectId === projectId);
+    FIXTURE_SELECTIONS.push(...selections.map(apiSelectionToFixture));
+  });
+
+  _step('change_orders', () => {
+    removeMatching(FIXTURE_CHANGE_ORDERS, (c) => (c as { projectId: string }).projectId === projectId);
+    FIXTURE_CHANGE_ORDERS.push(...changeOrders.map(apiChangeOrderToFixture));
+  });
+
+  _step('budget_items', () => {
+    removeMatching(FIXTURE_BUDGET_ITEMS, (b) => (b as { projectId: string }).projectId === projectId);
+    FIXTURE_BUDGET_ITEMS.push(...(budgetItems as unknown as Array<typeof FIXTURE_BUDGET_ITEMS[number]>));
+  });
+
+  _step('activity', () => {
+    removeMatching(FIXTURE_ACTIVITY, (a) => (a as { projectId: string }).projectId === projectId);
+    FIXTURE_ACTIVITY.push(...activities.map(apiActivityToFixture));
+  });
+
+  _step('approvals', () => {
+    removeMatching(FIXTURE_APPROVALS, (a) => (a as { projectId: string }).projectId === projectId);
+    FIXTURE_APPROVALS.push(...approvals.map(apiApprovalToFixture));
+  });
+
+  _step('rooms', () => {
+    removeMatching(FIXTURE_ROOMS, (r) => r.projectId === projectId);
+    FIXTURE_ROOMS.push(...rooms.map((r) => apiRoomToFixture(r, projectId)));
+  });
+
+  // SITE_VISITS is "latest visit per project" on the frontend; the
+  // backend returns the list ordered by visit_date DESC, so we take
+  // the first row as the canonical visit for the project.
+  _step('site_visits', () => {
+    removeMatching(FIXTURE_SITE_VISITS, (v) => v.projectId === projectId);
+    if (siteVisits.length > 0) {
+      FIXTURE_SITE_VISITS.push(apiSiteVisitToFixture(siteVisits[0]));
+    }
+  });
+
+  // Rough budget versions — full list, ordered by version_number DESC
+  // on the backend so the frontend's "latest is first" assumption
+  // holds when sorted by version DESC client-side.
+  _step('rough_budgets', () => {
+    removeMatching(FIXTURE_ROUGH_BUDGETS, (b) => b.projectId === projectId);
+    FIXTURE_ROUGH_BUDGETS.push(...roughBudgetVersions.map(apiRoughBudgetVersionToFixture));
+  });
+
+  // Photos — full list per project, swap out any pre-existing rows
+  // and refill from the API. Backend returns uploaded_at DESC; the
+  // RoomDetail consumer filters client-side by roomId.
+  _step('photos', () => {
+    removeMatching(FIXTURE_PHOTOS, (p) => p.projectId === projectId);
+    FIXTURE_PHOTOS.push(...photos.map(apiPhotoToFixture));
+  });
+
+  // Notify every useFixtureRev() subscriber that the project caches
+  // have been refilled. Without this, components mounted before
+  // hydration completes would render with empty arrays and never
+  // re-render when the API rows landed.
+  bumpFixtureRev();
+}
+
+/** Hook: hydrate top-level fixtures on mount. Returns { hydrated,
+ *  error, refetch, rev } where `rev` is a version counter that
+ *  consumers can include in a useEffect/useMemo dep list to re-derive
+ *  state after live data arrives. */
+export function useHydrateDesignTopLevel(): { hydrated: boolean; loading: boolean; error: string | null; refetch: () => void; rev: number } {
+  const [hydrated, setHydrated] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
+
+  const refetch = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    hydrateDesignTopLevel()
+      .then(() => { setHydrated(true); setRev((r) => r + 1); })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  return { hydrated, loading, error, refetch, rev };
+}
+
+/** Hook: hydrate a single project's per-resource arrays. Returns
+ *  { hydrated, error, refetch, rev } same as the top-level hook. */
+export function useHydrateDesignProject(projectId: string | null): { hydrated: boolean; loading: boolean; error: string | null; refetch: () => void; rev: number } {
+  const [hydratedFor, setHydratedFor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
+
+  const refetch = useCallback(() => {
+    if (!projectId) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    hydrateDesignProject(projectId)
+      .then(() => { setHydratedFor(projectId); setRev((r) => r + 1); })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [projectId]);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  return { hydrated: hydratedFor === projectId, loading, error, refetch, rev };
+}
+
+// useMemo import was added for completeness; current hooks do not
+// require it but downstream wiring (e.g. project pickers, table sort
+// memoisation) commonly does, so keep the import live.
+void useMemo;

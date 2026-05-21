@@ -1049,6 +1049,15 @@ export default function MessageDashboard() {
 
   if (!token) return <LoginScreen onLogin={handleLogin} />
 
+  // Logged-in users land on the new FAD shell rather than the legacy
+  // GMS UI. The legacy components below stay in the bundle for now (we
+  // may resurrect specific panels), but as of the 2026-05-18 cutover
+  // the team uses /fad/ exclusively.
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/fad')) {
+    window.location.replace('/fad');
+    return null;
+  }
+
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden" data-pwa-shell style={{background: '#0d1117', color: '#f1f5f9', paddingBottom: 'env(safe-area-inset-bottom, 0px)'}}>
       <Toaster position="top-right" containerStyle={{ zIndex: 99999, pointerEvents: 'none', top: 'calc(env(safe-area-inset-top, 0px) + 64px)' }} toastOptions={{ duration: 4000, style: { background: 'rgba(15,25,50,0.95)', color: '#f1f5f9', border: '1px solid rgba(255,255,255,0.1)', pointerEvents: 'auto' } }} />

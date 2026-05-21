@@ -1,4 +1,9 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://admin.friday.mu';
+import { resolveApiBase } from '../components/types';
+
+const API_BASE = resolveApiBase(
+  process.env.NEXT_PUBLIC_API_URL || 'https://admin.friday.mu',
+  typeof window !== 'undefined' ? window.location.hostname : undefined,
+);
 
 let sessionId: string | null = null;
 let eventBuffer: Array<{ event_type: string; event_data?: any; session_id?: string; user_name?: string; timestamp?: string }> = [];

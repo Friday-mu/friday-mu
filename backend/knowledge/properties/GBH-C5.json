@@ -1,0 +1,156 @@
+{
+  "card_type": "independent",
+  "parent_complex_code": "GBH",
+  "code": "GBH-C5",
+  "name": "Apt with Pool & Gym · Near Shops & Beach",
+  "property_id": "674d64d116651e00107650ee",
+  "location": {
+    "area": "Grand Baie",
+    "region": "north",
+    "address": "Géranium Road, 30525 Grand Baie, Mauritius",
+    "floor": null,
+    "coordinates": {
+      "lat": null,
+      "lng": null
+    }
+  },
+  "type": {
+    "property_type": "apartment",
+    "unit_type": "2br",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [],
+  "capacity": {
+    "adults": 4,
+    "children": 0,
+    "total_max": 4,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "double"
+      ],
+      "ac": true
+    },
+    {
+      "id": 2,
+      "beds": [
+        "double"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 1,
+    "ensuite_count": 0,
+    "half_baths": 0
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": true,
+    "gym": false,
+    "elevator": false,
+    "garage": true,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": "shared_complex",
+      "location": "Grand Baie Heights complex",
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": "*012012#",
+    "lockbox": {
+      "code": "5012",
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": "HUAWEI-V8Qz",
+      "password": "mrKV89A6",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": "Grand Baie Heights",
+    "complex_code": "GBH",
+    "electrical_authority": "CEB",
+    "shared_facilities": [
+      "pool",
+      "gym",
+      "elevator",
+      "parking"
+    ],
+    "syndic": "Friday Retreats Ltd",
+    "acoustic_notes": null,
+    "notes": null
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": null
+    },
+    "nearest_beach": {
+      "minutes_walk": null,
+      "name": null
+    },
+    "nearby_landmarks": []
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": "not_allowed",
+    "parties": "not_allowed",
+    "quiet_hours": "10 PM - 8 AM",
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": null,
+    "minimum_stay_nights": null
+  },
+  "operational_notes": [
+    "Parking is first-come, first-served. Specific spot allocation can be confirmed with the team case-by-case.",
+    "Gym is located on the 2nd floor of the Grand Baie Heights complex (shared facility for all GBH apartments)."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": null,
+    "booking": null,
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_v1_path": "/Users/judith/repos/friday-gms/knowledge/GBH-C5.json",
+    "migration_timestamp": "2026-05-14T10:16:31.959404+00:00",
+    "mapping_status": "locked"
+  },
+  "_editorial_review_needed": [],
+  "_rename_log": []
+}
