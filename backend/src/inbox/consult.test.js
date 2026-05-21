@@ -71,6 +71,46 @@ describe('FAD-native Consult helpers', () => {
     expect(message).toContain('Make it shorter');
   });
 
+  test('adds the latest status update guard to Consult prompts for incident update requests', () => {
+    const message = buildConsultUserMessage({
+      instruction: 'Rewrite the draft',
+      context: 'compose',
+      conversation: {
+        id: 'c1',
+        guest_name: 'Floriane Huc',
+        property_name: 'RC-15',
+        channel: 'airbnb',
+        check_in_date: '2026-05-20',
+        check_out_date: '2026-05-24',
+        num_guests: 2,
+        status: 'active',
+        notes: null,
+      },
+      messages: [
+        {
+          direction: 'inbound',
+          sender_name: 'Floriane Huc',
+          body: "Bonjour. Nous sommes a l'appartement et il n'y a pas d'eau",
+          translated_body: 'Hello. We are at the apartment and there is no water.',
+          created_at: '2026-05-20T12:00:00Z',
+        },
+        {
+          direction: 'inbound',
+          sender_name: 'Floriane Huc',
+          body: 'Bonjour avez vous du nouveau a nous communiquer ?',
+          translated_body: 'Hello, do you have any news to communicate to us?',
+          created_at: '2026-05-21T12:00:00Z',
+        },
+      ],
+      draftBody: '',
+      sessionHistory: [],
+      currentSessionSummary: null,
+    });
+
+    expect(message).toContain('Latest status update guard');
+    expect(message).toContain('No staff note with a confirmed new status');
+  });
+
   test('classifies Kimi timeouts and temporary upstream failures as transient', () => {
     expect(isTransientConsultFailure({ ok: false, error: 'timeout of 45000ms exceeded' })).toBe(true);
     expect(isTransientConsultFailure({ ok: false, error: 'empty response (finish_reason=length)', finishReason: 'length' })).toBe(true);

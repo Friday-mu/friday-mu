@@ -10,6 +10,9 @@ const {
   resolvePropertyCode,
   formatMessageForContext,
   detectTaskSignals,
+  latestInboundMessage,
+  statusUpdateSafetyInstruction,
+  applyStatusUpdateSafety,
 } = require('./draft_generator');
 const {
   resolveInboxReservationContext,
@@ -121,6 +124,15 @@ function parseDraftUpdate(responseText) {
   return match ? match[1].trim() || null : null;
 }
 
+function replaceDraftUpdate(responseText, draftUpdate) {
+  const replacement = `[DRAFT_UPDATE]${draftUpdate || ''}[/DRAFT_UPDATE]`;
+  const text = String(responseText || '');
+  if (/\[DRAFT_UPDATE\][\s\S]*?\[\/DRAFT_UPDATE\]/.test(text)) {
+    return text.replace(/\[DRAFT_UPDATE\][\s\S]*?\[\/DRAFT_UPDATE\]/, replacement);
+  }
+  return `${text.trim()}\n${replacement}`.trim();
+}
+
 function parseTeachingActions(responseText, teachingIdMap = {}) {
   const actions = [];
   const matches = [...String(responseText || '').matchAll(/\[TEACH\]([\s\S]*?)\[\/TEACH\]/g)];
@@ -210,6 +222,13 @@ function buildConsultUserMessage({
   if (draftBody) {
     parts.push(`[Current working draft]\n${draftBody}`);
   }
+  const latestInbound = latestInboundMessage(messages);
+  const updateGuard = statusUpdateSafetyInstruction({
+    message: latestInbound,
+    conversation,
+    messages,
+  });
+  if (updateGuard) parts.push(updateGuard);
   if (currentSessionSummary) {
     parts.push(`[Previous compacted Consult context]\n${currentSessionSummary}`);
   }
@@ -261,6 +280,13 @@ function buildCompactConsultUserMessage({
   if (draftBody) {
     parts.push(`[Current working draft]\n${truncateText(draftBody, 1800)}`);
   }
+  const latestInbound = latestInboundMessage(messages);
+  const updateGuard = statusUpdateSafetyInstruction({
+    message: latestInbound,
+    conversation,
+    messages,
+  });
+  if (updateGuard) parts.push(updateGuard);
   if (currentSessionSummary) {
     parts.push(`[Previous Consult summary]\n${truncateText(currentSessionSummary, 1200)}`);
   }
@@ -620,10 +646,24 @@ router.post('/', attachIdentity, async (req, res) => {
       }
       if (!result.ok) throw new Error(result.error || 'Consult model call failed');
 
-      const responseTextForHistory = result.text;
-      const draftUpdate = parseDraftUpdate(result.text);
+      let responseTextForHistory = result.text;
+      let draftUpdate = parseDraftUpdate(result.text);
+      let statusUpdateSafetyApplied = false;
+      if (draftUpdate) {
+        const latestInbound = latestInboundMessage(messages);
+        const guarded = applyStatusUpdateSafety(draftUpdate, {
+          message: latestInbound,
+          conversation,
+          messages,
+        });
+        if (guarded.applied) {
+          draftUpdate = guarded.draftBody;
+          statusUpdateSafetyApplied = true;
+          responseTextForHistory = replaceDraftUpdate(responseTextForHistory, draftUpdate);
+        }
+      }
       const teachingActions = parseTeachingActions(result.text, teachingIdMap);
-      let responseTextForClient = stripProtocolTags(result.text);
+      let responseTextForClient = stripProtocolTags(responseTextForHistory);
       if (!responseTextForClient && draftUpdate) {
         responseTextForClient = 'Done — I updated the draft in the editor.';
       }
@@ -670,8 +710,10 @@ router.post('/', attachIdentity, async (req, res) => {
       if (degraded) confidence = 0.2;
       else if (fallbackUsed) confidence = 0.62;
       else if (composed.missingKnowledge) confidence = 0.55;
+      else if (statusUpdateSafetyApplied) confidence = 0.55;
       else if (draftUpdate) confidence = 0.82;
       else confidence = 0.78;
+      if (statusUpdateSafetyApplied) confidence = Math.min(confidence, 0.55);
 
       res.json({
         response: responseTextForClient,
@@ -688,6 +730,7 @@ router.post('/', attachIdentity, async (req, res) => {
           fallbackUsed,
           degraded,
           modelTimeout,
+          statusUpdateSafetyApplied,
         },
         ...(composed.missingKnowledge ? { missingKnowledge: true } : {}),
       });

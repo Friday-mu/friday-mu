@@ -116,6 +116,72 @@ const GREETINGS = [
   'thank you', 'thanks', 'welcome', 'good morning', 'good afternoon', 'good evening',
 ];
 
+const STATUS_UPDATE_REQUEST_RE = /\b(?:any\s+(?:news|updates?)|do\s+you\s+have\s+(?:any\s+)?(?:news|updates?)|what(?:'s| is)\s+the\s+latest|status\s+update|latest\s+update|nouveau(?:x)?|nouvelles?|avez[-\s]?vous\s+du\s+nouveau|du\s+nouveau|des\s+nouvelles|mise\s+[àa]\s+jour|avancement|où\s+en\s+est|ou\s+en\s+est)\b/i;
+const OPS_INCIDENT_RE = /\b(?:water|eau|hot\s*water|chauffe[-\s]?eau|ballon\s+d['’]?eau|toilet|toilettes?|flush|plumbing|pump|pompe|supply|alimentation|syndic|building\s+(?:management|manager|supply)|gestion\s+de\s+l['’]?immeuble|incident|issue|problem|probl[eè]me|refund|remboursement|repair|r[eé]paration|restored?|r[eé]tabli|r[eè]gl[ée])\b/i;
+
+function latestInboundMessage(messages) {
+  if (!Array.isArray(messages)) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.direction === 'inbound') return messages[i];
+  }
+  return null;
+}
+
+function isGuestStatusUpdateRequest(text) {
+  return STATUS_UPDATE_REQUEST_RE.test(String(text || ''));
+}
+
+function isOperationalIncidentContext(messages, extraText = '') {
+  const recentText = Array.isArray(messages)
+    ? messages.slice(-16).map((m) => `${m.body || ''}\n${m.translated_body || ''}`).join('\n')
+    : '';
+  return OPS_INCIDENT_RE.test(`${extraText || ''}\n${recentText}`);
+}
+
+function statusUpdateSafetyApplies({ message, conversation, messages }) {
+  const guestText = `${message?.body || ''}\n${message?.translated_body || ''}`;
+  if (!isGuestStatusUpdateRequest(guestText)) return false;
+  if (!isOperationalIncidentContext(messages, guestText)) return false;
+  // If a human has put fresh operational notes on the conversation, let
+  // the model use them. Without notes, an "any update?" reply should be
+  // a holding reply, not invented progress from stale thread context.
+  return !String(conversation?.notes || '').trim();
+}
+
+function statusUpdateSafetyInstruction(ctx) {
+  if (!statusUpdateSafetyApplies(ctx)) return '';
+  return `[Latest status update guard]
+The latest guest message is asking for a new status update on an operational incident.
+No staff note with a confirmed new status is present in this prompt.
+Do not convert old thread context into a new update. Do not say the issue is restored, will be resolved by a specific time, that access has newly been granted, or that Friday is actively working with the board/syndic unless that exact new fact appears in staff notes.
+Safe reply pattern: acknowledge the guest, say Friday is checking the latest status with the team/building management/syndic now, and promise a confirmed update shortly.`;
+}
+
+function buildSafeStatusUpdateDraft({ message, messages }) {
+  const text = `${message?.body || ''}\n${message?.translated_body || ''}`;
+  const waterIncident = /\b(?:water|eau|hot\s*water|chauffe[-\s]?eau|toilettes?|toilet|pump|pompe|alimentation|supply)\b/i.test(
+    `${text}\n${Array.isArray(messages) ? messages.slice(-12).map((m) => `${m.body || ''}\n${m.translated_body || ''}`).join('\n') : ''}`,
+  );
+  const subject = waterIncident ? 'water-supply status' : 'latest status';
+  return `Hello,
+
+We are checking the ${subject} with our team and the building management now. We do not want to give you an unconfirmed update, so we will come back to you as soon as we have confirmed information.
+
+Thank you for your patience,
+Friday Retreats`;
+}
+
+function applyStatusUpdateSafety(draftBody, ctx) {
+  if (!statusUpdateSafetyApplies(ctx)) {
+    return { draftBody, applied: false, confidenceCeiling: null };
+  }
+  return {
+    draftBody: buildSafeStatusUpdateDraft(ctx),
+    applied: true,
+    confidenceCeiling: 55,
+  };
+}
+
 function stripAIPreamble(text) {
   if (!text || typeof text !== 'string') return text || '';
   let out = String(text).trim();
@@ -457,7 +523,12 @@ ${previousDraftBody || '(unknown)'}
 
 Rewrite the draft to address the revision instruction above. Preserve everything that wasn't called out for change.`;
   } else {
-    taskDirective = `DRAFT A REPLY TO THE LATEST MESSAGE.
+    const latestUpdateGuard = statusUpdateSafetyInstruction({
+      message,
+      conversation,
+      messages: allMessages,
+    });
+    taskDirective = `${latestUpdateGuard ? `${latestUpdateGuard}\n\n` : ''}DRAFT A REPLY TO THE LATEST MESSAGE.
 
 Messages labeled [Automated reply already sent] or [System notification] indicate actions already taken — do NOT repeat information that was already sent to the guest.
 
@@ -524,10 +595,18 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
     message,
     conversation,
   });
-  const draftBody = correctCurrencyFormatting(operatorEnglishBody);
+  let draftBody = correctCurrencyFormatting(operatorEnglishBody);
+  const safety = revisionInstruction
+    ? { applied: false, confidenceCeiling: null }
+    : applyStatusUpdateSafety(draftBody, {
+      message,
+      conversation,
+      messages: allMessages,
+    });
+  if (safety.applied) draftBody = safety.draftBody;
 
   // 7. Confidence scoring.
-  const confidence = calculateConfidence({
+  let confidence = calculateConfidence({
     category,
     hasCheckIn: !!conversation.check_in_date,
     hasCheckOut: !!conversation.check_out_date,
@@ -540,6 +619,9 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
     messageWordCount: (guestText.match(/\S+/g) || []).length,
     bodyText: guestText,
   });
+  if (typeof safety.confidenceCeiling === 'number') {
+    confidence = Math.min(confidence, safety.confidenceCeiling);
+  }
 
   return {
     draftBody,
@@ -552,6 +634,7 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
     tokenEstimate: composerOutput.metadata.token_estimate || 0,
     promptLatencyMs: kimi.latencyMs || null,
     fallbackUsed,
+    safetyApplied: safety.applied ? 'status_update_holding_reply' : null,
   };
 }
 
@@ -775,5 +858,12 @@ module.exports = {
   buildDraftUserMessage,
   compactDraftSystemPrompt,
   compactHistoryMessages,
+  latestInboundMessage,
+  isGuestStatusUpdateRequest,
+  isOperationalIncidentContext,
+  statusUpdateSafetyApplies,
+  statusUpdateSafetyInstruction,
+  buildSafeStatusUpdateDraft,
+  applyStatusUpdateSafety,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
 };

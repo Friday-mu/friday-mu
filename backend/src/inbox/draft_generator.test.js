@@ -12,6 +12,9 @@ const {
   buildDraftUserMessage,
   compactHistoryMessages,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
+  isGuestStatusUpdateRequest,
+  statusUpdateSafetyInstruction,
+  applyStatusUpdateSafety,
 } = require('./draft_generator');
 
 describe('draft generator language policy', () => {
@@ -105,5 +108,72 @@ describe('draft generator compact fallback policy', () => {
     expect(prompt).toContain('- Property: LV-10');
     expect(prompt).toContain('PREVIOUS MESSAGES:');
     expect(prompt).toContain('DRAFT A REPLY.');
+  });
+});
+
+describe('draft generator status update safety', () => {
+  const latestMessage = {
+    id: 'm-latest',
+    direction: 'inbound',
+    body: 'Bonjour avez vous du nouveau a nous communiquer ?',
+    translated_body: 'Hello, do you have any news to communicate to us?',
+  };
+  const waterThread = [
+    {
+      direction: 'inbound',
+      body: "Bonjour. Nous sommes a l'appartement et il n'y a pas d'eau",
+      translated_body: 'Hello. We are at the apartment and there is no water.',
+    },
+    {
+      direction: 'outbound',
+      body: "Nous vérifions avec le syndic et vous tiendrons informée.",
+      translated_body: 'We are checking with the building management and will keep you informed.',
+    },
+    latestMessage,
+  ];
+
+  test('detects French and English guest requests for new status', () => {
+    expect(isGuestStatusUpdateRequest('Bonjour avez vous du nouveau a nous communiquer ?')).toBe(true);
+    expect(isGuestStatusUpdateRequest('Do you have any update for us?')).toBe(true);
+    expect(isGuestStatusUpdateRequest('Thanks, yes you can access the apartment')).toBe(false);
+  });
+
+  test('adds a hard guard when guest asks for updates on an incident without staff notes', () => {
+    const guard = statusUpdateSafetyInstruction({
+      message: latestMessage,
+      conversation: { notes: null },
+      messages: waterThread,
+    });
+    expect(guard).toContain('Latest status update guard');
+    expect(guard).toContain('Do not convert old thread context into a new update');
+  });
+
+  test('replaces unsafe invented progress with a holding reply and lowers confidence', () => {
+    const result = applyStatusUpdateSafety(
+      'Hello Floriane, we have been informed that access has been granted and the issue should be resolved before your return tonight.',
+      {
+        message: latestMessage,
+        conversation: { notes: null },
+        messages: waterThread,
+      },
+    );
+
+    expect(result.applied).toBe(true);
+    expect(result.confidenceCeiling).toBe(55);
+    expect(result.draftBody).toContain('checking the water-supply status');
+    expect(result.draftBody).toContain('unconfirmed update');
+    expect(result.draftBody).not.toContain('before your return tonight');
+  });
+
+  test('allows specific updates when staff notes provide confirmed fresh status', () => {
+    const result = applyStatusUpdateSafety(
+      'Hello Floriane, the building manager confirmed the supply has been restored.',
+      {
+        message: latestMessage,
+        conversation: { notes: 'Confirmed by syndic at 16:00: water restored.' },
+        messages: waterThread,
+      },
+    );
+    expect(result.applied).toBe(false);
   });
 });
