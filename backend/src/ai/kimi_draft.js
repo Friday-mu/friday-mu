@@ -204,18 +204,18 @@ async function callWithRetry(opts) {
 // call (success or fail) logs to ai_usage. Examples of `feature`
 // values: 'inbox_draft', 'inbox_followup_draft'. tenantId defaults
 // to FR when omitted.
-async function generateDraftReply({ system, user, meter, timeoutMs, maxRetries, maxTokens }) {
+async function generateDraftReply({ system, user, meter, timeoutMs, maxRetries, maxTokens, model, temperature }) {
   const result = await callWithRetry({
     system,
     user,
-    model: DRAFT_MODEL,
+    model: model || DRAFT_MODEL,
     maxTokens: maxTokens || DRAFT_MAX_TOKENS,
-    temperature: DRAFT_TEMPERATURE,
+    temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : DRAFT_TEMPERATURE,
     timeoutMs: timeoutMs || DRAFT_TIMEOUT_MS,
     maxRetries,
   });
   logUsage(meter, {
-    model: result.model || DRAFT_MODEL,
+    model: result.model || model || DRAFT_MODEL,
     promptTokens: result.inputTokens,
     completionTokens: result.outputTokens,
     durationMs: result.latencyMs,

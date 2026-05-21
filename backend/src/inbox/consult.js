@@ -17,6 +17,11 @@ const router = express.Router();
 const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 45_000;
 const CONSULT_MAX_RETRIES = Number(process.env.KIMI_CONSULT_MAX_RETRIES) || 0;
 const CONSULT_MAX_TOKENS = Number(process.env.KIMI_CONSULT_MAX_TOKENS) || 1800;
+const CONSULT_FALLBACK_MODEL = process.env.KIMI_CONSULT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || 'moonshot-v1-8k';
+const CONSULT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_FALLBACK_TIMEOUT_MS) || 25_000;
+const CONSULT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_RETRIES) || 0;
+const CONSULT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_TOKENS) || 900;
+const CONSULT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|rate limit|too many requests|overloaded|temporarily|unavailable|gateway|502|503|504)/i;
 
 const VALID_CONTEXTS = new Set([
   'revision',
@@ -82,6 +87,20 @@ function actorId(req) {
 
 function cleanInstruction(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value || '');
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 18)).trimEnd()}\n[truncated]`;
+}
+
+function isTransientConsultFailure(result) {
+  if (!result || result.ok) return false;
+  const status = Number(result.status);
+  if ([408, 409, 425, 429].includes(status)) return true;
+  if (status >= 500) return true;
+  return CONSULT_TRANSIENT_FAILURE_RE.test(String(result.error || ''));
 }
 
 function stripProtocolTags(text) {
@@ -199,6 +218,69 @@ function buildConsultUserMessage({
   return parts.join('\n\n');
 }
 
+function buildCompactConsultUserMessage({
+  instruction,
+  context,
+  conversation,
+  messages,
+  draftBody,
+  sessionHistory,
+  currentSessionSummary,
+}) {
+  const parts = [];
+  parts.push(`[Compact Consult context]\n- Mode: ${context}`);
+  if (conversation) {
+    const convLines = [
+      `Conversation ID: ${conversation.id}`,
+      `Guest: ${conversation.guest_name || 'unknown'}`,
+      `Property: ${conversation.property_name || 'unknown'}`,
+      `Channel: ${conversation.channel || conversation.communication_channel || 'unknown'}`,
+      `Stay: ${conversation.check_in_date || 'n/a'} -> ${conversation.check_out_date || 'n/a'}`,
+      `Guests: ${conversation.num_guests || 'n/a'}`,
+      `Status: ${conversation.status || 'unknown'}`,
+    ];
+    if (conversation.conversation_summary) {
+      convLines.push(`Prior summary: ${truncateText(conversation.conversation_summary, 900)}`);
+    }
+    parts.push(`[Conversation]\n${convLines.map((l) => `- ${l}`).join('\n')}`);
+  }
+  const recentMessages = Array.isArray(messages)
+    ? messages.slice(-8).map((m) => truncateText(formatMessageForContext(m), 900))
+    : [];
+  if (recentMessages.length > 0) {
+    parts.push(`[Last thread messages]\n${recentMessages.join('\n\n')}`);
+  }
+  if (draftBody) {
+    parts.push(`[Current working draft]\n${truncateText(draftBody, 1800)}`);
+  }
+  if (currentSessionSummary) {
+    parts.push(`[Previous Consult summary]\n${truncateText(currentSessionSummary, 1200)}`);
+  }
+  const recentTurns = Array.isArray(sessionHistory)
+    ? sessionHistory.slice(-4).map((m) => {
+      const role = m.role === 'assistant' ? 'Friday' : (m.sender || 'Operator');
+      return `${role}: ${truncateText(m.content || m.text || '', 900)}`;
+    }).filter((line) => line.trim())
+    : [];
+  if (recentTurns.length > 0) {
+    parts.push(`[Last Ask Friday turns]\n${recentTurns.join('\n\n')}`);
+  }
+  parts.push(contextTaskInstruction(context));
+  parts.push(`[Operator request]\n${truncateText(instruction, 1800)}`);
+  return parts.join('\n\n');
+}
+
+function compactConsultSystemPrompt({ context, propertyCode }) {
+  return `You are Friday, Friday Retreats' AI operations assistant inside FAD.
+
+Respond in English. Be concise and operational.
+Use only the compact context provided. Do not invent prices, availability, property features, refunds, or operational commitments.
+If the operator asks you to write or modify a guest-facing draft/message, put the complete final text in [DRAFT_UPDATE]...[/DRAFT_UPDATE] and do not repeat it outside the tag.
+If you cannot safely answer from the compact context, say exactly what is missing and what the operator should check.
+
+Surface: ${selectConsultSurface(context)}${propertyCode ? `\nProperty code: ${propertyCode}` : ''}`;
+}
+
 function composeSystemPrompt({ context, propertyCode, instruction, draftBody, activeTeachingBlock, actionFeedbackBlock }) {
   const surface = selectConsultSurface(context);
   const acceptsPropertyCard = surface !== 'learning-analyzer';
@@ -249,6 +331,21 @@ Be concise. Surface missing knowledge honestly. Do not invent prices, availabili
     missingKnowledge,
     metadata: composed.metadata,
   };
+}
+
+async function appendConsultSessionError({ sessionId, context, message, phase }) {
+  if (!sessionId) return;
+  await query(
+    `UPDATE consult_sessions
+        SET errors = COALESCE(errors, '[]'::jsonb) || $1::jsonb
+      WHERE id = $2`,
+    [JSON.stringify([{
+      message,
+      phase: phase || null,
+      timestamp: new Date().toISOString(),
+      context,
+    }]), sessionId],
+  );
 }
 
 async function loadConversationBundle(conversationId, tenantId) {
@@ -443,7 +540,7 @@ router.post('/', attachIdentity, async (req, res) => {
         currentSessionSummary: session.running_summary || session.summary || null,
       });
 
-      const result = await generateDraftReply({
+      let result = await generateDraftReply({
         system: composed.systemPrompt,
         user: userMessage,
         meter: { tenantId: req.tenantId, feature: 'inbox_consult' },
@@ -451,6 +548,61 @@ router.post('/', attachIdentity, async (req, res) => {
         maxRetries: CONSULT_MAX_RETRIES,
         maxTokens: CONSULT_MAX_TOKENS,
       });
+      let fallbackUsed = false;
+      let degraded = false;
+      let modelTimeout = false;
+      if (!result.ok && isTransientConsultFailure(result)) {
+        fallbackUsed = true;
+        modelTimeout = true;
+        const fullContextError = result.error || 'transient consult model failure';
+        console.warn(`[consult] full-context call failed (${fullContextError}); retrying compact consult context`);
+        await appendConsultSessionError({
+          sessionId: activeSessionId,
+          context,
+          message: fullContextError,
+          phase: 'full_context',
+        }).catch(() => {});
+
+        const compactUserMessage = buildCompactConsultUserMessage({
+          instruction,
+          context,
+          conversation,
+          messages,
+          draftBody,
+          sessionHistory,
+          currentSessionSummary: session.running_summary || session.summary || null,
+        });
+        result = await generateDraftReply({
+          system: compactConsultSystemPrompt({ context, propertyCode }),
+          user: compactUserMessage,
+          meter: { tenantId: req.tenantId, feature: 'inbox_consult_compact' },
+          timeoutMs: CONSULT_FALLBACK_TIMEOUT_MS,
+          maxRetries: CONSULT_FALLBACK_MAX_RETRIES,
+          maxTokens: CONSULT_FALLBACK_MAX_TOKENS,
+          model: CONSULT_FALLBACK_MODEL,
+        });
+      }
+      if (!result.ok && isTransientConsultFailure(result)) {
+        degraded = true;
+        modelTimeout = true;
+        const compactError = result.error || 'compact consult model failure';
+        console.warn(`[consult] compact fallback failed (${compactError}); returning controlled degraded response`);
+        await appendConsultSessionError({
+          sessionId: activeSessionId,
+          context,
+          message: compactError,
+          phase: 'compact_context',
+        }).catch(() => {});
+        result = {
+          ok: true,
+          text: 'Friday timed out while reading the consultation context. I kept this Consult session open. Please retry the same request, or make the request narrower; no guest message was changed.',
+          model: CONSULT_FALLBACK_MODEL,
+          inputTokens: 0,
+          outputTokens: 0,
+          latencyMs: result.latencyMs || null,
+          degraded: true,
+        };
+      }
       if (!result.ok) throw new Error(result.error || 'Consult model call failed');
 
       const responseTextForHistory = result.text;
@@ -500,7 +652,9 @@ router.post('/', attachIdentity, async (req, res) => {
       }
 
       let confidence;
-      if (composed.missingKnowledge) confidence = 0.55;
+      if (degraded) confidence = 0.2;
+      else if (fallbackUsed) confidence = 0.62;
+      else if (composed.missingKnowledge) confidence = 0.55;
       else if (draftUpdate) confidence = 0.82;
       else confidence = 0.78;
 
@@ -516,6 +670,9 @@ router.post('/', attachIdentity, async (req, res) => {
           loadedSkills: composed.metadata.loaded_skills,
           tokenEstimate: composed.metadata.token_estimate,
           propertyCode: composed.metadata.property_code,
+          fallbackUsed,
+          degraded,
+          modelTimeout,
         },
         ...(composed.missingKnowledge ? { missingKnowledge: true } : {}),
       });
@@ -529,12 +686,12 @@ router.post('/', attachIdentity, async (req, res) => {
   } catch (e) {
     console.error('[consult] error:', e.message);
     if (activeSessionId) {
-      await query(
-        `UPDATE consult_sessions
-            SET errors = COALESCE(errors, '[]'::jsonb) || $1::jsonb
-          WHERE id = $2`,
-        [JSON.stringify([{ message: e.message, timestamp: new Date().toISOString(), context: req.body?.context }]), activeSessionId],
-      ).catch(() => {});
+      await appendConsultSessionError({
+        sessionId: activeSessionId,
+        context: req.body?.context,
+        message: e.message,
+        phase: 'route_error',
+      }).catch(() => {});
     }
     res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : 'Consultation failed', details: e.message });
   }
@@ -664,6 +821,9 @@ module.exports._test = {
   parseTeachingActions,
   selectConsultSurface,
   contextTaskInstruction,
+  isTransientConsultFailure,
+  buildCompactConsultUserMessage,
+  compactConsultSystemPrompt,
   buildConsultUserMessage,
   composeSystemPrompt,
 };

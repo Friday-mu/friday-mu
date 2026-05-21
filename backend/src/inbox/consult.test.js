@@ -6,7 +6,10 @@ const {
   parseTeachingActions,
   selectConsultSurface,
   buildConsultUserMessage,
+  buildCompactConsultUserMessage,
+  compactConsultSystemPrompt,
   conversationIdForSession,
+  isTransientConsultFailure,
 } = require('./consult')._test;
 
 describe('FAD-native Consult helpers', () => {
@@ -66,5 +69,63 @@ describe('FAD-native Consult helpers', () => {
     expect(message).toContain('Long draft');
     expect(message).toContain('Prior decision');
     expect(message).toContain('Make it shorter');
+  });
+
+  test('classifies Kimi timeouts and temporary upstream failures as transient', () => {
+    expect(isTransientConsultFailure({ ok: false, error: 'timeout of 45000ms exceeded' })).toBe(true);
+    expect(isTransientConsultFailure({ ok: false, status: 429, error: 'Too Many Requests' })).toBe(true);
+    expect(isTransientConsultFailure({ ok: false, status: 503, error: 'upstream unavailable' })).toBe(true);
+    expect(isTransientConsultFailure({ ok: false, status: 401, error: 'invalid api key' })).toBe(false);
+    expect(isTransientConsultFailure({ ok: true })).toBe(false);
+  });
+
+  test('builds a compact fallback prompt with bounded thread and session context', () => {
+    const messages = Array.from({ length: 12 }, (_, i) => ({
+      created_at: '2026-06-01T10:00:00Z',
+      sender_name: i % 2 ? 'Friday' : 'Guest',
+      direction: i % 2 ? 'outbound' : 'inbound',
+      body: `Message ${i + 1}`,
+    }));
+    const sessionHistory = Array.from({ length: 7 }, (_, i) => ({
+      role: i % 2 ? 'assistant' : 'user',
+      content: `Consult turn ${i + 1}`,
+      sender: 'Ishant',
+    }));
+
+    const message = buildCompactConsultUserMessage({
+      instruction: 'Please make the draft warmer',
+      context: 'compose',
+      conversation: {
+        id: 'c1',
+        guest_name: 'Guest A',
+        property_name: 'BS-1',
+        channel: 'whatsapp',
+        check_in_date: '2026-06-01',
+        check_out_date: '2026-06-08',
+        num_guests: 2,
+        status: 'active',
+      },
+      messages,
+      draftBody: 'Current draft',
+      sessionHistory,
+      currentSessionSummary: 'Earlier decision',
+    });
+
+    expect(message).toContain('[Compact Consult context]');
+    expect(message).toContain('Guest: Guest A');
+    expect(message).not.toContain('Message 4');
+    expect(message).toContain('Message 5');
+    expect(message).toContain('Message 12');
+    expect(message).not.toContain('Consult turn 1');
+    expect(message).toContain('Consult turn 4');
+    expect(message).toContain('Consult turn 7');
+    expect(message).toContain('Please make the draft warmer');
+  });
+
+  test('compact fallback system prompt preserves Consult draft protocol', () => {
+    const prompt = compactConsultSystemPrompt({ context: 'compose', propertyCode: 'BS-1' });
+    expect(prompt).toContain('Respond in English');
+    expect(prompt).toContain('[DRAFT_UPDATE]');
+    expect(prompt).toContain('Property code: BS-1');
   });
 });
