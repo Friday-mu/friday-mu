@@ -20,6 +20,10 @@ API enrichment preview report:
 
 `api-enrichment-preview.json`
 
+API enrichment apply summary:
+
+`api-enrichment-apply-summary.json`
+
 `bundle-preview.json` was preview-only. `bundle-apply-preview.json` is the apply-readiness preview generated after import policy skips, `Watch` priority mapping, cost/supply child-row insertion, and payload redaction were implemented.
 
 ## Summary Export
@@ -58,9 +62,34 @@ API enrichment preview report:
   - `node backend/scripts/breezeway-task-enrichment-preview.js --limit 25 --use-keychain`
   - `node backend/scripts/breezeway-task-enrichment-preview.js --task-id <id> --use-keychain`
 - Local API-only smoke used two known task IDs and retrieved 2/2 without writing FAD data.
-- The preview reports counts and field presence only; it does not print photo URLs, comments, secrets, or raw task payloads.
+- The preview reports counts and field presence only; it does not print photo URLs, secrets, or raw task payloads.
 - DB-backed mode requires `DATABASE_URL` and reads existing imported tasks by `external_ref = breezeway:<Task ID>`.
-- Apply mode is intentionally not implemented yet. The next safe step is an idempotent apply that stores enrichment under `source_payload.apiEnrichment` and updates `attachment_count` where API photos exist.
+- Apply mode is available after preview:
+  - `node backend/scripts/breezeway-task-enrichment-preview.js --limit 25 --use-keychain --apply`
+  - It updates existing `source = breezeway` tasks only.
+  - It defaults to rows missing `source_payload.apiEnrichment` so repeated batch runs cannot skip rows after `updated_at` changes.
+  - It stores API detail under `source_payload.apiEnrichment`.
+  - It updates `attachment_count`, missing due/time/spent/source timestamps, and merged tags idempotently.
+  - API photo URLs are not stored; photos are preserved as redacted metadata with counts and URL-presence only.
+  - Comments/costs/supplies/assignments/people/linked reservation/report metadata are preserved in internal source provenance for later UI surfacing.
+
+Production API enrichment result:
+
+- Enriched existing imported Breezeway tasks: 4,483/4,483
+- Failed API enrichment rows: 0
+- Tasks with API photo metadata / attachment counts: 2,016
+- Tasks with API assignments: 4,336
+- Tasks with API finished-by objects: 3,770
+- Tasks with API created-by objects: 2,792
+- Tasks with API linked reservations: 806
+- Tasks with API descriptions: 2,017
+- Tasks with API summaries: 631
+- Tasks with API tags: 399
+- Tasks with API costs: 182
+- Tasks with API supplies: 1
+- Tasks with API comments from this endpoint: 0
+- Stored API photo URL leak rows: 0
+- Batch audit reports remain on the VPS at `/tmp/fad-breezeway-enrichment-full/`; summary copied into this folder.
 
 ## Current Apply Readiness
 

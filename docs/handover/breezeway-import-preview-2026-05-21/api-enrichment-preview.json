@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-21T17:45:13.859Z",
+  "generatedAt": "2026-05-21T17:57:30.434Z",
   "mode": "api_task_id_preview_only",
   "source": "breezeway_api",
   "scanned": 2,
@@ -22,12 +22,14 @@
         "assignmentsCount": 0,
         "photosCount": 0,
         "tagsCount": 0,
+        "commentsCount": 0,
         "costsCount": 0,
         "suppliesCount": 0,
         "hasCreatedBy": false,
         "hasFinishedBy": false,
         "hasRequestedBy": false,
         "hasLinkedReservation": false,
+        "reportedTasksCount": 0,
         "statusStage": "new"
       }
     },
@@ -41,12 +43,14 @@
         "assignmentsCount": 1,
         "photosCount": 0,
         "tagsCount": 0,
+        "commentsCount": 0,
         "costsCount": 0,
         "suppliesCount": 0,
         "hasCreatedBy": false,
         "hasFinishedBy": false,
         "hasRequestedBy": false,
         "hasLinkedReservation": false,
+        "reportedTasksCount": 0,
         "statusStage": "new"
       }
     }
