@@ -14,6 +14,9 @@ const {
 const { publishFadEvent } = require('../realtime');
 
 const router = express.Router();
+const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 45_000;
+const CONSULT_MAX_RETRIES = Number(process.env.KIMI_CONSULT_MAX_RETRIES) || 0;
+const CONSULT_MAX_TOKENS = Number(process.env.KIMI_CONSULT_MAX_TOKENS) || 1800;
 
 const VALID_CONTEXTS = new Set([
   'revision',
@@ -444,6 +447,9 @@ router.post('/', attachIdentity, async (req, res) => {
         system: composed.systemPrompt,
         user: userMessage,
         meter: { tenantId: req.tenantId, feature: 'inbox_consult' },
+        timeoutMs: CONSULT_TIMEOUT_MS,
+        maxRetries: CONSULT_MAX_RETRIES,
+        maxTokens: CONSULT_MAX_TOKENS,
       });
       if (!result.ok) throw new Error(result.error || 'Consult model call failed');
 

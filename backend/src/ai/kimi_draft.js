@@ -149,7 +149,10 @@ async function callKimiOnce({ system, user, model, maxTokens, temperature, timeo
 //     change on a fresh call with the same prompt.
 async function callWithRetry(opts) {
   let lastError = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  const maxRetries = Number.isFinite(Number(opts.maxRetries))
+    ? Math.max(0, Number(opts.maxRetries))
+    : MAX_RETRIES;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const result = await callKimiOnce(opts);
     if (result.ok) {
       if (attempt > 0) {
@@ -186,7 +189,7 @@ async function callWithRetry(opts) {
       console.warn(`[ai/kimi-draft] non-retryable: stop with no output (in=${result.inputTokens})`);
       return result;
     }
-    if (attempt < MAX_RETRIES) {
+    if (attempt < maxRetries) {
       const wait = RETRY_BASE_MS * Math.pow(2, attempt);
       console.warn(`[ai/kimi-draft] attempt ${attempt + 1} failed (${result.error}); retrying in ${wait}ms`);
       await sleep(wait);
@@ -201,14 +204,15 @@ async function callWithRetry(opts) {
 // call (success or fail) logs to ai_usage. Examples of `feature`
 // values: 'inbox_draft', 'inbox_followup_draft'. tenantId defaults
 // to FR when omitted.
-async function generateDraftReply({ system, user, meter }) {
+async function generateDraftReply({ system, user, meter, timeoutMs, maxRetries, maxTokens }) {
   const result = await callWithRetry({
     system,
     user,
     model: DRAFT_MODEL,
-    maxTokens: DRAFT_MAX_TOKENS,
+    maxTokens: maxTokens || DRAFT_MAX_TOKENS,
     temperature: DRAFT_TEMPERATURE,
-    timeoutMs: DRAFT_TIMEOUT_MS,
+    timeoutMs: timeoutMs || DRAFT_TIMEOUT_MS,
+    maxRetries,
   });
   logUsage(meter, {
     model: result.model || DRAFT_MODEL,
