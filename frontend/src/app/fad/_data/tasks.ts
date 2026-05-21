@@ -45,7 +45,8 @@ export type TaskSource =
   | 'friday'
   | 'reported_issue'
   | 'personal'
-  | 'review';
+  | 'review'
+  | 'syndic';
 
 export type TaskVisibility = 'all' | 'team' | 'self';
 

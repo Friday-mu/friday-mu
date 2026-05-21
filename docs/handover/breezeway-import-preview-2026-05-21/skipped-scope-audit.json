@@ -1,0 +1,484 @@
+{
+  "generatedAt": "2026-05-21T16:56:57.118Z",
+  "sourceDirectory": "/Users/judith/Desktop/Friday/Friday OS/Ops Module",
+  "totalSkipped": 691,
+  "byReason": {
+    "admin_property": {
+      "rows": 649,
+      "propertyIds": [
+        {
+          "value": "1099484",
+          "count": 649
+        },
+        {
+          "value": "1268645",
+          "count": 42
+        }
+      ],
+      "properties": [
+        {
+          "value": "Office / Store / Admin",
+          "count": 649
+        }
+      ],
+      "statuses": [
+        {
+          "value": "Finished",
+          "count": 347
+        },
+        {
+          "value": "Closed",
+          "count": 187
+        },
+        {
+          "value": "Not Started",
+          "count": 106
+        },
+        {
+          "value": "In Progress",
+          "count": 9
+        }
+      ],
+      "priorities": [
+        {
+          "value": "Medium",
+          "count": 617
+        },
+        {
+          "value": "High",
+          "count": 25
+        },
+        {
+          "value": "Urgent",
+          "count": 7
+        }
+      ],
+      "departments": [
+        {
+          "value": "Inspection",
+          "count": 571
+        },
+        {
+          "value": "Cleaning",
+          "count": 42
+        },
+        {
+          "value": "Maintenance",
+          "count": 36
+        }
+      ],
+      "subdepartments": [
+        {
+          "value": "(empty)",
+          "count": 537
+        },
+        {
+          "value": "Guest Services",
+          "count": 101
+        },
+        {
+          "value": "Safety",
+          "count": 7
+        },
+        {
+          "value": "Preventative Safety",
+          "count": 2
+        },
+        {
+          "value": "Photography",
+          "count": 1
+        },
+        {
+          "value": "Onboarding",
+          "count": 1
+        }
+      ],
+      "openLikeRows": 9,
+      "completedLikeRows": 534,
+      "sampleOpen": [
+        {
+          "taskId": "123645072",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Find Third Parties for all the Following in the North & West",
+          "dueDate": "",
+          "createdDate": "2025-12-07"
+        },
+        {
+          "taskId": "120792145",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Inventory List of Supplies in Stock (SRL, Equipment, Maintenance stuff, etc)",
+          "dueDate": "2026-04-14",
+          "createdDate": "2025-11-12"
+        },
+        {
+          "taskId": "124150234",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Amend T&Cs",
+          "dueDate": "2026-04-14",
+          "createdDate": "2025-12-11"
+        },
+        {
+          "taskId": "124959734",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Change Whatsapp Name on Guesty",
+          "dueDate": "2026-05-14",
+          "createdDate": "2025-12-18"
+        },
+        {
+          "taskId": "145032705",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Delivery bwell ( west ",
+          "dueDate": "2026-05-22",
+          "createdDate": "2026-04-29"
+        },
+        {
+          "taskId": "134690811",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Setup Drying Rods and Cables in Store",
+          "dueDate": "2026-05-25",
+          "createdDate": "2026-02-20"
+        },
+        {
+          "taskId": "136430555",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Setup Maintenance Area in Store",
+          "dueDate": "2026-05-25",
+          "createdDate": "2026-03-05"
+        },
+        {
+          "taskId": "139318220",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Transfer Ownership of Scooters",
+          "dueDate": "2026-05-25",
+          "createdDate": "2026-03-24"
+        },
+        {
+          "taskId": "140422442",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "In Progress",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "Guest Services",
+          "title": "Print Brochure House Rules & Business Cards",
+          "dueDate": "2026-06-01",
+          "createdDate": "2026-03-31"
+        }
+      ],
+      "sampleCompleted": [
+        {
+          "taskId": "132603093",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Valeting of 2 Chairs and 1 Mattress",
+          "dueDate": "",
+          "createdDate": "2026-02-10"
+        },
+        {
+          "taskId": "135458515",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Update inventory on breezeway (Maintenance)",
+          "dueDate": "",
+          "createdDate": "2026-02-26"
+        },
+        {
+          "taskId": "135459742",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "RC Syndic Proposal Agreement",
+          "dueDate": "",
+          "createdDate": "2026-02-26"
+        },
+        {
+          "taskId": "139704147",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Buy missing items",
+          "dueDate": "",
+          "createdDate": "2026-03-26"
+        },
+        {
+          "taskId": "138469568",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "Guest Services",
+          "title": "House Rules for All Listing",
+          "dueDate": "2026-03-25",
+          "createdDate": "2026-03-18"
+        },
+        {
+          "taskId": "138644102",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "Guest Services",
+          "title": "Friday's Pricing Document",
+          "dueDate": "2026-03-25",
+          "createdDate": "2026-03-19"
+        },
+        {
+          "taskId": "119959466",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Review Owner Agreement",
+          "dueDate": "2026-04-13",
+          "createdDate": "2025-11-05"
+        },
+        {
+          "taskId": "120400681",
+          "propertyId": "1099484",
+          "property": "Office / Store / Admin",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Review Employee Contract",
+          "dueDate": "2026-04-13",
+          "createdDate": "2025-11-09"
+        }
+      ]
+    },
+    "aggregate_property": {
+      "rows": 42,
+      "propertyIds": [
+        {
+          "value": "1099484",
+          "count": 649
+        },
+        {
+          "value": "1268645",
+          "count": 42
+        }
+      ],
+      "properties": [
+        {
+          "value": "Grand Baie Heights",
+          "count": 42
+        }
+      ],
+      "statuses": [
+        {
+          "value": "Finished",
+          "count": 17
+        },
+        {
+          "value": "Closed",
+          "count": 13
+        },
+        {
+          "value": "Not Started",
+          "count": 12
+        }
+      ],
+      "priorities": [
+        {
+          "value": "Medium",
+          "count": 37
+        },
+        {
+          "value": "High",
+          "count": 5
+        }
+      ],
+      "departments": [
+        {
+          "value": "Inspection",
+          "count": 19
+        },
+        {
+          "value": "Maintenance",
+          "count": 13
+        },
+        {
+          "value": "Cleaning",
+          "count": 10
+        }
+      ],
+      "subdepartments": [
+        {
+          "value": "(empty)",
+          "count": 39
+        },
+        {
+          "value": "Guest Services",
+          "count": 2
+        },
+        {
+          "value": "Preventative Safety",
+          "count": 1
+        }
+      ],
+      "openLikeRows": 0,
+      "completedLikeRows": 30,
+      "sampleOpen": [],
+      "sampleCompleted": [
+        {
+          "taskId": "141484248",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Petition - Sewage water to be taken care of by CWA",
+          "dueDate": "",
+          "createdDate": "2026-04-07"
+        },
+        {
+          "taskId": "146565006",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Lights not working",
+          "dueDate": "",
+          "createdDate": "2026-05-09"
+        },
+        {
+          "taskId": "140277162",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Not Started",
+          "priority": "High",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "To readjust price for syndic fee proposal ",
+          "dueDate": "2026-04-13",
+          "createdDate": "2026-03-30"
+        },
+        {
+          "taskId": "143758760",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Moraillon lock - GBH meter",
+          "dueDate": "2026-05-19",
+          "createdDate": "2026-04-21"
+        },
+        {
+          "taskId": "141649522",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Not Started",
+          "priority": "Medium",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "To print images as well as add plexiglass",
+          "dueDate": "2026-06-01",
+          "createdDate": "2026-04-08"
+        },
+        {
+          "taskId": "137156573",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Finished",
+          "priority": "High",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Overall inspection of Grand Baie Heights",
+          "dueDate": "2026-03-18",
+          "createdDate": "2026-03-10"
+        },
+        {
+          "taskId": "138337325",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Finished",
+          "priority": "High",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Walkthrough of Grand baie Heights",
+          "dueDate": "2026-03-19",
+          "createdDate": "2026-03-17"
+        },
+        {
+          "taskId": "140624608",
+          "propertyId": "1268645",
+          "property": "Grand Baie Heights",
+          "status": "Finished",
+          "priority": "High",
+          "department": "Inspection",
+          "subdepartment": "",
+          "title": "Buy cleaning materials",
+          "dueDate": "2026-04-08",
+          "createdDate": "2026-04-01"
+        }
+      ]
+    }
+  },
+  "recommendation": {
+    "aggregate_property": "Treat GBH aggregate rows as Syndic/building-scope candidates, not disposable rows. Import only after schema/source classification is explicit.",
+    "admin_property": "Review Office/Admin/Store rows as Friday/internal or office Ops tasks. Do not expose blindly to field staff."
+  }
+}

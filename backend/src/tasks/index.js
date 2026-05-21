@@ -68,6 +68,7 @@ const VALID_REQUIREMENT_KIND = new Set([
 const VALID_SUPPLY_CATEGORY = new Set([
   'linen', 'amenity', 'cleaning', 'maintenance', 'welcome', 'consumable', 'other',
 ]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IMPORT_ROLES = new Set([
   'admin',
   'director',
@@ -76,6 +77,65 @@ const IMPORT_ROLES = new Set([
   'manager',
   'supervisor',
 ]);
+
+const TASK_SORTS = {
+  propertyCode: 't.property_code',
+  property: 't.property_code',
+  title: 't.title',
+  subdepartment: 't.subdepartment',
+  department: 't.department',
+  status: `CASE t.status
+    WHEN 'reported' THEN 0
+    WHEN 'scheduled' THEN 1
+    WHEN 'ready' THEN 2
+    WHEN 'in_progress' THEN 3
+    WHEN 'paused' THEN 4
+    WHEN 'blocked' THEN 5
+    WHEN 'completed' THEN 6
+    WHEN 'closed' THEN 7
+    WHEN 'cancelled' THEN 8
+    ELSE 9
+  END`,
+  priority: `CASE t.priority
+    WHEN 'urgent' THEN 0
+    WHEN 'high' THEN 1
+    WHEN 'medium' THEN 2
+    WHEN 'low' THEN 3
+    WHEN 'lowest' THEN 4
+    ELSE 5
+  END`,
+  dueDate: 't.due_date',
+  due_date: 't.due_date',
+  source: 't.source',
+  createdAt: 't.created_at',
+  updatedAt: 't.updated_at',
+};
+
+function clampInt(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.floor(parsed), min), max);
+}
+
+function taskOrderBy(query) {
+  const sortKey = typeof query.sort === 'string' ? query.sort : '';
+  const sortExpr = TASK_SORTS[sortKey];
+  if (!sortExpr) {
+    return `CASE t.priority
+        WHEN 'urgent' THEN 0
+        WHEN 'high'   THEN 1
+        WHEN 'medium' THEN 2
+        WHEN 'low'    THEN 3
+        WHEN 'lowest' THEN 4
+      END,
+      t.due_date ASC NULLS LAST,
+      t.created_at DESC`;
+  }
+
+  const dir = query.dir === 'desc' ? 'DESC' : 'ASC';
+  const tieBreaker = sortExpr === 't.created_at' ? 't.id ASC' : 't.created_at DESC';
+  return `${sortExpr} ${dir} NULLS LAST, ${tieBreaker}`;
+}
 
 // Mig-050-era callers used todo/done. The cutover lifecycle keeps
 // `todo` as a migration alias only.
@@ -387,7 +447,9 @@ async function notifyNewAssignees(tenantId, taskId, oldIds, newIds, actorUserId)
 }
 
 // GET / — list with filters. Returns shaped tasks WITHOUT comments +
-// costs (avoids N+1 on long lists). Detail view loads those.
+// costs (avoids N+1 on long lists). Detail view loads those. The list
+// response includes pagination metadata so Operations can handle
+// historical imports without pretending the first slice is the universe.
 router.get('/', attachIdentity, async (req, res) => {
   try {
     const filters = ['t.tenant_id = $1'];
@@ -410,9 +472,13 @@ router.get('/', attachIdentity, async (req, res) => {
         ? req.identity?.userId
         : req.query.assignee;
       if (assignee) {
-        // Array membership via the GIN index.
-        filters.push(`$${i++} = ANY(t.assignee_user_ids)`);
-        params.push(assignee);
+        if (!UUID_RE.test(assignee)) {
+          filters.push('FALSE');
+        } else {
+          // Array membership via the GIN index.
+          filters.push(`$${i++}::uuid = ANY(t.assignee_user_ids)`);
+          params.push(assignee);
+        }
       }
     }
     if (typeof req.query.project === 'string') {
@@ -451,27 +517,52 @@ router.get('/', attachIdentity, async (req, res) => {
       filters.push(`t.due_date < CURRENT_DATE`);
       filters.push(`t.status IN ('reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked')`);
     }
-    const limitRaw = Number(req.query.limit);
-    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 200;
+    if (typeof req.query.search === 'string' && req.query.search.trim().length > 0) {
+      const needle = `%${req.query.search.trim()}%`;
+      filters.push(`(
+        t.title ILIKE $${i}
+        OR COALESCE(t.description, '') ILIKE $${i}
+        OR COALESCE(t.property_code, '') ILIKE $${i}
+        OR COALESCE(t.bz_id, '') ILIKE $${i}
+        OR COALESCE(t.external_ref, '') ILIKE $${i}
+        OR COALESCE(t.department, '') ILIKE $${i}
+        OR COALESCE(t.subdepartment, '') ILIKE $${i}
+      )`);
+      params.push(needle);
+      i += 1;
+    }
+    const limit = clampInt(req.query.limit, 200, 1, 500);
+    const offset = clampInt(req.query.offset, 0, 0, 1_000_000);
+    const orderBy = taskOrderBy(req.query);
     const { rows } = await query(
-      `SELECT t.*
+      `SELECT t.*, COUNT(*) OVER()::int AS total_count
        FROM tasks t
        WHERE ${filters.join(' AND ')}
-       ORDER BY
-         CASE t.priority
-           WHEN 'urgent' THEN 0
-           WHEN 'high'   THEN 1
-           WHEN 'medium' THEN 2
-           WHEN 'low'    THEN 3
-           WHEN 'lowest' THEN 4
-         END,
-         t.due_date ASC NULLS LAST,
-         t.created_at DESC
-       LIMIT ${limit}`,
-      params,
+       ORDER BY ${orderBy}
+       LIMIT $${i++}
+       OFFSET $${i++}`,
+      [...params, limit, offset],
     );
     const hydrated = await hydrateAssignees(rows);
-    res.json({ tasks: hydrated.map((r) => shapeTask(r)) });
+    let total = rows.length > 0 ? Number(rows[0].total_count || 0) : 0;
+    if (rows.length === 0 && offset > 0) {
+      const { rows: countRows } = await query(
+        `SELECT COUNT(*)::int AS total
+         FROM tasks t
+         WHERE ${filters.join(' AND ')}`,
+        params,
+      );
+      total = Number(countRows[0]?.total || 0);
+    }
+    res.json({
+      tasks: hydrated.map((r) => shapeTask(r)),
+      total,
+      limit,
+      offset,
+      hasMore: offset + rows.length < total,
+      sort: typeof req.query.sort === 'string' && TASK_SORTS[req.query.sort] ? req.query.sort : null,
+      dir: req.query.dir === 'desc' ? 'desc' : 'asc',
+    });
   } catch (e) {
     console.error('[tasks] list error:', e.message);
     res.status(500).json({ error: e.message });

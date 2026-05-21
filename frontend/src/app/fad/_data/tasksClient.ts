@@ -248,14 +248,35 @@ function uuidsOnly(arr: unknown): string[] {
 
 // ─── Public API (matches breezeway.ts signatures) ────────────────
 
-export async function fetchTasks(filter?: {
+export interface FetchTasksPageInput {
   assignee?: 'me' | string;
   status?: TaskStatus[];
   property?: string;
   reservation?: string;
   project?: string;
   overdue?: boolean;
-}): Promise<Task[]> {
+  source?: TaskSource | string;
+  department?: Department | string;
+  priority?: TaskPriority;
+  dueBefore?: string;
+  dueAfter?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+  sort?: 'propertyCode' | 'title' | 'subdepartment' | 'department' | 'status' | 'priority' | 'dueDate' | 'source' | 'createdAt' | 'updatedAt';
+  dir?: 'asc' | 'desc';
+  include?: 'cancelled';
+}
+
+export interface FetchTasksPageResult {
+  tasks: Task[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+function buildTasksQuery(filter?: FetchTasksPageInput): string {
   const qs = new URLSearchParams();
   if (filter?.assignee) qs.set('assignee', filter.assignee);
   if (filter?.status?.length) qs.set('status', filter.status.join(','));
@@ -263,9 +284,57 @@ export async function fetchTasks(filter?: {
   if (filter?.reservation) qs.set('reservation', filter.reservation);
   if (filter?.project) qs.set('project', filter.project);
   if (filter?.overdue) qs.set('overdue', 'true');
-  const path = '/api/tasks' + (qs.toString() ? `?${qs}` : '');
-  const res = (await apiFetch(path)) as { tasks: ServerTask[] };
-  return (res?.tasks || []).map(mapTask);
+  if (filter?.source) qs.set('source', filter.source);
+  if (filter?.department) qs.set('department', filter.department);
+  if (filter?.priority) qs.set('priority', filter.priority);
+  if (filter?.dueBefore) qs.set('due_before', filter.dueBefore);
+  if (filter?.dueAfter) qs.set('due_after', filter.dueAfter);
+  if (filter?.search) qs.set('search', filter.search);
+  if (filter?.limit) qs.set('limit', String(filter.limit));
+  if (filter?.offset) qs.set('offset', String(filter.offset));
+  if (filter?.sort) qs.set('sort', filter.sort);
+  if (filter?.dir) qs.set('dir', filter.dir);
+  if (filter?.include) qs.set('include', filter.include);
+  return qs.toString();
+}
+
+export async function fetchTasksPage(filter?: FetchTasksPageInput): Promise<FetchTasksPageResult> {
+  const qs = buildTasksQuery(filter);
+  const path = '/api/tasks' + (qs ? `?${qs}` : '');
+  const res = (await apiFetch(path)) as {
+    tasks?: ServerTask[];
+    total?: number;
+    limit?: number;
+    offset?: number;
+    hasMore?: boolean;
+  };
+  const tasks = (res?.tasks || []).map(mapTask);
+  return {
+    tasks,
+    total: Number.isFinite(res?.total) ? Number(res.total) : tasks.length,
+    limit: Number.isFinite(res?.limit) ? Number(res.limit) : (filter?.limit || tasks.length),
+    offset: Number.isFinite(res?.offset) ? Number(res.offset) : (filter?.offset || 0),
+    hasMore: Boolean(res?.hasMore),
+  };
+}
+
+export async function fetchTasks(filter?: FetchTasksPageInput): Promise<Task[]> {
+  if (filter?.limit || filter?.offset) {
+    return (await fetchTasksPage(filter)).tasks;
+  }
+
+  const all: Task[] = [];
+  const limit = 500;
+  let offset = 0;
+
+  for (;;) {
+    const page = await fetchTasksPage({ ...filter, limit, offset });
+    all.push(...page.tasks);
+    if (!page.hasMore || page.tasks.length === 0) break;
+    offset += page.tasks.length;
+  }
+
+  return all;
 }
 
 export async function fetchTask(taskId: string): Promise<Task | undefined> {

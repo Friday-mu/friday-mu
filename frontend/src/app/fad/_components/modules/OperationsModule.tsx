@@ -14,8 +14,8 @@ import {
 } from '../../_data/tasks';
 import { useCanSee, useCurrentUserId, usePermissions } from '../usePermissions';
 import { fireToast } from '../Toaster';
-import { createTask, updateTask } from '../../_data/tasksClient';
-import { useApiTasks } from '../../_data/useApiTasks';
+import { createTask, fetchTask, updateTask } from '../../_data/tasksClient';
+import { useApiTasks, useApiTasksPage } from '../../_data/useApiTasks';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
@@ -57,6 +57,7 @@ const SOURCE_LABEL: Record<TaskSource, string> = {
   reported_issue: 'Issue',
   personal: 'Personal',
   review: 'Review',
+  syndic: 'Syndic',
 };
 
 // Priority left-bar bullets resolve through palette so they read sensibly in
@@ -186,13 +187,40 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 
   const [createIntent, setCreateIntent] = useState<CreateTaskIntent | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
-  const detailTask = detailTaskId ? liveTasks.find((t) => t.id === detailTaskId) : null;
+  const [remoteDetailTask, setRemoteDetailTask] = useState<Task | null>(null);
+  const cachedDetailTask = detailTaskId ? liveTasks.find((t) => t.id === detailTaskId) : null;
+  const detailTask = detailTaskId ? (cachedDetailTask || (remoteDetailTask?.id === detailTaskId ? remoteDetailTask : null)) : null;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const taskId = new URLSearchParams(window.location.search).get('task');
     if (taskId) setDetailTaskId(taskId);
   }, []);
+
+  useEffect(() => {
+    if (!detailTaskId) {
+      setRemoteDetailTask(null);
+      return;
+    }
+    if (cachedDetailTask) {
+      setRemoteDetailTask(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchTask(detailTaskId)
+      .then((task) => {
+        if (!cancelled) setRemoteDetailTask(task || null);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setRemoteDetailTask(null);
+          fireToast(e instanceof Error ? e.message : 'Task could not be loaded');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailTaskId, cachedDetailTask]);
 
   const openManagerCreate = (prefill?: CreateTaskPrefill) => {
     setCreateIntent({ mode: 'manager_schedule', prefill });
@@ -1248,23 +1276,8 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
   lowest: 4,
 };
 
-function compareTasks(a: Task, b: Task, key: TaskSortKey): number {
-  switch (key) {
-    case 'status':
-      return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-    case 'priority':
-      return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-    case 'dueDate':
-      return a.dueDate.localeCompare(b.dueDate);
-    default:
-      return String(a[key]).localeCompare(String(b[key]));
-  }
-}
-
 function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => void; onCreate: () => void }) {
-  const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
-  const { tasks: TASKS, loading, error } = useApiTasks();
 
   const [filters, setFilters] = useState<AllTasksFilters>({
     department: 'all',
@@ -1278,6 +1291,8 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
   });
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: TaskSortKey; dir: 'asc' | 'desc' } | null>(null);
+  const [pageSize, setPageSize] = useState(200);
+  const [offset, setOffset] = useState(0);
 
   const toggleSort = (key: TaskSortKey) => {
     setSort((prev) => {
@@ -1287,32 +1302,42 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
     });
   };
 
-  const visibleTasks = useMemo(() => {
-    let tasks = [...TASKS];
-    // Field staff: own + team-visible
-    if (role === 'field') {
-      tasks = tasks.filter((t) => t.visibility !== 'self' || t.assigneeIds.includes(currentUserId));
-    }
-    if (filters.department !== 'all') tasks = tasks.filter((t) => t.department === filters.department);
-    if (filters.status !== 'all') tasks = tasks.filter((t) => t.status === filters.status);
-    if (filters.priority !== 'all') tasks = tasks.filter((t) => t.priority === filters.priority);
-    if (filters.property !== 'all') tasks = tasks.filter((t) => t.propertyCode === filters.property);
-    if (filters.assignee !== 'all') tasks = tasks.filter((t) => t.assigneeIds.includes(filters.assignee));
-    if (filters.source !== 'all') tasks = tasks.filter((t) => t.source === filters.source);
-    if (filters.mine) tasks = tasks.filter((t) => t.assigneeIds.includes(currentUserId));
-    if (filters.due === 'today') tasks = tasks.filter((t) => t.dueDate === TODAY);
-    if (filters.due === 'overdue') tasks = tasks.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status));
-    if (filters.due === 'this_week') tasks = tasks.filter((t) => t.dueDate >= '2026-04-27' && t.dueDate <= '2026-05-03');
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      tasks = tasks.filter((t) => t.title.toLowerCase().includes(q) || t.propertyCode.toLowerCase().includes(q));
-    }
-    if (sort) {
-      const sign = sort.dir === 'asc' ? 1 : -1;
-      tasks.sort((a, b) => sign * compareTasks(a, b, sort.key));
-    }
-    return tasks;
-  }, [TASKS, filters, search, role, currentUserId, sort]);
+  useEffect(() => {
+    setOffset(0);
+  }, [filters, search, sort, pageSize]);
+
+  const pageQuery = useMemo(() => {
+    const dueToday = filters.due === 'today';
+    const dueThisWeek = filters.due === 'this_week';
+    return {
+      department: filters.department !== 'all' ? filters.department : undefined,
+      status: filters.status !== 'all' ? [filters.status] : undefined,
+      priority: filters.priority !== 'all' ? filters.priority : undefined,
+      property: filters.property !== 'all' ? filters.property : undefined,
+      assignee: filters.mine || role === 'field'
+        ? 'me'
+        : (filters.assignee !== 'all' ? filters.assignee : undefined),
+      source: filters.source !== 'all' ? filters.source : undefined,
+      overdue: filters.due === 'overdue',
+      dueAfter: dueToday ? TODAY : (dueThisWeek ? TODAY : undefined),
+      dueBefore: dueToday ? TODAY : (dueThisWeek ? addDays(TODAY, 6) : undefined),
+      search: search.trim() || undefined,
+      sort: sort?.key,
+      dir: sort?.dir,
+      limit: pageSize,
+      offset,
+    };
+  }, [filters, offset, pageSize, role, search, sort]);
+
+  const {
+    tasks: visibleTasks,
+    total,
+    limit,
+    offset: pageOffset,
+    hasMore,
+    loading,
+    error,
+  } = useApiTasksPage(pageQuery);
 
   const activeFilterCount =
     (filters.department !== 'all' ? 1 : 0) +
@@ -1324,6 +1349,10 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
     (filters.source !== 'all' ? 1 : 0) +
     (filters.mine ? 1 : 0);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const pageStart = total === 0 ? 0 : pageOffset + 1;
+  const pageEnd = Math.min(pageOffset + visibleTasks.length, total);
+  const canPrev = pageOffset > 0;
+  const canNext = hasMore;
   const clearAllFilters = () =>
     setFilters({
       department: 'all',
@@ -1411,6 +1440,9 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
           { value: 'manual', label: 'Manual' },
           { value: 'breezeway', label: 'Breezeway' },
           { value: 'inbox_ai', label: 'Inbox AI' },
+          { value: 'syndic', label: 'Syndic' },
+          { value: 'friday', label: 'Friday' },
+          { value: 'guesty', label: 'Guesty' },
           { value: 'recurring', label: 'Recurring' },
           { value: 'reservation_trigger', label: 'Reservation' },
           { value: 'reported_issue', label: 'Issue' },
@@ -1529,8 +1561,30 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         <div className="all-tasks-filter-bar-desktop" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
           {filterChips}
         </div>
-        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          {visibleTasks.length} of {TASKS.length} tasks
+        <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          <span>
+            {loading && visibleTasks.length === 0
+              ? 'Loading live tasks...'
+              : `${pageStart}-${pageEnd} of ${total} tasks`}
+          </span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              aria-label="Tasks per page"
+              style={{ padding: '4px 8px', fontSize: 11, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)' }}
+            >
+              <option value={100}>100 / page</option>
+              <option value={200}>200 / page</option>
+              <option value={500}>500 / page</option>
+            </select>
+            <button className="btn ghost sm" disabled={!canPrev || loading} onClick={() => setOffset(Math.max(0, pageOffset - limit))}>
+              Prev
+            </button>
+            <button className="btn ghost sm" disabled={!canNext || loading} onClick={() => setOffset(pageOffset + limit)}>
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1556,7 +1610,12 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
             ))}
           </tbody>
         </table>
-        {loading && TASKS.length === 0 && <Empty>Loading live tasks...</Empty>}
+        {loading && visibleTasks.length === 0 && <Empty>Loading live tasks...</Empty>}
+        {loading && visibleTasks.length > 0 && (
+          <div style={{ padding: '10px 0', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            Refreshing task page...
+          </div>
+        )}
         <div className="fad-tasks-cards">
           {visibleTasks.map((t) => (
             <TaskCard key={t.id} task={t} onClick={() => onOpenTask(t.id)} />

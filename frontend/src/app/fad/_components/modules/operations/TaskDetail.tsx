@@ -1753,6 +1753,7 @@ function sourceLabel(source: Task['source']): string {
     reported_issue: 'Field issue report',
     personal: 'Personal task',
     review: 'Review workflow',
+    syndic: 'Syndic workflow',
   };
   return labels[source] || source;
 }

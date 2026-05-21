@@ -144,6 +144,7 @@ export function taskSourceTone(source: string): SemanticTone {
     case 'reported_issue':
       return 'warning';
     case 'personal':
+    case 'syndic':
       return 'accent';
     case 'manual':
     case 'breezeway':
