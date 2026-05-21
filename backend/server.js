@@ -1510,108 +1510,13 @@ app.post('/api/inbox/drafts/:id/revise', requireAuth, _identityForDrafts, inject
   gmsProxy(req, res, `/api/drafts/${req.params.id}/revise`, 'post')
 ));
 
-// ─── Friday Consult (Ask Friday) ──────────────────────────────────────
-// POST body: { text|instruction, conversationId, context, draftId?,
-//   draftBody?, history?, sessionId?, model_tier?, contextData? }.
-// Valid context: revision | compose | draft_review | pending_action |
-//   next_step | teaching | learning_candidate | message_review.
-// Response: { response, model, draft_update?, teaching_actions?,
-//   teaching_action?, sessionId, compacted?, missingKnowledge? }.
-// FAD parses [DRAFT_UPDATE] tag via the draft_update field — wires
-// directly back into DraftPanel's editingDraft + editBody state.
-
-app.post('/api/inbox/consult', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, '/api/ai/consult', 'post')
-));
-
-app.get('/api/inbox/consult/session/active', requireAuth, asyncHandler(async (req, res) => {
-  try {
-    const client = userScopedGms(req);
-    const { data } = await client.get('/api/ai/consult/session/active', { params: req.query });
-    res.json(data);
-  } catch (e) {
-    if (e.response?.status === 404) {
-      return res.json({ session: null, sessionId: null });
-    }
-    logUpstreamFailure('inbox GET /api/ai/consult/session/active', e);
-    const status = e.response?.status || 502;
-    res.status(status).json({
-      error: e.response?.data?.error || e.message || (e.response ? 'Upstream error' : 'GMS unreachable'),
-    });
-  }
-}));
-
-app.get('/api/inbox/consult/history/:conversationId', requireAuth, asyncHandler(async (req, res) => {
-  const path = `/api/ai/consult/history/${req.params.conversationId}`;
-  try {
-    const client = userScopedGms(req);
-    const { data } = await client.get(path, { params: req.query });
-    res.json(data);
-  } catch (e) {
-    if (e.response?.status === 404) {
-      return res.json({ sessions: [] });
-    }
-    logUpstreamFailure(`inbox GET ${path}`, e);
-    const status = e.response?.status || 502;
-    res.status(status).json({
-      error: e.response?.data?.error || e.message || (e.response ? 'Upstream error' : 'GMS unreachable'),
-    });
-  }
-}));
-
-app.post('/api/inbox/consult/session/end', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, '/api/ai/consult/session/end', 'post')
-));
-
-app.post('/api/inbox/consult/:sessionId/summarize', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/ai/consult/${req.params.sessionId}/summarize`, 'post')
-));
-
-// ─── Teachings (write-side, driven by Friday Consult's teaching_action) ─
-// Friday Consult emits structured teaching proposals via [TEACH] tags
-// (parsed server-side, returned as `teaching_actions` array). The UI
-// renders confirmation cards; on click these proxies create/update/pause
-// teachings in friday-gms's `teachings` table, which are then loaded
-// back into every draft prompt via draft-generator.ts:677-702. The
-// learning loop closes here.
-
-app.get('/api/inbox/teachings', attachIdentity, asyncHandler(async (req, res) => {
-  const { query } = require('./src/database/client');
-  const status = typeof req.query.status === 'string' ? req.query.status : 'active';
-  const statuses = new Set(['active', 'draft', 'revoked', 'retired', 'rejected']);
-  const filters = ['tenant_id = $1'];
-  const params = [req.tenantId];
-  if (status !== 'all') {
-    if (!statuses.has(status)) return res.status(400).json({ error: 'invalid status' });
-    params.push(status);
-    filters.push(`status = $${params.length}`);
-  }
-  const { rows } = await query(
-    `SELECT id, instruction, scope, property_code, property_codes, source,
-            status, taught_by, taught_at, approved_at, approved_by,
-            evidence_count, confidence, polarity
-       FROM teachings
-      WHERE ${filters.join(' AND ')}
-      ORDER BY taught_at DESC NULLS LAST
-      LIMIT 500`,
-    params,
-  );
-  res.json({ teachings: rows });
-}));
-
-app.post('/api/inbox/teachings', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, '/api/teachings', 'post')
-));
-
-app.patch('/api/inbox/teachings/:id', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/teachings/${req.params.id}`, 'patch')
-));
-
-// Pause an existing teaching — used by the flag_conflict resolution flow
-// when the operator confirms the new rule should replace an existing one.
-app.post('/api/inbox/teachings/:id/pause', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/teachings/${req.params.id}/pause`, 'post')
-));
+// ─── Friday Consult + teachings — FAD-native ─────────────────────────
+// Consult now loads backend/knowledge through the structured composer,
+// persists consult_sessions with tenant + draft scope, parses
+// [DRAFT_UPDATE]/[TEACH] locally, and writes teachings directly.
+app.use('/api/inbox/consult', require('./src/inbox/consult'));
+app.use('/api/inbox/teachings', require('./src/inbox/teachings'));
+app.use('/api/inbox/pending-actions', require('./src/inbox/pending_actions'));
 
 // ====================================================================
 // Reviews — Guesty direct (service credentials)

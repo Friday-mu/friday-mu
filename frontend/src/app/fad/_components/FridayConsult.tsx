@@ -1,9 +1,8 @@
 'use client';
 
 // Friday Consult — inline chat panel scoped to a single conversation.
-// Wires to friday-gms's /api/ai/consult via FAD's /api/inbox/consult
-// proxy. Replaces the scripted-strings stub that lived here until
-// 2026-05-17.
+// Wires to FAD-native /api/inbox/consult. Replaces the scripted-strings
+// stub that lived here until 2026-05-17.
 //
 // Two surfaces it serves:
 //   1. The compose-box "Friday Consult" toggle in InboxModule —
@@ -23,8 +22,8 @@ import { confidenceTier } from '../_data/draftsClient';
 import { fireToast } from './Toaster';
 import { IconCheck, IconClose, IconRefresh, IconSend, IconSparkle } from './icons';
 
-/** Structured teaching proposal emitted by friday-gms's [TEACH] tag
- *  parser (consult.ts:865-893). One per assistant turn at most. */
+/** Structured teaching proposal emitted by FAD's [TEACH] tag parser.
+ *  One per assistant turn at most. */
 interface TeachingAction {
   /** create  — net-new rule; just confirm to insert.
    *  update  — refine an existing teaching (existingTeachingId).
@@ -50,19 +49,19 @@ interface ConsultMessage {
   draftUpdate?: string;
   /** Revision number for 'draft' role — sequentially increments each
    *  time Friday produces a new draft via DRAFT_UPDATE or via a fresh
-   *  GMS draft. Latest revision is the active/editable one. */
+   *  persisted draft. Latest revision is the active/editable one. */
   draftRev?: number;
-  /** GMS draft id for 'draft' role when sourced from a GMS draft (vs
+  /** Inbox draft id for 'draft' role when sourced from a persisted draft (vs
    *  produced inline via DRAFT_UPDATE in a consult turn). */
   draftId?: string;
   /** When non-empty, render TeachingCards under the message. Each card
    *  closes the learning loop: operator confirms → POST /api/inbox/teachings,
-   *  GMS stores it, every future draft prompt includes it. */
+   *  FAD stores it, every future draft prompt includes it. */
   teachingActions?: TeachingAction[];
   /** Per-action local state — 'pending' (showing), 'saving' (POST in
    *  flight), 'saved' (success), 'dismissed' (operator declined). */
   teachingStates?: Array<'pending' | 'saving' | 'saved' | 'dismissed'>;
-  /** Optional citations / sources surfaced by GMS for accountability. */
+  /** Optional citations / sources surfaced by Friday for accountability. */
   source?: string;
 }
 
@@ -72,7 +71,7 @@ interface ConsultResponse {
   /** 0..1 confidence score on this consult turn. Surfaces in the
    *  embedded DraftCard's confidence pill and in the send preflight
    *  modal so the operator can weigh whether to send as-is or revise.
-   *  GMS-side heuristic for v1 (consult.ts); model self-report later. */
+   *  backend heuristic for v1; model self-report later. */
   confidence?: number;
   draft_update?: string;
   teaching_actions?: TeachingAction[];
@@ -140,28 +139,28 @@ interface Props {
    *  null/undefined, the panel renders in degraded mode (chat works
    *  but Friday has no per-property knowledge). */
   conversationId?: string;
-  /** The active GMS draft (if any) for this conversation. When present,
+  /** The active Inbox draft (if any) for this conversation. When present,
    *  its body seeds the embedded DraftCard. Friday can revise/replace
    *  it via [DRAFT_UPDATE]; operator can edit inline + Approve/Reject
    *  without leaving the panel. */
   currentDraft?: InboxDraft | null;
   /** Operator's in-progress compose text. Lets Friday refine work that
-   *  hasn't been GMS-drafted yet. If both are present, currentDraft
-   *  wins (because it's the GMS-authored version with state machine). */
+   *  has not been AI-drafted yet. If both are present, currentDraft
+   *  wins because it is the state-machine-backed version. */
   initialBody?: string;
   /** Conversation context — drives prompt assembly + model selection
-   *  in friday-gms's consult.ts. Defaults to 'compose'. */
+   *  in the FAD-native Consult backend. Defaults to 'compose'. */
   context?: ConsultContext;
   /** WhatsApp channel + window state for the inline timer in DraftCard. */
   channelLabel?: string;
   whatsappWindow?: WhatsAppWindow;
 
   // ── Action callbacks ── parent owns the network calls + 5s undo state.
-  /** Approve the active GMS draft (with optional inline edits). When
+  /** Approve the active Inbox draft (with optional inline edits). When
    *  there's no currentDraft, this should send the body as a manual
    *  compose (mode=manual). */
   onApproveDraft?: (body: string) => void;
-  /** Reject the active GMS draft with optional learning feedback. */
+  /** Reject the active Inbox draft with optional learning feedback. */
   onRejectDraft?: (reason?: string) => void;
   /** Send as a manual compose (when no currentDraft). Identical to
    *  approve from the operator's POV — Approve & Send always works. */
@@ -207,7 +206,7 @@ export function FridayConsult({
   onClose,
 }: Props) {
   // The "working draft body" is what the operator will eventually send.
-  // Seeded from the active GMS draft if any, else the in-progress
+  // Seeded from the active Inbox draft if any, else the in-progress
   // compose text. Mutated by inline edits, by [DRAFT_UPDATE] from Friday,
   // and by quick-chip rewrites. Tracks the source of truth across the
   // whole chat session.
@@ -229,7 +228,7 @@ export function FridayConsult({
   const [rejectReason, setRejectReason] = useState('');
   // Live confidence on the most recent consult turn. Surfaces in the
   // DraftCard header so the operator can see how confident Friday is
-  // in their latest rewrite, separate from the GMS-draft confidence
+  // in their latest rewrite, separate from the original draft confidence
   // (which is on currentDraft.confidence).
   const [latestConfidence, setLatestConfidence] = useState<number | null>(
     confidenceRatio(currentDraft?.confidence),
@@ -252,7 +251,7 @@ export function FridayConsult({
 
   // Past consult sessions for this conversation. Fetched on demand
   // when the operator opens the history panel. Endpoint already exists
-  // (GMS /api/ai/consult/history/:conversationId via FAD proxy).
+  // (FAD-native /api/inbox/consult/history/:conversationId).
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pastSessions, setPastSessions] = useState<Array<{
     id: string;
@@ -368,7 +367,7 @@ export function FridayConsult({
   }, [msgs, thinking, currentDraft?.id, currentDraft?.body, workingBody]);
 
   // Seed an initial 'draft' chat message when the conversation arrives
-  // with an active GMS draft. Drafts flow into the chat history like
+  // with an active Inbox draft. Drafts flow into the chat history like
   // tool-call results — when Friday revises, a NEW draft msg appends;
   // older ones scroll up as read-only history. Per Ishant 2026-05-17.
   const seededDraftIdRef = useRef<string | null>(null);
@@ -446,10 +445,8 @@ export function FridayConsult({
     try {
       // If the operator turned on "Use full thread", fetch every guest↔
       // team message for this conversation and prepend it to the user
-      // query. This works around GMS's LIMIT 10 cap on conversation
-      // context in consult.ts:544 — the model sees the full thread as
-      // part of the user message, not via the cap-controlled prompt
-      // path. No GMS-side change required.
+      // query. The backend also loads recent thread messages, but this
+      // lets the operator explicitly force full-thread context.
       let queryText = q;
       if (useFullThread && conversationId) {
         try {
@@ -480,7 +477,7 @@ export function FridayConsult({
       if (conversationId) body.conversationId = conversationId;
       if (currentDraft?.id) body.draftId = currentDraft.id;
       // Always send the CURRENT working body so Friday operates on the
-      // operator's latest edits, not the stale GMS-original.
+      // operator's latest edits, not the stale original draft.
       if (workingBody) body.draftBody = workingBody;
       if (sessionId) body.sessionId = sessionId;
 
@@ -592,7 +589,7 @@ export function FridayConsult({
     });
   };
 
-  // Operator confirmed a teaching proposal — close the loop with GMS.
+  // Operator confirmed a teaching proposal — close the loop with FAD.
   // The action types differ in how they hit the API:
   //   create        → POST /api/inbox/teachings
   //   update        → PATCH /api/inbox/teachings/:existingId
@@ -600,7 +597,7 @@ export function FridayConsult({
   //                   then POST /api/inbox/teachings (the replacement)
   //
   // Optional `extraPropertyCodes` widens the scope from a single
-  // property (proposed by Friday) to multiple — wired through to GMS
+  // property (proposed by Friday) to multiple — wired through to FAD
   // via the property_codes[] array which mig 053-era teachings already
   // support. Used by the multi-property picker in TeachingCard.
   const confirmTeaching = async (
@@ -1486,7 +1483,7 @@ function EmbeddedDraftCard({
   onCancelReject: () => void;
 }) {
   // Resolve which confidence number to render. Live consult-turn
-  // confidence wins (it's the freshest). Falls back to GMS-draft
+  // confidence wins (it's the freshest). Falls back to original draft
   // confidence. Manual (operator-typed) compose has neither — show
   // "Operator-authored" instead.
   const effectiveConfidence: number | null =
@@ -1544,7 +1541,7 @@ function EmbeddedDraftCard({
             background: confColor[tier],
             color: '#fff',
           }}
-            title="Friday's confidence on this draft. Live consult turns supersede the original GMS-draft score."
+            title="Friday's confidence on this draft. Live consult turns supersede the original draft score."
           >
             {confLabel}
           </span>

@@ -26,6 +26,8 @@ const { extractStructuredOutput, EXTRACT_MODEL } = require('../ai/kimi_draft');
 const { loadTeachingsBlock } = require('./learning_context');
 const { checkAutoRules } = require('./action_suppression');
 const { getLearnedDeadlineHours } = require('./deadline_learner');
+const { convertPendingActionToTask } = require('./pending_actions');
+const { DEFAULT_TENANT_ID } = require('../design/adapters');
 
 const SKIP_RESERVATION_STATUSES = new Set([
   'inquiry', 'cancelled', 'expired', 'declined', 'closed',
@@ -136,6 +138,16 @@ async function detectActions(params) {
     // 1. Reservation status + date gate.
     let checkInDate = null;
     let checkOutDate = null;
+    let tenantId = DEFAULT_TENANT_ID;
+    try {
+      const { rows } = await query(
+        `SELECT tenant_id FROM conversations WHERE id = $1 LIMIT 1`,
+        [conversationId],
+      );
+      if (rows[0]?.tenant_id) tenantId = rows[0].tenant_id;
+    } catch (e) {
+      console.warn(`[action-detector] tenant lookup failed (conv=${conversationId}): ${e.message}`);
+    }
     try {
       const { rows } = await query(
         `SELECT r.status, r.check_in, r.check_out
@@ -289,6 +301,8 @@ async function detectActions(params) {
         ],
       );
       const actionId = insertResult[0].id;
+      let actionClosedByRule = false;
+      let convertedTaskId = null;
 
       // 9. Auto-rule transitions (dismiss / complete) — for non-suppress
       // rule outcomes, insert then flip status.
@@ -300,10 +314,9 @@ async function detectActions(params) {
             WHERE id = $3`,
           [newStatus, `Auto-${newStatus} by rule: ${ruleCheck.rule.rule_name}`, actionId],
         );
+        actionClosedByRule = true;
         console.log(`[action-detector] auto-${newStatus} by rule "${ruleCheck.rule.rule_name}": ${actionText.slice(0, 60)}…`);
       }
-
-      inserted.push({ id: actionId, text: actionText, owner, dueBy });
 
       // 10. Deferred-followup expansion: for guest-owned date-anchored
       // requests ("we'll check before arrival" etc.), spawn proactive
@@ -331,11 +344,12 @@ async function detectActions(params) {
         }
 
         for (const fu of followUps) {
-          await query(
+          const { rows: fuRows } = await query(
             `INSERT INTO pending_actions
                (conversation_id, guest_name, property_code, action_text,
                 due_by, urgency, owner, category, parent_action_id)
-             VALUES ($1, $2, $3, $4, $5, 'medium', 'team', 'guest_communication', $6)`,
+             VALUES ($1, $2, $3, $4, $5, 'medium', 'team', 'guest_communication', $6)
+             RETURNING id`,
             [
               conversationId,
               guestName || null,
@@ -345,6 +359,16 @@ async function detectActions(params) {
               actionId,
             ],
           );
+          const followupId = fuRows[0]?.id;
+          if (followupId) {
+            convertPendingActionToTask({
+              pendingActionId: followupId,
+              tenantId,
+              actor: 'inbox_action_detector',
+            }).catch((e) => {
+              console.warn(`[action-detector] follow-up task bridge failed action=${followupId}: ${e.message}`);
+            });
+          }
         }
 
         if (followUps.length > 0) {
@@ -358,6 +382,23 @@ async function detectActions(params) {
           console.log(`[action-detector] converted deferred guest action to ${followUps.length} team follow-up(s): ${actionText.slice(0, 60)}…`);
         }
       }
+
+      if (owner === 'team' && !actionClosedByRule) {
+        try {
+          const bridged = await convertPendingActionToTask({
+            pendingActionId: actionId,
+            tenantId,
+            actor: 'inbox_action_detector',
+          });
+          convertedTaskId = bridged.task?.id || null;
+        } catch (e) {
+          // Keep the pending_action row if the task bridge fails. The
+          // Operations review queue can retry conversion idempotently.
+          console.warn(`[action-detector] task bridge failed action=${actionId}: ${e.message}`);
+        }
+      }
+
+      inserted.push({ id: actionId, text: actionText, owner, dueBy, taskId: convertedTaskId });
     }
 
     console.log(

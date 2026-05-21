@@ -64,6 +64,7 @@ function shapeTask(row, comments = [], costs = []) {
     tenant_id: row.tenant_id,
     project_id: row.project_id,
     bz_id: row.bz_id,
+    external_ref: row.external_ref,
     title: row.title,
     description: row.description,
     status: row.status,
@@ -380,7 +381,7 @@ router.post('/', attachIdentity, async (req, res) => {
          assignee_user_id, assignee_user_ids,
          due_date, due_time, estimated_minutes, spent_minutes,
          is_recurring, template, inbox_thread_id, group_email_id,
-         awaiting_human_approval, tags
+         awaiting_human_approval, tags, external_ref
        )
        VALUES (
          $1, $2, $3, $4, $5,
@@ -390,7 +391,7 @@ router.post('/', attachIdentity, async (req, res) => {
          $17, $18,
          $19, $20, $21, $22,
          $23, $24, $25, $26,
-         $27, $28
+         $27, $28, $29
        )
        RETURNING *`,
       [
@@ -424,6 +425,7 @@ router.post('/', attachIdentity, async (req, res) => {
         typeof body.group_email_id === 'string' ? body.group_email_id : null,
         body.awaiting_human_approval === true,
         tags,
+        typeof body.external_ref === 'string' && body.external_ref.trim() ? body.external_ref.trim() : null,
       ],
     );
     const created = rows[0];
@@ -494,6 +496,9 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(body, 'tags')) setCol('tags', Array.isArray(body.tags) ? body.tags : []);
     if (Object.prototype.hasOwnProperty.call(body, 'inbox_thread_id')) setCol('inbox_thread_id', body.inbox_thread_id || null);
     if (Object.prototype.hasOwnProperty.call(body, 'group_email_id')) setCol('group_email_id', body.group_email_id || null);
+    if (Object.prototype.hasOwnProperty.call(body, 'external_ref')) {
+      setCol('external_ref', typeof body.external_ref === 'string' && body.external_ref.trim() ? body.external_ref.trim() : null);
+    }
 
     // Multi-assignee. Accept both `assignee_user_ids` (preferred) and
     // legacy `assignee_user_id` (single). Keep the legacy column in sync.
