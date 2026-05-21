@@ -15,10 +15,11 @@
 //      surface it to the parent via `onDraftUpdate` so DraftPanel can
 //      swap into edit mode with the rewritten body.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, formatConfidencePercent } from '../../../components/types';
 import type { InboxDraft } from '../_data/fixtures';
 import { confidenceTier } from '../_data/draftsClient';
+import { PROPERTIES } from '../_data/properties';
 import { fireToast } from './Toaster';
 import { IconCheck, IconClose, IconRefresh, IconSend, IconSparkle } from './icons';
 
@@ -1735,22 +1736,22 @@ function TeachingCard({
   onDismiss: () => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [extraCodesInput, setExtraCodesInput] = useState('');
-
-  if (state === 'dismissed') return null;
+  const [extraPropertyCodes, setExtraPropertyCodes] = useState<string[]>([]);
 
   const isConflict = action.action === 'flag_conflict';
   const accent = isConflict ? 'var(--color-text-warning)' : 'var(--color-brand-accent)';
 
-  // Property cohorts (from guesty_listings.cohort, 2026-05-17):
-  //   north → grand_baie: 12 properties (GBH-*, MV-*, VA-*, RCN-*)
-  //   west  → flic_en_flac: 15 properties (BS, BW, KS, LB, LF, LV, NYH, RC, SD, …)
-  // Quick-select buttons in the multi-property picker let the operator
-  // scope a teaching to a region without typing codes. Per Ishant
-  // 2026-05-17 — teachings should be an explicit approve-with-scope
-  // moment, not auto-saved.
-  const NORTH_CODES = ['GBH-B4', 'GBH-C3', 'GBH-C5', 'GBH-C6', 'GBH-C8', 'MV-1', 'RCN-4', 'VA-1', 'VA-2', 'VA-3', 'VA-4', 'VA-C'];
-  const WEST_CODES = ['BS-1', 'BW-C4', 'KS-5', 'LB-1', 'LB-2', 'LB-3', 'LB-C', 'LF-7', 'LV-10', 'NYH-A2', 'RC-14', 'RC-15', 'RC-16', 'RC-7', 'SD-10'];
+  const propertyOptions = useMemo(() => (
+    PROPERTIES
+      .filter((p) => p.lifecycleStatus === 'live')
+      .map((p) => ({ code: p.code.toUpperCase(), label: `${p.code} · ${p.name}`, zone: p.zone }))
+      .sort((a, b) => a.code.localeCompare(b.code))
+  ), []);
+  const northCodes = useMemo(() => propertyOptions.filter((p) => p.zone === 'north').map((p) => p.code), [propertyOptions]);
+  const westCodes = useMemo(() => propertyOptions.filter((p) => p.zone === 'west').map((p) => p.code), [propertyOptions]);
+  const allPropertyCodes = useMemo(() => propertyOptions.map((p) => p.code), [propertyOptions]);
+  const proposedCode = action.propertyCode?.toUpperCase() || null;
+  const selectedExtras = useMemo(() => new Set(extraPropertyCodes), [extraPropertyCodes]);
 
   const title = isConflict
     ? 'Conflicts with an existing rule'
@@ -1762,18 +1763,23 @@ function TeachingCard({
     ? `${action.propertyCode}`
     : 'all properties';
 
-  // Parse the user-typed extra codes into a Set for tracking selection.
-  const currentExtras = new Set(
-    extraCodesInput.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean),
-  );
   const applyRegion = (codes: string[]) => {
-    // Adds region codes to the picker (de-duped) — operator can still
-    // edit the text box manually to add/remove.
-    const merged = new Set([...currentExtras, ...codes]);
-    if (action.propertyCode) merged.delete(action.propertyCode.toUpperCase());
-    setExtraCodesInput(Array.from(merged).join(', '));
+    const merged = new Set([...extraPropertyCodes, ...codes.map((code) => code.toUpperCase())]);
+    if (proposedCode) merged.delete(proposedCode);
+    setExtraPropertyCodes(Array.from(merged).sort());
     setPickerOpen(true);
   };
+  const addProperty = (code: string) => {
+    const normalized = code.toUpperCase();
+    if (!normalized || normalized === proposedCode) return;
+    setExtraPropertyCodes((current) => Array.from(new Set([...current, normalized])).sort());
+    setPickerOpen(true);
+  };
+  const removeProperty = (code: string) => {
+    setExtraPropertyCodes((current) => current.filter((c) => c !== code));
+  };
+
+  if (state === 'dismissed') return null;
 
   return (
     <div
@@ -1805,27 +1811,27 @@ function TeachingCard({
         <span>Apply to:</span>
         <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
           {scopeLine}
-          {currentExtras.size > 0 ? ` + ${currentExtras.size} more` : ''}
+          {extraPropertyCodes.length > 0 ? ` + ${extraPropertyCodes.length} more` : ''}
         </span>
         {state !== 'saving' && state !== 'saved' && (
           <>
             <button
               type="button"
-              onClick={() => applyRegion(NORTH_CODES)}
+              onClick={() => applyRegion(northCodes)}
               style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
             >
               + All North
             </button>
             <button
               type="button"
-              onClick={() => applyRegion(WEST_CODES)}
+              onClick={() => applyRegion(westCodes)}
               style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
             >
               + All West
             </button>
             <button
               type="button"
-              onClick={() => applyRegion([...NORTH_CODES, ...WEST_CODES])}
+              onClick={() => applyRegion(allPropertyCodes)}
               style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
             >
               + All properties
@@ -1841,23 +1847,61 @@ function TeachingCard({
         )}
       </div>
       {pickerOpen && state !== 'saving' && state !== 'saved' && (
-        <input
-          type="text"
-          value={extraCodesInput}
-          onChange={(e) => setExtraCodesInput(e.target.value)}
-          placeholder="Comma-separated codes, e.g. LB-2, KS-5, MV-1"
+        <div
           style={{
-            width: '100%',
-            padding: '5px 7px',
-            fontSize: 11,
+            display: 'grid',
+            gap: 6,
             marginBottom: 6,
-            color: 'var(--color-text-primary)',
-            background: 'var(--color-background-primary)',
-            border: '0.5px solid var(--color-border-secondary)',
-            borderRadius: 'var(--radius-sm)',
-            boxSizing: 'border-box',
           }}
-        />
+        >
+          <select
+            value=""
+            onChange={(e) => {
+              addProperty(e.target.value);
+              e.currentTarget.value = '';
+            }}
+            style={{
+              width: '100%',
+              padding: '5px 7px',
+              fontSize: 11,
+              color: 'var(--color-text-primary)',
+              background: 'var(--color-background-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              boxSizing: 'border-box',
+            }}
+          >
+            <option value="">Add an active property…</option>
+            {propertyOptions
+              .filter((p) => p.code !== proposedCode && !selectedExtras.has(p.code))
+              .map((p) => (
+                <option key={p.code} value={p.code}>{p.label}</option>
+              ))}
+          </select>
+          {extraPropertyCodes.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {extraPropertyCodes.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => removeProperty(code)}
+                  title={`Remove ${code}`}
+                  style={{
+                    padding: '2px 7px',
+                    fontSize: 10,
+                    borderRadius: 999,
+                    border: '0.5px solid var(--color-border-tertiary)',
+                    background: 'var(--color-background-secondary)',
+                    color: 'var(--color-text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {code} x
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       {action.reason && (
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, fontStyle: 'italic' }}>
@@ -1873,11 +1917,7 @@ function TeachingCard({
           <button
             type="button"
             onClick={() => {
-              const extras = extraCodesInput
-                .split(',')
-                .map((s) => s.trim().toUpperCase())
-                .filter((s) => s.length > 0);
-              onConfirm(extras.length > 0 ? extras : undefined);
+              onConfirm(extraPropertyCodes.length > 0 ? extraPropertyCodes : undefined);
             }}
             disabled={state === 'saving'}
             style={{

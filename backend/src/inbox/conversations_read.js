@@ -25,18 +25,92 @@ const axios = require('axios');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { publishFadEvent } = require('../realtime');
+const { translateText } = require('../ai/translate');
 
 const router = express.Router();
 
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const ACTIONABLE_DRAFT_STATES_SQL = "('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')";
+
+function currentActionableDraftPredicate(draftAlias = 'd') {
+  return `
+    ${draftAlias}.state IN ${ACTIONABLE_DRAFT_STATES_SQL}
+    AND EXISTS (
+      SELECT 1
+        FROM messages draft_message
+       WHERE draft_message.id = ${draftAlias}.message_id
+         AND draft_message.conversation_id = ${draftAlias}.conversation_id
+         AND draft_message.direction = 'inbound'
+         AND NOT EXISTS (
+           SELECT 1
+             FROM messages newer_message
+            WHERE newer_message.conversation_id = draft_message.conversation_id
+              AND (
+                newer_message.created_at > draft_message.created_at
+                OR (
+                  newer_message.created_at = draft_message.created_at
+                  AND newer_message.id::text > draft_message.id::text
+                )
+              )
+         )
+    )
+  `;
+}
+
+async function supersedeStaleActionableDrafts(conversationId) {
+  const { rows } = await query(
+    `WITH latest_message AS (
+       SELECT id, direction
+        FROM messages
+       WHERE conversation_id = $1
+        ORDER BY created_at DESC, id::text DESC
+        LIMIT 1
+     ),
+     current_latest_draft AS (
+       SELECT d.id
+         FROM drafts d
+         JOIN latest_message lm ON lm.id = d.message_id AND lm.direction = 'inbound'
+        WHERE d.conversation_id = $1
+          AND d.state IN ${ACTIONABLE_DRAFT_STATES_SQL}
+        ORDER BY d.created_at DESC, d.id::text DESC
+        LIMIT 1
+     )
+     UPDATE drafts d
+        SET state = 'superseded', updated_at = NOW()
+      WHERE d.conversation_id = $1
+        AND d.state IN ${ACTIONABLE_DRAFT_STATES_SQL}
+        AND (
+          NOT EXISTS (
+            SELECT 1
+              FROM latest_message lm
+             WHERE lm.direction = 'inbound'
+               AND lm.id = d.message_id
+          )
+          OR (
+            EXISTS (
+              SELECT 1
+                FROM latest_message lm
+               WHERE lm.direction = 'inbound'
+                 AND lm.id = d.message_id
+            )
+            AND d.id <> COALESCE((SELECT id FROM current_latest_draft), d.id)
+          )
+        )
+      RETURNING d.id`,
+    [conversationId],
+  );
+  return rows.length;
+}
+
+const CURRENT_ACTIONABLE_DRAFT_PREDICATE = currentActionableDraftPredicate('d');
 
 // SQL fragment used by both list + search — identical column set, same
 // is_unread computation, same read_status join. Keep them in sync.
 const LIST_SELECT_SQL = `
   SELECT c.*,
-    (SELECT d.state FROM drafts d WHERE d.conversation_id = c.id ORDER BY d.created_at DESC LIMIT 1) as latest_draft_state,
-    (SELECT d.id FROM drafts d WHERE d.conversation_id = c.id ORDER BY d.created_at DESC LIMIT 1) as latest_draft_id,
-    (SELECT d.confidence FROM drafts d WHERE d.conversation_id = c.id ORDER BY d.created_at DESC LIMIT 1) as latest_draft_confidence,
+    (SELECT d.state FROM drafts d WHERE d.conversation_id = c.id AND ${CURRENT_ACTIONABLE_DRAFT_PREDICATE} ORDER BY d.created_at DESC LIMIT 1) as latest_draft_state,
+    (SELECT d.id FROM drafts d WHERE d.conversation_id = c.id AND ${CURRENT_ACTIONABLE_DRAFT_PREDICATE} ORDER BY d.created_at DESC LIMIT 1) as latest_draft_id,
+    (SELECT d.confidence FROM drafts d WHERE d.conversation_id = c.id AND ${CURRENT_ACTIONABLE_DRAFT_PREDICATE} ORDER BY d.created_at DESC LIMIT 1) as latest_draft_confidence,
     (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'inbound') as inbound_count,
     (SELECT m.body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message_body,
     (SELECT m.direction FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message_direction,
@@ -237,6 +311,97 @@ router.post('/:id/send-template', attachIdentity, async (req, res) => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// POST /api/inbox/conversations/:id/translate
+// FAD-native conversation translation. The current UI mostly relies on
+// the background worker, but this keeps the old on-demand path useful
+// without routing back through GMS.
+// ────────────────────────────────────────────────────────────────────
+router.post('/:id/translate', attachIdentity, async (req, res) => {
+  const { id } = req.params;
+  const limit = Math.min(Number(req.body?.limit) || 100, 200);
+  const tenantId = req.tenantId || FR_TENANT_ID;
+  try {
+    const conv = await query(
+      `SELECT id, tenant_id FROM conversations WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+      [id, tenantId],
+    );
+    if (conv.rows.length === 0) {
+      return res.status(404).json({ error: 'conversation_not_found' });
+    }
+
+    const { rows: messages } = await query(
+      `SELECT id, body, original_language, translated_body, direction
+         FROM messages
+        WHERE conversation_id = $1
+          AND body IS NOT NULL
+          AND LENGTH(body) > 0
+          AND body NOT LIKE '📎%'
+          AND body NOT LIKE '📷%'
+          AND body NOT LIKE '💬%'
+        ORDER BY created_at ASC
+        LIMIT $2`,
+      [id, limit],
+    );
+
+    const translated = [];
+    const failed = [];
+    let lastDetectedLanguage = null;
+    for (const msg of messages) {
+      try {
+        const result = await translateText(msg.body, {
+          conversationId: id,
+          sourceLang: msg.original_language || undefined,
+          cacheKey: `message:${msg.id}`,
+        });
+        const sourceLang = (result.sourceLang || 'en')
+          .toLowerCase()
+          .split(/[\s(]/)[0]
+          .slice(0, 10);
+        const isEnglish = sourceLang === 'en' || sourceLang.startsWith('en-');
+        const translatedBody = isEnglish ? null : (result.translated || null);
+
+        await query(
+          `UPDATE messages
+              SET original_language = $1,
+                  translated_body = $2
+            WHERE id = $3`,
+          [sourceLang, translatedBody, msg.id],
+        );
+        lastDetectedLanguage = sourceLang;
+        translated.push({
+          id: msg.id,
+          original_language: sourceLang,
+          translated_body: translatedBody,
+          cached: !!result.cached,
+        });
+      } catch (e) {
+        failed.push({ id: msg.id, error: e.message });
+      }
+    }
+
+    if (lastDetectedLanguage) {
+      await query(
+        `UPDATE conversations
+            SET last_detected_language = $1
+          WHERE id = $2`,
+        [lastDetectedLanguage, id],
+      ).catch(() => {});
+    }
+
+    return res.json({
+      ok: true,
+      translated_count: translated.length,
+      failed_count: failed.length,
+      messages: translated,
+      failed,
+    });
+  } catch (e) {
+    console.error('[inbox/conversations] translate error:', e.message);
+    return res.status(500).json({ error: 'conversation_translate_failed', message: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────
 // GET /api/inbox/conversations
 // Optional query: status, channel, has_pending_draft
 // Returns: { conversations: [...], total }
@@ -258,7 +423,7 @@ router.get('/', attachIdentity, async (req, res) => {
       params.push(channel);
     }
     if (has_pending_draft === 'true') {
-      sql += ` AND EXISTS (SELECT 1 FROM drafts d WHERE d.conversation_id = c.id AND d.state IN ('draft_ready', 'under_review'))`;
+      sql += ` AND EXISTS (SELECT 1 FROM drafts d WHERE d.conversation_id = c.id AND ${CURRENT_ACTIONABLE_DRAFT_PREDICATE})`;
     }
 
     sql += ' ORDER BY c.last_message_at DESC NULLS LAST';
@@ -280,6 +445,7 @@ router.get('/', attachIdentity, async (req, res) => {
 router.get('/:id', attachIdentity, async (req, res) => {
   try {
     const { id } = req.params;
+    await supersedeStaleActionableDrafts(id);
 
     const [convResult, messagesResult, draftsResult, reservationResult, channelsResult] =
       await Promise.all([
@@ -432,6 +598,7 @@ router.get('/:id/reservation', attachIdentity, async (req, res) => {
 // ────────────────────────────────────────────────────────────────────
 router.get('/:id/drafts', attachIdentity, async (req, res) => {
   try {
+    await supersedeStaleActionableDrafts(req.params.id);
     const result = await query(
       'SELECT * FROM drafts WHERE conversation_id = $1 ORDER BY created_at DESC',
       [req.params.id],

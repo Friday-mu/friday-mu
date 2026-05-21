@@ -1,47 +1,49 @@
 'use strict';
 
 const {
-  mapUrgencyToPriority,
-  dueParts,
-  buildTaskTitle,
-  buildTaskDescription,
+  shapePendingAction,
 } = require('./pending_actions')._test;
 
-describe('pending action task bridge helpers', () => {
-  test('maps action urgency to task priority', () => {
-    expect(mapUrgencyToPriority('urgent')).toBe('urgent');
-    expect(mapUrgencyToPriority('critical')).toBe('urgent');
-    expect(mapUrgencyToPriority('high')).toBe('high');
-    expect(mapUrgencyToPriority('low')).toBe('low');
-    expect(mapUrgencyToPriority('medium')).toBe('medium');
-    expect(mapUrgencyToPriority(null)).toBe('medium');
-  });
-
-  test('derives stable due date/time parts', () => {
-    expect(dueParts('2026-06-01T09:30:00.000Z')).toEqual({
-      dueDate: '2026-06-01',
-      dueTime: '09:30',
-    });
-    expect(dueParts(null)).toEqual({ dueDate: null, dueTime: null });
-  });
-
-  test('builds concise titles from long pending action text', () => {
-    const title = buildTaskTitle('x'.repeat(140));
-    expect(title).toHaveLength(90);
-    expect(title.endsWith('...')).toBe(true);
-  });
-
-  test('keeps source context in generated task description', () => {
-    const description = buildTaskDescription({
-      action_text: 'Follow up with guest',
-      guest_name: 'Guest A',
+describe('pending action proposal helpers', () => {
+  test('shapes a pending action proposal without creating task fields', () => {
+    expect(shapePendingAction({
+      id: 'pa-1',
       conversation_id: 'conv-1',
-      category: 'guest_communication',
+      guest_name: 'Guest A',
+      property_code: 'BS-1',
+      action_text: 'Follow up with guest',
+      status: 'pending',
+      detected_at: '2026-05-21T00:00:00.000Z',
+      due_by: '2026-05-22T00:00:00.000Z',
+      urgency: 'high',
       owner: 'team',
+      category: 'guest_communication',
+      source: 'auto',
+      fad_task_id: null,
+      conversation_guest_name: 'Guest A',
+      conversation_channel: 'whatsapp',
+      conversation_status: 'active',
+      conversation_last_message_at: '2026-05-21T00:00:00.000Z',
+    })).toEqual({
+      id: 'pa-1',
+      conversation_id: 'conv-1',
+      guest_name: 'Guest A',
+      property_code: 'BS-1',
+      action_text: 'Follow up with guest',
+      status: 'pending',
+      detected_at: '2026-05-21T00:00:00.000Z',
+      due_by: '2026-05-22T00:00:00.000Z',
+      urgency: 'high',
+      owner: 'team',
+      category: 'guest_communication',
+      source: 'auto',
+      fad_task_id: null,
+      conversation: {
+        guest_name: 'Guest A',
+        channel: 'whatsapp',
+        status: 'active',
+        last_message_at: '2026-05-21T00:00:00.000Z',
+      },
     });
-    expect(description).toContain('Inbox AI pending action');
-    expect(description).toContain('Follow up with guest');
-    expect(description).toContain('Guest A');
-    expect(description).toContain('conv-1');
   });
 });

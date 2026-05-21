@@ -18,8 +18,10 @@
 //   Returns: { ok, messageId?, draftId?, sentAt }
 //
 // Routing matrix:
-//   guest + whatsapp|airbnb|booking|email  → friday-gms compose
-//                                            (POST /api/conversations/<id>/compose)
+//   guest + whatsapp|airbnb|booking|email  → FAD direct Guesty send for
+//                                            operator-authored replies;
+//                                            GMS compose only for dormant
+//                                            draft/AI compose modes
 //   owner|vendor + email                   → Resend
 //   team + team-channel|team-dm            → TeamInbox internal send
 //   owner|vendor + whatsapp                → Meta Hub stub (clear blocker error)
@@ -89,14 +91,14 @@ router.post('/send', attachIdentity, async (req, res) => {
   }
 
   try {
-    // ─── guest — friday-gms compose ─────────────────────────────────
+    // ─── guest — FAD direct send, with GMS compose fallback for AI modes ─
     if (audience === 'guest') {
       if (!GUEST_CHANNELS.has(channel)) {
         return res.status(400).json({ error: `audience=guest does not support channel=${channel}` });
       }
-      // friday-gms compose requires reviewed_by (audit) + sent_via
-      // (channel reference). The legacy GMS dashboard passed them from
-      // its session; we read them from the FAD user's JWT identity.
+      // Guest outbound audit requires reviewed_by + sent_via. The legacy
+      // GMS dashboard passed them from its session; we read them from the
+      // FAD user's JWT identity.
       // Fallback chain favours human-readable name → username → userId
       // so the audit log never shows "anonymous".
       const reviewedBy =

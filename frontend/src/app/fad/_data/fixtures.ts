@@ -121,6 +121,8 @@ export interface InboxThread {
   summary?: string;
   sentiment?: 'positive' | 'neutral' | 'negative' | 'urgent';
   language?: 'EN' | 'FR' | 'PT' | 'IT' | 'NL';
+  guestEmail?: string;
+  guestPhone?: string;
   whatsappWindow?: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
   /** Reservation context bundled in the thread-detail response. Optional —
    *  list view doesn't carry it, only the detail fetch does. */

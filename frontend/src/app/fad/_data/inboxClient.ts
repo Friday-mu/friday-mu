@@ -9,7 +9,7 @@
 // transformer narrows GMS's broader record into FAD's InboxThread interface
 // with neutral fallbacks so a malformed entry never crashes the page.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch, formatConfidencePercent } from '../../../components/types';
 import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState } from './fixtures';
 
@@ -269,6 +269,14 @@ export function transformGmsConversation(
   const drafts: InboxDraft[] | undefined = draftsRaw
     ? draftsRaw.map(transformGmsDraft)
     : undefined;
+  const guestEmail = raw.guest_email ? String(raw.guest_email) : undefined;
+  const guestPhone = raw.guest_phone ? String(raw.guest_phone) : undefined;
+  const reservation = reservationRaw ? transformGmsReservation(reservationRaw) : undefined;
+  if (reservation) {
+    reservation.guestEmail ||= guestEmail;
+    reservation.guestPhone ||= guestPhone;
+    reservation.guestName ||= raw.guest_name ? String(raw.guest_name) : undefined;
+  }
 
   return {
     id: String(raw.id || `conv-${Math.random().toString(36).slice(2, 9)}`),
@@ -291,7 +299,9 @@ export function transformGmsConversation(
     sentiment: mapSentiment(sentiment),
     language: mapLanguage(raw.last_detected_language),
     whatsappWindow,
-    reservation: reservationRaw ? transformGmsReservation(reservationRaw) : undefined,
+    guestEmail,
+    guestPhone,
+    reservation,
     drafts,
     availableChannels,
     recommendedChannel,
@@ -471,25 +481,40 @@ export function useThreadDetail(threadId: string | null): UseThreadDetailResult 
   const [thread, setThread] = useState<InboxThread | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshSeq, setRefreshSeq] = useState(0);
+  const activeRequestRef = useRef(0);
 
   const refetch = useCallback(() => {
+    setRefreshSeq((seq) => seq + 1);
+  }, []);
+
+  useEffect(() => {
     if (!threadId) {
       setThread(null);
       setLoading(false);
       setError(null);
       return;
     }
+    const requestId = activeRequestRef.current + 1;
+    activeRequestRef.current = requestId;
+    setThread(null);
     setLoading(true);
     setError(null);
     loadThreadDetail(threadId)
-      .then(setThread)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load thread'))
-      .finally(() => setLoading(false));
-  }, [threadId]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+      .then((nextThread) => {
+        if (activeRequestRef.current !== requestId) return;
+        if (nextThread.id !== threadId) return;
+        setThread(nextThread);
+      })
+      .catch((e) => {
+        if (activeRequestRef.current !== requestId) return;
+        setError(e instanceof Error ? e.message : 'Failed to load thread');
+      })
+      .finally(() => {
+        if (activeRequestRef.current !== requestId) return;
+        setLoading(false);
+      });
+  }, [threadId, refreshSeq]);
 
   return { thread, loading, error, refetch };
 }

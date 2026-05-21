@@ -126,16 +126,10 @@ export function InboxModule({ onAskFriday }: Props) {
   const [noteMentions, setNoteMentions] = useState<string[]>([]);
   const [, setNotesRev] = useState(0);
   const currentUserId = useCurrentUserId();
-  // Friday Consult is now the default reply surface — every inbound
-   // Default-COLLAPSED per Ishant 2026-05-18 ("space for the actual
-   // text conversation"). Auto-opens when an AI draft lands so the
-   // operator immediately sees the draft to review. The unified
-   // compose at the bottom stays visible regardless — no duplicate
-   // "Write a reply" surface flickers in/out when consult toggles.
-  // FridayConsult is now the SOLE compose surface. Always open when a
-  // thread is selected (no toggle). Decision 2026-05-17.
-  const consultOpen = true;
-  const setConsultOpen = (_v: boolean | ((v: boolean) => boolean)) => { /* noop */ };
+  // Friday Consult is the default reply surface, but it must stay
+  // closeable so operators can switch to internal notes or the compact
+  // DraftPanel without losing their typed reply.
+  const [consultOpen, setConsultOpen] = useState(true);
   // Track which draft id we've auto-opened consult for, so we don't
   // fight the operator after they explicitly close — only auto-opens
   // again when a NEW draft replaces the current one (revision).
@@ -252,8 +246,9 @@ export function InboxModule({ onAskFriday }: Props) {
   // changes. Falls back to the list-version while detail loads so the pane
   // doesn't blank between selections.
   const listThread = filtered.find((t) => t.id === selected) || filtered[0] || sourceThreads[0];
-  const { thread: detailThread, refetch: refetchDetail } = useThreadDetail(listThread?.id ?? null);
-  const thread = detailThread || listThread;
+  const { thread: detailThread, error: threadError, refetch: refetchDetail } = useThreadDetail(listThread?.id ?? null);
+  const currentDetailThread = detailThread && detailThread.id === listThread?.id ? detailThread : null;
+  const thread = currentDetailThread || listThread;
 
   // ─── Draft review state ────────────────────────────────────────────────
   // The active draft is the most-recent one in a review-ready state. GMS
@@ -516,9 +511,10 @@ export function InboxModule({ onAskFriday }: Props) {
 
   // ─── Compose state ─────────────────────────────────────────────────────
   // Operator-initiated manual reply (vs. draft-review path which goes
-  // through DraftPanel). Posts to /api/inbox/conversations/:id/compose
-  // mode=manual. "Polish with Friday" hits /api/inbox/consult to rewrite
-  // the current body. Reset when the active thread changes.
+  // through DraftPanel). Posts through /api/outbound/send so typed text
+  // uses the FAD direct-send path. "Polish with Friday" hits
+  // /api/inbox/consult to rewrite the current body. Reset when the
+  // active thread changes.
   const [replyBody, setReplyBody] = useState('');
   const [composeBusy, setComposeBusy] = useState(false);
   const [polishBusy, setPolishBusy] = useState(false);
@@ -526,6 +522,7 @@ export function InboxModule({ onAskFriday }: Props) {
   useEffect(() => {
     setReplyBody('');
     setComposeMode('reply');
+    setConsultOpen(true);
   }, [selected]);
 
   // Mark conversation as read when the operator opens it (Mary bug
@@ -1004,6 +1001,37 @@ export function InboxModule({ onAskFriday }: Props) {
               )}
             </div>
             {thread.whatsappWindow && <WhatsAppTimer window={thread.whatsappWindow} onPickTemplate={() => handleTemplateSend()} />}
+            {threadError && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-bg-danger)',
+                  color: 'var(--color-text-danger)',
+                  fontSize: 12,
+                  lineHeight: 1.45,
+                }}
+              >
+                Thread details failed to load: <strong>{threadError}</strong>{' '}
+                <button
+                  type="button"
+                  onClick={refetchDetail}
+                  style={{
+                    border: 0,
+                    background: 'transparent',
+                    color: 'inherit',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: 12,
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {/* AI toolbar + Summary chip + auto-summary panel removed
                 2026-05-17 per Ishant — the GMS-side auto-summary was
                 wasted AI compute (most operators didn't read it) AND
@@ -1531,16 +1559,16 @@ function ReservationRightPanel({
           <span className="label">Language</span>
           <span className="value">{thread.language || '—'}</span>
         </div>
-        {r?.guestEmail && (
+        {(r?.guestEmail || thread.guestEmail) && (
           <div className="inbox-right-row">
             <span className="label">Email</span>
-            <span className="value" style={{ fontSize: 11 }}>{r.guestEmail}</span>
+            <span className="value" style={{ fontSize: 11 }}>{r?.guestEmail || thread.guestEmail}</span>
           </div>
         )}
-        {r?.guestPhone && (
+        {(r?.guestPhone || thread.guestPhone) && (
           <div className="inbox-right-row">
             <span className="label">Phone</span>
-            <span className="value" style={{ fontSize: 11 }}>{r.guestPhone}</span>
+            <span className="value" style={{ fontSize: 11 }}>{r?.guestPhone || thread.guestPhone}</span>
           </div>
         )}
       </div>

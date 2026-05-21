@@ -253,7 +253,6 @@ async function latestSubstantiveMessage(conversationId) {
     `SELECT id, direction
        FROM messages
       WHERE conversation_id = $1
-        AND COALESCE(is_auto_response, FALSE) IS FALSE
       ORDER BY created_at DESC, id DESC
       LIMIT 1`,
     [conversationId],

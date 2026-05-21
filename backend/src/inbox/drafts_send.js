@@ -33,6 +33,7 @@ const { guestyRequest } = require('../website_inbox/guesty');
 const { detectActions } = require('./action_detector');
 const { checkAutoResolve } = require('./auto_resolve');
 const { publishFadEvent, notifyUsers, resolveGmWatchers } = require('../realtime');
+const { triggerDraftGeneration } = require('./draft_generator');
 
 // Feature flag — set FAD_ACTION_DETECTOR_DISABLED=true on the backend
 // env to stop post-send commitment detection. Rollback handle for
@@ -103,7 +104,7 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
   let draftRow;
   try {
     const { rows } = await query(
-      `SELECT d.id, d.conversation_id, d.draft_body, d.state, d.confidence,
+      `SELECT d.id, d.conversation_id, d.message_id, d.draft_body, d.state, d.confidence,
               c.guesty_conversation_id, c.channel, c.communication_channel,
               c.last_inbound_at, c.tenant_id, c.guest_name, c.property_name
          FROM drafts d
@@ -132,6 +133,20 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
   }
   if (!draftRow.guesty_conversation_id) {
     return res.status(409).json({ error: 'conversation_not_synced', message: 'no guesty_conversation_id yet' });
+  }
+
+  const latest = await latestSubstantiveMessage(draftRow.conversation_id);
+  if (!latest || latest.direction !== 'inbound' || String(latest.id) !== String(draftRow.message_id)) {
+    await query(
+      `UPDATE drafts
+          SET state = 'superseded', updated_at = NOW()
+        WHERE id = $1`,
+      [draftId],
+    ).catch(() => {});
+    return res.status(409).json({
+      error: 'draft_stale',
+      message: 'The conversation changed after this draft was created. Refresh the thread before sending.',
+    });
   }
 
   const channel = (overrideChannel || draftRow.communication_channel || draftRow.channel || '').toLowerCase();
@@ -396,6 +411,161 @@ async function sendViaGuesty(guestyConversationId, body, channel) {
   });
   return data;
 }
+
+async function latestSubstantiveMessage(conversationId) {
+  const { rows } = await query(
+    `SELECT id, direction
+       FROM messages
+      WHERE conversation_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+    [conversationId],
+  );
+  return rows[0] || null;
+}
+
+function reviewerFromIdentity(identity) {
+  return identity?.displayName
+    || identity?.username
+    || identity?.userId
+    || 'fad-user';
+}
+
+// ────────────────────────────────────────────────────────────────────
+// POST /api/inbox/drafts/:id/revise
+// FAD-native replacement for the last GMS-proxied draft mutation.
+// Current FAD still exposes the DraftPanel "Revise" control, so this
+// route is not legacy. It records the learning signal locally, marks
+// the current draft revision_requested, then starts FAD draft-gen for a
+// new revision.
+// ────────────────────────────────────────────────────────────────────
+router.post('/:id/revise', attachIdentity, async (req, res) => {
+  const draftId = req.params.id;
+  const instruction = typeof req.body?.revision_instruction === 'string'
+    ? req.body.revision_instruction.trim()
+    : '';
+  if (!instruction) {
+    return res.status(400).json({ error: 'revision_instruction_required' });
+  }
+
+  const mode = ['standard', 'teach', 'one_time'].includes(req.body?.mode)
+    ? req.body.mode
+    : 'standard';
+  const reviewedBy = reviewerFromIdentity(req.identity);
+  const tenantId = req.tenantId || FR_TENANT_ID;
+
+  try {
+    const { rows } = await query(
+      `SELECT d.id, d.conversation_id, d.message_id, d.draft_body, d.state,
+              d.revision_number, d.tenant_id,
+              c.property_name, c.tenant_id AS conversation_tenant_id
+         FROM drafts d
+         JOIN conversations c ON c.id = d.conversation_id
+        WHERE d.id = $1
+          AND c.tenant_id = $2
+        LIMIT 1`,
+      [draftId, tenantId],
+    );
+    const currentDraft = rows[0];
+    if (!currentDraft) {
+      return res.status(404).json({ error: 'draft_not_found' });
+    }
+    if (!['draft_ready', 'under_review'].includes(currentDraft.state)) {
+      return res.status(409).json({
+        error: 'invalid_draft_state',
+        message: `cannot revise draft in state ${currentDraft.state}`,
+      });
+    }
+
+    const latest = await latestSubstantiveMessage(currentDraft.conversation_id);
+    if (!latest || latest.direction !== 'inbound' || String(latest.id) !== String(currentDraft.message_id)) {
+      await query(
+        `UPDATE drafts
+            SET state = 'superseded', updated_at = NOW()
+          WHERE id = $1`,
+        [draftId],
+      ).catch(() => {});
+      return res.status(409).json({
+        error: 'draft_stale',
+        message: 'The conversation changed after this draft was created. Refresh the thread before revising.',
+      });
+    }
+
+    const revisionNumber = Number(currentDraft.revision_number || 1) + 1;
+    await query(
+      `UPDATE drafts
+          SET state = 'revision_requested',
+              reviewed_by = $1,
+              revision_instruction = $2,
+              updated_at = NOW()
+        WHERE id = $3`,
+      [reviewedBy, instruction, draftId],
+    );
+
+    await query(
+      `INSERT INTO revision_log (
+         tenant_id, conversation_id, draft_id, instruction, mode, created_by
+       ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [tenantId, currentDraft.conversation_id, draftId, instruction, mode, reviewedBy],
+    ).catch((e) => console.warn('[drafts/revise] revision_log insert failed:', e.message));
+
+    await query(
+      `INSERT INTO learning_events (
+         tenant_id, type, draft_id, conversation_id, property_code,
+         draft_body, revision_instruction, reviewer_user_id
+       ) VALUES ($1, 'revision', $2, $3, $4, $5, $6, $7)`,
+      [
+        tenantId,
+        draftId,
+        currentDraft.conversation_id,
+        currentDraft.property_name || null,
+        currentDraft.draft_body || null,
+        instruction,
+        reviewedBy,
+      ],
+    ).catch((e) => console.warn('[drafts/revise] learning event insert failed:', e.message));
+
+    if (mode === 'teach') {
+      const scope = req.body?.scope === 'property' ? 'property' : 'global';
+      const propertyCode = scope === 'property' ? (currentDraft.property_name || null) : null;
+      await query(
+        `INSERT INTO teachings (
+           tenant_id, instruction, scope, property_code, source,
+           source_revision_ids, taught_by, taught_at
+         ) VALUES ($1, $2, $3, $4, 'revision', $5::uuid[], $6, NOW())`,
+        [tenantId, instruction, scope, propertyCode, [draftId], reviewedBy],
+      ).catch((e) => console.warn('[drafts/revise] teaching insert failed:', e.message));
+      await query(
+        `INSERT INTO learning_events (
+           tenant_id, type, draft_id, conversation_id, property_code,
+           revision_instruction, reviewer_user_id
+         ) VALUES ($1, 'teach', $2, $3, $4, $5, $6)`,
+        [tenantId, draftId, currentDraft.conversation_id, propertyCode, instruction, reviewedBy],
+      ).catch((e) => console.warn('[drafts/revise] teach learning event insert failed:', e.message));
+    }
+
+    triggerDraftGeneration(currentDraft.message_id, currentDraft.conversation_id, {
+      revisionInstruction: instruction,
+      revisionNumber,
+    }).then((result) => {
+      if (result?.error) {
+        console.error(`[drafts/revise] draft generation returned error for ${draftId}:`, result.error);
+      }
+    }).catch((e) => {
+      console.error(`[drafts/revise] draft generation failed for ${draftId}:`, e.message);
+    });
+
+    return res.status(202).json({
+      ok: true,
+      previous_draft_id: draftId,
+      revision_number: revisionNumber,
+      state: 'revision_requested',
+    });
+  } catch (e) {
+    console.error('[drafts/revise] error:', e.message);
+    return res.status(500).json({ error: 'revise_failed', message: e.message });
+  }
+});
 
 // ────────────────────────────────────────────────────────────────────
 // POST /api/inbox/drafts/:id/reject

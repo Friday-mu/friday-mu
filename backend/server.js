@@ -1373,21 +1373,26 @@ async function gmsProxy(req, res, gmsPath, method = 'get') {
   }
 }
 
-// ─── /api/analytics — proxy to GMS ────────────────────────────────
-// The OLD GMS UI at frontend/src/app/page.tsx tracks analytics events
-// to /api/analytics/events/batch (lib/analytics.ts). Pre-migration
-// these went directly to admin.friday.mu (where GMS lived). Once
-// admin.friday.mu is migrated to FAD, that URL hits fad-backend
-// instead — so we proxy to GMS to keep analytics flowing.
+// ─── /api/analytics ────────────────────────────────────────────────
+// FAD-owned event ingestion is local now. The broader /api/analytics/v2/*
+// reporting surface belongs to the old GMS dashboard and remains proxied
+// until the FAD Analytics module is rebuilt against FAD-native data.
+app.use('/api/analytics/events', require('./src/analytics/events'));
 app.all('/api/analytics/*', asyncHandler((req, res) =>
   gmsProxy(req, res, req.path, req.method.toLowerCase())
 ));
 
-// /api/version — legacy update-banner polling endpoint (lib/analytics.ts +
-// page.tsx). Pre-cutover hit GMS directly; now proxied through fad-backend.
-app.get('/api/version', asyncHandler((req, res) =>
-  gmsProxy(req, res, '/api/version')
-));
+// /api/version — legacy update-banner polling endpoint. Return FAD's own
+// identity instead of bouncing through GMS.
+app.get('/api/version', (_req, res) => {
+  const pkg = require('./package.json');
+  res.json({
+    service: 'fad-backend',
+    version: process.env.APP_VERSION || pkg.version || '1.0.0',
+    commit: process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT || null,
+    built_at: process.env.BUILD_TIME || null,
+  });
+});
 
 // /api/auth/login-roster — public. Drives the LoginScreen chip selector so
 // it reflects who actually has an account (vs the hardcoded TEAM array it
@@ -1442,12 +1447,9 @@ app.use('/api/inbox/conversations', conversationsReadRouter);
 // the PATCH /:id/read, /:id/unread, /:id (status) routes are all
 // handled by conversationsReadRouter above (Phase 2+3 port).
 //
-// On-demand translation stays proxied — it calls into GMS's draft
-// generator (intelligence-layer-adjacent, frozen anti-goal).
-
-app.post('/api/inbox/conversations/:id/translate', requireAuth, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/conversations/${req.params.id}/translate`, 'post')
-));
+// On-demand conversation translation is FAD-native in
+// conversationsReadRouter above (`POST /:id/translate`) and uses
+// backend/src/ai/translate.js. No GMS proxy remains for this path.
 
 // ─── Compose ──────────────────────────────────────────────────────────
 // Three modes per friday-gms/src/routes/compose.ts:
@@ -1476,39 +1478,11 @@ app.post('/api/inbox/conversations/:id/compose', requireAuth, asyncHandler((req,
 const draftsReadRouter = require('./src/inbox/drafts_read');
 app.use('/api/inbox/drafts', draftsReadRouter);
 
-// POST /api/inbox/drafts/:id/approve — FAD-native (Stage 2.1 port).
-// Owns translation + Guesty send + state transition + message insert.
-// The other draft mutations (reject/revise/retry/fail/dismiss) stay
-// proxied below — they touch the GMS intelligence layer.
+// POST /api/inbox/drafts/:id/{approve,reject,revise,retry,fail,dismiss}
+// are FAD-native. Approve/retry own Guesty send; revise records the
+// learning signal locally and starts FAD draft generation.
 const draftsSendRouter = require('./src/inbox/drafts_send');
 app.use('/api/inbox/drafts', draftsSendRouter);
-
-// Friday-gms requires `reviewed_by` on every draft mutation for the
-// audit log (who approved/rejected/revised/etc.). The legacy GMS
-// dashboard passed it from its session; FAD frontend may omit it, so
-// we inject it server-side from the JWT-verified identity. JWT is the
-// only trustworthy source — relying on the frontend would let a caller
-// spoof the audit trail.
-const { attachIdentitySoft: _identityForDrafts } = require('./src/design/auth');
-function gmsReviewer(req) {
-  return req.identity?.displayName
-      || req.identity?.username
-      || req.identity?.userId
-      || 'fad-user';
-}
-function injectReviewer(req, _res, next) {
-  req.body = { ...(req.body || {}), reviewed_by: gmsReviewer(req) };
-  next();
-}
-
-// /approve, /reject, /retry, /fail, /dismiss are now FAD-native — see
-// the draftsSendRouter mounted above (./src/inbox/drafts_send.js).
-//
-// /revise stays proxied to GMS because it triggers draft regeneration
-// (intelligence-layer-adjacent — Stage 3 port).
-app.post('/api/inbox/drafts/:id/revise', requireAuth, _identityForDrafts, injectReviewer, asyncHandler((req, res) =>
-  gmsProxy(req, res, `/api/drafts/${req.params.id}/revise`, 'post')
-));
 
 // ─── Friday Consult + teachings — FAD-native ─────────────────────────
 // Consult now loads backend/knowledge through the structured composer,

@@ -1,18 +1,19 @@
 'use client';
 
-// Thin API client for the FAD inbox draft + compose endpoints. All
-// requests proxy to friday-gms via FAD backend's /api/inbox/* surface.
+// Thin API client for the FAD inbox draft + compose endpoints. The main
+// review/send paths are now FAD-native; only the dormant AI-compose
+// compatibility mode can still pass through the backend's GMS bridge.
 // Mirrors the patterns established in inboxClient.ts (apiFetch, neutral
 // response shapes, no global state — callers own caching/refresh).
 //
 // Endpoint matrix (FAD path → GMS path):
 //   POST /api/inbox/drafts/:id/approve  → /api/drafts/:id/approve
 //   POST /api/inbox/drafts/:id/reject   → /api/drafts/:id/reject
-//   POST /api/inbox/drafts/:id/revise   → /api/drafts/:id/revise
+//   POST /api/inbox/drafts/:id/revise   → FAD draft generator
 //   POST /api/inbox/drafts/:id/retry    → /api/drafts/:id/retry
 //   POST /api/inbox/drafts/:id/fail     → /api/drafts/:id/fail
 //   POST /api/inbox/drafts/:id/dismiss  → /api/drafts/:id/dismiss
-//   POST /api/inbox/conversations/:id/compose → /api/conversations/:id/compose
+//   POST /api/outbound/send             → direct Guesty send for manual replies
 //
 // Errors: 4xx/5xx bubble up as thrown Error('<status>: <body>'); callers
 // catch and surface to the UI. WhatsApp window-expired is a special 409
@@ -91,8 +92,9 @@ export interface ReviseDraftOpts {
 
 export interface ReviseDraftResp {
   ok: boolean;
-  /** ID of the new draft being generated. The current draft transitions
-   *  to revision_requested and the next /:id GET will return this one. */
+  /** ID of the new draft being generated when available. The current
+   *  draft transitions to revision_requested and the next /:id GET will
+   *  return the generated revision. */
   new_draft_id?: string;
   /** Revision number of the new draft (prev + 1). */
   revision_number?: number;
