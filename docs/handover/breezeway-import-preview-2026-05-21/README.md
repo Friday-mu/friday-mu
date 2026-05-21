@@ -50,7 +50,7 @@ API validation report:
 
 ## Current Apply Readiness
 
-Ready to apply after one final production preview on the server.
+Applied to production after one final production preview on the server.
 
 Resolved policy decisions:
 
@@ -63,14 +63,24 @@ Resolved policy decisions:
 
 Production apply guardrails:
 
-- Run the bundle importer on the VPS against the live `DATABASE_URL` in preview mode first.
-- Confirm production preview still reports 4,483 importable task rows and no unexpected existing `external_ref` collisions.
-- Apply once with `--confirm`; the task insert is idempotent on `tenant_id + external_ref`.
+- Run the bundle importer on the VPS against the live `DATABASE_URL` in preview mode first. Done: `/tmp/fad-breezeway-import-e4ae355/prod-preview.json`.
+- Confirm production preview still reports 4,483 importable task rows and no unexpected existing `external_ref` collisions. Done: 4,483 importable, 0 existing Breezeway refs.
+- Apply once with `--confirm`; the task insert is idempotent on `tenant_id + external_ref`. Done: `/tmp/fad-breezeway-import-e4ae355/prod-apply.json`.
 - Do not re-add old Desktop sample CSVs or screenshot-derived sensitive values.
+
+Production apply result:
+
+- Import batch: `breezeway-2026-05-21T16-35-33-326Z-384298`
+- Inserted tasks: 4,483
+- Inserted task costs: 193
+- Inserted task supplies: 1
+- Inserted stock movements: 1
+- Failed rows: 0
+- DB safety checks: 0 admin/aggregate leaks, 0 source-payload redaction keyword leaks.
 
 Recommended next apply path:
 
-1. Copy the five current CSV exports to a temporary folder on the VPS.
-2. Run `node scripts/breezeway-task-bundle-import.js --dir <folder> --mode preview --out <report>`.
-3. If the report matches `bundle-apply-preview.json`, run the same command with `--mode apply --confirm`.
-4. Verify live counts for `source = breezeway`, `external_ref LIKE 'breezeway:%'`, `task_costs`, and `task_supplies`.
+1. Keep FAD Ops as the source of truth for task execution from this point forward.
+2. Use Breezeway API only for temporary validation if a specific row is disputed.
+3. Wire the existing Ops Settings workflow policy into automatic task generation for checkouts, recurring monthly work, and scheduled maintenance.
+4. Add property/user mapping cleanup only if operators need historical assignee reporting beyond source-payload provenance.

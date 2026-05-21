@@ -311,3 +311,15 @@
 - Reworked Ops Approvals and Insights to derive from live tasks instead of `APPROVAL_REQUESTS`, `TASK_INSIGHTS`, or `REPORTED_ISSUES` fixtures; Settings remains because it is current workflow policy, not discarded demo content.
 - Generated `docs/handover/breezeway-import-preview-2026-05-21/bundle-apply-preview.json`: 5,174 total rows, 4,483 valid/importable rows, 691 policy-skipped admin/aggregate rows, 0 unknown statuses/priorities/departments, 962 sensitive redactions, custom export 5,174/5,174 row-order joinable, 208 explicit cost rows, 1 supply row, and 5,791 payroll provenance rows.
 - Verification before apply checkpoint: `backend npm test` passed 18 suites / 76 tests, `frontend npx tsc --noEmit` passed, and `frontend npm run build` passed.
+
+## 2026-05-21 Breezeway Production Import
+
+- Pushed `e4ae355` to `origin/fad-rebuild`, deployed the static frontend to `/var/www/fad`, deployed scoped backend task import files to `/var/www/fad-backend`, and restarted PM2 `fad-backend`.
+- Live `https://admin.friday.mu/version.json` reports version `e4ae355`; live chunks include the new `0xt39~6lk80ir.js` Ops bundle and no longer include the previous `0~wbfu_3mwmtv.js` bundle.
+- Backups before deploy: `/var/backups/fad-frontend-e4ae355` and `/var/backups/fad-backend-e4ae355`.
+- Copied only the current CSV exports from `/Users/judith/Desktop/Friday/Friday OS/Ops Module` to `/tmp/fad-breezeway-import-e4ae355` on the VPS; old Desktop sample CSVs were not used.
+- Production preview matched the local readiness report: 5,174 total rows, 4,483 valid/importable rows, 691 policy-skipped admin/aggregate rows, no existing Breezeway external refs, no unknown statuses/priorities/departments, no unknown properties, 22 unknown historical assignee groups, 962 sensitive redactions, and custom export joinable.
+- Production apply committed import batch `breezeway-2026-05-21T16-35-33-326Z-384298`: 4,483 tasks inserted, 193 explicit cost rows inserted, 1 supply row inserted, 1 stock movement inserted, 0 failures.
+- Direct production DB verification: 4,483 `source = breezeway` tasks, 4,483 `external_ref LIKE 'breezeway:%'`, statuses = 3,770 completed / 344 closed / 342 scheduled / 27 in_progress, 193 Breezeway task costs, 1 Breezeway task supply, 1 Breezeway stock movement.
+- Safety verification after apply: 0 imported admin/aggregate policy leaks and 0 source-payload matches for password/passcode/lockbox/gate-code/access-code/key-safe/PIN/Wi-Fi redaction keywords.
+- Follow-up live chunk inspection found the old `TASKS` fixture array still bundled as a compatibility fallback; removed those task rows from `_data/tasks.ts` and left only an empty `TASKS` export for legacy imports. `frontend/DEMO_CRUFT.md` now no longer lists `PROD-DATA-2`.
