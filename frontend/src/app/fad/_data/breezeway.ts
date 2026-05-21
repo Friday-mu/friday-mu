@@ -62,6 +62,7 @@ export interface CreateTaskInput {
   department: Task['department'];
   subdepartment: Task['subdepartment'];
   priority: Task['priority'];
+  status?: Task['status'];
   source: Task['source'];
   assigneeIds?: string[];
   requesterId?: string;
@@ -86,7 +87,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     department: input.department,
     subdepartment: input.subdepartment,
     priority: input.priority,
-    status: 'todo',
+    status: input.status ?? (input.source === 'inbox_ai' || input.source === 'reported_issue' || input.source === 'review' ? 'reported' : 'scheduled'),
     source: input.source,
     visibility: 'all',
     assigneeIds: input.assigneeIds ?? [],

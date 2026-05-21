@@ -24,22 +24,26 @@ type SortKey = 'dueDate' | 'title' | 'source' | 'assignee' | 'status' | 'updated
 const TODAY = '2026-04-27';
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: 'To do',
+  reported: 'Reported',
+  scheduled: 'Scheduled',
+  ready: 'Ready',
   in_progress: 'In progress',
   paused: 'Paused',
-  reported: 'Reported',
-  awaiting_approval: 'Awaiting approval',
+  blocked: 'Blocked',
   completed: 'Completed',
+  closed: 'Closed',
   cancelled: 'Cancelled',
 };
 
 const STATUS_TONE: Record<TaskStatus, string> = {
-  todo: '',
+  reported: 'warn',
+  scheduled: '',
+  ready: '',
   in_progress: 'info',
   paused: '',
-  reported: 'warn',
-  awaiting_approval: 'warn',
+  blocked: 'warn',
   completed: 'info',
+  closed: 'info',
   cancelled: '',
 };
 
@@ -57,7 +61,7 @@ const SOURCE_LABEL: Record<TaskSource, string> = {
   review: 'Review',
 };
 
-const isOpen = (s: TaskStatus) => s !== 'completed' && s !== 'cancelled';
+const isOpen = (s: TaskStatus) => s !== 'completed' && s !== 'closed' && s !== 'cancelled';
 
 function isOverdue(task: Task): boolean {
   return isOpen(task.status) && task.dueDate < TODAY;

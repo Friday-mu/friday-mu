@@ -122,6 +122,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Operations task service. This route is tenant-scoped and owns real task
+// execution records; Inbox pending_actions remain proposals until converted
+// into tasks through this API with an idempotent external_ref.
+app.use('/api/tasks', require('./src/tasks'));
+
 // ====================================================================
 // Frontend Compatibility Layer
 // ====================================================================

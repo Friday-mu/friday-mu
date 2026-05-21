@@ -11,7 +11,7 @@ import {
   type TaskPriority,
   type TaskSource,
 } from '../../../_data/tasks';
-import { createTask } from '../../../_data/breezeway';
+import { createTask } from '../../../_data/tasksClient';
 import { useCurrentUserId } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconSparkle } from '../../icons';

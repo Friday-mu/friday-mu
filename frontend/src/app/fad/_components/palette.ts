@@ -48,14 +48,16 @@ export function taskStatusTone(status: string): SemanticTone {
     case 'in_progress':
       return 'info';
     case 'paused':
+    case 'blocked':
     case 'reported':
-    case 'awaiting_approval':
       return 'warning';
+    case 'closed':
     case 'completed':
       return 'success';
     case 'cancelled':
       return 'danger';
-    case 'todo':
+    case 'scheduled':
+    case 'ready':
     default:
       return 'neutral';
   }

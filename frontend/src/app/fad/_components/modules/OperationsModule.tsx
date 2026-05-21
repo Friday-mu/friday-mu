@@ -6,7 +6,6 @@ import {
   AI_TASK_DRAFTS,
   APPROVAL_REQUESTS,
   REPORTED_ISSUES,
-  TASKS,
   TASK_INSIGHTS,
   TASK_PROPERTIES,
   TASK_USER_BY_ID,
@@ -21,7 +20,8 @@ import {
 } from '../../_data/tasks';
 import { useCanSee, useCurrentUserId, usePermissions } from '../usePermissions';
 import { fireToast } from '../Toaster';
-import { createTask, updateTask } from '../../_data/breezeway';
+import { createTask, updateTask } from '../../_data/tasksClient';
+import { useApiTasks } from '../../_data/useApiTasks';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
@@ -64,14 +64,18 @@ function priorityBarColor(p: TaskPriority): string {
 }
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: 'To do',
+  reported: 'Reported',
+  scheduled: 'Scheduled',
+  ready: 'Ready',
   in_progress: 'In progress',
   paused: 'Paused',
-  reported: 'Reported',
-  awaiting_approval: 'Awaiting approval',
+  blocked: 'Blocked',
   completed: 'Completed',
+  closed: 'Closed',
   cancelled: 'Cancelled',
 };
+
+const CLOSED_STATUS = new Set<TaskStatus>(['completed', 'closed', 'cancelled']);
 
 export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   const canSeeApprovals = useCanSee('tasks', 'approve');
@@ -91,11 +95,15 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
 
   const [, setRev] = useState(0);
-  const bumpRev = () => setRev((n) => n + 1);
+  const { tasks: liveTasks, refetch } = useApiTasks();
+  const bumpRev = () => {
+    setRev((n) => n + 1);
+    refetch();
+  };
 
   const [createOpen, setCreateOpen] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
-  const detailTask = detailTaskId ? TASKS.find((t) => t.id === detailTaskId) : null;
+  const detailTask = detailTaskId ? liveTasks.find((t) => t.id === detailTaskId) : null;
 
   const renderSub = () => {
     switch (active) {
@@ -167,21 +175,22 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 // ───────────────── Overview ─────────────────
 
 function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+  const { tasks: TASKS, loading, error } = useApiTasks();
   const kpis = useMemo(() => {
-    const openToday = TASKS.filter((t) => t.dueDate === TODAY && t.status !== 'completed' && t.status !== 'cancelled').length;
-    const overdue = TASKS.filter((t) => t.dueDate < TODAY && t.status !== 'completed' && t.status !== 'cancelled').length;
-    const urgent = TASKS.filter((t) => t.priority === 'urgent' && t.status !== 'completed').length;
-    const awaitingApproval = TASKS.filter((t) => t.status === 'awaiting_approval' || t.awaitingHumanApproval).length;
+    const openToday = TASKS.filter((t) => t.dueDate === TODAY && !CLOSED_STATUS.has(t.status)).length;
+    const overdue = TASKS.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
+    const urgent = TASKS.filter((t) => t.priority === 'urgent' && !CLOSED_STATUS.has(t.status)).length;
+    const awaitingApproval = TASKS.filter((t) => t.status === 'blocked' || t.awaitingHumanApproval).length;
     const reportedToday = REPORTED_ISSUES.filter((i) => i.reportedAt.slice(0, 10) === TODAY && i.status === 'new').length;
     return { openToday, overdue, urgent, awaitingApproval, reportedToday };
-  }, []);
+  }, [TASKS]);
 
   const escalations = TASKS.filter(
     (t) => t.riskFlags.includes('overdue') || t.riskFlags.includes('blocked_access') || t.priority === 'urgent',
   ).slice(0, 4);
 
   const reservationDriven = TASKS.filter(
-    (t) => t.riskFlags.includes('reservation_imminent') && t.status !== 'completed',
+    (t) => t.riskFlags.includes('reservation_imminent') && !CLOSED_STATUS.has(t.status),
   );
 
   const recentActivity = useMemo(() => {
@@ -190,7 +199,7 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
     )
       .sort((a, b) => b.entry.ts.localeCompare(a.entry.ts))
       .slice(0, 6);
-  }, []);
+  }, [TASKS]);
 
   const telemetry = useAITelemetry();
   const [briefIndex, setBriefIndex] = useState(() => new Date().getHours() % DAILY_BRIEF_POOL.length);
@@ -205,6 +214,13 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+      {error && (
+        <div style={{ marginBottom: 12, padding: 12, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
+          Live tasks could not load: {error}
+        </div>
+      )}
+      {loading && TASKS.length === 0 && <Empty>Loading live tasks...</Empty>}
+
       {/* KPI strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
         <KpiCard label="Open today" value={kpis.openToday} accent="var(--color-text-info)" />
@@ -357,13 +373,15 @@ type TaskSortKey =
   | 'source';
 
 const STATUS_ORDER: Record<TaskStatus, number> = {
-  todo: 0,
-  in_progress: 1,
-  paused: 2,
-  awaiting_approval: 3,
-  reported: 4,
-  completed: 5,
-  cancelled: 6,
+  reported: 0,
+  scheduled: 1,
+  ready: 2,
+  in_progress: 3,
+  paused: 4,
+  blocked: 5,
+  completed: 6,
+  closed: 7,
+  cancelled: 8,
 };
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
@@ -390,6 +408,7 @@ function compareTasks(a: Task, b: Task, key: TaskSortKey): number {
 function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => void; onCreate: () => void }) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
+  const { tasks: TASKS, loading, error } = useApiTasks();
 
   const [filters, setFilters] = useState<AllTasksFilters>({
     department: 'all',
@@ -426,7 +445,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
     if (filters.source !== 'all') tasks = tasks.filter((t) => t.source === filters.source);
     if (filters.mine) tasks = tasks.filter((t) => t.assigneeIds.includes(currentUserId));
     if (filters.due === 'today') tasks = tasks.filter((t) => t.dueDate === TODAY);
-    if (filters.due === 'overdue') tasks = tasks.filter((t) => t.dueDate < TODAY && t.status !== 'completed');
+    if (filters.due === 'overdue') tasks = tasks.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status));
     if (filters.due === 'this_week') tasks = tasks.filter((t) => t.dueDate >= '2026-04-27' && t.dueDate <= '2026-05-03');
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -478,11 +497,14 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         value={filters.status}
         options={[
           { value: 'all', label: 'All statuses' },
-          { value: 'todo', label: 'To do' },
+          { value: 'reported', label: 'Reported' },
+          { value: 'scheduled', label: 'Scheduled' },
+          { value: 'ready', label: 'Ready' },
           { value: 'in_progress', label: 'In progress' },
           { value: 'paused', label: 'Paused' },
-          { value: 'awaiting_approval', label: 'Awaiting approval' },
+          { value: 'blocked', label: 'Blocked' },
           { value: 'completed', label: 'Completed' },
+          { value: 'closed', label: 'Closed' },
         ]}
         onChange={(v) => setFilters({ ...filters, status: v as TaskStatus | 'all' })}
       />
@@ -554,6 +576,11 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div style={{ padding: '12px 20px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+        {error && (
+          <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
+            Live tasks could not load: {error}
+          </div>
+        )}
         <div className="all-tasks-search-row">
           <input
             type="search"
@@ -673,6 +700,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
             ))}
           </tbody>
         </table>
+        {loading && TASKS.length === 0 && <Empty>Loading live tasks...</Empty>}
         <div className="fad-tasks-cards">
           {visibleTasks.map((t) => (
             <TaskCard key={t.id} task={t} onClick={() => onOpenTask(t.id)} />

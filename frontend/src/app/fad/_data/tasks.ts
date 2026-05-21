@@ -28,12 +28,14 @@ export type Subdepartment =
   | 'guest_services';
 
 export type TaskStatus =
-  | 'todo'
+  | 'reported'
+  | 'scheduled'
+  | 'ready'
   | 'in_progress'
   | 'paused'
-  | 'reported'
-  | 'awaiting_approval'
+  | 'blocked'
   | 'completed'
+  | 'closed'
   | 'cancelled';
 
 export type TaskPriority = 'lowest' | 'low' | 'medium' | 'high' | 'urgent';
@@ -314,6 +316,7 @@ export interface ActivityEntry {
 export interface Task {
   id: string;
   bzId?: string;
+  externalRef?: string;
   title: string;
   description?: string;
   propertyCode: string;
@@ -393,7 +396,7 @@ export const TASKS: Task[] = [
     ],
     activityLog: [
       { id: 'a-001-1', ts: '2026-03-05T10:00:00', kind: 'created', actorId: 'u-ishant' },
-      { id: 'a-001-2', ts: '2026-04-22T14:30:00', kind: 'status_changed', actorId: 'u-ishant', detail: 'todo → paused' },
+      { id: 'a-001-2', ts: '2026-04-22T14:30:00', kind: 'status_changed', actorId: 'u-ishant', detail: 'scheduled → paused' },
     ],
     createdAt: '2026-03-05T10:00:00',
     updatedAt: '2026-04-22T14:30:00',
@@ -407,7 +410,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'breezeway',
     visibility: 'all',
     assigneeIds: ['u-franny'],
@@ -466,7 +469,7 @@ export const TASKS: Task[] = [
     activityLog: [
       { id: 'a-003-1', ts: '2026-04-25T08:00:00', kind: 'created', actorId: 'u-franny', detail: 'Auto-created from check-in trigger' },
       { id: 'a-003-2', ts: '2026-04-25T08:01:00', kind: 'assigned', actorId: 'u-franny', detail: '→ Alex' },
-      { id: 'a-003-3', ts: '2026-04-27T09:00:00', kind: 'status_changed', actorId: 'u-alex', detail: 'todo → in_progress' },
+      { id: 'a-003-3', ts: '2026-04-27T09:00:00', kind: 'status_changed', actorId: 'u-alex', detail: 'scheduled → in_progress' },
       { id: 'a-003-4', ts: '2026-04-27T09:42:00', kind: 'commented', actorId: 'u-alex', detail: 'Welcome basket missing 2 items' },
     ],
     createdAt: '2026-04-25T08:00:00',
@@ -481,7 +484,7 @@ export const TASKS: Task[] = [
     department: 'cleaning',
     subdepartment: 'standard_clean',
     priority: 'high',
-    status: 'todo',
+    status: 'scheduled',
     source: 'reservation_trigger',
     visibility: 'all',
     assigneeIds: ['u-bryan'],
@@ -512,7 +515,7 @@ export const TASKS: Task[] = [
     department: 'cleaning',
     subdepartment: 'deep_clean',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'manual',
     visibility: 'all',
     assigneeIds: ['u-mary', 'u-bryan'],
@@ -578,7 +581,7 @@ export const TASKS: Task[] = [
       { id: 'a-006-02', ts: '2026-04-26T22:32:00', kind: 'assigned', actorId: 'u-franny', detail: '→ Mathias' },
       { id: 'a-006-03', ts: '2026-04-26T22:35:00', kind: 'priority_changed', actorId: 'system', detail: 'high → urgent (AI urgency_bump)' },
       { id: 'a-006-04', ts: '2026-04-26T22:35:00', kind: 'risk_flagged', actorId: 'system', detail: 'reservation_imminent' },
-      { id: 'a-006-05', ts: '2026-04-27T08:30:00', kind: 'status_changed', actorId: 'u-mathias', detail: 'todo → in_progress' },
+      { id: 'a-006-05', ts: '2026-04-27T08:30:00', kind: 'status_changed', actorId: 'u-mathias', detail: 'scheduled → in_progress' },
       { id: 'a-006-06', ts: '2026-04-27T08:45:00', kind: 'commented', actorId: 'u-mathias', detail: 'On site. Looks like compressor.' },
       { id: 'a-006-07', ts: '2026-04-27T08:50:00', kind: 'commented', actorId: 'u-franny', detail: '@Mathias need ETA before 11am' },
       { id: 'a-006-08', ts: '2026-04-27T09:18:00', kind: 'cost_added', actorId: 'u-mathias', detail: 'Rs 4,800 · Compressor parts (Coolbreeze)' },
@@ -598,7 +601,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'carpentry',
     priority: 'high',
-    status: 'awaiting_approval',
+    status: 'blocked',
     source: 'reported_issue',
     visibility: 'all',
     assigneeIds: ['u-alex'],
@@ -621,7 +624,7 @@ export const TASKS: Task[] = [
       { id: 'a-007-1', ts: '2026-04-26T14:30:00', kind: 'created', actorId: 'u-bryan', detail: 'Reported during pre-arrival inspection' },
       { id: 'a-007-2', ts: '2026-04-26T14:45:00', kind: 'assigned', actorId: 'u-bryan', detail: '→ Alex' },
       { id: 'a-007-3', ts: '2026-04-26T16:00:00', kind: 'commented', actorId: 'u-alex', detail: 'Verre Express quote Rs 8,200' },
-      { id: 'a-007-4', ts: '2026-04-26T16:01:00', kind: 'status_changed', actorId: 'u-alex', detail: 'todo → awaiting_approval' },
+      { id: 'a-007-4', ts: '2026-04-26T16:01:00', kind: 'status_changed', actorId: 'u-alex', detail: 'scheduled → blocked' },
     ],
     createdAt: '2026-04-26T14:30:00',
     updatedAt: '2026-04-26T16:00:00',
@@ -635,7 +638,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'plumbing',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'breezeway',
     visibility: 'all',
     assigneeIds: ['u-mathias'],
@@ -669,7 +672,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'carpentry',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'reported_issue',
     visibility: 'all',
     assigneeIds: ['u-alex'],
@@ -696,7 +699,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'low',
-    status: 'todo',
+    status: 'scheduled',
     source: 'manual',
     visibility: 'all',
     assigneeIds: ['u-ishant'],
@@ -723,7 +726,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'manual',
     visibility: 'all',
     assigneeIds: ['u-alex'],
@@ -765,7 +768,7 @@ export const TASKS: Task[] = [
     aiSuggestions: [],
     activityLog: [
       { id: 'a-012-1', ts: '2026-04-26T18:00:00', kind: 'created', actorId: 'u-alex' },
-      { id: 'a-012-2', ts: '2026-04-27T09:30:00', kind: 'status_changed', actorId: 'u-bryan', detail: 'todo → in_progress' },
+      { id: 'a-012-2', ts: '2026-04-27T09:30:00', kind: 'status_changed', actorId: 'u-bryan', detail: 'scheduled → in_progress' },
     ],
     createdAt: '2026-04-26T18:00:00',
     updatedAt: '2026-04-27T09:30:00',
@@ -810,7 +813,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'low',
-    status: 'todo',
+    status: 'scheduled',
     source: 'manual',
     visibility: 'all',
     assigneeIds: ['u-ishant'],
@@ -867,7 +870,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'manual',
     visibility: 'all',
     assigneeIds: ['u-mary', 'u-franny'],
@@ -894,7 +897,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'plumbing',
     priority: 'low',
-    status: 'todo',
+    status: 'scheduled',
     source: 'breezeway',
     visibility: 'all',
     assigneeIds: ['u-alex'],
@@ -951,7 +954,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'pool',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'recurring',
     visibility: 'all',
     assigneeIds: ['u-mathias'],
@@ -978,7 +981,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'garden',
     priority: 'low',
-    status: 'todo',
+    status: 'scheduled',
     source: 'recurring',
     visibility: 'all',
     assigneeIds: ['u-bryan'],
@@ -1035,7 +1038,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'low',
-    status: 'todo',
+    status: 'scheduled',
     source: 'manual',
     visibility: 'all',
     assigneeIds: ['u-ishant'],
@@ -1062,7 +1065,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'guest_services',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'recurring',
     visibility: 'all',
     assigneeIds: ['u-judith', 'u-franny'],
@@ -1088,7 +1091,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'plumbing',
     priority: 'high',
-    status: 'todo',
+    status: 'scheduled',
     source: 'inbox_ai',
     visibility: 'all',
     assigneeIds: [],
@@ -1118,7 +1121,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'guest_services',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'inbox_ai',
     visibility: 'all',
     assigneeIds: [],
@@ -1149,7 +1152,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'low',
-    status: 'todo',
+    status: 'scheduled',
     source: 'personal',
     visibility: 'self',
     assigneeIds: ['u-judith'],
@@ -1176,7 +1179,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'admin',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'personal',
     visibility: 'self',
     assigneeIds: ['u-franny'],
@@ -1205,7 +1208,7 @@ export const TASKS: Task[] = [
     department: 'office',
     subdepartment: 'guest_services',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'group_email',
     visibility: 'all',
     assigneeIds: ['u-mathias'],
@@ -1236,7 +1239,7 @@ export const TASKS: Task[] = [
     department: 'maintenance',
     subdepartment: 'electrical',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'group_email',
     visibility: 'all',
     assigneeIds: ['u-franny'],
@@ -1268,7 +1271,7 @@ export const TASKS: Task[] = [
     department: 'cleaning',
     subdepartment: 'standard_clean',
     priority: 'high',
-    status: 'todo',
+    status: 'scheduled',
     source: 'reservation_trigger',
     visibility: 'all',
     assigneeIds: ['u-catherine'],
@@ -1297,7 +1300,7 @@ export const TASKS: Task[] = [
     department: 'inspection',
     subdepartment: 'pre_arrival',
     priority: 'medium',
-    status: 'todo',
+    status: 'scheduled',
     source: 'reservation_trigger',
     visibility: 'all',
     assigneeIds: ['u-alex'],

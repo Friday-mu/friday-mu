@@ -8,7 +8,7 @@ import {
   type TaskComment,
   type TaskCost,
 } from '../../../_data/tasks';
-import { addComment, updateTask } from '../../../_data/breezeway';
+import { addComment, updateTask } from '../../../_data/tasksClient';
 import { FIN_EXPENSES } from '../../../_data/finance';
 import { useCurrentUserId, useCanAccess, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
@@ -44,12 +44,14 @@ const RISK_LABEL: Record<string, string> = {
 };
 
 const STATUS_LABEL: Record<Task['status'], string> = {
-  todo: 'To do',
+  reported: 'Reported',
+  scheduled: 'Scheduled',
+  ready: 'Ready',
   in_progress: 'In progress',
   paused: 'Paused',
-  reported: 'Reported',
-  awaiting_approval: 'Awaiting approval',
+  blocked: 'Blocked',
   completed: 'Completed',
+  closed: 'Closed',
   cancelled: 'Cancelled',
 };
 
@@ -171,9 +173,11 @@ function Header({
           Due {task.dueDate}{task.dueTime ? ` · ${task.dueTime}` : ''}
         </span>
       </div>
-      {onSetStatus && task.status !== 'completed' && (
+      {onSetStatus && task.status !== 'completed' && task.status !== 'closed' && task.status !== 'cancelled' && (
         <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {task.status === 'todo' && <button className="btn ghost sm" onClick={() => onSetStatus('in_progress')}>Start</button>}
+          {(task.status === 'reported' || task.status === 'scheduled' || task.status === 'ready') && (
+            <button className="btn ghost sm" onClick={() => onSetStatus('in_progress')}>Start</button>
+          )}
           {task.status === 'in_progress' && <button className="btn ghost sm" onClick={() => onSetStatus('paused')}>Pause</button>}
           {task.status === 'paused' && <button className="btn ghost sm" onClick={() => onSetStatus('in_progress')}>Resume</button>}
           <button className="btn primary sm" onClick={() => onSetStatus('completed')}>Mark complete</button>
