@@ -20,6 +20,8 @@ import type {
   Task,
   TaskComment,
   TaskCost,
+  TaskSupply,
+  TaskSupplyCategory,
   TaskStatus,
   TaskPriority,
   TaskSource,
@@ -67,6 +69,25 @@ interface ServerCost {
   created_at: string;
 }
 
+interface ServerSupply {
+  id: string;
+  task_id: string;
+  supply_id: string;
+  supply_name: string;
+  category: TaskSupplyCategory;
+  quantity: number;
+  unit: string;
+  location_code: string | null;
+  unit_cost_minor: number | null;
+  currency_code: string;
+  owner_charge: boolean;
+  stock_movement_id: string | null;
+  flowed_to_task_cost_id: string | null;
+  added_by_user_id: string | null;
+  added_by_display_name: string | null;
+  created_at: string;
+}
+
 interface ServerTask {
   id: string;
   tenant_id: string;
@@ -108,6 +129,7 @@ interface ServerTask {
   completed_at: string | null;
   comments?: ServerComment[];
   costs?: ServerCost[];
+  supplies?: ServerSupply[];
 }
 
 function mapComment(s: ServerComment): TaskComment {
@@ -132,6 +154,25 @@ function mapCost(s: ServerCost): TaskCost {
     addedBy: s.added_by_user_id || 'unknown',
     ownerCharge: s.owner_charge,
     flowedToFinanceExpenseId: s.flowed_to_finance_expense_id || undefined,
+  };
+}
+
+function mapSupply(s: ServerSupply): TaskSupply {
+  return {
+    id: s.id,
+    supplyId: s.supply_id,
+    supplyName: s.supply_name,
+    category: s.category,
+    quantity: Number(s.quantity || 0),
+    unit: s.unit,
+    locationCode: s.location_code || undefined,
+    unitCost: s.unit_cost_minor != null ? s.unit_cost_minor / 100 : undefined,
+    currency: s.currency_code as TaskSupply['currency'],
+    ownerCharge: s.owner_charge,
+    stockMovementId: s.stock_movement_id || undefined,
+    flowedToTaskCostId: s.flowed_to_task_cost_id || undefined,
+    addedBy: s.added_by_user_id || undefined,
+    createdAt: s.created_at,
   };
 }
 
@@ -169,6 +210,7 @@ function mapTask(s: ServerTask): Task {
     attachmentCount: s.attachment_count ?? 0,
     comments: (s.comments || []).map(mapComment),
     costs: (s.costs || []).map(mapCost),
+    supplies: (s.supplies || []).map(mapSupply),
     requirements: normalizeRequirements(s.requirements),
     requirementState: normalizeRequirementState(s.requirement_state || initialRequirementState()),
     isRecurring: s.is_recurring,
@@ -520,6 +562,38 @@ export async function addCost(input: AddCostInput): Promise<TaskCost> {
   })) as ServerCost;
   void fetchTask(input.taskId).then((t) => { if (t) replaceTaskInCache(t); }).catch(() => {});
   return mapCost(res);
+}
+
+export interface AddSupplyInput {
+  taskId: string;
+  supplyId: string;
+  supplyName: string;
+  category: TaskSupplyCategory;
+  quantity: number;
+  unit: string;
+  locationCode?: string;
+  unitCost?: number;
+  currency: TaskSupply['currency'];
+  ownerCharge: boolean;
+}
+
+export async function addSupply(input: AddSupplyInput): Promise<TaskSupply> {
+  const res = (await apiFetch(`/api/tasks/${encodeURIComponent(input.taskId)}/supplies`, {
+    method: 'POST',
+    body: JSON.stringify({
+      supply_id: input.supplyId,
+      supply_name: input.supplyName,
+      category: input.category,
+      quantity: input.quantity,
+      unit: input.unit,
+      location_code: input.locationCode,
+      unit_cost_minor: input.unitCost != null ? Math.round(input.unitCost * 100) : undefined,
+      currency_code: input.currency,
+      owner_charge: input.ownerCharge,
+    }),
+  })) as ServerSupply;
+  void fetchTask(input.taskId).then((t) => { if (t) replaceTaskInCache(t); }).catch(() => {});
+  return mapSupply(res);
 }
 
 export async function deleteCost(taskId: string, costId: string): Promise<void> {

@@ -15,6 +15,8 @@
 //   POST   /api/tasks/:id/comments                 add a comment
 //   POST   /api/tasks/:id/costs                    add a cost line
 //   DELETE /api/tasks/:taskId/costs/:costId        remove a cost line
+//   POST   /api/tasks/:id/supplies                 record supply use
+//   DELETE /api/tasks/:taskId/supplies/:supplyId   remove supply use
 //
 // Status set: reported / scheduled / ready / in_progress / paused /
 //             blocked / completed / closed / cancelled
@@ -31,7 +33,7 @@
 //   - bz_id             → Breezeway external id (when we sync)
 
 const express = require('express');
-const { query } = require('../database/client');
+const { pool, query } = require('../database/client');
 const { attachIdentity } = require('../auth/identity');
 
 const router = express.Router();
@@ -55,6 +57,9 @@ const VALID_COST_TYPE = new Set([
 ]);
 const VALID_REQUIREMENT_KIND = new Set([
   'check', 'photo', 'file', 'expense', 'supply', 'time', 'summary',
+]);
+const VALID_SUPPLY_CATEGORY = new Set([
+  'linen', 'amenity', 'cleaning', 'maintenance', 'welcome', 'consumable', 'other',
 ]);
 
 // Mig-050-era callers used todo/done. The cutover lifecycle keeps
@@ -111,7 +116,7 @@ function normaliseRequirementState(value) {
   };
 }
 
-function shapeTask(row, comments = [], costs = []) {
+function shapeTask(row, comments = [], costs = [], supplies = []) {
   if (!row) return null;
   return {
     id: row.id,
@@ -154,6 +159,7 @@ function shapeTask(row, comments = [], costs = []) {
     completed_at: row.completed_at,
     comments,
     costs,
+    supplies,
   };
 }
 
@@ -186,6 +192,41 @@ function shapeCost(row) {
     flowed_to_finance_expense_id: row.flowed_to_finance_expense_id,
     created_at: row.created_at,
   };
+}
+
+function shapeSupply(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    task_id: row.task_id,
+    supply_id: row.supply_id,
+    supply_name: row.supply_name,
+    category: row.category,
+    quantity: row.quantity != null ? Number(row.quantity) : 0,
+    unit: row.unit,
+    location_code: row.location_code,
+    unit_cost_minor: row.unit_cost_minor != null ? Number(row.unit_cost_minor) : null,
+    currency_code: row.currency_code,
+    owner_charge: row.owner_charge,
+    stock_movement_id: row.stock_movement_id,
+    flowed_to_task_cost_id: row.flowed_to_task_cost_id,
+    added_by_user_id: row.added_by_user_id,
+    added_by_display_name: row.added_by_display_name,
+    created_at: row.created_at,
+  };
+}
+
+function parsePositiveQuantity(value) {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  return Math.round(quantity * 100) / 100;
+}
+
+function parseOptionalMinor(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const amount = Math.round(Number(value));
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return amount;
 }
 
 // Resolve a UUID[] of assignee_user_ids to a parallel array of
@@ -233,6 +274,18 @@ async function loadCosts(taskId, tenantId) {
     [taskId, tenantId],
   );
   return rows.map(shapeCost);
+}
+
+async function loadSupplies(taskId, tenantId) {
+  const { rows } = await query(
+    `SELECT s.*, u.display_name AS added_by_display_name
+     FROM task_supplies s
+     LEFT JOIN users u ON u.id = s.added_by_user_id
+     WHERE s.task_id = $1 AND s.tenant_id = $2
+     ORDER BY s.created_at ASC`,
+    [taskId, tenantId],
+  );
+  return rows.map(shapeSupply);
 }
 
 // Append a single entry to the JSONB activity_log on a task. Best-
@@ -356,11 +409,12 @@ router.get('/:id', attachIdentity, async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Task not found' });
     const [hydrated] = await hydrateAssignees(rows);
-    const [comments, costs] = await Promise.all([
+    const [comments, costs, supplies] = await Promise.all([
       loadComments(req.params.id, req.tenantId),
       loadCosts(req.params.id, req.tenantId),
+      loadSupplies(req.params.id, req.tenantId),
     ]);
-    res.json(shapeTask(hydrated, comments, costs));
+    res.json(shapeTask(hydrated, comments, costs, supplies));
   } catch (e) {
     console.error('[tasks] get error:', e.message);
     res.status(500).json({ error: e.message });
@@ -397,11 +451,12 @@ router.post('/', attachIdentity, async (req, res) => {
       );
       if (existing.length > 0) {
         const [hydrated] = await hydrateAssignees(existing);
-        const [comments, costs] = await Promise.all([
+        const [comments, costs, supplies] = await Promise.all([
           loadComments(hydrated.id, req.tenantId),
           loadCosts(hydrated.id, req.tenantId),
+          loadSupplies(hydrated.id, req.tenantId),
         ]);
-        return res.status(200).json(shapeTask(hydrated, comments, costs));
+        return res.status(200).json(shapeTask(hydrated, comments, costs, supplies));
       }
     }
 
@@ -472,7 +527,7 @@ router.post('/', attachIdentity, async (req, res) => {
       detail: `Task created from ${created.source}`,
     });
     const [hydrated] = await hydrateAssignees([created]);
-    res.status(201).json(shapeTask(hydrated, [], []));
+    res.status(201).json(shapeTask(hydrated, [], [], []));
   } catch (e) {
     if (e.code === '23505' && req.body?.external_ref) {
       try {
@@ -482,7 +537,12 @@ router.post('/', attachIdentity, async (req, res) => {
         );
         if (rows.length > 0) {
           const [hydrated] = await hydrateAssignees(rows);
-          return res.status(200).json(shapeTask(hydrated));
+          const [comments, costs, supplies] = await Promise.all([
+            loadComments(hydrated.id, req.tenantId),
+            loadCosts(hydrated.id, req.tenantId),
+            loadSupplies(hydrated.id, req.tenantId),
+          ]);
+          return res.status(200).json(shapeTask(hydrated, comments, costs, supplies));
         }
       } catch (lookupError) {
         console.error('[tasks] idempotency lookup failed:', lookupError.message);
@@ -713,6 +773,195 @@ router.delete('/:taskId/costs/:costId', attachIdentity, async (req, res) => {
   } catch (e) {
     console.error('[tasks/costs] delete error:', e.message);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Supplies + inventory movements ─────────────────────────────
+router.post('/:id/supplies', attachIdentity, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const body = req.body || {};
+    const supplyId = cleanText(body.supply_id, '');
+    const supplyName = cleanText(body.supply_name, '');
+    const category = cleanText(body.category, 'other');
+    const quantity = parsePositiveQuantity(body.quantity);
+    const unit = cleanText(body.unit, '');
+    const locationCode = cleanText(body.location_code, '') || null;
+    const currency = cleanText(body.currency_code, 'MUR').toUpperCase();
+    const unitCostMinor = parseOptionalMinor(body.unit_cost_minor);
+
+    if (!supplyId) return res.status(400).json({ error: 'supply_id is required' });
+    if (!supplyName) return res.status(400).json({ error: 'supply_name is required' });
+    if (!VALID_SUPPLY_CATEGORY.has(category)) return res.status(400).json({ error: `invalid supply category: ${category}` });
+    if (quantity === null) return res.status(400).json({ error: 'quantity must be a positive number' });
+    if (!unit) return res.status(400).json({ error: 'unit is required' });
+    if (!currency) return res.status(400).json({ error: 'currency_code is required' });
+
+    await client.query('BEGIN');
+    const { rows: taskRows } = await client.query(
+      `SELECT id FROM tasks WHERE tenant_id = $1 AND id = $2`,
+      [req.tenantId, req.params.id],
+    );
+    if (taskRows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const { rows: movementRows } = await client.query(
+      `INSERT INTO stock_movements (
+         tenant_id, task_id, supply_id, supply_name, location_code,
+         quantity_delta, unit, reason, created_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'task_use', $8)
+       RETURNING *`,
+      [
+        req.tenantId,
+        req.params.id,
+        supplyId,
+        supplyName,
+        locationCode,
+        -quantity,
+        unit,
+        req.identity?.userId || null,
+      ],
+    );
+
+    let costId = null;
+    const ownerCharge = body.owner_charge === true;
+    if (ownerCharge && unitCostMinor !== null && unitCostMinor > 0) {
+      const amountMinor = Math.round(quantity * unitCostMinor);
+      const { rows: costRows } = await client.query(
+        `INSERT INTO task_costs (
+           task_id, tenant_id, type, amount_minor, currency_code,
+           description, added_by_user_id, owner_charge
+         )
+         VALUES ($1, $2, 'material', $3, $4, $5, $6, TRUE)
+         RETURNING id`,
+        [
+          req.params.id,
+          req.tenantId,
+          amountMinor,
+          currency,
+          `Supply: ${supplyName} x ${quantity} ${unit}`,
+          req.identity?.userId || null,
+        ],
+      );
+      costId = costRows[0]?.id || null;
+    }
+
+    const { rows } = await client.query(
+      `INSERT INTO task_supplies (
+         task_id, tenant_id, supply_id, supply_name, category,
+         quantity, unit, location_code, unit_cost_minor, currency_code,
+         owner_charge, stock_movement_id, flowed_to_task_cost_id,
+         added_by_user_id
+       )
+       VALUES (
+         $1, $2, $3, $4, $5,
+         $6, $7, $8, $9, $10,
+         $11, $12, $13,
+         $14
+       )
+       RETURNING *`,
+      [
+        req.params.id,
+        req.tenantId,
+        supplyId,
+        supplyName,
+        category,
+        quantity,
+        unit,
+        locationCode,
+        unitCostMinor,
+        currency,
+        ownerCharge,
+        movementRows[0].id,
+        costId,
+        req.identity?.userId || null,
+      ],
+    );
+    await client.query('COMMIT');
+
+    void appendActivity(req.params.id, req.tenantId, {
+      kind: 'supply_used',
+      actorId: req.identity?.userId || 'system',
+      detail: `${supplyName}: ${quantity} ${unit}`,
+    });
+    const { rows: joined } = await query(
+      `SELECT s.*, u.display_name AS added_by_display_name
+       FROM task_supplies s
+       LEFT JOIN users u ON u.id = s.added_by_user_id
+       WHERE s.id = $1`,
+      [rows[0].id],
+    );
+    res.status(201).json(shapeSupply(joined[0]));
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[tasks/supplies] create error:', e.message);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.delete('/:taskId/supplies/:supplyId', attachIdentity, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT *
+       FROM task_supplies
+       WHERE id = $1 AND task_id = $2 AND tenant_id = $3
+       FOR UPDATE`,
+      [req.params.supplyId, req.params.taskId, req.tenantId],
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Supply line not found' });
+    }
+    const supply = rows[0];
+    await client.query(
+      `DELETE FROM task_supplies WHERE id = $1 AND task_id = $2 AND tenant_id = $3`,
+      [req.params.supplyId, req.params.taskId, req.tenantId],
+    );
+    if (supply.flowed_to_task_cost_id) {
+      await client.query(
+        `DELETE FROM task_costs
+         WHERE id = $1 AND task_id = $2 AND tenant_id = $3`,
+        [supply.flowed_to_task_cost_id, req.params.taskId, req.tenantId],
+      );
+    }
+    await client.query(
+      `INSERT INTO stock_movements (
+         tenant_id, task_id, supply_id, supply_name, location_code,
+         quantity_delta, unit, reason, created_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'task_supply_removed', $8)`,
+      [
+        req.tenantId,
+        req.params.taskId,
+        supply.supply_id,
+        supply.supply_name,
+        supply.location_code,
+        Number(supply.quantity),
+        supply.unit,
+        req.identity?.userId || null,
+      ],
+    );
+    await client.query('COMMIT');
+
+    void appendActivity(req.params.taskId, req.tenantId, {
+      kind: 'updated',
+      actorId: req.identity?.userId || 'system',
+      detail: `Removed supply: ${supply.supply_name}`,
+    });
+    res.status(204).end();
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[tasks/supplies] delete error:', e.message);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
   }
 });
 

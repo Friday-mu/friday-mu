@@ -1,0 +1,219 @@
+- generic [active] [ref=e1] [box=0,0,1440,900]:
+  - generic [ref=e2] [box=0,0,1440,900]:
+    - banner [ref=e3] [box=0,0,1440,48]:
+      - generic [ref=e4] [box=0,8,232,32]:
+        - button "Toggle sidebar" [ref=e5] [cursor=pointer] [box=0,8,32,32]:
+          - img [ref=e6] [box=8,16,16,16]
+        - button "Friday friday.mu Admin" [ref=e621] [cursor=pointer] [box=40,4,116,40]:
+          - img "Friday" [ref=e9] [box=44,8,32,32]
+          - generic [ref=e10] [box=86,10,62,27]:
+            - text: friday.mu
+            - generic [ref=e11] [box=86,26,38,11]: Admin
+      - button "Search or Ask Friday… ⌘K" [ref=e622] [cursor=pointer] [box=410,6,560,35]:
+        - img [ref=e14] [box=425,17,14,14]
+        - generic [ref=e17] [box=449,14,140,20]: Search or Ask Friday…
+        - generic [ref=e18] [box=932,13,27,21]: ⌘K
+      - generic [ref=e19] [box=1148,8,292,32]:
+        - button "View as · Director" [ref=e21] [cursor=pointer] [box=1148,8,112,32]
+        - button "Ask Friday ⌘/" [ref=e22] [cursor=pointer] [box=1264,8,32,32]:
+          - img [ref=e23] [box=1272,16,16,16]
+        - button "17" [ref=e26] [cursor=pointer] [box=1300,8,32,32]:
+          - img [ref=e27] [box=1308,16,16,16]
+          - generic [ref=e31] [box=1313,10,17,14]: "17"
+        - button "Help" [ref=e33] [cursor=pointer] [box=1336,8,32,32]:
+          - img [ref=e34] [box=1344,16,16,16]
+        - button "Switch to dark" [ref=e37] [cursor=pointer] [box=1372,8,32,32]:
+          - img [ref=e38] [box=1380,16,16,16]
+        - button "JF" [ref=e41] [cursor=pointer] [box=1412,10,28,28]
+    - generic [ref=e42] [box=0,48,1440,852]:
+      - complementary [ref=e43] [box=0,48,232,852]:
+        - generic [ref=e44] [box=0,48,231,1241]:
+          - button "Ask Friday" [ref=e45] [cursor=pointer] [box=8,56,215,41]:
+            - img [ref=e47] [box=19,69,16,16]
+            - generic [ref=e49] [box=45,66,145,21]: Ask Friday
+            - img [ref=e51] [box=200,71,12,12]
+          - generic [ref=e54] [box=8,120,215,427]:
+            - generic [ref=e56] [box=18,126,44,18]: Today
+            - button "Inbox 8 pending" [ref=e58] [cursor=pointer] [box=8,148,215,34]
+            - generic [ref=e65] [box=8,182,215,325]
+            - button "Calendar 1 pending" [ref=e96] [cursor=pointer] [box=8,513,215,34]
+          - generic [ref=e103] [box=8,557,215,115]:
+            - generic [ref=e104] [box=8,557,215,38]: Manage
+            - generic [ref=e106] [box=18,599,60,15]: Portfolio
+            - button "Properties 1 pending" [ref=e108] [cursor=pointer] [box=8,616,215,28]
+            - button "Reservations 1 pending" [ref=e116] [cursor=pointer] [box=8,644,215,28]
+          - generic [ref=e122] [box=8,680,215,77]:
+            - generic [ref=e124] [box=18,684,53,15]: Business
+            - button "Finance 6 pending" [ref=e126] [cursor=pointer] [box=8,701,215,28]
+            - button "Legal & Admin" [ref=e136] [cursor=pointer] [box=8,729,215,28]
+          - generic [ref=e141] [box=8,765,215,133]:
+            - generic [ref=e143] [box=18,769,41,15]: People
+            - button "Guests" [ref=e145] [cursor=pointer] [box=8,786,215,28]
+            - button "Owners" [ref=e152] [cursor=pointer] [box=8,814,215,28]
+            - button "Reviews 3 pending" [ref=e159] [cursor=pointer] [box=8,842,215,28]
+            - button "HR" [ref=e166] [cursor=pointer] [box=8,870,215,28]
+          - generic [ref=e174] [box=8,906,215,133]:
+            - generic [ref=e176] [box=18,910,48,15]: Growth
+            - button "Marketing" [ref=e178] [cursor=pointer] [box=8,927,215,28]
+            - button "Leads / CRM-lite" [ref=e185] [cursor=pointer] [box=8,955,215,28]
+            - button "Analytics" [ref=e193] [cursor=pointer] [box=8,983,215,28]
+            - button "Intelligence" [ref=e200] [cursor=pointer] [box=8,1011,215,28]
+          - generic [ref=e205] [box=8,1047,215,105]:
+            - generic [ref=e207] [box=18,1051,89,15]: Business Units
+            - button "Syndic" [ref=e209] [cursor=pointer] [box=8,1068,215,28]
+            - button "Interior" [ref=e217] [cursor=pointer] [box=8,1096,215,28]
+            - button "Agency" [ref=e224] [cursor=pointer] [box=8,1124,215,28]
+          - generic [ref=e230] [box=8,1160,215,105]:
+            - generic [ref=e232] [box=18,1164,44,15]: System
+            - button "Notifications" [ref=e234] [cursor=pointer] [box=8,1181,215,28]
+            - button "Training" [ref=e241] [cursor=pointer] [box=8,1209,215,28]
+            - button "Settings" [ref=e248] [cursor=pointer] [box=8,1237,215,28]
+      - main [ref=e254] [box=232,48,1208,852]:
+        - generic [ref=e255] [box=232,48,1208,852]:
+          - generic [ref=e256] [box=232,48,1208,143]:
+            - generic [ref=e257] [box=264,72,1035,118]
+            - button "New task" [ref=e272] [cursor=pointer] [box=1315,148,93,28]
+          - generic [ref=e276] [box=232,191,1208,709]:
+            - generic [ref=e277] [box=232,191,1208,125]
+            - generic [ref=e290] [box=232,316,1208,584]
+          - complementary [ref=e358] [box=1020,0,420,900]:
+            - generic [ref=e359] [box=1021,0,419,900]
+    - complementary [ref=e312] [box=1440,0,420,900]:
+      - generic [ref=e313] [box=1441,0,419,48]:
+        - img [ref=e314] [box=1457,16,15,16]
+        - generic [ref=e316] [box=1482,4,61,39]: Ask Friday
+        - generic [ref=e317] [box=1561,4,203,39]: scope · Operations · All tasks
+        - button [ref=e318] [cursor=pointer] [box=1774,8,30,32]:
+          - img [ref=e319] [box=1781,16,16,16]
+        - button [ref=e321] [cursor=pointer] [box=1814,8,30,32]:
+          - img [ref=e322] [box=1821,16,16,16]
+      - generic [ref=e325] [box=1455,60,391,399]:
+        - generic [ref=e326] [box=1459,72,383,21]: Hi Judith — ask me anything.
+        - generic [ref=e327] [box=1459,97,383,36]: I'll pull from Inbox, Finance, Calendar, Operations, and the module you're viewing.
+        - generic [ref=e328] [box=1459,151,383,296]:
+          - generic [ref=e329] [box=1459,151,383,141]:
+            - generic [ref=e330] [box=1459,151,383,15]: Today
+            - button [ref=e331] [cursor=pointer] [box=1459,172,383,36]: What needs my attention today?
+            - button [ref=e332] [cursor=pointer] [box=1459,212,383,36]: Who's checking in this week?
+            - button [ref=e333] [cursor=pointer] [box=1459,252,383,36]: Any overdue tasks?
+          - generic [ref=e334] [box=1459,306,383,141]:
+            - generic [ref=e335] [box=1459,306,383,15]: Finance
+            - button [ref=e336] [cursor=pointer] [box=1459,327,383,36]: How much tourist tax do we owe for April?
+            - button [ref=e337] [cursor=pointer] [box=1459,367,383,36]: Show Nitzana YTD payouts
+            - button [ref=e338] [cursor=pointer] [box=1459,407,383,36]: List all pending refunds
+      - generic [ref=e339] [box=1441,838,419,63]:
+        - textbox [ref=e340] [box=1457,851,335,38]:
+          - /placeholder: Ask about operations · all tasks, or anything else…
+        - button [ref=e341] [cursor=pointer] [box=1800,851,44,38]:
+          - img [ref=e342] [box=1815,862,14,14]
+    - generic [box=0,0,1440,900]:
+      - generic [box=440,112,560,448]:
+        - generic [box=441,113,558,46]:
+          - img [box=457,128,16,16]
+          - textbox "Jump to module or ask Friday…" [box=483,125,470,21]
+          - generic [box=963,127,20,17]: esc
+        - generic [box=441,159,558,400]:
+          - generic [box=445,163,550,29]: Results
+          - button "Inbox Today" [box=445,192,550,36]:
+            - img [box=455,203,14,14]
+            - generic [box=479,200,34,20]: Inbox
+            - generic [box=952,202,33,17]: Today
+          - button "Operations Today" [box=445,228,550,36]:
+            - img [box=455,238,14,14]
+            - generic [box=479,236,67,20]: Operations
+            - generic [box=952,237,33,17]: Today
+          - button "Calendar Today" [box=445,263,550,36]:
+            - img [box=455,274,14,14]
+            - generic [box=479,271,55,20]: Calendar
+            - generic [box=952,273,33,17]: Today
+          - button "Properties Portfolio" [box=445,299,550,36]:
+            - img [box=455,309,14,14]
+            - generic [box=479,307,63,20]: Properties
+            - generic [box=926,308,59,17]: Portfolio
+          - button "Reservations Portfolio" [box=445,334,550,36]:
+            - img [box=455,345,14,14]
+            - generic [box=479,342,80,20]: Reservations
+            - generic [box=926,344,59,17]: Portfolio
+          - button "Finance Business" [box=445,370,550,36]:
+            - img [box=455,380,14,14]
+            - generic [box=479,378,49,20]: Finance
+            - generic [box=932,379,53,17]: Business
+          - button "Legal & Admin Business" [box=445,405,550,36]:
+            - img [box=455,416,14,14]
+            - generic [box=479,413,88,20]: Legal & Admin
+            - generic [box=932,415,53,17]: Business
+          - button "Guests People" [box=445,441,550,36]:
+            - img [box=455,451,14,14]
+            - generic [box=479,449,43,20]: Guests
+            - generic [box=945,450,40,17]: People
+          - button "Owners People" [box=445,476,550,36]:
+            - img [box=455,487,14,14]
+            - generic [box=479,484,48,20]: Owners
+            - generic [box=945,486,40,17]: People
+          - button "Reviews People" [box=445,512,550,36]:
+            - img [box=455,522,14,14]
+            - generic [box=479,520,51,20]: Reviews
+            - generic [box=945,521,40,17]: People
+          - button "HR People" [box=445,547,550,36]:
+            - img [box=455,558,14,14]
+            - generic [box=479,555,18,20]: HR
+            - generic [box=945,557,40,17]: People
+          - button "Marketing Growth" [box=445,583,550,36]:
+            - img [box=455,593,14,14]
+            - generic [box=479,591,62,20]: Marketing
+            - generic [box=945,592,40,17]: Growth
+          - button "Leads / CRM-lite Growth" [box=445,618,550,36]:
+            - img [box=455,629,14,14]
+            - generic [box=479,626,103,20]: Leads / CRM-lite
+            - generic [box=945,628,40,17]: Growth
+          - button "Analytics Growth" [box=445,654,550,36]:
+            - img [box=455,664,14,14]
+            - generic [box=479,662,56,20]: Analytics
+            - generic [box=945,663,40,17]: Growth
+          - button "Intelligence Growth" [box=445,689,550,36]:
+            - img [box=455,700,14,14]
+            - generic [box=479,697,71,20]: Intelligence
+            - generic [box=945,699,40,17]: Growth
+          - button "Syndic Units" [box=445,725,550,36]:
+            - img [box=455,735,14,14]
+            - generic [box=479,733,42,20]: Syndic
+            - generic [box=952,734,33,17]: Units
+          - button "Interior Units" [box=445,760,550,36]:
+            - img [box=455,771,14,14]
+            - generic [box=479,768,44,20]: Interior
+            - generic [box=952,770,33,17]: Units
+          - button "Agency Units" [box=445,796,550,36]:
+            - img [box=455,806,14,14]
+            - generic [box=479,804,47,20]: Agency
+            - generic [box=952,805,33,17]: Units
+          - button "Notifications System" [box=445,831,550,36]:
+            - img [box=455,842,14,14]
+            - generic [box=479,839,78,20]: Notifications
+            - generic [box=945,841,40,17]: System
+          - button "Training System" [box=445,867,550,36]:
+            - img [box=455,877,14,14]
+            - generic [box=479,875,49,20]: Training
+            - generic [box=945,876,40,17]: System
+          - button "Settings System" [box=445,902,550,36]:
+            - img [box=455,913,14,14]
+            - generic [box=479,910,50,20]: Settings
+            - generic [box=945,912,40,17]: System
+          - button "Ask Friday about this view ⌘/" [box=445,938,550,36]:
+            - img [box=455,948,14,14]
+            - generic [box=479,946,161,20]: Ask Friday about this view
+            - generic [box=972,947,13,17]: ⌘/
+          - button "New task action" [box=445,973,550,36]:
+            - img [box=455,984,14,14]
+            - generic [box=479,981,57,20]: New task
+            - generic [box=945,983,40,17]: action
+          - button "New message action" [box=445,1009,550,36]:
+            - img [box=455,1019,14,14]
+            - generic [box=479,1017,87,20]: New message
+            - generic [box=945,1018,40,17]: action
+          - button "Toggle light / dark prefs" [box=445,1044,550,36]:
+            - img [box=455,1055,14,14]
+            - generic [box=479,1052,111,20]: Toggle light / dark
+            - generic [box=952,1054,33,17]: prefs
+  - button "Open Next.js Dev Tools" [ref=e352] [cursor=pointer] [box=22,846,32,32]:
+    - img [ref=e353] [box=22,842,40,40]
+  - alert [ref=e356] [box=-1,899,1,1]

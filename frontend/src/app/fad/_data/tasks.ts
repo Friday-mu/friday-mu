@@ -71,6 +71,7 @@ export type ActivityKind =
   | 'priority_changed'
   | 'commented'
   | 'cost_added'
+  | 'supply_used'
   | 'risk_flagged'
   | 'ai_suggested'
   | 'approved'
@@ -303,6 +304,32 @@ export interface TaskCost {
   flowedToFinanceExpenseId?: string;
 }
 
+export type TaskSupplyCategory =
+  | 'linen'
+  | 'amenity'
+  | 'cleaning'
+  | 'maintenance'
+  | 'welcome'
+  | 'consumable'
+  | 'other';
+
+export interface TaskSupply {
+  id: string;
+  supplyId: string;
+  supplyName: string;
+  category: TaskSupplyCategory;
+  quantity: number;
+  unit: string;
+  locationCode?: string;
+  unitCost?: number;
+  currency: 'MUR' | 'EUR';
+  ownerCharge?: boolean;
+  stockMovementId?: string;
+  flowedToTaskCostId?: string;
+  addedBy?: string;
+  createdAt?: string;
+}
+
 export type TaskRequirementKind =
   | 'check'
   | 'photo'
@@ -363,6 +390,7 @@ export interface Task {
   attachmentCount: number;
   comments: TaskComment[];
   costs: TaskCost[];
+  supplies?: TaskSupply[];
   requirements?: TaskRequirement[];
   requirementState?: TaskRequirementState;
   isRecurring?: boolean;

@@ -10,6 +10,7 @@ import {
   type TaskCost,
   type TaskRequirement,
   type TaskRequirementState,
+  type TaskSupply,
 } from '../../../_data/tasks';
 import { addComment, updateTask } from '../../../_data/tasksClient';
 import {
@@ -24,6 +25,7 @@ import { useCurrentUserId, useCanAccess, usePermissions } from '../../usePermiss
 import { fireToast } from '../../Toaster';
 import { IconClose, IconExpand, IconPlus, IconSparkle } from '../../icons';
 import { AddCostDrawer } from './AddCostDrawer';
+import { AddSupplyDrawer } from './AddSupplyDrawer';
 import { useAITelemetry, type AISurface } from '../../ai/useAITelemetry';
 import { AIConfidenceChip } from '../../ai/AIComponents';
 import { RISK_FLAG_EXPLANATIONS, pickFromPool } from '../../../_data/aiFixtures';
@@ -41,6 +43,11 @@ import {
   publishTaskCommentMentionBridge,
   resolveTaskCommentMentions,
 } from '../../../_data/taskCommentBridge';
+import {
+  stockLocationLabel,
+  suggestSupplyLoadout,
+  type SupplyLoadoutItem,
+} from '../../../_data/supplies';
 
 interface DetailProps {
   task: Task;
@@ -85,6 +92,12 @@ interface EvidenceItem {
   type: string;
 }
 
+interface SupplyPrefill {
+  supplyId: string;
+  quantity?: number;
+  locationCode?: string;
+}
+
 // Status + priority badges resolve through the palette helper so dark mode
 // auto-flips and the design system stays single-sourced.
 const statusBadgeFor = (s: Task['status']) => toneStyle(taskStatusTone(s));
@@ -102,6 +115,8 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   const [completionSummary, setCompletionSummary] = useState(() => latestExecutionSummary(task));
   const [aiSummaryShown, setAiSummaryShown] = useState(false);
   const [addCostOpen, setAddCostOpen] = useState(false);
+  const [addSupplyOpen, setAddSupplyOpen] = useState(false);
+  const [supplyPrefill, setSupplyPrefill] = useState<SupplyPrefill | null>(null);
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [queuedStatus, setQueuedStatus] = useState<Task['status'] | null>(null);
@@ -161,10 +176,11 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     attachmentCount: task.attachmentCount,
     queuedEvidenceCount: evidenceQueue.length,
     costCount: task.costs.length,
+    supplyCount: task.supplies?.length ?? 0,
     elapsedSeconds,
     spentMinutes: spentMinutesForPatch(),
     summary: completionSummary,
-  }), [completionSummary, elapsedSeconds, evidenceQueue.length, task.attachmentCount, task.costs.length, task.spentMinutes]);
+  }), [completionSummary, elapsedSeconds, evidenceQueue.length, task.attachmentCount, task.costs.length, task.spentMinutes, task.supplies?.length]);
 
   const missingCompletionRequirements = useMemo(() => (
     missingRequiredRequirements(requirements, requirementState, completionSignals)
@@ -289,6 +305,11 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     setSyncError('Evidence is queued locally; upload is not yet persisted.');
   };
 
+  const openAddSupply = (item?: SupplyLoadoutItem) => {
+    setSupplyPrefill(item ? { supplyId: item.id, quantity: item.quantity } : null);
+    setAddSupplyOpen(true);
+  };
+
   return (
     <div className="ops-task-detail-root">
       <Header
@@ -317,6 +338,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           setCloseArmed={setCloseArmed}
           canSeeFinance={canSeeFinance}
           onAddCost={() => setAddCostOpen(true)}
+          onAddSupply={openAddSupply}
           elapsedSeconds={elapsedSeconds}
           completionSummary={completionSummary}
           setCompletionSummary={setCompletionSummary}
@@ -361,6 +383,17 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
         onClose={() => setAddCostOpen(false)}
         onAdded={() => {
           setAddCostOpen(false);
+          onBumpRev();
+        }}
+      />
+      <AddSupplyDrawer
+        open={addSupplyOpen}
+        task={task}
+        initialSupply={supplyPrefill}
+        onClose={() => setAddSupplyOpen(false)}
+        onAdded={() => {
+          setAddSupplyOpen(false);
+          setSupplyPrefill(null);
           onBumpRev();
         }}
       />
@@ -472,6 +505,7 @@ function Body({
   setCloseArmed,
   canSeeFinance,
   onAddCost,
+  onAddSupply,
   elapsedSeconds,
   completionSummary,
   setCompletionSummary,
@@ -503,6 +537,7 @@ function Body({
   setCloseArmed: (v: boolean) => void;
   canSeeFinance: boolean;
   onAddCost: () => void;
+  onAddSupply: (item?: SupplyLoadoutItem) => void;
   elapsedSeconds: number;
   completionSummary: string;
   setCompletionSummary: (v: string) => void;
@@ -631,6 +666,8 @@ function Body({
       )}
 
       <CostLines task={task} canEdit={canEdit} canSeeFinance={canSeeFinance} onAddCost={onAddCost} />
+
+      <SupplyLines task={task} canEdit={canEdit} onAddSupply={onAddSupply} />
 
       <Section title="Activity">
         <ActivityLog entries={task.activityLog} />
@@ -1067,6 +1104,108 @@ function DetailPair({ label, value, mono }: { label: string; value: string; mono
     <div>
       <span>{label}</span>
       <strong className={mono ? 'mono' : undefined}>{value}</strong>
+    </div>
+  );
+}
+
+function SupplyLines({
+  task,
+  canEdit,
+  onAddSupply,
+}: {
+  task: Task;
+  canEdit: boolean;
+  onAddSupply: (item?: SupplyLoadoutItem) => void;
+}) {
+  const supplies = task.supplies || [];
+  const usedSupplyIds = new Set(supplies.map((supply) => supply.supplyId));
+  const loadout = suggestSupplyLoadout(task).filter((item) => !usedSupplyIds.has(item.id));
+  const ownerBillable = supplies.filter((supply) => supply.ownerCharge);
+  return (
+    <Section title={`Supplies · ${supplies.length}`}>
+      <div className="ops-supplies-panel">
+        {loadout.length > 0 && (
+          <div className="ops-supply-loadout" aria-label="Suggested supply loadout">
+            <div className="ops-supply-loadout-head">
+              <span>Suggested SRL / welcome loadout</span>
+              <small>Based on property capacity and task type.</small>
+            </div>
+            <div className="ops-supply-loadout-grid">
+              {loadout.map((item) => (
+                <div className="ops-supply-loadout-item" key={item.id}>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{formatQuantity(item.quantity)} {item.unit} · {item.reason}</span>
+                  </div>
+                  {canEdit && (
+                    <button type="button" className="btn ghost sm" onClick={() => onAddSupply(item)}>
+                      Add
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {supplies.length === 0 && (
+          <div className="ops-supply-empty">
+            No supplies recorded yet.
+          </div>
+        )}
+
+        {supplies.map((supply) => (
+          <SupplyRow key={supply.id} supply={supply} />
+        ))}
+
+        {ownerBillable.length > 0 && (
+          <div className="ops-supply-finance-note">
+            {ownerBillable.length} owner-billable supply line{ownerBillable.length === 1 ? '' : 's'} recorded for Finance review.
+          </div>
+        )}
+
+        {canEdit && (
+          <button className="btn ghost sm ops-supply-add-btn" onClick={() => onAddSupply()}>
+            <IconPlus size={11} /> Add supply
+          </button>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function SupplyRow({ supply }: { supply: TaskSupply }) {
+  const addedBy = supply.addedBy ? TASK_USER_BY_ID[supply.addedBy] : undefined;
+  const lineValue = supply.unitCost != null ? supply.quantity * supply.unitCost : 0;
+  return (
+    <div className="ops-supply-row">
+      <div className="ops-supply-row-main">
+        <span className="ops-supply-category">{supply.category}</span>
+        <div>
+          <strong>{supply.supplyName}</strong>
+          <small>
+            {formatQuantity(supply.quantity)} {supply.unit}
+            {' · '}
+            {stockLocationLabel(supply.locationCode)}
+          </small>
+        </div>
+      </div>
+      <div className="ops-supply-row-meta">
+        {supply.unitCost != null && (
+          <span className="mono">
+            {lineValue.toLocaleString('en-MU')} {supply.currency}
+          </span>
+        )}
+        {supply.ownerCharge && (
+          <span className="chip ops-supply-owner-chip" title="Owner-billable supply">
+            OWNER
+          </span>
+        )}
+        {supply.flowedToTaskCostId && (
+          <span>Cost line created</span>
+        )}
+        {addedBy && <span>{addedBy.name.split(' ')[0]}</span>}
+      </div>
     </div>
   );
 }
@@ -1517,8 +1656,12 @@ function requirementStatusText(
   signals: CompletionSignals,
 ): string {
   if (state.waivedIds.includes(requirement.id)) return 'Waived by manager.';
-  if (requirement.kind === 'check' || requirement.kind === 'supply') {
+  if (requirement.kind === 'check') {
     return state.completedIds.includes(requirement.id) ? 'Marked complete.' : 'Needs manual confirmation.';
+  }
+  if (requirement.kind === 'supply') {
+    if (signals.supplyCount > 0) return `${signals.supplyCount} supply line${signals.supplyCount === 1 ? '' : 's'} recorded.`;
+    return state.completedIds.includes(requirement.id) ? 'Marked complete.' : 'Record a supply line or mark manually.';
   }
   if (requirement.kind === 'photo' || requirement.kind === 'file') {
     const count = signals.attachmentCount + signals.queuedEvidenceCount;
@@ -1549,6 +1692,11 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatQuantity(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(2).replace(/\.?0+$/, '');
 }
 
 function formatActivityTime(ts: string): string {

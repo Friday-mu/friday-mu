@@ -1,0 +1,35 @@
+{
+  "flow": "Operations task detail -> suggested supply loadout -> Add supply drawer -> owner-billable supply line -> completion",
+  "url": "http://127.0.0.1:3022/fad?m=operations&sub=all&task=qa-supply-1",
+  "api": "http://127.0.0.1:3334 mock task API",
+  "browserPluginInteraction": {
+    "pageIdentity": "Friday Admin Dashboard",
+    "consoleErrors": 0,
+    "consoleWarnings": 0,
+    "stateChecks": {
+      "taskLoaded": true,
+      "drawerOpenedFromLoadout": true,
+      "supplyRecorded": true,
+      "ownerBillableCostCreated": true,
+      "requirementsCompleted": "3/3",
+      "statusAfterComplete": "completed"
+    }
+  },
+  "playwrightViewportSweep": {
+    "consoleErrors": 0,
+    "consoleWarnings": [
+      "Next dev font preload timing warning only"
+    ],
+    "viewports": [
+      { "width": 320, "height": 720, "screenshot": "supply-flow-320.png", "visualOverflowObserved": false },
+      { "width": 375, "height": 720, "screenshot": "supply-flow-375.png", "visualOverflowObserved": false },
+      { "width": 430, "height": 720, "screenshot": "supply-flow-430.png", "visualOverflowObserved": false },
+      { "width": 768, "height": 900, "screenshot": "supply-flow-768.png", "visualOverflowObserved": false },
+      { "width": 1440, "height": 900, "screenshot": "supply-flow-1440.png", "visualOverflowObserved": false }
+    ]
+  },
+  "supportingScreenshots": [
+    "supply-section-browser.png",
+    "supply-row-browser.png"
+  ]
+}

@@ -11,6 +11,7 @@ export interface CompletionSignals {
   attachmentCount: number;
   queuedEvidenceCount: number;
   costCount: number;
+  supplyCount: number;
   elapsedSeconds: number;
   spentMinutes: number;
   summary: string;
@@ -183,8 +184,11 @@ export function requirementSatisfied(
   signals: CompletionSignals,
 ): boolean {
   if (state.waivedIds.includes(requirement.id)) return true;
-  if (requirement.kind === 'check' || requirement.kind === 'supply') {
+  if (requirement.kind === 'check') {
     return state.completedIds.includes(requirement.id);
+  }
+  if (requirement.kind === 'supply') {
+    return state.completedIds.includes(requirement.id) || signals.supplyCount > 0;
   }
   if (requirement.kind === 'photo' || requirement.kind === 'file') {
     return signals.attachmentCount + signals.queuedEvidenceCount > 0;

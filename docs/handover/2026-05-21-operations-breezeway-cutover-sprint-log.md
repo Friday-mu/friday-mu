@@ -141,3 +141,26 @@
 - Browser interaction QA used a local mock `/api/tasks` task: missing requirements blocked Complete, marking reset/supplies, waiving photo, and adding a summary allowed completion to `completed`.
 - Responsive QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave5/`; 320/375/430/768/1440 showed 0 document overflow, 0 task-detail overflow, and 0 small actionable targets.
 - Typecheck, frontend build, restored `next-env.d.ts`, rerun typecheck, backend task-service syntax check, and `git diff --check` passed.
+
+## 2026-05-21 Wave 6 Mini-Research
+
+- Current `fad-rebuild` has task costs persisted in `task_costs` plus `AddCostDrawer`, but no supply catalog, stock locations, task supply movements, or inventory events.
+- `TaskDetail.tsx` already has a clear Costs section and Wave 5 Requirements can gate supplies manually; Wave 6 should add actual task-linked supply capture next to costs, not another execution surface.
+- `origin/fad-design-os-v01-frontend` matches the current Add Cost implementation and has no supply/inventory primitive to port.
+- Feature Catalog has only a currency-picker note relevant to MUR/current rates; no inventory/stock movement primitive exists, so model the domain locally.
+- Notion Mobile UX Doctrine keeps this to one mobile hierarchy, visible primary actions, persistent labels, inline errors, and 44-48px targets.
+- Breezeway mobile evidence shows `Costs` and `Supplies` as first-class task rows below task context, with a sticky Start/Complete model; FAD should surface supplies in task detail without copying Breezeway's field create-and-complete shortcut.
+- Existing FAD task cost-to-Finance brief already defines owner-billable cost flow; Wave 6 should preserve that path and add inventory movements as separate downstream events.
+- MDN/W3C checks: mobile quantity/cost inputs should use native labels, `inputmode`/numeric hints, and text error messages associated near invalid fields instead of color-only state.
+- Wave 6 decision: add `task_supplies` persistence plus a frontend supply catalog/loadout helper, show SRL/welcome-pack suggested loadouts from property size, and let field staff record used quantities/billable supply lines from the task.
+
+## 2026-05-21 Wave 6 Checkpoint
+
+- Added migration 053 with `task_supplies` and `stock_movements`, preserving task-linked execution while giving Inventory a downstream ledger.
+- Extended `/api/tasks/:id` detail responses with supplies and added `POST /api/tasks/:id/supplies`; owner-billable supply use can create a linked material cost line for the existing Finance path.
+- Added a starter supply catalog/loadout helper tagged `@demo:data` as `PROD-DATA-50`; `frontend/DEMO_CRUFT.md` was updated in the same checkpoint.
+- Task detail now shows Supplies beside task execution/costs, suggested SRL/welcome-pack loadouts from property capacity/task type, recorded supply rows, stock location, owner-billable state, and cost-line creation.
+- Supply requirements now satisfy automatically when a task has a recorded supply line; manual confirmation remains available for exception cases.
+- Browser QA with mock task API: opened task, used suggested Bath towel loadout, marked it owner-billable, verified supply row, linked cost row, requirements `3/3`, and task completion to `completed`.
+- Responsive screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave6/`; 320/375/430/768/1440 checks showed no visible horizontal overflow or clipped primary controls.
+- Verification passed: backend task-service syntax check, frontend typecheck, frontend build, restored `next-env.d.ts`, rerun typecheck, and `git diff --check`.
