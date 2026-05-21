@@ -430,3 +430,26 @@
 - Post-check: 1,841 already marked, 0 candidate updates remaining, no task statuses or `source = breezeway` provenance changed.
 - Reports backed up on VPS: `/var/backups/fad-reported-issues-preview-dace8ce5cd24.json` and `/var/backups/fad-reported-issues-apply-dace8ce5cd24.json`.
 - Missing 143 need a separate import decision: 131 `Office / Store / Admin`, 11 `Grand Baie Heights`, 1 `RC-16` task (`Water Leak Behind Washing Machine`, due 2026-05-22).
+
+## 2026-05-22 Missing Reported-Issues Import Mini-Research
+
+- User approved importing the 143 reported-issue rows that were missing from the first historical task import.
+- This is an exception to the first-pass admin/aggregate skip policy because the final Ops scope includes Friday/internal, Syndic/common-area, and property-linked issue work.
+- The import must stay bounded to the new reported-issues export bundle only; do not use the old Desktop sample exports.
+- Keep idempotency at `external_ref = breezeway:<Task ID>` and preserve `source = breezeway` as internal provenance.
+- Do not re-import the 1,841 already-marked rows; generate a filtered bundle containing only missing Task IDs.
+- Preserve custom/cost/payroll/supplies enrichment for those missing IDs, including custom export row-order alignment.
+- Preview first against production, then apply only after the preview reports the expected 143 insertable rows.
+- After apply, rerun the reported-issue marker so the newly imported rows land in Reported Issues with accepted-issue tags/category.
+
+### Checkpoint
+
+- Added `backend/scripts/import-missing-breezeway-reported-issues.js` to build a filtered five-file bundle from only missing reported-issue Task IDs.
+- Production preview: 1,984 unique reported-issue Task IDs, 1,841 already present, 143 missing, 143 insertable, custom rows aligned, 0 skipped rows, 0 policy skips.
+- Apply imported the 143 approved missing tasks from the reported-issues bundle with `import_batch_id = reported-issues-missing-dace8ce5cd24`.
+- Apply inserted 143 tasks and 9 cost rows; no supply rows, stock movements, failures, or duplicate `external_ref` rows were created.
+- Expected unresolved import context remains visible in the report: 131 Office/Admin rows, 11 GBH rows, and 1 unknown historical assignee label for Judith Friday.
+- Reran the reported-issue marker after import: 143 newly imported rows were tagged and categorized as accepted reported issues.
+- Post-check: all 1,984 reported-issue export rows now match FAD tasks, all 1,984 are already marked, 0 missing, 0 candidate updates.
+- Direct DB verification: 4,626 total `source = breezeway` tasks, 1,984 `category = reported_issue`, missing batch status mix = 81 completed / 37 closed / 22 scheduled / 3 in_progress.
+- Reports backed up on VPS: `/var/backups/fad-reported-issues-missing-preview-dace8ce5cd24.json`, `/var/backups/fad-reported-issues-missing-apply-dace8ce5cd24.json`, `/var/backups/fad-reported-issues-marker-after-missing-apply-dace8ce5cd24.json`, and `/var/backups/fad-reported-issues-marker-after-missing-postcheck-dace8ce5cd24.json`.
