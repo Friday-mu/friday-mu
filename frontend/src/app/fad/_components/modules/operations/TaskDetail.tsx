@@ -33,6 +33,7 @@ interface DetailProps {
   onClose?: () => void;
   onExpand?: () => void;
   onBumpRev: () => void;
+  onReportIssue?: (task: Task) => void;
 }
 
 const RISK_LABEL: Record<string, string> = {
@@ -74,7 +75,7 @@ interface EvidenceItem {
 const statusBadgeFor = (s: Task['status']) => toneStyle(taskStatusTone(s));
 const priorityBadgeFor = (p: Task['priority']) => toneStyle(priorityTone(p));
 
-export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev }: DetailProps) {
+export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportIssue }: DetailProps) {
   const currentUserId = useCurrentUserId();
   const { can, role } = usePermissions();
   const canManageTasks = can('tasks', 'write');
@@ -257,6 +258,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev }: DetailP
           onSetStatus={setStatus}
           evidenceQueue={evidenceQueue}
           onEvidenceSelected={onEvidenceSelected}
+          onReportIssue={onReportIssue}
         />
         <Comments task={task} draft={draftComment} setDraft={setDraftComment} onSend={canEdit ? sendComment : undefined} />
       </div>
@@ -324,7 +326,7 @@ function Header({
           className="chip"
           style={{
             minWidth: 44,
-            minHeight: 36,
+            minHeight: 44,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -399,6 +401,7 @@ function Body({
   onSetStatus,
   evidenceQueue,
   onEvidenceSelected,
+  onReportIssue,
 }: {
   task: Task;
   role: NonNullable<ReturnType<typeof usePermissions>['role']>;
@@ -423,6 +426,7 @@ function Body({
   onSetStatus: (s: Task['status']) => void;
   evidenceQueue: EvidenceItem[];
   onEvidenceSelected: (files: FileList | null) => void;
+  onReportIssue?: (task: Task) => void;
 }) {
   const assignees = task.assigneeIds.map((id) => TASK_USER_BY_ID[id]).filter(Boolean);
   const canViewSensitiveContext = canManageTasks || task.assigneeIds.includes(currentUserId);
@@ -454,6 +458,19 @@ function Body({
       <Section title="Property context">
         <PropertyContextPanel task={task} canViewSensitiveContext={canViewSensitiveContext} />
       </Section>
+
+      {onReportIssue && canEdit && (
+        <Section title="Report related issue">
+          <div className="ops-related-report">
+            <span>
+              Create a separate reported issue from this task. Property and reservation context are inherited, but guest/access details are not copied into the report text.
+            </span>
+            <button type="button" className="btn ghost sm" onClick={() => onReportIssue(task)}>
+              Report issue
+            </button>
+          </div>
+        </Section>
+      )}
 
       <Section title="Assignees">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

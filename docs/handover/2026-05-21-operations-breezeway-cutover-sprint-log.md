@@ -49,3 +49,25 @@
 - Sensitive property access values are never rendered; field access only shows an assigned/time-window policy state, while managers see audit policy text without codes.
 - Visual QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave3a/`; metrics show 15 screenshots with 0 document overflow, 0 Operations overflow, and 0 task-detail small targets across 320/375/430/768/1440.
 - Typecheck and frontend build passed after final mobile target and summary-editor layout fixes.
+
+## 2026-05-21 Wave 3B Mini-Research
+
+- Current `CreateTaskDrawer.tsx` already routes through `/api/tasks`, but it is desktop-shaped, uses hardcoded demo dates in the NL parser, and does not distinguish field reporting from manager scheduling.
+- Current Operations already has a manager-only reported-issues triage page; Wave 3B should add field-origin issue creation without adding another task backend or touching Inbox-owned proposal code.
+- Breezeway missed-mobile evidence shows a property-first flow: plus button, property search, priority chips, department/subdepartment/template, title/description/element/attachment/tag/requester, due date/time, assignee picker, and separate `Report` / `Schedule` actions.
+- FAD policy differs from Breezeway: field staff must not see create-and-complete or free scheduling; standalone field reports require a property and description and must not reveal reservation/access context.
+- Feature Catalog `voice-dictation-hook` is available on `origin/fad-design-os-v01-frontend`, but it needs `/api/transcribe`, Gemini env, and auth/rate-limit behavior, so it is deferred out of this focused slice.
+- Notion Mobile UX Doctrine keeps the mobile form to one hierarchy per screen, persistent labels, large touch controls, visible sync failure, and no cramped nested modals.
+- External platform check: native `datetime-local` normalizes value format but has browser-specific UI and no timezone payload; Wave 3B stores date/time separately through the existing task adapter.
+- Wave 3B decision: extend `CreateTaskDrawer` with role-aware variants for manager scheduling, standalone field issue reporting, and assigned-task issue reporting, all backed by `createTask`.
+
+## 2026-05-21 Wave 3B Checkpoint
+
+- Implemented role-aware Operations reporting/scheduling through the existing `/api/tasks` adapter without touching Inbox-owned files or adding a duplicate task system.
+- Field standalone issue reports now require property/title/description, create unassigned `reported` tasks with `source = reported_issue`, and deliberately omit reservation/access context.
+- Assigned-task issue reports inherit property/reservation context from the assigned task, close the task detail before opening the report drawer, and include safe provenance text without guest/access details.
+- Managers can schedule from mobile with property search, priority chips, department/subdepartment, template, element/category, tags, requester, date/time, minutes, grouped assignee picker, and `Assign to me`.
+- The global bug-report FAB is hidden while Operations create/report drawers are open, fixing a visual-QA failure where it intercepted the sticky Schedule button.
+- `createTask` now passes `template` to the backend task service; fixture staff ids for assignees/requesters are still filtered by the adapter until production auth/users provide UUIDs.
+- Visual QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave3b/`; metrics show 9 screenshots with 0 document overflow, 0 Operations/drawer overflow, and 0 small targets across 320/375/430/768/1440.
+- Typecheck, frontend build, and backend task-service syntax check passed.

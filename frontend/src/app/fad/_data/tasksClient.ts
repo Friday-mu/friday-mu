@@ -246,6 +246,7 @@ export interface CreateTaskInput {
   groupEmailId?: string;
   awaitingHumanApproval?: boolean;
   category?: string;
+  template?: string;
   status?: TaskStatus;
   externalRef?: string;
 }
@@ -275,6 +276,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       group_email_id: input.groupEmailId,
       awaiting_human_approval: input.awaitingHumanApproval,
       category: input.category,
+      template: input.template,
       external_ref: input.externalRef,
     }),
   })) as ServerTask;

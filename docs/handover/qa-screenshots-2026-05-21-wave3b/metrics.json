@@ -1,0 +1,204 @@
+{
+  "captures": [
+    {
+      "name": "field-320-my-tasks",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/field-320-my-tasks.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "field-320-standalone-report-ready",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/field-320-standalone-report-ready.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "field-320-standalone-report-created",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/field-320-standalone-report-created.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "field-375-property-search",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/field-375-property-search.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "field-430-assigned-issue-inherited",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/field-430-assigned-issue-inherited.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "manager-768-schedule-ready",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/manager-768-schedule-ready.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "manager-768-schedule-created",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/manager-768-schedule-created.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "manager-1440-schedule-ready",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/manager-1440-schedule-ready.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    },
+    {
+      "name": "manager-1440-schedule-created",
+      "file": "/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard/docs/handover/qa-screenshots-2026-05-21-wave3b/manager-1440-schedule-created.png",
+      "metrics": {
+        "documentOverflow": 0,
+        "rootOverflow": 0,
+        "smallTargets": 0,
+        "small": []
+      }
+    }
+  ],
+  "assertions": {
+    "standaloneField": {
+      "status": "reported",
+      "source": "reported_issue",
+      "property": "BS-1",
+      "assignees": [],
+      "reservation": null
+    },
+    "assignedField": {
+      "status": "reported",
+      "source": "reported_issue",
+      "property": "BS-1",
+      "assignees": [],
+      "reservation": "RSV-BS1-0521",
+      "descriptionHasSafeContext": true
+    },
+    "managerSchedule768": {
+      "status": "scheduled",
+      "source": "manual",
+      "property": "BS-1",
+      "dueTime": "14:30",
+      "assignees": []
+    },
+    "managerSchedule1440": {
+      "status": "scheduled",
+      "source": "manual",
+      "property": "BS-1",
+      "dueTime": "14:30",
+      "assignees": []
+    }
+  },
+  "posts": [
+    {
+      "role": "field",
+      "body": {
+        "title": "Broken balcony light",
+        "description": "Balcony light flickers and smells hot when switched on.",
+        "status": "reported",
+        "property_code": "BS-1",
+        "department": "maintenance",
+        "subdepartment": "plumbing",
+        "priority": "medium",
+        "source": "reported_issue",
+        "visibility": "team",
+        "assignee_user_ids": [],
+        "requester_user_id": null,
+        "due_date": "2026-05-21",
+        "tags": []
+      }
+    },
+    {
+      "role": "field",
+      "body": {
+        "title": "Issue found at BS-1",
+        "description": "Reported from assigned task #BW-4101: Check AC vibration in bedroom\nReservation context is inherited from the assigned task; guest/access details are intentionally omitted from report text.\n\nFound water marks under the indoor AC while checking vibration.",
+        "status": "reported",
+        "property_code": "BS-1",
+        "department": "maintenance",
+        "subdepartment": "aircon",
+        "priority": "medium",
+        "source": "reported_issue",
+        "visibility": "team",
+        "assignee_user_ids": [],
+        "requester_user_id": null,
+        "due_date": "2026-05-21",
+        "reservation_guesty_id": "RSV-BS1-0521",
+        "tags": []
+      }
+    },
+    {
+      "role": "ops_manager",
+      "body": {
+        "title": "Schedule AC technician follow-up",
+        "description": "Inspect the bedroom AC vibration and confirm whether parts are needed.",
+        "status": "scheduled",
+        "property_code": "BS-1",
+        "department": "maintenance",
+        "subdepartment": "plumbing",
+        "priority": "medium",
+        "source": "manual",
+        "visibility": "all",
+        "assignee_user_ids": [],
+        "requester_user_id": null,
+        "due_date": "2026-05-21",
+        "due_time": "14:30",
+        "estimated_minutes": 45,
+        "tags": []
+      }
+    },
+    {
+      "role": "ops_manager",
+      "body": {
+        "title": "Schedule AC technician follow-up",
+        "description": "Inspect the bedroom AC vibration and confirm whether parts are needed.",
+        "status": "scheduled",
+        "property_code": "BS-1",
+        "department": "maintenance",
+        "subdepartment": "plumbing",
+        "priority": "medium",
+        "source": "manual",
+        "visibility": "all",
+        "assignee_user_ids": [],
+        "requester_user_id": null,
+        "due_date": "2026-05-21",
+        "due_time": "14:30",
+        "estimated_minutes": 45,
+        "tags": []
+      }
+    }
+  ]
+}

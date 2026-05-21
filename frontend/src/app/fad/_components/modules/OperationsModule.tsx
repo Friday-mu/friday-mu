@@ -23,7 +23,7 @@ import { fireToast } from '../Toaster';
 import { createTask, updateTask } from '../../_data/tasksClient';
 import { useApiTasks } from '../../_data/useApiTasks';
 import { TaskDetail } from './operations/TaskDetail';
-import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
+import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
 import { IconClose, IconExpand, IconFilter, IconPlus, IconSparkle } from '../icons';
 import { DAILY_BRIEF_POOL, pickDifferent, pickFromPool } from '../../_data/aiFixtures';
@@ -87,6 +87,12 @@ type TaskDateTab = 'today' | 'tomorrow' | 'week' | 'all';
 type ReservationFilter = 'all' | 'linked' | 'unlinked';
 type MyTaskSort = 'suggested' | 'due' | 'priority' | 'property';
 type DashboardStatusFilter = 'all' | 'open' | TaskStatus;
+
+interface CreateTaskIntent {
+  mode: CreateTaskMode;
+  prefill?: CreateTaskPrefill;
+  sourceTask?: Task;
+}
 
 function addDays(date: string, days: number): string {
   const [year, month, day] = date.split('-').map(Number);
@@ -175,20 +181,57 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
     refetch();
   };
 
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createIntent, setCreateIntent] = useState<CreateTaskIntent | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const detailTask = detailTaskId ? liveTasks.find((t) => t.id === detailTaskId) : null;
+
+  const openManagerCreate = (prefill?: CreateTaskPrefill) => {
+    setCreateIntent({ mode: 'manager_schedule', prefill });
+  };
+
+  const openStandaloneReport = () => {
+    setCreateIntent({
+      mode: 'field_standalone_issue',
+      prefill: {
+        source: 'reported_issue',
+        priority: 'medium',
+      },
+    });
+  };
+
+  const openAssignedIssueReport = (task: Task) => {
+    setDetailTaskId(null);
+    setCreateIntent({
+      mode: 'assigned_issue',
+      sourceTask: task,
+      prefill: {
+        title: `Issue found at ${task.propertyCode}`,
+        propertyCode: task.propertyCode,
+        department: task.department,
+        subdepartment: task.subdepartment,
+        priority: task.priority === 'urgent' ? 'high' : 'medium',
+        reservationId: task.reservationId,
+        source: 'reported_issue',
+      },
+    });
+  };
 
   const renderSub = () => {
     switch (active) {
       case 'my':
-        return <MyTasksPage onOpenTask={setDetailTaskId} />;
+        return (
+          <MyTasksPage
+            onOpenTask={setDetailTaskId}
+            onReportStandalone={isField ? openStandaloneReport : undefined}
+            onReportIssue={openAssignedIssueReport}
+          />
+        );
       case 'history':
         return <MyHistoryPage onOpenTask={setDetailTaskId} />;
       case 'overview':
         return <OverviewPage onOpenTask={setDetailTaskId} />;
       case 'all':
-        return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => setCreateOpen(true)} />;
+        return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
       case 'issues':
         return <ReportedIssuesPage onCreated={(t) => { bumpRev(); setDetailTaskId(t.id); }} />;
       case 'approvals':
@@ -198,7 +241,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       case 'insights':
         return <InsightsPage />;
       case 'settings':
-        return canSeeSettings ? <SettingsPage onCreate={() => setCreateOpen(true)} /> : null;
+        return canSeeSettings ? <SettingsPage onCreate={() => openManagerCreate()} /> : null;
       default:
         return null;
     }
@@ -212,11 +255,15 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}
-        actions={!isField ? (
-          <button className="btn primary sm" onClick={() => setCreateOpen(true)}>
+        actions={isField ? (
+          <button className="btn primary sm" onClick={openStandaloneReport}>
+            <IconPlus size={12} /> Report issue
+          </button>
+        ) : (
+          <button className="btn primary sm" onClick={() => openManagerCreate()}>
             <IconPlus size={12} /> New task
           </button>
-        ) : undefined}
+        )}
       />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {renderSub()}
@@ -232,16 +279,20 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
               onClose={() => setDetailTaskId(null)}
               onExpand={() => fireToast('Full-page route would open at /fad/tasks/' + detailTask.id)}
               onBumpRev={bumpRev}
+              onReportIssue={openAssignedIssueReport}
             />
           </aside>
         </>
       )}
 
       <CreateTaskDrawer
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        open={Boolean(createIntent)}
+        mode={createIntent?.mode}
+        sourceTask={createIntent?.sourceTask}
+        prefill={createIntent?.prefill}
+        onClose={() => setCreateIntent(null)}
         onCreated={(t) => {
-          setCreateOpen(false);
+          setCreateIntent(null);
           setDetailTaskId(t.id);
           bumpRev();
         }}
@@ -535,7 +586,15 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
 
 // ───────────────── My Tasks / History ─────────────────
 
-function MyTasksPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+function MyTasksPage({
+  onOpenTask,
+  onReportStandalone,
+  onReportIssue,
+}: {
+  onOpenTask: (id: string) => void;
+  onReportStandalone?: () => void;
+  onReportIssue: (task: Task) => void;
+}) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
   const { tasks: TASKS, loading, error, refetch } = useApiTasks();
@@ -614,11 +673,18 @@ function MyTasksPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
           <h2>My tasks</h2>
           <p>{role === 'field' ? 'Start, comment, attach evidence, and complete only work assigned to you.' : 'Your own execution queue inside the manager board.'}</p>
         </div>
-        <div className="ops-my-counts" aria-label="My task counts">
-          <span><strong>{counts.active}</strong> active</span>
-          <span><strong>{counts.due}</strong> due</span>
-          <span><strong>{counts.blocked}</strong> blocked</span>
-          <span><strong>{counts.completed}</strong> done</span>
+        <div className="ops-my-header-side">
+          <div className="ops-my-counts" aria-label="My task counts">
+            <span><strong>{counts.active}</strong> active</span>
+            <span><strong>{counts.due}</strong> due</span>
+            <span><strong>{counts.blocked}</strong> blocked</span>
+            <span><strong>{counts.completed}</strong> done</span>
+          </div>
+          {onReportStandalone && (
+            <button type="button" className="btn primary sm ops-report-issue-btn" onClick={onReportStandalone}>
+              <IconPlus size={12} /> Report property issue
+            </button>
+          )}
         </div>
       </div>
 
@@ -709,6 +775,7 @@ function MyTasksPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
                   syncLabel={error ? 'Not synced' : 'Live'}
                   onOpen={() => onOpenTask(task.id)}
                   onSetStatus={(status) => setTaskStatus(task, status)}
+                  onReportIssue={() => onReportIssue(task)}
                 />
               ))}
             </div>
@@ -726,12 +793,14 @@ function MyTaskCard({
   syncLabel,
   onOpen,
   onSetStatus,
+  onReportIssue,
 }: {
   task: Task;
   busy: boolean;
   syncLabel: string;
   onOpen: () => void;
   onSetStatus: (status: TaskStatus) => void;
+  onReportIssue: () => void;
 }) {
   const statusSwatch = toneStyle(taskStatusTone(task.status));
   const prioSwatch = toneStyle(priorityTone(task.priority));
@@ -812,6 +881,9 @@ function MyTaskCard({
         </button>
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
           Evidence
+        </button>
+        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onReportIssue(); }}>
+          Report issue
         </button>
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
           Details
