@@ -1,7 +1,7 @@
 'use strict';
 
 const { query } = require('../database/client');
-const { guestyRequest } = require('../website_inbox/guesty');
+const { guestyRequest } = require('../integrations/guesty');
 
 const CACHE_FRESH_HOURS = Number(process.env.GUESTY_CALENDAR_CACHE_HOURS || 24);
 

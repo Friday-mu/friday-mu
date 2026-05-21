@@ -11,7 +11,7 @@
 // SQL — see migration 049 — but the read-path JOIN expects it).
 
 const { query } = require('../database/client');
-const { listReservations } = require('../website_inbox/guesty');
+const { listReservations } = require('../integrations/guesty');
 
 const DEFAULT_DAYS_BACK = 30;
 const DEFAULT_DAYS_FORWARD = 365;
@@ -142,7 +142,7 @@ async function syncReservationsForTenant(tenantId, opts = {}) {
 // Guesty rather than trusting the webhook payload, since the payload
 // is sometimes a partial update.
 async function upsertReservationById(tenantId, reservationId) {
-  const { getReservation } = require('../website_inbox/guesty');
+  const { getReservation } = require('../integrations/guesty');
   const r = await getReservation({ reservationId });
   if (!r?._id) throw new Error('upsertReservationById: Guesty returned no _id');
   // Reuse the same upsert path by passing a single-element array

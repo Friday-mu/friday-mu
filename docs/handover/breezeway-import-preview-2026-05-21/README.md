@@ -16,6 +16,10 @@ API validation report:
 
 `api-validation.json`
 
+API enrichment preview report:
+
+`api-enrichment-preview.json`
+
 `bundle-preview.json` was preview-only. `bundle-apply-preview.json` is the apply-readiness preview generated after import policy skips, `Watch` priority mapping, cost/supply child-row insertion, and payload redaction were implemented.
 
 ## Summary Export
@@ -47,6 +51,16 @@ API validation report:
 - Custom export validation: 5,174/5,174 row-order checks align after ignoring 264 title comparisons already redacted by the CSV preview safety layer.
 - API-only fields observed in the 50-task sample include report URLs on all 50, descriptions on 28, assignments on 26, photos on 9, tags on 8, created-by objects on 33, and one linked reservation.
 - The API should remain validation/enrichment support only for this migration. CSV remains the primary backfill source.
+
+## Breezeway API Enrichment Preview
+
+- Added read-only enrichment tooling:
+  - `node backend/scripts/breezeway-task-enrichment-preview.js --limit 25 --use-keychain`
+  - `node backend/scripts/breezeway-task-enrichment-preview.js --task-id <id> --use-keychain`
+- Local API-only smoke used two known task IDs and retrieved 2/2 without writing FAD data.
+- The preview reports counts and field presence only; it does not print photo URLs, comments, secrets, or raw task payloads.
+- DB-backed mode requires `DATABASE_URL` and reads existing imported tasks by `external_ref = breezeway:<Task ID>`.
+- Apply mode is intentionally not implemented yet. The next safe step is an idempotent apply that stores enrichment under `source_payload.apiEnrichment` and updates `attachment_count` where API photos exist.
 
 ## Current Apply Readiness
 

@@ -12,7 +12,7 @@
 // always pass `FR_TENANT_ID` for now.
 
 const { query } = require('../database/client');
-const { listListings } = require('../website_inbox/guesty');
+const { listListings } = require('../integrations/guesty');
 
 // Reuse the same city → cohort mapping that server.js's review handler
 // uses, so the Properties UI groups listings the same way as Reviews.
