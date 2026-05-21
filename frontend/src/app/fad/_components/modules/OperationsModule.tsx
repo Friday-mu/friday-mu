@@ -3,20 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import {
-  AI_TASK_DRAFTS,
-  APPROVAL_REQUESTS,
-  REPORTED_ISSUES,
-  TASK_INSIGHTS,
   TASK_PROPERTIES,
   TASK_USER_BY_ID,
   TASK_USERS,
   type Department,
-  type ReportedIssue,
   type Task,
   type TaskPriority,
   type TaskSource,
   type TaskStatus,
-  type ApprovalRequest,
 } from '../../_data/tasks';
 import { useCanSee, useCurrentUserId, usePermissions } from '../usePermissions';
 import { fireToast } from '../Toaster';
@@ -25,7 +19,7 @@ import { useApiTasks } from '../../_data/useApiTasks';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
-import { IconClose, IconExpand, IconFilter, IconPlus, IconSparkle } from '../icons';
+import { IconClose, IconExpand, IconFilter, IconPlus } from '../icons';
 import { DAILY_BRIEF_POOL, pickDifferent, pickFromPool } from '../../_data/aiFixtures';
 import { useAITelemetry } from '../ai/useAITelemetry';
 import { AIBadge, AIRegenerateButton } from '../ai/AIComponents';
@@ -88,6 +82,7 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 
 const CLOSED_STATUS = new Set<TaskStatus>(['completed', 'closed', 'cancelled']);
 const FIELD_EXECUTABLE_STATUS = new Set<TaskStatus>(['scheduled', 'ready', 'in_progress', 'paused']);
+const INTAKE_SOURCES = new Set<TaskSource>(['inbox_ai', 'reported_issue', 'group_email', 'review']);
 const TASK_DAY_MS = 86_400_000;
 
 type TaskDateTab = 'today' | 'tomorrow' | 'week' | 'all';
@@ -170,8 +165,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
           { id: 'overview', label: 'Overview' },
           { id: 'my', label: 'My tasks' },
           { id: 'all', label: 'All tasks' },
-          { id: 'issues', label: 'Reported issues' },
-          { id: 'inbox-ai', label: 'Inbox AI' },
+          { id: 'intake', label: 'Intake' },
           { id: 'history', label: 'My history' },
           canSeeApprovals && { id: 'approvals', label: 'Approvals' },
           canSeeRoster && { id: 'roster', label: 'Roster' },
@@ -180,7 +174,8 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         ]
   ).filter((t): t is { id: string; label: string } => Boolean(t));
 
-  const active = tabs.find((t) => t.id === subPage)?.id ?? (isField ? 'my' : 'overview');
+  const canonicalSubPage = subPage === 'issues' || subPage === 'inbox-ai' ? 'intake' : subPage;
+  const active = tabs.find((t) => t.id === canonicalSubPage)?.id ?? (isField ? 'my' : 'overview');
 
   const [, setRev] = useState(0);
   const { tasks: liveTasks, refetch } = useApiTasks();
@@ -246,12 +241,10 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         return <OverviewPage onOpenTask={setDetailTaskId} onChangeSubPage={onChangeSubPage} canSeeRoster={canSeeRoster} />;
       case 'all':
         return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
-      case 'issues':
-        return <ReportedIssuesPage onCreated={(t) => { bumpRev(); setDetailTaskId(t.id); }} />;
-      case 'inbox-ai':
-        return <InboxAiTriagePage onOpenTask={setDetailTaskId} />;
+      case 'intake':
+        return <IntakeTriagePage onOpenTask={setDetailTaskId} />;
       case 'approvals':
-        return canSeeApprovals ? <ApprovalsPage onAfter={bumpRev} /> : null;
+        return canSeeApprovals ? <ApprovalsPage onOpenTask={setDetailTaskId} /> : null;
       case 'roster':
         return canSeeRoster ? <RosterPage /> : null;
       case 'insights':
@@ -267,7 +260,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
         title="Operations"
-        subtitle={isField ? 'Assigned work · comments · evidence · history' : 'Tasks · reported issues · approvals · roster · insights'}
+        subtitle={isField ? 'Assigned work · comments · evidence · history' : 'Tasks · intake · approvals · roster · insights'}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}
@@ -342,7 +335,7 @@ function OverviewPage({
     const overdue = scopedTasks.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
     const urgent = scopedTasks.filter((t) => t.priority === 'urgent' && !CLOSED_STATUS.has(t.status)).length;
     const awaitingApproval = scopedTasks.filter((t) => t.status === 'blocked' || t.awaitingHumanApproval).length;
-    const reportedToday = REPORTED_ISSUES.filter((i) => i.reportedAt.slice(0, 10) === TODAY && i.status === 'new').length;
+    const reportedToday = scopedTasks.filter((t) => INTAKE_SOURCES.has(t.source) && t.status === 'reported' && t.createdAt.slice(0, 10) === TODAY).length;
     return { openToday, overdue, urgent, awaitingApproval, reportedToday };
   }, [scopedTasks]);
 
@@ -633,8 +626,7 @@ function ManagerWorkbenchPanel({
         </div>
         <div className="ops-workbench-counts" role="status" aria-live="polite">
           <span><strong>{signals.staleOpen.length}</strong> stale open</span>
-          <span><strong>{signals.openReportedIssues.length}</strong> issues</span>
-          <span><strong>{signals.inboxAiReported.length}</strong> Inbox AI</span>
+          <span><strong>{signals.openReportedIssues.length + signals.inboxAiReported.length}</strong> intake</span>
           <span><strong>{signals.supplyPrep.length}</strong> supply prep</span>
         </div>
       </div>
@@ -651,20 +643,13 @@ function ManagerWorkbenchPanel({
           {signals.staleOpen.length === 0 && <WorkbenchEmpty>No stale open work.</WorkbenchEmpty>}
         </WorkbenchLane>
 
-        <WorkbenchLane title={`Manager triage · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}>
-          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('issues')}>
+        <WorkbenchLane title={`Manager intake · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}>
+          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('intake')}>
             <span>
-              <strong>Reported property issues</strong>
-              <small>{signals.openReportedIssues.length} waiting for manager scheduling</small>
+              <strong>Reported issues and Inbox AI</strong>
+              <small>{signals.openReportedIssues.length + signals.inboxAiReported.length} real task records need accept/dismiss/link</small>
             </span>
-            <span className="ops-workbench-badge">{signals.openReportedIssues.length}</span>
-          </button>
-          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('inbox-ai')}>
-            <span>
-              <strong>Inbox AI task proposals</strong>
-              <small>{signals.inboxAiReported.length} real task records need accept/dismiss/link</small>
-            </span>
-            <span className="ops-workbench-badge">{signals.inboxAiReported.length}</span>
+            <span className="ops-workbench-badge">{signals.openReportedIssues.length + signals.inboxAiReported.length}</span>
           </button>
           <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('all')}>
             <span>
@@ -1327,7 +1312,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
       tasks.sort((a, b) => sign * compareTasks(a, b, sort.key));
     }
     return tasks;
-  }, [filters, search, role, currentUserId, sort]);
+  }, [TASKS, filters, search, role, currentUserId, sort]);
 
   const activeFilterCount =
     (filters.department !== 'all' ? 1 : 0) +
@@ -1866,9 +1851,9 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
   );
 }
 
-// ───────────────── Inbox AI Triage ─────────────────
+// ───────────────── Intake Triage ─────────────────
 
-type InboxAiTriageAction = 'accept' | 'dismiss' | 'duplicate' | 'stale' | 'link';
+type IntakeTriageAction = 'accept' | 'dismiss' | 'duplicate' | 'stale' | 'link';
 
 const TRIAGE_CHIP_STYLE: React.CSSProperties = {
   fontSize: 10,
@@ -1884,18 +1869,19 @@ function addTags(existing: string[], ...next: string[]): string[] {
   return Array.from(new Set([...existing, ...next].filter(Boolean)));
 }
 
-function pendingActionLabel(task: Task): string {
+function sourceRefLabel(task: Task): string {
   if (task.externalRef?.startsWith('pending_action:')) {
     return task.externalRef.replace('pending_action:', '');
   }
-  return task.externalRef || 'No pending-action ref';
+  if (task.externalRef) return task.externalRef;
+  return task.source === 'reported_issue' ? 'Field report' : 'No source ref';
 }
 
 function appendTriageNote(task: Task, note: string): string {
   return [task.description, `Triage: ${note}`].filter(Boolean).join('\n\n');
 }
 
-function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
   const currentUserId = useCurrentUserId();
   const { tasks: TASKS, loading, error, refetch } = useApiTasks();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1904,9 +1890,9 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [linkTargetId, setLinkTargetId] = useState('');
 
-  const inboxAiTasks = useMemo(() => (
+  const intakeTasks = useMemo(() => (
     TASKS
-      .filter((task) => task.source === 'inbox_ai' && task.status === 'reported')
+      .filter((task) => INTAKE_SOURCES.has(task.source) && task.status === 'reported')
       .sort((a, b) =>
         PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
         (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99') ||
@@ -1914,16 +1900,16 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
       )
   ), [TASKS]);
 
-  const selectedTask = inboxAiTasks.find((task) => task.id === selectedId) ?? inboxAiTasks[0] ?? null;
+  const selectedTask = intakeTasks.find((task) => task.id === selectedId) ?? intakeTasks[0] ?? null;
 
   useEffect(() => {
-    const available = new Set(inboxAiTasks.map((task) => task.id));
+    const available = new Set(intakeTasks.map((task) => task.id));
     setSelectedIds((ids) => ids.filter((id) => available.has(id)));
     if (selectedId && !available.has(selectedId)) {
-      setSelectedId(inboxAiTasks[0]?.id ?? null);
-      setDetailOpen(Boolean(inboxAiTasks[0]));
+      setSelectedId(intakeTasks[0]?.id ?? null);
+      setDetailOpen(Boolean(intakeTasks[0]));
     }
-  }, [inboxAiTasks, selectedId]);
+  }, [intakeTasks, selectedId]);
 
   const linkTargets = useMemo(() => (
     TASKS
@@ -1940,7 +1926,7 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
 
   const applyTriage = async (
     task: Task,
-    action: InboxAiTriageAction,
+    action: IntakeTriageAction,
     options?: { linkTarget?: string; silent?: boolean },
   ) => {
     const linkedTask = options?.linkTarget ? TASKS.find((t) => t.id === options.linkTarget) : undefined;
@@ -1952,33 +1938,33 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
 
     if (action === 'accept') {
       patch.status = 'scheduled';
-      patch.tags = addTags(task.tags, 'inbox-ai:accepted');
+      patch.tags = addTags(task.tags, 'intake:accepted', `${task.source}:accepted`);
     } else if (action === 'dismiss') {
       patch.status = 'cancelled';
-      patch.tags = addTags(task.tags, 'inbox-ai:dismissed');
+      patch.tags = addTags(task.tags, 'intake:dismissed', `${task.source}:dismissed`);
       patch.description = appendTriageNote(task, `Dismissed by ${currentUserId}.`);
     } else if (action === 'duplicate') {
       patch.status = 'cancelled';
-      patch.tags = addTags(task.tags, 'inbox-ai:duplicate');
+      patch.tags = addTags(task.tags, 'intake:duplicate', `${task.source}:duplicate`);
       patch.description = appendTriageNote(task, `Marked duplicate by ${currentUserId}.`);
     } else if (action === 'stale') {
       patch.status = 'cancelled';
-      patch.tags = addTags(task.tags, 'inbox-ai:stale');
+      patch.tags = addTags(task.tags, 'intake:stale', `${task.source}:stale`);
       patch.description = appendTriageNote(task, `Marked stale by ${currentUserId}.`);
     } else if (action === 'link' && linkedTask) {
       patch.status = 'cancelled';
-      patch.tags = addTags(task.tags, 'inbox-ai:linked-existing', `linked-existing:${linkedTask.id}`);
+      patch.tags = addTags(task.tags, 'intake:linked-existing', `${task.source}:linked-existing`, `linked-existing:${linkedTask.id}`);
       patch.description = appendTriageNote(task, `Linked to existing task ${linkedTask.id} (${linkedTask.title}) by ${currentUserId}.`);
     }
 
     if (!patch.status) return;
     await updateTask({ taskId: task.id, patch, actorId: currentUserId });
     if (!options?.silent) {
-      fireToast(action === 'accept' ? 'Inbox AI task accepted' : 'Inbox AI task triaged');
+      fireToast(action === 'accept' ? 'Task accepted into schedule' : 'Intake item triaged');
     }
   };
 
-  const runSingle = async (task: Task, action: InboxAiTriageAction, linkTarget?: string) => {
+  const runSingle = async (task: Task, action: IntakeTriageAction, linkTarget?: string) => {
     if (action === 'link' && !linkTarget) {
       fireToast('Choose an existing task to link');
       return;
@@ -1989,21 +1975,21 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
       setSelectedIds((ids) => ids.filter((id) => id !== task.id));
       refetch();
     } catch (e) {
-      fireToast(e instanceof Error ? e.message : 'Inbox AI triage failed');
+      fireToast(e instanceof Error ? e.message : 'Intake triage failed');
     } finally {
       setBusyKey(null);
     }
   };
 
-  const runBulk = async (action: Extract<InboxAiTriageAction, 'accept' | 'dismiss' | 'stale'>) => {
-    const tasks = inboxAiTasks.filter((task) => selectedIds.includes(task.id));
+  const runBulk = async (action: Extract<IntakeTriageAction, 'accept' | 'dismiss' | 'stale'>) => {
+    const tasks = intakeTasks.filter((task) => selectedIds.includes(task.id));
     if (tasks.length === 0) return;
     setBusyKey(`bulk:${action}`);
     try {
       for (const task of tasks) {
         await applyTriage(task, action, { silent: true });
       }
-      fireToast(`${tasks.length} Inbox AI task${tasks.length === 1 ? '' : 's'} triaged`);
+      fireToast(`${tasks.length} intake item${tasks.length === 1 ? '' : 's'} triaged`);
       setSelectedIds([]);
       refetch();
     } catch (e) {
@@ -2019,27 +2005,27 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
         <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
           {error && (
             <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
-              Inbox AI tasks could not load: {error}
+              Intake tasks could not load: {error}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0 }}>
-                Source = Inbox AI
+                Reported task intake
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{inboxAiTasks.length} reported</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{intakeTasks.length} reported</div>
             </div>
             <button
               className="btn ghost sm"
               type="button"
               style={{ minHeight: 44 }}
               onClick={() => {
-                if (selectedIds.length === inboxAiTasks.length) setSelectedIds([]);
-                else setSelectedIds(inboxAiTasks.map((task) => task.id));
+                if (selectedIds.length === intakeTasks.length) setSelectedIds([]);
+                else setSelectedIds(intakeTasks.map((task) => task.id));
               }}
-              disabled={inboxAiTasks.length === 0}
+              disabled={intakeTasks.length === 0}
             >
-              {selectedIds.length === inboxAiTasks.length && inboxAiTasks.length > 0 ? 'Clear' : 'Select all'}
+              {selectedIds.length === intakeTasks.length && intakeTasks.length > 0 ? 'Clear' : 'Select all'}
             </button>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -2056,8 +2042,8 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading && inboxAiTasks.length === 0 && <Empty>Loading Inbox AI tasks...</Empty>}
-          {inboxAiTasks.map((task) => {
+          {loading && intakeTasks.length === 0 && <Empty>Loading intake tasks...</Empty>}
+          {intakeTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
             const statusSwatch = toneStyle(taskStatusTone(task.status));
             return (
@@ -2118,14 +2104,15 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
                   <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{task.title}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(task.source)).background, color: toneStyle(taskSourceTone(task.source)).color }}>{SOURCE_LABEL[task.source]}</span>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{task.priority}</span>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{pendingActionLabel(task)}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{sourceRefLabel(task)}</span>
                   </div>
                 </button>
               </div>
             );
           })}
-          {!loading && inboxAiTasks.length === 0 && <Empty>No Inbox AI reported tasks.</Empty>}
+          {!loading && intakeTasks.length === 0 && <Empty>No reported intake tasks.</Empty>}
         </div>
       </div>
 
@@ -2136,14 +2123,14 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
           style={{ minHeight: 44 }}
           onClick={() => setDetailOpen(false)}
         >
-          ← Back to Inbox AI
+          ← Back to intake
         </button>
         {selectedTask ? (
           <div style={{ maxWidth: 720 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
-                  {selectedTask.propertyCode || 'No property'} · {pendingActionLabel(selectedTask)}
+                  {selectedTask.propertyCode || 'No property'} · {sourceRefLabel(selectedTask)}
                 </div>
                 <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{selectedTask.title}</h2>
               </div>
@@ -2273,261 +2260,41 @@ function InboxAiTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void })
             </div>
           </div>
         ) : (
-          <Empty>Select an Inbox AI task to triage.</Empty>
+          <Empty>Select a reported task to triage.</Empty>
         )}
       </div>
-    </div>
-  );
-}
-
-// ───────────────── Reported Issues ─────────────────
-
-function ReportedIssuesPage({ onCreated }: { onCreated: (t: Task) => void }) {
-  const [statusFilter, setStatusFilter] = useState<ReportedIssue['status'] | 'all'>('new');
-  const [sourceFilter, setSourceFilter] = useState<ReportedIssue['source'] | 'all'>('all');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-
-  const visible = useMemo(() => {
-    let issues = [...REPORTED_ISSUES];
-    if (statusFilter !== 'all') issues = issues.filter((i) => i.status === statusFilter);
-    if (sourceFilter !== 'all') issues = issues.filter((i) => i.source === sourceFilter);
-    return issues.sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
-  }, [statusFilter, sourceFilter]);
-
-  const selected = REPORTED_ISSUES.find((i) => i.id === selectedId) ?? visible[0];
-
-  return (
-    <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
-      <div className="fad-split-list" style={{ width: 380, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
-            {(['new', 'triaged', 'converted', 'all'] as const).map((s) => (
-              <button
-                key={s}
-                className={'inbox-chip' + (statusFilter === s ? ' active' : '')}
-                onClick={() => setStatusFilter(s)}
-              >
-                {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {(['all', 'guest_chat', 'field_pm', 'inspection', 'group_email', 'inbox'] as const).map((s) => (
-              <button
-                key={s}
-                className={'inbox-chip' + (sourceFilter === s ? ' active' : '')}
-                onClick={() => setSourceFilter(s)}
-                style={{ fontSize: 10 }}
-              >
-                {s === 'all' ? 'All sources' : s.replace('_', ' ')}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {visible.map((i) => {
-            const isSelected = selected?.id === i.id;
-            return (
-              <button
-                key={i.id}
-                onClick={() => { setSelectedId(i.id); setDetailOpen(true); }}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: '10px 14px',
-                  textAlign: 'left',
-                  border: 0,
-                  background: isSelected ? 'var(--color-background-tertiary)' : 'transparent',
-                  cursor: 'pointer',
-                  borderBottom: '0.5px solid var(--color-border-tertiary)',
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <span style={{ fontWeight: 500 }}>{i.propertyCode}</span>
-                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{formatRelative(i.reportedAt)}</span>
-                </div>
-                <div style={{ fontSize: 12 }}>{i.title}</div>
-                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                  {i.reporterLabel ?? TASK_USER_BY_ID[i.reporterId]?.name ?? i.reporterId}
-                </div>
-              </button>
-            );
-          })}
-          {visible.length === 0 && <Empty>No issues match filters.</Empty>}
-        </div>
-      </div>
-
-      <div className="fad-split-detail" style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
-        <button
-          type="button"
-          className="btn ghost sm fad-split-back"
-          onClick={() => setDetailOpen(false)}
-        >
-          ← Back to issues
-        </button>
-        {selected ? (
-          <IssueDetail issue={selected} onCreated={onCreated} />
-        ) : (
-          <Empty>Select an issue to triage.</Empty>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function IssueDetail({ issue, onCreated }: { issue: ReportedIssue; onCreated: (t: Task) => void }) {
-  const currentUserId = useCurrentUserId();
-
-  const convert = async () => {
-    const task = await createTask({
-      title: issue.title,
-      description: issue.description,
-      propertyCode: issue.propertyCode,
-      department: issue.aiSuggestedDepartment ?? 'office',
-      subdepartment: issue.aiSuggestedSubdepartment ?? 'admin',
-      priority: issue.aiSuggestedPriority ?? 'medium',
-      source: 'reported_issue',
-      assigneeIds: issue.aiSuggestedAssignee ? [issue.aiSuggestedAssignee] : [],
-      requesterId: currentUserId,
-      dueDate: TODAY,
-      inboxThreadId: issue.inboxThreadId,
-      groupEmailId: issue.groupEmailId,
-    });
-    issue.status = 'converted';
-    issue.convertedTaskId = task.id;
-    onCreated(task);
-  };
-
-  const dismiss = () => {
-    issue.status = 'dismissed';
-    fireToast('Issue dismissed');
-  };
-
-  return (
-    <div>
-      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 500 }}>{issue.title}</h2>
-      <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 16 }}>
-        {issue.propertyCode} · {issue.reporterLabel ?? 'Field PM'} · {formatRelative(issue.reportedAt)}
-      </div>
-
-      <div
-        style={{
-          padding: 12,
-          background: 'var(--color-background-secondary)',
-          borderRadius: 6,
-          marginBottom: 16,
-          fontSize: 13,
-          lineHeight: 1.5,
-        }}
-      >
-        {issue.description}
-      </div>
-
-      {issue.photos > 0 && (
-        <div style={{ marginBottom: 16, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          📷 {issue.photos} photo{issue.photos === 1 ? '' : 's'} attached
-        </div>
-      )}
-
-      {issue.aiConfidence !== undefined && (
-        <div
-          style={{
-            padding: 12,
-            background: 'var(--color-brand-accent-softer)',
-            borderLeft: '3px solid var(--color-brand-accent)',
-            borderRadius: 6,
-            marginBottom: 16,
-            fontSize: 13,
-            lineHeight: 1.5,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-            <IconSparkle size={11} />
-            <span style={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-brand-accent)' }}>
-              AI triage · {Math.round(issue.aiConfidence * 100)}%
-            </span>
-          </div>
-          {issue.aiReason}
-          <div style={{ marginTop: 10, fontSize: 12 }}>
-            <strong>Suggested:</strong>
-            {issue.aiSuggestedDepartment && ` ${issue.aiSuggestedDepartment} > ${issue.aiSuggestedSubdepartment}`}
-            {issue.aiSuggestedAssignee && ` · ${TASK_USER_BY_ID[issue.aiSuggestedAssignee]?.name.split(' ')[0]}`}
-            {issue.aiSuggestedPriority && ` · ${issue.aiSuggestedPriority} priority`}
-          </div>
-        </div>
-      )}
-
-      {issue.status === 'new' && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn primary" onClick={convert}>
-            Convert to task
-          </button>
-          <button className="btn ghost" onClick={dismiss}>
-            Dismiss
-          </button>
-        </div>
-      )}
-      {issue.status === 'converted' && issue.convertedTaskId && (
-        <div style={{ padding: 10, background: 'var(--color-bg-success)', borderRadius: 6, fontSize: 12 }}>
-          ✓ Converted to task {issue.convertedTaskId}
-        </div>
-      )}
-      {issue.status === 'dismissed' && (
-        <div style={{ padding: 10, background: 'var(--color-background-secondary)', borderRadius: 6, fontSize: 12 }}>
-          Dismissed
-        </div>
-      )}
     </div>
   );
 }
 
 // ───────────────── Approvals ─────────────────
 
-function ApprovalsPage({ onAfter }: { onAfter: () => void }) {
+function ApprovalsPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
   const [detailOpen, setDetailOpen] = useState(false);
-  const currentUserId = useCurrentUserId();
-  const [statusFilter, setStatusFilter] = useState<ApprovalRequest['status'] | 'all'>('pending');
+  const { tasks: TASKS, loading, error } = useApiTasks();
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'blocked' | 'all'>('pending');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const visible = useMemo(() => {
-    let reqs = [...APPROVAL_REQUESTS];
-    if (statusFilter !== 'all') reqs = reqs.filter((r) => r.status === statusFilter);
-    return reqs.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
-  }, [statusFilter]);
+    let tasks = TASKS.filter((task) => task.awaitingHumanApproval || task.status === 'blocked' || task.tags.some((tag) => tag.includes('approval')));
+    if (statusFilter === 'pending') tasks = tasks.filter((task) => task.awaitingHumanApproval);
+    if (statusFilter === 'blocked') tasks = tasks.filter((task) => task.status === 'blocked');
+    return tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [TASKS, statusFilter]);
 
-  const selected = APPROVAL_REQUESTS.find((r) => r.id === selectedId) ?? visible[0];
-
-  const decide = (req: ApprovalRequest, decision: 'approved' | 'rejected' | 'countered', notes?: string, counterAmount?: number) => {
-    req.status = decision;
-    req.reviewedBy = currentUserId;
-    req.reviewedAt = new Date().toISOString();
-    req.reviewNotes = notes;
-    if (counterAmount !== undefined) req.counterAmount = counterAmount;
-    fireToast(`Request ${decision}`);
-    onAfter();
-  };
+  const selected = visible.find((task) => task.id === selectedId) ?? visible[0] ?? null;
 
   return (
     <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
       <div className="fad-split-list" style={{ width: 380, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
-        <div
-          style={{
-            padding: 10,
-            background: 'var(--color-bg-warning)',
-            borderLeft: '3px solid var(--color-text-warning)',
-            fontSize: 11,
-            color: 'var(--color-text-secondary)',
-            margin: 12,
-            borderRadius: 4,
-          }}
-        >
-          <strong>Demo data</strong> · this flow activates when field staff move from Breezeway approval requests to FAD in Phase 2.
-        </div>
         <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+          {error && (
+            <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
+              Approval tasks could not load: {error}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {(['pending', 'approved', 'rejected', 'countered', 'all'] as const).map((s) => (
+            {(['pending', 'blocked', 'all'] as const).map((s) => (
               <button
                 key={s}
                 className={'inbox-chip' + (statusFilter === s ? ' active' : '')}
@@ -2539,13 +2306,14 @@ function ApprovalsPage({ onAfter }: { onAfter: () => void }) {
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {visible.map((r) => {
-            const isSelected = selected?.id === r.id;
-            const requester = TASK_USER_BY_ID[r.requesterId];
+          {loading && visible.length === 0 && <Empty>Loading approval queue...</Empty>}
+          {visible.map((task) => {
+            const isSelected = selected?.id === task.id;
+            const requester = task.requesterId ? TASK_USER_BY_ID[task.requesterId] : null;
             return (
               <button
-                key={r.id}
-                onClick={() => { setSelectedId(r.id); setDetailOpen(true); }}
+                key={task.id}
+                onClick={() => { setSelectedId(task.id); setDetailOpen(true); }}
                 style={{
                   display: 'block',
                   width: '100%',
@@ -2559,21 +2327,18 @@ function ApprovalsPage({ onAfter }: { onAfter: () => void }) {
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <span style={{ fontWeight: 500 }}>{r.type.replace('_', ' ')} · {r.propertyCode}</span>
-                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{formatRelative(r.requestedAt)}</span>
+                  <span style={{ fontWeight: 500 }}>{task.propertyCode || 'No property'}</span>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{formatRelative(task.updatedAt)}</span>
                 </div>
-                {r.amount !== undefined && (
-                  <div className="mono" style={{ fontSize: 11 }}>
-                    {/* @demo:config — 'MUR' hardcoded fallback currency. Replace with tenant defaultCurrency from GET /api/tenant/config. Tag: PROD-CONFIG-9. */}
-                    {r.amount.toLocaleString()} {r.currency ?? 'MUR'}
-                  </div>
-                )}
+                <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3 }}>{task.title}</div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                  {requester?.name.split(' ')[0] ?? r.requesterId}
+                  {task.awaitingHumanApproval ? 'Awaiting approval' : STATUS_LABEL[task.status]}
+                  {requester ? ` · ${requester.name.split(' ')[0]}` : ''}
                 </div>
               </button>
             );
           })}
+          {!loading && visible.length === 0 && <Empty>No live approval requests.</Empty>}
         </div>
       </div>
 
@@ -2585,33 +2350,34 @@ function ApprovalsPage({ onAfter }: { onAfter: () => void }) {
         >
           ← Back to approvals
         </button>
-        {selected ? <ApprovalDetail req={selected} onDecide={decide} /> : <Empty>Select a request.</Empty>}
+        {selected ? <ApprovalDetail task={selected} onOpenTask={onOpenTask} /> : <Empty>Select a request.</Empty>}
       </div>
     </div>
   );
 }
 
 function ApprovalDetail({
-  req,
-  onDecide,
+  task,
+  onOpenTask,
 }: {
-  req: ApprovalRequest;
-  onDecide: (req: ApprovalRequest, decision: 'approved' | 'rejected' | 'countered', notes?: string, counter?: number) => void;
+  task: Task;
+  onOpenTask: (id: string) => void;
 }) {
-  const requester = TASK_USER_BY_ID[req.requesterId];
-  const [notes, setNotes] = useState('');
-  const [counter, setCounter] = useState('');
+  const requester = task.requesterId ? TASK_USER_BY_ID[task.requesterId] : null;
+  const totalOwnerCharge = task.costs
+    .filter((cost) => cost.ownerCharge)
+    .reduce((sum, cost) => sum + cost.amount, 0);
 
   return (
     <div>
       <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 500 }}>
-        {req.type.replace('_', ' ')} · {req.propertyCode}
+        {task.title}
       </h2>
       <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 16 }}>
-        {requester?.name ?? 'Unknown'} · requested {formatRelative(req.requestedAt)}
+        {task.propertyCode || 'No property'} · {requester?.name ?? 'Unknown requester'} · updated {formatRelative(task.updatedAt)}
       </div>
 
-      {req.amount !== undefined && (
+      {totalOwnerCharge > 0 && (
         <div
           style={{
             padding: 16,
@@ -2621,83 +2387,25 @@ function ApprovalDetail({
           }}
         >
           <div style={{ fontSize: 24, fontWeight: 500 }}>
-            {/* @demo:config — 'MUR' fallback (see PROD-CONFIG-9) */}
-            {req.amount.toLocaleString()} {req.currency ?? 'MUR'}
+            {totalOwnerCharge.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MUR
           </div>
-          {req.vendor && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>Vendor: {req.vendor}</div>}
-          {req.thresholdTier && <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>Tier: {req.thresholdTier}</div>}
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>Owner-charge costs attached to this task.</div>
         </div>
       )}
 
       <div style={{ marginBottom: 16, fontSize: 13, lineHeight: 1.5 }}>
-        <strong>Justification:</strong> {req.justification}
+        <strong>Context:</strong> {task.description || 'No approval context has been captured yet.'}
       </div>
 
-      {req.attachments.length > 0 && (
+      {task.attachmentCount > 0 && (
         <div style={{ marginBottom: 16, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          📎 Attachments: {req.attachments.join(', ')}
+          {task.attachmentCount} attachment{task.attachmentCount === 1 ? '' : 's'} linked
         </div>
       )}
 
-      {req.linkedTaskId && (
-        <div style={{ marginBottom: 16, fontSize: 12 }}>
-          Linked task: <code>{req.linkedTaskId}</code>
-        </div>
-      )}
-
-      {req.status === 'pending' && (
-        <div
-          style={{
-            padding: 16,
-            border: '0.5px solid var(--color-border-tertiary)',
-            borderRadius: 6,
-          }}
-        >
-          <textarea
-            placeholder="Notes (optional)"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            style={{ width: '100%', minHeight: 60, padding: 8, fontSize: 13, fontFamily: 'inherit', marginBottom: 8 }}
-          />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn primary" onClick={() => onDecide(req, 'approved', notes || undefined)}>
-              Approve
-            </button>
-            <button className="btn ghost" onClick={() => onDecide(req, 'rejected', notes || undefined)}>
-              Reject
-            </button>
-            {req.amount !== undefined && (
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input
-                  type="number"
-                  placeholder="Counter amount"
-                  value={counter}
-                  onChange={(e) => setCounter(e.target.value)}
-                  style={{ width: 120, padding: '4px 8px', fontSize: 12 }}
-                />
-                <button
-                  className="btn ghost"
-                  onClick={() => onDecide(req, 'countered', notes || undefined, parseFloat(counter) || undefined)}
-                  disabled={!counter}
-                >
-                  Counter
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {req.status !== 'pending' && (
-        <div style={{ padding: 12, background: 'var(--color-background-secondary)', borderRadius: 6, fontSize: 12 }}>
-          <strong>{req.status}</strong>
-          {req.reviewedBy && ` by ${TASK_USER_BY_ID[req.reviewedBy]?.name}`}
-          {req.counterAmount !== undefined && ` (counter: ${req.counterAmount.toLocaleString()})`}
-          {req.reviewNotes && (
-            <div style={{ marginTop: 6, fontStyle: 'italic' }}>"{req.reviewNotes}"</div>
-          )}
-        </div>
-      )}
+      <button className="btn primary" onClick={() => onOpenTask(task.id)}>
+        Open task
+      </button>
     </div>
   );
 }
@@ -2705,60 +2413,97 @@ function ApprovalDetail({
 // ───────────────── Insights ─────────────────
 
 function InsightsPage() {
-  const top = TASK_INSIGHTS.topAssignees;
-  const dept = TASK_INSIGHTS.byDepartment;
-  const props = TASK_INSIGHTS.topPropertiesByIssues;
-  const trend = TASK_INSIGHTS.escalationTrend;
-  const completed = TASK_INSIGHTS.completedTrend;
-  const ai = TASK_INSIGHTS.aiAccuracy;
+  const { tasks: TASKS, loading, error } = useApiTasks();
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 6)), []);
+  const inWindow = (date?: string) => Boolean(date && date.slice(0, 10) >= days[0] && date.slice(0, 10) <= days[6]);
+  const completedTasks = TASKS.filter((task) => (task.status === 'completed' || task.status === 'closed') && inWindow(task.completedAt || task.updatedAt));
+  const createdTasks = TASKS.filter((task) => inWindow(task.createdAt));
+  const completed = days.map((day) => completedTasks.filter((task) => (task.completedAt || task.updatedAt).slice(0, 10) === day).length);
+  const created = days.map((day) => createdTasks.filter((task) => task.createdAt.slice(0, 10) === day).length);
+  const avgCompletionMinutes = (() => {
+    const values = completedTasks
+      .map((task) => {
+        if (task.spentMinutes && task.spentMinutes > 0) return task.spentMinutes;
+        const end = new Date(task.completedAt || task.updatedAt).getTime();
+        const start = new Date(task.createdAt).getTime();
+        if (!Number.isFinite(end) || !Number.isFinite(start) || end <= start) return null;
+        return Math.round((end - start) / 60000);
+      })
+      .filter((value): value is number => typeof value === 'number');
+    if (values.length === 0) return 0;
+    return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  })();
+  const top = [...TASK_USERS.map((user) => {
+    const done = completedTasks.filter((task) => task.assigneeIds.includes(user.id));
+    const avg = done.length === 0 ? 0 : Math.round(done.reduce((sum, task) => sum + (task.spentMinutes || task.estimatedMinutes || 0), 0) / done.length);
+    return { userId: user.id, completed: done.length, avgMinutes: avg };
+  })].filter((row) => row.completed > 0).sort((a, b) => b.completed - a.completed).slice(0, 5);
+  const dept = (['cleaning', 'inspection', 'maintenance', 'office'] as Department[]).map((department) => {
+    const done = completedTasks.filter((task) => task.department === department);
+    const avg = done.length === 0 ? 0 : Math.round(done.reduce((sum, task) => sum + (task.spentMinutes || task.estimatedMinutes || 0), 0) / done.length);
+    return { dept: department, count: done.length, avgMinutes: avg };
+  }).filter((row) => row.count > 0);
+  const props = Object.entries(
+    TASKS
+      .filter((task) => INTAKE_SOURCES.has(task.source))
+      .reduce<Record<string, number>>((acc, task) => {
+        const key = task.propertyCode || 'No property';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+  )
+    .map(([code, issues]) => ({ code, issues }))
+    .sort((a, b) => b.issues - a.issues)
+    .slice(0, 5);
+  const escalations = days.map((day) => TASKS.filter((task) => task.updatedAt.slice(0, 10) === day && (task.status === 'blocked' || task.priority === 'urgent')).length);
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+      {error && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
+          Insights could not load live tasks: {error}
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <Section title="Completed last 7 days">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{TASK_INSIGHTS.weeklyCompleted}</div>
+          <div style={{ fontSize: 28, fontWeight: 500 }}>{completedTasks.length}</div>
           <Sparkline values={completed} color="#10b981" />
         </Section>
 
         <Section title="Created last 7 days">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{TASK_INSIGHTS.weeklyCreated}</div>
-          <Sparkline values={completed} color="#7c3aed" />
+          <div style={{ fontSize: 28, fontWeight: 500 }}>{createdTasks.length}</div>
+          <Sparkline values={created} color="#7c3aed" />
         </Section>
 
         <Section title="Avg completion time">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{TASK_INSIGHTS.avgCompletionMinutes}m</div>
+          <div style={{ fontSize: 28, fontWeight: 500 }}>{avgCompletionMinutes}m</div>
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>across all departments</div>
         </Section>
 
         <Section title="Top assignees">
-          <BarList rows={top.map((r) => ({ label: TASK_USER_BY_ID[r.userId]?.name.split(' ')[0] ?? r.userId, value: r.completed, sub: `${r.avgMinutes}m avg` }))} />
+          {top.length > 0 ? <BarList rows={top.map((r) => ({ label: TASK_USER_BY_ID[r.userId]?.name.split(' ')[0] ?? r.userId, value: r.completed, sub: `${r.avgMinutes}m avg` }))} /> : <Empty>No completions yet.</Empty>}
         </Section>
 
         <Section title="By department">
-          <BarList rows={dept.map((d) => ({ label: d.dept, value: d.count, sub: `${d.avgMinutes}m avg` }))} />
+          {dept.length > 0 ? <BarList rows={dept.map((d) => ({ label: d.dept, value: d.count, sub: `${d.avgMinutes}m avg` }))} /> : <Empty>No department completions yet.</Empty>}
         </Section>
 
         <Section title="Properties with most issues">
-          <BarList rows={props.map((p) => ({ label: p.code, value: p.issues, sub: `${p.issues} issue${p.issues === 1 ? '' : 's'}` }))} />
+          {props.length > 0 ? <BarList rows={props.map((p) => ({ label: p.code, value: p.issues, sub: `${p.issues} issue${p.issues === 1 ? '' : 's'}` }))} /> : <Empty>No reported issues yet.</Empty>}
         </Section>
 
         <Section title="Escalations · last 7 days">
-          <Sparkline values={trend} color="#ef4444" />
+          <Sparkline values={escalations} color="#ef4444" />
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-            {trend[trend.length - 1]} today vs {trend[0]} 7 days ago
+            {escalations[escalations.length - 1]} today vs {escalations[0]} 7 days ago
           </div>
         </Section>
 
         <Section title="AI accuracy">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 4 }}>
-            <Stat label="Auto-triage accept" value={`${Math.round(ai.autoTriageAccept * 100)}%`} />
-            <Stat label="NL parse accept" value={`${Math.round(ai.nlParseAccept * 100)}%`} />
-            <Stat label="Risk flag accept" value={`${Math.round(ai.riskFlagAccept * 100)}%`} />
-            <Stat label="Sample size" value={`${ai.sampleSize}`} />
+          <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+            No live AI acceptance telemetry has been recorded yet.
           </div>
-          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            Phase 1 canned · real telemetry wired in Phase 2
-          </div>
+          {loading && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Loading live task metrics...</div>}
         </Section>
       </div>
     </div>
@@ -2813,18 +2558,8 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ padding: 8, background: 'var(--color-background-secondary)', borderRadius: 4 }}>
-      <div style={{ fontSize: 16, fontWeight: 500 }}>{value}</div>
-      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
-    </div>
-  );
-}
-
 // ───────────────── Settings ─────────────────
 
-// @demo:data — Tag: PROD-DATA-36 — see frontend/DEMO_CRUFT.md
 function SettingsPage({ onCreate }: { onCreate: () => void }) {
   return (
     <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
@@ -2838,17 +2573,17 @@ function SettingsPage({ onCreate }: { onCreate: () => void }) {
       <div
         style={{
           padding: 12,
-          background: 'var(--color-bg-warning)',
-          borderLeft: '3px solid var(--color-text-warning)',
+          background: 'var(--color-background-secondary)',
+          borderLeft: '3px solid var(--color-brand-accent)',
           borderRadius: 4,
           marginBottom: 20,
           fontSize: 12,
         }}
       >
-        Read-only mirror of Breezeway templates and workflows. Edit upstream in Breezeway until Phase 3.
+        Current Operations workflow policy. The next cutover slice wires these rules to automatic task generation.
       </div>
 
-      <Section title="Templates · read-only mirror from Breezeway">
+      <Section title="Templates">
         {[
           { id: 'std-clean', name: 'Standard cleaning', dept: 'cleaning > standard_clean', items: 82, est: '2h', uses30d: 287 },
           { id: 'post-clean', name: 'Post-clean inspection', dept: 'inspection > post_clean', items: 45, est: '30m', uses30d: 261 },
@@ -2895,14 +2630,6 @@ function SettingsPage({ onCreate }: { onCreate: () => void }) {
         <Workflow trigger="Aesthetic check" actions={['Monthly · all properties']} />
         <Workflow trigger="Amenities form → Gap analysis" actions={['Monthly · sequential']} />
       </Section>
-
-      <button
-        className="btn ghost sm"
-        onClick={() => fireToast('Would open Breezeway templates editor in new tab')}
-        style={{ marginTop: 12 }}
-      >
-        Edit in Breezeway ↗
-      </button>
     </div>
   );
 }
@@ -2959,11 +2686,11 @@ function Empty({ children }: { children: React.ReactNode }) {
 
 function formatRelative(iso: string): string {
   const d = new Date(iso);
-  const now = new Date('2026-04-27T12:00:00');
+  const now = new Date();
   const diffMin = Math.floor((now.getTime() - d.getTime()) / 60000);
+  if (!Number.isFinite(diffMin)) return '';
+  if (diffMin < 0) return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
   if (diffMin < 60) return `${diffMin}m ago`;
   if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
   return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 }
-
-void AI_TASK_DRAFTS;

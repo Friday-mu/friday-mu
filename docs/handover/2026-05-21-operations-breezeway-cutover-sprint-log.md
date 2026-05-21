@@ -299,3 +299,15 @@
 - Generated `docs/handover/breezeway-import-preview-2026-05-21/api-validation.json`; it found all 29 CSV Breezeway home IDs in the API, 0 reference-property mismatches, 50/50 sampled importable tasks retrieved, 0 field diffs, and 5,174/5,174 custom rows aligned after redaction-aware title checks.
 - API-only enrichment observed in the 50-task sample includes report URLs, assignment objects, created/finished/requested-by objects, photos/tags, and one linked reservation; CSV remains the primary migration source.
 - No production import/apply was run.
+
+## 2026-05-21 Breezeway Source-of-Truth Import Preparation
+
+- Extended the Breezeway importer from single summary CSV to the real five-file export bundle: summary, custom, cost, payroll, and supplies.
+- Kept CSV as the primary source and API as validation evidence only; no ongoing Breezeway runtime dependency was added.
+- Added default import policy skips for Breezeway admin/office rows and aggregate `GBH` rows so field-staff-visible Ops work is created only for actual property tasks.
+- Preserved provenance with `source = breezeway`, `external_ref = breezeway:<Task ID>`, `bz_id`, `import_batch_id`, original source timestamps, redacted source payload, task report links, custom/cost/payroll/supply raw context, and idempotent inserts.
+- Inserted explicit Breezeway cost and supply lines into Ops child tables during apply; payroll rows remain historical provenance inside `source_payload` rather than creating thousands of labor cost rows.
+- Removed Ops demo/static intake data from the frontend by replacing separate `Reported issues` and `Inbox AI` demo pages with one live `/api/tasks` Intake queue for `reported_issue`, `inbox_ai`, `group_email`, and `review` sources.
+- Reworked Ops Approvals and Insights to derive from live tasks instead of `APPROVAL_REQUESTS`, `TASK_INSIGHTS`, or `REPORTED_ISSUES` fixtures; Settings remains because it is current workflow policy, not discarded demo content.
+- Generated `docs/handover/breezeway-import-preview-2026-05-21/bundle-apply-preview.json`: 5,174 total rows, 4,483 valid/importable rows, 691 policy-skipped admin/aggregate rows, 0 unknown statuses/priorities/departments, 962 sensitive redactions, custom export 5,174/5,174 row-order joinable, 208 explicit cost rows, 1 supply row, and 5,791 payroll provenance rows.
+- Verification before apply checkpoint: `backend npm test` passed 18 suites / 76 tests, `frontend npx tsc --noEmit` passed, and `frontend npm run build` passed.

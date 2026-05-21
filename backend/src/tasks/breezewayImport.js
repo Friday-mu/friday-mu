@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const DEFAULT_SAMPLE_SIZE = 5;
 const DEFAULT_TIMEZONE_OFFSET = '+04:00';
@@ -26,6 +28,7 @@ const STATUS_MAP = new Map([
 const PRIORITY_MAP = new Map([
   ['lowest', 'lowest'],
   ['low', 'low'],
+  ['watch', 'low'],
   ['medium', 'medium'],
   ['normal', 'medium'],
   ['high', 'high'],
@@ -47,12 +50,26 @@ const DEPARTMENT_MAP = new Map([
 const FORMULA_PREFIX_RE = /^[=+\-@\t\r\n]/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SENSITIVE_TEXT_RE = /\b(wi-?fi|password|passcode|lock\s*box|lockbox|gate\s+code|access\s+code|key\s*safe|keysafe|pin\s+code)\b/i;
+const DEFAULT_BUNDLE_FILES = {
+  summary: 'breezeway-task-summary-export.csv',
+  custom: 'breezeway-task-custom-export.csv',
+  cost: 'breezeway-task-cost-export.csv',
+  payroll: 'breezeway-task-payroll-export.csv',
+  supplies: 'breezeway-task-supplies-export.csv',
+};
+const DEFAULT_POLICY_SKIP_PROPERTY_IDS = new Set(['1099484', '1268645']);
+const DEFAULT_POLICY_SKIP_PROPERTY_LABELS = [
+  { reason: 'admin_property', pattern: /office\s*\/\s*store\s*\/\s*admin/i },
+  { reason: 'aggregate_property', pattern: /^gbh$/i },
+];
 
 const TEXT_FIELDS_TO_REDACT = new Set([
   'Task title',
   'Task description',
   'Task summary',
   'Task tags',
+  'Cost description',
+  'Supply description',
   'Requested by',
   'Created by',
   'Completed by',
@@ -251,6 +268,60 @@ function parseMoneyMinor(value) {
   return Math.round(amount * 100);
 }
 
+function parseNumber(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/,/g, '');
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseBooleanish(value) {
+  const raw = normalizeKey(value);
+  if (!raw) return null;
+  if (['yes', 'y', 'true', '1', 'billable'].includes(raw)) return true;
+  if (['no', 'n', 'false', '0', 'no charge', 'no charge/internal', 'internal'].includes(raw)) return false;
+  return null;
+}
+
+function isOwnerCharge(value) {
+  const raw = normalizeKey(value);
+  return raw.includes('owner') && !raw.includes('no charge') && !raw.includes('internal');
+}
+
+function taskIdFromRow(row) {
+  return String(row?.['Task ID'] || '').trim();
+}
+
+function mapRowsByTaskId(rows) {
+  const out = new Map();
+  for (const row of rows || []) {
+    const taskId = taskIdFromRow(row);
+    if (!taskId) continue;
+    const list = out.get(taskId) || [];
+    list.push(row);
+    out.set(taskId, list);
+  }
+  return out;
+}
+
+function policySkipReason(row, options = {}) {
+  if (options.skipPolicy === false) return null;
+  const propertyId = String(row['Property ID'] || '').trim();
+  const propertyLabel = String(row.Property || '').trim();
+  const skipIds = new Set([
+    ...DEFAULT_POLICY_SKIP_PROPERTY_IDS,
+    ...(options.skipPropertyIds || []).map((id) => String(id).trim()).filter(Boolean),
+  ]);
+  if (skipIds.has(propertyId)) {
+    return propertyId === '1268645' ? 'aggregate_property' : 'admin_property';
+  }
+  for (const { reason, pattern } of DEFAULT_POLICY_SKIP_PROPERTY_LABELS) {
+    if (pattern.test(propertyLabel)) return reason;
+  }
+  return null;
+}
+
 function countMapPush(map, value, rowNumber) {
   const key = String(value || '(empty)');
   const entry = map.get(key) || { value: key, count: 0, rows: [] };
@@ -289,9 +360,11 @@ function createReport({ importBatchId, fileName }) {
     unknownDepartments: [],
     emptyCriticalFields: [],
     skippedRows: [],
+    policySkippedRows: 0,
     sensitiveRedactions: [],
     formulaEscapes: [],
     sampleTransformedRecords: [],
+    supplemental: null,
     apply: null,
   };
 }
@@ -352,6 +425,106 @@ function resolveUsers(row, options, report) {
   return { resolved, names, externalIds, unresolved };
 }
 
+function normalizeCostType(value) {
+  const raw = normalizeKey(value);
+  if (raw.includes('labor') || raw.includes('labour')) return 'labor';
+  if (raw.includes('material') || raw.includes('supply')) return 'material';
+  if (raw.includes('tax')) return 'tax';
+  if (raw.includes('mileage') || raw.includes('transport')) return 'mileage';
+  if (raw.includes('markup')) return 'markup';
+  return 'expense';
+}
+
+function normalizeSupplyCategory(row) {
+  const dept = normalizeKey(row.Department);
+  const sub = normalizeKey(row.Subdepartment);
+  const name = normalizeKey(row['Supply name']);
+  if (dept.includes('clean') || sub.includes('clean')) return 'cleaning';
+  if (dept.includes('maintenance') || sub.includes('maintenance')) return 'maintenance';
+  if (name.includes('linen') || sub.includes('linen')) return 'linen';
+  if (name.includes('soap') || name.includes('shampoo') || name.includes('amenity')) return 'amenity';
+  return 'other';
+}
+
+function supplementalCustomPayload(row, report) {
+  if (!row) return null;
+  const totalCostMinor = parseMoneyMinor(row['Total cost']);
+  return {
+    propertyLabel: safeCell(row.Property, report, row.__rowNumber, 'Property') || null,
+    issues: parseNumber(row.Issues),
+    comments: parseNumber(row.Comments),
+    status: safeCell(row.Status, report, row.__rowNumber, 'Status') || null,
+    priority: safeCell(row.Priority, report, row.__rowNumber, 'Priority') || null,
+    guestArrivalRating: safeCell(row['Guest arrival rating'], report, row.__rowNumber, 'Guest arrival rating') || null,
+    totalCostMinor,
+    currency: safeCell(row['Currency (Total cost)'], report, row.__rowNumber, 'Currency (Total cost)').toUpperCase() || null,
+    billTo: safeCell(row['Bill to'], report, row.__rowNumber, 'Bill to') || null,
+    taskReportLink: safeCell(row['Task report link'], report, row.__rowNumber, 'Task report link') || null,
+    raw: sanitizeRawRow(row, report),
+  };
+}
+
+function costLineFromRow(row, report) {
+  const amountMinor = parseMoneyMinor(row['Cost amount']);
+  const description = safeCell(row['Cost description'], report, row.__rowNumber, 'Cost description');
+  const costType = safeCell(row['Cost type'], report, row.__rowNumber, 'Cost type');
+  if (!amountMinor || amountMinor <= 0) return null;
+  return {
+    type: normalizeCostType(costType),
+    amountMinor,
+    currencyCode: safeCell(row.Currency, report, row.__rowNumber, 'Currency').toUpperCase() || 'MUR',
+    description: [
+      description || costType || 'Breezeway task cost',
+      `Breezeway cost row ${row.__rowNumber}`,
+      row['Cost bill to'] ? `Bill to: ${safeCell(row['Cost bill to'], report, row.__rowNumber, 'Cost bill to')}` : null,
+    ].filter(Boolean).join(' · '),
+    ownerCharge: isOwnerCharge(row['Cost bill to'] || row['Bill to']),
+    sourceRowNumber: row.__rowNumber,
+    raw: sanitizeRawRow(row, report),
+  };
+}
+
+function supplyLineFromRow(row, report) {
+  const supplyId = safeCell(row['Supply ID'], report, row.__rowNumber, 'Supply ID');
+  const supplyName = safeCell(row['Supply name'], report, row.__rowNumber, 'Supply name');
+  const quantity = parseNumber(row['Supply quantity']);
+  if (!supplyId || !supplyName || !quantity || quantity <= 0) return null;
+  const billable = parseBooleanish(row['Supply is billable']);
+  const ownerCharge = billable === true || isOwnerCharge(row['Supply bill to']);
+  return {
+    supplyId,
+    supplyName,
+    category: normalizeSupplyCategory(row),
+    quantity,
+    unit: safeCell(row['Supply unit type'], report, row.__rowNumber, 'Supply unit type') || 'unit',
+    locationCode: extractPropertyCode(row.Property) || null,
+    unitCostMinor: parseMoneyMinor(row['Supply unit cost'] || row['Supply price']),
+    currencyCode: safeCell(row.Currency, report, row.__rowNumber, 'Currency').toUpperCase() || 'MUR',
+    ownerCharge,
+    sourceRowNumber: row.__rowNumber,
+    raw: sanitizeRawRow(row, report),
+  };
+}
+
+function payrollPayloadRows(rows, report) {
+  return (rows || [])
+    .filter((row) => ['Assignee', 'Employee ID', 'Rate paid', 'Rate type', 'Default rate', 'Default rate type', 'Estimated time', 'Total time']
+      .some((field) => String(row[field] || '').trim()))
+    .map((row) => ({
+      rowNumber: row.__rowNumber,
+      assignee: safeCell(row.Assignee, report, row.__rowNumber, 'Assignee') || null,
+      employeeId: safeCell(row['Employee ID'], report, row.__rowNumber, 'Employee ID') || null,
+      numberOfPeople: parseNumber(row['Number of people']),
+      defaultRateMinor: parseMoneyMinor(row['Default rate']),
+      ratePaidMinor: parseMoneyMinor(row['Rate paid']),
+      defaultRateType: safeCell(row['Default rate type'], report, row.__rowNumber, 'Default rate type') || null,
+      rateType: safeCell(row['Rate type'], report, row.__rowNumber, 'Rate type') || null,
+      estimatedMinutes: parseDurationMinutes(row['Estimated time']),
+      spentMinutes: parseDurationMinutes(row['Total time']),
+      raw: sanitizeRawRow(row, report),
+    }));
+}
+
 function transformRow(row, options, report, seenTaskIds, seenExternalRefs, existingExternalRefs) {
   const taskId = safeCell(row['Task ID'], report, row.__rowNumber, 'Task ID');
   if (!taskId) {
@@ -370,6 +543,12 @@ function transformRow(row, options, report, seenTaskIds, seenExternalRefs, exist
   }
   seenTaskIds.add(taskId);
   seenExternalRefs.add(externalRef);
+
+  const policyReason = policySkipReason(row, options);
+  if (policyReason) {
+    report.policySkippedRows += 1;
+    return { skipped: true, reason: policyReason, taskId, externalRef };
+  }
 
   if (existingExternalRefs.has(externalRef)) {
     countMapPush(report._existingExternalRefs, externalRef, row.__rowNumber);
@@ -422,11 +601,13 @@ function transformRow(row, options, report, seenTaskIds, seenExternalRefs, exist
   const ratePaidMinor = parseMoneyMinor(row['Rate paid']);
   const currency = safeCell(row.Currency, report, row.__rowNumber, 'Currency').toUpperCase() || null;
   const subdepartment = row.Subdepartment ? slug(row.Subdepartment) || null : null;
+  const supplemental = options.supplementalByTaskId?.get(taskId) || {};
   const historicalOpen = ['scheduled', 'ready', 'in_progress', 'paused', 'blocked', 'reported'].includes(status);
   const importTags = [
     'breezeway-import',
     'historical-import',
     `breezeway-status:${slug(rawStatus || status)}`,
+    rawPriority && !PRIORITY_MAP.has(normalizeKey(rawPriority)) ? `breezeway-priority:${slug(rawPriority)}` : null,
     historicalOpen ? 'historical-open' : null,
     ...tags,
   ].filter(Boolean);
@@ -478,6 +659,21 @@ function transformRow(row, options, report, seenTaskIds, seenExternalRefs, exist
     },
     raw: sanitizeRawRow(row, report),
   };
+  const customPayload = supplementalCustomPayload(supplemental.customRow, report);
+  const costLines = (supplemental.costRows || []).map((line) => costLineFromRow(line, report)).filter(Boolean);
+  const supplyLines = [
+    ...(supplemental.supplyRows || []),
+    ...(supplemental.costRows || []).filter((line) => String(line['Supply ID'] || line['Supply name'] || '').trim()),
+  ].map((line) => supplyLineFromRow(line, report)).filter(Boolean);
+  const payrollRows = payrollPayloadRows(supplemental.payrollRows || [], report);
+  if (customPayload || costLines.length > 0 || supplyLines.length > 0 || payrollRows.length > 0) {
+    sourcePayload.supplemental = {
+      custom: customPayload,
+      costLines: costLines.map((line) => line.raw),
+      payroll: payrollRows,
+      supplies: supplyLines.map((line) => line.raw),
+    };
+  }
 
   return {
     rowNumber: row.__rowNumber,
@@ -504,6 +700,8 @@ function transformRow(row, options, report, seenTaskIds, seenExternalRefs, exist
     sourceCompletedAt,
     tags: importTags,
     sourcePayload,
+    costLines,
+    supplyLines,
     sample: {
       rowNumber: row.__rowNumber,
       externalRef,
@@ -553,6 +751,121 @@ async function loadKnownPropertyCodes(db, tenantId) {
     // Preview should still work without a live DB or property table.
   }
   return codes;
+}
+
+async function insertImportedCostLine(client, tenantId, taskId, actorUserId, line) {
+  const existing = await client.query(
+    `SELECT id FROM task_costs
+     WHERE task_id = $1
+       AND tenant_id = $2
+       AND type = $3
+       AND amount_minor = $4
+       AND currency_code = $5
+       AND COALESCE(description, '') = COALESCE($6, '')
+       AND owner_charge = $7
+     LIMIT 1`,
+    [taskId, tenantId, line.type, line.amountMinor, line.currencyCode, line.description || null, line.ownerCharge === true],
+  );
+  if (existing.rows.length > 0) return { inserted: false, id: existing.rows[0].id };
+  const { rows } = await client.query(
+    `INSERT INTO task_costs (
+       task_id, tenant_id, type, amount_minor, currency_code,
+       description, added_by_user_id, owner_charge
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id`,
+    [
+      taskId,
+      tenantId,
+      line.type,
+      line.amountMinor,
+      line.currencyCode,
+      line.description || null,
+      actorUserId || null,
+      line.ownerCharge === true,
+    ],
+  );
+  return { inserted: true, id: rows[0].id };
+}
+
+async function insertImportedSupplyLine(client, tenantId, taskId, actorUserId, line) {
+  const existing = await client.query(
+    `SELECT id, stock_movement_id
+     FROM task_supplies
+     WHERE task_id = $1
+       AND tenant_id = $2
+       AND supply_id = $3
+       AND supply_name = $4
+       AND quantity = $5::numeric
+       AND unit = $6
+       AND COALESCE(location_code, '') = COALESCE($7, '')
+       AND COALESCE(unit_cost_minor, -1) = COALESCE($8, -1)
+       AND currency_code = $9
+       AND owner_charge = $10
+     LIMIT 1`,
+    [
+      taskId,
+      tenantId,
+      line.supplyId,
+      line.supplyName,
+      line.quantity,
+      line.unit,
+      line.locationCode || null,
+      line.unitCostMinor,
+      line.currencyCode,
+      line.ownerCharge === true,
+    ],
+  );
+  if (existing.rows.length > 0) return { inserted: false, movementInserted: false, id: existing.rows[0].id };
+
+  const { rows: movementRows } = await client.query(
+    `INSERT INTO stock_movements (
+       tenant_id, task_id, supply_id, supply_name, location_code,
+       quantity_delta, unit, reason, created_by_user_id
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'task_use', $8)
+     RETURNING id`,
+    [
+      tenantId,
+      taskId,
+      line.supplyId,
+      line.supplyName,
+      line.locationCode || null,
+      -line.quantity,
+      line.unit,
+      actorUserId || null,
+    ],
+  );
+
+  const { rows } = await client.query(
+    `INSERT INTO task_supplies (
+       task_id, tenant_id, supply_id, supply_name, category,
+       quantity, unit, location_code, unit_cost_minor, currency_code,
+       owner_charge, stock_movement_id, added_by_user_id
+     )
+     VALUES (
+       $1, $2, $3, $4, $5,
+       $6, $7, $8, $9, $10,
+       $11, $12, $13
+     )
+     RETURNING id`,
+    [
+      taskId,
+      tenantId,
+      line.supplyId,
+      line.supplyName,
+      line.category,
+      line.quantity,
+      line.unit,
+      line.locationCode || null,
+      line.unitCostMinor,
+      line.currencyCode,
+      line.ownerCharge === true,
+      movementRows[0].id,
+      actorUserId || null,
+    ],
+  );
+  return { inserted: true, movementInserted: true, id: rows[0].id };
 }
 
 function initInternalMaps(report) {
@@ -648,6 +961,11 @@ async function applyBreezewayCsv(options) {
   const apply = {
     inserted: 0,
     skippedExisting: preview.report.duplicates.existingExternalRefs.reduce((sum, item) => sum + item.count, 0),
+    insertedCosts: 0,
+    skippedCostDuplicates: 0,
+    insertedSupplies: 0,
+    skippedSupplyDuplicates: 0,
+    insertedStockMovements: 0,
     failed: 0,
     errors: [],
   };
@@ -712,8 +1030,23 @@ async function applyBreezewayCsv(options) {
             record.completedAt,
           ],
         );
-        if (rows.length > 0) apply.inserted += 1;
-        else apply.skippedExisting += 1;
+        if (rows.length > 0) {
+          apply.inserted += 1;
+          const taskId = rows[0].id;
+          for (const line of record.costLines || []) {
+            const result = await insertImportedCostLine(client, options.tenantId, taskId, options.actorUserId, line);
+            if (result.inserted) apply.insertedCosts += 1;
+            else apply.skippedCostDuplicates += 1;
+          }
+          for (const line of record.supplyLines || []) {
+            const result = await insertImportedSupplyLine(client, options.tenantId, taskId, options.actorUserId, line);
+            if (result.inserted) apply.insertedSupplies += 1;
+            else apply.skippedSupplyDuplicates += 1;
+            if (result.movementInserted) apply.insertedStockMovements += 1;
+          }
+        } else {
+          apply.skippedExisting += 1;
+        }
       } catch (error) {
         apply.failed += 1;
         apply.errors.push({
@@ -743,9 +1076,226 @@ async function applyBreezewayCsv(options) {
   return preview.report;
 }
 
+function readBundleParsed(directory, fileNames = DEFAULT_BUNDLE_FILES, fileTexts = null) {
+  if (!directory && !fileTexts) throw new Error('directory or files is required');
+  const dir = fileTexts ? 'uploaded-breezeway-bundle' : path.resolve(directory);
+  const files = {};
+  const parsed = {};
+  for (const [kind, fileName] of Object.entries(fileNames)) {
+    const uploaded = fileTexts ? fileTexts[kind] : null;
+    const csvText = typeof uploaded === 'string'
+      ? uploaded
+      : (uploaded && typeof uploaded.csvText === 'string' ? uploaded.csvText : null);
+    const effectiveFileName = uploaded && typeof uploaded.fileName === 'string' ? uploaded.fileName : fileName;
+    const filePath = fileTexts ? effectiveFileName : path.join(dir, fileName);
+    if (fileTexts && csvText == null) throw new Error(`Missing ${kind} export text`);
+    if (!fileTexts && !fs.existsSync(filePath)) throw new Error(`Missing ${kind} export: ${filePath}`);
+    const text = csvText == null ? fs.readFileSync(filePath, 'utf8') : csvText;
+    files[kind] = {
+      fileName: effectiveFileName,
+      path: filePath,
+      csvText: text,
+    };
+    parsed[kind] = parseCsv(text);
+  }
+  return { dir, files, parsed };
+}
+
+function rowHasAny(row, fields) {
+  return fields.some((field) => String(row[field] || '').trim().length > 0);
+}
+
+function buildCustomRowsByTaskId(summaryRows, customRows) {
+  const mismatches = [];
+  const byTaskId = new Map();
+  const comparedRows = Math.min(summaryRows.length, customRows.length);
+  for (let i = 0; i < comparedRows; i += 1) {
+    const summary = summaryRows[i];
+    const custom = customRows[i];
+    const matches = ['Task title', 'Due date', 'Created date', 'Last updated date']
+      .every((field) => String(summary[field] || '').trim() === String(custom[field] || '').trim());
+    if (!matches && mismatches.length < 25) {
+      mismatches.push({
+        rowNumber: custom.__rowNumber,
+        summaryTaskId: taskIdFromRow(summary),
+        summaryTitle: summary['Task title'] || null,
+        customTitle: custom['Task title'] || null,
+        summaryDueDate: summary['Due date'] || null,
+        customDueDate: custom['Due date'] || null,
+      });
+    }
+    const taskId = taskIdFromRow(summary);
+    if (taskId) byTaskId.set(taskId, custom);
+  }
+  return {
+    byTaskId,
+    report: {
+      rows: customRows.length,
+      joinStrategy: 'row_order_with_summary_task_id',
+      joinable: mismatches.length === 0 && summaryRows.length === customRows.length,
+      comparedRows,
+      mismatches,
+      taskReportLinkRows: customRows.filter((row) => String(row['Task report link'] || '').trim()).length,
+      propertyCodeRows: customRows.filter((row) => extractPropertyCode(row.Property)).length,
+    },
+  };
+}
+
+function buildSupplementalByTaskId(parsed) {
+  const { byTaskId: customByTaskId, report: customReport } = buildCustomRowsByTaskId(parsed.summary.rows, parsed.custom.rows);
+  const costByTaskId = mapRowsByTaskId(parsed.cost.rows);
+  const payrollByTaskId = mapRowsByTaskId(parsed.payroll.rows);
+  const suppliesByTaskId = mapRowsByTaskId(parsed.supplies.rows);
+  const supplementalByTaskId = new Map();
+
+  for (const row of parsed.summary.rows) {
+    const taskId = taskIdFromRow(row);
+    if (!taskId) continue;
+    supplementalByTaskId.set(taskId, {
+      customRow: customReport.joinable ? customByTaskId.get(taskId) : null,
+      costRows: (costByTaskId.get(taskId) || []).filter((costRow) => rowHasAny(costRow, [
+        'Cost type',
+        'Cost description',
+        'Cost amount',
+        'Cost bill to',
+        'Supply ID',
+        'Supply name',
+        'Supply quantity',
+        'Supply unit cost',
+        'Supply price',
+        'Supply bill to',
+      ])),
+      payrollRows: (payrollByTaskId.get(taskId) || []).filter((payrollRow) => rowHasAny(payrollRow, [
+        'Assignee',
+        'Employee ID',
+        'Rate paid',
+        'Rate type',
+        'Default rate',
+        'Default rate type',
+        'Estimated time',
+        'Total time',
+      ])),
+      supplyRows: (suppliesByTaskId.get(taskId) || []).filter((supplyRow) => rowHasAny(supplyRow, [
+        'Supply ID',
+        'Supply name',
+        'Supply quantity',
+        'Supply unit cost',
+        'Supply total cost',
+        'Supply is billable',
+        'Supply bill to',
+        'Supply total charge',
+      ])),
+    });
+  }
+
+  return {
+    supplementalByTaskId,
+    report: {
+      custom: customReport,
+      cost: {
+        rows: parsed.cost.rows.length,
+        uniqueTaskIds: costByTaskId.size,
+        lineRows: [...costByTaskId.values()].reduce((sum, rows) => sum + rows.filter((row) => rowHasAny(row, [
+          'Cost type',
+          'Cost description',
+          'Cost amount',
+          'Cost bill to',
+          'Supply ID',
+          'Supply name',
+          'Supply quantity',
+          'Supply unit cost',
+          'Supply price',
+          'Supply bill to',
+        ])).length, 0),
+      },
+      payroll: {
+        rows: parsed.payroll.rows.length,
+        uniqueTaskIds: payrollByTaskId.size,
+        provenanceRows: [...payrollByTaskId.values()].reduce((sum, rows) => sum + rows.filter((row) => rowHasAny(row, [
+          'Assignee',
+          'Employee ID',
+          'Rate paid',
+          'Rate type',
+          'Default rate',
+          'Default rate type',
+          'Estimated time',
+          'Total time',
+        ])).length, 0),
+        note: 'Payroll rows are preserved in source_payload; explicit cost export rows are inserted into task_costs.',
+      },
+      supplies: {
+        rows: parsed.supplies.rows.length,
+        uniqueTaskIds: suppliesByTaskId.size,
+        lineRows: [...suppliesByTaskId.values()].reduce((sum, rows) => sum + rows.filter((row) => rowHasAny(row, [
+          'Supply ID',
+          'Supply name',
+          'Supply quantity',
+          'Supply unit cost',
+          'Supply total cost',
+          'Supply is billable',
+          'Supply bill to',
+          'Supply total charge',
+        ])).length, 0),
+      },
+    },
+  };
+}
+
+function attachBundleReport(report, bundle) {
+  report.mode = report.apply ? 'bundle_apply' : 'bundle_preview';
+  report.sourceDirectory = bundle.dir;
+  report.files = Object.fromEntries(Object.entries(bundle.files).map(([kind, file]) => [
+    kind,
+    {
+      fileName: file.fileName,
+      path: file.path,
+      rows: bundle.parsed[kind].rows.length,
+      headers: bundle.parsed[kind].headers,
+    },
+  ]));
+  report.supplemental = bundle.supplementalReport;
+  return report;
+}
+
+function prepareBundleOptions(options) {
+  const fileNames = options.fileNames || DEFAULT_BUNDLE_FILES;
+  const fileTexts = options.fileTexts || options.uploadedFiles || null;
+  const bundle = readBundleParsed(options.directory || options.dir, fileNames, fileTexts);
+  const { supplementalByTaskId, report: supplementalReport } = buildSupplementalByTaskId(bundle.parsed);
+  if (options.mode === 'apply' && !supplementalReport.custom.joinable) {
+    throw new Error('Custom export row-order validation failed; refusing bundle apply');
+  }
+  bundle.supplementalReport = supplementalReport;
+  return {
+    bundle,
+    common: {
+      ...options,
+      csvText: bundle.files.summary.csvText,
+      fileName: bundle.files.summary.fileName,
+      supplementalByTaskId,
+    },
+  };
+}
+
+async function previewBreezewayBundle(options) {
+  const { bundle, common } = prepareBundleOptions(options);
+  const { report, records, headers } = await previewBreezewayCsv(common);
+  return { report: attachBundleReport(report, bundle), records, headers };
+}
+
+async function applyBreezewayBundle(options) {
+  if (!options.db) throw new Error('db is required for apply mode');
+  if (!options.tenantId) throw new Error('tenantId is required for apply mode');
+  const { bundle, common } = prepareBundleOptions({ ...options, mode: 'apply' });
+  const report = await applyBreezewayCsv(common);
+  return attachBundleReport(report, bundle);
+}
+
 module.exports = {
   parseCsv,
   previewBreezewayCsv,
   applyBreezewayCsv,
+  previewBreezewayBundle,
+  applyBreezewayBundle,
   extractPropertyCode,
 };

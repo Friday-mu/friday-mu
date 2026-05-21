@@ -36,7 +36,12 @@ const express = require('express');
 const { pool, query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { sendEmail, tplTaskAssigned } = require('../tenants/email');
-const { previewBreezewayCsv, applyBreezewayCsv } = require('./breezewayImport');
+const {
+  previewBreezewayCsv,
+  applyBreezewayCsv,
+  previewBreezewayBundle,
+  applyBreezewayBundle,
+} = require('./breezewayImport');
 
 const router = express.Router();
 
@@ -518,6 +523,52 @@ router.post('/imports/breezeway/apply', attachIdentity, async (req, res) => {
     res.json(report);
   } catch (e) {
     console.error('[tasks/imports/breezeway] apply error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/imports/breezeway/bundle-preview', attachIdentity, async (req, res) => {
+  try {
+    if (!requireImportRole(req, res)) return;
+    const body = req.body || {};
+    const fileTexts = body.files && typeof body.files === 'object' ? body.files : null;
+    if (!fileTexts) return res.status(400).json({ error: 'files object is required' });
+    const { report } = await previewBreezewayBundle({
+      fileTexts,
+      propertyMap: body.propertyMap && typeof body.propertyMap === 'object' ? body.propertyMap : {},
+      userMap: body.userMap && typeof body.userMap === 'object' ? body.userMap : {},
+      sampleSize: Number.isFinite(body.sampleSize) ? body.sampleSize : undefined,
+      tenantId: req.tenantId,
+      db: pool,
+    });
+    res.json(report);
+  } catch (e) {
+    console.error('[tasks/imports/breezeway] bundle preview error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/imports/breezeway/bundle-apply', attachIdentity, async (req, res) => {
+  try {
+    if (!requireImportRole(req, res)) return;
+    const body = req.body || {};
+    if (body.confirmApply !== true) {
+      return res.status(400).json({ error: 'confirmApply=true is required for Breezeway bundle import apply mode' });
+    }
+    const fileTexts = body.files && typeof body.files === 'object' ? body.files : null;
+    if (!fileTexts) return res.status(400).json({ error: 'files object is required' });
+    const report = await applyBreezewayBundle({
+      fileTexts,
+      propertyMap: body.propertyMap && typeof body.propertyMap === 'object' ? body.propertyMap : {},
+      userMap: body.userMap && typeof body.userMap === 'object' ? body.userMap : {},
+      sampleSize: Number.isFinite(body.sampleSize) ? body.sampleSize : undefined,
+      tenantId: req.tenantId,
+      actorUserId: req.identity?.userId || null,
+      db: pool,
+    });
+    res.json(report);
+  } catch (e) {
+    console.error('[tasks/imports/breezeway] bundle apply error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

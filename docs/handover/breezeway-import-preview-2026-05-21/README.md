@@ -8,11 +8,15 @@ Generated report:
 
 `bundle-preview.json`
 
+Apply-readiness report:
+
+`bundle-apply-preview.json`
+
 API validation report:
 
 `api-validation.json`
 
-This is preview-only. No production task rows were inserted or updated.
+`bundle-preview.json` was preview-only. `bundle-apply-preview.json` is the apply-readiness preview generated after import policy skips, `Watch` priority mapping, cost/supply child-row insertion, and payload redaction were implemented.
 
 ## Summary Export
 
@@ -46,24 +50,27 @@ This is preview-only. No production task rows were inserted or updated.
 
 ## Current Apply Readiness
 
-Not ready to apply.
+Ready to apply after one final production preview on the server.
 
 Resolved policy decisions:
 
 - Skip `Office / Store / Admin` rows as administrative/non-guest-facing.
 - Skip aggregate `GBH / Grand Baie Heights` rows; import individual unit rows only.
 - Map priority `Watch` to low/lowest plus source provenance, not urgent.
-- Unknown historical assignees should not block import; use approved user mapping where available, otherwise historical-only placeholders or a generic historical assignee pool.
+- Unknown historical assignees should not block import; historical rows remain unassigned unless a user map resolves them to current FAD user UUIDs.
+- Payroll export rows are preserved in `tasks.source_payload` as historical provenance rather than inserted as thousands of labor-cost rows.
+- Explicit cost export rows become `task_costs`; supply rows become `task_supplies` and matching `stock_movements`.
 
-Remaining blockers before apply:
+Production apply guardrails:
 
-- Confirm the production property/user mapping file or placeholder-user approach.
-- Implement child-row apply for cost/payroll/supply exports if those should become `task_costs` / `task_supplies` / inventory rows.
-- Get explicit confirmation before applying imports to production data.
+- Run the bundle importer on the VPS against the live `DATABASE_URL` in preview mode first.
+- Confirm production preview still reports 4,483 importable task rows and no unexpected existing `external_ref` collisions.
+- Apply once with `--confirm`; the task insert is idempotent on `tenant_id + external_ref`.
+- Do not re-add old Desktop sample CSVs or screenshot-derived sensitive values.
 
 Recommended next apply path:
 
-1. Import summary export as base historical `source = breezeway` task records after mappings are accepted, preserving `external_ref = breezeway:<Task ID>`.
-2. Enrich those base rows from the custom export by validated row order, especially property display labels, issue/comment counts, guest-arrival rating, report link, and custom status labels.
-3. Keep historical open rows unassigned unless the user map is explicitly approved.
-4. Import cost/payroll/supply child rows in a second pass joined by `Task ID`.
+1. Copy the five current CSV exports to a temporary folder on the VPS.
+2. Run `node scripts/breezeway-task-bundle-import.js --dir <folder> --mode preview --out <report>`.
+3. If the report matches `bundle-apply-preview.json`, run the same command with `--mode apply --confirm`.
+4. Verify live counts for `source = breezeway`, `external_ref LIKE 'breezeway:%'`, `task_costs`, and `task_supplies`.
