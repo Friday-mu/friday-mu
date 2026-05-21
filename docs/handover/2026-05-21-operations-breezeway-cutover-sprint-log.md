@@ -190,3 +190,26 @@
 - Responsive screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave7/`; 320/375/430/768/1440 showed 0 horizontal overflow and 0 small targets inside the manager workbench.
 - Residual shell note: the global Ask Friday search input itself measures 21px high at 768/desktop, but it sits inside the larger header search pill and was not changed in this Operations slice.
 - Verification passed: frontend typecheck, frontend build, restored `next-env.d.ts`, rerun typecheck, and `git diff --check`.
+
+## 2026-05-21 Breezeway Historical Import Mini-Research
+
+- Current `fad-rebuild` task schema already has `source = breezeway`, `bz_id`, and tenant-scoped `external_ref`; the import should extend that model, not create a second historical task system.
+- Sample Breezeway CSV exports have 36 columns including Task ID, property IDs/names, lifecycle dates/times, assignees/employee IDs, summary/description/tags, time, rate/cost, currency, and bill-to.
+- Existing samples contain `Finished`, `Closed`, and `Not Started`; map to `completed`, `closed`, and `scheduled`, but leave historical open rows unassigned unless an explicit user map resolves them.
+- Current backend has no durable source-payload/import-batch fields, so add additive task provenance columns and keep original Breezeway timestamps separate from FAD import audit timestamps.
+- Feature Catalog/local search found no reusable import pipeline; reuse the Operations task service and existing `external_ref` idempotency pattern.
+- Notion confirms Supplies/Tasks migration should be CSV-first and task-linked, with Breezeway as a temporary source only; Running Decisions now says Operations is already on the Breezeway replacement path.
+- Breezeway API docs confirm List Tasks filters by Breezeway or reference property IDs and auth tokens are 24h with a 1 request/min token endpoint; API validation should be optional and token-cached.
+- OWASP CSV Injection guidance means any preview/export-style report must guard spreadsheet formula-leading values; imported text also needs sensitive access/Wi-Fi/lockbox redaction.
+- Decision: implement CSV preview/apply tooling with default CSV-only behavior, idempotent `external_ref = breezeway:<Task ID>`, source provenance, unknown mapping reports, and a separate optional API validation script.
+
+## 2026-05-21 Breezeway Historical Import Checkpoint
+
+- Added migration 054 for import batch ID, redacted source payload, and original Breezeway source timestamps on `tasks`.
+- Added Operations-owned CSV preview/apply service and manager-gated routes under `/api/tasks/imports/breezeway/*`.
+- Added CLI preview/apply tooling plus a temporary opt-in Breezeway API validator that reads Keychain only when explicitly invoked.
+- Preview reports include total/valid/insertable rows, duplicate task IDs/external refs, existing refs, unknown properties/users/statuses/priorities/departments, empty critical fields, skipped rows, redactions, formula escapes, and sanitized samples.
+- Sample exports parsed cleanly: 8/8 and 40/40 valid with 0 skipped; property/user mappings remain unresolved until a confirmed map is provided.
+- Apply mode inserts only non-existing `external_ref = breezeway:<Task ID>` records; historical open rows remain unassigned by default to avoid field-staff-visible stale work.
+- Fixed a legacy `backend/src/server.ts` TypeScript shorthand bug so backend `npm run build` is green.
+- Live coordination note: after Ops `87b26bc` was deployed, another session deployed frontend `35d86ef` from `origin/fad-design-os-v01-frontend`; do not overwrite it without merging/coordination.

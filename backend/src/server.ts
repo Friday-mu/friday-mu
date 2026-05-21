@@ -302,12 +302,12 @@ app.post('/api/messages/:id/generate-reply', async (req, res) => {
       io.to(`conversation_${message.conversation_id}`).emit('ai_reply_generated', {
         messageId,
         ai_suggested_reply: ai_reply_en,
-        ai_suggested_reply_translated
+        ai_suggested_reply_translated: ai_reply_translated
       });
 
       res.json({
         ai_suggested_reply: ai_reply_en,
-        ai_suggested_reply_translated
+        ai_suggested_reply_translated: ai_reply_translated
       });
 
     } catch (gmsError) {

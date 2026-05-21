@@ -35,6 +35,7 @@
 const express = require('express');
 const { pool, query } = require('../database/client');
 const { attachIdentity } = require('../auth/identity');
+const { previewBreezewayCsv, applyBreezewayCsv } = require('./breezewayImport');
 
 const router = express.Router();
 
@@ -60,6 +61,14 @@ const VALID_REQUIREMENT_KIND = new Set([
 ]);
 const VALID_SUPPLY_CATEGORY = new Set([
   'linen', 'amenity', 'cleaning', 'maintenance', 'welcome', 'consumable', 'other',
+]);
+const IMPORT_ROLES = new Set([
+  'admin',
+  'director',
+  'ops_manager',
+  'operations_manager',
+  'manager',
+  'supervisor',
 ]);
 
 // Mig-050-era callers used todo/done. The cutover lifecycle keeps
@@ -157,6 +166,13 @@ function shapeTask(row, comments = [], costs = [], supplies = []) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     completed_at: row.completed_at,
+    import_batch_id: row.import_batch_id,
+    source_payload: row.source_payload || {},
+    source_created_at: row.source_created_at,
+    source_updated_at: row.source_updated_at,
+    source_started_at: row.source_started_at,
+    source_due_at: row.source_due_at,
+    source_completed_at: row.source_completed_at,
     comments,
     costs,
     supplies,
@@ -227,6 +243,13 @@ function parseOptionalMinor(value) {
   const amount = Math.round(Number(value));
   if (!Number.isFinite(amount) || amount < 0) return null;
   return amount;
+}
+
+function requireImportRole(req, res) {
+  const role = cleanText(req.identity?.userRole || req.identity?.role, '').toLowerCase();
+  if (IMPORT_ROLES.has(role)) return true;
+  res.status(403).json({ error: 'Operations import requires manager/supervisor access' });
+  return false;
 }
 
 // Resolve a UUID[] of assignee_user_ids to a parallel array of
@@ -397,6 +420,55 @@ router.get('/', attachIdentity, async (req, res) => {
     res.json({ tasks: hydrated.map((r) => shapeTask(r)) });
   } catch (e) {
     console.error('[tasks] list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── One-time Breezeway historical import ────────────────────────
+router.post('/imports/breezeway/preview', attachIdentity, async (req, res) => {
+  try {
+    if (!requireImportRole(req, res)) return;
+    const body = req.body || {};
+    const csvText = typeof body.csvText === 'string' ? body.csvText : '';
+    if (!csvText.trim()) return res.status(400).json({ error: 'csvText is required' });
+    const { report } = await previewBreezewayCsv({
+      csvText,
+      fileName: typeof body.fileName === 'string' ? body.fileName : null,
+      propertyMap: body.propertyMap && typeof body.propertyMap === 'object' ? body.propertyMap : {},
+      userMap: body.userMap && typeof body.userMap === 'object' ? body.userMap : {},
+      sampleSize: Number.isFinite(body.sampleSize) ? body.sampleSize : undefined,
+      tenantId: req.tenantId,
+      db: pool,
+    });
+    res.json(report);
+  } catch (e) {
+    console.error('[tasks/imports/breezeway] preview error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/imports/breezeway/apply', attachIdentity, async (req, res) => {
+  try {
+    if (!requireImportRole(req, res)) return;
+    const body = req.body || {};
+    if (body.confirmApply !== true) {
+      return res.status(400).json({ error: 'confirmApply=true is required for Breezeway import apply mode' });
+    }
+    const csvText = typeof body.csvText === 'string' ? body.csvText : '';
+    if (!csvText.trim()) return res.status(400).json({ error: 'csvText is required' });
+    const report = await applyBreezewayCsv({
+      csvText,
+      fileName: typeof body.fileName === 'string' ? body.fileName : null,
+      propertyMap: body.propertyMap && typeof body.propertyMap === 'object' ? body.propertyMap : {},
+      userMap: body.userMap && typeof body.userMap === 'object' ? body.userMap : {},
+      sampleSize: Number.isFinite(body.sampleSize) ? body.sampleSize : undefined,
+      tenantId: req.tenantId,
+      actorUserId: req.identity?.userId || null,
+      db: pool,
+    });
+    res.json(report);
+  } catch (e) {
+    console.error('[tasks/imports/breezeway] apply error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
