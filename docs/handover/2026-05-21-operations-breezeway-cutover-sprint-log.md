@@ -368,3 +368,24 @@
 - Verification passed: `git diff --check`, frontend `npx tsc --noEmit`, frontend `npm run build`, backend `node --check`, backend `npm run build`, and backend `npm test -- --runInBand`.
 - Rendered QA used mocked `/api/tasks` + `/api/hr/staff` at 320/375/430/768/1440; body horizontal overflow stayed at viewport width and no visible `Intake`, `Breezeway`, fake property capacity, or fake attachment labels leaked.
 - Screenshots: `docs/handover/qa-screenshots-2026-05-21-ops-cleanup/`.
+
+## 2026-05-22 HR Roster Persistence Mini-Research
+
+- Current `fad-rebuild` has the roster UI backed by `/api/hr/staff` and `/api/tasks`, but weekly availability edits still live only in React state and the publish button is intentionally disabled.
+- Existing HR backend style is direct Express + `pg`, with JWT permission gates in `backend/src/hr/auth.js` and FAD schema migrations tracked by `fad_schema_migrations`.
+- The roster model should remain HR/Ops-owned availability by staff/date; it should not become the future desktop task-calendar scheduling system, and it should not depend on Breezeway.
+- Existing frontend permission config already names `hr_roster`; the backend permission matrix needs matching `hr_roster:read/write/approve` permissions.
+- Field staff should be able to read their own published roster rows; manager draft roster edits should stay manager-only until publish.
+- Use HR `staff_id` as the durable roster key because some staff may not have login/user IDs; task assignment remains tied to users where possible.
+- Keep the UI honest: save draft and publish persisted roster weeks, show backend errors, and do not imply TeamInbox/Notifications acknowledgement is solved in this slice.
+- Decision: add `hr_roster_weeks` + `hr_roster_days`, wire `GET/PUT/PUBLISH /api/hr/roster`, then connect RosterPage to saved rows with local dirty state.
+
+### Checkpoint
+
+- Added `backend/migrations/073_hr_roster.sql` with tenant-scoped roster weeks and staff/date roster days keyed by HR `staff_id`.
+- Added `GET /api/hr/roster?week_start=YYYY-MM-DD`, `PUT /api/hr/roster`, and `POST /api/hr/roster/publish`; managers see the team roster and field users without `hr_roster:read` see only their linked row after the week is published.
+- Extended the backend HR permission matrix with `hr_roster:read/write/approve` for director/admin and Ops manager roles, plus manager/supervisor aliases.
+- Wired Operations Roster to load saved weeks, save dirty edits, publish persisted weeks, and show Draft/Published state instead of the previous disabled placeholder.
+- Fixed the roster mobile split-pane regression found during QA: mobile now shows the day pager instead of hiding the roster content or showing the desktop table.
+- Browser QA used a local mock API for `/api/hr/staff`, `/api/hr/roster`, `/api/hr/roster/publish`, and `/api/tasks`; save draft and publish interactions updated the rendered state with no console warnings/errors.
+- Responsive QA screenshots: `docs/handover/qa-screenshots-2026-05-22-roster-persistence/`; 320/375/430/1440 checks stayed at viewport width with no horizontal overflow.

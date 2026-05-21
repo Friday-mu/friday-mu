@@ -974,8 +974,10 @@ app.use('/api/public/chat', publicChatRoutes);
 // TODO: tenant-scope queries here + drop the FR lockdown above.
 const hrStaffRoutes = require('./src/hr/staff');
 const hrTimeOffRoutes = require('./src/hr/time-off');
+const hrRosterRoutes = require('./src/hr/roster');
 app.use('/api/hr/staff', hrStaffRoutes);
 app.use('/api/hr/time-off', hrTimeOffRoutes);
+app.use('/api/hr/roster', hrRosterRoutes);
 
 // Design module routes — FAD-owned tables (design_*), Director-gated.
 // Sub-routers land progressively per design-be-N slices. See

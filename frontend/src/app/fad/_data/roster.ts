@@ -42,12 +42,17 @@ export const ZONE_COLOR: Record<Zone, { bg: string; fg: string }> = {
 };
 
 export interface RosterDay {
+  id?: string;
   userId: string;
+  staffId?: string;
   date: string; // YYYY-MM-DD
   availability: Availability;
   zone?: Zone | null;
   notes?: string;
   leaveType?: 'annual' | 'sick' | 'personal';
+  startTime?: string | null;
+  endTime?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface RosterWeek {

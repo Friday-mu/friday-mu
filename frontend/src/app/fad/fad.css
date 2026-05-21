@@ -5218,8 +5218,8 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
    day-pager full-screen so it's actually usable. */
 @media (max-width: 768px) {
   .fad-roster-pane > .fad-split-list { display: none !important; }
-  .fad-roster-pane > .fad-split-detail { display: block !important; }
-  .fad-split-pane > .fad-roster-grid-desktop { display: none; }
+  .fad-roster-pane > .fad-roster-grid-mobile { display: block !important; }
+  .fad-split-pane > .fad-roster-grid-desktop { display: none !important; }
 }
 
 /* Drawer sizing on mobile — use full viewport width */
@@ -8048,8 +8048,8 @@ body:has(.ops-create-drawer) .bug-fab {
   .ops-roster-grid {
     padding: 12px 14px;
   }
-  .fad-roster-grid-desktop { display: none; }
-  .fad-roster-grid-mobile { display: block; }
+  .fad-roster-grid-desktop { display: none !important; }
+  .fad-roster-grid-mobile { display: block !important; }
 }
 
 .fad-roster-day-pager {

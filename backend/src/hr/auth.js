@@ -10,29 +10,53 @@
 
 const jwt = require('jsonwebtoken');
 
+const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const ALL_HR_PERMS = [
+  'hr_staff:read',
+  'hr_staff:read_sensitive',
+  'hr_staff:write',
+  'hr_roster:read',
+  'hr_roster:write',
+  'hr_roster:approve',
+  'hr_time_off:read',
+  'hr_time_off:approve',
+];
+
 const ROLE_PERMS = {
   // GMS issues role='admin' for director-level accounts. Treat 'director'
   // as an alias for forward compatibility.
-  admin: new Set([
-    'hr_staff:read',
-    'hr_staff:read_sensitive',
-    'hr_staff:write',
-    'hr_time_off:read',
-    'hr_time_off:approve',
-  ]),
-  director: new Set([
-    'hr_staff:read',
-    'hr_staff:read_sensitive',
-    'hr_staff:write',
-    'hr_time_off:read',
-    'hr_time_off:approve',
-  ]),
+  admin: new Set(ALL_HR_PERMS),
+  director: new Set(ALL_HR_PERMS),
   // Operations managers need the non-sensitive HR roster/staff directory for
   // task planning and assignment. Sensitive staff fields remain director-only.
   ops_manager: new Set([
     'hr_staff:read',
+    'hr_roster:read',
+    'hr_roster:write',
+    'hr_roster:approve',
     'hr_time_off:read',
     'hr_time_off:approve',
+  ]),
+  operations_manager: new Set([
+    'hr_staff:read',
+    'hr_roster:read',
+    'hr_roster:write',
+    'hr_roster:approve',
+    'hr_time_off:read',
+    'hr_time_off:approve',
+  ]),
+  manager: new Set([
+    'hr_staff:read',
+    'hr_roster:read',
+    'hr_roster:write',
+    'hr_roster:approve',
+    'hr_time_off:read',
+  ]),
+  supervisor: new Set([
+    'hr_staff:read',
+    'hr_roster:read',
+    'hr_roster:write',
+    'hr_time_off:read',
   ]),
   // Everyone else has implicit baseline perms set in the route handlers
   // themselves — e.g. any authenticated user can submit their own
@@ -79,6 +103,7 @@ function requireHrPerm(perm) {
       return res.status(403).json({ error: `Forbidden — missing permission ${perm}` });
     }
     req.identity = identity;
+    req.tenantId = identity.tenantId || DEFAULT_TENANT_ID;
     next();
   };
 }
@@ -92,11 +117,14 @@ function attachIdentity(req, res, next) {
   const identity = decodeJwt(req);
   if (!identity) return res.status(401).json({ error: 'Unauthorized' });
   req.identity = identity;
+  req.tenantId = identity.tenantId || DEFAULT_TENANT_ID;
   next();
 }
 
 module.exports = {
+  DEFAULT_TENANT_ID,
   ROLE_PERMS,
+  ALL_HR_PERMS,
   decodeJwt,
   hasPerm,
   requireHrPerm,

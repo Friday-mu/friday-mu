@@ -10,6 +10,12 @@ import {
   type RosterDay,
   type Zone,
 } from '../../../_data/roster';
+import {
+  loadRosterWeek,
+  publishRosterWeek,
+  saveRosterWeek,
+  type ApiRosterWeek,
+} from '../../../_data/rosterClient';
 import type { Task } from '../../../_data/tasks';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../../_data/operationsStaffClient';
 import { useApiTasksPage } from '../../../_data/useApiTasks';
@@ -84,7 +90,8 @@ function defaultCell(user: OperationsStaffUser, date: string): RosterDay {
   const weekend = day === 0 || day === 6;
   const zone = user.zone === 'north' || user.zone === 'west' ? user.zone : null;
   return {
-    userId: user.id,
+    userId: staffKey(user),
+    staffId: user.staffId || user.id,
     date,
     availability: weekend ? 'off' : 'on',
     zone: weekend ? null : zone,
@@ -95,6 +102,16 @@ function cellKey(userId: string, date: string): string {
   return `${userId}:${date}`;
 }
 
+function staffKey(user: OperationsStaffUser): string {
+  return user.staffId || user.id;
+}
+
+function statusLabel(status?: ApiRosterWeek['status']): string {
+  if (status === 'published') return 'Published';
+  if (status === 'archived') return 'Archived';
+  return 'Draft';
+}
+
 export function RosterPage() {
   const { role, can } = usePermissions();
   const currentUserId = useCurrentUserId();
@@ -102,6 +119,11 @@ export function RosterPage() {
   const [weekStart, setWeekStart] = useState(() => mondayFor(todayIso()));
   const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
   const [staffError, setStaffError] = useState<string | null>(null);
+  const [rosterWeek, setRosterWeek] = useState<ApiRosterWeek | null>(null);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [editing, setEditing] = useState<{ userId: string; date: string } | null>(null);
   const [overrides, setOverrides] = useState<Record<string, RosterDay>>({});
   const [mobileDayIdx, setMobileDayIdx] = useState(0);
@@ -136,6 +158,30 @@ export function RosterPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setRosterLoading(true);
+    setRosterError(null);
+    setOverrides({});
+    setDirty(false);
+    void loadRosterWeek(weekStart)
+      .then((week) => {
+        if (!cancelled) setRosterWeek(week);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setRosterWeek(null);
+          setRosterError(e instanceof Error ? e.message : 'Roster week unavailable');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRosterLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [weekStart]);
+
   const visibleUsers = useMemo(() => {
     const sorted = [...staffUsers].sort((a, b) => a.name.localeCompare(b.name));
     if (role === 'field' || role === 'commercial_marketing') {
@@ -144,17 +190,107 @@ export function RosterPage() {
     return sorted;
   }, [currentUserId, role, staffUsers]);
 
-  const findCell = (user: OperationsStaffUser, date: string): RosterDay =>
-    overrides[cellKey(user.id, date)] || defaultCell(user, date);
+  const savedCells = useMemo(() => {
+    const next: Record<string, RosterDay> = {};
+    for (const day of rosterWeek?.days || []) {
+      const key = day.staff_id || day.user_id;
+      if (!key || !day.date || !day.availability) continue;
+      next[cellKey(key, day.date)] = {
+        id: day.id,
+        userId: key,
+        staffId: day.staff_id || key,
+        date: day.date,
+        availability: day.availability,
+        zone: day.zone === 'north' || day.zone === 'west' ? day.zone : null,
+        leaveType: day.leave_type === 'annual' || day.leave_type === 'sick' || day.leave_type === 'personal' ? day.leave_type : undefined,
+        startTime: day.start_time ?? null,
+        endTime: day.end_time ?? null,
+        notes: day.notes ?? undefined,
+        updatedAt: day.updated_at ?? null,
+      };
+    }
+    return next;
+  }, [rosterWeek]);
+
+  const findCell = (user: OperationsStaffUser, date: string): RosterDay => {
+    const key = staffKey(user);
+    return overrides[cellKey(key, date)] || savedCells[cellKey(key, date)] || defaultCell(user, date);
+  };
 
   const updateCell = (user: OperationsStaffUser, date: string, opt: CellOption) => {
+    const key = staffKey(user);
     const next: RosterDay = {
-      userId: user.id,
+      userId: key,
+      staffId: user.staffId || user.id,
       date,
       availability: opt.availability,
       zone: opt.zone,
     };
-    setOverrides((current) => ({ ...current, [cellKey(user.id, date)]: next }));
+    setOverrides((current) => ({ ...current, [cellKey(key, date)]: next }));
+    setDirty(true);
+  };
+
+  const persistableUsers = visibleUsers.filter((user) => user.staffId || user.id);
+  const collectWeekDays = (): RosterDay[] =>
+    persistableUsers.flatMap((user) =>
+      dates.map((date) => {
+        const cell = findCell(user, date);
+        return {
+          ...cell,
+          userId: staffKey(user),
+          staffId: user.staffId || user.id,
+        };
+      }),
+    );
+
+  const saveDraft = async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!canEdit || saving) return rosterWeek;
+    if (persistableUsers.length === 0) {
+      const msg = 'No HR staff records are available to save.';
+      setRosterError(msg);
+      if (!silent) fireToast(msg);
+      return rosterWeek;
+    }
+    setSaving(true);
+    setRosterError(null);
+    try {
+      const saved = await saveRosterWeek({ weekStart, days: collectWeekDays() });
+      setRosterWeek(saved);
+      setOverrides({});
+      setDirty(false);
+      if (!silent) fireToast('Roster draft saved');
+      return saved;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Roster save failed';
+      setRosterError(msg);
+      if (!silent) fireToast(msg);
+      return rosterWeek;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const publishWeek = async () => {
+    if (!canEdit || saving) return;
+    setSaving(true);
+    setRosterError(null);
+    try {
+      const saved = dirty ? await saveRosterWeek({ weekStart, days: collectWeekDays() }) : rosterWeek;
+      if (saved) {
+        setRosterWeek(saved);
+        setOverrides({});
+        setDirty(false);
+      }
+      const published = await publishRosterWeek(weekStart);
+      setRosterWeek(published);
+      fireToast('Roster published');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Roster publish failed';
+      setRosterError(msg);
+      fireToast(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const workload = useMemo(() => buildWorkload(tasksPage.tasks, dates, visibleUsers), [dates, tasksPage.tasks, visibleUsers]);
@@ -173,23 +309,40 @@ export function RosterPage() {
         <span className="chip" style={{ fontSize: 11 }}>
           HR directory · {visibleUsers.length} staff
         </span>
+        <span className="chip" style={{ fontSize: 11 }}>
+          {rosterLoading ? 'Loading roster...' : statusLabel(rosterWeek?.status)}
+          {dirty ? ' · unsaved' : ''}
+        </span>
+        {rosterWeek?.published_at && (
+          <span className="chip" style={{ fontSize: 11 }}>
+            Published {formatShortDate(rosterWeek.published_at.slice(0, 10))}
+          </span>
+        )}
         <button
           className="btn ghost sm"
-          disabled={!canEdit}
+          disabled={!canEdit || saving || !dirty}
+          title={canEdit ? undefined : 'Roster edits are manager-only'}
+          onClick={() => void saveDraft()}
+        >
+          {saving ? 'Saving...' : 'Save draft'}
+        </button>
+        <button
+          className="btn ghost sm"
+          disabled={!canEdit || saving || persistableUsers.length === 0}
           title={canEdit ? undefined : 'Roster publishing is manager-only'}
-          onClick={() => fireToast('Roster publish needs the /api/hr/roster persistence endpoint before it can lock a week.')}
+          onClick={() => void publishWeek()}
         >
           Publish
         </button>
       </div>
 
-      {(staffError || tasksPage.error) && (
+      {(staffError || rosterError || tasksPage.error) && (
         <div className="ops-roster-warning">
-          {staffError || tasksPage.error}
+          {staffError || rosterError || tasksPage.error}
         </div>
       )}
 
-      <div className="fad-split-pane fad-roster-pane" style={{ overflow: 'auto' }}>
+      <div className="fad-split-pane fad-roster-pane detail-open" style={{ overflow: 'auto' }}>
         <div className="fad-split-list ops-roster-side">
           <RosterWorkload
             weekStart={weekStart}
@@ -197,7 +350,9 @@ export function RosterPage() {
             staff={visibleUsers}
             assignableCount={visibleUsers.filter((user) => user.canAssign).length}
             workload={workload}
-            loading={tasksPage.loading}
+            loading={tasksPage.loading || rosterLoading}
+            rosterStatus={rosterWeek?.status}
+            dirty={dirty}
           />
         </div>
 
@@ -224,14 +379,15 @@ export function RosterPage() {
                     <StaffBadge user={user} />
                   </td>
                   {dates.map((date) => {
+                    const key = staffKey(user);
                     const cell = findCell(user, date);
-                    const isEditingThis = editing?.userId === user.id && editing?.date === date;
+                    const isEditingThis = editing?.userId === key && editing?.date === date;
                     return (
                       <td key={date} style={{ position: 'relative' }}>
                         <RosterCell
                           cell={cell}
                           editable={canEdit}
-                          onClick={() => canEdit && setEditing({ userId: user.id, date })}
+                          onClick={() => canEdit && setEditing({ userId: key, date })}
                         />
                         {isEditingThis && (
                           <CellEditPopover
@@ -285,8 +441,9 @@ export function RosterPage() {
 
           <ul className="fad-roster-day-list">
             {visibleUsers.map((user) => {
+              const key = staffKey(user);
               const cell = mobileDate ? findCell(user, mobileDate) : undefined;
-              const isEditingThis = editing?.userId === user.id && editing?.date === mobileDate;
+              const isEditingThis = editing?.userId === key && editing?.date === mobileDate;
               return (
                 <li key={user.id} className="fad-roster-day-row">
                   <StaffBadge user={user} compact />
@@ -295,7 +452,7 @@ export function RosterPage() {
                       <RosterCell
                         cell={cell}
                         editable={canEdit}
-                        onClick={() => canEdit && mobileDate && setEditing({ userId: user.id, date: mobileDate })}
+                        onClick={() => canEdit && mobileDate && setEditing({ userId: key, date: mobileDate })}
                       />
                     )}
                     {isEditingThis && cell && mobileDate && (
@@ -429,6 +586,8 @@ function RosterWorkload({
   assignableCount,
   workload,
   loading,
+  rosterStatus,
+  dirty,
 }: {
   weekStart: string;
   weekEnd: string;
@@ -436,6 +595,8 @@ function RosterWorkload({
   assignableCount: number;
   workload: WorkloadSummary;
   loading: boolean;
+  rosterStatus?: ApiRosterWeek['status'];
+  dirty: boolean;
 }) {
   const unlinked = staff.length - assignableCount;
   return (
@@ -447,6 +608,7 @@ function RosterWorkload({
         <div><strong>{staff.length}</strong><span>active staff</span></div>
         <div><strong>{assignableCount}</strong><span>task-assignable</span></div>
         <div><strong>{unlinked}</strong><span>needs login link</span></div>
+        <div><strong>{statusLabel(rosterStatus)}</strong><span>{dirty ? 'unsaved edits' : 'saved state'}</span></div>
       </div>
 
       <RosterBars title="Tasks by day" rows={workload.byDay.map((day) => ({ label: DAY_LABEL[new Date(`${day.date}T00:00:00Z`).getUTCDay()], count: day.count }))} />
