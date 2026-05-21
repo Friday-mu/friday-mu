@@ -172,6 +172,17 @@ html.fad-dark .fad-brand-name { color: #e8e9ec; }
   letter-spacing: 0.1em;
   margin-top: 1px;
 }
+.fad-brand-wordmark {
+  font-family: var(--font-sans-fad);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 23px;
+  letter-spacing: 0;
+  color: var(--color-brand-navy);
+  line-height: 1;
+  padding: 2px 4px 2px 2px;
+}
+html.fad-dark .fad-brand-wordmark { color: #f3f4f7; }
 
 .fad-ask-wrap { flex: 1; display: flex; justify-content: center; }
 .fad-ask-pill {
@@ -1813,6 +1824,7 @@ html.fad-dark .bug-fab:hover { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6); }
   .fad-header { padding: 0 10px; gap: 6px; }
   .fad-brand { min-width: 0; gap: 6px; }
   .fad-brand span { display: none; }
+  .fad-brand .fad-brand-wordmark { display: inline-block; font-size: 18px; }
   .fad-ask-pill {
     min-width: 0;
     padding: 6px 10px;

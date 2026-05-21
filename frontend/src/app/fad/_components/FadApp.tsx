@@ -35,10 +35,16 @@ import { TrainingModule } from './modules/TrainingModule';
 import { NotificationsModule } from './modules/NotificationsModule';
 import { HRModule } from './modules/HRModule';
 import { DesignModule } from './modules/DesignModule';
+import { TenantSettingsModule } from './modules/TenantSettingsModule';
+import { BillingModule } from './modules/BillingModule';
+import { AdminAnalyticsModule } from './modules/AdminAnalyticsModule';
 import { MODULE_RESOURCE, PermissionsProvider, useCurrentRole } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
 import { apiFetch, getToken } from '../../../components/types';
+import { useEnabledModules } from '../_data/useEnabledModules';
+import { useAnnexA } from '../_data/useAnnexA';
+import { useTenantCurrency } from '../_data/useTenantCurrency';
 
 type Theme = 'light' | 'dark';
 
@@ -76,6 +82,9 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   const [authChecked, setAuthChecked] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const role = useCurrentRole();
+  const { enabledSet } = useEnabledModules();
+  useAnnexA();
+  useTenantCurrency();
 
   useEffect(() => {
     if (!getToken()) {
@@ -203,6 +212,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
     : null;
   const fridayScope = fridayScopeOverride
     || (subPageLabel ? `${mod.label} · ${subPageLabel}` : mod.label);
+  const moduleDisabledForTenant = !fridayFs && enabledSet !== null && !enabledSet.has(active);
 
   // Single entry point used by header pill, sidebar tile, ⌘/, AND inline triggers (Friday brief
   // cards, "Ask Friday" inline buttons). Optional `scope` overrides the auto-computed module+sub-page.
@@ -288,6 +298,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
               }}
               onExit={() => setFridayFs(false)}
             />
+          ) : moduleDisabledForTenant ? (
+            <ModuleNotEnabled label={mod.label} />
           ) : (
             renderModule(mod, subPage, { theme, toggleTheme, openFriday, finRole, setFinRole, setSubPage })
           )}
@@ -315,6 +327,19 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       {mustChangePassword && (
         <ChangePasswordModal onChanged={() => setMustChangePassword(false)} />
       )}
+    </div>
+  );
+}
+
+function ModuleNotEnabled({ label }: { label: string }) {
+  return (
+    <div className="fad-module-body">
+      <div className="card" style={{ padding: 24, maxWidth: 560, margin: '40px auto', textAlign: 'center' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 500 }}>{label} is not enabled</h3>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+          This module is not enabled for your tenant.
+        </p>
+      </div>
     </div>
   );
 }
@@ -381,6 +406,12 @@ function renderModuleInner(
       return <NotificationsModule />;
     case 'design':
       return <DesignModule subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} openFriday={ctx.openFriday} />;
+    case 'tenant-settings':
+      return <TenantSettingsModule subPage={subPage || 'general'} onChangeSubPage={ctx.setSubPage} />;
+    case 'billing':
+      return <BillingModule />;
+    case 'admin-analytics':
+      return <AdminAnalyticsModule />;
     case 'syndic':
     case 'agency':
       return <TeaseModule mod={mod} />;

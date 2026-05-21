@@ -17,8 +17,8 @@ import {
 } from './icons';
 import { RoleSwitcher } from './PermissionGate';
 import { usePermissions, useCurrentUserId } from './usePermissions';
-import { TASK_USER_BY_ID } from '../_data/tasks';
 import { ROLE_LABEL } from '../_data/permissions';
+import { useDisplayedUser } from '../_data/useDisplayedUser';
 import { clearToken } from '../../../components/types';
 import {
   topNotifications,
@@ -63,7 +63,7 @@ export function Header({
   avatarOpen,
 }: Props) {
   const { currentUserId, role } = usePermissions();
-  const currentUser = TASK_USER_BY_ID[currentUserId];
+  const currentUser = useDisplayedUser();
 
   // Subscribe to notifications-rev so the bell dot updates reactively
   const [, setNotifRev] = useState(0);
@@ -88,18 +88,7 @@ export function Header({
           onClick={onGoHome}
           title="Home · Inbox"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/friday-logo.jpg"
-            alt="Friday"
-            className="fad-brand-logo"
-            width={32}
-            height={32}
-          />
-          <span className="fad-brand-name">
-            friday.mu
-            <span className="fad-brand-sub">Admin</span>
-          </span>
+          <span className="fad-brand-wordmark">fridayOS</span>
         </button>
       </div>
 
@@ -330,8 +319,11 @@ function HelpDropdown() {
 }
 
 function AvatarDropdown() {
-  const { currentUserId, role } = usePermissions();
-  const user = TASK_USER_BY_ID[currentUserId];
+  const { role } = usePermissions();
+  const user = useDisplayedUser();
+  const domain = user.email && user.email.includes('@')
+    ? user.email.split('@')[1]
+    : 'friday.mu';
 
   // @demo:auth — Tag: PROD-AUTH-2 — see frontend/DEMO_CRUFT.md
   // Replace with: POST /api/auth/logout to invalidate session server-side.
@@ -354,9 +346,9 @@ function AvatarDropdown() {
   return (
     <div className="fad-dropdown" style={{ width: 220 }}>
       <div style={{ padding: '10px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-        <div style={{ fontWeight: 500, fontSize: 13 }}>{user?.name ?? 'Unknown user'}</div>
+        <div style={{ fontWeight: 500, fontSize: 13 }}>{user.name}</div>
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          {ROLE_LABEL[role]} · friday.mu
+          {ROLE_LABEL[role]} · {domain}
         </div>
       </div>
       <button className="fad-dropdown-item">Profile</button>

@@ -5,6 +5,8 @@ import { MODULES, GROUPS, type ModuleDef } from '../_data/modules';
 import { iconFor, IconExpand, IconSparkle } from './icons';
 import { canSeeModule, useCurrentRole, useCurrentUserId } from './usePermissions';
 import { pendingCountFor, pendingCountForSubpage, subscribePendingRev, type PendingCount } from '../_data/pendingCounts';
+import { useEnabledModules } from '../_data/useEnabledModules';
+import { FR_TENANT_ID, useCurrentTenantId } from '../_data/useTenantIdentity';
 
 interface Props {
   active: string;
@@ -34,6 +36,9 @@ export function Sidebar({
 }: Props) {
   const role = useCurrentRole();
   const userId = useCurrentUserId();
+  const { enabledSet } = useEnabledModules();
+  const tenantId = useCurrentTenantId();
+  const isKnownNonFrTenant = tenantId !== null && tenantId !== FR_TENANT_ID;
 
   // Subscribe to fixture-mutation bumps so badges re-compute reactively
   const [pendingRev, setPendingRev] = useState(0);
@@ -43,10 +48,12 @@ export function Sidebar({
     const m: Record<string, ModuleDef[]> = {};
     MODULES.forEach((mod) => {
       if (!canSeeModule(role, mod.id)) return;
+      if (enabledSet && !enabledSet.has(mod.id)) return;
+      if (mod.id === 'admin-analytics' && isKnownNonFrTenant) return;
       (m[mod.group] = m[mod.group] || []).push(mod);
     });
     return m;
-  }, [role]);
+  }, [role, enabledSet, isKnownNonFrTenant]);
 
   // Allow re-clicking the active module to collapse its sub-pages.
   // Resets when the user navigates to a different module.
