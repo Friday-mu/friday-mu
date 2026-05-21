@@ -374,6 +374,7 @@ export interface Task {
   source: TaskSource;
   visibility: TaskVisibility;
   assigneeIds: string[];
+  assigneeNames?: string[];
   requesterId?: string;
   dueDate: string;
   dueTime?: string;

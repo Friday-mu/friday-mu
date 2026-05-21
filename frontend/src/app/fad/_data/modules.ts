@@ -28,6 +28,7 @@ export const MODULES: ModuleDef[] = [
   { id: 'inbox', label: 'Inbox', group: 'Today', tier: 'live', ship: 'live', icon: 'IconInbox', path: '/gms/inbox' },
   { id: 'operations', label: 'Operations', group: 'Today', tier: 'live', ship: 'live', icon: 'IconTasks', path: '/fad/operations', subPages: [
     { id: 'overview', label: 'Overview' },
+    { id: 'schedule', label: 'Schedule' },
     { id: 'my', label: 'My tasks' },
     { id: 'all', label: 'All tasks' },
     { id: 'intake', label: 'Intake' },

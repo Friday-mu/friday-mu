@@ -6046,11 +6046,361 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   text-transform: uppercase;
 }
 
+/* Operations Schedule — manager task calendar */
+.ops-schedule {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+  color: var(--color-text-primary);
+}
+
+.ops-schedule-toolbar,
+.ops-schedule-filters,
+.ops-schedule-backlog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ops-schedule-toolbar h2,
+.ops-schedule-backlog-head h3 {
+  margin: 0;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.ops-schedule-toolbar h2 {
+  font-size: 22px;
+}
+
+.ops-schedule-backlog-head h3 {
+  font-size: 16px;
+}
+
+.ops-schedule-date-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ops-schedule-date-controls input,
+.ops-schedule-filters input,
+.ops-schedule-task-controls input,
+.ops-schedule-task-controls select {
+  min-height: 44px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 6px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 0 10px;
+}
+
+.ops-schedule-filters {
+  margin: 12px 0 10px;
+}
+
+.ops-schedule-filters input {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.ops-schedule-segment {
+  display: inline-flex;
+  min-height: 44px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-background-secondary);
+}
+
+.ops-schedule-segment button {
+  min-width: 104px;
+  border: 0;
+  border-right: 0.5px solid var(--color-border-tertiary);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ops-schedule-segment button:last-child {
+  border-right: 0;
+}
+
+.ops-schedule-segment button.active {
+  background: var(--color-brand-accent);
+  color: white;
+}
+
+.ops-schedule-warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--color-bg-warning);
+  color: var(--color-text-warning);
+  font-size: 12px;
+}
+
+.ops-schedule-scroll {
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+}
+
+.ops-schedule-board {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+}
+
+.ops-schedule-column,
+.ops-schedule-property,
+.ops-schedule-backlog {
+  min-width: 0;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+}
+
+.ops-schedule-column {
+  min-width: 260px;
+}
+
+.ops-schedule-column-head,
+.ops-schedule-property-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 56px;
+  padding: 10px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.ops-schedule-column-head > span:nth-child(2),
+.ops-schedule-property-head strong {
+  min-width: 0;
+  flex: 1;
+}
+
+.ops-schedule-column-head strong,
+.ops-schedule-column-head small,
+.ops-schedule-property-head strong,
+.ops-schedule-task-main strong,
+.ops-schedule-task-main small,
+.ops-schedule-backlog-row strong,
+.ops-schedule-backlog-row small {
+  overflow-wrap: anywhere;
+}
+
+.ops-schedule-column-head strong,
+.ops-schedule-task-main strong,
+.ops-schedule-backlog-row strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.ops-schedule-column-head small,
+.ops-schedule-task-main small,
+.ops-schedule-backlog-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.ops-schedule-column-head em,
+.ops-schedule-property-head span,
+.ops-schedule-backlog-head > span {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.ops-schedule-avatar {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ops-schedule-column-list,
+.ops-schedule-property-list,
+.ops-schedule-backlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ops-schedule-column-list,
+.ops-schedule-backlog-list {
+  padding: 10px;
+}
+
+.ops-schedule-property-list {
+  margin-top: 12px;
+}
+
+.ops-schedule-property {
+  padding-bottom: 10px;
+}
+
+.ops-schedule-property > .ops-schedule-task {
+  margin: 8px 10px 0;
+}
+
+.ops-schedule-task {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-left-width: 4px;
+  border-radius: 7px;
+  background: var(--color-background-primary);
+}
+
+.ops-schedule-task-main {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-schedule-time {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ops-schedule-task-main em {
+  max-width: 76px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ops-schedule-task-controls {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.ops-schedule-task-controls label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ops-schedule-task-controls input,
+.ops-schedule-task-controls select {
+  width: 100%;
+  min-width: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ops-schedule-empty {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ops-schedule-backlog {
+  margin-top: 16px;
+  padding: 12px;
+}
+
+.ops-schedule-backlog-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 0;
+  border-bottom: 0.5px dashed var(--color-border-tertiary);
+  cursor: pointer;
+}
+
+.ops-schedule-backlog-row:last-child {
+  border-bottom: 0;
+}
+
+.ops-schedule-backlog-row > span:first-child {
+  min-width: 0;
+}
+
+.ops-schedule-backlog-row .btn {
+  min-height: 44px;
+}
+
+.ops-schedule-task:focus-within,
+.ops-schedule-backlog-row:focus-visible {
+  outline: 2px solid var(--color-brand-accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 900px) {
   .ops-mobile-dashboard-head,
   .ops-my-header,
-  .ops-workbench-head {
+  .ops-workbench-head,
+  .ops-schedule-toolbar,
+  .ops-schedule-filters,
+  .ops-schedule-backlog-head {
     flex-direction: column;
+  }
+  .ops-schedule-date-controls,
+  .ops-schedule-segment {
+    width: 100%;
+  }
+  .ops-schedule-date-controls input {
+    flex: 1 1 150px;
+  }
+  .ops-schedule-segment button {
+    flex: 1;
   }
   .ops-workbench-counts {
     width: 100%;
@@ -6076,7 +6426,8 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 @media (max-width: 768px) {
   .ops-my-tasks,
-  .ops-history {
+  .ops-history,
+  .ops-schedule {
     padding: 14px;
   }
   .ops-mobile-dashboard {
@@ -6100,6 +6451,15 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   }
   .ops-my-list {
     grid-template-columns: 1fr;
+  }
+  .ops-schedule-scroll {
+    overflow-x: visible;
+  }
+  .ops-schedule-board {
+    grid-template-columns: 1fr !important;
+  }
+  .ops-schedule-column {
+    min-width: 0;
   }
 }
 
@@ -6162,6 +6522,32 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   }
   .ops-history-row > span:last-child {
     justify-self: start;
+  }
+  .ops-schedule-toolbar h2 {
+    font-size: 18px;
+  }
+  .ops-schedule-date-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ops-schedule-date-controls input,
+  .ops-schedule-date-controls .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .ops-schedule-task-main {
+    grid-template-columns: 1fr;
+  }
+  .ops-schedule-task-main em {
+    max-width: none;
+    justify-self: start;
+  }
+  .ops-schedule-task-controls {
+    grid-template-columns: 1fr;
+  }
+  .ops-schedule-backlog-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

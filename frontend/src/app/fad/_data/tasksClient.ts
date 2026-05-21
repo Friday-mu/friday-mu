@@ -200,6 +200,7 @@ function mapTask(s: ServerTask): Task {
     source: (s.source as TaskSource) || 'manual',
     visibility: (s.visibility as TaskVisibility) || 'all',
     assigneeIds: s.assignee_user_ids || [],
+    assigneeNames: (s.assignee_display_names || []).filter((name): name is string => Boolean(name)),
     requesterId: s.requester_user_id || undefined,
     dueDate: s.due_date || '',
     dueTime: s.due_time || undefined,

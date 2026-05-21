@@ -323,3 +323,27 @@
 - Direct production DB verification: 4,483 `source = breezeway` tasks, 4,483 `external_ref LIKE 'breezeway:%'`, statuses = 3,770 completed / 344 closed / 342 scheduled / 27 in_progress, 193 Breezeway task costs, 1 Breezeway task supply, 1 Breezeway stock movement.
 - Safety verification after apply: 0 imported admin/aggregate policy leaks and 0 source-payload matches for password/passcode/lockbox/gate-code/access-code/key-safe/PIN/Wi-Fi redaction keywords.
 - Follow-up live chunk inspection found the old `TASKS` fixture array still bundled as a compatibility fallback; removed those task rows from `_data/tasks.ts` and left only an empty `TASKS` export for legacy imports. `frontend/DEMO_CRUFT.md` now no longer lists `PROD-DATA-2`.
+
+## 2026-05-21 Ops Schedule Calendar Mini-Research
+
+- Current `origin/fad-rebuild` is at `65bac54` and clean in the isolated `/Users/judith/.codex/worktrees/7fa0/friday-admin-dashboard` worktree; no Inbox-owned files need to be edited for this slice.
+- Operations already has manager scheduling through `CreateTaskDrawer`, but there is no Ops-owned calendar/schedule tab; the generic Calendar module is not a replacement for task assignment planning.
+- Backend `/api/tasks` already supports tenant-scoped `due_after` / `due_before`, pagination, canonical statuses, and PATCH for `due_date`, `due_time`, and UUID assignees, so no duplicate task system or new scheduling endpoint is needed.
+- Task list responses include `assignee_display_names`, but the frontend mapper drops them; schedule needs that field so imported/API tasks can show real staff names without relying on demo `TASK_USERS`.
+- Breezeway mobile evidence shows day planning needs a date selector, status chips, time column, property/task rows, inline due-time assignment, and a staff selector; desktop per-user day view should be the manager command-center version of that pattern.
+- Feature Catalog confirms the FAD shell/module-routing boundary; add this as an Operations subpage rather than changing the global Calendar module.
+- Notion/project memory direction still treats FAD as the operations cockpit and Operations as the real task-execution owner; field users stay on My Tasks/My History only.
+- External platform research favors explicit schedule controls over first-pass HTML drag/drop because touch, keyboard, and pointer handling need separate rigor in a PWA.
+- Decision: ship a manager-only `Schedule` tab backed by `/api/tasks`, grouped by staff/day with unassigned work visible, explicit date/time/assignee controls, and mobile-safe responsive layout.
+
+## 2026-05-21 Ops Schedule Calendar Checkpoint
+
+- Added a manager-only Operations `Schedule` tab; field users still only get `My tasks` and `My history`.
+- The schedule is backed by live `/api/tasks` day filters and PATCHes `due_date`, `due_time`, and UUID `assignee_user_ids`; no new task backend or generic Calendar-module dependency was added.
+- Added a small Operations staff-directory client for `/api/team/users` and mapped task `assignee_display_names` into the frontend task type so real assignee names show without relying on demo staff IDs.
+- Staff Day view shows per-user columns plus Unassigned, with explicit time and assignee controls; Property Day gives a property-grouped scheduling view for the same task records.
+- Added an unscheduled open-work queue that can put a reported/scheduled task onto the selected date without bulk-converting history.
+- Updated task due-date rendering in All Tasks to use human dates/times instead of raw ISO strings, and changed the Breezeway source label to `Imported` in the UI.
+- Browser QA used mocked `/api/tasks` and `/api/team/users`: time edit, assignee edit, unscheduled add-to-date, and Property Day toggle all hit the expected task PATCH paths.
+- Responsive QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-schedule/`; 320/375/430/768/1440 checks showed 0 document overflow, 0 Operations overflow, and 0 undersized controls after the final CSS pass.
+- Verification passed: `git diff --check`, frontend `npx tsc --noEmit`, and frontend `npm run build`.

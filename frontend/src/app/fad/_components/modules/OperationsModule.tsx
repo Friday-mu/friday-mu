@@ -16,6 +16,7 @@ import { useCanSee, useCurrentUserId, usePermissions } from '../usePermissions';
 import { fireToast } from '../Toaster';
 import { createTask, fetchTask, updateTask } from '../../_data/tasksClient';
 import { useApiTasks, useApiTasksPage } from '../../_data/useApiTasks';
+import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../_data/operationsStaffClient';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
@@ -47,7 +48,7 @@ const TODAY = todayIso();
 
 const SOURCE_LABEL: Record<TaskSource, string> = {
   manual: 'Manual',
-  breezeway: 'Breezeway',
+  breezeway: 'Imported',
   inbox_ai: 'Inbox AI',
   guesty: 'Guesty',
   recurring: 'Recurring',
@@ -85,11 +86,15 @@ const CLOSED_STATUS = new Set<TaskStatus>(['completed', 'closed', 'cancelled']);
 const FIELD_EXECUTABLE_STATUS = new Set<TaskStatus>(['scheduled', 'ready', 'in_progress', 'paused']);
 const INTAKE_SOURCES = new Set<TaskSource>(['inbox_ai', 'reported_issue', 'group_email', 'review']);
 const TASK_DAY_MS = 86_400_000;
+const OPEN_SCHEDULE_STATUSES: TaskStatus[] = ['reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked'];
+const UNASSIGNED_SCHEDULE_ID = '__unassigned__';
 
 type TaskDateTab = 'today' | 'tomorrow' | 'week' | 'all';
 type ReservationFilter = 'all' | 'linked' | 'unlinked';
 type MyTaskSort = 'suggested' | 'due' | 'priority' | 'property';
 type DashboardStatusFilter = 'all' | 'open' | TaskStatus;
+type ScheduleStatusFilter = 'open' | 'unassigned' | 'all' | TaskStatus;
+type ScheduleViewMode = 'staff' | 'property';
 
 interface CreateTaskIntent {
   mode: CreateTaskMode;
@@ -164,6 +169,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         ]
       : [
           { id: 'overview', label: 'Overview' },
+          { id: 'schedule', label: 'Schedule' },
           { id: 'my', label: 'My tasks' },
           { id: 'all', label: 'All tasks' },
           { id: 'intake', label: 'Intake' },
@@ -267,6 +273,8 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         return <MyHistoryPage onOpenTask={setDetailTaskId} />;
       case 'overview':
         return <OverviewPage onOpenTask={setDetailTaskId} onChangeSubPage={onChangeSubPage} canSeeRoster={canSeeRoster} />;
+      case 'schedule':
+        return <SchedulePage onOpenTask={setDetailTaskId} onCreate={openManagerCreate} />;
       case 'all':
         return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
       case 'intake':
@@ -789,6 +797,452 @@ function StaffLoadRow({ signal }: { signal: StaffLoadSignal }) {
 
 function WorkbenchEmpty({ children }: { children: React.ReactNode }) {
   return <div className="ops-workbench-empty">{children}</div>;
+}
+
+// ───────────────── Schedule ─────────────────
+
+interface ScheduleColumn {
+  id: string;
+  name: string;
+  initials: string;
+  role?: string | null;
+  tasks: Task[];
+}
+
+function initialsForName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+}
+
+function formatScheduleDate(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatTimeLabel(time?: string): string {
+  if (!time) return 'Any time';
+  const match = time.match(/^(\d{2}):(\d{2})/);
+  if (!match) return time;
+  return `${match[1]}:${match[2]}`;
+}
+
+function taskTimeSortKey(task: Task): string {
+  return `${task.dueTime || '99:99'}-${PRIORITY_ORDER[task.priority]}-${task.title}`;
+}
+
+function taskAssigneeName(task: Task, assigneeId: string, index: number): string {
+  return task.assigneeNames?.[index]
+    || TASK_USER_BY_ID[assigneeId]?.name
+    || `Assignee ${assigneeId.slice(0, 8)}`;
+}
+
+function taskScheduleMatchesSearch(task: Task, query: string): boolean {
+  if (!query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  if (taskMatchesSearch(task, q)) return true;
+  return (task.assigneeNames || []).some((name) => name.toLowerCase().includes(q));
+}
+
+function scheduleStatusMatches(task: Task, status: ScheduleStatusFilter): boolean {
+  if (status === 'all') return true;
+  if (status === 'open') return OPEN_SCHEDULE_STATUSES.includes(task.status);
+  if (status === 'unassigned') return OPEN_SCHEDULE_STATUSES.includes(task.status) && task.assigneeIds.length === 0;
+  return task.status === status;
+}
+
+function mergeScheduleStaff(directoryUsers: OperationsStaffUser[], tasks: Task[]): OperationsStaffUser[] {
+  const byId = new Map<string, OperationsStaffUser>();
+  directoryUsers
+    .filter((user) => !/(external|guest|owner)/i.test(user.role || ''))
+    .forEach((user) => byId.set(user.id, user));
+
+  tasks.forEach((task) => {
+    task.assigneeIds.forEach((id, index) => {
+      if (byId.has(id)) return;
+      const name = taskAssigneeName(task, id, index);
+      byId.set(id, {
+        id,
+        name,
+        initials: initialsForName(name),
+        role: null,
+      });
+    });
+  });
+
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function SchedulePage({
+  onOpenTask,
+  onCreate,
+}: {
+  onOpenTask: (id: string) => void;
+  onCreate: (prefill?: CreateTaskPrefill) => void;
+}) {
+  const currentUserId = useCurrentUserId();
+  const [selectedDate, setSelectedDate] = useState(TODAY);
+  const [statusFilter, setStatusFilter] = useState<ScheduleStatusFilter>('open');
+  const [viewMode, setViewMode] = useState<ScheduleViewMode>('staff');
+  const [search, setSearch] = useState('');
+  const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
+  const [staffError, setStaffError] = useState<string | null>(null);
+  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+
+  const dayQuery = useMemo(() => ({
+    dueAfter: selectedDate,
+    dueBefore: selectedDate,
+    limit: 500,
+    sort: 'dueDate' as const,
+    dir: 'asc' as const,
+  }), [selectedDate]);
+  const unscheduledQuery = useMemo(() => ({
+    status: OPEN_SCHEDULE_STATUSES,
+    limit: 100,
+    sort: 'updatedAt' as const,
+    dir: 'desc' as const,
+  }), []);
+  const dayPage = useApiTasksPage(dayQuery);
+  const unscheduledPage = useApiTasksPage(unscheduledQuery);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadOperationsStaffUsers()
+      .then((users) => {
+        if (!cancelled) {
+          setStaffUsers(users);
+          setStaffError(null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setStaffUsers([]);
+          setStaffError(e instanceof Error ? e.message : 'Staff directory unavailable');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rawDayTasks = dayPage.tasks;
+  const dayTasks = useMemo(() => (
+    rawDayTasks
+      .filter((task) => scheduleStatusMatches(task, statusFilter))
+      .filter((task) => taskScheduleMatchesSearch(task, search))
+      .sort((a, b) => taskTimeSortKey(a).localeCompare(taskTimeSortKey(b)))
+  ), [rawDayTasks, search, statusFilter]);
+
+  const unscheduledTasks = useMemo(() => (
+    unscheduledPage.tasks
+      .filter((task) => !task.dueDate && OPEN_SCHEDULE_STATUSES.includes(task.status))
+      .filter((task) => taskScheduleMatchesSearch(task, search))
+      .slice(0, 12)
+  ), [unscheduledPage.tasks, search]);
+
+  const staffOptions = useMemo(() => mergeScheduleStaff(staffUsers, [...rawDayTasks, ...unscheduledPage.tasks]), [rawDayTasks, staffUsers, unscheduledPage.tasks]);
+
+  const columns = useMemo<ScheduleColumn[]>(() => {
+    const byAssignee = new Map<string, Task[]>();
+    const unassigned: Task[] = [];
+    dayTasks.forEach((task) => {
+      if (task.assigneeIds.length === 0) {
+        unassigned.push(task);
+        return;
+      }
+      task.assigneeIds.forEach((id) => {
+        const list = byAssignee.get(id) || [];
+        list.push(task);
+        byAssignee.set(id, list);
+      });
+    });
+
+    const cols: ScheduleColumn[] = [];
+    cols.push({
+      id: UNASSIGNED_SCHEDULE_ID,
+      name: 'Unassigned',
+      initials: '--',
+      role: null,
+      tasks: unassigned.sort((a, b) => taskTimeSortKey(a).localeCompare(taskTimeSortKey(b))),
+    });
+
+    staffOptions.forEach((user) => {
+      cols.push({
+        id: user.id,
+        name: user.name,
+        initials: user.initials,
+        role: user.role,
+        tasks: (byAssignee.get(user.id) || []).sort((a, b) => taskTimeSortKey(a).localeCompare(taskTimeSortKey(b))),
+      });
+    });
+
+    return cols.filter((column) => column.id === UNASSIGNED_SCHEDULE_ID || staffOptions.length <= 12 || column.tasks.length > 0);
+  }, [dayTasks, staffOptions]);
+
+  const propertyGroups = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    dayTasks.forEach((task) => {
+      const key = task.propertyCode || 'No property';
+      const list = groups.get(key) || [];
+      list.push(task);
+      groups.set(key, list);
+    });
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [dayTasks]);
+
+  const counts = useMemo(() => {
+    const open = rawDayTasks.filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status)).length;
+    const unassigned = rawDayTasks.filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status) && task.assigneeIds.length === 0).length;
+    const active = rawDayTasks.filter((task) => task.status === 'in_progress' || task.status === 'paused').length;
+    const completed = rawDayTasks.filter((task) => task.status === 'completed' || task.status === 'closed').length;
+    return { open, unassigned, active, completed, total: rawDayTasks.length };
+  }, [rawDayTasks]);
+
+  const patchTask = async (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => {
+    setSavingTaskId(task.id);
+    try {
+      await updateTask({ taskId: task.id, patch, actorId: currentUserId });
+      fireToast(success);
+      dayPage.refetch();
+      unscheduledPage.refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Task schedule update failed');
+    } finally {
+      setSavingTaskId(null);
+    }
+  };
+
+  const scheduleToday = (task: Task) => {
+    void patchTask(task, { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status }, 'Task added to schedule');
+  };
+
+  const scheduleChips: Array<{ id: ScheduleStatusFilter; label: string; count: number }> = [
+    { id: 'open', label: 'Open', count: counts.open },
+    { id: 'unassigned', label: 'Unassigned', count: counts.unassigned },
+    { id: 'in_progress', label: 'Active', count: counts.active },
+    { id: 'completed', label: 'Done', count: counts.completed },
+    { id: 'all', label: 'All', count: counts.total },
+  ];
+
+  return (
+    <div className="ops-schedule" aria-label="Operations task schedule">
+      <div className="ops-schedule-toolbar">
+        <div>
+          <div className="ops-mobile-kicker">Task schedule</div>
+          <h2>{formatScheduleDate(selectedDate)}</h2>
+        </div>
+        <div className="ops-schedule-date-controls">
+          <button className="btn ghost sm" type="button" onClick={() => setSelectedDate(addDays(selectedDate, -1))}>
+            Previous
+          </button>
+          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} aria-label="Schedule date" />
+          <button className="btn ghost sm" type="button" onClick={() => setSelectedDate(TODAY)}>
+            Today
+          </button>
+          <button className="btn ghost sm" type="button" onClick={() => setSelectedDate(addDays(selectedDate, 1))}>
+            Next
+          </button>
+          <button className="btn primary sm" type="button" onClick={() => onCreate({ dueDate: selectedDate })}>
+            <IconPlus size={12} /> New task
+          </button>
+        </div>
+      </div>
+
+      <div className="ops-schedule-filters">
+        <input
+          type="search"
+          placeholder="Search property, task, assignee..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="ops-schedule-segment" role="group" aria-label="Schedule view">
+          <button type="button" className={viewMode === 'staff' ? 'active' : ''} onClick={() => setViewMode('staff')}>
+            Staff day
+          </button>
+          <button type="button" className={viewMode === 'property' ? 'active' : ''} onClick={() => setViewMode('property')}>
+            Property day
+          </button>
+        </div>
+      </div>
+
+      <div className="ops-status-strip" aria-label="Schedule status filters">
+        {scheduleChips.map((chip) => (
+          <button
+            key={chip.id}
+            type="button"
+            className={'ops-status-chip' + (statusFilter === chip.id ? ' active' : '')}
+            onClick={() => setStatusFilter(chip.id)}
+          >
+            <span>{chip.label}</span>
+            <strong>{chip.count}</strong>
+          </button>
+        ))}
+      </div>
+
+      {staffError && (
+        <div className="ops-schedule-warning">
+          Staff directory could not load; showing assignees already present on tasks.
+        </div>
+      )}
+      {dayPage.error && (
+        <div className="ops-schedule-warning">Schedule tasks could not load: {dayPage.error}</div>
+      )}
+
+      {viewMode === 'staff' ? (
+        <div className="ops-schedule-scroll" aria-busy={dayPage.loading}>
+          <div
+            className="ops-schedule-board"
+            style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(260px, 1fr))` }}
+          >
+            {columns.map((column) => (
+              <section className="ops-schedule-column" key={column.id}>
+                <div className="ops-schedule-column-head">
+                  <span className="ops-schedule-avatar">{column.initials}</span>
+                  <span>
+                    <strong>{column.name}</strong>
+                    <small>{column.role || (column.id === UNASSIGNED_SCHEDULE_ID ? 'Needs owner' : 'Staff')}</small>
+                  </span>
+                  <em>{column.tasks.length}</em>
+                </div>
+                <div className="ops-schedule-column-list">
+                  {column.tasks.map((task) => (
+                    <ScheduleTaskBlock
+                      key={`${column.id}-${task.id}`}
+                      task={task}
+                      staffOptions={staffOptions}
+                      saving={savingTaskId === task.id}
+                      onOpenTask={onOpenTask}
+                      onPatch={patchTask}
+                    />
+                  ))}
+                  {column.tasks.length === 0 && <div className="ops-schedule-empty">No work scheduled.</div>}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="ops-schedule-property-list" aria-busy={dayPage.loading}>
+          {propertyGroups.map(([propertyCode, tasks]) => (
+            <section className="ops-schedule-property" key={propertyCode}>
+              <div className="ops-schedule-property-head">
+                <strong className="mono">{propertyCode}</strong>
+                <span>{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+              </div>
+              {tasks.map((task) => (
+                <ScheduleTaskBlock
+                  key={task.id}
+                  task={task}
+                  staffOptions={staffOptions}
+                  saving={savingTaskId === task.id}
+                  onOpenTask={onOpenTask}
+                  onPatch={patchTask}
+                />
+              ))}
+            </section>
+          ))}
+          {propertyGroups.length === 0 && <Empty>No scheduled tasks match this view.</Empty>}
+        </div>
+      )}
+
+      <section className="ops-schedule-backlog">
+        <div className="ops-schedule-backlog-head">
+          <div>
+            <div className="ops-mobile-kicker">Unscheduled queue</div>
+            <h3>Open work without a date</h3>
+          </div>
+          <span>{unscheduledTasks.length} shown</span>
+        </div>
+        <div className="ops-schedule-backlog-list" aria-busy={unscheduledPage.loading}>
+          {unscheduledTasks.map((task) => (
+            <div
+              className="ops-schedule-backlog-row"
+              key={task.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpenTask(task.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') onOpenTask(task.id);
+              }}
+            >
+              <span>
+                <strong>{task.title}</strong>
+                <small>{task.propertyCode || 'No property'} · {STATUS_LABEL[task.status]} · {task.priority}</small>
+              </span>
+              <span onClick={(e) => e.stopPropagation()}>
+                <button className="btn ghost sm" type="button" disabled={savingTaskId === task.id} onClick={() => scheduleToday(task)}>
+                  Add to {formatShortDate(selectedDate)}
+                </button>
+              </span>
+            </div>
+          ))}
+          {unscheduledTasks.length === 0 && <div className="ops-schedule-empty">No unscheduled open tasks in the current queue.</div>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ScheduleTaskBlock({
+  task,
+  staffOptions,
+  saving,
+  onOpenTask,
+  onPatch,
+}: {
+  task: Task;
+  staffOptions: OperationsStaffUser[];
+  saving: boolean;
+  onOpenTask: (id: string) => void;
+  onPatch: (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => Promise<void>;
+}) {
+  const statusSwatch = toneStyle(taskStatusTone(task.status));
+  const selectedAssignee = task.assigneeIds[0] || '';
+
+  return (
+    <div className="ops-schedule-task" style={{ borderLeftColor: priorityBarColor(task.priority) }}>
+      <button type="button" className="ops-schedule-task-main" onClick={() => onOpenTask(task.id)}>
+        <span className="ops-schedule-time">{formatTimeLabel(task.dueTime)}</span>
+        <span>
+          <strong>{task.title}</strong>
+          <small>
+            {task.propertyCode || 'No property'} · {task.department} · {task.reservationId ? 'reservation linked' : 'no reservation'}
+          </small>
+        </span>
+        <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
+      </button>
+      <div className="ops-schedule-task-controls">
+        <label>
+          <span>Time</span>
+          <input
+            type="time"
+            value={task.dueTime?.slice(0, 5) || ''}
+            disabled={saving}
+            onChange={(e) => void onPatch(task, { dueTime: e.target.value }, 'Task time updated')}
+          />
+        </label>
+        <label>
+          <span>Assignee</span>
+          <select
+            value={selectedAssignee}
+            disabled={saving}
+            onChange={(e) => void onPatch(task, { assigneeIds: e.target.value ? [e.target.value] : [] }, 'Task assignee updated')}
+          >
+            <option value="">Unassigned</option>
+            {staffOptions.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </div>
+  );
 }
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
@@ -1438,7 +1892,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         options={[
           { value: 'all', label: 'Any source' },
           { value: 'manual', label: 'Manual' },
-          { value: 'breezeway', label: 'Breezeway' },
+          { value: 'breezeway', label: 'Imported' },
           { value: 'inbox_ai', label: 'Inbox AI' },
           { value: 'syndic', label: 'Syndic' },
           { value: 'friday', label: 'Friday' },
@@ -1789,7 +2243,7 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
           {task.assigneeIds.length === 0 && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>—</span>}
         </div>
       </td>
-      <td style={{ padding: '6px 10px', fontSize: 11 }}>{task.dueDate}</td>
+      <td style={{ padding: '6px 10px', fontSize: 11 }}>{formatTaskDue(task.dueDate, task.dueTime)}</td>
       <td style={{ padding: '6px 10px' }}>
         <span
           style={{
@@ -1814,15 +2268,18 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
 }
 
 function formatTaskDue(dueDate: string, dueTime?: string): string {
-  if (dueDate === TODAY) return dueTime ? `Due today, ${dueTime}` : 'Due today';
+  if (!dueDate) return 'No due date';
+  const time = dueTime ? `, ${formatTimeLabel(dueTime)}` : '';
+  if (dueDate === TODAY) return `Today${time}`;
   const parts = dueDate.split('-').map(Number);
   const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  const today = new Date(2026, 3, 27);
+  const [todayYear, todayMonth, todayDay] = TODAY.split('-').map(Number);
+  const today = new Date(todayYear, todayMonth - 1, todayDay);
   const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000);
   const fmt = date.toLocaleString('en-US', { month: 'short', day: 'numeric' });
-  if (diff === 1) return dueTime ? `Due tomorrow, ${dueTime}` : 'Due tomorrow';
+  if (diff === 1) return `Tomorrow${time}`;
   if (diff < 0) return `Overdue · ${fmt}`;
-  return `Due ${fmt}`;
+  return `${fmt}${time}`;
 }
 
 function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
