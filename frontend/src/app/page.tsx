@@ -228,9 +228,7 @@ export default function MessageDashboard() {
 
   const handleLogin = (t: string) => {
     setToken(t)
-    setTokenState(t)
-    const dn = localStorage.getItem('gms_display_name')
-    if (dn) setDisplayName(dn)
+    window.location.replace('/fad')
   }
 
   // Fetch conversations
