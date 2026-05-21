@@ -287,3 +287,15 @@
 - Summary export preview: 5,174/5,174 valid rows, 0 existing `external_ref` matches, 2 unresolved property groups, 24 unresolved assignee groups, one unknown priority value (`Watch` on 12 rows).
 - Supplemental join preview: cost export has 208 cost/supply-like line rows; payroll has 5,791 assignee/payroll rows; supplies has 1 row; custom export has 5,174 row-order matches, property-code labels on 4,483 rows, and task report links on all rows.
 - No production import/apply was run.
+
+## 2026-05-21 Ops Frontend Live Check + Breezeway API Validation
+
+- Investigated the user-visible concern that Ops frontend changes were not obvious on `admin.friday.mu`.
+- Live `/version.json` now reports `fad-rebuild` at `9e032dad0269`; `/fad` returns 200 and the live `0~wbfu_3mwmtv.js` chunk hash matches the local exported chunk.
+- The matched live chunk contains the new Ops strings: `Manager workbench`, `Supply capture required`, `Inbox AI task proposals`, `My agenda`, and `Source = Inbox AI`.
+- If the UI still looks unchanged in-browser, the likely remaining causes are role/subpage gating or a stale service worker/browser cache, not a missing server artifact.
+- Judith confirmed current Breezeway import guidance: current CSV folder is `/Users/judith/Desktop/Friday/Friday OS/Ops Module`, summary is primary, custom export is row-order enrichment, skip admin/aggregate rows, and unknown historical assignees should not block import.
+- Added a safer temporary API validator that supports `--custom-csv`, `--out`, 24h token caching, direct Task ID retrieval, property validation, import-policy exclusions, and sanitized API field-presence reporting.
+- Generated `docs/handover/breezeway-import-preview-2026-05-21/api-validation.json`; it found all 29 CSV Breezeway home IDs in the API, 0 reference-property mismatches, 50/50 sampled importable tasks retrieved, 0 field diffs, and 5,174/5,174 custom rows aligned after redaction-aware title checks.
+- API-only enrichment observed in the 50-task sample includes report URLs, assignment objects, created/finished/requested-by objects, photos/tags, and one linked reservation; CSV remains the primary migration source.
+- No production import/apply was run.

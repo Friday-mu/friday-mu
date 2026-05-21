@@ -8,6 +8,10 @@ Generated report:
 
 `bundle-preview.json`
 
+API validation report:
+
+`api-validation.json`
+
 This is preview-only. No production task rows were inserted or updated.
 
 ## Summary Export
@@ -30,16 +34,32 @@ This is preview-only. No production task rows were inserted or updated.
 - Custom export: 5,174 rows, no `Task ID` column, but row-order validation against the summary export passes on title, due date, created date, and updated date for all 5,174 rows.
 - Custom export property labels include extractable property codes on 4,483 rows and task report links on all 5,174 rows.
 
+## Breezeway API Validation
+
+- Judith confirmed Keychain access for preview-only API validation. No secrets were written to this report.
+- Breezeway API token use is cached locally because the auth endpoint is limited to 1 request/minute and tokens are valid for 24 hours.
+- API property validation: all 29 CSV Breezeway home IDs matched API properties, with 0 `reference_property_id` mismatches.
+- API task validation: 50/50 sampled importable tasks were retrieved directly by Breezeway Task ID, with 0 field diffs across title/status/priority/department/property/date/time/report-link checks.
+- Custom export validation: 5,174/5,174 row-order checks align after ignoring 264 title comparisons already redacted by the CSV preview safety layer.
+- API-only fields observed in the 50-task sample include report URLs on all 50, descriptions on 28, assignments on 26, photos on 9, tags on 8, created-by objects on 33, and one linked reservation.
+- The API should remain validation/enrichment support only for this migration. CSV remains the primary backfill source.
+
 ## Current Apply Readiness
 
 Not ready to apply.
 
-Blockers:
+Resolved policy decisions:
 
-- Review/approve property mapping for `Office / Store / Admin` and the aggregate `GBH` rows.
-- Review/approve user mapping for Breezeway assignee names to FAD users, or keep imported historical tasks unassigned.
-- Decide how to map priority `Watch`.
+- Skip `Office / Store / Admin` rows as administrative/non-guest-facing.
+- Skip aggregate `GBH / Grand Baie Heights` rows; import individual unit rows only.
+- Map priority `Watch` to low/lowest plus source provenance, not urgent.
+- Unknown historical assignees should not block import; use approved user mapping where available, otherwise historical-only placeholders or a generic historical assignee pool.
+
+Remaining blockers before apply:
+
+- Confirm the production property/user mapping file or placeholder-user approach.
 - Implement child-row apply for cost/payroll/supply exports if those should become `task_costs` / `task_supplies` / inventory rows.
+- Get explicit confirmation before applying imports to production data.
 
 Recommended next apply path:
 
