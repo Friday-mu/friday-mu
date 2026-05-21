@@ -157,13 +157,20 @@ Do not convert old thread context into a new update. Do not say the issue is res
 Safe reply pattern: acknowledge the guest, say Friday is checking the latest status with the team/building management/syndic now, and promise a confirmed update shortly.`;
 }
 
-function buildSafeStatusUpdateDraft({ message, messages }) {
+function guestFirstName(conversation) {
+  const raw = String(conversation?.guest_name || '').trim();
+  if (!raw) return '';
+  return raw.split(/\s+/)[0].replace(/[^\p{L}'’-]/gu, '');
+}
+
+function buildSafeStatusUpdateDraft({ message, messages, conversation }) {
   const text = `${message?.body || ''}\n${message?.translated_body || ''}`;
   const waterIncident = /\b(?:water|eau|hot\s*water|chauffe[-\s]?eau|toilettes?|toilet|pump|pompe|alimentation|supply)\b/i.test(
     `${text}\n${Array.isArray(messages) ? messages.slice(-12).map((m) => `${m.body || ''}\n${m.translated_body || ''}`).join('\n') : ''}`,
   );
   const subject = waterIncident ? 'water-supply status' : 'latest status';
-  return `Hello,
+  const name = guestFirstName(conversation);
+  return `Hello${name ? ` ${name}` : ''},
 
 We are checking the ${subject} with our team and the building management now. We do not want to give you an unconfirmed update, so we will come back to you as soon as we have confirmed information.
 
@@ -864,6 +871,7 @@ module.exports = {
   statusUpdateSafetyApplies,
   statusUpdateSafetyInstruction,
   buildSafeStatusUpdateDraft,
+  guestFirstName,
   applyStatusUpdateSafety,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
 };

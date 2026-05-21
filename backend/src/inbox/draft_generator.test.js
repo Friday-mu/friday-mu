@@ -153,13 +153,14 @@ describe('draft generator status update safety', () => {
       'Hello Floriane, we have been informed that access has been granted and the issue should be resolved before your return tonight.',
       {
         message: latestMessage,
-        conversation: { notes: null },
+        conversation: { guest_name: 'Floriane Huc', notes: null },
         messages: waterThread,
       },
     );
 
     expect(result.applied).toBe(true);
     expect(result.confidenceCeiling).toBe(55);
+    expect(result.draftBody).toContain('Hello Floriane');
     expect(result.draftBody).toContain('checking the water-supply status');
     expect(result.draftBody).toContain('unconfirmed update');
     expect(result.draftBody).not.toContain('before your return tonight');
