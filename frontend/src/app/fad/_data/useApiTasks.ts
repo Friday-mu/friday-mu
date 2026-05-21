@@ -132,10 +132,6 @@ export function useApiTasks(filter?: FetchTasksPageInput): UseApiTasksResult {
     if (!filter) return undefined;
     const sub = () => force((v) => v + 1);
     filteredSubscribers.add(sub);
-    const cached = filteredCache.get(key);
-    if (!cached?.loaded && !cached?.loading) {
-      void loadFiltered(key, filter);
-    }
     return () => {
       filteredSubscribers.delete(sub);
     };
@@ -145,13 +141,25 @@ export function useApiTasks(filter?: FetchTasksPageInput): UseApiTasksResult {
     if (filter) return undefined;
     const sub = () => force((v) => v + 1);
     subscribers.add(sub);
-    if (!cache.loaded && !cache.loading) {
-      void load();
-    }
     return () => {
       subscribers.delete(sub);
     };
   }, [filter]);
+
+  useEffect(() => {
+    if (!filter) return;
+    const cached = filteredCache.get(key);
+    if (!cached?.loaded && !cached?.loading) {
+      void loadFiltered(key, filter);
+    }
+  });
+
+  useEffect(() => {
+    if (filter) return;
+    if (!cache.loaded && !cache.loading) {
+      void load();
+    }
+  });
 
   if (filter) {
     const state = filteredCache.get(key) || { tasks: [], loading: false, error: null, loaded: false };
@@ -218,14 +226,17 @@ export function useApiTasksPage(filter: FetchTasksPageInput): UseApiTasksPageRes
   useEffect(() => {
     const sub = () => force((v) => v + 1);
     pageSubscribers.add(sub);
-    const cached = pageCache.get(key);
-    if (!cached?.loaded && !cached?.loading) {
-      void loadPage(key, filter);
-    }
     return () => {
       pageSubscribers.delete(sub);
     };
   }, [key]);
+
+  useEffect(() => {
+    const cached = pageCache.get(key);
+    if (!cached?.loaded && !cached?.loading) {
+      void loadPage(key, filter);
+    }
+  });
 
   const state = pageCache.get(key) || { ...emptyPage, loading: false, error: null, loaded: false };
   return {

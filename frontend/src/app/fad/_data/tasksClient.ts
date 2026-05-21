@@ -197,12 +197,24 @@ function mapStatus(s: string): TaskStatus {
   return s as TaskStatus;
 }
 
+function dateOnly(value: string | null | undefined): string {
+  if (!value) return '';
+  const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : '';
+}
+
+function taskTitle(value: string): string {
+  return value.includes('[redacted: sensitive operational detail]')
+    ? 'Sensitive imported task'
+    : value;
+}
+
 function mapTask(s: ServerTask): Task {
   return {
     id: s.id,
     bzId: s.bz_id || undefined,
     externalRef: s.external_ref || undefined,
-    title: s.title,
+    title: taskTitle(s.title),
     description: s.description || undefined,
     propertyCode: s.property_code || '',
     department: (s.department as Department) || 'office',
@@ -217,7 +229,7 @@ function mapTask(s: ServerTask): Task {
     requesterName: s.requester_display_name || undefined,
     createdById: s.created_by_user_id || undefined,
     createdByName: s.created_by_display_name || undefined,
-    dueDate: s.due_date || '',
+    dueDate: dateOnly(s.due_date),
     dueTime: s.due_time || undefined,
     estimatedMinutes: s.estimated_minutes ?? undefined,
     spentMinutes: s.spent_minutes ?? undefined,

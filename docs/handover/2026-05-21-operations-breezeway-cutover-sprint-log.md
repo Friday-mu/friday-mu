@@ -399,3 +399,13 @@
 - HR staff and `users` are partially disconnected: Bryan/Catherine have user rows but null `hr_staff.user_id`; Hans is HR staff with no user row; several Breezeway assignees are external vendors/historical people.
 - Frontend `usePermissions` still defaults self-scope to fixture IDs (`u-ishant`), so client-side My Tasks filters cannot match live UUID assignees even after backfill.
 - Decision: fix the data, not just the UI. Backfill Breezeway assignees idempotently from preserved source payload, create inactive shadow assignee identities only where no FAD user/staff identity exists, link HR by email, and make future imports auto-resolve known identities.
+
+## 2026-05-22 Ops Performance + Date Rendering Mini-Research
+
+- Live All Tasks on `admin.friday.mu` reproduces the user report: first load shows plain `Loading live tasks...`, then renders `1-200 of 4483 tasks` with due cells like `Invalid Date, 08:00`.
+- Backend `/api/tasks` returns `due_date` as ISO timestamps; the frontend task adapter was passing those through even though Operations date helpers expect `YYYY-MM-DD`.
+- Operations parent component was also starting a full unfiltered task fetch for the drawer cache on every Ops subpage, which defeats the paginated All Tasks API and makes the imported dataset feel slow.
+- The All Tasks UI defaulted to 200 rows and offered 500 rows, so each first page pulled a large task payload before anything useful appeared.
+- Current Reported Issues has no production `source = reported_issue` / `status = reported` rows; historical accepted issues need a clean reported-issues export or API marker rather than title-text inference.
+- Safe display decision: keep Breezeway provenance as `Imported`, do not expose the provider as a permanent runtime label, and replace redacted imported titles in the UI with `Sensitive imported task` without unredacting the source data.
+- First fix slice: normalize due dates at the adapter boundary, remove the parent-level full task fetch, default task pages/API to 50 rows, add an animated F loader, and make status visually stronger while priority becomes quieter.

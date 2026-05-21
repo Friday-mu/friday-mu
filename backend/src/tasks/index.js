@@ -542,7 +542,7 @@ router.get('/', attachIdentity, async (req, res) => {
       params.push(needle);
       i += 1;
     }
-    const limit = clampInt(req.query.limit, 200, 1, 500);
+    const limit = clampInt(req.query.limit, 50, 1, 500);
     const offset = clampInt(req.query.offset, 0, 0, 1_000_000);
     const orderBy = taskOrderBy(req.query);
     const { rows } = await query(

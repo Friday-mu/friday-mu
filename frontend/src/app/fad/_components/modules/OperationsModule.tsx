@@ -24,7 +24,7 @@ import { IconClose, IconExpand, IconFilter, IconPlus } from '../icons';
 import { DAILY_BRIEF_POOL, pickDifferent, pickFromPool } from '../../_data/aiFixtures';
 import { useAITelemetry } from '../ai/useAITelemetry';
 import { AIBadge, AIRegenerateButton } from '../ai/AIComponents';
-import { priorityTone, taskSourceTone, taskStatusTone, toneStyle } from '../palette';
+import { taskSourceTone, taskStatusTone, toneStyle } from '../palette';
 import {
   buildManagerWorkbenchSignals,
   type ManagerWorkbenchSignals,
@@ -103,20 +103,26 @@ interface CreateTaskIntent {
 }
 
 function addDays(date: string, days: number): string {
-  const [year, month, day] = date.split('-').map(Number);
+  const parts = dateParts(date);
+  if (!parts) return date;
+  const [year, month, day] = parts;
   const d = new Date(Date.UTC(year, month - 1, day + days));
   return d.toISOString().slice(0, 10);
 }
 
 function daysBetween(from: string, to: string): number {
-  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
-  const [toYear, toMonth, toDay] = to.split('-').map(Number);
+  const fromParts = dateParts(from);
+  const toParts = dateParts(to);
+  if (!fromParts || !toParts) return Number.POSITIVE_INFINITY;
+  const [fromYear, fromMonth, fromDay] = fromParts;
+  const [toYear, toMonth, toDay] = toParts;
   const a = new Date(Date.UTC(fromYear, fromMonth - 1, fromDay));
   const b = new Date(Date.UTC(toYear, toMonth - 1, toDay));
   return Math.round((b.getTime() - a.getTime()) / TASK_DAY_MS);
 }
 
 function withinDateTab(task: Task, tab: TaskDateTab, startDate: string, endDate: string): boolean {
+  if (!task.dueDate) return false;
   if (tab === 'today') return task.dueDate <= TODAY;
   if (tab === 'tomorrow') return task.dueDate === addDays(TODAY, 1);
   if (tab === 'week') return task.dueDate <= addDays(TODAY, 6);
@@ -141,17 +147,39 @@ function reservationState(task: Task): Exclude<ReservationFilter, 'all'> {
 }
 
 function formatShortDate(date: string): string {
-  const [year, month, day] = date.split('-').map(Number);
+  const parts = dateParts(date);
+  if (!parts) return 'No date';
+  const [year, month, day] = parts;
   return new Date(year, month - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 function formatHistoryDate(date: string): string {
-  const [year, month, day] = date.split('-').map(Number);
+  const parts = dateParts(date);
+  if (!parts) return 'No date';
+  const [year, month, day] = parts;
   return new Date(year, month - 1, day).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 function isIsoDateKey(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function dateParts(value: string | undefined): [number, number, number] | null {
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return [year, month, day];
 }
 
 export function OperationsModule({ subPage, onChangeSubPage }: Props) {
@@ -184,18 +212,15 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   const canonicalSubPage = subPage === 'intake' || subPage === 'inbox-ai' ? 'issues' : subPage;
   const active = tabs.find((t) => t.id === canonicalSubPage)?.id ?? (isField ? 'my' : 'overview');
 
-  const [, setRev] = useState(0);
-  const { tasks: liveTasks, refetch } = useApiTasks();
+  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
   const bumpRev = () => {
-    setRev((n) => n + 1);
-    refetch();
+    setDetailRefreshKey((n) => n + 1);
   };
 
   const [createIntent, setCreateIntent] = useState<CreateTaskIntent | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [remoteDetailTask, setRemoteDetailTask] = useState<Task | null>(null);
-  const cachedDetailTask = detailTaskId ? liveTasks.find((t) => t.id === detailTaskId) : null;
-  const detailTask = detailTaskId ? (cachedDetailTask || (remoteDetailTask?.id === detailTaskId ? remoteDetailTask : null)) : null;
+  const detailTask = detailTaskId ? (remoteDetailTask?.id === detailTaskId ? remoteDetailTask : null) : null;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -208,11 +233,8 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       setRemoteDetailTask(null);
       return;
     }
-    if (cachedDetailTask) {
-      setRemoteDetailTask(null);
-      return;
-    }
     let cancelled = false;
+    setRemoteDetailTask((current) => (current?.id === detailTaskId ? current : null));
     void fetchTask(detailTaskId)
       .then((task) => {
         if (!cancelled) setRemoteDetailTask(task || null);
@@ -226,7 +248,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [detailTaskId, cachedDetailTask]);
+  }, [detailTaskId, detailRefreshKey]);
 
   const openManagerCreate = (prefill?: CreateTaskPrefill) => {
     setCreateIntent({ mode: 'manager_schedule', prefill });
@@ -338,6 +360,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         onClose={() => setCreateIntent(null)}
         onCreated={(t) => {
           setCreateIntent(null);
+          setRemoteDetailTask(t);
           setDetailTaskId(t.id);
           bumpRev();
         }}
@@ -369,7 +392,7 @@ function OverviewPage({
   const scopedTasks = TASKS;
   const kpis = useMemo(() => {
     const openToday = scopedTasks.filter((t) => t.dueDate === TODAY && !CLOSED_STATUS.has(t.status)).length;
-    const overdue = scopedTasks.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
+    const overdue = scopedTasks.filter((t) => t.dueDate && t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
     const urgent = scopedTasks.filter((t) => t.priority === 'urgent' && !CLOSED_STATUS.has(t.status)).length;
     const awaitingApproval = scopedTasks.filter((t) => t.status === 'blocked' || t.awaitingHumanApproval).length;
     const reportedToday = scopedTasks.filter((t) => INTAKE_SOURCES.has(t.source) && t.status === 'reported' && t.createdAt.slice(0, 10) === TODAY).length;
@@ -470,7 +493,7 @@ function OverviewPage({
           Live tasks could not load: {error}
         </div>
       )}
-      {loading && TASKS.length === 0 && <Empty>Loading live tasks...</Empty>}
+      {loading && TASKS.length === 0 && <LoadingState label="Loading live tasks" />}
 
       <section className="ops-mobile-dashboard" aria-label="Mobile operations dashboard">
         <div className="ops-mobile-dashboard-head">
@@ -1337,7 +1360,7 @@ function MyTasksPage({
 
   const counts = useMemo(() => {
     const active = assignedTasks.filter((task) => task.status === 'in_progress').length;
-    const due = assignedTasks.filter((task) => task.dueDate <= TODAY && !CLOSED_STATUS.has(task.status)).length;
+    const due = assignedTasks.filter((task) => task.dueDate && task.dueDate <= TODAY && !CLOSED_STATUS.has(task.status)).length;
     const blocked = assignedTasks.filter((task) => task.status === 'blocked').length;
     const completed = assignedTasks.filter((task) => task.status === 'completed' || task.status === 'closed').length;
     return { active, due, blocked, completed };
@@ -1384,7 +1407,7 @@ function MyTasksPage({
           Live tasks could not load: {error}. Offline queue is not enabled yet, so failed actions stay visible here instead of disappearing.
         </div>
       )}
-      {loading && assignedTasks.length === 0 && <Empty>Loading assigned tasks...</Empty>}
+      {loading && assignedTasks.length === 0 && <LoadingState label="Loading assigned tasks" />}
 
       <div className="ops-my-tabs" role="tablist" aria-label="Task date range">
         {[
@@ -1494,8 +1517,7 @@ function MyTaskCard({
   onReportIssue: () => void;
 }) {
   const statusSwatch = toneStyle(taskStatusTone(task.status));
-  const prioSwatch = toneStyle(priorityTone(task.priority));
-  const isOverdue = task.dueDate < TODAY && !CLOSED_STATUS.has(task.status);
+  const isOverdue = Boolean(task.dueDate) && task.dueDate < TODAY && !CLOSED_STATUS.has(task.status);
   const daysUntil = daysBetween(TODAY, task.dueDate);
   const primaryAction =
     task.status === 'scheduled' || task.status === 'ready'
@@ -1529,7 +1551,7 @@ function MyTaskCard({
       {task.description && <p>{task.description}</p>}
       <div className="ops-my-card-chips">
         <span style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
-        <span style={{ background: prioSwatch.background, color: prioSwatch.color }}>{task.priority}</span>
+        <PriorityLabel priority={task.priority} />
         <span>{task.department}</span>
         <span>{task.reservationId ? 'reservation' : 'property issue'}</span>
         {isOverdue && <span>overdue</span>}
@@ -1626,7 +1648,7 @@ function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
         </div>
       </div>
       {error && <div className="ops-my-alert">Live history could not load: {error}</div>}
-      {loading && TASKS.length === 0 && <Empty>Loading task history...</Empty>}
+      {loading && TASKS.length === 0 && <LoadingState label="Loading task history" />}
       <div className="ops-my-filterbar">
         <input
           type="search"
@@ -1756,7 +1778,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
   });
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: TaskSortKey; dir: 'asc' | 'desc' } | null>(null);
-  const [pageSize, setPageSize] = useState(200);
+  const [pageSize, setPageSize] = useState(50);
   const [offset, setOffset] = useState(0);
   const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
 
@@ -2056,7 +2078,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
           <span>
             {loading && visibleTasks.length === 0
-              ? 'Loading live tasks...'
+              ? <LoadingInline label="Loading task page" />
               : `${pageStart}-${pageEnd} of ${total} tasks`}
           </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2066,9 +2088,9 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
               aria-label="Tasks per page"
               style={{ padding: '4px 8px', fontSize: 11, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)' }}
             >
+              <option value={50}>50 / page</option>
               <option value={100}>100 / page</option>
               <option value={200}>200 / page</option>
-              <option value={500}>500 / page</option>
             </select>
             <button className="btn ghost sm" disabled={!canPrev || loading} onClick={() => setOffset(Math.max(0, pageOffset - limit))}>
               Prev
@@ -2102,10 +2124,10 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
             ))}
           </tbody>
         </table>
-        {loading && visibleTasks.length === 0 && <Empty>Loading live tasks...</Empty>}
+        {loading && visibleTasks.length === 0 && <LoadingState label="Loading live tasks" />}
         {loading && visibleTasks.length > 0 && (
-          <div style={{ padding: '10px 0', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-            Refreshing task page...
+          <div style={{ padding: '10px 0' }}>
+            <LoadingInline label="Refreshing task page" />
           </div>
         )}
         <div className="fad-tasks-cards">
@@ -2218,6 +2240,26 @@ function SortableTh({
   );
 }
 
+function StatusPill({ status }: { status: TaskStatus }) {
+  const swatch = toneStyle(taskStatusTone(status));
+  return (
+    <span
+      className="ops-status-pill-strong"
+      style={{ background: swatch.background, color: swatch.color }}
+    >
+      {STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+function PriorityLabel({ priority }: { priority: TaskPriority }) {
+  return (
+    <span className={'ops-priority-label' + (priority === 'urgent' ? ' urgent' : '')}>
+      {priority}
+    </span>
+  );
+}
+
 function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
   const sourceSwatch = toneStyle(taskSourceTone(task.source));
   const sourceLabel = SOURCE_LABEL[task.source];
@@ -2244,12 +2286,10 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
       </td>
       <td style={{ padding: '6px 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>{task.subdepartment.replace('_', ' ')}</td>
       <td style={{ padding: '6px 10px' }}>
-        <span style={{ fontSize: 11 }}>{STATUS_LABEL[task.status]}</span>
+        <StatusPill status={task.status} />
       </td>
       <td style={{ padding: '6px 10px' }}>
-        <span style={{ fontSize: 11, textTransform: 'uppercase', color: priorityBarColor(task.priority), fontWeight: 500 }}>
-          {task.priority}
-        </span>
+        <PriorityLabel priority={task.priority} />
       </td>
       <td style={{ padding: '6px 10px' }}>
         <div style={{ display: 'flex', gap: 0 }}>
@@ -2308,12 +2348,15 @@ function formatTaskDue(dueDate: string, dueTime?: string): string {
   if (!dueDate) return 'No due date';
   const time = dueTime ? `, ${formatTimeLabel(dueTime)}` : '';
   if (dueDate === TODAY) return `Today${time}`;
-  const parts = dueDate.split('-').map(Number);
-  const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  const [todayYear, todayMonth, todayDay] = TODAY.split('-').map(Number);
+  const parts = dateParts(dueDate);
+  const todayParts = dateParts(TODAY);
+  if (!parts || !todayParts) return `No due date${dueTime ? `, ${formatTimeLabel(dueTime)}` : ''}`;
+  const [year, month, day] = parts;
+  const date = new Date(year, month - 1, day);
+  const [todayYear, todayMonth, todayDay] = todayParts;
   const today = new Date(todayYear, todayMonth - 1, todayDay);
   const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-  const sameYear = parts[0] === todayYear;
+  const sameYear = year === todayYear;
   const fmt = date.toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
@@ -2326,8 +2369,6 @@ function formatTaskDue(dueDate: string, dueTime?: string): string {
 }
 
 function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
-  const statusSwatch = toneStyle(taskStatusTone(task.status));
-  const prioSwatch = toneStyle(priorityTone(task.priority));
   const sourceSwatch = toneStyle(taskSourceTone(task.source));
   const assignees = taskAssigneePeople(task);
   const chipBase: React.CSSProperties = {
@@ -2364,12 +2405,8 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
         )}
         <div className="fad-task-card-row2">
           <div className="fad-task-card-chips">
-            <span style={{ ...chipBase, background: statusSwatch.background, color: statusSwatch.color }}>
-              {STATUS_LABEL[task.status]}
-            </span>
-            <span style={{ ...chipBase, background: prioSwatch.background, color: prioSwatch.color }}>
-              {task.priority}
-            </span>
+            <StatusPill status={task.status} />
+            <PriorityLabel priority={task.priority} />
             <span style={{ ...chipBase, background: sourceSwatch.background, color: sourceSwatch.color }}>
               {SOURCE_LABEL[task.source]}
             </span>
@@ -2441,7 +2478,10 @@ function appendTriageNote(task: Task, note: string): string {
 
 function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
   const currentUserId = useCurrentUserId();
-  const { tasks: TASKS, loading, error, refetch } = useApiTasks();
+  const reportedTaskFilter = useMemo(() => ({ status: ['reported'] as TaskStatus[] }), []);
+  const linkableTaskFilter = useMemo(() => ({ status: OPEN_SCHEDULE_STATUSES }), []);
+  const { tasks: TASKS, loading, error, refetch } = useApiTasks(reportedTaskFilter);
+  const { tasks: linkableTasks, refetch: refetchLinkableTasks } = useApiTasks(linkableTaskFilter);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -2470,11 +2510,16 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
   }, [intakeTasks, selectedId]);
 
   const linkTargets = useMemo(() => (
-    TASKS
+    linkableTasks
       .filter((task) => task.id !== selectedTask?.id && !CLOSED_STATUS.has(task.status))
       .sort((a, b) => (a.propertyCode || '').localeCompare(b.propertyCode || '') || a.title.localeCompare(b.title))
       .slice(0, 40)
-  ), [TASKS, selectedTask?.id]);
+  ), [linkableTasks, selectedTask?.id]);
+
+  const refetchReportedIssues = () => {
+    refetch();
+    refetchLinkableTasks();
+  };
 
   const toggleSelected = (taskId: string) => {
     setSelectedIds((ids) => (
@@ -2531,7 +2576,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
     try {
       await applyTriage(task, action, { linkTarget });
       setSelectedIds((ids) => ids.filter((id) => id !== task.id));
-      refetch();
+      refetchReportedIssues();
     } catch (e) {
       fireToast(e instanceof Error ? e.message : 'Reported issue triage failed');
     } finally {
@@ -2549,7 +2594,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
       }
       fireToast(`${tasks.length} reported item${tasks.length === 1 ? '' : 's'} triaged`);
       setSelectedIds([]);
-      refetch();
+      refetchReportedIssues();
     } catch (e) {
       fireToast(e instanceof Error ? e.message : 'Bulk triage failed');
     } finally {
@@ -2600,7 +2645,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading && intakeTasks.length === 0 && <Empty>Loading reported issues...</Empty>}
+          {loading && intakeTasks.length === 0 && <LoadingState label="Loading reported issues" />}
           {intakeTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
             const statusSwatch = toneStyle(taskStatusTone(task.status));
@@ -2864,7 +2909,7 @@ function ApprovalsPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading && visible.length === 0 && <Empty>Loading approval queue...</Empty>}
+          {loading && visible.length === 0 && <LoadingState label="Loading approval queue" />}
           {visible.map((task) => {
             const isSelected = selected?.id === task.id;
             const requester = task.requesterId ? TASK_USER_BY_ID[task.requesterId] : null;
@@ -3251,6 +3296,24 @@ function Empty({ children }: { children: React.ReactNode }) {
     <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 12 }}>
       {children}
     </div>
+  );
+}
+
+function LoadingState({ label }: { label: string }) {
+  return (
+    <div className="fad-loading-state" role="status" aria-live="polite">
+      <span className="fad-loading-mark" aria-hidden="true">F</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function LoadingInline({ label }: { label: string }) {
+  return (
+    <span className="fad-loading-inline" role="status" aria-live="polite">
+      <span className="fad-loading-mark mini" aria-hidden="true">F</span>
+      <span>{label}</span>
+    </span>
   );
 }
 
