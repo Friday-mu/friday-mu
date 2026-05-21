@@ -1,0 +1,235 @@
+'use strict';
+
+// Selections — owner picker UI. Each selection has options[] (JSONB) and
+// status transitions: draft → sent → picked | changes_requested.
+//
+// Options are mutated via JSONB array helpers; for v0.1, the full
+// options array is replaced on PATCH (simpler than path-based updates).
+
+const express = require('express');
+const { query } = require('../database/client');
+const { requireDesignPerm } = require('./auth');
+const { shapeSelection } = require('./adapters');
+const { appendActivity } = require('./activities');
+
+const router = express.Router();
+
+// Migration 020 added room_id + category_code so selections can be
+// keyed by room and budget category — the frontend has always tracked
+// these but until the migration they had no backend column.
+const WRITABLE_FIELDS = ['title', 'pack_id', 'options', 'room_id', 'category_code'];
+
+// JSONB fields need explicit casting through ::jsonb because the dynamic
+// SET clause prevents node-postgres from inferring the column type — a
+// plain JS array binds as a Postgres array literal and trips
+// "invalid input syntax for type json".
+const JSONB_FIELDS = new Set(['options']);
+
+router.get('/', requireDesignPerm('design:read'), async (req, res) => {
+  try {
+    const projectId = req.query.project_id;
+    if (typeof projectId !== 'string') {
+      return res.status(400).json({ error: 'project_id query param is required' });
+    }
+    const ownerCheck = await query(
+      `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
+      [req.tenantId, projectId],
+    );
+    if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
+    const { rows } = await query(
+      `SELECT * FROM design_selections WHERE project_id = $1 ORDER BY created_at DESC`,
+      [projectId],
+    );
+    res.json({ results: rows.map(shapeSelection) });
+  } catch (e) {
+    console.error('[design/selections] list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.project_id) return res.status(400).json({ error: 'project_id is required' });
+    if (!body.title) return res.status(400).json({ error: 'title is required' });
+    const ownerCheck = await query(
+      `SELECT 1 FROM design_projects WHERE tenant_id = $1 AND id = $2`,
+      [req.tenantId, body.project_id],
+    );
+    if (ownerCheck.rows.length === 0) return res.status(404).json({ error: 'Project not found' });
+    const { rows } = await query(
+      // options is JSONB — JSON.stringify + ::jsonb cast, otherwise the
+      // pg driver serializes a JS array as a Postgres array literal
+      // which Postgres rejects ("invalid input syntax for type json").
+      // The PATCH path already does this (JSONB_FIELDS set); applying
+      // the same shape on INSERT closes the gap.
+      `INSERT INTO design_selections (project_id, pack_id, title, options, room_id, category_code)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6) RETURNING *`,
+      [
+        body.project_id,
+        body.pack_id || null,
+        body.title,
+        JSON.stringify(body.options ?? []),
+        body.room_id || null,
+        body.category_code || null,
+      ],
+    );
+    res.status(201).json(shapeSelection(rows[0]));
+  } catch (e) {
+    console.error('[design/selections] create error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/:id', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const sets = [];
+    const params = [req.tenantId, req.params.id];
+    let idx = 3;
+    for (const field of WRITABLE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        if (JSONB_FIELDS.has(field)) {
+          sets.push(`${field} = $${idx++}::jsonb`);
+          params.push(JSON.stringify(body[field] ?? []));
+        } else {
+          sets.push(`${field} = $${idx++}`);
+          params.push(body[field] === '' ? null : body[field]);
+        }
+      }
+    }
+    if (sets.length === 0) return res.status(400).json({ error: 'No allowed fields to update' });
+    sets.push('updated_at = NOW()');
+    const sql = `UPDATE design_selections s SET ${sets.join(', ')}
+                 FROM design_projects p
+                 WHERE p.id = s.project_id AND p.tenant_id = $1 AND s.id = $2 AND s.status = 'draft'
+                 RETURNING s.*`;
+    const { rows } = await query(sql, params);
+    if (rows.length === 0) return res.status(404).json({ error: 'Draft selection not found' });
+    res.json(shapeSelection(rows[0]));
+  } catch (e) {
+    console.error('[design/selections] patch error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:id/send', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows } = await query(
+      `UPDATE design_selections s SET status = 'sent', sent_at = NOW(), updated_at = NOW()
+       FROM design_projects p
+       WHERE p.id = s.project_id AND p.tenant_id = $1 AND s.id = $2 AND s.status = 'draft'
+       RETURNING s.*`,
+      [req.tenantId, req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Draft selection not found' });
+    await appendActivity({
+      projectId: rows[0].project_id,
+      actorUserId: req.identity.userId,
+      actorName: req.identity.displayName || req.identity.username,
+      action: 'selection.sent',
+      payload: { selection_id: rows[0].id, title: rows[0].title },
+      visibility: 'portal',
+    });
+    res.json(shapeSelection(rows[0]));
+  } catch (e) {
+    console.error('[design/selections] send error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Staff-side: manually record a pick (e.g. owner phoned in their choice).
+// Owner-side picks come through the portal router in design-be-5b.
+router.post('/:id/pick', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { picked_option_id } = req.body || {};
+    if (!picked_option_id) return res.status(400).json({ error: 'picked_option_id is required' });
+    const { rows } = await query(
+      `UPDATE design_selections s SET status = 'picked', picked_option_id = $3, picked_at = NOW(), updated_at = NOW()
+       FROM design_projects p
+       WHERE p.id = s.project_id AND p.tenant_id = $1 AND s.id = $2 AND s.status = 'sent'
+       RETURNING s.*`,
+      [req.tenantId, req.params.id, picked_option_id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Sent selection not found' });
+    await appendActivity({
+      projectId: rows[0].project_id,
+      actorUserId: req.identity.userId,
+      actorName: req.identity.displayName || req.identity.username,
+      action: 'selection.picked',
+      payload: { selection_id: rows[0].id, picked_option_id },
+      visibility: 'portal',
+    });
+    res.json(shapeSelection(rows[0]));
+  } catch (e) {
+    console.error('[design/selections] pick error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:id/request-changes', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { comment } = req.body || {};
+    const { rows } = await query(
+      `UPDATE design_selections s SET status = 'changes_requested', change_request_comment = $3, updated_at = NOW()
+       FROM design_projects p
+       WHERE p.id = s.project_id AND p.tenant_id = $1 AND s.id = $2 AND s.status = 'sent'
+       RETURNING s.*`,
+      [req.tenantId, req.params.id, comment || null],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Sent selection not found' });
+    await appendActivity({
+      projectId: rows[0].project_id,
+      actorUserId: req.identity.userId,
+      actorName: req.identity.displayName || req.identity.username,
+      action: 'selection.changes_requested',
+      payload: { selection_id: rows[0].id, comment: comment || null },
+      visibility: 'portal',
+    });
+    res.json(shapeSelection(rows[0]));
+  } catch (e) {
+    console.error('[design/selections] request-changes error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE — draft-only. Once a selection has been sent (or picked /
+// changes_requested) it has been seen by the counterparty and is an
+// audit artifact: returns 409. Drafts hard-delete; activity log
+// records the action so the timeline still shows "removed X".
+//
+// Scoping source: docs/scoping/uploads-and-ai-context.md decision #1
+// (NOT parked). Companion handlers in change_orders, vendors,
+// site_visits.
+router.delete('/:id', requireDesignPerm('design:write'), async (req, res) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT s.id, s.project_id, s.title, s.status
+       FROM design_selections s
+       JOIN design_projects p ON p.id = s.project_id
+       WHERE p.tenant_id = $1 AND s.id = $2`,
+      [req.tenantId, req.params.id],
+    );
+    if (existing.length === 0) return res.status(404).json({ error: 'Selection not found' });
+    if (existing[0].status !== 'draft') {
+      return res.status(409).json({
+        error: `Cannot delete a ${existing[0].status} selection — it has been sent to the counterparty.`,
+      });
+    }
+    await query(`DELETE FROM design_selections WHERE id = $1`, [req.params.id]);
+    appendActivity({
+      projectId: existing[0].project_id,
+      actorUserId: req.identity?.userId,
+      actorName: req.identity?.displayName || req.identity?.username,
+      action: 'selection.deleted',
+      payload: { selection_id: existing[0].id, title: existing[0].title },
+      visibility: 'internal',
+    }).catch(() => {});
+    res.status(204).end();
+  } catch (e) {
+    console.error('[design/selections] delete error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+module.exports = router;

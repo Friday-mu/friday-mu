@@ -1,0 +1,175 @@
+{
+  "card_type": "subunit",
+  "parent_complex_code": "VA-C",
+  "code": "VA-3",
+  "name": "1 Bedroom Studio, 10mins Walk to Beach - NR2",
+  "property_id": "675fea6d8f9638000f70bbbc",
+  "location": {
+    "area": "Grand Baie",
+    "region": "north",
+    "address": "Geranium Lane, 30525 Grand Baie, Mauritius",
+    "floor": "2",
+    "coordinates": {
+      "lat": -20.018718,
+      "lng": 57.576742
+    }
+  },
+  "type": {
+    "property_type": "apartment",
+    "unit_type": "studio",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [
+    "VA-2",
+    "VA-4",
+    "VA-C"
+  ],
+  "capacity": {
+    "adults": 2,
+    "children": 0,
+    "total_max": 2,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "king"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 1,
+    "ensuite_count": 0,
+    "half_baths": 0
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": false,
+    "gym": false,
+    "elevator": false,
+    "garage": false,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": null,
+      "location": null,
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [
+        "studio"
+      ],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": null,
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": null,
+      "password": "[redacted]",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": null,
+    "complex_code": "VA-C",
+    "electrical_authority": "CEB",
+    "shared_facilities": [],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "Grand Baie building with 4 units: 2 studios, 1 two-bedroom apartment on the first floor, and 1 two-bedroom apartment on the ground floor. VA-3 is one of the studios, located on the second floor. This is Grand Baie / north, not Flic en Flac."
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": 60
+    },
+    "nearest_beach": {
+      "minutes_walk": 10,
+      "name": "Grand Baie Beach"
+    },
+    "nearby_landmarks": [
+      {
+        "name": "La Croisette Mall",
+        "minutes_walk": 5,
+        "notes": "Guesty description: 5-minute walk from La Croisette Mall."
+      },
+      {
+        "name": "MCB Grand Baie",
+        "minutes_walk": 10,
+        "notes": "Teaching aa290841: approximately 3-minute drive / 10-minute walk from VA-3."
+      },
+      {
+        "name": "C-Care Grand Baie",
+        "minutes_walk": 15,
+        "notes": "Teaching aa290841: approximately 6-7-minute drive / 15-minute walk from VA-3."
+      }
+    ]
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": 55,
+    "minimum_stay_nights": 3
+  },
+  "operational_notes": [
+    "Studio is on the second floor and accessible by stairs.",
+    "Kitchen is compact but equipped for light meal preparation.",
+    "Self-check-in uses a lockbox; exact access details must come from the reservation/access source."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": "https://www.airbnb.com/rooms/1566577376034376287",
+    "booking": "https://booking.com/hotel/mu/1-bedroom-studio-10mins-walk-to-beach-nr2.en.html",
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_guesty_cache": "backend/.guesty-listings-cache.json",
+    "absorbed_teachings": [
+      "aa290841",
+      "ed7c723a",
+      "d212258e"
+    ],
+    "migration_timestamp": "2026-05-19T00:00:00+04:00",
+    "mapping_status": "guesty_backfill"
+  },
+  "_editorial_review_needed": [
+    "Confirm exact MCB and C-Care branch names/distances.",
+    "Confirm bed size, access details, WiFi credentials, and whether a hair dryer is available."
+  ],
+  "_rename_log": []
+}

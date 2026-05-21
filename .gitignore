@@ -1,3 +1,8 @@
 node_modules/
 .next/
 .vercel
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.*-cache.json
+backend/uploads/

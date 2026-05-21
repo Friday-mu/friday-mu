@@ -1,0 +1,32 @@
+{
+  "_note": "Residence slug (matches friday.mu's _seed/properties.json) → Guesty listing ID. Populated 2026-05-14 from the friday.mu Claude session — 26 active residences across Grand Baie and Flic-en-Flac. Slugs not in this map fail the create_reservation job with a clear 'unmapped slug' error (visible in the DLQ).",
+  "_lastUpdated": "2026-05-14",
+  "slugs": {
+    "1-bedroom-studio-10mins-walk-to-beach-nr2-grand-baie": "675fea6d8f9638000f70bbbc",
+    "3-villas-complex-with-pool-flic-en-flac": "674d618daadd1100123a0ed7",
+    "apt-in-the-heart-of-grand-bay-2-min-to-beach-rcn4-grand-baie": "690212dbed7abb000fad4cdd",
+    "apt-with-pool-gym-grand-baie": "68e63d208a2fa800115366ae",
+    "apt-with-pool-gym-grand-baie-2": "68a4688586b06f0013de9f7f",
+    "apt-with-pool-gym-grand-baie-3": "674d64dd160a2d0012c4a1ed",
+    "apt-with-pool-gym-grand-baie-4": "674d64d116651e00107650ee",
+    "apt-with-rooftop-pool-flic-en-flac": "68e7895a2cfcc300129e312d",
+    "beachfront-apt-with-pool-flic-en-flac": "674d6436bf815e001328e81b",
+    "beachfront-apt-with-sea-views-flic-en-flac": "674d61135e1fe2001235a54e",
+    "convenient-2br-apartment-10-mins-walk-to-beach-grand-baie": "69f49962c6198a0014ffd30d",
+    "cozy-apt-flic-en-flac": "6900b7316cbd6500115684ca",
+    "cozy-apt-with-pool-flic-en-flac": "674d62ad81a8a00014b9594a",
+    "cozy-studio-10-mins-walk-from-the-beach-grand-baie": "674d62795e483e0012dc6ec9",
+    "modern-apt-in-secure-gated-residence-flic-en-flac": "674d64e6eadd040010b20ed4",
+    "modern-apt-with-pool-gym-dedicated-office-grand-baie": "67c5ab9e8b7c5d0010be4f65",
+    "modern-sea-view-apt-with-pool-4-min-to-beach-flic-en-flac": "68e767eca5e35f00237ca478",
+    "modern-villa-with-pool-flic-en-flac": "674d6155bf815e001328d766",
+    "mountain-view-penthouse-flic-en-flac": "689449013913970012bad531",
+    "ocean-view-apt-with-pool-flic-en-flac": "674d64a1518c1300139958f8",
+    "private-retreat-6br-up-to-15-guests-grand-baie": "69d5f690bcf8b10012e4ff8e",
+    "sea-view-penthouse-with-pool-flic-en-flac": "674d62a516651e001076464b",
+    "spacious-apartment-10-mins-walk-to-beach-grand-baie": "69ce4cee41cd7800130879d5",
+    "spacious-villa-with-pool-flic-en-flac": "674d6130ad0880000f00b766",
+    "stunning-villa-with-pool-flic-en-flac": "674d6144725ee60010b6e2d1",
+    "stylish-apt-with-pool-balcony-flic-en-flac": "674d644da3a83d000e21a3b5"
+  }
+}

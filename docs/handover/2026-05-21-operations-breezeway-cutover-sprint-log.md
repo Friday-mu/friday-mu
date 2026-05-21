@@ -243,3 +243,15 @@
 - Live `fad-backend` is an rsynced runtime tree, not a git checkout; it already has full `/api/inbox/*`, `/api/team/*`, `/api/outbound/send`, and `/api/tasks` routes mounted.
 - Live public HTTPS route smoke returns `401 Unauthorized` for `/api/inbox/conversations` and `/api/team/channels`; `/api/inbox/website/threads` returns `200` with website-thread JSON. None of the checked routes return `404`.
 - I did not overwrite `/var/www/fad-backend` with this `fad-rebuild` backend tree because live currently contains the fuller Inbox backend; doing a blind backend deploy from this branch would be a regression.
+
+## 2026-05-21 Backend Full-Convergence Mini-Research
+
+- Current Ops worktree is clean and detached at `origin/fad-rebuild` `0f39b15`; the main checkout still has local `fad-rebuild` checked out at an older local commit, so this worktree remains the integration workspace.
+- Live `/var/www/fad-backend` was copied to `/tmp/fad-live-backend-convergence` excluding `.env`, caches, `node_modules`, uploads, and knowledge content; no secrets were imported.
+- Production backend is effectively the full design/inbox backend plus Ops task migrations 052/053; the current Ops branch backend is the smaller task/import backend plus a temporary `inboxCompat` bridge.
+- `origin/fad-design-os-v01-frontend` has the fuller backend source, additional tests, migration 067, and the paused Inbox route implementations; production has route parity but is missing some tests and migration 067.
+- Ops branch has newer Operations-owned pieces not present in design/production: canonical task lifecycle/external_ref edits, Breezeway import migration 054, Breezeway import service/scripts, and task import routes.
+- Feature Catalog confirms multi-tenant module gating and AI usage code came from the design backend; keep those route guards when converging rather than flattening everything into the simpler Ops server.
+- Notion running decisions confirm FAD stays multi-tenant, FAD is the shared integration owner, TeamInbox is the internal comms surface, and Operations owns real task execution/source conversion.
+- Express docs confirm production reverse-proxy settings need deliberate `trust proxy` configuration and security middleware/rate limits; keep the design backend's production middleware posture.
+- Decision: seed backend from the full design backend, then layer in production-only Ops task migrations 052/053 and branch-only Ops import/task deltas, deleting the temporary `inboxCompat` bridge once full routes are present.

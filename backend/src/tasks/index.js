@@ -34,7 +34,8 @@
 
 const express = require('express');
 const { pool, query } = require('../database/client');
-const { attachIdentity } = require('../auth/identity');
+const { attachIdentity } = require('../design/auth');
+const { sendEmail, tplTaskAssigned } = require('../tenants/email');
 const { previewBreezewayCsv, applyBreezewayCsv } = require('./breezewayImport');
 
 const router = express.Router();
@@ -332,6 +333,54 @@ async function appendActivity(taskId, tenantId, entry) {
   }
 }
 
+// Send assignment emails to each newly-added assignee. Best-effort and
+// deliberately after the API response path so task writes stay durable
+// even if email delivery is unavailable.
+async function notifyNewAssignees(tenantId, taskId, oldIds, newIds, actorUserId) {
+  const oldSet = new Set(oldIds || []);
+  const added = (newIds || []).filter((id) => !oldSet.has(id) && id !== actorUserId);
+  if (added.length === 0) return;
+  try {
+    const { rows } = await query(
+      `SELECT t.*, tn.name AS tenant_name,
+              au.display_name AS assigner_display_name, au.email AS assigner_email
+       FROM tasks t
+       LEFT JOIN tenants tn ON tn.id = t.tenant_id
+       LEFT JOIN users au ON au.id = $3
+       WHERE t.id = $1 AND t.tenant_id = $2`,
+      [taskId, tenantId, actorUserId],
+    );
+    const task = rows[0];
+    if (!task) return;
+    const { rows: assignees } = await query(
+      `SELECT id, email, display_name FROM users WHERE id = ANY($1)`,
+      [added],
+    );
+    for (const assignee of assignees) {
+      if (!assignee.email) continue;
+      const tpl = tplTaskAssigned({
+        tenant: { name: task.tenant_name },
+        task: {
+          title: task.title,
+          description: task.description,
+          due_date: task.due_date,
+          priority: task.priority,
+        },
+        assigner: {
+          display_name: task.assigner_display_name,
+          email: task.assigner_email,
+        },
+        taskUrl: `https://admin.friday.mu/fad?m=operations&task=${task.id}`,
+      });
+      sendEmail({ to: assignee.email, ...tpl }).catch((e) => {
+        console.warn(`[tasks/notifyAssignees] sendEmail to ${assignee.email} failed:`, e.message);
+      });
+    }
+  } catch (e) {
+    console.error('[tasks/notifyAssignees] failed:', e.message);
+  }
+}
+
 // GET / — list with filters. Returns shaped tasks WITHOUT comments +
 // costs (avoids N+1 on long lists). Detail view loads those.
 router.get('/', attachIdentity, async (req, res) => {
@@ -600,6 +649,9 @@ router.post('/', attachIdentity, async (req, res) => {
     });
     const [hydrated] = await hydrateAssignees([created]);
     res.status(201).json(shapeTask(hydrated, [], [], []));
+    if (assigneeIds.length > 0) {
+      void notifyNewAssignees(req.tenantId, created.id, [], assigneeIds, req.identity?.userId);
+    }
   } catch (e) {
     if (e.code === '23505' && req.body?.external_ref) {
       try {
@@ -725,6 +777,15 @@ router.patch('/:id', attachIdentity, async (req, res) => {
         actorId: req.identity?.userId || 'system',
         detail: `${existing.status} → ${updated.status}`,
       });
+    }
+    if (nextAssignees !== undefined) {
+      void notifyNewAssignees(
+        req.tenantId,
+        updated.id,
+        existing.assignee_user_ids || [],
+        updated.assignee_user_ids || [],
+        req.identity?.userId,
+      );
     }
   } catch (e) {
     console.error('[tasks] patch error:', e.message);

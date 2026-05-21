@@ -1,0 +1,92 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-04-03",
+  "slaTargets": {
+    "corePrinciple": "Underpromise and overdeliver. Never commit to specific timeframes in guest messages without checking with the team first to ensure we can deliver.",
+    "guestFirstResponse": {
+      "target": "5-10 minutes",
+      "rationale": "Sets the tone for the entire stay. For inquiries, this is a hot lead — the longer we take, the more time they have to shop around and book elsewhere."
+    },
+    "urgentMaintenanceNotification": {
+      "target": "Immediately",
+      "note": "Team notification is immediate. Actual intervention is based on planning and urgency. Do not promise specific ETAs to guests."
+    },
+    "nonUrgentMaintenanceNotification": {
+      "target": "Immediately",
+      "note": "Same principle — notify immediately, intervene based on planning."
+    },
+    "ownerInquiryResponse": {
+      "target": "Within 24 hours",
+      "note": "Unless the owner flags it as urgent"
+    }
+  },
+  "maintenanceWorkflow": {
+    "steps": [
+      "Guest reports issue or team identifies it during inspection",
+      "Franny is notified and assesses urgency",
+      "Bryan is dispatched (both north and west regions)",
+      "For west properties: Alex coordinates on-site access and logistics",
+      "If spending required above Rs 5,000: Franny escalates to Ishant (or Mathias if Ishant unavailable)",
+      "Issue resolved, guest notified of resolution",
+      "Case logged in reservation notes"
+    ]
+  },
+  "cancellationFees": {
+    "rule": "Friday keeps 100% of cancellation fees — no owner split",
+    "surfacing": "Do NOT surface proactively to owners",
+    "disputes": "Case-by-case if an owner ever raises it — hasn't happened yet"
+  },
+  "currencyHandling": {
+    "guestPayments": "EUR (sometimes cash MUR or USD, or wire to USD/EUR accounts)",
+    "ownerPayouts": "MUR",
+    "exchangeRate": "Monthly weighted average across all payments received that month",
+    "automation": "Currently eyeballed — future: Judith computes real weighted average from actual payment dates"
+  },
+  "payoutTiming": {
+    "revenueRecognition": "On checkout date",
+    "payoutWindow": "Within 7 days after month-end (e.g., March checkouts paid by April 7)",
+    "statements": "Monthly statements sent by email within first 7 days of following month"
+  },
+  "ownerCommunication": {
+    "philosophy": "Minimal communication. Only essentials. Don't disturb — owners should feel it's truly passive. More comms = more surface area for complaints/requests.",
+    "monthly": "Statements sent by email within first 7 days of following month",
+    "dayToDay": "Per-owner WhatsApp group (Mary, Mathias, Ishant, Franny + owner). Ad hoc only.",
+    "notificationThresholds": {
+      "belowThreshold": "Handled silently, no owner notification",
+      "aboveThreshold": "Owner approval via WhatsApp group"
+    },
+    "approvalFlows": {
+      "pricingAndListings": "Friday decides, no owner approval needed",
+      "spendingAboveThreshold": "Owner approval required"
+    }
+  },
+  "onboardingFlow": {
+    "steps": [
+      "Lead comes in → share brochure/presentation → answer questions",
+      "Site visit",
+      "Standards book shared — must be understood and accepted BEFORE signing",
+      "Agreement signed (Eversign)",
+      "Onboarding document given post-signing",
+      "Key handover (in person)",
+      "Friday provides: lockbox, bathroom/kitchen/laundry dispensers, professional photoshoot, linen (from June 2026)",
+      "Listing setup by Friday"
+    ],
+    "gaps": "Standards book and onboarding document need formalization — some exist, some don't. Future project."
+  },
+  "linenService": {
+    "status": "Launching June 2026",
+    "pricing": "€1.25/guest/night + VAT",
+    "previousPricing": "Reduced from initial €2.50",
+    "model": "Staff bring fresh linen from central store, swap dirty, return dirty for laundry",
+    "currentModel": "Done on-site, problematic — next-day return trip needed"
+  },
+  "checkoutCheckinWorkflow": {
+    "steps": [
+      "Breezeway auto-creates cleaning + post-clean inspection tasks per booking",
+      "Judith does weekly planning — assigns times, dates, cleaners via Breezeway",
+      "Guest leaves → cleaners arrive → clean",
+      "Place SRL (Stay Ready List): shampoo, body gel, soap, laundry detergent, chocolate, 1 water, 1 Coke, 1 Fanta, small chocolate pack (x3), sugar, salt",
+      "Post-clean inspection by Bryan/Alex"
+    ]
+  }
+}

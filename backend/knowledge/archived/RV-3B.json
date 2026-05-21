@@ -1,0 +1,80 @@
+{
+  "property_id": "674d611d16651e00107639b8",
+  "display_name": "RV-3B",
+  "full_name": "1-Bedroom Studio, 10mins Walk to Beach",
+  "location": "Grand Baie, Mauritius",
+  "property_type": "Apartment",
+  "bedrooms": 1,
+  "bathrooms": 1,
+  "guest_capacity": 3,
+  "priority_level": "medium",
+  "quick_responses": {
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Rays Villa, Racket Lane, 30525 Grand Baie, Mauritius | Lockbox Code: [redacted]",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "",
+      "priority": "high"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +230 4084119 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    }
+  },
+  "property_details": {
+    "address": "Rays Villa, Racket Lane, 30525 Grand Baie, Mauritius",
+    "amenities": [
+      "Hair dryer",
+      "High chair",
+      "Kitchen",
+      "TV",
+      "Wireless Internet",
+      "Crib",
+      "Air conditioning",
+      "Garage"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": "If you’re seeking a cozy hideaway in Grand Baie, look no further than this space. This bright and modern studio is perfect for solo travelers, couples, or a small group needing an extra sleeping option. Conveniently located near the area’s vibrant shops, dining spots, and stunning public beach, the studio offers a charming and comfortable base for your island adventures.",
+    "space": "Designed with simplicity and comfort in mind, this studio features a plush king-sized bed plus a sofa bed, making it easy to accommodate up to 3 guests. The private kitchenette is equipped with essential cooking utensils and appliances, allowing you to prepare light meals and snacks at your leisure.\n\nUnwind in the cozy living area, where you can watch TV or chat about the day’s plans. The well-appointed bathroom is stocked with soft towels and complimentary toiletries for your convenience. Thanks to the secure gated property, you can enjoy peace of mind throughout your stay, along with access to a large shared swimming pool and free on-site parking. Whether you’re exploring Grand Baie’s lively nightlife or simply basking in the island sunshine, the studio promises a relaxed and memorable experience.",
+    "house_rules": null,
+    "parking": null,
+    "guest_access": null
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ],
+  "_note": "Partial data — some fields may need enrichment from conversations or Breezeway"
+}

@@ -1,0 +1,234 @@
+{
+  "card_type": "complex",
+  "parent_complex_code": null,
+  "code": "LB-C",
+  "name": "Lagon Bleu Complex",
+  "property_id": "family_villas",
+  "location": {
+    "area": "Flic en Flac",
+    "region": "west",
+    "address": "Avenue Pailles en Queue, Flic en Flac, Mauritius",
+    "floor": null,
+    "coordinates": {
+      "lat": null,
+      "lng": null
+    }
+  },
+  "type": {
+    "property_type": "villa",
+    "unit_type": null,
+    "renovation_status": "current"
+  },
+  "subunits": [
+    "LB-1",
+    "LB-2",
+    "LB-3"
+  ],
+  "adjacent_friday_properties": [
+    "NYH-A2"
+  ],
+  "capacity": {
+    "adults": 18,
+    "children": 0,
+    "total_max": 18,
+    "infants_in_crib": 3
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "subunit": "LB-1",
+      "beds": [
+        "single",
+        "single"
+      ],
+      "ac": true
+    },
+    {
+      "id": 2,
+      "subunit": "LB-1",
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    },
+    {
+      "id": 3,
+      "subunit": "LB-1",
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    },
+    {
+      "id": 4,
+      "subunit": "LB-2",
+      "beds": [
+        "king"
+      ],
+      "ac": true
+    },
+    {
+      "id": 5,
+      "subunit": "LB-2",
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    },
+    {
+      "id": 6,
+      "subunit": "LB-2",
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    },
+    {
+      "id": 7,
+      "subunit": "LB-3",
+      "beds": [
+        "king"
+      ],
+      "ac": true
+    },
+    {
+      "id": 8,
+      "subunit": "LB-3",
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    },
+    {
+      "id": 9,
+      "subunit": "LB-3",
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 6,
+    "half_baths": 1,
+    "ensuite_count": 1
+  },
+  "amenities": {
+    "kitchen": false,
+    "washer": false,
+    "dryer": false,
+    "tv": false,
+    "high_chair": false,
+    "crib": false,
+    "hair_dryer": false,
+    "gym": false,
+    "elevator": false,
+    "garage": false,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": "shared",
+      "location": "between the 3 villas",
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [
+        "all bedrooms",
+        "all living rooms"
+      ],
+      "unit_count": 12
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": null,
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": null,
+      "password": "[redacted]",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": null,
+    "complex_code": null,
+    "electrical_authority": "CEB",
+    "shared_facilities": [],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "La Bergerie complex — 3 villas with shared pool, 5 min walk to Flic en Flac beach"
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": 53
+    },
+    "nearest_beach": {
+      "minutes_walk": 5,
+      "name": "Flic en Flac beach"
+    },
+    "nearby_landmarks": [
+      {
+        "name": "NYH-A2 (Friday property)",
+        "minutes_walk": 5,
+        "type": "landmark"
+      }
+    ]
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": null,
+    "minimum_stay_nights": null
+  },
+  "operational_notes": [
+    "Complex has 3 separate villas (LB-1, LB-2, LB-3) that can be booked individually or together.",
+    "Subunit names (keep in French, do not translate): LB-1 is 'La Raie Manta', LB-2 is 'Le Requin', LB-3 is 'L'Espadon'.",
+    "Max 18 guests when all booked together. Capacity breakdown: 2 king beds, 6 queen/double beds, 2 single beds across 9 bedrooms.",
+    "Pool is shared between the 3 villas. It is effectively private only when all 3 villas are booked together by a single group. Pool is on a regular cleaning schedule.",
+    "Pool net is stored next to LB-1 (La Raie Manta), near where the sun loungers are kept.",
+    "2 of the 3 villas have been fully renovated (approximately early 2026). The third villa retains an older interior style; check with the team for the current renovation timeline.",
+    "Great for weddings/events but needs advance notice.",
+    "Verify specific-villa availability with the team before confirming which villa(s) a guest will occupy.",
+    "Cribs available on request, 1 per villa.",
+    "BBQ is available for guest use at the property.",
+    "Garbage setup: small bins in each villa's kitchen; larger bins are in the courtyard near the entrance, by the electricity meters."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": null,
+    "booking": null,
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_v1_path": "/Users/judith/repos/friday-gms/knowledge/LB-C.json",
+    "migration_timestamp": "2026-05-14T10:16:31.960801+00:00",
+    "mapping_status": "locked"
+  },
+  "_editorial_review_needed": [],
+  "_rename_log": []
+}

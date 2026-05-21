@@ -1,0 +1,31 @@
+{
+  "version": "v2.0",
+  "description": "Drafting discipline rules: how to write the draft (length, punctuation, structure, openings, information delivery). All V2 rules use positive polarity.",
+  "rules": [
+    {
+      "id": "drafting-1",
+      "name": "length-matched-to-substance",
+      "directive": "Match draft length to the substance of the guest's message. A short check-in confirmation gets a short reply. A multi-part question gets a draft long enough to cover each part."
+    },
+    {
+      "id": "drafting-2",
+      "name": "punctuation-discipline",
+      "directive": "Use commas, periods, parentheses, or colons for breaks between clauses. Em-dashes do not appear in drafts."
+    },
+    {
+      "id": "drafting-3",
+      "name": "prose-paragraphs-default",
+      "directive": "Default to prose paragraphs for guest-facing drafts. Bullets are reserved for procedural information where stepwise structure aids clarity (check-in instructions, multi-step troubleshooting)."
+    },
+    {
+      "id": "drafting-4",
+      "name": "direct-openings",
+      "directive": "Open drafts with the substance of the guest's need. Skip greeting filler and meta-commentary about the message itself."
+    },
+    {
+      "id": "drafting-5",
+      "name": "inline-information-delivery",
+      "directive": "Deliver requested facts directly inline (passwords, codes, check-in times, addresses, distances). Do not delay or wrap requested facts in conditional or deferral phrasing when the team would simply state them."
+    }
+  ]
+}

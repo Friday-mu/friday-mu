@@ -1,0 +1,90 @@
+{
+  "property_id": "67695f5ba25ac60011cee008",
+  "display_name": "SR-C1A Temp",
+  "full_name": "Cozy 3 Bedroom Apt, 7mins Walk to Beach",
+  "location": "Flic en Flac, Mauritius",
+  "property_type": "Apartment",
+  "bedrooms": 3,
+  "bathrooms": 1,
+  "guest_capacity": 6,
+  "priority_level": "medium",
+  "quick_responses": {
+    "wifi": {
+      "trigger_keywords": [
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]"
+      ],
+      "response": "[redacted]",
+      "priority": "[redacted]"
+    },
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Coastal Road, 90502 Flic en Flac, Mauritius | Lockbox Code: [redacted]",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "",
+      "priority": "high"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +23057944017 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    }
+  },
+  "property_details": {
+    "address": "Coastal Road, 90502 Flic en Flac, Mauritius",
+    "amenities": [
+      "Crib",
+      "Hair dryer",
+      "High chair",
+      "Wireless Internet",
+      "Washer",
+      "TV",
+      "Kitchen",
+      "Air conditioning"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": null,
+    "space": null,
+    "house_rules": null,
+    "parking": null,
+    "guest_access": null
+  },
+  "emergency_contact": "+23057944017",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ]
+}

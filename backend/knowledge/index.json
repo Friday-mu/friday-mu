@@ -1,0 +1,77 @@
+{
+  "schema_version": "v2.1",
+  "surfaces": {
+    "inbox-drafts": {
+      "consumer": "backend/src/inbox/draft_generator.js",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice",
+        "global/drafting-discipline",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/inbox-drafts",
+      "lazy_loadable": {
+        "discount-bounds": "trigger:discount|deal|promo|reduction|reduce",
+        "refund-bounds": "trigger:refund|compensation|reimburse"
+      },
+      "property_card": "optional"
+    },
+    "inbox-advisory": {
+      "consumer": "src/routes/consult.ts",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/inbox-advisory",
+      "lazy_loadable": {
+        "platform-compliance": "trigger:Airbnb|Booking|platform|policy|cancellation",
+        "ops-workflows": "trigger:maintenance|owner|escalate|team|repair"
+      },
+      "property_card": "optional"
+    },
+    "pending-actions": {
+      "consumer": "src/services/action-detector.ts",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/pending-actions",
+      "lazy_loadable": {},
+      "property_card": "optional"
+    },
+    "inquiry-followup": {
+      "consumer": "src/services/followup-draft-generator.ts",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/inquiry-followup",
+      "lazy_loadable": {
+        "tone-cadence": "always"
+      },
+      "property_card": "optional"
+    },
+    "learning-analyzer": {
+      "consumer": "src/services/learning-analyzer.ts",
+      "always_load": [
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/learning-analyzer",
+      "lazy_loadable": {},
+      "property_card": false
+    }
+  },
+  "compose_context_mapping": {
+    "_comment": "Maps consult.ts request context values to surface keys (backward compat)",
+    "revision": "inbox-drafts",
+    "compose": "inbox-drafts",
+    "draft_review": "inbox-advisory",
+    "pending_action": "pending-actions",
+    "next_step": "pending-actions",
+    "teaching": "inbox-advisory",
+    "learning_candidate": "learning-analyzer",
+    "message_review": "inbox-advisory"
+  }
+}

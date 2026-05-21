@@ -1,0 +1,411 @@
+{
+  "version": "2.0",
+  "lastUpdated": "2026-05-13",
+  "schema_status": "LOCKED",
+  "source": "Friday Retreats Refund Metrics & Process Framework v3.2 + v2.0.1 KB anchors (critical-4 pricing-within-bounds, critical-6 defer-on-commercial-policy-scope, BV-5 errors-handled-with-grace, BV-7 gratitude-framed-private-feedback). Updated for AI envelope alignment with team envelope. Editorial sweep per drafting-discipline v2.0.1 + brand-voice v2.0.1.",
+  "aiEnvelope": {
+    "schemaVersion": "v2.0",
+    "anchoredIn": "critical-4 (pricing-within-bounds), critical-6 (defer-on-commercial-policy-scope), BV-5 (errors-handled-with-grace)",
+    "principle": "AI operates within the same envelope as the human team. Every refund draft is human-reviewed before send (Sprint 8-9). Every refund, regardless of amount, auto-creates a paired Ishant-Slack-notify task per corePrinciples.ceoApproval, this is a refund-specific overlay on top of the standard Mechanism A/B routing. When SP9-12 multi-dim confidence + Sprint 10+ adaptive auto-creation graduation logic ships, autoSendAutonomousTier will be populated. Until then, refunds remain fully team-gated.",
+    "handlingMechanisms": {
+      "A_draft_with_mandatory_paired_notify": "AI drafts proposed refund amount within severity-band recommendation. Paired Ishant-Slack-notify task auto-created. Team-review-before-send is the gate; team approves the proposed amount or revises before guest send.",
+      "B_defer_with_paired_task": "AI draft uses 'check with management' deferral language for above-envelope cases. Analyzer auto-creates paired approval-routing task per SP9-10. No commercial amount stated in guest-facing draft.",
+      "C_ask_guest_clarification": "AI asks guest to clarify when the issue or compensation request is ambiguous (e.g., affected nights unclear, scope of issue undefined)."
+    },
+    "boundsReference": {
+      "refund_within_envelope": "severityAssessment.severityBands. Minor: up to 5% of nightly rate per affected night. Moderate: 10-30% per affected night. Severe: 100% of affected nights' rate + relocation if needed. Standard metrics per standardRefundMetrics. Mechanism A_draft_with_mandatory_paired_notify.",
+      "refund_above_envelope": "Above band recommendation OR above 1000 EUR absolute cost OR any legalTrigger. Mechanism B_defer_with_paired_task."
+    },
+    "hardBlocks": [
+      "Refund cost above 1000 EUR absolute (down from v1.0 1800 EUR)",
+      "Guest injury reported: stop all compensation discussions, collect evidence, no admission of liability",
+      "Legal threat from guest: cease engagement, paired LEGAL_HOLD task only",
+      "Multi-listing relocation: Ishant oversight required regardless of cost"
+    ],
+    "behaviorTilt": "Offer fix first (re-clean, repair, alternative) before compensation per refundDecisionProcess.step5. Do not offer refunds proactively unless clear bad-review risk per refundEligibility.proactiveRule. When a guest raises an issue privately before posting a review, lead with BV-7 gratitude-framed acknowledgment.",
+    "pairedTaskContract": {
+      "refund_any_amount_within_bands": "Auto-create Ishant-Slack-notify task: 'Approve refund of [X] EUR for reservation [id]. Reason: [Y]. Severity: [band]. AI proposed: [amount] per [standardRefundMetric].' AI draft proceeds with proposed amount; team-review-before-send is the gate.",
+      "refund_above_bands_or_above_1000": "Auto-create with HARD_ESCALATION flag: 'Approve refund above envelope for reservation [id]. Guest situation: [Z]. Severity: [band]. AI deferred via Mechanism B.' AI draft uses management-check deferral language, no commercial amount stated.",
+      "refund_legal_trigger": "Auto-create with LEGAL_HOLD flag and dataRetention trigger. AI draft uses hard_block_acknowledgment only. NO commercial discussion, NO admission of liability. Evidence retention per legalTriggers.dataRetention (18 months minimum).",
+      "relocation_multi_listing": "Auto-create with MULTI_LISTING_OVERSIGHT flag. AI handles communication coordination only; commercial and ops decisions route through Ishant per legalTriggers.multiListingRelocation."
+    },
+    "autoSendAutonomousTier": {
+      "_status": "EMPTY, populated when SP9-12 multi-dim confidence + Sprint 10+ adaptive graduation logic ships. Refunds are unlikely to graduate to auto-send autonomously given financial impact + owner-communication coupling. Most refund classes will remain team-gated indefinitely.",
+      "_likely_when_populated": "Possibly: minor-band cosmetic refunds <20 EUR absolute. Unlikely: moderate or severe bands. To be determined by per-class accuracy and team-edit signal."
+    }
+  },
+  "corePrinciples": {
+    "philosophy": "Guest-centered, owner-fair. Refunds are only offered when guests ask, and decisions always consider all parties' interests.",
+    "underpromise": "Underpromise and overdeliver. Never commit to specific timeframes in guest messages without checking with the team first to ensure we can deliver.",
+    "ceoApproval": "Ishant (CEO) must be notified on Slack for every refund, even within team authority caps. He must be consulted before issuing any refund above authority caps. This is enforced via the aiEnvelope.pairedTaskContract.refund_any_amount_within_bands rule, every refund draft auto-creates a notify task regardless of amount.",
+    "consistency": "Use predefined metrics to ensure fairness and avoid subjective decisions.",
+    "documentation": "Every case must be logged with reason, amount, dates, and outcome in reservation notes.",
+    "reviewProtection": "Do everything possible to avoid negative reviews without being unreasonable financially. A 200 EUR refund can prevent roughly 1200 EUR in lost bookings over 90 days."
+  },
+  "refundEligibility": {
+    "conditions": [
+      "Guest explicitly requests compensation for an issue",
+      "The issue is valid, verified, and occurred during the stay",
+      "It would help maintain goodwill, prevent bad reviews, or is fair given the situation",
+      "The impact was not caused by the guest"
+    ],
+    "proactiveRule": "Do not offer refunds proactively unless there is a clear risk of a bad review."
+  },
+  "severityAssessment": {
+    "description": "Evaluate severity using five qualitative dimensions to determine the appropriate compensation band. Do NOT assign numeric scores, use the dimensions as reasoning criteria.",
+    "dimensions": [
+      {
+        "name": "Essentiality",
+        "description": "How essential was the affected feature to the stay?",
+        "range": "Cosmetic issue -> Core amenity failure -> Property uninhabitable"
+      },
+      {
+        "name": "Duration",
+        "description": "How long did the issue persist?",
+        "range": "Under 1 hour -> Several hours -> Multiple days -> Entire stay"
+      },
+      {
+        "name": "Guest Impact",
+        "description": "How many guests were affected and how severely?",
+        "range": "Single guest minor inconvenience -> Full party significantly disrupted -> Guests forced to leave"
+      },
+      {
+        "name": "Timing",
+        "description": "When did the issue occur?",
+        "range": "Daytime (easier to resolve) -> Night-time or arrival/departure (harder to resolve, higher stress)"
+      },
+      {
+        "name": "Responsibility",
+        "description": "Who caused the issue?",
+        "range": "Guest caused -> External/force majeure -> Shared responsibility -> Clearly host/property fault"
+      }
+    ],
+    "severityBands": {
+      "minor": {
+        "description": "Cosmetic or brief issues with low guest impact, often guest-caused or external",
+        "compensationRange": "Up to 5% of nightly rate per affected night",
+        "mechanism": "A_draft_with_mandatory_paired_notify",
+        "examples": [
+          "Minor cosmetic defect",
+          "Brief utility interruption under 1 hour",
+          "Missing non-essential amenity quickly replaced"
+        ]
+      },
+      "moderate": {
+        "description": "Core amenity issues lasting several hours affecting guest comfort, host responsibility likely",
+        "compensationRange": "10-30% of nightly rate per affected night",
+        "mechanism": "A_draft_with_mandatory_paired_notify",
+        "examples": [
+          "Broken A/C for several hours in summer",
+          "No hot water for a day",
+          "Dirty apartment on check-in",
+          "Construction noise affecting stay",
+          "Missing or broken important amenities"
+        ]
+      },
+      "severe": {
+        "description": "Essential services failed for extended periods, full party significantly impacted, clearly host fault",
+        "compensationRange": "100% of affected nights' rate + relocation if needed",
+        "mechanism": "A_draft_with_mandatory_paired_notify if absolute cost <=1000 EUR, otherwise B_defer_with_paired_task",
+        "examples": [
+          "Property uninhabitable",
+          "Full night lost due to check-in failure",
+          "Severe safety issue",
+          "Double booking",
+          "Major misrepresentation"
+        ]
+      }
+    }
+  },
+  "standardRefundMetrics": [
+    {
+      "situation": "Issue impacting stay (e.g. broken A/C, no hot water)",
+      "recommendation": "30% of nightly rate per affected night",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "notes": "Per Airbnb's recommendation. Assess severity dimensions first."
+    },
+    {
+      "situation": "Full night lost (e.g. check-in issue, severe issue)",
+      "recommendation": "100% of that night's rate (excluding cleaning fee)",
+      "mechanism": "A_draft_with_mandatory_paired_notify (if total <=1000 EUR), B_defer_with_paired_task otherwise",
+      "notes": "Only if guest genuinely couldn't stay."
+    },
+    {
+      "situation": "Dirty apartment on check-in",
+      "recommendation": "Free re-cleaning + optional 10-30% refund for 1 night",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "notes": "Depends on severity and guest reaction. Always offer re-cleaning first per refundDecisionProcess.step5."
+    },
+    {
+      "situation": "Missing or broken amenities",
+      "recommendation": "10-30% of 1 night's rate",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "notes": "Use judgment depending on importance of the amenity."
+    },
+    {
+      "situation": "External disturbance or reduced access",
+      "recommendation": "10-30% of 1 night's rate",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "notes": "Based on level of impact. Construction, blocked access, etc."
+    }
+  ],
+  "refundDecisionProcess": [
+    {
+      "step": 1,
+      "action": "Confirm Guest Request",
+      "detail": "Only proceed if guest explicitly asks for compensation. Don't offer proactively unless there is a clear risk of a bad review."
+    },
+    {
+      "step": 2,
+      "action": "Diagnose the Issue",
+      "detail": "What happened? How many nights were affected? Assess against the five severity dimensions."
+    },
+    {
+      "step": 3,
+      "action": "Apply Standard Metric",
+      "detail": "Use the compensation percentages from the severity bands. Base calculation on actual nightly rate after discount (excluding cleaning fee)."
+    },
+    {
+      "step": 4,
+      "action": "Assess Owner Fairness",
+      "detail": "Was this caused by owner negligence, guest negligence, or a one-off event? Avoid refunds for issues outside our control unless severe."
+    },
+    {
+      "step": 5,
+      "action": "Offer Fix First",
+      "detail": "If the issue can be resolved (re-clean, repair, alternative), always offer a solution before compensation. AI draft should lead with the fix offer; if guest accepts fix, refund may not be needed."
+    },
+    {
+      "step": 6,
+      "action": "Determine Envelope and Mechanism",
+      "detail": "Within severity band recommendation AND total absolute cost <=1000 EUR: Mechanism A_draft_with_mandatory_paired_notify (AI drafts proposed amount, paired Ishant-Slack-notify task auto-created). Above band OR above 1000 EUR OR legal trigger: Mechanism B_defer_with_paired_task (deferral language, no commercial amount stated, paired approval task)."
+    },
+    {
+      "step": 7,
+      "action": "Log the Case",
+      "detail": "Add note to guest reservation with: incident summary, cost breakdown, and outcome. Notify owner with ROI argument if relevant per ownerCommunication.requirement."
+    }
+  ],
+  "communicationFramework": {
+    "name": "4E Model",
+    "steps": [
+      {
+        "step": "Empathise",
+        "description": "Acknowledge the guest's frustration genuinely. Show you understand the impact."
+      },
+      {
+        "step": "Explain",
+        "description": "Briefly explain what happened and what you're doing about it. Be transparent without over-sharing."
+      },
+      {
+        "step": "Execute",
+        "description": "Take concrete action, fix the issue, offer compensation, or arrange an alternative."
+      },
+      {
+        "step": "Elevate",
+        "description": "Turn the negative into a positive memory. Follow up to confirm resolution and satisfaction."
+      }
+    ],
+    "brandVoiceCrossReference": "BV-5 errors-handled-with-grace governs the Empathise step. BV-7 gratitude-framed-private-feedback applies when the guest raises the issue privately before posting a review. BV-8 close-hospitality-comms-with-warmth applies to the Elevate step closing."
+  },
+  "relocationProtocol": {
+    "name": "R-3-60",
+    "description": "Recognise within 5 minutes -> React within 30 minutes with alternative + transport -> Resolve within 60 minutes",
+    "costHierarchy": [
+      "Equal Friday unit (best, no extra cost)",
+      "Friday upgrade (builds goodwill at minimal cost)",
+      "Partner host (pre-negotiated rates)",
+      "4-star hotel (emergency fallback)",
+      "OTA relocation (absolute last resort, platform may invoice host)"
+    ],
+    "fullRefundTriggers": [
+      "Host cancels before check-in (auto-refund)",
+      "Property genuinely unsafe",
+      "Double booking with no alternative found within 60 minutes"
+    ],
+    "mechanism": "B_defer_with_paired_task for any multi-listing relocation per legalTriggers.multiListingRelocation. Single-property relocation within Friday inventory: A_draft_with_mandatory_paired_notify."
+  },
+  "slaTargets": {
+    "guestFirstResponse": "5-10 minutes (ops-knowledge standard) / within 15 minutes (refund complaint)",
+    "problemResolution": "Within 2 hours of first message",
+    "refundIncidence": "Below 4% of stays (industry average: 6-7%)",
+    "averageRefundSize": "Under 20% of nightly rate",
+    "postIssueSatisfaction": "CSAT >= 4.7/5",
+    "serviceRecoveryParadox": "+12% chance of guest leaving 5 stars after quick, effective fix"
+  },
+  "kpis": {
+    "refundIncidence": "<=4% of stays",
+    "avgRefundSize": "<=20% of nightly rate",
+    "responseTime": "<=15 minutes for complaints",
+    "resolutionTime": "<=2 hours",
+    "postIssueCsat": ">=4.7/5",
+    "ratingTargets": {
+      "airbnb": ">=4.8 stars",
+      "bookingCom": ">=9.0 score"
+    }
+  },
+  "otaPolicies": {
+    "airbnb": {
+      "cancellation": "24-hour free cancellation for bookings made >=7 days before check-in",
+      "issueReporting": "Guest must report 'Reservation Issue' within 72 hours",
+      "coveredIssues": [
+        "Uninhabitable",
+        "Unsafe",
+        "Unclean",
+        "Major misrepresentation",
+        "Key amenity missing >24 hours",
+        "Host cancels"
+      ],
+      "serviceFeeRule": "Do not refund Airbnb's service fee unless platform requires it"
+    },
+    "bookingCom": {
+      "alternativeOffer": "Host must offer comparable alternative within 30 minutes of complaint",
+      "failureConsequence": "Booking.com relocates guest and invoices host",
+      "lowReliabilityFlag": "Complaint invoice >250 EUR triggers 'Low Reliability' flag on profile"
+    }
+  },
+  "ownerCommunication": {
+    "requirement": "Every owner notification must include: incident summary, cost breakdown, ROI argument",
+    "costAssignment": {
+      "ownerFault": "Assign to owner ledger under 'Guest Recovery, Owner Fault'",
+      "sharedResponsibility": "Split or absorb depending on relationship and circumstance"
+    },
+    "aiScope": "AI does not draft owner-facing communication in this Sprint. Owner notify is a team-side action via paired task per ownerCommunication.requirement. AI's role is limited to guest-facing draft and the paired team-notify task; owner messaging is downstream."
+  },
+  "legalTriggers": {
+    "guestInjury": "Stop all compensation discussions. Collect photos and evidence. Notify management immediately. Complete insurer form PL-78934. Do NOT admit liability. AI uses hard_block_acknowledgment only.",
+    "legalThreat": "Escalate to management immediately. Do not engage further without direction. AI uses hard_block_acknowledgment only.",
+    "costAboveThreshold": "Any cost above 1000 EUR must be escalated to management before action. Down from v1.0 1800 EUR.",
+    "multiListingRelocation": "Management oversight required for any relocation involving multiple properties. AI handles communication coordination only.",
+    "dataRetention": "Retain all evidence for at least 18 months."
+  },
+  "macroLibrary": [
+    {
+      "id": "apology_fix_minor",
+      "description": "Apology for minor issue with fix in progress",
+      "usage": "Minor severity issues where fix is underway",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED, templates currently live in Guesty saved replies / Helpscout, not in this KB. Corpus-paired template authoring deferred to follow-on session (similar to brand-voice Phase 5 corpus pairing pattern)."
+    },
+    {
+      "id": "apology_fix_pending",
+      "description": "Apology for issue with fix pending/scheduled",
+      "usage": "Issues requiring scheduled maintenance or next-day fix",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "clean_fee_refund",
+      "description": "Cleaning fee refund offer for dirty check-in",
+      "usage": "Dirty apartment on arrival, offer re-clean plus partial refund",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "wifi_out_30",
+      "description": "WiFi outage compensation (30% one night)",
+      "usage": "Extended WiFi outage affecting remote workers or connectivity-dependent guests",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "amenity_partial_15",
+      "description": "Partial refund (15%) for missing amenity",
+      "usage": "Important amenity missing or broken, moderate inconvenience",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "reloc_offer_equal",
+      "description": "Relocation offer to equal Friday property",
+      "usage": "Severe issue requiring relocation, equal unit available",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "reloc_offer_upgrade",
+      "description": "Relocation offer with upgrade",
+      "usage": "Severe issue requiring relocation, upgrade available (builds goodwill)",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "future_credit",
+      "description": "Future stay credit offer",
+      "usage": "Moderate issues where future credit is more cost-effective than immediate refund",
+      "mechanism": "A_draft_with_mandatory_paired_notify",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "full_refund_uninhabitable",
+      "description": "Full refund for uninhabitable property",
+      "usage": "Property genuinely unsafe or uninhabitable, full night refund required",
+      "mechanism": "A_draft_with_mandatory_paired_notify (<=1000 EUR), B_defer_with_paired_task (>1000 EUR)",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "owner_notify_refund",
+      "description": "Owner notification of refund issued",
+      "usage": "After any refund, owner must be informed with cost breakdown and ROI argument",
+      "mechanism": "OWNER_SCOPE, not in AI draft scope this Sprint",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "owner_notify_reloc",
+      "description": "Owner notification of guest relocation",
+      "usage": "After relocation, owner informed of reason, cost, and prevention steps",
+      "mechanism": "OWNER_SCOPE, not in AI draft scope this Sprint",
+      "_template_authoring_status": "DEFERRED"
+    },
+    {
+      "id": "review_request_positive",
+      "description": "Request for positive review after issue resolution",
+      "usage": "After successful service recovery, request review to offset any negative impact",
+      "mechanism": "A_autonomous_draft (no mandatory notify, this is post-recovery follow-up not a refund)",
+      "_template_authoring_status": "DEFERRED"
+    }
+  ],
+  "aboveEnvelopeMacros": {
+    "_description": "Canonized Mechanism B phrasings for above-envelope refund cases. Pair each with auto-created team-approval task per aiEnvelope.pairedTaskContract.",
+    "refund_above_bands": "I'd like to discuss this with our management team to see what we can do. I'll come back to you with their decision shortly.",
+    "refund_above_1000_cost": "I'd like to discuss this with our management team. They handle decisions of this size directly, and they'll come back to you shortly.",
+    "refund_legal_trigger": "Thank you for letting us know. I'll bring this to our management team's attention and they'll be in touch with you directly.",
+    "hard_block_acknowledgment": "Thank you for sharing this with us. Our management team is reviewing the situation and will be in direct contact with you shortly.",
+    "multi_listing_relocation": "We're working on a solution for you across our properties. I'd like to coordinate with our management team to make sure we get this right. They'll come back to you shortly."
+  },
+  "economicsContext": {
+    "reviewImpact": "One 3-star review causes approximately -13% drop in bookings for 90 days",
+    "ratingValue": "Every +0.1 star adds approximately 4% more future bookings",
+    "serviceRecoveryParadox": "+12% chance of 5-star review after effective quick fix vs. problem-free stay",
+    "futureStayCreditRedemption": "75% never redeemed, 22% of recipients book again",
+    "fridayTarget": "Refund incidence below 4% (industry average 6-7%)"
+  },
+  "changeLog": [
+    {
+      "version": "2.0",
+      "date": "2026-05-13",
+      "changes": [
+        "Added aiEnvelope top-level block: AI = team envelope principle, handlingMechanisms with new A_draft_with_mandatory_paired_notify variant (refund-specific overlay on top of A/B), pairedTaskContract spec for refund/legal/multi-listing routing, autoSendAutonomousTier slot reserved for Sprint 10+ (likely stays empty for refunds given financial impact)",
+        "severityBands re-tagged with mechanism field. Minor and moderate: always A_with_paired_notify. Severe: A if <=1000 EUR, else B",
+        "standardRefundMetrics re-tagged with mechanism per situation",
+        "Cost above threshold tightened: 1800 EUR -> 1000 EUR (legalTriggers.costAboveThreshold)",
+        "refundDecisionProcess.step6 renamed 'Determine Envelope and Mechanism', expanded with explicit A vs B routing",
+        "communicationFramework.brandVoiceCrossReference added: BV-5, BV-7, BV-8 anchored to 4E steps",
+        "relocationProtocol.mechanism field added: multi-listing always B, single-property within Friday inventory is A_with_paired_notify",
+        "ownerCommunication.aiScope clarification: AI does not draft owner-facing this Sprint; owner notify is downstream paired-task team action",
+        "legalTriggers: 'Notify Ishant' generalized to 'Notify management' in canonized action wording per OP-4 (Ishant retained in corePrinciples documentation context)",
+        "macroLibrary: each macro tagged with mechanism. _template_authoring_status: DEFERRED added to all 12 macros, actual template text not in this KB, lives in Guesty saved replies / Helpscout. Corpus-paired template authoring deferred to follow-on session (same pattern as brand-voice Phase 5)",
+        "owner_notify_refund and owner_notify_reloc macros tagged OWNER_SCOPE (not in AI draft scope this Sprint)",
+        "review_request_positive macro: A_autonomous_draft no mandatory notify (post-recovery follow-up, not a refund)",
+        "New aboveEnvelopeMacros section: 5 canonized Mechanism B phrasings (refund_above_bands, refund_above_1000_cost, refund_legal_trigger, hard_block_acknowledgment, multi_listing_relocation)"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2026-04-03",
+      "changes": [
+        "Initial version, adapted from Friday Retreats Refund Metrics & Process Framework v3.2 for current team structure"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "property_id": "674d64897292ce0011f05f17",
+  "display_name": "SR-C1A",
+  "full_name": "Modern 3-Bedroom Apt, 7mins Walk to Beach",
+  "location": "Flic en Flac, Mauritius",
+  "property_type": "Condominium",
+  "bedrooms": 3,
+  "bathrooms": 1,
+  "guest_capacity": 6,
+  "priority_level": "medium",
+  "quick_responses": {
+    "wifi": {
+      "trigger_keywords": [
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]"
+      ],
+      "response": "[redacted]",
+      "priority": "[redacted]"
+    },
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Coastal Road, 90502 Flic en Flac, Mauritius | Lockbox Code: [redacted]",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "",
+      "priority": "high"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +230 4084119 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    }
+  },
+  "property_details": {
+    "address": "Coastal Road, 90502 Flic en Flac, Mauritius",
+    "amenities": [
+      "Smoking allowed",
+      "Hair dryer",
+      "Air conditioning",
+      "Kitchen",
+      "TV",
+      "Garage",
+      "High chair",
+      "Crib",
+      "Washer",
+      "Wireless Internet"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": "Situated close to the main road leading to Flic en Flac beach, this luxurious 3-bedroom apartment offers a peaceful retreat on the West Coast. \n\nOn hot summer days, take a refreshing dip in our swimming pool or enjoy a 7-minute walk through the vibrant Village of Flic en Flac to the stunning lagoon, sandy beaches, and local cuisine.",
+    "space": "Experience comfort and luxury in our three spacious bedrooms, each featuring a king-size bed for a restful night's sleep. Enjoy the convenience of air conditioning in every bedroom, ensuring a cool and comfortable stay. Plush towels and complimentary toiletries are provided for your convenience.\n\nThe fully equipped kitchen makes meal preparation a breeze, whether you're cooking up a storm or preparing a simple snack. Step outside onto the delightful patio, the perfect spot to unwind on a hot summer afternoon in the refreshing shade.",
+    "house_rules": "No Pets: Pets are not allowed unless prior arrangements have been made and approved.\n\nNoise Levels: Please respect our neighbors by keeping noise to a minimum between 10 PM and 8 AM. No loud music or parties are allowed at any time.\n\nMaximum Occupancy: The maximum number of guests allowed is 6. Additional guests are not permitted without prior approval.\n\nRespect the Property: Please treat our home with respect and care. Any damage caused during your stay will result in additional charges.\n\nGarbage Disposal: Dispose of garbage and recycling in the designated bins. Please follow local recycling guidelines.\n\nKitchen Use: Feel free to use the kitchen, but please clean up after yourself. Wash all dishes and utensils before departure.\n\nParking: Only park in the designated parking area. Do not block driveways or other vehicles.\n\nCheck-Out Procedures: Follow the check-out instructions provided. Ensure all doors and windows are locked, and keys are returned to the designated location.\n\nNo Illegal Activities: Engaging in any illegal activities on the property is strictly prohibited.\n\nFire Safety: Do not leave candles or open flames unattended. Familiarize yourself with the location of fire extinguishers and exits.\n\nEnergy Conservation: Turn off lights, air conditioning, and heating when not in use to conserve energy.\n\nLost and Found: The host is not responsible for any personal belongings left behind.\n\nPlease check the property thoroughly before departure.",
+    "parking": null,
+    "guest_access": "Guests have full access to the apartment and the private patio. \n\nThe complex features two gated entrances, one at the front and one at the back, for added convenience and security."
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ]
+}
