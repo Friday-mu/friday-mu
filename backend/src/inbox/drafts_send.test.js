@@ -154,3 +154,67 @@ describe('draft approve route', () => {
     expect(query.mock.calls[2][0]).toContain("state = 'superseded'");
   });
 });
+
+describe('draft retry route', () => {
+  beforeEach(() => {
+    process.env.JWT_SECRET = JWT_SECRET;
+    query.mockReset();
+    triggerDraftGeneration.mockReset();
+    triggerDraftGeneration.mockResolvedValue({ draftId: 'new-draft', state: 'draft_ready' });
+  });
+
+  test('retries generation_failed drafts by starting a fresh draft generation', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: DRAFT_ID,
+          message_id: MESSAGE_ID,
+          conversation_id: CONVERSATION_ID,
+          state: 'generation_failed',
+          tenant_id: TENANT_ID,
+          latest_message_id: MESSAGE_ID,
+          latest_direction: 'inbound',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app())
+      .post(`/api/inbox/drafts/${DRAFT_ID}/retry`)
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(202);
+
+    expect(res.body).toEqual({
+      ok: true,
+      previous_draft_id: DRAFT_ID,
+      state: 'friday_drafting',
+      retry_type: 'generation',
+    });
+    expect(query.mock.calls[1][0]).toContain("state = 'superseded'");
+    expect(triggerDraftGeneration).toHaveBeenCalledWith(MESSAGE_ID, CONVERSATION_ID);
+  });
+
+  test('supersedes stale generation_failed drafts instead of retrying old context', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: DRAFT_ID,
+          message_id: MESSAGE_ID,
+          conversation_id: CONVERSATION_ID,
+          state: 'generation_failed',
+          tenant_id: TENANT_ID,
+          latest_message_id: '66666666-6666-4666-8666-666666666666',
+          latest_direction: 'outbound',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app())
+      .post(`/api/inbox/drafts/${DRAFT_ID}/retry`)
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(409);
+
+    expect(res.body.error).toBe('draft_stale');
+    expect(query.mock.calls[1][0]).toContain("state = 'superseded'");
+    expect(triggerDraftGeneration).not.toHaveBeenCalled();
+  });
+});

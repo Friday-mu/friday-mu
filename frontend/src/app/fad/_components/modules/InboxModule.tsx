@@ -431,7 +431,7 @@ export function InboxModule({ onAskFriday }: Props) {
     setDraftError(null);
     retryDraft(draft.id)
       .then(() => {
-        fireToast('Retrying send');
+        fireToast(draft.state === 'generation_failed' ? 'Retrying draft generation' : 'Retrying send');
         refetchDetail();
         refetchConversations();
       })
@@ -1963,7 +1963,7 @@ function DraftProblemCard({
   const body = isQueued
     ? 'Friday has not confirmed this reply was sent yet. Keep an eye on the thread or mark it failed if the queue is stuck.'
     : isGenerationFailed
-      ? 'Friday could not generate a reply for this guest message. Ask Friday manually or dismiss the failed draft.'
+      ? 'Friday could not generate a reply for this guest message. Retry generation, ask Friday manually, or dismiss the failed draft.'
       : 'The guest reply did not go out. Retry when the channel is available, or dismiss after handling it manually.';
 
   return (
@@ -2009,11 +2009,11 @@ function DraftProblemCard({
           <button className="btn ghost sm" disabled={busy} onClick={onMarkFailed}>
             <IconClose size={12} /> Mark failed
           </button>
-        ) : !isGenerationFailed ? (
+        ) : (
           <button className="btn primary sm" disabled={busy} onClick={onRetry}>
             <IconRefresh size={12} /> Retry
           </button>
-        ) : null}
+        )}
         <button className="btn ghost sm" disabled={busy} onClick={onDismiss}>
           Dismiss
         </button>

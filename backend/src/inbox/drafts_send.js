@@ -606,8 +606,8 @@ router.post('/:id/reject', attachIdentity, async (req, res) => {
 
 // ────────────────────────────────────────────────────────────────────
 // POST /api/inbox/drafts/:id/retry
-// Re-send a queued or failed draft. Same send orchestration as
-// /approve — we just enter from a different starting state.
+// Re-send a queued or failed draft. For generation_failed drafts, retry
+// the AI generation pipeline instead of sending the failed placeholder.
 // Atomically claims the draft via state transition so concurrent
 // retries can't double-send.
 // ────────────────────────────────────────────────────────────────────
@@ -619,6 +619,61 @@ router.post('/:id/retry', attachIdentity, async (req, res) => {
     || req.identity?.userId
     || 'fad-user';
   try {
+    const existing = await query(
+      `SELECT d.id, d.message_id, d.conversation_id, d.state,
+              c.tenant_id,
+              latest.id AS latest_message_id,
+              latest.direction AS latest_direction
+         FROM drafts d
+         JOIN conversations c ON c.id = d.conversation_id
+         LEFT JOIN LATERAL (
+           SELECT id, direction
+             FROM messages
+            WHERE conversation_id = d.conversation_id
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+         ) latest ON true
+        WHERE d.id = $1
+        LIMIT 1`,
+      [draftId],
+    );
+    const existingDraft = existing.rows[0];
+    if (!existingDraft) {
+      return res.status(404).json({ error: 'draft_not_found' });
+    }
+    if (existingDraft.tenant_id !== FR_TENANT_ID) {
+      return res.status(403).json({ error: 'tenant_not_supported' });
+    }
+
+    if (existingDraft.state === 'generation_failed') {
+      if (
+        String(existingDraft.latest_message_id || '') !== String(existingDraft.message_id || '')
+        || existingDraft.latest_direction !== 'inbound'
+      ) {
+        await query(
+          `UPDATE drafts SET state = 'superseded', updated_at = NOW() WHERE id = $1`,
+          [draftId],
+        );
+        return res.status(409).json({
+          error: 'draft_stale',
+          message: 'A newer message exists. The failed draft was superseded instead of retried.',
+        });
+      }
+
+      await query(
+        `UPDATE drafts SET state = 'superseded', updated_at = NOW() WHERE id = $1`,
+        [draftId],
+      );
+      triggerDraftGeneration(existingDraft.message_id, existingDraft.conversation_id)
+        .catch((e) => console.error(`[drafts/retry] generation retry failed for ${draftId}:`, e.message));
+      return res.status(202).json({
+        ok: true,
+        previous_draft_id: draftId,
+        state: 'friday_drafting',
+        retry_type: 'generation',
+      });
+    }
+
     // Atomic claim — transitions to 'sending' only if in send_queued
     // / send_failed. Prevents double-send race.
     const claim = await query(
