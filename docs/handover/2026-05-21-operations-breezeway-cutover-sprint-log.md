@@ -241,5 +241,5 @@
 - `origin/fad-rebuild` is pushed through `51de64c`.
 - `admin.friday.mu/fad` is live and returns 200; `/var/www/fad/version.json` reports frontend version `e8e7a84`, which includes the latest paused Inbox frontend fix ported here.
 - Live `fad-backend` is an rsynced runtime tree, not a git checkout; it already has full `/api/inbox/*`, `/api/team/*`, `/api/outbound/send`, and `/api/tasks` routes mounted.
-- Live unauthenticated route smoke for `/api/inbox/conversations`, `/api/team/channels`, and `/api/inbox/website/threads` returns `401 Missing authorization header`, not `404`.
+- Live public HTTPS route smoke returns `401 Unauthorized` for `/api/inbox/conversations` and `/api/team/channels`; `/api/inbox/website/threads` returns `200` with website-thread JSON. None of the checked routes return `404`.
 - I did not overwrite `/var/www/fad-backend` with this `fad-rebuild` backend tree because live currently contains the fuller Inbox backend; doing a blind backend deploy from this branch would be a regression.
