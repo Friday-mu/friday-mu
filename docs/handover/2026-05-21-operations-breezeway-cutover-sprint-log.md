@@ -265,3 +265,15 @@
 - Verified backend build/tests, frontend typecheck/build, route-mount smoke, and pushed convergence commit `a4ed602` to `origin/fad-rebuild`.
 - Production DB inspection showed `tasks.status` still used the old `todo` default/check and old open index, so deploying the converged backend requires a forward-only reconciliation migration.
 - Added `071_tasks_ops_lifecycle_reconcile.sql` and fixed 051 fresh-migration ordering so canonical status writes happen only after the old check constraint is dropped.
+
+## 2026-05-21 Backend Full-Convergence Live Deploy
+
+- Pushed migration fix commit `9eb54d8` to `origin/fad-rebuild`.
+- Backed up live backend runtime to `/var/backups/fad-backend-20260521-150523`.
+- Rsynced converged backend source to `/var/www/fad-backend`, preserving live `.env`, `node_modules`, caches, uploads, and generated dist output boundaries.
+- Ran `npm install --omit=dev` on the server; npm reports 6 audit vulnerabilities (4 moderate, 2 high), unchanged for this deploy scope.
+- Manually ran the migration runner before restart; it applied `054_breezeway_task_import.sql` and `071_tasks_ops_lifecycle_reconcile.sql`.
+- Restarted PM2 `fad-backend`; process is online and the boot log reports `74 already-applied, 74 total`.
+- Production schema now has canonical task status default `scheduled`, full Ops status check, `external_ref`, Breezeway import provenance columns, and updated open/import indexes.
+- Public smoke: `/fad` 200, `/api/version` 200, `/api/inbox/conversations` 401, `/api/team/channels` 401, `/api/tasks` 401, `/api/inbox/pending-actions` 401, `/api/inbox/website/threads` 200; no checked route returned 404.
+- Existing Consult/Inbox logs still show full-context timeouts and model length failures; treat Inbox/Consult product behavior as a separate cleanup/rebuild pass, not as protected baseline work.
