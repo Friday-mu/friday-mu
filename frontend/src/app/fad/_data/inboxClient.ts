@@ -205,14 +205,18 @@ function transformGmsReservation(raw: Record<string, unknown>): InboxReservation
   };
 }
 
-function transformGmsDraft(raw: Record<string, unknown>): InboxDraft {
+export function transformGmsDraft(raw: Record<string, unknown>): InboxDraft {
   const num = (v: unknown): number | undefined =>
     v == null ? undefined : (Number.isFinite(Number(v)) ? Number(v) : undefined);
   return {
     id: String(raw.id || ''),
     state: (raw.state ? String(raw.state) : 'draft_ready') as DraftState,
     body: String(raw.draft_body || raw.body || ''),
-    bodyTranslated: raw.draft_translated ? String(raw.draft_translated) : undefined,
+    bodyTranslated: raw.translated_content
+      ? String(raw.translated_content)
+      : raw.draft_translated
+        ? String(raw.draft_translated)
+        : undefined,
     confidence: confidenceRatio(raw.confidence),
     revisionNumber: num(raw.revision_number),
     revisionInstruction: raw.revision_instruction ? String(raw.revision_instruction) : undefined,
