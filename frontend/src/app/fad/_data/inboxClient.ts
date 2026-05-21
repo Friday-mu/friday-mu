@@ -208,9 +208,11 @@ function transformGmsReservation(raw: Record<string, unknown>): InboxReservation
 export function transformGmsDraft(raw: Record<string, unknown>): InboxDraft {
   const num = (v: unknown): number | undefined =>
     v == null ? undefined : (Number.isFinite(Number(v)) ? Number(v) : undefined);
+  const state = (raw.state ? String(raw.state) : 'draft_ready') as DraftState;
+  const sentAt = raw.sent_at || raw.delivered_at || (state === 'sent' ? raw.updated_at : null);
   return {
     id: String(raw.id || ''),
-    state: (raw.state ? String(raw.state) : 'draft_ready') as DraftState,
+    state,
     body: String(raw.draft_body || raw.body || ''),
     bodyTranslated: raw.translated_content
       ? String(raw.translated_content)
@@ -221,7 +223,8 @@ export function transformGmsDraft(raw: Record<string, unknown>): InboxDraft {
     revisionNumber: num(raw.revision_number),
     revisionInstruction: raw.revision_instruction ? String(raw.revision_instruction) : undefined,
     modelUsed: raw.model_used ? String(raw.model_used) : undefined,
-    createdAt: String(raw.created_at || raw.updated_at || new Date().toISOString()),
+    createdAt: String(sentAt || raw.created_at || raw.updated_at || new Date().toISOString()),
+    sentAt: sentAt ? String(sentAt) : undefined,
     retryCount: num(raw.retry_count),
     nextRetryAt: raw.next_retry_at ? String(raw.next_retry_at) : undefined,
     rejectionReason: raw.rejection_reason ? String(raw.rejection_reason) : undefined,

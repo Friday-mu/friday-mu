@@ -11,9 +11,12 @@ describe('transformGmsDraft', () => {
       translated_content: "Merci, nous allons verifier l'alimentation en eau et vous tenir informee rapidement.",
       confidence: 91,
       created_at: '2026-05-21T08:00:00Z',
+      sent_at: '2026-05-21T08:10:00Z',
     });
 
     expect(draft.body).toBe('Thanks, we will check the water supply and update you shortly.');
     expect(draft.bodyTranslated).toBe("Merci, nous allons verifier l'alimentation en eau et vous tenir informee rapidement.");
+    expect(draft.createdAt).toBe('2026-05-21T08:10:00Z');
+    expect(draft.sentAt).toBe('2026-05-21T08:10:00Z');
   });
 });

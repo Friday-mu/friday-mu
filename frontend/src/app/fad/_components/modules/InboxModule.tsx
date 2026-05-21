@@ -11,6 +11,7 @@ import {
   type StayStatus,
 } from '../../_data/fixtures';
 import { useLiveConversations, useThreadDetail } from '../../_data/inboxClient';
+import { sentDraftHasMatchingOutbound } from '../../_data/inboxTimeline';
 import { useWebsiteThreads } from '../../_data/websiteInboxClient';
 import {
   approveDraft,
@@ -1293,10 +1294,9 @@ export function InboxModule({ onAskFriday }: Props) {
 // never carry a translation; the toggle is hidden for them.
 // Unified message + sent-draft timeline. Merges thread.messages (inbound
 // + outbound conversation events) with thread.drafts in 'sent' state
-// (AI drafts approved + sent by the team). Sorted chronologically so
-// the operator sees the conversation in order, with sent drafts
-// rendered as outbound bubbles carrying reviewer attribution
-// ("Sent by Mathias via Friday").
+// only when a matching outbound message row is absent. Approved draft
+// sends now insert real outbound messages, so rendering both records
+// would duplicate the same guest-facing send.
 //
 // Why merge here rather than at the API: the bundled detail response
 // is two arrays (messages + drafts); the timeline view is a derived
@@ -1317,10 +1317,11 @@ function UnifiedTimeline({ thread }: { thread: InboxThread }) {
     // Failed/queued sends could surface later as retry cards.
     (thread.drafts || []).forEach((d) => {
       if (d.state !== 'sent') return;
+      if (sentDraftHasMatchingOutbound(d, thread.messages)) return;
       out.push({
         kind: 'sent-draft',
         key: `d-${d.id}`,
-        ts: d.createdAt,
+        ts: d.sentAt || d.createdAt,
         body: d.body,
         bodyTranslated: d.bodyTranslated && d.bodyTranslated !== d.body ? d.bodyTranslated : undefined,
         // For v1 we don't have reviewer-name on the draft row; GMS

@@ -90,6 +90,7 @@ export interface InboxDraft {
   revisionInstruction?: string;
   modelUsed?: string;
   createdAt: string;
+  sentAt?: string;
   /** Send-queue retry metadata for send_queued / send_failed states. */
   retryCount?: number;
   nextRetryAt?: string;
