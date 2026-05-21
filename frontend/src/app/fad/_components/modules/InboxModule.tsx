@@ -1166,6 +1166,23 @@ export function InboxModule({ onAskFriday }: Props) {
               onClose={() => setConsultOpen(false)}
             />
           )}
+          {!consultOpen && !activeDraft && (
+            <div style={{ padding: '8px 12px 10px', borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={() => setConsultOpen(true)}
+                style={{
+                  width: '100%',
+                  minHeight: 38,
+                  justifyContent: 'center',
+                  gap: 6,
+                }}
+              >
+                <IconSparkle size={13} /> Ask Friday / compose reply
+              </button>
+            </div>
+          )}
           {/* AI draft review panel — shown when consult is CLOSED and GMS
               has an active draft. When consult is open, the draft is
               embedded inside the consult panel instead. */}
