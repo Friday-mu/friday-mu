@@ -295,6 +295,7 @@ export interface FetchTasksPageInput {
   priority?: TaskPriority;
   dueBefore?: string;
   dueAfter?: string;
+  unscheduled?: boolean;
   search?: string;
   limit?: number;
   offset?: number;
@@ -324,6 +325,7 @@ function buildTasksQuery(filter?: FetchTasksPageInput): string {
   if (filter?.priority) qs.set('priority', filter.priority);
   if (filter?.dueBefore) qs.set('due_before', filter.dueBefore);
   if (filter?.dueAfter) qs.set('due_after', filter.dueAfter);
+  if (filter?.unscheduled) qs.set('unscheduled', 'true');
   if (filter?.search) qs.set('search', filter.search);
   if (filter?.limit) qs.set('limit', String(filter.limit));
   if (filter?.offset) qs.set('offset', String(filter.offset));

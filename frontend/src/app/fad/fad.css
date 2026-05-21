@@ -6224,6 +6224,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-schedule-segment button {
   min-width: 104px;
+  min-height: 44px;
   border: 0;
   border-right: 0.5px solid var(--color-border-tertiary);
   background: transparent;
@@ -6420,8 +6421,9 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-schedule-task-controls {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: 118px 96px minmax(0, 1fr) auto;
   gap: 8px;
+  align-items: end;
 }
 
 .ops-schedule-task-controls label {
@@ -6442,6 +6444,11 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   min-width: 0;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.ops-schedule-task-controls .btn {
+  min-height: 44px;
+  white-space: nowrap;
 }
 
 .ops-schedule-empty {
@@ -6477,6 +6484,13 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   min-width: 0;
 }
 
+.ops-schedule-backlog-row > span:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .ops-schedule-backlog-row .btn {
   min-height: 44px;
 }
@@ -6485,6 +6499,290 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-schedule-backlog-row:focus-visible {
   outline: 2px solid var(--color-brand-accent);
   outline-offset: 2px;
+}
+
+.ops-planner-scroll {
+  margin-top: 12px;
+  max-width: 100%;
+  min-height: 280px;
+  overflow: auto;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+}
+
+.ops-planner-grid {
+  display: grid;
+  min-width: max-content;
+  align-items: stretch;
+}
+
+.ops-planner-grid.user-day {
+  grid-template-columns: 224px repeat(9, minmax(168px, 1fr));
+}
+
+.ops-planner-grid.week {
+  grid-template-columns: 224px repeat(7, minmax(176px, 1fr));
+}
+
+.ops-planner-row-fragment {
+  display: contents;
+}
+
+.ops-planner-corner,
+.ops-planner-col-head,
+.ops-planner-row-head,
+.ops-planner-cell {
+  border-right: 0.5px solid var(--color-border-tertiary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.ops-planner-corner,
+.ops-planner-col-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  min-height: 50px;
+  padding: 10px;
+  background: var(--color-background-secondary);
+}
+
+.ops-planner-corner {
+  left: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ops-planner-col-head {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.ops-planner-col-head strong {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ops-planner-col-head small {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+}
+
+.ops-planner-row-head {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 62px;
+  padding: 10px;
+  background: var(--color-background-secondary);
+}
+
+.ops-planner-row-head > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.ops-planner-row-head strong,
+.ops-planner-row-head small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ops-planner-row-head strong {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ops-planner-row-head small {
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.ops-planner-row-head em {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.ops-planner-cell {
+  min-height: 74px;
+  padding: 7px;
+  background: var(--color-background-primary);
+}
+
+.ops-planner-grid.user-day .ops-planner-cell {
+  min-height: 110px;
+}
+
+.ops-planner-cell:empty::after {
+  content: '';
+  display: block;
+  min-height: 30px;
+}
+
+.ops-planner-cell.compact {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ops-planner-chip-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ops-planner-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.ops-planner-chip,
+.ops-planner-chip-edit,
+.ops-planner-overflow {
+  min-height: 44px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ops-planner-chip {
+  width: 44px;
+  border: 0;
+  background: #0f7a49;
+  color: white;
+  cursor: pointer;
+}
+
+.ops-planner-chip-edit {
+  display: none;
+  border: 0.5px solid var(--color-border-tertiary);
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  min-width: 44px;
+}
+
+.ops-planner-chip-wrap:focus-within .ops-planner-chip-edit,
+.ops-planner-chip-wrap:hover .ops-planner-chip-edit {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+}
+
+.ops-planner-overflow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 0 7px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+}
+
+.ops-reservation-bar {
+  min-height: 20px;
+  max-width: 100%;
+  padding: 3px 7px;
+  border-left: 3px solid var(--color-border-primary);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-border-tertiary) 65%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.ops-reservation-bar span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ops-planner-edit {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) 150px 120px minmax(180px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 12px;
+  padding: 10px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+}
+
+.ops-planner-edit > div:first-child {
+  min-width: 0;
+}
+
+.ops-planner-edit strong,
+.ops-planner-edit small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ops-planner-edit strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ops-planner-edit small {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+}
+
+.ops-planner-edit label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.ops-planner-edit input,
+.ops-planner-edit select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 6px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 0 10px;
+  text-transform: none;
+}
+
+.ops-property-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #0f7a49;
 }
 
 @media (max-width: 900px) {
@@ -6499,6 +6797,9 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   .ops-schedule-date-controls,
   .ops-schedule-segment {
     width: 100%;
+  }
+  .ops-planner-edit {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 1fr);
   }
   .ops-schedule-date-controls input {
     flex: 1 1 150px;
@@ -6555,6 +6856,33 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   }
   .ops-my-list {
     grid-template-columns: 1fr;
+  }
+  .ops-planner-scroll {
+    overflow-x: auto;
+    overflow-y: auto;
+  }
+  .ops-planner-grid.user-day {
+    grid-template-columns: 190px repeat(9, minmax(150px, 1fr));
+  }
+  .ops-planner-grid.week {
+    grid-template-columns: 190px repeat(7, minmax(150px, 1fr));
+  }
+  .ops-planner-row-head {
+    min-height: 58px;
+  }
+  .ops-planner-chip,
+  .ops-planner-chip-edit,
+  .ops-planner-overflow {
+    min-height: 44px;
+  }
+  .ops-planner-chip {
+    width: 44px;
+  }
+  .ops-planner-chip-edit {
+    display: inline-flex;
+    align-items: center;
+    min-width: 44px;
+    padding: 0 8px;
   }
   .ops-schedule-scroll {
     overflow-x: visible;
@@ -6649,9 +6977,22 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   .ops-schedule-task-controls {
     grid-template-columns: 1fr;
   }
+  .ops-planner-edit {
+    grid-template-columns: 1fr;
+  }
+  .ops-planner-edit .btn {
+    justify-content: center;
+    width: 100%;
+  }
   .ops-schedule-backlog-row {
     align-items: stretch;
     flex-direction: column;
+  }
+  .ops-schedule-backlog-row > span:last-child {
+    justify-content: stretch;
+  }
+  .ops-schedule-backlog-row > span:last-child .btn {
+    flex: 1 1 130px;
   }
 }
 

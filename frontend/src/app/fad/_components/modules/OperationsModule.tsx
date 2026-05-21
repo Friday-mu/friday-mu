@@ -17,6 +17,7 @@ import { fireToast } from '../Toaster';
 import { createTask, fetchTask, updateTask } from '../../_data/tasksClient';
 import { useApiTasks, useApiTasksPage } from '../../_data/useApiTasks';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../_data/operationsStaffClient';
+import { fetchScheduleReservations, type ScheduleReservation } from '../../_data/reservationsClient';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
@@ -94,7 +95,7 @@ type ReservationFilter = 'all' | 'linked' | 'unlinked';
 type MyTaskSort = 'suggested' | 'due' | 'priority' | 'property';
 type DashboardStatusFilter = 'all' | 'open' | TaskStatus;
 type ScheduleStatusFilter = 'open' | 'unassigned' | 'all' | TaskStatus;
-type ScheduleViewMode = 'staff' | 'property';
+type SchedulePlannerMode = 'user_day' | 'user_week' | 'property_week';
 
 interface CreateTaskIntent {
   mode: CreateTaskMode;
@@ -854,13 +855,55 @@ function WorkbenchEmpty({ children }: { children: React.ReactNode }) {
 
 // ───────────────── Schedule ─────────────────
 
-interface ScheduleColumn {
+type ScheduleBucketId = 'all_day' | 'before_8' | '8_10' | '10_12' | '12_14' | '14_16' | '16_18' | '18_20' | 'after_20';
+
+interface ScheduleTimeBucket {
+  id: ScheduleBucketId;
+  label: string;
+  subLabel?: string;
+  startHour: number | null;
+  endHour: number | null;
+  defaultTime: string;
+}
+
+interface ScheduleStaffRow {
   id: string;
   name: string;
   initials: string;
   role?: string | null;
   tasks: Task[];
 }
+
+interface SchedulePropertyRow {
+  id: string;
+  label: string;
+  subLabel?: string;
+  tasks: Task[];
+  reservations: ScheduleReservation[];
+}
+
+interface PlannerDropTarget {
+  mode: SchedulePlannerMode;
+  rowType: 'staff' | 'property';
+  rowId: string;
+  date: string;
+  bucketId?: ScheduleBucketId;
+  propertyCode?: string;
+}
+
+const SCHEDULE_TIME_BUCKETS: ScheduleTimeBucket[] = [
+  { id: 'all_day', label: 'All day tasks', subLabel: 'No exact time', startHour: null, endHour: null, defaultTime: '' },
+  { id: 'before_8', label: 'Before 8am', startHour: 0, endHour: 8, defaultTime: '07:00' },
+  { id: '8_10', label: '8 - 10am', startHour: 8, endHour: 10, defaultTime: '08:00' },
+  { id: '10_12', label: '10 - 12pm', startHour: 10, endHour: 12, defaultTime: '10:00' },
+  { id: '12_14', label: '12 - 2pm', startHour: 12, endHour: 14, defaultTime: '12:00' },
+  { id: '14_16', label: '2 - 4pm', startHour: 14, endHour: 16, defaultTime: '14:00' },
+  { id: '16_18', label: '4 - 6pm', startHour: 16, endHour: 18, defaultTime: '16:00' },
+  { id: '18_20', label: '6 - 8pm', startHour: 18, endHour: 20, defaultTime: '18:00' },
+  { id: 'after_20', label: 'After 8pm', startHour: 20, endHour: 24, defaultTime: '20:00' },
+];
+
+const COMPACT_CELL_LIMIT = 6;
 
 function initialsForName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -869,7 +912,9 @@ function initialsForName(name: string): string {
 }
 
 function formatScheduleDate(date: string): string {
-  const [year, month, day] = date.split('-').map(Number);
+  const parts = dateParts(date);
+  if (!parts) return 'No date';
+  const [year, month, day] = parts;
   return new Date(year, month - 1, day).toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
@@ -877,11 +922,29 @@ function formatScheduleDate(date: string): string {
   });
 }
 
+function formatScheduleRange(start: string, end: string): string {
+  return `${formatShortDate(start)} - ${formatShortDate(end)}`;
+}
+
 function formatTimeLabel(time?: string): string {
   if (!time) return 'Any time';
   const match = time.match(/^(\d{2}):(\d{2})/);
   if (!match) return time;
   return `${match[1]}:${match[2]}`;
+}
+
+function timeBucketForTask(task: Task): ScheduleBucketId {
+  if (!task.dueTime) return 'all_day';
+  const match = task.dueTime.match(/^(\d{2}):/);
+  const hour = match ? Number(match[1]) : Number.NaN;
+  if (!Number.isFinite(hour)) return 'all_day';
+  const bucket = SCHEDULE_TIME_BUCKETS.find((item) => (
+    item.startHour != null &&
+    item.endHour != null &&
+    hour >= item.startHour &&
+    hour < item.endHour
+  ));
+  return bucket?.id || 'all_day';
 }
 
 function taskTimeSortKey(task: Task): string {
@@ -944,6 +1007,36 @@ function mergeScheduleStaff(directoryUsers: OperationsStaffUser[], tasks: Task[]
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function normalizeScheduleProperty(value: string | undefined): string {
+  return value?.trim() || 'No property';
+}
+
+function reservationMatchesSearch(reservation: ScheduleReservation, query: string): boolean {
+  if (!query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  return [
+    reservation.propertyCode,
+    reservation.listingNickname,
+    reservation.guestName,
+    reservation.confirmationCode,
+    reservation.channel,
+  ].some((value) => value.toLowerCase().includes(q));
+}
+
+function reservationOverlapsDay(reservation: ScheduleReservation, day: string): boolean {
+  return reservation.checkInDate <= day && reservation.checkOutDate >= day;
+}
+
+function buildVisibleDays(startDate: string, mode: SchedulePlannerMode): string[] {
+  const days = mode === 'user_day' ? 1 : 7;
+  return Array.from({ length: days }, (_, index) => addDays(startDate, index));
+}
+
+function canUseNativeDrag(): boolean {
+  return typeof window !== 'undefined'
+    && window.matchMedia('(pointer: fine) and (min-width: 769px)').matches;
+}
+
 function SchedulePage({
   onOpenTask,
   onCreate,
@@ -954,26 +1047,38 @@ function SchedulePage({
   const currentUserId = useCurrentUserId();
   const [selectedDate, setSelectedDate] = useState(TODAY);
   const [statusFilter, setStatusFilter] = useState<ScheduleStatusFilter>('open');
-  const [viewMode, setViewMode] = useState<ScheduleViewMode>('staff');
+  const [plannerMode, setPlannerMode] = useState<SchedulePlannerMode>('user_day');
   const [search, setSearch] = useState('');
   const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [dragEnabled, setDragEnabled] = useState(false);
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  const [reservations, setReservations] = useState<ScheduleReservation[]>([]);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
+  const [reservationsError, setReservationsError] = useState<string | null>(null);
 
-  const dayQuery = useMemo(() => ({
-    dueAfter: selectedDate,
-    dueBefore: selectedDate,
+  const visibleDays = useMemo(() => buildVisibleDays(selectedDate, plannerMode), [plannerMode, selectedDate]);
+  const rangeStart = visibleDays[0] || selectedDate;
+  const rangeEnd = visibleDays[visibleDays.length - 1] || selectedDate;
+  const rangeStep = plannerMode === 'user_day' ? 1 : 7;
+
+  const scheduleQuery = useMemo(() => ({
+    dueAfter: rangeStart,
+    dueBefore: rangeEnd,
     limit: 500,
     sort: 'dueDate' as const,
     dir: 'asc' as const,
-  }), [selectedDate]);
+  }), [rangeEnd, rangeStart]);
   const unscheduledQuery = useMemo(() => ({
     status: OPEN_SCHEDULE_STATUSES,
-    limit: 100,
+    unscheduled: true,
+    limit: 50,
     sort: 'updatedAt' as const,
     dir: 'desc' as const,
   }), []);
-  const dayPage = useApiTasksPage(dayQuery);
+  const taskPage = useApiTasksPage(scheduleQuery);
   const unscheduledPage = useApiTasksPage(unscheduledQuery);
 
   useEffect(() => {
@@ -996,27 +1101,72 @@ function SchedulePage({
     };
   }, []);
 
-  const rawDayTasks = dayPage.tasks;
-  const dayTasks = useMemo(() => (
-    rawDayTasks
+  useEffect(() => {
+    const refresh = () => setDragEnabled(canUseNativeDrag());
+    refresh();
+    if (typeof window === 'undefined') return undefined;
+    const mq = window.matchMedia('(pointer: fine) and (min-width: 769px)');
+    mq.addEventListener?.('change', refresh);
+    return () => mq.removeEventListener?.('change', refresh);
+  }, []);
+
+  useEffect(() => {
+    if (plannerMode !== 'property_week') return;
+    let cancelled = false;
+    setReservationsLoading(true);
+    setReservationsError(null);
+    void fetchScheduleReservations({ from: rangeStart, to: rangeEnd, limit: 500 })
+      .then((items) => {
+        if (!cancelled) setReservations(items);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setReservations([]);
+          setReservationsError(e instanceof Error ? e.message : 'Reservation overlays unavailable');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReservationsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [plannerMode, rangeEnd, rangeStart]);
+
+  const rawScheduleTasks = taskPage.tasks;
+  const scheduleTasks = useMemo(() => (
+    rawScheduleTasks
       .filter((task) => scheduleStatusMatches(task, statusFilter))
       .filter((task) => taskScheduleMatchesSearch(task, search))
       .sort((a, b) => taskTimeSortKey(a).localeCompare(taskTimeSortKey(b)))
-  ), [rawDayTasks, search, statusFilter]);
+  ), [rawScheduleTasks, search, statusFilter]);
 
   const unscheduledTasks = useMemo(() => (
     unscheduledPage.tasks
       .filter((task) => !task.dueDate && OPEN_SCHEDULE_STATUSES.includes(task.status))
       .filter((task) => taskScheduleMatchesSearch(task, search))
-      .slice(0, 12)
+      .slice(0, 50)
   ), [unscheduledPage.tasks, search]);
 
-  const staffOptions = useMemo(() => mergeScheduleStaff(staffUsers, [...rawDayTasks, ...unscheduledPage.tasks]), [rawDayTasks, staffUsers, unscheduledPage.tasks]);
+  const staffOptions = useMemo(
+    () => mergeScheduleStaff(staffUsers, [...rawScheduleTasks, ...unscheduledPage.tasks]),
+    [rawScheduleTasks, staffUsers, unscheduledPage.tasks],
+  );
 
-  const columns = useMemo<ScheduleColumn[]>(() => {
+  const allKnownTasks = useMemo(
+    () => mergeTaskSlices(rawScheduleTasks, unscheduledPage.tasks),
+    [rawScheduleTasks, unscheduledPage.tasks],
+  );
+
+  const selectedEditTask = useMemo(
+    () => allKnownTasks.find((task) => task.id === editingTaskId) || null,
+    [allKnownTasks, editingTaskId],
+  );
+
+  const staffRows = useMemo<ScheduleStaffRow[]>(() => {
     const byAssignee = new Map<string, Task[]>();
     const unassigned: Task[] = [];
-    dayTasks.forEach((task) => {
+    scheduleTasks.forEach((task) => {
       if (task.assigneeIds.length === 0) {
         unassigned.push(task);
         return;
@@ -1028,8 +1178,8 @@ function SchedulePage({
       });
     });
 
-    const cols: ScheduleColumn[] = [];
-    cols.push({
+    const rows: ScheduleStaffRow[] = [];
+    rows.push({
       id: UNASSIGNED_SCHEDULE_ID,
       name: 'Unassigned',
       initials: '--',
@@ -1038,7 +1188,7 @@ function SchedulePage({
     });
 
     staffOptions.forEach((user) => {
-      cols.push({
+      rows.push({
         id: user.id,
         name: user.name,
         initials: user.initials,
@@ -1047,34 +1197,56 @@ function SchedulePage({
       });
     });
 
-    return cols.filter((column) => column.id === UNASSIGNED_SCHEDULE_ID || staffOptions.length <= 12 || column.tasks.length > 0);
-  }, [dayTasks, staffOptions]);
+    return rows;
+  }, [scheduleTasks, staffOptions]);
 
-  const propertyGroups = useMemo(() => {
-    const groups = new Map<string, Task[]>();
-    dayTasks.forEach((task) => {
-      const key = task.propertyCode || 'No property';
-      const list = groups.get(key) || [];
-      list.push(task);
-      groups.set(key, list);
+  const propertyRows = useMemo<SchedulePropertyRow[]>(() => {
+    const groups = new Map<string, SchedulePropertyRow>();
+    const ensure = (key: string, subLabel?: string) => {
+      const normalized = normalizeScheduleProperty(key);
+      const existing = groups.get(normalized);
+      if (existing) {
+        if (!existing.subLabel && subLabel) existing.subLabel = subLabel;
+        return existing;
+      }
+      const row: SchedulePropertyRow = {
+        id: normalized,
+        label: normalized,
+        subLabel,
+        tasks: [],
+        reservations: [],
+      };
+      groups.set(normalized, row);
+      return row;
+    };
+
+    scheduleTasks.forEach((task) => {
+      ensure(task.propertyCode).tasks.push(task);
     });
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [dayTasks]);
+    reservations
+      .filter((reservation) => reservationMatchesSearch(reservation, search))
+      .forEach((reservation) => {
+        ensure(reservation.propertyCode, reservation.listingNickname).reservations.push(reservation);
+      });
+    return Array.from(groups.values())
+      .filter((row) => row.tasks.length > 0 || row.reservations.length > 0)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [reservations, scheduleTasks, search]);
 
   const counts = useMemo(() => {
-    const open = rawDayTasks.filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status)).length;
-    const unassigned = rawDayTasks.filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status) && task.assigneeIds.length === 0).length;
-    const active = rawDayTasks.filter((task) => task.status === 'in_progress' || task.status === 'paused').length;
-    const completed = rawDayTasks.filter((task) => task.status === 'completed' || task.status === 'closed').length;
-    return { open, unassigned, active, completed, total: rawDayTasks.length };
-  }, [rawDayTasks]);
+    const open = rawScheduleTasks.filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status)).length;
+    const unassigned = rawScheduleTasks.filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status) && task.assigneeIds.length === 0).length;
+    const active = rawScheduleTasks.filter((task) => task.status === 'in_progress' || task.status === 'paused').length;
+    const completed = rawScheduleTasks.filter((task) => task.status === 'completed' || task.status === 'closed').length;
+    return { open, unassigned, active, completed, total: rawScheduleTasks.length };
+  }, [rawScheduleTasks]);
 
   const patchTask = async (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => {
     setSavingTaskId(task.id);
     try {
       await updateTask({ taskId: task.id, patch, actorId: currentUserId });
       fireToast(success);
-      dayPage.refetch();
+      taskPage.refetch();
       unscheduledPage.refetch();
     } catch (e) {
       fireToast(e instanceof Error ? e.message : 'Task schedule update failed');
@@ -1086,6 +1258,61 @@ function SchedulePage({
   const scheduleToday = (task: Task) => {
     void patchTask(task, { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status }, 'Task added to schedule');
   };
+
+  const patchForDropTarget = (task: Task, target: PlannerDropTarget): Parameters<typeof updateTask>[0]['patch'] | null => {
+    const patch: Parameters<typeof updateTask>[0]['patch'] = {};
+    if (target.rowType === 'property') {
+      const taskProperty = normalizeScheduleProperty(task.propertyCode);
+      if (taskProperty !== target.propertyCode) {
+        fireToast('Open the task to change property before moving it to another property row.');
+        return null;
+      }
+      patch.dueDate = target.date;
+    } else {
+      patch.dueDate = target.date;
+      patch.assigneeIds = target.rowId === UNASSIGNED_SCHEDULE_ID ? [] : [target.rowId];
+      if (target.mode === 'user_day') {
+        const bucket = SCHEDULE_TIME_BUCKETS.find((item) => item.id === target.bucketId);
+        patch.dueTime = bucket?.defaultTime || '';
+      }
+    }
+    if (task.status === 'reported') patch.status = 'scheduled';
+    return patch;
+  };
+
+  const moveTask = (task: Task, target: PlannerDropTarget) => {
+    const patch = patchForDropTarget(task, target);
+    if (!patch) return;
+    void patchTask(task, patch, 'Task schedule updated');
+  };
+
+  const handleDragStart = (event: React.DragEvent<HTMLElement>, task: Task) => {
+    if (!dragEnabled) {
+      event.preventDefault();
+      return;
+    }
+    setDragTaskId(task.id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', task.id);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLElement>, target: PlannerDropTarget) => {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData('text/plain') || dragTaskId;
+    setDragTaskId(null);
+    const task = allKnownTasks.find((item) => item.id === taskId);
+    if (!task) return;
+    moveTask(task, target);
+  };
+
+  const allowDrop = (event: React.DragEvent<HTMLElement>) => {
+    if (dragTaskId && dragEnabled) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  const shiftDate = (direction: -1 | 1) => setSelectedDate(addDays(selectedDate, direction * rangeStep));
 
   const scheduleChips: Array<{ id: ScheduleStatusFilter; label: string; count: number }> = [
     { id: 'open', label: 'Open', count: counts.open },
@@ -1099,18 +1326,18 @@ function SchedulePage({
     <div className="ops-schedule" aria-label="Operations task schedule">
       <div className="ops-schedule-toolbar">
         <div>
-          <div className="ops-mobile-kicker">Task schedule</div>
-          <h2>{formatScheduleDate(selectedDate)}</h2>
+          <div className="ops-mobile-kicker">Schedule planner</div>
+          <h2>{plannerMode === 'user_day' ? formatScheduleDate(selectedDate) : formatScheduleRange(rangeStart, rangeEnd)}</h2>
         </div>
         <div className="ops-schedule-date-controls">
-          <button className="btn ghost sm" type="button" onClick={() => setSelectedDate(addDays(selectedDate, -1))}>
+          <button className="btn ghost sm" type="button" onClick={() => shiftDate(-1)}>
             Previous
           </button>
           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} aria-label="Schedule date" />
           <button className="btn ghost sm" type="button" onClick={() => setSelectedDate(TODAY)}>
             Today
           </button>
-          <button className="btn ghost sm" type="button" onClick={() => setSelectedDate(addDays(selectedDate, 1))}>
+          <button className="btn ghost sm" type="button" onClick={() => shiftDate(1)}>
             Next
           </button>
           <button className="btn primary sm" type="button" onClick={() => onCreate({ dueDate: selectedDate })}>
@@ -1127,11 +1354,14 @@ function SchedulePage({
           onChange={(e) => setSearch(e.target.value)}
         />
         <div className="ops-schedule-segment" role="group" aria-label="Schedule view">
-          <button type="button" className={viewMode === 'staff' ? 'active' : ''} onClick={() => setViewMode('staff')}>
-            Staff day
+          <button type="button" className={plannerMode === 'user_day' ? 'active' : ''} onClick={() => setPlannerMode('user_day')}>
+            User day
           </button>
-          <button type="button" className={viewMode === 'property' ? 'active' : ''} onClick={() => setViewMode('property')}>
-            Property day
+          <button type="button" className={plannerMode === 'user_week' ? 'active' : ''} onClick={() => setPlannerMode('user_week')}>
+            User week
+          </button>
+          <button type="button" className={plannerMode === 'property_week' ? 'active' : ''} onClick={() => setPlannerMode('property_week')}>
+            Property week
           </button>
         </div>
       </div>
@@ -1155,64 +1385,172 @@ function SchedulePage({
           Staff directory could not load; showing assignees already present on tasks.
         </div>
       )}
-      {dayPage.error && (
-        <div className="ops-schedule-warning">Schedule tasks could not load: {dayPage.error}</div>
+      {taskPage.error && (
+        <div className="ops-schedule-warning">Schedule tasks could not load: {taskPage.error}</div>
+      )}
+      {reservationsError && plannerMode === 'property_week' && (
+        <div className="ops-schedule-warning">Reservation overlays could not load: {reservationsError}</div>
+      )}
+      {taskPage.total > taskPage.tasks.length && (
+        <div className="ops-schedule-warning">
+          Showing {taskPage.tasks.length} of {taskPage.total} scheduled tasks. Narrow the date range or filters to avoid hidden rows.
+        </div>
       )}
 
-      {viewMode === 'staff' ? (
-        <div className="ops-schedule-scroll" aria-busy={dayPage.loading}>
-          <div
-            className="ops-schedule-board"
-            style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(260px, 1fr))` }}
-          >
-            {columns.map((column) => (
-              <section className="ops-schedule-column" key={column.id}>
-                <div className="ops-schedule-column-head">
-                  <span className="ops-schedule-avatar">{column.initials}</span>
+      {selectedEditTask && (
+        <PlannerEditPanel
+          task={selectedEditTask}
+          staffOptions={staffOptions}
+          saving={savingTaskId === selectedEditTask.id}
+          onOpenTask={onOpenTask}
+          onClose={() => setEditingTaskId(null)}
+          onPatch={patchTask}
+        />
+      )}
+
+      {plannerMode === 'user_day' ? (
+        <div className="ops-planner-scroll" aria-busy={taskPage.loading}>
+          <div className="ops-planner-grid user-day" role="grid" aria-label="User day planner">
+            <div className="ops-planner-corner" role="columnheader">Users</div>
+            {SCHEDULE_TIME_BUCKETS.map((bucket) => (
+              <div className="ops-planner-col-head" role="columnheader" key={bucket.id}>
+                <strong>{bucket.label}</strong>
+                {bucket.subLabel && <small>{bucket.subLabel}</small>}
+              </div>
+            ))}
+            {staffRows.map((row) => (
+              <div className="ops-planner-row-fragment" role="row" key={row.id}>
+                <div className="ops-planner-row-head" role="rowheader">
+                  <span className="ops-schedule-avatar">{row.initials}</span>
                   <span>
-                    <strong>{column.name}</strong>
-                    <small>{column.role || (column.id === UNASSIGNED_SCHEDULE_ID ? 'Needs owner' : 'Staff')}</small>
+                    <strong>{row.name}</strong>
+                    <small>{row.role || (row.id === UNASSIGNED_SCHEDULE_ID ? 'Needs owner' : 'Staff')}</small>
                   </span>
-                  <em>{column.tasks.length}</em>
+                  <em>{row.tasks.length}</em>
                 </div>
-                <div className="ops-schedule-column-list">
-                  {column.tasks.map((task) => (
-                    <ScheduleTaskBlock
-                      key={`${column.id}-${task.id}`}
-                      task={task}
-                      staffOptions={staffOptions}
-                      saving={savingTaskId === task.id}
-                      onOpenTask={onOpenTask}
-                      onPatch={patchTask}
-                    />
-                  ))}
-                  {column.tasks.length === 0 && <div className="ops-schedule-empty">No work scheduled.</div>}
-                </div>
-              </section>
+                {SCHEDULE_TIME_BUCKETS.map((bucket) => {
+                  const cellTasks = row.tasks.filter((task) => timeBucketForTask(task) === bucket.id);
+                  return (
+                    <div
+                      className="ops-planner-cell"
+                      role="gridcell"
+                      key={`${row.id}-${bucket.id}`}
+                      onDragOver={allowDrop}
+                      onDrop={(event) => handleDrop(event, {
+                        mode: 'user_day',
+                        rowType: 'staff',
+                        rowId: row.id,
+                        date: selectedDate,
+                        bucketId: bucket.id,
+                      })}
+                    >
+                      {cellTasks.map((task) => (
+                        <PlannerTaskCard
+                          key={`${row.id}-${bucket.id}-${task.id}`}
+                          task={task}
+                          staffOptions={staffOptions}
+                          saving={savingTaskId === task.id}
+                          dragEnabled={dragEnabled}
+                          onDragStart={handleDragStart}
+                          onOpenTask={onOpenTask}
+                          onEdit={setEditingTaskId}
+                          onPatch={patchTask}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
             ))}
           </div>
+          {staffRows.every((row) => row.tasks.length === 0) && <div className="ops-schedule-empty">No scheduled tasks match this day.</div>}
+        </div>
+      ) : plannerMode === 'user_week' ? (
+        <div className="ops-planner-scroll" aria-busy={taskPage.loading}>
+          <div className="ops-planner-grid week" role="grid" aria-label="User week planner">
+            <div className="ops-planner-corner" role="columnheader">Users</div>
+            {visibleDays.map((day) => (
+              <div className="ops-planner-col-head" role="columnheader" key={day}>
+                <strong>{formatShortDate(day)}</strong>
+                <small>{formatScheduleDate(day).split(',')[0]}</small>
+              </div>
+            ))}
+            {staffRows.map((row) => (
+              <div className="ops-planner-row-fragment" role="row" key={row.id}>
+                <div className="ops-planner-row-head" role="rowheader">
+                  <span className="ops-schedule-avatar">{row.initials}</span>
+                  <span>
+                    <strong>{row.name}</strong>
+                    <small>{row.role || (row.id === UNASSIGNED_SCHEDULE_ID ? 'Needs owner' : 'Staff')}</small>
+                  </span>
+                  <em>{row.tasks.length}</em>
+                </div>
+                {visibleDays.map((day) => {
+                  const cellTasks = row.tasks.filter((task) => task.dueDate === day);
+                  return (
+                    <PlannerCompactCell
+                      key={`${row.id}-${day}`}
+                      tasks={cellTasks}
+                      dropTarget={{ mode: 'user_week', rowType: 'staff', rowId: row.id, date: day }}
+                      dragEnabled={dragEnabled}
+                      savingTaskId={savingTaskId}
+                      onDragStart={handleDragStart}
+                      onDrop={handleDrop}
+                      onDragOver={allowDrop}
+                      onOpenTask={onOpenTask}
+                      onEdit={setEditingTaskId}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          {staffRows.every((row) => row.tasks.length === 0) && <div className="ops-schedule-empty">No scheduled tasks match this week.</div>}
         </div>
       ) : (
-        <div className="ops-schedule-property-list" aria-busy={dayPage.loading}>
-          {propertyGroups.map(([propertyCode, tasks]) => (
-            <section className="ops-schedule-property" key={propertyCode}>
-              <div className="ops-schedule-property-head">
-                <strong className="mono">{propertyCode}</strong>
-                <span>{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+        <div className="ops-planner-scroll" aria-busy={taskPage.loading || reservationsLoading}>
+          <div className="ops-planner-grid week property-week" role="grid" aria-label="Property week planner">
+            <div className="ops-planner-corner" role="columnheader">Properties</div>
+            {visibleDays.map((day) => (
+              <div className="ops-planner-col-head" role="columnheader" key={day}>
+                <strong>{formatShortDate(day)}</strong>
+                <small>{formatScheduleDate(day).split(',')[0]}</small>
               </div>
-              {tasks.map((task) => (
-                <ScheduleTaskBlock
-                  key={task.id}
-                  task={task}
-                  staffOptions={staffOptions}
-                  saving={savingTaskId === task.id}
-                  onOpenTask={onOpenTask}
-                  onPatch={patchTask}
-                />
-              ))}
-            </section>
-          ))}
-          {propertyGroups.length === 0 && <Empty>No scheduled tasks match this view.</Empty>}
+            ))}
+            {propertyRows.map((row) => (
+              <div className="ops-planner-row-fragment" role="row" key={row.id}>
+                <div className="ops-planner-row-head" role="rowheader">
+                  <span className="ops-property-dot" />
+                  <span>
+                    <strong className="mono">{row.label}</strong>
+                    <small>{row.subLabel || `${row.tasks.length} scheduled`}</small>
+                  </span>
+                  <em>{row.tasks.length}</em>
+                </div>
+                {visibleDays.map((day) => {
+                  const cellTasks = row.tasks.filter((task) => task.dueDate === day);
+                  const cellReservations = row.reservations.filter((reservation) => reservationOverlapsDay(reservation, day));
+                  return (
+                    <PlannerCompactCell
+                      key={`${row.id}-${day}`}
+                      tasks={cellTasks}
+                      reservations={cellReservations}
+                      propertyCode={row.label}
+                      dropTarget={{ mode: 'property_week', rowType: 'property', rowId: row.id, date: day, propertyCode: row.label }}
+                      dragEnabled={dragEnabled}
+                      savingTaskId={savingTaskId}
+                      onDragStart={handleDragStart}
+                      onDrop={handleDrop}
+                      onDragOver={allowDrop}
+                      onOpenTask={onOpenTask}
+                      onEdit={setEditingTaskId}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          {propertyRows.length === 0 && <Empty>No scheduled tasks or reservation overlays match this view.</Empty>}
         </div>
       )}
 
@@ -1231,6 +1569,9 @@ function SchedulePage({
               key={task.id}
               role="button"
               tabIndex={0}
+              draggable={dragEnabled && savingTaskId !== task.id}
+              onDragStart={(event) => handleDragStart(event, task)}
+              onDragEnd={() => setDragTaskId(null)}
               onClick={() => onOpenTask(task.id)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') onOpenTask(task.id);
@@ -1244,6 +1585,9 @@ function SchedulePage({
                 <button className="btn ghost sm" type="button" disabled={savingTaskId === task.id} onClick={() => scheduleToday(task)}>
                   Add to {formatShortDate(selectedDate)}
                 </button>
+                <button className="btn ghost sm" type="button" disabled={savingTaskId === task.id} onClick={() => setEditingTaskId(task.id)}>
+                  Edit
+                </button>
               </span>
             </div>
           ))}
@@ -1254,24 +1598,35 @@ function SchedulePage({
   );
 }
 
-function ScheduleTaskBlock({
+function PlannerTaskCard({
   task,
   staffOptions,
   saving,
+  dragEnabled,
+  onDragStart,
   onOpenTask,
+  onEdit,
   onPatch,
 }: {
   task: Task;
   staffOptions: OperationsStaffUser[];
   saving: boolean;
+  dragEnabled: boolean;
+  onDragStart: (event: React.DragEvent<HTMLElement>, task: Task) => void;
   onOpenTask: (id: string) => void;
+  onEdit: (id: string) => void;
   onPatch: (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => Promise<void>;
 }) {
   const statusSwatch = toneStyle(taskStatusTone(task.status));
   const selectedAssignee = task.assigneeIds[0] || '';
 
   return (
-    <div className="ops-schedule-task" style={{ borderLeftColor: priorityBarColor(task.priority) }}>
+    <div
+      className="ops-schedule-task"
+      style={{ borderLeftColor: priorityBarColor(task.priority) }}
+      draggable={dragEnabled && !saving}
+      onDragStart={(event) => onDragStart(event, task)}
+    >
       <button type="button" className="ops-schedule-task-main" onClick={() => onOpenTask(task.id)}>
         <span className="ops-schedule-time">{formatTimeLabel(task.dueTime)}</span>
         <span>
@@ -1283,6 +1638,15 @@ function ScheduleTaskBlock({
         <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
       </button>
       <div className="ops-schedule-task-controls">
+        <label>
+          <span>Date</span>
+          <input
+            type="date"
+            value={task.dueDate || ''}
+            disabled={saving}
+            onChange={(e) => void onPatch(task, { dueDate: e.target.value, status: task.status === 'reported' ? 'scheduled' : task.status }, 'Task date updated')}
+          />
+        </label>
         <label>
           <span>Time</span>
           <input
@@ -1307,9 +1671,155 @@ function ScheduleTaskBlock({
             ))}
           </select>
         </label>
+        <button className="btn ghost sm" type="button" disabled={saving} onClick={() => onEdit(task.id)}>
+          Edit schedule
+        </button>
       </div>
     </div>
   );
+}
+
+function PlannerCompactCell({
+  tasks,
+  reservations,
+  propertyCode,
+  dropTarget,
+  dragEnabled,
+  savingTaskId,
+  onDragStart,
+  onDrop,
+  onDragOver,
+  onOpenTask,
+  onEdit,
+}: {
+  tasks: Task[];
+  reservations?: ScheduleReservation[];
+  propertyCode?: string;
+  dropTarget: PlannerDropTarget;
+  dragEnabled: boolean;
+  savingTaskId: string | null;
+  onDragStart: (event: React.DragEvent<HTMLElement>, task: Task) => void;
+  onDrop: (event: React.DragEvent<HTMLElement>, target: PlannerDropTarget) => void;
+  onDragOver: (event: React.DragEvent<HTMLElement>) => void;
+  onOpenTask: (id: string) => void;
+  onEdit: (id: string) => void;
+}) {
+  const visibleTasks = tasks.slice(0, COMPACT_CELL_LIMIT);
+  const overflow = tasks.length - visibleTasks.length;
+
+  return (
+    <div
+      className="ops-planner-cell compact"
+      role="gridcell"
+      onDragOver={onDragOver}
+      onDrop={(event) => onDrop(event, dropTarget)}
+    >
+      {(reservations || []).slice(0, 2).map((reservation) => (
+        <div className="ops-reservation-bar" key={`${propertyCode || 'row'}-${reservation.id}`} title={`${reservation.guestName} · ${reservation.confirmationCode}`}>
+          <span>{reservation.guestName}</span>
+        </div>
+      ))}
+      <div className="ops-planner-chip-row">
+        {visibleTasks.map((task) => (
+          <div className="ops-planner-chip-wrap" key={`${dropTarget.rowId}-${dropTarget.date}-${task.id}`}>
+            <button
+              type="button"
+              className="ops-planner-chip"
+              title={`${task.title} · ${task.propertyCode || 'No property'} · ${STATUS_LABEL[task.status]}`}
+              draggable={dragEnabled && savingTaskId !== task.id}
+              onDragStart={(event) => onDragStart(event, task)}
+              onClick={() => onOpenTask(task.id)}
+            >
+              <span>{taskIconLabel(task)}</span>
+            </button>
+            <button
+              type="button"
+              className="ops-planner-chip-edit"
+              disabled={savingTaskId === task.id}
+              onClick={() => onEdit(task.id)}
+            >
+              Edit
+            </button>
+          </div>
+        ))}
+        {overflow > 0 && <span className="ops-planner-overflow">+{overflow}</span>}
+      </div>
+    </div>
+  );
+}
+
+function PlannerEditPanel({
+  task,
+  staffOptions,
+  saving,
+  onOpenTask,
+  onClose,
+  onPatch,
+}: {
+  task: Task;
+  staffOptions: OperationsStaffUser[];
+  saving: boolean;
+  onOpenTask: (id: string) => void;
+  onClose: () => void;
+  onPatch: (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => Promise<void>;
+}) {
+  const selectedAssignee = task.assigneeIds[0] || '';
+  return (
+    <div className="ops-planner-edit" aria-label="Edit selected scheduled task">
+      <div>
+        <div className="ops-mobile-kicker">Selected task</div>
+        <strong>{task.title}</strong>
+        <small>{task.propertyCode || 'No property'} · {STATUS_LABEL[task.status]}</small>
+      </div>
+      <label>
+        <span>Date</span>
+        <input
+          type="date"
+          value={task.dueDate || ''}
+          disabled={saving}
+          onChange={(e) => void onPatch(task, { dueDate: e.target.value, status: task.status === 'reported' ? 'scheduled' : task.status }, 'Task date updated')}
+        />
+      </label>
+      <label>
+        <span>Time</span>
+        <input
+          type="time"
+          value={task.dueTime?.slice(0, 5) || ''}
+          disabled={saving}
+          onChange={(e) => void onPatch(task, { dueTime: e.target.value }, 'Task time updated')}
+        />
+      </label>
+      <label>
+        <span>Assignee</span>
+        <select
+          value={selectedAssignee}
+          disabled={saving}
+          onChange={(e) => void onPatch(task, { assigneeIds: e.target.value ? [e.target.value] : [] }, 'Task assignee updated')}
+        >
+          <option value="">Unassigned</option>
+          {staffOptions.filter((user) => user.canAssign).map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className="btn ghost sm" type="button" onClick={() => onOpenTask(task.id)}>
+        Detail
+      </button>
+      <button className="btn ghost sm" type="button" onClick={onClose}>
+        Close
+      </button>
+    </div>
+  );
+}
+
+function taskIconLabel(task: Task): string {
+  if (task.source === 'reported_issue' || task.tags.includes('reported_issue')) return '!';
+  if (task.department === 'maintenance') return 'M';
+  if (task.department === 'cleaning') return 'C';
+  if (task.status === 'completed' || task.status === 'closed') return 'C';
+  return 'T';
 }
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {

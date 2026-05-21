@@ -155,3 +155,74 @@ export function useLiveReservations(): UseLiveReservationsResult {
   useEffect(() => { refetch(); }, [refetch]);
   return { reservations, loading, error, refetch };
 }
+
+export interface ScheduleReservation {
+  id: string;
+  guestyId: string;
+  listingGuestyId: string;
+  listingNickname: string;
+  propertyCode: string;
+  confirmationCode: string;
+  status: string;
+  channel: string;
+  checkInDate: string;
+  checkOutDate: string;
+  guestName: string;
+}
+
+export interface FetchScheduleReservationsInput {
+  from: string;
+  to: string;
+  limit?: number;
+}
+
+const PROPERTY_CODE_RE = /^([A-Z]{1,5}(?:-[A-Z0-9]{1,5}){0,3})(?=\b|\s|$)/;
+
+function dateOnly(value: string | null | undefined): string {
+  if (!value) return '';
+  const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : '';
+}
+
+function propertyCodeFromReservation(reservation: RawReservation): string {
+  const nickname = (reservation.listing_nickname || '').trim();
+  const match = nickname.match(PROPERTY_CODE_RE);
+  if (match) return match[1];
+  return nickname || reservation.listing_guesty_id || 'No property';
+}
+
+function scheduleGuestName(reservation: RawReservation): string {
+  const first = reservation.guest?.first_name?.trim();
+  const last = reservation.guest?.last_name?.trim();
+  return [first, last].filter(Boolean).join(' ') || 'Guest';
+}
+
+function transformScheduleReservation(reservation: RawReservation): ScheduleReservation {
+  const guestyId = reservation.guesty_id || reservation.id;
+  return {
+    id: reservation.id,
+    guestyId,
+    listingGuestyId: reservation.listing_guesty_id || '',
+    listingNickname: reservation.listing_nickname || reservation.listing_guesty_id || 'No listing',
+    propertyCode: propertyCodeFromReservation(reservation),
+    confirmationCode: reservation.confirmation_code || guestyId,
+    status: reservation.status || 'unknown',
+    channel: reservation.channel || reservation.source || 'reservation',
+    checkInDate: dateOnly(reservation.check_in_date),
+    checkOutDate: dateOnly(reservation.check_out_date),
+    guestName: scheduleGuestName(reservation),
+  };
+}
+
+export async function fetchScheduleReservations(input: FetchScheduleReservationsInput): Promise<ScheduleReservation[]> {
+  const qs = new URLSearchParams();
+  qs.set('from', input.from);
+  qs.set('to', input.to);
+  qs.set('date_mode', 'overlap');
+  qs.set('limit', String(input.limit || 500));
+
+  const data = await apiFetch(`/api/reservations?${qs.toString()}`) as { reservations?: RawReservation[] };
+  return (data?.reservations || [])
+    .map(transformScheduleReservation)
+    .filter((reservation) => reservation.checkInDate && reservation.checkOutDate);
+}

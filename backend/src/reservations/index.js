@@ -53,10 +53,38 @@ function shapeReservation(row) {
   };
 }
 
+function appendReservationDateFilters(queryParams, filters, params, startIndex) {
+  let i = startIndex;
+  const overlapMode = queryParams?.date_mode === 'overlap';
+
+  if (overlapMode) {
+    if (typeof queryParams.from === 'string') {
+      filters.push(`r.check_out_date >= $${i++}`);
+      params.push(queryParams.from);
+    }
+    if (typeof queryParams.to === 'string') {
+      filters.push(`r.check_in_date <= $${i++}`);
+      params.push(queryParams.to);
+    }
+    return i;
+  }
+
+  if (typeof queryParams?.from === 'string') {
+    filters.push(`r.check_in_date >= $${i++}`);
+    params.push(queryParams.from);
+  }
+  if (typeof queryParams?.to === 'string') {
+    filters.push(`r.check_in_date <= $${i++}`);
+    params.push(queryParams.to);
+  }
+  return i;
+}
+
 // GET / — list reservations.
 //   ?status=reserved|confirmed|canceled
 //   ?listing=<guesty_id>
 //   ?from=YYYY-MM-DD&to=YYYY-MM-DD   filter by check_in_date range
+//   ?date_mode=overlap               use cached stay overlap for schedule overlays
 //   ?upcoming=true                   shortcut: check_in_date >= today
 //   ?limit=N (default 200, max 500)
 router.get('/', attachIdentity, async (req, res) => {
@@ -72,14 +100,7 @@ router.get('/', attachIdentity, async (req, res) => {
       filters.push(`r.listing_guesty_id = $${i++}`);
       params.push(req.query.listing);
     }
-    if (typeof req.query.from === 'string') {
-      filters.push(`r.check_in_date >= $${i++}`);
-      params.push(req.query.from);
-    }
-    if (typeof req.query.to === 'string') {
-      filters.push(`r.check_in_date <= $${i++}`);
-      params.push(req.query.to);
-    }
+    i = appendReservationDateFilters(req.query, filters, params, i);
     if (req.query.upcoming === 'true') {
       filters.push('r.check_in_date >= CURRENT_DATE');
     }
@@ -200,3 +221,6 @@ router.post('/sync', attachIdentity, async (req, res) => {
 });
 
 module.exports = router;
+module.exports._test = {
+  appendReservationDateFilters,
+};

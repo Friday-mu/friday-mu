@@ -137,6 +137,12 @@ function taskOrderBy(query) {
   return `${sortExpr} ${dir} NULLS LAST, ${tieBreaker}`;
 }
 
+function appendTaskScheduleFilters(queryParams, filters) {
+  if (queryParams?.unscheduled === 'true') {
+    filters.push('t.due_date IS NULL');
+  }
+}
+
 // Mig-050-era callers used todo/done. The cutover lifecycle keeps
 // `todo` as a migration alias only.
 function normaliseStatus(s) {
@@ -524,6 +530,7 @@ router.get('/', attachIdentity, async (req, res) => {
       filters.push(`t.due_date >= $${i++}`);
       params.push(req.query.due_after);
     }
+    appendTaskScheduleFilters(req.query, filters);
     if (req.query.overdue === 'true') {
       filters.push(`t.due_date < CURRENT_DATE`);
       filters.push(`t.status IN ('reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked')`);
@@ -1252,3 +1259,7 @@ router.delete('/:taskId/supplies/:supplyId', attachIdentity, async (req, res) =>
 });
 
 module.exports = router;
+module.exports._test = {
+  appendTaskScheduleFilters,
+  taskOrderBy,
+};

@@ -453,3 +453,14 @@
 - Post-check: all 1,984 reported-issue export rows now match FAD tasks, all 1,984 are already marked, 0 missing, 0 candidate updates.
 - Direct DB verification: 4,626 total `source = breezeway` tasks, 1,984 `category = reported_issue`, missing batch status mix = 81 completed / 37 closed / 22 scheduled / 3 in_progress.
 - Reports backed up on VPS: `/var/backups/fad-reported-issues-missing-preview-dace8ce5cd24.json`, `/var/backups/fad-reported-issues-missing-apply-dace8ce5cd24.json`, `/var/backups/fad-reported-issues-marker-after-missing-apply-dace8ce5cd24.json`, and `/var/backups/fad-reported-issues-marker-after-missing-postcheck-dace8ce5cd24.json`.
+
+## 2026-05-22 Ops Schedule Planner V1 Mini-Research
+
+- Breezeway schedule screenshots show the target: staff/property rows, all-day plus time-bucket columns, week grids, compact task icons, overflow counts, grey reservation bars, and drawer-first task inspection.
+- Current FAD Schedule is still a staff-column day board; it fetches scheduled tasks by date but approximates the unscheduled queue from a status-limited first page instead of `due_date IS NULL`.
+- `/api/tasks` already supports range queries and PATCH for `due_date`, `due_time`, and `assignee_user_ids`; the backend gap is a strict `unscheduled=true` filter.
+- `/api/reservations` currently filters by check-in dates only; property-week overlays need cached overlap semantics (`check_out_date >= from AND check_in_date <= to`) with no live Guesty calls from the schedule page.
+- Notion architecture/decisions confirm FAD as the shared integration/cache layer and Ops as the scheduling/task-execution owner; Calendar/Reservations remain owners of reservation/calendar domains.
+- WAI grid guidance supports an interactive row/column planner, but WCAG 2.2 dragging guidance requires a single-pointer/non-drag alternative for every drag operation.
+- FullCalendar’s resource timeline matches the planner shape, but its resource timeline is Premium/licensed; v1 should stay dependency-free with a custom CSS grid.
+- Implementation decision: replace the Schedule subpage only, preserve TaskDetail drawer click-through, add desktop drag/drop, keep explicit date/time/assignee controls, and keep mobile as contained horizontal grid scrolling.
