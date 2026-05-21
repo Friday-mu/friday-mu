@@ -33,6 +33,12 @@ test('inbox-drafts loads with property card', () => {
   assert(result.metadata.loaded_skills.length >= 4, 'must load at least 4 skills');
 });
 
+test('inbox-drafts loads VA-1 property card', () => {
+  const result = composer.load('inbox-drafts', { property_code: 'VA-1' });
+  assert(result.system_message.includes('property:VA-1'), 'must include VA-1 property card section header');
+  assert(result.system_message.includes('Convenient 2BR Apartment'), 'must include VA-1 listing title');
+});
+
 test('inbox-drafts loads without property card', () => {
   // Per Phase 3.1: inbox-drafts surface was relaxed to property_card:
   // optional so newly-stubbed conversations (no resolved property yet)

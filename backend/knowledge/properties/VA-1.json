@@ -1,0 +1,170 @@
+{
+  "card_type": "subunit",
+  "parent_complex_code": "VA-C",
+  "code": "VA-1",
+  "name": "Convenient 2BR Apartment, 10 Mins Walk to Beach",
+  "property_id": "69f49962c6198a0014ffd30d",
+  "location": {
+    "area": "Grand Baie",
+    "region": "north",
+    "address": "Geranium Lane, 30525 Grand Baie, Mauritius",
+    "floor": "1",
+    "coordinates": {
+      "lat": -20.018718,
+      "lng": 57.576742
+    }
+  },
+  "type": {
+    "property_type": "apartment",
+    "unit_type": "2br",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [
+    "VA-2",
+    "VA-3",
+    "VA-4",
+    "VA-C"
+  ],
+  "capacity": {
+    "adults": 4,
+    "children": 0,
+    "total_max": 4,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "unknown"
+      ],
+      "ac": true
+    },
+    {
+      "id": 2,
+      "beds": [
+        "unknown"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 1,
+    "ensuite_count": 0,
+    "half_baths": 0
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": true,
+    "gym": false,
+    "elevator": false,
+    "garage": false,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": null,
+      "location": null,
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [
+        "bedrooms"
+      ],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": null,
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": null,
+      "password": "***",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": "Villa Angel",
+    "complex_code": "VA-C",
+    "electrical_authority": "CEB",
+    "shared_facilities": [],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "Grand Baie building with 4 units: 2 studios and 2 two-bedroom apartments. VA-1 is a 2-bedroom apartment in the Villa Angel complex. This is Grand Baie / north, not Flic en Flac."
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": 60
+    },
+    "nearest_beach": {
+      "minutes_walk": 10,
+      "name": "Grand Baie Beach"
+    },
+    "nearby_landmarks": [
+      {
+        "name": "La Croisette Mall",
+        "minutes_walk": 5,
+        "notes": "Guesty description: 5-minute walk from La Croisette Mall."
+      }
+    ]
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": 70,
+    "minimum_stay_nights": 3
+  },
+  "operational_notes": [
+    "Guesty public description says the apartment is situated on the second floor; Guesty address metadata has floor 1. Confirm before making guest-facing floor claims.",
+    "Living room includes a sofa and smart TV.",
+    "Fully equipped kitchen and dining area seats four.",
+    "Self-check-in/access details must come from the reservation/access source, not from this property card."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD - populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": "https://www.airbnb.com/rooms/1676062478269274183",
+    "booking": null,
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_guesty_listing_id": "69f49962c6198a0014ffd30d",
+    "migration_timestamp": "2026-05-21T14:20:00+04:00",
+    "mapping_status": "guesty_backfill"
+  },
+  "_editorial_review_needed": [
+    "Confirm floor wording: Guesty address floor 1 vs public description second floor.",
+    "Confirm bed sizes, exact AC locations, access details, WiFi credentials, and building-specific operational details.",
+    "Confirm whether Booking.com listing exists."
+  ],
+  "_rename_log": []
+}
