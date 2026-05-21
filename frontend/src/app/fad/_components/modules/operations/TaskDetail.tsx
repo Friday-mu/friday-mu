@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   TASK_USER_BY_ID,
   type ActivityEntry,
@@ -19,6 +19,7 @@ import { AIConfidenceChip } from '../../ai/AIComponents';
 import { RISK_FLAG_EXPLANATIONS, pickFromPool } from '../../../_data/aiFixtures';
 import { priorityTone, taskStatusTone, toneStyle } from '../../palette';
 import { PropertyChip } from '../properties/PropertyQuickView';
+import { PROPERTY_BY_CODE } from '../../../_data/properties';
 import {
   RESERVATION_BY_ID,
   CHANNEL_LABEL,
@@ -55,6 +56,19 @@ const STATUS_LABEL: Record<Task['status'], string> = {
   cancelled: 'Cancelled',
 };
 
+const SUMMARY_PREFIX = 'Execution summary:';
+const EXECUTION_WINDOW_HOURS = 12;
+const EXECUTION_GRACE_HOURS = 4;
+
+type SyncState = 'idle' | 'saving' | 'saved' | 'queued' | 'failed';
+
+interface EvidenceItem {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
 // Status + priority badges resolve through the palette helper so dark mode
 // auto-flips and the design system stays single-sourced.
 const statusBadgeFor = (s: Task['status']) => toneStyle(taskStatusTone(s));
@@ -62,46 +76,201 @@ const priorityBadgeFor = (p: Task['priority']) => toneStyle(priorityTone(p));
 
 export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev }: DetailProps) {
   const currentUserId = useCurrentUserId();
-  const { can } = usePermissions();
-  const canEdit = can('tasks', 'write') || task.assigneeIds.includes(currentUserId);
+  const { can, role } = usePermissions();
+  const canManageTasks = can('tasks', 'write');
+  const isAssigned = task.assigneeIds.includes(currentUserId);
+  const canEdit = canManageTasks || isAssigned;
+  const canCloseReopen = canManageTasks && role !== 'field';
   const canSeeFinance = useCanAccess('finance', 'read');
   const [draftComment, setDraftComment] = useState('');
+  const [completionSummary, setCompletionSummary] = useState(() => latestExecutionSummary(task));
   const [aiSummaryShown, setAiSummaryShown] = useState(false);
   const [addCostOpen, setAddCostOpen] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [queuedStatus, setQueuedStatus] = useState<Task['status'] | null>(null);
+  const [closeArmed, setCloseArmed] = useState(false);
+  const [evidenceQueue, setEvidenceQueue] = useState<EvidenceItem[]>([]);
+  const [timerBaseSeconds, setTimerBaseSeconds] = useState(() => minutesToSeconds(task.spentMinutes));
+  const [timerStartedAt, setTimerStartedAt] = useState<number | null>(() =>
+    task.status === 'in_progress' ? Date.now() : null,
+  );
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setCompletionSummary(latestExecutionSummary(task));
+    setEvidenceQueue([]);
+    setQueuedStatus(null);
+    setSyncError(null);
+    setSyncState('idle');
+    setCloseArmed(false);
+  }, [task.id]);
+
+  useEffect(() => {
+    setTimerBaseSeconds(minutesToSeconds(task.spentMinutes));
+    setTimerStartedAt(task.status === 'in_progress' ? Date.now() : null);
+    setClockNow(Date.now());
+  }, [task.id, task.spentMinutes, task.status]);
+
+  useEffect(() => {
+    if (task.status !== 'in_progress') return;
+    const tick = () => setClockNow(Date.now());
+    const id = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [task.status]);
+
+  const elapsedSeconds = useMemo(() => {
+    const runningSeconds =
+      task.status === 'in_progress' && timerStartedAt
+        ? Math.max(0, Math.floor((clockNow - timerStartedAt) / 1000))
+        : 0;
+    return timerBaseSeconds + runningSeconds;
+  }, [clockNow, task.status, timerBaseSeconds, timerStartedAt]);
 
   const sendComment = async () => {
     const text = draftComment.trim();
     if (!text) return;
-    await addComment({ taskId: task.id, authorId: currentUserId, text });
-    setDraftComment('');
-    onBumpRev();
+    await runApiMutation('comment', async () => {
+      await addComment({ taskId: task.id, authorId: currentUserId, text });
+      setDraftComment('');
+      onBumpRev();
+    });
+  };
+
+  const spentMinutesForPatch = () => Math.max(task.spentMinutes ?? 0, Math.ceil(elapsedSeconds / 60));
+
+  const runApiMutation = async (label: string, fn: () => Promise<void>) => {
+    setSyncError(null);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setSyncState('queued');
+      setSyncError(`${label} is waiting for a connection. This queue is local to this browser session.`);
+      return;
+    }
+    setSyncState('saving');
+    try {
+      await fn();
+      setQueuedStatus(null);
+      setSyncState('saved');
+      window.setTimeout(() => setSyncState((state) => (state === 'saved' ? 'idle' : state)), 1600);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Sync failed';
+      setSyncState('failed');
+      setSyncError(message);
+      fireToast(`Task sync failed: ${message}`);
+    }
   };
 
   const setStatus = async (status: Task['status']) => {
-    await updateTask({ taskId: task.id, patch: { status }, actorId: currentUserId });
-    onBumpRev();
+    setCloseArmed(false);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setQueuedStatus(status);
+      setSyncState('queued');
+      setSyncError(`Queued ${STATUS_LABEL[status].toLowerCase()} for retry in this session.`);
+      return;
+    }
+    await runApiMutation(STATUS_LABEL[status], async () => {
+      const patch: Parameters<typeof updateTask>[0]['patch'] = { status };
+      if (shouldPatchSpentMinutes(task.status, status)) {
+        patch.spentMinutes = spentMinutesForPatch();
+      }
+      await updateTask({ taskId: task.id, patch, actorId: currentUserId });
+      if (status === 'completed' && completionSummary.trim()) {
+        await addComment({
+          taskId: task.id,
+          authorId: currentUserId,
+          text: `${SUMMARY_PREFIX} ${completionSummary.trim()}`,
+        });
+      }
+      onBumpRev();
+    });
+  };
+
+  const retryQueuedStatus = async () => {
+    if (!queuedStatus) return;
+    const status = queuedStatus;
+    setQueuedStatus(null);
+    await setStatus(status);
+  };
+
+  const saveSummary = async () => {
+    const text = completionSummary.trim();
+    if (!text) return;
+    await runApiMutation('summary', async () => {
+      await addComment({ taskId: task.id, authorId: currentUserId, text: `${SUMMARY_PREFIX} ${text}` });
+      onBumpRev();
+    });
+  };
+
+  const onEvidenceSelected = (files: FileList | null) => {
+    const next = Array.from(files || []).map((file) => ({
+      id: `${task.id}-${file.name}-${file.lastModified}-${file.size}`,
+      name: file.name,
+      size: file.size,
+      type: file.type || 'file',
+    }));
+    if (next.length === 0) return;
+    setEvidenceQueue((items) => [...items, ...next]);
+    setSyncState('queued');
+    setSyncError('Evidence is queued locally; upload is not yet persisted.');
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div className="ops-task-detail-root">
       <Header
         task={task}
         mode={mode}
         onClose={onClose}
         onExpand={onExpand}
-        onSetStatus={canEdit ? setStatus : undefined}
+        canExecute={canEdit}
+        canCloseReopen={canCloseReopen}
+        closeArmed={closeArmed}
+        setCloseArmed={setCloseArmed}
+        elapsedSeconds={elapsedSeconds}
+        onSetStatus={setStatus}
       />
-      <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+      <div className="ops-task-detail-scroll">
         <Body
           task={task}
+          role={role}
+          currentUserId={currentUserId}
           aiSummaryShown={aiSummaryShown}
           setAiSummaryShown={setAiSummaryShown}
           canEdit={canEdit}
+          canManageTasks={canManageTasks}
+          canCloseReopen={canCloseReopen}
+          closeArmed={closeArmed}
+          setCloseArmed={setCloseArmed}
           canSeeFinance={canSeeFinance}
           onAddCost={() => setAddCostOpen(true)}
+          elapsedSeconds={elapsedSeconds}
+          completionSummary={completionSummary}
+          setCompletionSummary={setCompletionSummary}
+          onSaveSummary={saveSummary}
+          syncState={syncState}
+          syncError={syncError}
+          queuedStatus={queuedStatus}
+          onRetryQueuedStatus={retryQueuedStatus}
+          onSetStatus={setStatus}
+          evidenceQueue={evidenceQueue}
+          onEvidenceSelected={onEvidenceSelected}
         />
         <Comments task={task} draft={draftComment} setDraft={setDraftComment} onSend={canEdit ? sendComment : undefined} />
       </div>
+      <MobileExecutionBar
+        task={task}
+        canExecute={canEdit}
+        canCloseReopen={canCloseReopen}
+        closeArmed={closeArmed}
+        setCloseArmed={setCloseArmed}
+        elapsedSeconds={elapsedSeconds}
+        syncState={syncState}
+        queuedStatus={queuedStatus}
+        onSetStatus={setStatus}
+      />
       <AddCostDrawer
         open={addCostOpen}
         task={task}
@@ -120,20 +289,30 @@ function Header({
   mode,
   onClose,
   onExpand,
+  canExecute,
+  canCloseReopen,
+  closeArmed,
+  setCloseArmed,
+  elapsedSeconds,
   onSetStatus,
 }: {
   task: Task;
   mode: 'drawer' | 'page';
   onClose?: () => void;
   onExpand?: () => void;
-  onSetStatus?: (s: Task['status']) => void;
+  canExecute: boolean;
+  canCloseReopen: boolean;
+  closeArmed: boolean;
+  setCloseArmed: (v: boolean) => void;
+  elapsedSeconds: number;
+  onSetStatus: (s: Task['status']) => void;
 }) {
   const statusBadge = statusBadgeFor(task.status);
   const priorityBadge = priorityBadgeFor(task.priority);
   const riskFlags = task.riskFlags;
 
   return (
-    <div style={{ padding: '14px 20px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+    <div className="ops-task-detail-header">
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         {task.bzId && (
           <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
@@ -143,7 +322,16 @@ function Header({
         <PropertyChip
           code={task.propertyCode}
           className="chip"
-          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+          style={{
+            minWidth: 44,
+            minHeight: 36,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 8px',
+            fontSize: 11,
+            whiteSpace: 'nowrap',
+          }}
         >
           {task.propertyCode}
         </PropertyChip>
@@ -172,43 +360,100 @@ function Header({
           Due {task.dueDate}{task.dueTime ? ` · ${task.dueTime}` : ''}
         </span>
       </div>
-      {onSetStatus && task.status !== 'completed' && task.status !== 'closed' && task.status !== 'cancelled' && (
-        <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {(task.status === 'reported' || task.status === 'scheduled' || task.status === 'ready') && (
-            <button className="btn ghost sm" onClick={() => onSetStatus('in_progress')}>Start</button>
-          )}
-          {task.status === 'in_progress' && <button className="btn ghost sm" onClick={() => onSetStatus('paused')}>Pause</button>}
-          {task.status === 'paused' && <button className="btn ghost sm" onClick={() => onSetStatus('in_progress')}>Resume</button>}
-          <button className="btn primary sm" onClick={() => onSetStatus('completed')}>Mark complete</button>
-        </div>
-      )}
+      <div className="ops-execution-header-actions">
+        <ExecutionButtons
+          task={task}
+          canExecute={canExecute}
+          canCloseReopen={canCloseReopen}
+          closeArmed={closeArmed}
+          setCloseArmed={setCloseArmed}
+          onSetStatus={onSetStatus}
+        />
+        <span className="ops-timer-pill">{formatDuration(elapsedSeconds)}</span>
+      </div>
     </div>
   );
 }
 
 function Body({
   task,
+  role,
+  currentUserId,
   aiSummaryShown,
   setAiSummaryShown,
   canEdit,
+  canManageTasks,
+  canCloseReopen,
+  closeArmed,
+  setCloseArmed,
   canSeeFinance,
   onAddCost,
+  elapsedSeconds,
+  completionSummary,
+  setCompletionSummary,
+  onSaveSummary,
+  syncState,
+  syncError,
+  queuedStatus,
+  onRetryQueuedStatus,
+  onSetStatus,
+  evidenceQueue,
+  onEvidenceSelected,
 }: {
   task: Task;
+  role: NonNullable<ReturnType<typeof usePermissions>['role']>;
+  currentUserId: string;
   aiSummaryShown: boolean;
   setAiSummaryShown: (v: boolean) => void;
   canEdit: boolean;
+  canManageTasks: boolean;
+  canCloseReopen: boolean;
+  closeArmed: boolean;
+  setCloseArmed: (v: boolean) => void;
   canSeeFinance: boolean;
   onAddCost: () => void;
+  elapsedSeconds: number;
+  completionSummary: string;
+  setCompletionSummary: (v: string) => void;
+  onSaveSummary: () => void;
+  syncState: SyncState;
+  syncError: string | null;
+  queuedStatus: Task['status'] | null;
+  onRetryQueuedStatus: () => void;
+  onSetStatus: (s: Task['status']) => void;
+  evidenceQueue: EvidenceItem[];
+  onEvidenceSelected: (files: FileList | null) => void;
 }) {
   const assignees = task.assigneeIds.map((id) => TASK_USER_BY_ID[id]).filter(Boolean);
+  const canViewSensitiveContext = canManageTasks || task.assigneeIds.includes(currentUserId);
   return (
     <>
+      <ExecutionPanel
+        task={task}
+        canExecute={canEdit}
+        canCloseReopen={canCloseReopen}
+        closeArmed={closeArmed}
+        setCloseArmed={setCloseArmed}
+        elapsedSeconds={elapsedSeconds}
+        completionSummary={completionSummary}
+        setCompletionSummary={setCompletionSummary}
+        onSaveSummary={onSaveSummary}
+        syncState={syncState}
+        syncError={syncError}
+        queuedStatus={queuedStatus}
+        onRetryQueuedStatus={onRetryQueuedStatus}
+        onSetStatus={onSetStatus}
+      />
+
       {task.description && (
-        <Section title="Description">
+        <Section title="Original description">
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>{task.description}</p>
         </Section>
       )}
+
+      <Section title="Property context">
+        <PropertyContextPanel task={task} canViewSensitiveContext={canViewSensitiveContext} />
+      </Section>
 
       <Section title="Assignees">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -238,39 +483,22 @@ function Body({
       </Section>
 
       {task.reservationId && (
-        <Section title="Linked reservation">
-          <ReservationPanel reservationId={task.reservationId} />
+        <Section title="Staff-safe reservation context">
+          <ReservationPanel reservationId={task.reservationId} staffMode={role === 'field'} />
         </Section>
       )}
 
-      {task.attachmentCount > 0 && (
-        <Section title={`Attachments · ${task.attachmentCount}`}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 6 }}>
-            {Array.from({ length: Math.min(task.attachmentCount, 8) }).map((_, i) => (
-              <div
-                key={i}
-                style={{
-                  height: 60,
-                  background: 'var(--color-background-secondary)',
-                  borderRadius: 6,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 9,
-                  color: 'var(--color-text-tertiary)',
-                }}
-              >
-                attachment {i + 1}
-              </div>
-            ))}
-            {task.attachmentCount > 8 && (
-              <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                +{task.attachmentCount - 8} more
-              </div>
-            )}
-          </div>
-        </Section>
-      )}
+      <Section title={`Evidence · ${task.attachmentCount + evidenceQueue.length}`}>
+        <EvidencePanel task={task} evidenceQueue={evidenceQueue} onEvidenceSelected={onEvidenceSelected} />
+      </Section>
+
+      <Section title="Access">
+        <AccessPanel task={task} role={role} currentUserId={currentUserId} canManageTasks={canManageTasks} />
+      </Section>
+
+      <Section title="Details">
+        <DetailsPanel task={task} />
+      </Section>
 
       {task.aiSuggestions.length > 0 && (
         <Section title="AI panel">
@@ -284,6 +512,337 @@ function Body({
         <ActivityLog entries={task.activityLog} />
       </Section>
     </>
+  );
+}
+
+function ExecutionPanel({
+  task,
+  canExecute,
+  canCloseReopen,
+  closeArmed,
+  setCloseArmed,
+  elapsedSeconds,
+  completionSummary,
+  setCompletionSummary,
+  onSaveSummary,
+  syncState,
+  syncError,
+  queuedStatus,
+  onRetryQueuedStatus,
+  onSetStatus,
+}: {
+  task: Task;
+  canExecute: boolean;
+  canCloseReopen: boolean;
+  closeArmed: boolean;
+  setCloseArmed: (v: boolean) => void;
+  elapsedSeconds: number;
+  completionSummary: string;
+  setCompletionSummary: (v: string) => void;
+  onSaveSummary: () => void;
+  syncState: SyncState;
+  syncError: string | null;
+  queuedStatus: Task['status'] | null;
+  onRetryQueuedStatus: () => void;
+  onSetStatus: (s: Task['status']) => void;
+}) {
+  const needsSummary = task.status !== 'closed' && task.status !== 'cancelled';
+  return (
+    <Section title="Execution">
+      <div className="ops-execution-panel">
+        <div className="ops-execution-topline">
+          <div>
+            <span className="ops-mobile-kicker">Time on task</span>
+            <strong className="ops-execution-time">{formatDuration(elapsedSeconds)}</strong>
+            <small>
+              {task.estimatedMinutes ? `Estimated ${formatDuration(task.estimatedMinutes * 60)}` : 'No estimate set'}
+            </small>
+          </div>
+          <ExecutionButtons
+            task={task}
+            canExecute={canExecute}
+            canCloseReopen={canCloseReopen}
+            closeArmed={closeArmed}
+            setCloseArmed={setCloseArmed}
+            onSetStatus={onSetStatus}
+          />
+        </div>
+        <SyncNotice
+          syncState={syncState}
+          syncError={syncError}
+          queuedStatus={queuedStatus}
+          onRetryQueuedStatus={onRetryQueuedStatus}
+        />
+        {needsSummary && (
+          <div className="ops-summary-editor">
+            <label htmlFor={`task-summary-${task.id}`}>Execution summary</label>
+            <textarea
+              id={`task-summary-${task.id}`}
+              value={completionSummary}
+              onChange={(e) => setCompletionSummary(e.target.value)}
+              placeholder="What changed, what was found, what remains..."
+            />
+            <div className="ops-summary-actions">
+              <span>Saved summaries are stored as task comments; the original description stays unchanged.</span>
+              <button className="btn ghost sm" onClick={onSaveSummary} disabled={!completionSummary.trim()}>
+                Save summary
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function ExecutionButtons({
+  task,
+  canExecute,
+  canCloseReopen,
+  closeArmed,
+  setCloseArmed,
+  onSetStatus,
+}: {
+  task: Task;
+  canExecute: boolean;
+  canCloseReopen: boolean;
+  closeArmed: boolean;
+  setCloseArmed: (v: boolean) => void;
+  onSetStatus: (s: Task['status']) => void;
+}) {
+  const terminal = task.status === 'closed' || task.status === 'cancelled';
+  const canWork = canExecute && !terminal && task.status !== 'completed';
+  return (
+    <div className="ops-execution-actions">
+      {canWork && (task.status === 'reported' || task.status === 'scheduled' || task.status === 'ready') && (
+        <button className="btn ghost sm" onClick={() => onSetStatus('in_progress')}>Start</button>
+      )}
+      {canWork && task.status === 'in_progress' && (
+        <button className="btn ghost sm" onClick={() => onSetStatus('paused')}>Pause</button>
+      )}
+      {canWork && (task.status === 'paused' || task.status === 'blocked') && (
+        <button className="btn ghost sm" onClick={() => onSetStatus('in_progress')}>Resume</button>
+      )}
+      {canWork && task.status !== 'blocked' && (
+        <button className="btn ghost sm" onClick={() => onSetStatus('blocked')}>Block</button>
+      )}
+      {canWork && (
+        <button className="btn primary sm" onClick={() => onSetStatus('completed')}>Complete</button>
+      )}
+      {canCloseReopen && task.status === 'completed' && (
+        closeArmed ? (
+          <button className="btn primary sm" onClick={() => onSetStatus('closed')}>Confirm close</button>
+        ) : (
+          <button className="btn ghost sm" onClick={() => setCloseArmed(true)}>Close task</button>
+        )
+      )}
+      {canCloseReopen && task.status === 'closed' && (
+        <button className="btn ghost sm" onClick={() => onSetStatus('ready')}>Reopen</button>
+      )}
+    </div>
+  );
+}
+
+function SyncNotice({
+  syncState,
+  syncError,
+  queuedStatus,
+  onRetryQueuedStatus,
+}: {
+  syncState: SyncState;
+  syncError: string | null;
+  queuedStatus: Task['status'] | null;
+  onRetryQueuedStatus: () => void;
+}) {
+  if (syncState === 'idle') return null;
+  const label =
+    syncState === 'saving' ? 'Syncing change...' :
+      syncState === 'saved' ? 'Saved' :
+        syncState === 'queued' ? 'Queued locally' :
+          'Sync failed';
+  return (
+    <div className={`ops-sync-notice ${syncState}`}>
+      <span>{label}</span>
+      {syncError && <small>{syncError}</small>}
+      {queuedStatus && (
+        <button className="btn ghost sm" onClick={onRetryQueuedStatus}>
+          Retry {STATUS_LABEL[queuedStatus].toLowerCase()}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MobileExecutionBar({
+  task,
+  canExecute,
+  canCloseReopen,
+  closeArmed,
+  setCloseArmed,
+  elapsedSeconds,
+  syncState,
+  queuedStatus,
+  onSetStatus,
+}: {
+  task: Task;
+  canExecute: boolean;
+  canCloseReopen: boolean;
+  closeArmed: boolean;
+  setCloseArmed: (v: boolean) => void;
+  elapsedSeconds: number;
+  syncState: SyncState;
+  queuedStatus: Task['status'] | null;
+  onSetStatus: (s: Task['status']) => void;
+}) {
+  return (
+    <div className="ops-mobile-execution-bar">
+      <div className="ops-mobile-execution-meta">
+        <span>{task.status === 'in_progress' ? 'Running' : STATUS_LABEL[task.status]}</span>
+        <strong>{formatDuration(elapsedSeconds)}</strong>
+        {syncState === 'saving' && <small>Syncing</small>}
+        {syncState === 'queued' && <small>Queued{queuedStatus ? `: ${STATUS_LABEL[queuedStatus]}` : ''}</small>}
+      </div>
+      <ExecutionButtons
+        task={task}
+        canExecute={canExecute}
+        canCloseReopen={canCloseReopen}
+        closeArmed={closeArmed}
+        setCloseArmed={setCloseArmed}
+        onSetStatus={onSetStatus}
+      />
+    </div>
+  );
+}
+
+function PropertyContextPanel({ task, canViewSensitiveContext }: { task: Task; canViewSensitiveContext: boolean }) {
+  const property = PROPERTY_BY_CODE[task.propertyCode];
+  if (!property) {
+    return <div className="ops-context-panel">Property {task.propertyCode || 'not linked'}.</div>;
+  }
+  const sourceLine =
+    task.source === 'reported_issue' ? 'Linked from field issue report' :
+      task.source === 'inbox_ai' ? 'Linked from Inbox AI proposal' :
+        task.source === 'reservation_trigger' ? 'Linked from reservation workflow' :
+          'No separate issue record linked';
+  return (
+    <div className="ops-context-panel">
+      <div>
+        <span className="ops-mobile-kicker">Property</span>
+        <strong>{property.code} · {property.name}</strong>
+        <small>{property.area} · {property.bedrooms} bed · {property.maxOccupancy} pax</small>
+      </div>
+      <div>
+        <span className="ops-mobile-kicker">Location</span>
+        <strong>{canViewSensitiveContext ? property.address : 'Hidden until assigned'}</strong>
+        <small>{property.lifecycleStatus.replace('_', ' ')}</small>
+      </div>
+      <div>
+        <span className="ops-mobile-kicker">Issue context</span>
+        <strong>{sourceLine}</strong>
+        <small>{task.tags.length > 0 ? task.tags.join(', ') : 'No issue tags'}</small>
+      </div>
+    </div>
+  );
+}
+
+function EvidencePanel({
+  task,
+  evidenceQueue,
+  onEvidenceSelected,
+}: {
+  task: Task;
+  evidenceQueue: EvidenceItem[];
+  onEvidenceSelected: (files: FileList | null) => void;
+}) {
+  return (
+    <div className="ops-evidence-panel">
+      {task.attachmentCount > 0 && (
+        <div className="ops-attachment-grid">
+          {Array.from({ length: Math.min(task.attachmentCount, 8) }).map((_, i) => (
+            <div key={i} className="ops-attachment-tile">attachment {i + 1}</div>
+          ))}
+          {task.attachmentCount > 8 && (
+            <div className="ops-attachment-tile">+{task.attachmentCount - 8} more</div>
+          )}
+        </div>
+      )}
+      <label className="btn ghost sm ops-evidence-pick">
+        Add photo/file
+        <input
+          type="file"
+          accept="image/*,.pdf"
+          capture="environment"
+          multiple
+          onChange={(e) => {
+            onEvidenceSelected(e.currentTarget.files);
+            e.currentTarget.value = '';
+          }}
+        />
+      </label>
+      {evidenceQueue.length === 0 ? (
+        <div className="ops-evidence-empty">No local evidence queued.</div>
+      ) : (
+        <div className="ops-evidence-queue">
+          {evidenceQueue.map((file) => (
+            <div key={file.id} className="ops-evidence-row">
+              <span>{file.name}</span>
+              <small>{formatBytes(file.size)} · queued locally</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccessPanel({
+  task,
+  role,
+  currentUserId,
+  canManageTasks,
+}: {
+  task: Task;
+  role: NonNullable<ReturnType<typeof usePermissions>['role']>;
+  currentUserId: string;
+  canManageTasks: boolean;
+}) {
+  const policy = accessPolicyFor(task, role, currentUserId, canManageTasks);
+  return (
+    <div className={`ops-access-panel ${policy.allowed ? 'open' : 'locked'}`}>
+      <strong>{policy.title}</strong>
+      <span>{policy.body}</span>
+      {policy.windowLabel && <small>{policy.windowLabel}</small>}
+    </div>
+  );
+}
+
+function DetailsPanel({ task }: { task: Task }) {
+  const assignees = task.assigneeIds
+    .map((id) => TASK_USER_BY_ID[id]?.name || id)
+    .join(', ') || 'Unassigned';
+  const requester = task.requesterId ? TASK_USER_BY_ID[task.requesterId]?.name || task.requesterId : 'System/import';
+  const externalId = task.externalRef || task.bzId || 'None';
+  return (
+    <div className="ops-details-grid">
+      <DetailPair label="Last updated" value={formatDateTime(task.updatedAt)} />
+      <DetailPair label="Created" value={formatDateTime(task.createdAt)} />
+      <DetailPair label="Created by" value={requester} />
+      <DetailPair label="Source" value={sourceLabel(task.source)} />
+      <DetailPair label="External task ID" value={externalId} mono />
+      <DetailPair label="Assignees" value={assignees} />
+      <DetailPair label="Priority" value={task.priority} />
+      <DetailPair label="Due" value={formatDue(task)} />
+      <DetailPair label="Status" value={STATUS_LABEL[task.status]} />
+    </div>
+  );
+}
+
+function DetailPair({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong className={mono ? 'mono' : undefined}>{value}</strong>
+    </div>
   );
 }
 
@@ -673,14 +1232,156 @@ function renderMentions(text: string): React.ReactNode {
   );
 }
 
+function latestExecutionSummary(task: Task): string {
+  const summary = [...task.comments]
+    .reverse()
+    .find((comment) => comment.text.trim().toLowerCase().startsWith(SUMMARY_PREFIX.toLowerCase()));
+  if (!summary) return '';
+  return summary.text.trim().slice(SUMMARY_PREFIX.length).trim();
+}
+
+function minutesToSeconds(minutes?: number): number {
+  return Math.max(0, Math.round((minutes ?? 0) * 60));
+}
+
+function shouldPatchSpentMinutes(from: Task['status'], to: Task['status']): boolean {
+  if (from === 'in_progress') return true;
+  return to === 'completed' || to === 'blocked' || to === 'paused';
+}
+
+function formatDuration(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m`;
+  return `${m}m`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function formatActivityTime(ts: string): string {
   const d = new Date(ts);
-  const today = new Date('2026-04-27');
+  const today = new Date();
   const sameDay = d.toDateString() === today.toDateString();
   if (sameDay) {
     return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   }
   return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return 'Not set';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString('en-GB', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function dueDateTime(task: Task): Date | null {
+  if (!task.dueDate) return null;
+  const time = task.dueTime || '12:00';
+  const d = new Date(`${task.dueDate}T${time.length === 5 ? `${time}:00` : time}`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatDue(task: Task): string {
+  const d = dueDateTime(task);
+  if (!d) return 'Not scheduled';
+  return d.toLocaleString('en-GB', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function sourceLabel(source: Task['source']): string {
+  const labels: Record<Task['source'], string> = {
+    manual: 'Manual',
+    breezeway: 'Breezeway import',
+    inbox_ai: 'Inbox AI',
+    guesty: 'Guesty',
+    recurring: 'Recurring template',
+    reservation_trigger: 'Reservation workflow',
+    group_email: 'Group email',
+    friday: 'Friday system',
+    reported_issue: 'Field issue report',
+    personal: 'Personal task',
+    review: 'Review workflow',
+  };
+  return labels[source] || source;
+}
+
+function accessPolicyFor(
+  task: Task,
+  role: NonNullable<ReturnType<typeof usePermissions>['role']>,
+  currentUserId: string,
+  canManageTasks: boolean,
+): { allowed: boolean; title: string; body: string; windowLabel?: string } {
+  const terminal = task.status === 'closed' || task.status === 'cancelled' || task.status === 'completed';
+  const due = dueDateTime(task);
+  const assigned = task.assigneeIds.includes(currentUserId);
+
+  if (canManageTasks && role !== 'field') {
+    return {
+      allowed: false,
+      title: 'Access policy',
+      body: 'Managers can audit the access window here. Codes stay in the secure property/access source, not in this task drawer.',
+      windowLabel: due ? `Field window opens ${EXECUTION_WINDOW_HOURS}h before ${formatDue(task)}` : 'Schedule the task before access can open.',
+    };
+  }
+
+  if (!assigned) {
+    return {
+      allowed: false,
+      title: 'Access hidden',
+      body: 'Only assigned field staff can request task access.',
+    };
+  }
+
+  if (terminal) {
+    return {
+      allowed: false,
+      title: 'Access closed',
+      body: 'Access details are hidden once the task is completed, closed, or cancelled.',
+    };
+  }
+
+  if (!due) {
+    return {
+      allowed: false,
+      title: 'Access pending schedule',
+      body: 'A manager must schedule this task before field access can open.',
+    };
+  }
+
+  const now = Date.now();
+  const opensAt = due.getTime() - EXECUTION_WINDOW_HOURS * 60 * 60 * 1000;
+  const closesAt = due.getTime() + EXECUTION_GRACE_HOURS * 60 * 60 * 1000;
+  if (now < opensAt || now > closesAt) {
+    return {
+      allowed: false,
+      title: 'Access hidden',
+      body: 'Access is time-gated for assigned field work.',
+      windowLabel: `Window: ${new Date(opensAt).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} - ${new Date(closesAt).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
+    };
+  }
+
+  return {
+    allowed: true,
+    title: 'Access window open',
+    body: 'Assigned task access can be requested now. No access code is displayed in this Operations view.',
+    windowLabel: `Window closes ${new Date(closesAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
+  };
 }
 
 function generateThreadSummary(task: Task): string {
@@ -692,12 +1393,12 @@ function generateThreadSummary(task: Task): string {
   return `${task.comments.length} comments · last update from ${author?.name.split(' ')[0] ?? 'someone'}: "${lastComment?.text ?? ''}".`;
 }
 
-function ReservationPanel({ reservationId }: { reservationId: string }) {
+function ReservationPanel({ reservationId, staffMode }: { reservationId: string; staffMode: boolean }) {
   const rsv = RESERVATION_BY_ID[reservationId];
   if (!rsv) {
     return (
       <span className="chip" style={{ fontSize: 11 }}>
-        🛏 {reservationId}
+        Reservation {reservationId}
       </span>
     );
   }
@@ -715,7 +1416,7 @@ function ReservationPanel({ reservationId }: { reservationId: string }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span className="mono" style={{ fontSize: 12, fontWeight: 500 }}>
-          🛏 {rsv.id}
+          {rsv.id}
         </span>
         <span
           style={{
@@ -736,7 +1437,7 @@ function ReservationPanel({ reservationId }: { reservationId: string }) {
         </span>
       </div>
       <div style={{ fontSize: 13, fontWeight: 500 }}>
-        {rsv.guestName}
+        {staffMode ? 'Guest record linked' : rsv.guestName}
         <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>
           {' · '}
           {rsv.propertyCode}
@@ -749,18 +1450,20 @@ function ReservationPanel({ reservationId }: { reservationId: string }) {
         {rsv.partySize.adults} adult{rsv.partySize.adults === 1 ? '' : 's'}
         {rsv.partySize.children > 0 && ` · ${rsv.partySize.children} child${rsv.partySize.children === 1 ? '' : 'ren'}`}
       </div>
-      {rsv.notes && (
+      {!staffMode && rsv.notes && (
         <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
           {rsv.notes}
         </div>
       )}
-      <button
-        className="btn ghost sm"
-        style={{ alignSelf: 'flex-start', marginTop: 4 }}
-        onClick={() => window.location.assign(`/fad?m=reservations&sub=overview&rsv=${rsv.id}`)}
-      >
-        Open reservation →
-      </button>
+      {!staffMode && (
+        <button
+          className="btn ghost sm"
+          style={{ alignSelf: 'flex-start', marginTop: 4 }}
+          onClick={() => window.location.assign(`/fad?m=reservations&sub=overview&rsv=${rsv.id}`)}
+        >
+          Open reservation
+        </button>
+      )}
     </div>
   );
 }

@@ -467,7 +467,7 @@ router.patch('/:id', attachIdentity, async (req, res) => {
       setCol('status', status);
       if (status === 'completed' && existing.status !== 'completed') {
         sets.push(`completed_at = NOW()`);
-      } else if (!['completed', 'closed'].includes(status) && existing.status === 'completed') {
+      } else if (!['completed', 'closed'].includes(status) && ['completed', 'closed'].includes(existing.status)) {
         sets.push(`completed_at = NULL`);
       }
     }

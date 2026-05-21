@@ -1,0 +1,311 @@
+{
+  "generatedAt": "2026-05-21T07:23:32.129Z",
+  "screenshots": [
+    "field-320-my-tasks.png",
+    "field-320-detail-ready.png",
+    "field-375-my-tasks.png",
+    "field-375-detail-ready.png",
+    "field-375-offline-queued.png",
+    "field-375-started.png",
+    "field-375-completed.png",
+    "field-430-my-tasks.png",
+    "field-430-detail-ready.png",
+    "manager-768-completed-close.png",
+    "manager-768-closed.png",
+    "manager-768-reopened.png",
+    "manager-1440-completed-close.png",
+    "manager-1440-closed.png",
+    "manager-1440-reopened.png"
+  ],
+  "metrics": [
+    {
+      "label": "field-320-my-tasks",
+      "viewport": {
+        "width": 320,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-320-detail-ready",
+      "viewport": {
+        "width": 320,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-375-my-tasks",
+      "viewport": {
+        "width": 375,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-375-detail-ready",
+      "viewport": {
+        "width": 375,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-375-offline-queued",
+      "viewport": {
+        "width": 375,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-375-started",
+      "viewport": {
+        "width": 375,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-375-completed",
+      "viewport": {
+        "width": 375,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-430-my-tasks",
+      "viewport": {
+        "width": 430,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "field-430-detail-ready",
+      "viewport": {
+        "width": 430,
+        "height": 780
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "manager-768-completed-close",
+      "viewport": {
+        "width": 768,
+        "height": 900
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "manager-768-closed",
+      "viewport": {
+        "width": 768,
+        "height": 900
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "manager-768-reopened",
+      "viewport": {
+        "width": 768,
+        "height": 900
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "manager-1440-completed-close",
+      "viewport": {
+        "width": 1440,
+        "height": 920
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "manager-1440-closed",
+      "viewport": {
+        "width": 1440,
+        "height": 920
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    },
+    {
+      "label": "manager-1440-reopened",
+      "viewport": {
+        "width": 1440,
+        "height": 920
+      },
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0,
+      "overflow": [],
+      "smallTargets": []
+    }
+  ],
+  "consoleByRun": {
+    "field-320": [
+      "warning: Service Worker registration blocked by Playwright"
+    ],
+    "field-375": [
+      "warning: Service Worker registration blocked by Playwright"
+    ],
+    "field-430": [
+      "warning: Service Worker registration blocked by Playwright"
+    ],
+    "manager-768": [
+      "warning: Service Worker registration blocked by Playwright"
+    ],
+    "manager-1440": [
+      "warning: Service Worker registration blocked by Playwright"
+    ]
+  },
+  "summary": [
+    {
+      "label": "field-320-my-tasks",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-320-detail-ready",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-375-my-tasks",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-375-detail-ready",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-375-offline-queued",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-375-started",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-375-completed",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-430-my-tasks",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "field-430-detail-ready",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "manager-768-completed-close",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "manager-768-closed",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "manager-768-reopened",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "manager-1440-completed-close",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "manager-1440-closed",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    },
+    {
+      "label": "manager-1440-reopened",
+      "documentOverflow": false,
+      "opsOverflowCount": 0,
+      "opsSmallTargetCount": 0
+    }
+  ]
+}
