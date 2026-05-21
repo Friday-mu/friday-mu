@@ -710,7 +710,8 @@ export function FridayConsult({
     setHistoryOpen(false);
   };
 
-  const hasConsultContent = msgs.length > 0 || thinking || !!currentDraft || workingBody.trim().length > 0;
+  const showManualReplyCard = context === 'compose' && !currentDraft;
+  const hasConsultContent = showManualReplyCard || msgs.length > 0 || thinking || !!currentDraft || workingBody.trim().length > 0;
 
   // FC is compact-by-default: header + chips + Ask Friday input only.
   // Transcript + EmbeddedDraftCard appear conditionally below. Each
@@ -946,26 +947,25 @@ export function FridayConsult({
             >
               <IconRefresh size={9} /> History
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              title="Collapse Friday Consult"
-              style={{
-                width: 24,
-                height: 24,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--color-text-tertiary)',
-                background: 'transparent',
-                border: '0.5px solid var(--color-border-tertiary)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              <IconClose size={11} />
-            </button>
           </div>
+          {showManualReplyCard && (
+            <EmbeddedDraftCard
+              workingBody={workingBody}
+              setWorkingBody={setWorkingBody}
+              currentDraft={null}
+              liveConfidence={latestConfidence}
+              channelLabel={channelLabel}
+              whatsappWindow={whatsappWindow}
+              sendBusy={sendBusy}
+              rejecting={false}
+              rejectReason=""
+              setRejectReason={setRejectReason}
+              onApprove={submitApprove}
+              onStartReject={() => {}}
+              onConfirmReject={() => {}}
+              onCancelReject={() => {}}
+            />
+          )}
         </div>
       )}
       {/* Ask Friday input — restored 2026-05-17 per Ishant: FridayConsult
@@ -1434,27 +1434,6 @@ function DraftMessageActive({
           >
             <IconSend size={11} /> Send
           </button>
-          {canReject && (
-            <button
-              type="button"
-              onClick={onStartReject}
-              disabled={sendBusy}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '5px 8px',
-                fontSize: 11,
-                color: 'var(--color-text-secondary)',
-                background: 'transparent',
-                border: '0.5px solid var(--color-border-secondary)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              Reject
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -1712,27 +1691,6 @@ function EmbeddedDraftCard({
           >
             <IconSend size={12} /> Approve &amp; send
           </button>
-          {currentDraft && (
-            <button
-              type="button"
-              onClick={onStartReject}
-              disabled={sendBusy}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '6px 10px',
-                fontSize: 12,
-                color: 'var(--color-text-secondary)',
-                background: 'transparent',
-                border: '0.5px solid var(--color-border-secondary)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              <IconClose size={11} /> Reject
-            </button>
-          )}
           <span style={{ flex: 1 }} />
         </div>
       )}

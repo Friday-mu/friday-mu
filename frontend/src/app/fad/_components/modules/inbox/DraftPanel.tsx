@@ -340,9 +340,6 @@ export function DraftPanel({
         <button type="button" disabled={busy} onClick={() => setMode('edit')} style={ghostBtn()}>
           Edit
         </button>
-        <button type="button" disabled={busy} onClick={() => setMode('reject')} style={ghostBtn()}>
-          <IconClose size={12} /> Reject
-        </button>
       </ActionRow>
     </Card>
   );
