@@ -98,19 +98,36 @@ test('unknown surface throws', () => {
   assert(threw, 'must throw on unknown surface');
 });
 
-// Run all tests
-let passed = 0;
-let failed = 0;
-for (const { name, fn } of tests) {
-  try {
-    fn();
-    console.log(`  ✓ ${name}`);
-    passed++;
-  } catch (e) {
-    console.log(`  ✗ ${name}`);
-    console.log(`    ${e.message}`);
-    failed++;
+function runStandalone() {
+  let passed = 0;
+  let failed = 0;
+  for (const { name, fn } of tests) {
+    try {
+      fn();
+      console.log(`  ✓ ${name}`);
+      passed++;
+    } catch (e) {
+      console.log(`  ✗ ${name}`);
+      console.log(`    ${e.message}`);
+      failed++;
+    }
   }
+  console.log(`\n${passed} passed, ${failed} failed`);
+  process.exit(failed > 0 ? 1 : 0);
 }
-console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed > 0 ? 1 : 0);
+
+function isJestRuntime() {
+  return typeof describe === 'function'
+    && typeof it === 'function'
+    && Boolean(process.env.JEST_WORKER_ID);
+}
+
+if (isJestRuntime()) {
+  describe('knowledge composer smoke', () => {
+    for (const { name, fn } of tests) {
+      it(name, fn);
+    }
+  });
+} else {
+  runStandalone();
+}

@@ -164,9 +164,15 @@ describe('FAD-native Consult helpers', () => {
   });
 
   test('compact fallback system prompt preserves Consult draft protocol', () => {
-    const prompt = compactConsultSystemPrompt({ context: 'compose', propertyCode: 'BS-1' });
+    const prompt = compactConsultSystemPrompt({
+      context: 'compose',
+      propertyCode: 'BS-1',
+      compactKnowledgeAppendix: '\n\n[Compact KB + Learning Context]\nT1: Keep operational promises verified.',
+    });
     expect(prompt).toContain('Respond in English');
     expect(prompt).toContain('[DRAFT_UPDATE]');
     expect(prompt).toContain('Property code: BS-1');
+    expect(prompt).toContain('Compact KB + Learning Context');
+    expect(prompt).toContain('Keep operational promises verified');
   });
 });

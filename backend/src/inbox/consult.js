@@ -4,6 +4,7 @@ const express = require('express');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { defaultComposer } = require('../knowledge/composer');
+const { buildCompactKnowledgeAppendix } = require('../knowledge/compact_prompt');
 const { generateDraftReply, DRAFT_MODEL } = require('../ai/kimi_draft');
 const { loadActionFeedbackBlock } = require('./learning_context');
 const {
@@ -304,7 +305,11 @@ function buildCompactConsultUserMessage({
   return parts.join('\n\n');
 }
 
-function compactConsultSystemPrompt({ context, propertyCode }) {
+function compactConsultSystemPrompt({
+  context,
+  propertyCode,
+  compactKnowledgeAppendix,
+}) {
   return `You are Friday, Friday Retreats' AI operations assistant inside FAD.
 
 Respond in English. Be concise and operational.
@@ -312,7 +317,7 @@ Use only the compact context provided. Do not invent prices, availability, prope
 If the operator asks you to write or modify a guest-facing draft/message, put the complete final text in [DRAFT_UPDATE]...[/DRAFT_UPDATE] and do not repeat it outside the tag.
 If you cannot safely answer from the compact context, say exactly what is missing and what the operator should check.
 
-Surface: ${selectConsultSurface(context)}${propertyCode ? `\nProperty code: ${propertyCode}` : ''}`;
+Surface: ${selectConsultSurface(context)}${propertyCode ? `\nProperty code: ${propertyCode}` : ''}${compactKnowledgeAppendix || ''}`;
 }
 
 function composeSystemPrompt({ context, propertyCode, instruction, draftBody, activeTeachingBlock, actionFeedbackBlock }) {
@@ -364,6 +369,7 @@ Be concise. Surface missing knowledge honestly. Do not invent prices, availabili
     systemPrompt: `${protocol}\n\n${composed.system_message}${activeTeachingBlock || ''}${actionFeedbackBlock || ''}`,
     missingKnowledge,
     metadata: composed.metadata,
+    composerSystemMessage: composed.system_message,
   };
 }
 
@@ -614,7 +620,17 @@ router.post('/', attachIdentity, async (req, res) => {
           currentSessionSummary: session.running_summary || session.summary || null,
         });
         result = await generateDraftReply({
-          system: compactConsultSystemPrompt({ context, propertyCode }),
+          system: compactConsultSystemPrompt({
+            context,
+            propertyCode,
+            compactKnowledgeAppendix: buildCompactKnowledgeAppendix({
+              systemMessage: composed.composerSystemMessage,
+              surface: composed.metadata.surface,
+              propertyCode: composed.metadata.property_code || propertyCode,
+              activeTeachingBlock: teachingsBlock,
+              actionFeedbackBlock,
+            }),
+          }),
           user: compactUserMessage,
           meter: { tenantId: req.tenantId, feature: 'inbox_consult_compact' },
           timeoutMs: CONSULT_FALLBACK_TIMEOUT_MS,

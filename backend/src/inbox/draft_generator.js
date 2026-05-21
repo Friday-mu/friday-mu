@@ -30,6 +30,7 @@
 
 const { query } = require('../database/client');
 const { defaultComposer } = require('../knowledge/composer');
+const { buildCompactKnowledgeAppendix } = require('../knowledge/compact_prompt');
 const { generateDraftReply, classifyMessageWithKimi, DRAFT_MODEL } = require('../ai/kimi_draft');
 const { translateText } = require('../ai/translate');
 const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
@@ -247,7 +248,7 @@ ${history}
 ${taskDirective}`;
 }
 
-function compactDraftSystemPrompt({ propertyCode, category }) {
+function compactDraftSystemPrompt({ propertyCode, category, compactKnowledgeAppendix }) {
   return `You are Friday Retreats' guest-message drafting assistant.
 
 Use this compact fallback only when the full knowledge prompt is too large or times out.
@@ -262,7 +263,7 @@ Rules:
 
 Context hints:
 - Property code: ${propertyCode || 'unknown'}
-- Trigger category: ${category || 'other'}`;
+- Trigger category: ${category || 'other'}${compactKnowledgeAppendix || ''}`;
 }
 
 function compactHistoryMessages(allMessages, triggeringMessageId) {
@@ -581,7 +582,17 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
       taskDirective,
     });
     kimi = await generateDraftReply({
-      system: compactDraftSystemPrompt({ propertyCode, category }),
+      system: compactDraftSystemPrompt({
+        propertyCode,
+        category,
+        compactKnowledgeAppendix: buildCompactKnowledgeAppendix({
+          systemMessage: composerOutput.system_message,
+          surface: composerOutput.metadata.surface,
+          propertyCode: composerOutput.metadata.property_code || propertyCode,
+          activeTeachingBlock: teachingsBlock,
+          actionFeedbackBlock: feedbackBlock,
+        }),
+      }),
       user: compactUserMessage,
       meter: { feature: 'inbox_draft_compact' },
       timeoutMs: DRAFT_FALLBACK_TIMEOUT_MS,

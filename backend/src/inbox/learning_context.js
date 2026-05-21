@@ -10,9 +10,9 @@
 //   property (or global). Hand-authored by the team via revise/teach
 //   on the inbox surface.
 //
-//   [Action Feedback from team] — last 20 teach/reject events from
-//   `action_feedback`. Calibrates the model on what kinds of actions
-//   the team accepts vs rejects.
+//   [Action Feedback from team] — last 20 human accept/edit/promote/
+//   reject events from `action_feedback`. Calibrates the model on what
+//   kinds of actions the team accepts vs rejects.
 //
 // Sprint 9 composer refactor (V2 KB / Skills folder) intentionally
 // preserved these injections — per both sprint audits, Sprint 8 + 9
@@ -74,32 +74,36 @@ async function loadTeachingsBlock(propertyCode) {
 }
 
 /**
- * Load the most recent 20 teach/reject action feedback rows. Used to
- * calibrate the model: GOOD examples (teach) reinforce what the team
- * accepts; AVOID examples (reject) signal patterns to drop.
- * Mirrors GMS draft-generator.ts:941-960 verbatim.
+ * Load the most recent 20 human action feedback rows. GMS used
+ * `teach`/`reject`; FAD now records `accept`/`edit`/`promote`/`reject`.
+ * Skip `auto_reject` here because those rows are system-suppression
+ * noise, not durable human preference.
  *
  * @returns {Promise<string>} formatted block or '' if no feedback.
  */
 async function loadActionFeedbackBlock() {
   try {
     const { rows } = await query(
-      `SELECT feedback_type, original_text, edited_text, rejection_reason
+      `SELECT feedback_type, action_type, original_text, edited_text, rejection_reason
          FROM action_feedback
-        WHERE feedback_type IN ('teach', 'reject')
+        WHERE feedback_type IN ('teach', 'accept', 'edit', 'promote', 'reject')
         ORDER BY created_at DESC LIMIT 20`,
     );
     if (rows.length === 0) return '';
 
-    let block = '\n[Action Feedback from team]\nThese are actions the team has confirmed or rejected. Use this to calibrate what commitments to make:\n';
+    let block = '\n[Action Feedback from team]\nThese are human decisions on proposed actions/drafts. Use accepted/promoted/edited items as positive calibration and rejected items as patterns to avoid:\n';
     for (const f of rows) {
       const original = String(f.original_text || '');
-      if (f.feedback_type === 'teach') {
+      const kind = f.action_type ? ` (${f.action_type})` : '';
+      if (f.feedback_type === 'teach' || f.feedback_type === 'accept' || f.feedback_type === 'promote') {
         const refined = f.edited_text ? ` (refined: "${f.edited_text}")` : '';
-        block += `- GOOD: "${original}"${refined}\n`;
-      } else {
+        block += `- GOOD${kind}: "${original}"${refined}\n`;
+      } else if (f.feedback_type === 'edit') {
+        const edited = f.edited_text ? ` -> "${f.edited_text}"` : '';
+        block += `- CORRECTED${kind}: "${original}"${edited}\n`;
+      } else if (f.feedback_type === 'reject') {
         const reason = f.rejection_reason ? ` (reason: ${f.rejection_reason})` : '';
-        block += `- AVOID: "${original}"${reason}\n`;
+        block += `- AVOID${kind}: "${original}"${reason}\n`;
       }
     }
     return block;

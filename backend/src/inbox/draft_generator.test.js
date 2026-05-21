@@ -11,6 +11,7 @@ const {
   isTransientDraftFailure,
   buildDraftUserMessage,
   compactHistoryMessages,
+  compactDraftSystemPrompt,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
   isGuestStatusUpdateRequest,
   statusUpdateSafetyInstruction,
@@ -108,6 +109,19 @@ describe('draft generator compact fallback policy', () => {
     expect(prompt).toContain('- Property: LV-10');
     expect(prompt).toContain('PREVIOUS MESSAGES:');
     expect(prompt).toContain('DRAFT A REPLY.');
+  });
+
+  test('compact fallback system prompt keeps compact KB and learning context', () => {
+    const prompt = compactDraftSystemPrompt({
+      propertyCode: 'RC-15',
+      category: 'request',
+      compactKnowledgeAppendix: '\n\n[Compact KB + Learning Context]\nT1: Do not invent operational status updates.',
+    });
+
+    expect(prompt).toContain('Property code: RC-15');
+    expect(prompt).toContain('Trigger category: request');
+    expect(prompt).toContain('Compact KB + Learning Context');
+    expect(prompt).toContain('Do not invent operational status updates');
   });
 });
 
