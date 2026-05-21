@@ -47,6 +47,21 @@ SET assignee_user_ids = ARRAY[assignee_user_id]
 WHERE assignee_user_id IS NOT NULL
   AND (assignee_user_ids IS NULL OR cardinality(assignee_user_ids) = 0);
 
+-- Replace the narrow status check with the full set. Drop the old
+-- one first; CHECK constraints can't be ALTERed in place, and the
+-- canonical backfill below writes values the old constraint rejects.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'tasks_status_check'
+       AND conrelid = 'tasks'::regclass
+  ) THEN
+    ALTER TABLE tasks DROP CONSTRAINT tasks_status_check;
+  END IF;
+END $$;
+
 -- Normalise migration-era statuses into the canonical Operations
 -- lifecycle. `todo` is only a migration/back-compat alias; new writes
 -- should use `scheduled`.
@@ -59,16 +74,6 @@ SET status = CASE status
 END
 WHERE status IN ('todo', 'done', 'awaiting_approval');
 
--- Replace the narrow status check with the full set. Drop the old
--- one first; CHECK constraints can't be ALTERed in place.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'tasks_status_check'
-  ) THEN
-    ALTER TABLE tasks DROP CONSTRAINT tasks_status_check;
-  END IF;
-END $$;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
   CHECK (status IN (
     'reported',

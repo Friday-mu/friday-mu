@@ -255,3 +255,13 @@
 - Notion running decisions confirm FAD stays multi-tenant, FAD is the shared integration owner, TeamInbox is the internal comms surface, and Operations owns real task execution/source conversion.
 - Express docs confirm production reverse-proxy settings need deliberate `trust proxy` configuration and security middleware/rate limits; keep the design backend's production middleware posture.
 - Decision: seed backend from the full design backend, then layer in production-only Ops task migrations 052/053 and branch-only Ops import/task deltas, deleting the temporary `inboxCompat` bridge once full routes are present.
+
+## 2026-05-21 Backend Full-Convergence Checkpoint
+
+- Converged `fad-rebuild` backend from the full design/inbox backend while preserving Ops task execution, canonical lifecycle, supplies/inventory, and Breezeway import tooling.
+- Removed the temporary `backend/src/inboxCompat` bridge because full `/api/inbox/*`, `/api/team/*`, and `/api/outbound/send` routes are now present in source.
+- Swapped Ops task auth/assignment notifications onto the design backend auth/email stack instead of keeping the temporary standalone identity helper.
+- Redacted imported backend knowledge values for Wi-Fi/access/passcode/lockbox-style fields and verified JSON validity before commit.
+- Verified backend build/tests, frontend typecheck/build, route-mount smoke, and pushed convergence commit `a4ed602` to `origin/fad-rebuild`.
+- Production DB inspection showed `tasks.status` still used the old `todo` default/check and old open index, so deploying the converged backend requires a forward-only reconciliation migration.
+- Added `071_tasks_ops_lifecycle_reconcile.sql` and fixed 051 fresh-migration ordering so canonical status writes happen only after the old check constraint is dropped.
