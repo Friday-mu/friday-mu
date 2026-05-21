@@ -49,13 +49,13 @@ const TODAY = todayIso();
 const SOURCE_LABEL: Record<TaskSource, string> = {
   manual: 'Manual',
   breezeway: 'Imported',
-  inbox_ai: 'Inbox AI',
-  guesty: 'Guesty',
-  recurring: 'Recurring',
+  inbox_ai: 'Inbox',
+  guesty: 'Reservation',
+  recurring: 'Auto workflow',
   reservation_trigger: 'Reservation',
   group_email: 'Email',
   friday: 'Friday',
-  reported_issue: 'Issue',
+  reported_issue: 'Reported',
   personal: 'Personal',
   review: 'Review',
   syndic: 'Syndic',
@@ -142,12 +142,12 @@ function reservationState(task: Task): Exclude<ReservationFilter, 'all'> {
 
 function formatShortDate(date: string): string {
   const [year, month, day] = date.split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 function formatHistoryDate(date: string): string {
   const [year, month, day] = date.split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 function isIsoDateKey(value: string): boolean {
@@ -172,7 +172,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
           { id: 'schedule', label: 'Schedule' },
           { id: 'my', label: 'My tasks' },
           { id: 'all', label: 'All tasks' },
-          { id: 'intake', label: 'Intake' },
+          { id: 'issues', label: 'Reported issues' },
           { id: 'history', label: 'My history' },
           canSeeApprovals && { id: 'approvals', label: 'Approvals' },
           canSeeRoster && { id: 'roster', label: 'Roster' },
@@ -181,7 +181,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         ]
   ).filter((t): t is { id: string; label: string } => Boolean(t));
 
-  const canonicalSubPage = subPage === 'issues' || subPage === 'inbox-ai' ? 'intake' : subPage;
+  const canonicalSubPage = subPage === 'intake' || subPage === 'inbox-ai' ? 'issues' : subPage;
   const active = tabs.find((t) => t.id === canonicalSubPage)?.id ?? (isField ? 'my' : 'overview');
 
   const [, setRev] = useState(0);
@@ -277,8 +277,8 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         return <SchedulePage onOpenTask={setDetailTaskId} onCreate={openManagerCreate} />;
       case 'all':
         return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
-      case 'intake':
-        return <IntakeTriagePage onOpenTask={setDetailTaskId} />;
+      case 'issues':
+        return <ReportedIssuesPage onOpenTask={setDetailTaskId} />;
       case 'approvals':
         return canSeeApprovals ? <ApprovalsPage onOpenTask={setDetailTaskId} /> : null;
       case 'roster':
@@ -296,7 +296,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
         title="Operations"
-        subtitle={isField ? 'Assigned work · comments · evidence · history' : 'Tasks · intake · approvals · roster · insights'}
+        subtitle={isField ? 'Assigned work · comments · evidence · history' : 'Tasks · reported issues · approvals · roster · insights'}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}
@@ -662,7 +662,7 @@ function ManagerWorkbenchPanel({
         </div>
         <div className="ops-workbench-counts" role="status" aria-live="polite">
           <span><strong>{signals.staleOpen.length}</strong> stale open</span>
-          <span><strong>{signals.openReportedIssues.length + signals.inboxAiReported.length}</strong> intake</span>
+          <span><strong>{signals.openReportedIssues.length + signals.inboxAiReported.length}</strong> reported</span>
           <span><strong>{signals.supplyPrep.length}</strong> supply prep</span>
         </div>
       </div>
@@ -679,10 +679,10 @@ function ManagerWorkbenchPanel({
           {signals.staleOpen.length === 0 && <WorkbenchEmpty>No stale open work.</WorkbenchEmpty>}
         </WorkbenchLane>
 
-        <WorkbenchLane title={`Manager intake · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}>
-          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('intake')}>
+        <WorkbenchLane title={`Reported issues · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}>
+          <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('issues')}>
             <span>
-              <strong>Reported issues and Inbox AI</strong>
+              <strong>Reported issues and Inbox proposals</strong>
               <small>{signals.openReportedIssues.length + signals.inboxAiReported.length} real task records need accept/dismiss/link</small>
             </span>
             <span className="ops-workbench-badge">{signals.openReportedIssues.length + signals.inboxAiReported.length}</span>
@@ -838,7 +838,20 @@ function taskTimeSortKey(task: Task): string {
 function taskAssigneeName(task: Task, assigneeId: string, index: number): string {
   return task.assigneeNames?.[index]
     || TASK_USER_BY_ID[assigneeId]?.name
-    || `Assignee ${assigneeId.slice(0, 8)}`;
+    || 'Assigned user';
+}
+
+function taskAssigneePeople(task: Task): Array<{ id: string; name: string; initials: string; avatarColor: string }> {
+  return task.assigneeIds.map((id, index) => {
+    const fixture = TASK_USER_BY_ID[id];
+    const name = taskAssigneeName(task, id, index);
+    return {
+      id,
+      name,
+      initials: fixture?.initials || initialsForName(name),
+      avatarColor: fixture?.avatarColor || '#64748b',
+    };
+  });
 }
 
 function taskScheduleMatchesSearch(task: Task, query: string): boolean {
@@ -858,7 +871,7 @@ function scheduleStatusMatches(task: Task, status: ScheduleStatusFilter): boolea
 function mergeScheduleStaff(directoryUsers: OperationsStaffUser[], tasks: Task[]): OperationsStaffUser[] {
   const byId = new Map<string, OperationsStaffUser>();
   directoryUsers
-    .filter((user) => !/(external|guest|owner)/i.test(user.role || ''))
+    .filter((user) => user.canAssign && !/(external|guest|owner)/i.test(user.role || ''))
     .forEach((user) => byId.set(user.id, user));
 
   tasks.forEach((task) => {
@@ -870,6 +883,7 @@ function mergeScheduleStaff(directoryUsers: OperationsStaffUser[], tasks: Task[]
         name,
         initials: initialsForName(name),
         role: null,
+        canAssign: true,
       });
     });
   });
@@ -1233,7 +1247,7 @@ function ScheduleTaskBlock({
             onChange={(e) => void onPatch(task, { assigneeIds: e.target.value ? [e.target.value] : [] }, 'Task assignee updated')}
           >
             <option value="">Unassigned</option>
-            {staffOptions.map((user) => (
+            {staffOptions.filter((user) => user.canAssign).map((user) => (
               <option key={user.id} value={user.id}>
                 {user.name}
               </option>
@@ -1747,6 +1761,21 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
   const [sort, setSort] = useState<{ key: TaskSortKey; dir: 'asc' | 'desc' } | null>(null);
   const [pageSize, setPageSize] = useState(200);
   const [offset, setOffset] = useState(0);
+  const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadOperationsStaffUsers()
+      .then((users) => {
+        if (!cancelled) setStaffUsers(users.filter((user) => user.canAssign));
+      })
+      .catch(() => {
+        if (!cancelled) setStaffUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleSort = (key: TaskSortKey) => {
     setSort((prev) => {
@@ -1792,6 +1821,16 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
     loading,
     error,
   } = useApiTasksPage(pageQuery);
+  const propertyFilterOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    TASK_PROPERTIES.forEach((property) => seen.set(property.code, property.code));
+    visibleTasks.forEach((task) => {
+      const code = task.propertyCode?.trim();
+      if (code) seen.set(code, code);
+    });
+    if (filters.property !== 'all' && filters.property) seen.set(filters.property, filters.property);
+    return [...seen.values()].sort((a, b) => a.localeCompare(b)).map((code) => ({ value: code, label: code }));
+  }, [filters.property, visibleTasks]);
 
   const activeFilterCount =
     (filters.department !== 'all' ? 1 : 0) +
@@ -1862,7 +1901,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         value={filters.property}
         options={[
           { value: 'all', label: 'All properties' },
-          ...TASK_PROPERTIES.map((p) => ({ value: p.code, label: p.code })),
+          ...propertyFilterOptions,
         ]}
         onChange={(v) => setFilters({ ...filters, property: v })}
       />
@@ -1870,10 +1909,12 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         value={filters.assignee}
         options={[
           { value: 'all', label: 'All assignees' },
-          ...TASK_USERS.filter((u) => u.role !== 'external').map((u) => ({
-            value: u.id,
-            label: u.name.split(' ')[0],
-          })),
+          ...(staffUsers.length > 0
+            ? staffUsers.map((u) => ({ value: u.id, label: u.name.split(' ')[0] }))
+            : TASK_USERS.filter((u) => u.role !== 'external').map((u) => ({
+                value: u.id,
+                label: u.name.split(' ')[0],
+              }))),
         ]}
         onChange={(v) => setFilters({ ...filters, assignee: v })}
       />
@@ -1893,7 +1934,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
           { value: 'all', label: 'Any source' },
           { value: 'manual', label: 'Manual' },
           { value: 'breezeway', label: 'Imported' },
-          { value: 'inbox_ai', label: 'Inbox AI' },
+          { value: 'inbox_ai', label: 'Inbox' },
           { value: 'syndic', label: 'Syndic' },
           { value: 'friday', label: 'Friday' },
           { value: 'guesty', label: 'Guesty' },
@@ -2054,7 +2095,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
               <SortableTh sortKey="priority" sort={sort} onToggle={toggleSort}>Priority</SortableTh>
               <Th>Assignees</Th>
               <SortableTh sortKey="dueDate" sort={sort} onToggle={toggleSort}>Due</SortableTh>
-              <SortableTh sortKey="source" sort={sort} onToggle={toggleSort}>Source</SortableTh>
+              <SortableTh sortKey="source" sort={sort} onToggle={toggleSort}>Origin</SortableTh>
               <Th></Th>
             </tr>
           </thead>
@@ -2183,6 +2224,7 @@ function SortableTh({
 function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
   const sourceSwatch = toneStyle(taskSourceTone(task.source));
   const sourceLabel = SOURCE_LABEL[task.source];
+  const assignees = taskAssigneePeople(task);
   return (
     <tr
       onClick={onClick}
@@ -2214,12 +2256,10 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
       </td>
       <td style={{ padding: '6px 10px' }}>
         <div style={{ display: 'flex', gap: 0 }}>
-          {task.assigneeIds.slice(0, 3).map((id, i) => {
-            const u = TASK_USER_BY_ID[id];
-            if (!u) return null;
+          {assignees.slice(0, 3).map((u, i) => {
             return (
               <span
-                key={id}
+                key={u.id}
                 title={u.name}
                 style={{
                   width: 22,
@@ -2240,7 +2280,7 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
               </span>
             );
           })}
-          {task.assigneeIds.length === 0 && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>—</span>}
+          {assignees.length === 0 && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>—</span>}
         </div>
       </td>
       <td style={{ padding: '6px 10px', fontSize: 11 }}>{formatTaskDue(task.dueDate, task.dueTime)}</td>
@@ -2276,9 +2316,15 @@ function formatTaskDue(dueDate: string, dueTime?: string): string {
   const [todayYear, todayMonth, todayDay] = TODAY.split('-').map(Number);
   const today = new Date(todayYear, todayMonth - 1, todayDay);
   const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-  const fmt = date.toLocaleString('en-US', { month: 'short', day: 'numeric' });
+  const sameYear = parts[0] === todayYear;
+  const fmt = date.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
   if (diff === 1) return `Tomorrow${time}`;
-  if (diff < 0) return `Overdue · ${fmt}`;
+  if (diff < 0) return `${fmt}${time} · overdue`;
   return `${fmt}${time}`;
 }
 
@@ -2286,6 +2332,7 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
   const statusSwatch = toneStyle(taskStatusTone(task.status));
   const prioSwatch = toneStyle(priorityTone(task.priority));
   const sourceSwatch = toneStyle(taskSourceTone(task.source));
+  const assignees = taskAssigneePeople(task);
   const chipBase: React.CSSProperties = {
     fontSize: 10,
     padding: '2px 6px',
@@ -2331,12 +2378,10 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
             </span>
           </div>
           <div className="fad-task-card-avatars">
-            {task.assigneeIds.slice(0, 3).map((id, i) => {
-              const u = TASK_USER_BY_ID[id];
-              if (!u) return null;
+            {assignees.slice(0, 3).map((u, i) => {
               return (
                 <span
-                  key={id}
+                  key={u.id}
                   title={u.name}
                   style={{
                     width: 22,
@@ -2357,7 +2402,7 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
                 </span>
               );
             })}
-            {task.assigneeIds.length === 0 && (
+            {assignees.length === 0 && (
               <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>—</span>
             )}
           </div>
@@ -2397,7 +2442,7 @@ function appendTriageNote(task: Task, note: string): string {
   return [task.description, `Triage: ${note}`].filter(Boolean).join('\n\n');
 }
 
-function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
   const currentUserId = useCurrentUserId();
   const { tasks: TASKS, loading, error, refetch } = useApiTasks();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -2476,7 +2521,7 @@ function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) 
     if (!patch.status) return;
     await updateTask({ taskId: task.id, patch, actorId: currentUserId });
     if (!options?.silent) {
-      fireToast(action === 'accept' ? 'Task accepted into schedule' : 'Intake item triaged');
+      fireToast(action === 'accept' ? 'Task accepted into schedule' : 'Reported issue triaged');
     }
   };
 
@@ -2491,7 +2536,7 @@ function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) 
       setSelectedIds((ids) => ids.filter((id) => id !== task.id));
       refetch();
     } catch (e) {
-      fireToast(e instanceof Error ? e.message : 'Intake triage failed');
+      fireToast(e instanceof Error ? e.message : 'Reported issue triage failed');
     } finally {
       setBusyKey(null);
     }
@@ -2505,7 +2550,7 @@ function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) 
       for (const task of tasks) {
         await applyTriage(task, action, { silent: true });
       }
-      fireToast(`${tasks.length} intake item${tasks.length === 1 ? '' : 's'} triaged`);
+      fireToast(`${tasks.length} reported item${tasks.length === 1 ? '' : 's'} triaged`);
       setSelectedIds([]);
       refetch();
     } catch (e) {
@@ -2521,13 +2566,13 @@ function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) 
         <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
           {error && (
             <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
-              Intake tasks could not load: {error}
+              Reported issues could not load: {error}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0 }}>
-                Reported task intake
+                Reported issues
               </div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{intakeTasks.length} reported</div>
             </div>
@@ -2558,7 +2603,7 @@ function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) 
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading && intakeTasks.length === 0 && <Empty>Loading intake tasks...</Empty>}
+          {loading && intakeTasks.length === 0 && <Empty>Loading reported issues...</Empty>}
           {intakeTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
             const statusSwatch = toneStyle(taskStatusTone(task.status));
@@ -2628,7 +2673,7 @@ function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) 
               </div>
             );
           })}
-          {!loading && intakeTasks.length === 0 && <Empty>No reported intake tasks.</Empty>}
+          {!loading && intakeTasks.length === 0 && <Empty>No reported issues need triage.</Empty>}
         </div>
       </div>
 
@@ -2639,7 +2684,7 @@ function IntakeTriagePage({ onOpenTask }: { onOpenTask: (id: string) => void }) 
           style={{ minHeight: 44 }}
           onClick={() => setDetailOpen(false)}
         >
-          ← Back to intake
+          ← Back to reported issues
         </button>
         {selectedTask ? (
           <div style={{ maxWidth: 720 }}>
@@ -2949,11 +2994,23 @@ function InsightsPage() {
     if (values.length === 0) return 0;
     return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
   })();
-  const top = [...TASK_USERS.map((user) => {
-    const done = completedTasks.filter((task) => task.assigneeIds.includes(user.id));
-    const avg = done.length === 0 ? 0 : Math.round(done.reduce((sum, task) => sum + (task.spentMinutes || task.estimatedMinutes || 0), 0) / done.length);
-    return { userId: user.id, completed: done.length, avgMinutes: avg };
-  })].filter((row) => row.completed > 0).sort((a, b) => b.completed - a.completed).slice(0, 5);
+  const top = Object.values(completedTasks.reduce<Record<string, { label: string; completed: number; minutes: number }>>((acc, task) => {
+    task.assigneeIds.forEach((id, index) => {
+      const label = taskAssigneeName(task, id, index).split(' ')[0];
+      const row = acc[id] || { label, completed: 0, minutes: 0 };
+      row.completed += 1;
+      row.minutes += task.spentMinutes || task.estimatedMinutes || 0;
+      acc[id] = row;
+    });
+    return acc;
+  }, {}))
+    .map((row) => ({
+      label: row.label,
+      completed: row.completed,
+      avgMinutes: row.completed === 0 ? 0 : Math.round(row.minutes / row.completed),
+    }))
+    .sort((a, b) => b.completed - a.completed)
+    .slice(0, 5);
   const dept = (['cleaning', 'inspection', 'maintenance', 'office'] as Department[]).map((department) => {
     const done = completedTasks.filter((task) => task.department === department);
     const avg = done.length === 0 ? 0 : Math.round(done.reduce((sum, task) => sum + (task.spentMinutes || task.estimatedMinutes || 0), 0) / done.length);
@@ -2997,7 +3054,7 @@ function InsightsPage() {
         </Section>
 
         <Section title="Top assignees">
-          {top.length > 0 ? <BarList rows={top.map((r) => ({ label: TASK_USER_BY_ID[r.userId]?.name.split(' ')[0] ?? r.userId, value: r.completed, sub: `${r.avgMinutes}m avg` }))} /> : <Empty>No completions yet.</Empty>}
+          {top.length > 0 ? <BarList rows={top.map((r) => ({ label: r.label, value: r.completed, sub: `${r.avgMinutes}m avg` }))} /> : <Empty>No completions yet.</Empty>}
         </Section>
 
         <Section title="By department">

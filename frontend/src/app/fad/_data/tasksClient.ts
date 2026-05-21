@@ -116,7 +116,9 @@ interface ServerTask {
   assignee_user_ids: string[];
   assignee_display_names: (string | null)[];
   requester_user_id: string | null;
+  requester_display_name: string | null;
   created_by_user_id: string | null;
+  created_by_display_name: string | null;
   due_date: string | null;
   due_time: string | null;
   estimated_minutes: number | null;
@@ -127,6 +129,13 @@ interface ServerTask {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  import_batch_id: string | null;
+  source_payload: Task['sourcePayload'] | null;
+  source_created_at: string | null;
+  source_updated_at: string | null;
+  source_started_at: string | null;
+  source_due_at: string | null;
+  source_completed_at: string | null;
   comments?: ServerComment[];
   costs?: ServerCost[];
   supplies?: ServerSupply[];
@@ -136,6 +145,7 @@ function mapComment(s: ServerComment): TaskComment {
   return {
     id: s.id,
     authorId: s.author_user_id || 'unknown',
+    authorName: s.author_display_name || undefined,
     text: s.text,
     ts: s.created_at,
     mentions: s.mentions || [],
@@ -152,6 +162,7 @@ function mapCost(s: ServerCost): TaskCost {
     currency: s.currency_code as TaskCost['currency'],
     description: s.description || '',
     addedBy: s.added_by_user_id || 'unknown',
+    addedByName: s.added_by_display_name || undefined,
     ownerCharge: s.owner_charge,
     flowedToFinanceExpenseId: s.flowed_to_finance_expense_id || undefined,
   };
@@ -172,6 +183,7 @@ function mapSupply(s: ServerSupply): TaskSupply {
     stockMovementId: s.stock_movement_id || undefined,
     flowedToTaskCostId: s.flowed_to_task_cost_id || undefined,
     addedBy: s.added_by_user_id || undefined,
+    addedByName: s.added_by_display_name || undefined,
     createdAt: s.created_at,
   };
 }
@@ -202,6 +214,9 @@ function mapTask(s: ServerTask): Task {
     assigneeIds: s.assignee_user_ids || [],
     assigneeNames: (s.assignee_display_names || []).filter((name): name is string => Boolean(name)),
     requesterId: s.requester_user_id || undefined,
+    requesterName: s.requester_display_name || undefined,
+    createdById: s.created_by_user_id || undefined,
+    createdByName: s.created_by_display_name || undefined,
     dueDate: s.due_date || '',
     dueTime: s.due_time || undefined,
     estimatedMinutes: s.estimated_minutes ?? undefined,
@@ -223,6 +238,13 @@ function mapTask(s: ServerTask): Task {
     createdAt: s.created_at,
     updatedAt: s.updated_at,
     completedAt: s.completed_at || undefined,
+    importBatchId: s.import_batch_id || undefined,
+    sourcePayload: s.source_payload || undefined,
+    sourceCreatedAt: s.source_created_at || undefined,
+    sourceUpdatedAt: s.source_updated_at || undefined,
+    sourceStartedAt: s.source_started_at || undefined,
+    sourceDueAt: s.source_due_at || undefined,
+    sourceCompletedAt: s.source_completed_at || undefined,
     awaitingHumanApproval: s.awaiting_human_approval,
     inboxThreadId: s.inbox_thread_id || undefined,
     groupEmailId: s.group_email_id || undefined,

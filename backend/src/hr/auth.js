@@ -27,6 +27,13 @@ const ROLE_PERMS = {
     'hr_time_off:read',
     'hr_time_off:approve',
   ]),
+  // Operations managers need the non-sensitive HR roster/staff directory for
+  // task planning and assignment. Sensitive staff fields remain director-only.
+  ops_manager: new Set([
+    'hr_staff:read',
+    'hr_time_off:read',
+    'hr_time_off:approve',
+  ]),
   // Everyone else has implicit baseline perms set in the route handlers
   // themselves — e.g. any authenticated user can submit their own
   // time-off request (hr_time_off:request_own) without needing this map.

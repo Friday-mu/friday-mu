@@ -280,6 +280,7 @@ export interface AISuggestion {
 export interface TaskComment {
   id: string;
   authorId: string;
+  authorName?: string;
   text: string;
   ts: string;
   mentions?: string[];
@@ -293,6 +294,7 @@ export interface TaskCost {
   currency: 'MUR' | 'EUR';
   description: string;
   addedBy: string;
+  addedByName?: string;
   /** Owner-billable line — flows to Finance as Path-A passthrough capture (T8). */
   ownerCharge?: boolean;
   /** Set by the integration when the line has flowed to a Finance expense. */
@@ -322,7 +324,83 @@ export interface TaskSupply {
   stockMovementId?: string;
   flowedToTaskCostId?: string;
   addedBy?: string;
+  addedByName?: string;
   createdAt?: string;
+}
+
+export interface TaskSourcePerson {
+  id?: string | number | null;
+  name?: string | null;
+  email?: string | null;
+}
+
+export interface TaskSourcePayload {
+  provider?: string;
+  importBatchId?: string;
+  taskId?: string;
+  externalRef?: string;
+  property?: {
+    name?: string | null;
+    resolvedCode?: string | null;
+    group?: string | null;
+  };
+  people?: {
+    assignees?: string[];
+    assignedEmployeeIds?: string[];
+    unresolvedAssignees?: string[];
+    completedBy?: string | null;
+    requestedBy?: string | null;
+    createdBy?: string | null;
+  };
+  time?: {
+    totalTime?: string | null;
+    estimatedTime?: string | null;
+    sourceCreatedAt?: string | null;
+    sourceUpdatedAt?: string | null;
+    sourceStartedAt?: string | null;
+    sourceDueAt?: string | null;
+    sourceCompletedAt?: string | null;
+  };
+  cost?: {
+    billTo?: string | null;
+    rateType?: string | null;
+    currency?: string | null;
+    totalCostMinor?: number | null;
+  };
+  supplemental?: Record<string, unknown>;
+  apiEnrichment?: {
+    provider?: string;
+    fetchedAt?: string;
+    taskId?: string;
+    sourceUpdatedAt?: string | null;
+    reportUrl?: string | null;
+    summary?: { note?: string | null; createdAt?: string | null; updatedAt?: string | null } | null;
+    assignments?: Array<Record<string, unknown>>;
+    photos?: Array<Record<string, unknown>>;
+    photoCount?: number;
+    comments?: Array<Record<string, unknown>>;
+    commentsCount?: number;
+    costs?: Array<Record<string, unknown>>;
+    costsCount?: number;
+    supplies?: Array<Record<string, unknown>>;
+    suppliesCount?: number;
+    tags?: string[];
+    taskTags?: Array<Record<string, unknown>>;
+    people?: {
+      createdBy?: TaskSourcePerson | null;
+      finishedBy?: TaskSourcePerson | null;
+      requestedBy?: TaskSourcePerson | null;
+      startedBy?: TaskSourcePerson | null;
+    };
+    linkedReservation?: { id?: string | null; externalReservationId?: string | null } | null;
+    reportedTasks?: string[];
+    totalTime?: string | null;
+    totalMinutes?: number | null;
+    createdAt?: string | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+  };
+  raw?: Record<string, unknown>;
 }
 
 export type TaskRequirementKind =
@@ -376,6 +454,9 @@ export interface Task {
   assigneeIds: string[];
   assigneeNames?: string[];
   requesterId?: string;
+  requesterName?: string;
+  createdById?: string;
+  createdByName?: string;
   dueDate: string;
   dueTime?: string;
   estimatedMinutes?: number;
@@ -398,6 +479,13 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  importBatchId?: string;
+  sourcePayload?: TaskSourcePayload;
+  sourceCreatedAt?: string;
+  sourceUpdatedAt?: string;
+  sourceStartedAt?: string;
+  sourceDueAt?: string;
+  sourceCompletedAt?: string;
   /** AI-drafted, needs human green-light before push to Breezeway */
   awaitingHumanApproval?: boolean;
   inboxThreadId?: string;

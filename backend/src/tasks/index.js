@@ -221,7 +221,9 @@ function shapeTask(row, comments = [], costs = [], supplies = []) {
     assignee_user_ids: row.assignee_user_ids || [],
     assignee_display_names: row.assignee_display_names || [], // joined
     requester_user_id: row.requester_user_id,
+    requester_display_name: row.requester_display_name || null,
     created_by_user_id: row.created_by_user_id,
+    created_by_display_name: row.created_by_display_name || null,
     due_date: row.due_date,
     due_time: row.due_time,
     estimated_minutes: row.estimated_minutes,
@@ -318,16 +320,23 @@ function requireImportRole(req, res) {
   return false;
 }
 
-// Resolve a UUID[] of assignee_user_ids to a parallel array of
-// display_names (or username fallback). One round-trip per task in the
-// list view; acceptable up to ~500 tasks, which the list cap enforces.
+// Resolve UUID user references to display_names (or username/email fallback).
+// One round-trip per task page; acceptable up to ~500 tasks, which the list
+// cap enforces.
 async function hydrateAssignees(rows) {
   const ids = new Set();
   for (const r of rows) {
     for (const id of r.assignee_user_ids || []) ids.add(id);
+    if (r.requester_user_id) ids.add(r.requester_user_id);
+    if (r.created_by_user_id) ids.add(r.created_by_user_id);
   }
   if (ids.size === 0) {
-    return rows.map((r) => ({ ...r, assignee_display_names: [] }));
+    return rows.map((r) => ({
+      ...r,
+      assignee_display_names: [],
+      requester_display_name: null,
+      created_by_display_name: null,
+    }));
   }
   const { rows: users } = await query(
     `SELECT id, COALESCE(display_name, username, email) AS name
@@ -338,12 +347,14 @@ async function hydrateAssignees(rows) {
   return rows.map((r) => ({
     ...r,
     assignee_display_names: (r.assignee_user_ids || []).map((id) => byId.get(id) || null),
+    requester_display_name: r.requester_user_id ? byId.get(r.requester_user_id) || null : null,
+    created_by_display_name: r.created_by_user_id ? byId.get(r.created_by_user_id) || null : null,
   }));
 }
 
 async function loadComments(taskId, tenantId) {
   const { rows } = await query(
-    `SELECT c.*, u.display_name AS author_display_name
+    `SELECT c.*, COALESCE(u.display_name, u.username, u.email) AS author_display_name
      FROM task_comments c
      LEFT JOIN users u ON u.id = c.author_user_id
      WHERE c.task_id = $1 AND c.tenant_id = $2
@@ -355,7 +366,7 @@ async function loadComments(taskId, tenantId) {
 
 async function loadCosts(taskId, tenantId) {
   const { rows } = await query(
-    `SELECT c.*, u.display_name AS added_by_display_name
+    `SELECT c.*, COALESCE(u.display_name, u.username, u.email) AS added_by_display_name
      FROM task_costs c
      LEFT JOIN users u ON u.id = c.added_by_user_id
      WHERE c.task_id = $1 AND c.tenant_id = $2
@@ -367,7 +378,7 @@ async function loadCosts(taskId, tenantId) {
 
 async function loadSupplies(taskId, tenantId) {
   const { rows } = await query(
-    `SELECT s.*, u.display_name AS added_by_display_name
+    `SELECT s.*, COALESCE(u.display_name, u.username, u.email) AS added_by_display_name
      FROM task_supplies s
      LEFT JOIN users u ON u.id = s.added_by_user_id
      WHERE s.task_id = $1 AND s.tenant_id = $2

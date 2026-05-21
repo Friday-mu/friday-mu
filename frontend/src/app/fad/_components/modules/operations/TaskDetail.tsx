@@ -8,6 +8,7 @@ import {
   type Task,
   type TaskComment,
   type TaskCost,
+  type TaskSourcePerson,
   type TaskRequirement,
   type TaskRequirementState,
   type TaskSupply,
@@ -20,7 +21,6 @@ import {
   requirementsForTask,
   type CompletionSignals,
 } from '../../../_data/taskRequirements';
-import { FIN_EXPENSES } from '../../../_data/finance';
 import { useCurrentUserId, useCanAccess, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconExpand, IconPlus, IconSparkle } from '../../icons';
@@ -30,14 +30,6 @@ import { useAITelemetry, type AISurface } from '../../ai/useAITelemetry';
 import { AIConfidenceChip } from '../../ai/AIComponents';
 import { RISK_FLAG_EXPLANATIONS, pickFromPool } from '../../../_data/aiFixtures';
 import { priorityTone, taskStatusTone, toneStyle } from '../../palette';
-import { PropertyChip } from '../properties/PropertyQuickView';
-import { PROPERTY_BY_CODE } from '../../../_data/properties';
-import {
-  RESERVATION_BY_ID,
-  CHANNEL_LABEL,
-  STATUS_LABEL as RES_STATUS_LABEL,
-  formatStayWindow,
-} from '../../../_data/reservations';
 import {
   appendMentionToken,
   publishTaskCommentMentionBridge,
@@ -48,6 +40,7 @@ import {
   suggestSupplyLoadout,
   type SupplyLoadoutItem,
 } from '../../../_data/supplies';
+import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../../_data/operationsStaffClient';
 
 interface DetailProps {
   task: Task;
@@ -103,6 +96,76 @@ interface SupplyPrefill {
 const statusBadgeFor = (s: Task['status']) => toneStyle(taskStatusTone(s));
 const priorityBadgeFor = (p: Task['priority']) => toneStyle(priorityTone(p));
 
+function initialsForName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+}
+
+function taskAssigneeName(task: Task, id: string, index: number): string {
+  return task.assigneeNames?.[index]
+    || TASK_USER_BY_ID[id]?.name
+    || 'Assigned user';
+}
+
+function taskAssigneePeople(task: Task): Array<{ id: string; name: string; initials: string; avatarColor: string }> {
+  return task.assigneeIds.map((id, index) => {
+    const fixture = TASK_USER_BY_ID[id];
+    const name = taskAssigneeName(task, id, index);
+    return {
+      id,
+      name,
+      initials: fixture?.initials || initialsForName(name),
+      avatarColor: fixture?.avatarColor || '#64748b',
+    };
+  });
+}
+
+function sourcePersonName(person?: TaskSourcePerson | null): string | null {
+  if (!person) return null;
+  return person.name || person.email || (person.id != null ? String(person.id) : null);
+}
+
+function compactText(value?: string | null): string | null {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text || null;
+}
+
+function mentionTokensForStaff(user: OperationsStaffUser): string[] {
+  const [first] = user.name.split(/\s+/);
+  return [`@${user.name}`, first ? `@${first}` : '', `@${user.initials}`].filter(Boolean);
+}
+
+function textIncludesMention(text: string, token: string): boolean {
+  const normalized = text.toLowerCase();
+  const needle = token.toLowerCase();
+  const idx = normalized.indexOf(needle);
+  if (idx === -1) return false;
+  const before = idx === 0 ? '' : normalized[idx - 1];
+  const after = normalized[idx + needle.length] ?? '';
+  const beforeOk = before === '' || /\s|[([{]/.test(before);
+  const afterOk = after === '' || /\s/.test(after) || '.,;:!?)]}'.includes(after);
+  return beforeOk && afterOk;
+}
+
+function resolveStaffMentions(text: string, staffUsers: OperationsStaffUser[]): string[] {
+  if (staffUsers.length === 0) return resolveTaskCommentMentions(text);
+  const mentioned = new Set<string>();
+  staffUsers
+    .filter((user) => user.canAssign)
+    .forEach((user) => {
+      if (mentionTokensForStaff(user).some((token) => textIncludesMention(text, token))) {
+        mentioned.add(user.id);
+      }
+    });
+  return [...mentioned];
+}
+
+function appendStaffMentionToken(text: string, user: OperationsStaffUser): string {
+  const suffix = text.length > 0 && !text.endsWith(' ') ? ' ' : '';
+  return `${text}${suffix}@${user.name} `;
+}
+
 export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportIssue }: DetailProps) {
   const currentUserId = useCurrentUserId();
   const { can, role } = usePermissions();
@@ -128,6 +191,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     task.status === 'in_progress' ? Date.now() : null,
   );
   const [clockNow, setClockNow] = useState(() => Date.now());
+  const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
 
   useEffect(() => {
     setCompletionSummary(latestExecutionSummary(task));
@@ -160,6 +224,20 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     };
   }, [task.status]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void loadOperationsStaffUsers()
+      .then((users) => {
+        if (!cancelled) setStaffUsers(users);
+      })
+      .catch(() => {
+        if (!cancelled) setStaffUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const elapsedSeconds = useMemo(() => {
     const runningSeconds =
       task.status === 'in_progress' && timerStartedAt
@@ -189,7 +267,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   const sendComment = async () => {
     const text = draftComment.trim();
     if (!text) return;
-    const mentionIds = resolveTaskCommentMentions(text);
+    const mentionIds = resolveStaffMentions(text, staffUsers);
     await runApiMutation('comment', async () => {
       const comment = await addComment({ taskId: task.id, authorId: currentUserId, text, mentions: mentionIds });
       publishTaskCommentMentionBridge({ task, comment, authorId: currentUserId, mentionIds });
@@ -363,6 +441,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           draft={draftComment}
           setDraft={setDraftComment}
           currentUserId={currentUserId}
+          staffUsers={staffUsers}
           onSend={canEdit ? sendComment : undefined}
         />
       </div>
@@ -436,8 +515,7 @@ function Header({
             #{task.bzId}
           </span>
         )}
-        <PropertyChip
-          code={task.propertyCode}
+        <span
           className="chip"
           style={{
             minWidth: 44,
@@ -450,8 +528,8 @@ function Header({
             whiteSpace: 'nowrap',
           }}
         >
-          {task.propertyCode}
-        </PropertyChip>
+          {task.propertyCode || 'No property'}
+        </span>
         <span className="chip" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
           {task.department} · {task.subdepartment.replace('_', ' ')}
         </span>
@@ -474,7 +552,7 @@ function Header({
           <RiskFlagBadge key={rf} flag={rf} label={RISK_LABEL[rf]} />
         ))}
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          Due {task.dueDate}{task.dueTime ? ` · ${task.dueTime}` : ''}
+          Due {formatDue(task)}
         </span>
       </div>
       <div className="ops-execution-header-actions">
@@ -557,7 +635,7 @@ function Body({
   onToggleWaiver: (requirementId: string) => void;
   onReportIssue?: (task: Task) => void;
 }) {
-  const assignees = task.assigneeIds.map((id) => TASK_USER_BY_ID[id]).filter(Boolean);
+  const assignees = taskAssigneePeople(task);
   const canViewSensitiveContext = canManageTasks || task.assigneeIds.includes(currentUserId);
   return (
     <>
@@ -658,6 +736,8 @@ function Body({
       <Section title="Details">
         <DetailsPanel task={task} />
       </Section>
+
+      <ImportedHistoryPanel task={task} />
 
       {task.aiSuggestions.length > 0 && (
         <Section title="AI panel">
@@ -977,26 +1057,25 @@ function MobileExecutionBar({
 }
 
 function PropertyContextPanel({ task, canViewSensitiveContext }: { task: Task; canViewSensitiveContext: boolean }) {
-  const property = PROPERTY_BY_CODE[task.propertyCode];
-  if (!property) {
-    return <div className="ops-context-panel">Property {task.propertyCode || 'not linked'}.</div>;
-  }
+  const propertyName = compactText(task.sourcePayload?.property?.name);
+  const propertyCode = compactText(task.propertyCode);
   const sourceLine =
     task.source === 'reported_issue' ? 'Linked from field issue report' :
       task.source === 'inbox_ai' ? 'Linked from Inbox AI proposal' :
         task.source === 'reservation_trigger' ? 'Linked from reservation workflow' :
-          'No separate issue record linked';
+          task.source === 'breezeway' ? 'Imported historical task' :
+            'No separate issue record linked';
   return (
     <div className="ops-context-panel">
       <div>
         <span className="ops-mobile-kicker">Property</span>
-        <strong>{property.code} · {property.name}</strong>
-        <small>{property.area} · {property.bedrooms} bed · {property.maxOccupancy} pax</small>
+        <strong>{propertyCode || propertyName || 'Not linked'}</strong>
+        <small>{propertyName && propertyName !== propertyCode ? propertyName : 'No property record loaded in this drawer'}</small>
       </div>
       <div>
-        <span className="ops-mobile-kicker">Location</span>
-        <strong>{canViewSensitiveContext ? property.address : 'Hidden until assigned'}</strong>
-        <small>{property.lifecycleStatus.replace('_', ' ')}</small>
+        <span className="ops-mobile-kicker">Reservation</span>
+        <strong>{task.reservationId || 'Not linked'}</strong>
+        <small>{canViewSensitiveContext ? 'Guest/access details stay in the reservation and access systems.' : 'Hidden unless assigned or managing.'}</small>
       </div>
       <div>
         <span className="ops-mobile-kicker">Issue context</span>
@@ -1019,13 +1098,9 @@ function EvidencePanel({
   return (
     <div className="ops-evidence-panel">
       {task.attachmentCount > 0 && (
-        <div className="ops-attachment-grid">
-          {Array.from({ length: Math.min(task.attachmentCount, 8) }).map((_, i) => (
-            <div key={i} className="ops-attachment-tile">attachment {i + 1}</div>
-          ))}
-          {task.attachmentCount > 8 && (
-            <div className="ops-attachment-tile">+{task.attachmentCount - 8} more</div>
-          )}
+        <div className="ops-evidence-source-count">
+          <strong>{task.attachmentCount}</strong>
+          <span>attachment{task.attachmentCount === 1 ? '' : 's'} recorded in source history. File previews will appear here after attachment import is enabled.</span>
         </div>
       )}
       <label className="btn ghost sm ops-evidence-pick">
@@ -1079,23 +1154,126 @@ function AccessPanel({
 }
 
 function DetailsPanel({ task }: { task: Task }) {
-  const assignees = task.assigneeIds
-    .map((id) => TASK_USER_BY_ID[id]?.name || id)
-    .join(', ') || 'Unassigned';
-  const requester = task.requesterId ? TASK_USER_BY_ID[task.requesterId]?.name || task.requesterId : 'System/import';
-  const externalId = task.externalRef || task.bzId || 'None';
+  const assignees = taskAssigneePeople(task).map((person) => person.name).join(', ') || 'Unassigned';
+  const importedPeople = task.sourcePayload?.apiEnrichment?.people || {};
+  const createdBy =
+    task.createdByName
+    || task.requesterName
+    || sourcePersonName(importedPeople.createdBy)
+    || compactText(task.sourcePayload?.people?.createdBy)
+    || 'System/import';
+  const externalId = formatSourceReference(task.externalRef || task.bzId || null);
   return (
     <div className="ops-details-grid">
       <DetailPair label="Last updated" value={formatDateTime(task.updatedAt)} />
       <DetailPair label="Created" value={formatDateTime(task.createdAt)} />
-      <DetailPair label="Created by" value={requester} />
-      <DetailPair label="Source" value={sourceLabel(task.source)} />
-      <DetailPair label="External task ID" value={externalId} mono />
+      <DetailPair label="Created by" value={createdBy} />
+      <DetailPair label="Origin" value={sourceLabel(task.source)} />
+      {externalId && <DetailPair label="Source reference" value={externalId} mono />}
       <DetailPair label="Assignees" value={assignees} />
       <DetailPair label="Priority" value={task.priority} />
       <DetailPair label="Due" value={formatDue(task)} />
       <DetailPair label="Status" value={STATUS_LABEL[task.status]} />
     </div>
+  );
+}
+
+function ImportedHistoryPanel({ task }: { task: Task }) {
+  const payload = task.sourcePayload;
+  const enrichment = payload?.apiEnrichment;
+  if (!payload && !task.importBatchId && !task.sourceCreatedAt && !enrichment) return null;
+
+  const sourcePeople = [
+    ['Created by', sourcePersonName(enrichment?.people?.createdBy) || compactText(payload?.people?.createdBy)],
+    ['Requested by', sourcePersonName(enrichment?.people?.requestedBy) || compactText(payload?.people?.requestedBy)],
+    ['Started by', sourcePersonName(enrichment?.people?.startedBy)],
+    ['Completed by', sourcePersonName(enrichment?.people?.finishedBy) || compactText(payload?.people?.completedBy)],
+  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+
+  const sourceDates = [
+    ['Source created', task.sourceCreatedAt || enrichment?.createdAt || payload?.time?.sourceCreatedAt],
+    ['Source updated', task.sourceUpdatedAt || enrichment?.sourceUpdatedAt || payload?.time?.sourceUpdatedAt],
+    ['Started', task.sourceStartedAt || enrichment?.startedAt || payload?.time?.sourceStartedAt],
+    ['Due', task.sourceDueAt || payload?.time?.sourceDueAt],
+    ['Completed', task.sourceCompletedAt || enrichment?.finishedAt || payload?.time?.sourceCompletedAt],
+  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+  const sourceWork = [
+    ['Total time', enrichment?.totalTime || payload?.time?.totalTime],
+    ['Estimated time', payload?.time?.estimatedTime],
+    ['Bill to', payload?.cost?.billTo],
+    ['Rate type', payload?.cost?.rateType],
+    ['Total cost', formatSourceCost(payload?.cost?.totalCostMinor, payload?.cost?.currency)],
+  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+
+  const counters = [
+    ['Attachments', enrichment?.photoCount ?? task.attachmentCount],
+    ['Comments', enrichment?.commentsCount],
+    ['Costs', enrichment?.costsCount],
+    ['Supplies', enrichment?.suppliesCount],
+    ['Assignments', enrichment?.assignments?.length],
+    ['Related reports', enrichment?.reportedTasks?.length],
+  ].filter(([, value]) => typeof value === 'number' && value > 0) as Array<[string, number]>;
+
+  const sourceAssignees = payload?.people?.assignees?.filter(Boolean) || [];
+  const summary = compactText(enrichment?.summary?.note);
+
+  return (
+    <Section title="Imported history">
+      <div className="ops-import-history">
+        <div className="ops-import-history-top">
+          <strong>{sourceLabel(task.source)}</strong>
+          <span>{task.importBatchId ? `Batch ${task.importBatchId}` : 'Source provenance preserved'}</span>
+        </div>
+
+        {summary && (
+          <div className="ops-import-history-note">
+            {summary}
+          </div>
+        )}
+
+        {(sourcePeople.length > 0 || sourceAssignees.length > 0) && (
+          <div className="ops-import-history-grid">
+            {sourcePeople.map(([label, value]) => (
+              <DetailPair key={label} label={label} value={value} />
+            ))}
+            {sourceAssignees.length > 0 && (
+              <DetailPair label="Original assignees" value={sourceAssignees.join(', ')} />
+            )}
+          </div>
+        )}
+
+        {sourceDates.length > 0 && (
+          <div className="ops-import-history-grid">
+            {sourceDates.map(([label, value]) => (
+              <DetailPair key={label} label={label} value={formatDateTime(value)} />
+            ))}
+          </div>
+        )}
+
+        {sourceWork.length > 0 && (
+          <div className="ops-import-history-grid">
+            {sourceWork.map(([label, value]) => (
+              <DetailPair key={label} label={label} value={value} />
+            ))}
+          </div>
+        )}
+
+        {counters.length > 0 && (
+          <div className="ops-import-history-counts">
+            {counters.map(([label, value]) => (
+              <span key={label}>{label}: <strong>{value}</strong></span>
+            ))}
+          </div>
+        )}
+
+        {(enrichment?.reportUrl || payload?.property?.name) && (
+          <div className="ops-import-history-footnote">
+            {payload?.property?.name && <span>Original property: {payload.property.name}</span>}
+            {enrichment?.reportUrl && <span>Task report link preserved in provenance.</span>}
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -1175,7 +1353,7 @@ function SupplyLines({
 }
 
 function SupplyRow({ supply }: { supply: TaskSupply }) {
-  const addedBy = supply.addedBy ? TASK_USER_BY_ID[supply.addedBy] : undefined;
+  const addedBy = supply.addedByName || (supply.addedBy ? TASK_USER_BY_ID[supply.addedBy]?.name : undefined);
   const lineValue = supply.unitCost != null ? supply.quantity * supply.unitCost : 0;
   return (
     <div className="ops-supply-row">
@@ -1204,7 +1382,7 @@ function SupplyRow({ supply }: { supply: TaskSupply }) {
         {supply.flowedToTaskCostId && (
           <span>Cost line created</span>
         )}
-        {addedBy && <span>{addedBy.name.split(' ')[0]}</span>}
+        {addedBy && <span>{addedBy.split(' ')[0]}</span>}
       </div>
     </div>
   );
@@ -1231,7 +1409,7 @@ function CostLines({
         </div>
       )}
       {task.costs.map((c) => (
-        <CostRow key={c.id} cost={c} task={task} canSeeFinance={canSeeFinance} />
+        <CostRow key={c.id} cost={c} canSeeFinance={canSeeFinance} />
       ))}
       {task.costs.length > 0 && (
         <div
@@ -1277,18 +1455,8 @@ function CostLines({
   );
 }
 
-function CostRow({ cost, task, canSeeFinance }: { cost: TaskCost; task: Task; canSeeFinance: boolean }) {
-  const addedBy = TASK_USER_BY_ID[cost.addedBy];
-  // Find the linked FinExpense — either by direct id or by sourceTaskId match.
-  const linkedExpense = useMemo(() => {
-    if (cost.flowedToFinanceExpenseId) {
-      return FIN_EXPENSES.find((e) => e.id === cost.flowedToFinanceExpenseId);
-    }
-    if (cost.ownerCharge) {
-      return FIN_EXPENSES.find((e) => e.sourceTaskId === task.id);
-    }
-    return undefined;
-  }, [cost, task.id]);
+function CostRow({ cost, canSeeFinance }: { cost: TaskCost; canSeeFinance: boolean }) {
+  const addedBy = cost.addedByName || TASK_USER_BY_ID[cost.addedBy]?.name;
 
   return (
     <div
@@ -1316,26 +1484,23 @@ function CostRow({ cost, task, canSeeFinance }: { cost: TaskCost; task: Task; ca
           </span>
         )}
         {addedBy && (
-          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{addedBy.name.split(' ')[0]}</span>
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{addedBy.split(' ')[0]}</span>
         )}
       </div>
       {cost.ownerCharge && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 78, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          <span>→ Flowing to Finance</span>
-          {linkedExpense && canSeeFinance && (
+          <span>{cost.flowedToFinanceExpenseId ? 'Finance capture created' : 'Pending Finance capture creation'}</span>
+          {cost.flowedToFinanceExpenseId && canSeeFinance && (
             <a
-              href={`/fad?m=finance&sub=transactions&capture=${linkedExpense.id}`}
+              href={`/fad?m=finance&sub=transactions&capture=${cost.flowedToFinanceExpenseId}`}
               style={{ color: 'var(--color-brand-accent)', textDecoration: 'none', fontWeight: 500 }}
               onClick={(e) => {
                 e.preventDefault();
-                fireToast(`Would navigate to Finance > capture ${linkedExpense.id}`);
+                window.location.assign(`/fad?m=finance&sub=transactions&capture=${cost.flowedToFinanceExpenseId}`);
               }}
             >
-              View capture →
+              Open Finance capture
             </a>
-          )}
-          {!linkedExpense && (
-            <span style={{ fontStyle: 'italic' }}>(pending capture creation)</span>
           )}
         </div>
       )}
@@ -1442,6 +1607,7 @@ function ActivityLog({ entries }: { entries: ActivityEntry[] }) {
     <div>
       {sorted.map((e) => {
         const actor = TASK_USER_BY_ID[e.actorId];
+        const actorName = actor?.name || (e.actorId === 'system' ? 'System' : null);
         return (
           <div
             key={e.id}
@@ -1462,8 +1628,8 @@ function ActivityLog({ entries }: { entries: ActivityEntry[] }) {
             </span>
             <span style={{ flex: 1 }}>
               {e.detail || ''}
-              {actor && (
-                <span style={{ marginLeft: 6, color: 'var(--color-text-tertiary)' }}>· {actor.name.split(' ')[0]}</span>
+              {actorName && (
+                <span style={{ marginLeft: 6, color: 'var(--color-text-tertiary)' }}>· {actorName.split(' ')[0]}</span>
               )}
             </span>
           </div>
@@ -1478,20 +1644,37 @@ function Comments({
   draft,
   setDraft,
   currentUserId,
+  staffUsers,
   onSend,
 }: {
   task: Task;
   draft: string;
   setDraft: (s: string) => void;
   currentUserId: string;
+  staffUsers: OperationsStaffUser[];
   onSend?: () => void;
 }) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const sortedComments = useMemo(() => [...task.comments].sort((a, b) => a.ts.localeCompare(b.ts)), [task]);
-  const mentionIds = useMemo(() => resolveTaskCommentMentions(draft), [draft]);
+  const mentionIds = useMemo(() => resolveStaffMentions(draft, staffUsers), [draft, staffUsers]);
+  const staffById = useMemo(() => new Map(staffUsers.map((user) => [user.id, user])), [staffUsers]);
   const mentionCandidates = useMemo(
-    () => TASK_USERS.filter((user) => user.active && user.role !== 'external' && user.id !== currentUserId).slice(0, 8),
-    [currentUserId],
+    () => {
+      if (staffUsers.length > 0) {
+        return staffUsers.filter((user) => user.canAssign && user.id !== currentUserId).slice(0, 8);
+      }
+      return TASK_USERS
+        .filter((user) => user.active && user.role !== 'external' && user.id !== currentUserId)
+        .map((user) => ({
+          id: user.id,
+          name: user.name,
+          initials: user.initials,
+          role: user.role,
+          canAssign: true,
+        } satisfies OperationsStaffUser))
+        .slice(0, 8);
+    },
+    [currentUserId, staffUsers],
   );
 
   return (
@@ -1541,7 +1724,7 @@ function Comments({
                 key={user.id}
                 type="button"
                 className={mentionIds.includes(user.id) ? 'active' : ''}
-                onClick={() => setDraft(appendMentionToken(draft, user.id))}
+                onClick={() => setDraft(staffUsers.length > 0 ? appendStaffMentionToken(draft, user) : appendMentionToken(draft, user.id))}
               >
                 @{user.name.split(' ')[0]}
               </button>
@@ -1549,7 +1732,7 @@ function Comments({
           </div>
           {mentionIds.length > 0 && (
             <div className="ops-mention-preview">
-              Notifies {mentionIds.map((id) => TASK_USER_BY_ID[id]?.name ?? id).join(', ')} in TeamInbox and Notifications.
+              Notifies {mentionIds.map((id) => staffById.get(id)?.name || TASK_USER_BY_ID[id]?.name || 'selected teammate').join(', ')} in TeamInbox and Notifications.
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
@@ -1565,6 +1748,8 @@ function Comments({
 
 function CommentRow({ comment }: { comment: TaskComment }) {
   const author = TASK_USER_BY_ID[comment.authorId];
+  const authorName = comment.authorName || author?.name || 'Unknown';
+  const authorInitials = author?.initials || initialsForName(authorName);
   return (
     <div style={{ display: 'flex', gap: 10, marginBottom: 10, padding: '8px 0', borderBottom: '0.5px dashed var(--color-border-tertiary)' }}>
       <span
@@ -1572,7 +1757,7 @@ function CommentRow({ comment }: { comment: TaskComment }) {
           width: 26,
           height: 26,
           borderRadius: 13,
-          background: author?.avatarColor ?? '#94a3b8',
+          background: author?.avatarColor ?? '#64748b',
           color: 'white',
           fontSize: 10,
           fontWeight: 500,
@@ -1582,11 +1767,11 @@ function CommentRow({ comment }: { comment: TaskComment }) {
           flexShrink: 0,
         }}
       >
-        {author?.initials ?? '??'}
+        {authorInitials}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-          <span style={{ fontSize: 12, fontWeight: 500 }}>{author?.name ?? 'Unknown'}</span>
+          <span style={{ fontSize: 12, fontWeight: 500 }}>{authorName}</span>
           <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{formatActivityTime(comment.ts)}</span>
           {comment.syncedToBreezeway && (
             <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>· synced</span>
@@ -1699,6 +1884,17 @@ function formatQuantity(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, '');
 }
 
+function formatSourceCost(value?: number | null, currency?: string | null): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return `${(value / 100).toLocaleString('en-MU')} ${currency || 'MUR'}`;
+}
+
+function formatSourceReference(value?: string | null): string | null {
+  const ref = compactText(value);
+  if (!ref) return null;
+  return ref.replace(/^[a-z_]+:/i, '');
+}
+
 function formatActivityTime(ts: string): string {
   const d = new Date(ts);
   const today = new Date();
@@ -1713,9 +1909,12 @@ function formatDateTime(value?: string): string {
   if (!value) return 'Not set';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
   return d.toLocaleString('en-GB', {
     month: 'short',
     day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -1731,10 +1930,13 @@ function dueDateTime(task: Task): Date | null {
 function formatDue(task: Task): string {
   const d = dueDateTime(task);
   if (!d) return 'Not scheduled';
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
   return d.toLocaleString('en-GB', {
     weekday: 'short',
-    month: 'short',
     day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -1743,14 +1945,14 @@ function formatDue(task: Task): string {
 function sourceLabel(source: Task['source']): string {
   const labels: Record<Task['source'], string> = {
     manual: 'Manual',
-    breezeway: 'Breezeway import',
-    inbox_ai: 'Inbox AI',
+    breezeway: 'Imported',
+    inbox_ai: 'Inbox',
     guesty: 'Guesty',
     recurring: 'Recurring template',
     reservation_trigger: 'Reservation workflow',
     group_email: 'Group email',
     friday: 'Friday system',
-    reported_issue: 'Field issue report',
+    reported_issue: 'Reported issue',
     personal: 'Personal task',
     review: 'Review workflow',
     syndic: 'Syndic workflow',
@@ -1827,18 +2029,11 @@ function generateThreadSummary(task: Task): string {
   if (decisions) return decisions.message;
   const lastComment = task.comments[task.comments.length - 1];
   const author = lastComment ? TASK_USER_BY_ID[lastComment.authorId] : undefined;
-  return `${task.comments.length} comments · last update from ${author?.name.split(' ')[0] ?? 'someone'}: "${lastComment?.text ?? ''}".`;
+  const authorName = lastComment?.authorName || author?.name || 'someone';
+  return `${task.comments.length} comments · last update from ${authorName.split(' ')[0]}: "${lastComment?.text ?? ''}".`;
 }
 
 function ReservationPanel({ reservationId, staffMode }: { reservationId: string; staffMode: boolean }) {
-  const rsv = RESERVATION_BY_ID[reservationId];
-  if (!rsv) {
-    return (
-      <span className="chip" style={{ fontSize: 11 }}>
-        Reservation {reservationId}
-      </span>
-    );
-  }
   return (
     <div
       style={{
@@ -1853,50 +2048,23 @@ function ReservationPanel({ reservationId, staffMode }: { reservationId: string;
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span className="mono" style={{ fontSize: 12, fontWeight: 500 }}>
-          {rsv.id}
+          {reservationId}
         </span>
-        <span
-          style={{
-            fontSize: 10,
-            padding: '2px 6px',
-            borderRadius: 4,
-            background: 'var(--color-brand-accent-soft)',
-            color: 'var(--color-brand-accent)',
-            fontWeight: 500,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-          }}
-        >
-          {RES_STATUS_LABEL[rsv.status]}
-        </span>
-        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>
-          {CHANNEL_LABEL[rsv.channel]}
+        <span className="chip" style={{ fontSize: 10, marginLeft: 'auto' }}>
+          Linked
         </span>
       </div>
       <div style={{ fontSize: 13, fontWeight: 500 }}>
-        {staffMode ? 'Guest record linked' : rsv.guestName}
-        <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>
-          {' · '}
-          {rsv.propertyCode}
-        </span>
+        {staffMode ? 'Reservation linked' : 'Reservation record linked'}
       </div>
       <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-        {formatStayWindow(rsv)}
+        Guest details, stay dates, and access-sensitive fields are not duplicated into the task drawer.
       </div>
-      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-        {rsv.partySize.adults} adult{rsv.partySize.adults === 1 ? '' : 's'}
-        {rsv.partySize.children > 0 && ` · ${rsv.partySize.children} child${rsv.partySize.children === 1 ? '' : 'ren'}`}
-      </div>
-      {!staffMode && rsv.notes && (
-        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
-          {rsv.notes}
-        </div>
-      )}
       {!staffMode && (
         <button
           className="btn ghost sm"
           style={{ alignSelf: 'flex-start', marginTop: 4 }}
-          onClick={() => window.location.assign(`/fad?m=reservations&sub=overview&rsv=${rsv.id}`)}
+          onClick={() => window.location.assign(`/fad?m=reservations&sub=overview&rsv=${encodeURIComponent(reservationId)}`)}
         >
           Open reservation
         </button>

@@ -31,7 +31,7 @@ export const MODULES: ModuleDef[] = [
     { id: 'schedule', label: 'Schedule' },
     { id: 'my', label: 'My tasks' },
     { id: 'all', label: 'All tasks' },
-    { id: 'intake', label: 'Intake' },
+    { id: 'issues', label: 'Reported issues' },
     { id: 'history', label: 'My history' },
     { id: 'approvals', label: 'Approvals' },
     { id: 'roster', label: 'Roster' },

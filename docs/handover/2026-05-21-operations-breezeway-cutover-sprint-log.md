@@ -347,3 +347,24 @@
 - Browser QA used mocked `/api/tasks` and `/api/team/users`: time edit, assignee edit, unscheduled add-to-date, and Property Day toggle all hit the expected task PATCH paths.
 - Responsive QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-schedule/`; 320/375/430/768/1440 checks showed 0 document overflow, 0 Operations overflow, and 0 undersized controls after the final CSS pass.
 - Verification passed: `git diff --check`, frontend `npx tsc --noEmit`, and frontend `npm run build`.
+
+## 2026-05-21 Ops UI Cleanup + HR Roster Mini-Research
+
+- Current `fad-rebuild` already has API-backed tasks, but Operations still leaks fixture-era labels/person lookups in TaskDetail, All Tasks filters/cards, Insights, and the Roster page.
+- Backend task responses already include source provenance and imported Breezeway enrichment fields; the frontend client does not map them, so enriched history is invisible and raw UUIDs appear when fixture users do not match live users.
+- `origin/fad-design-os-v01-frontend` is not a better source for this slice; current `fad-rebuild` has the newer task lifecycle and import/enrichment shape.
+- Feature Catalog has generic FAD shell guidance only; no reusable Ops roster/history pattern was found.
+- Notion scope confirms pending actions resolve in Operations / Reported Issues, while FAD is the canonical owner for shared integrations and Ops should not expose Breezeway as a permanent runtime dependency.
+- Breezeway evidence supports source metadata, comments, attachments, assignments, and history, but FAD should present those as imported provenance rather than live Breezeway surfaces.
+- HR backend exists at `/api/hr/staff`, but its permission matrix is narrower than the frontend Ops/HR permission model, so Ops roster needs a non-sensitive HR read path for ops managers.
+- Decision: clean the existing Ops UI in place, rename Intake to Reported issues, map backend display/provenance fields, show imported history cleanly, and replace the Operations roster's hardcoded staff with HR-backed staff data without adding a second roster system.
+
+### Checkpoint
+
+- Shipped labels/data cleanup: Intake -> Reported issues, source -> operator-facing Origin/Imported labels, provider-prefixed external refs hidden in the drawer, and overdue due dates formatted with weekday/month/year.
+- Removed fake task-drawer details: no demo property address/capacity, no demo reservation guest details, no placeholder attachment tiles, no demo Finance expense lookup for owner-charge cost rows.
+- Roster now reads non-sensitive staff from `/api/hr/staff?status=active`, falls back to `/api/team/users`, and shows live task workload from `/api/tasks`.
+- Imported-history drawer panel now surfaces source people, dates, time, cost, batch, attachment/comment/cost/supply counts, and API enrichment note without exposing secrets or raw source payloads.
+- Verification passed: `git diff --check`, frontend `npx tsc --noEmit`, frontend `npm run build`, backend `node --check`, backend `npm run build`, and backend `npm test -- --runInBand`.
+- Rendered QA used mocked `/api/tasks` + `/api/hr/staff` at 320/375/430/768/1440; body horizontal overflow stayed at viewport width and no visible `Intake`, `Breezeway`, fake property capacity, or fake attachment labels leaked.
+- Screenshots: `docs/handover/qa-screenshots-2026-05-21-ops-cleanup/`.
