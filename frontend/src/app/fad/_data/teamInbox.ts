@@ -6,11 +6,24 @@
 // Replaces internal Slack at the FAD level.
 
 export type ChannelKey =
-  | 'general'
+  // Public channels (everyone in tenant)
+  | 'gm'
+  | 'announce'
+  | 'random'
   | 'ops'
-  | 'finance'
+  | 'reservations'
   | 'syndic'
-  | 'marketing';
+  | 'agency'
+  | 'marketing'
+  | 'photoshoot'
+  | 'design'
+  // Private channels (explicit membership)
+  | 'finance'
+  | 'admin'
+  | 'refunds'
+  | 'adjustments'
+  // Legacy keys still used by existing fixture/demo surfaces.
+  | 'general';
 
 export interface TeamChannel {
   id: string;
@@ -101,6 +114,8 @@ export interface TeamMessage {
   channelKey?: ChannelKey;     // present for channel posts
   dmId?: string;               // present for DMs
   authorId: string;
+  /** Backend-captured display name for live TeamInbox messages. */
+  authorName?: string;
   text: string;
   ts: string;
   mentions?: string[];         // user ids
@@ -119,7 +134,27 @@ export interface TeamMessage {
   callMeta?: TeamCallMeta;
   /** for kind: 'finance_escalation' — see FinanceEscalationMeta */
   financeEscalation?: FinanceEscalationMeta;
+  /** Optional Design project link inferred or selected at send time. */
+  designProject?: {
+    id: string;
+    name: string;
+    slug?: string | null;
+    source?: 'manual' | 'inferred' | 'inherited' | string;
+    confidence?: number;
+  };
   attachments?: number;
+  /** Attached files / images on this message. */
+  attachmentList?: Array<{
+    id: string;
+    filename: string;
+    mimeType: string | null;
+    sizeBytes: number;
+    url: string;
+    width: number | null;
+    height: number | null;
+  }>;
+  /** Slack-style flat threading. Set on replies; top-level messages are null. */
+  parentMessageId?: string | null;
   threadCount?: number;
 }
 

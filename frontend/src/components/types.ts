@@ -1,5 +1,19 @@
 // Shared types and utilities for Friday Admin Dashboard
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || ''
+export function resolveApiBase(configured: string | undefined, browserHost?: string): string {
+  const base = configured || ''
+  const host = browserHost || ''
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  const isLocalBase = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?/i.test(base)
+
+  // Production static builds must never point an operator's browser at their own localhost.
+  if (isLocalBase && host && !isLocalHost) return ''
+  return base
+}
+
+export const API_BASE = resolveApiBase(
+  process.env.NEXT_PUBLIC_API_URL,
+  typeof window !== 'undefined' ? window.location.hostname : undefined,
+)
 
 export const LANG_NAMES: Record<string, string> = {
   en: 'English', fr: 'French', de: 'German', es: 'Spanish', pt: 'Portuguese',
@@ -58,6 +72,18 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")
+}
+
+export function formatConfidencePercent(value: number | string | null | undefined): number | null {
+  if (value == null || value === '') return null
+  let n = Number(value)
+  if (!Number.isFinite(n)) return null
+
+  // Some legacy GMS rows stored percentages as basis points, so 7000 meant 70%.
+  if (n > 100 && n <= 10000) n = n / 100
+  if (n > 0 && n <= 1) n = n * 100
+
+  return Math.max(0, Math.min(100, Math.round(n)))
 }
 
 export function getToken() {

@@ -22,13 +22,17 @@ type Selection =
   | { kind: 'channel'; channelKey: ChannelKey }
   | { kind: 'dm'; dm: TeamDM };
 
-const CHANNEL_RESOURCE_BY_KEY: Record<ChannelKey, Resource> = {
+const CHANNEL_RESOURCE_BY_KEY: Partial<Record<ChannelKey, Resource>> = {
   general: 'inbox_team',
   ops: 'inbox_team',
   marketing: 'inbox_team',
   finance: 'finance',  // restricted: only roles with finance read see #finance
   syndic: 'inbox_syndic',
 };
+
+function resourceForChannel(key: ChannelKey): Resource {
+  return CHANNEL_RESOURCE_BY_KEY[key] ?? 'inbox_team';
+}
 
 export function TeamInbox({
   mentionsOnly = false,
@@ -45,7 +49,7 @@ export function TeamInbox({
   const currentUserId = useCurrentUserId();
 
   const visibleChannels = useMemo(
-    () => TEAM_CHANNELS.filter((c) => can(CHANNEL_RESOURCE_BY_KEY[c.key], 'read')),
+    () => TEAM_CHANNELS.filter((c) => can(resourceForChannel(c.key), 'read')),
     [role, can],
   );
   const visibleDms = useMemo(
