@@ -36,9 +36,13 @@ interface Props {
   onChangeSubPage: (id: string) => void;
 }
 
-// @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
-// Hardcoded demo date. Replace with new Date() (server-aware).
-const TODAY = '2026-04-27';
+function todayIso(): string {
+  const now = new Date();
+  const localMidnight = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localMidnight.toISOString().slice(0, 10);
+}
+
+const TODAY = todayIso();
 
 const SOURCE_LABEL: Record<TaskSource, string> = {
   manual: 'Manual',
@@ -76,23 +80,93 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 };
 
 const CLOSED_STATUS = new Set<TaskStatus>(['completed', 'closed', 'cancelled']);
+const FIELD_EXECUTABLE_STATUS = new Set<TaskStatus>(['scheduled', 'ready', 'in_progress', 'paused']);
+const TASK_DAY_MS = 86_400_000;
+
+type TaskDateTab = 'today' | 'tomorrow' | 'week' | 'all';
+type ReservationFilter = 'all' | 'linked' | 'unlinked';
+type MyTaskSort = 'suggested' | 'due' | 'priority' | 'property';
+type DashboardStatusFilter = 'all' | 'open' | TaskStatus;
+
+function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day + days));
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(from: string, to: string): number {
+  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
+  const [toYear, toMonth, toDay] = to.split('-').map(Number);
+  const a = new Date(Date.UTC(fromYear, fromMonth - 1, fromDay));
+  const b = new Date(Date.UTC(toYear, toMonth - 1, toDay));
+  return Math.round((b.getTime() - a.getTime()) / TASK_DAY_MS);
+}
+
+function withinDateTab(task: Task, tab: TaskDateTab, startDate: string, endDate: string): boolean {
+  if (tab === 'today') return task.dueDate === TODAY;
+  if (tab === 'tomorrow') return task.dueDate === addDays(TODAY, 1);
+  if (tab === 'week') return task.dueDate >= TODAY && task.dueDate <= addDays(TODAY, 6);
+  return task.dueDate >= startDate && task.dueDate <= endDate;
+}
+
+function taskMatchesSearch(task: Task, query: string): boolean {
+  if (!query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  return [
+    task.title,
+    task.description ?? '',
+    task.propertyCode,
+    task.reservationId ?? '',
+    task.department,
+    task.subdepartment.replace(/_/g, ' '),
+  ].some((value) => value.toLowerCase().includes(q));
+}
+
+function reservationState(task: Task): Exclude<ReservationFilter, 'all'> {
+  return task.reservationId ? 'linked' : 'unlinked';
+}
+
+function formatShortDate(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatHistoryDate(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function isIsoDateKey(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
 
 export function OperationsModule({ subPage, onChangeSubPage }: Props) {
+  const { role } = usePermissions();
   const canSeeApprovals = useCanSee('tasks', 'approve');
   const canSeeRoster = useCanSee('hr_roster', 'read');
   const canSeeSettings = useCanSee('settings');
+  const isField = role === 'field';
 
-  const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'all', label: 'All tasks' },
-    { id: 'issues', label: 'Reported issues' },
-    canSeeApprovals && { id: 'approvals', label: 'Approvals' },
-    canSeeRoster && { id: 'roster', label: 'Roster' },
-    { id: 'insights', label: 'Insights' },
-    canSeeSettings && { id: 'settings', label: 'Settings' },
-  ].filter((t): t is { id: string; label: string } => Boolean(t));
+  const tabs = (
+    isField
+      ? [
+          { id: 'my', label: 'My tasks' },
+          { id: 'history', label: 'My history' },
+        ]
+      : [
+          { id: 'overview', label: 'Overview' },
+          { id: 'my', label: 'My tasks' },
+          { id: 'all', label: 'All tasks' },
+          { id: 'issues', label: 'Reported issues' },
+          { id: 'history', label: 'My history' },
+          canSeeApprovals && { id: 'approvals', label: 'Approvals' },
+          canSeeRoster && { id: 'roster', label: 'Roster' },
+          { id: 'insights', label: 'Insights' },
+          canSeeSettings && { id: 'settings', label: 'Settings' },
+        ]
+  ).filter((t): t is { id: string; label: string } => Boolean(t));
 
-  const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
+  const active = tabs.find((t) => t.id === subPage)?.id ?? (isField ? 'my' : 'overview');
 
   const [, setRev] = useState(0);
   const { tasks: liveTasks, refetch } = useApiTasks();
@@ -107,6 +181,10 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 
   const renderSub = () => {
     switch (active) {
+      case 'my':
+        return <MyTasksPage onOpenTask={setDetailTaskId} />;
+      case 'history':
+        return <MyHistoryPage onOpenTask={setDetailTaskId} />;
       case 'overview':
         return <OverviewPage onOpenTask={setDetailTaskId} />;
       case 'all':
@@ -130,15 +208,15 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
         title="Operations"
-        subtitle="Tasks · reported issues · approvals · roster · insights"
+        subtitle={isField ? 'Assigned work · comments · evidence · history' : 'Tasks · reported issues · approvals · roster · insights'}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}
-        actions={
+        actions={!isField ? (
           <button className="btn primary sm" onClick={() => setCreateOpen(true)}>
             <IconPlus size={12} /> New task
           </button>
-        }
+        ) : undefined}
       />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {renderSub()}
@@ -175,31 +253,94 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 // ───────────────── Overview ─────────────────
 
 function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
-  const { tasks: TASKS, loading, error } = useApiTasks();
+  const { role } = usePermissions();
+  const currentUserId = useCurrentUserId();
+  const { tasks: TASKS, loading, error, refetch } = useApiTasks();
+  const [dashboardDate, setDashboardDate] = useState(TODAY);
+  const [dashboardStatus, setDashboardStatus] = useState<DashboardStatusFilter>('open');
+  const [savingTimeId, setSavingTimeId] = useState<string | null>(null);
+  const scopedTasks = useMemo(() => (
+    role === 'field' ? TASKS.filter((t) => t.assigneeIds.includes(currentUserId)) : TASKS
+  ), [TASKS, role, currentUserId]);
   const kpis = useMemo(() => {
-    const openToday = TASKS.filter((t) => t.dueDate === TODAY && !CLOSED_STATUS.has(t.status)).length;
-    const overdue = TASKS.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
-    const urgent = TASKS.filter((t) => t.priority === 'urgent' && !CLOSED_STATUS.has(t.status)).length;
-    const awaitingApproval = TASKS.filter((t) => t.status === 'blocked' || t.awaitingHumanApproval).length;
+    const openToday = scopedTasks.filter((t) => t.dueDate === TODAY && !CLOSED_STATUS.has(t.status)).length;
+    const overdue = scopedTasks.filter((t) => t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
+    const urgent = scopedTasks.filter((t) => t.priority === 'urgent' && !CLOSED_STATUS.has(t.status)).length;
+    const awaitingApproval = scopedTasks.filter((t) => t.status === 'blocked' || t.awaitingHumanApproval).length;
     const reportedToday = REPORTED_ISSUES.filter((i) => i.reportedAt.slice(0, 10) === TODAY && i.status === 'new').length;
     return { openToday, overdue, urgent, awaitingApproval, reportedToday };
-  }, [TASKS]);
+  }, [scopedTasks]);
 
-  const escalations = TASKS.filter(
+  const dashboardTasks = useMemo(() => (
+    scopedTasks
+      .filter((t) => t.dueDate === dashboardDate)
+      .filter((t) => {
+        if (dashboardStatus === 'all') return true;
+        if (dashboardStatus === 'open') return !CLOSED_STATUS.has(t.status);
+        return t.status === dashboardStatus;
+      })
+      .sort((a, b) => (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
+  ), [scopedTasks, dashboardDate, dashboardStatus]);
+
+  const dashboardByProperty = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    dashboardTasks.forEach((task) => {
+      const list = groups.get(task.propertyCode) ?? [];
+      list.push(task);
+      groups.set(task.propertyCode, list);
+    });
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [dashboardTasks]);
+
+  const statusCounts = useMemo(() => {
+    const dayTasks = scopedTasks.filter((t) => t.dueDate === dashboardDate);
+    const open = dayTasks.filter((t) => !CLOSED_STATUS.has(t.status)).length;
+    const counts: Record<TaskStatus, number> = {
+      reported: 0,
+      scheduled: 0,
+      ready: 0,
+      in_progress: 0,
+      paused: 0,
+      blocked: 0,
+      completed: 0,
+      closed: 0,
+      cancelled: 0,
+    };
+    dayTasks.forEach((task) => {
+      counts[task.status] += 1;
+    });
+    return { open, total: dayTasks.length, counts };
+  }, [scopedTasks, dashboardDate]);
+
+  const updateDueTime = async (task: Task, dueTime: string) => {
+    if (role === 'field') return;
+    setSavingTimeId(task.id);
+    try {
+      await updateTask({ taskId: task.id, patch: { dueTime }, actorId: currentUserId });
+      fireToast('Due time updated');
+      refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Due time update failed');
+    } finally {
+      setSavingTimeId(null);
+    }
+  };
+
+  const escalations = scopedTasks.filter(
     (t) => t.riskFlags.includes('overdue') || t.riskFlags.includes('blocked_access') || t.priority === 'urgent',
   ).slice(0, 4);
 
-  const reservationDriven = TASKS.filter(
+  const reservationDriven = scopedTasks.filter(
     (t) => t.riskFlags.includes('reservation_imminent') && !CLOSED_STATUS.has(t.status),
   );
 
   const recentActivity = useMemo(() => {
-    return TASKS.flatMap((t) =>
+    return scopedTasks.flatMap((t) =>
       t.activityLog.map((a) => ({ task: t, entry: a }))
     )
       .sort((a, b) => b.entry.ts.localeCompare(a.entry.ts))
       .slice(0, 6);
-  }, [TASKS]);
+  }, [scopedTasks]);
 
   const telemetry = useAITelemetry();
   const [briefIndex, setBriefIndex] = useState(() => new Date().getHours() % DAILY_BRIEF_POOL.length);
@@ -220,6 +361,80 @@ function OverviewPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
         </div>
       )}
       {loading && TASKS.length === 0 && <Empty>Loading live tasks...</Empty>}
+
+      <section className="ops-mobile-dashboard" aria-label="Mobile operations dashboard">
+        <div className="ops-mobile-dashboard-head">
+          <div>
+            <div className="ops-mobile-kicker">{role === 'field' ? 'My agenda' : 'Manager agenda'}</div>
+            <h2>Operations dashboard</h2>
+          </div>
+          <label>
+            <span>Date</span>
+            <input type="date" value={dashboardDate} onChange={(e) => setDashboardDate(e.target.value)} />
+          </label>
+        </div>
+        <div className="ops-status-strip" aria-label="Task status filters">
+          {[
+            { id: 'open' as const, label: 'Open', count: statusCounts.open },
+            { id: 'reported' as const, label: 'Reported', count: statusCounts.counts.reported },
+            { id: 'scheduled' as const, label: 'Scheduled', count: statusCounts.counts.scheduled },
+            { id: 'ready' as const, label: 'Ready', count: statusCounts.counts.ready },
+            { id: 'in_progress' as const, label: 'Active', count: statusCounts.counts.in_progress },
+            { id: 'blocked' as const, label: 'Blocked', count: statusCounts.counts.blocked },
+            { id: 'completed' as const, label: 'Done', count: statusCounts.counts.completed },
+            { id: 'all' as const, label: 'All', count: statusCounts.total },
+          ].map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              className={'ops-status-chip' + (dashboardStatus === chip.id ? ' active' : '')}
+              onClick={() => setDashboardStatus(chip.id)}
+            >
+              <span>{chip.label}</span>
+              <strong>{chip.count}</strong>
+            </button>
+          ))}
+        </div>
+        <div className="ops-agenda-list">
+          {dashboardByProperty.map(([propertyCode, tasks]) => (
+            <div className="ops-agenda-property" key={propertyCode}>
+              <div className="ops-agenda-property-title">
+                <span className="mono">{propertyCode}</span>
+                <span>{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+              </div>
+              {tasks.map((task) => (
+                <button className="ops-agenda-row" type="button" key={task.id} onClick={() => onOpenTask(task.id)}>
+                  <span className="ops-agenda-priority" style={{ background: priorityBarColor(task.priority) }} />
+                  <span className="ops-agenda-main">
+                    <strong>{task.title}</strong>
+                    <small>
+                      {STATUS_LABEL[task.status]} · {task.department} · {task.reservationId ? 'reservation linked' : 'no reservation'}
+                    </small>
+                  </span>
+                  <span className="ops-agenda-indicators">
+                    {task.attachmentCount > 0 && <span>{task.attachmentCount} files</span>}
+                    {task.comments.length > 0 && <span>{task.comments.length} comments</span>}
+                  </span>
+                  <span className="ops-agenda-time" onClick={(e) => e.stopPropagation()}>
+                    {role === 'field' ? (
+                      <span>{task.dueTime ?? 'Any time'}</span>
+                    ) : (
+                      <input
+                        type="time"
+                        value={task.dueTime ?? ''}
+                        aria-label={`Due time for ${task.title}`}
+                        disabled={savingTimeId === task.id}
+                        onChange={(e) => updateDueTime(task, e.target.value)}
+                      />
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+          {dashboardByProperty.length === 0 && <Empty>No agenda tasks for {formatShortDate(dashboardDate)}.</Empty>}
+        </div>
+      </section>
 
       {/* KPI strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
@@ -313,6 +528,378 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
       <div style={{ fontSize: 24, fontWeight: 500 }}>{value}</div>
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2 }}>
         {label}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────── My Tasks / History ─────────────────
+
+function MyTasksPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+  const currentUserId = useCurrentUserId();
+  const { role } = usePermissions();
+  const { tasks: TASKS, loading, error, refetch } = useApiTasks();
+  const [dateTab, setDateTab] = useState<TaskDateTab>('today');
+  const [search, setSearch] = useState('');
+  const [department, setDepartment] = useState<Department | 'all'>('all');
+  const [priority, setPriority] = useState<TaskPriority | 'all'>('all');
+  const [reservation, setReservation] = useState<ReservationFilter>('all');
+  const [sort, setSort] = useState<MyTaskSort>('suggested');
+  const [startDate, setStartDate] = useState(TODAY);
+  const [endDate, setEndDate] = useState(addDays(TODAY, 13));
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const assignedTasks = useMemo(() => (
+    TASKS.filter((task) => task.assigneeIds.includes(currentUserId))
+  ), [TASKS, currentUserId]);
+
+  const visibleTasks = useMemo(() => {
+    const tasks = assignedTasks
+      .filter((task) => !CLOSED_STATUS.has(task.status))
+      .filter((task) => withinDateTab(task, dateTab, startDate, endDate))
+      .filter((task) => department === 'all' || task.department === department)
+      .filter((task) => priority === 'all' || task.priority === priority)
+      .filter((task) => reservation === 'all' || reservationState(task) === reservation)
+      .filter((task) => taskMatchesSearch(task, search));
+    return [...tasks].sort((a, b) => {
+      if (sort === 'property') return a.propertyCode.localeCompare(b.propertyCode) || a.dueDate.localeCompare(b.dueDate);
+      if (sort === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.dueDate.localeCompare(b.dueDate);
+      if (sort === 'due') return a.dueDate.localeCompare(b.dueDate) || (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99');
+      return (
+        STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+        PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+        a.dueDate.localeCompare(b.dueDate) ||
+        (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99')
+      );
+    });
+  }, [assignedTasks, dateTab, department, endDate, priority, reservation, search, sort, startDate]);
+
+  const groupedTasks = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    visibleTasks.forEach((task) => {
+      const key = dateTab === 'today' || dateTab === 'tomorrow' ? task.propertyCode : task.dueDate;
+      const list = groups.get(key) ?? [];
+      list.push(task);
+      groups.set(key, list);
+    });
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [dateTab, visibleTasks]);
+
+  const counts = useMemo(() => {
+    const active = assignedTasks.filter((task) => task.status === 'in_progress').length;
+    const due = assignedTasks.filter((task) => task.dueDate <= TODAY && !CLOSED_STATUS.has(task.status)).length;
+    const blocked = assignedTasks.filter((task) => task.status === 'blocked').length;
+    const completed = assignedTasks.filter((task) => task.status === 'completed' || task.status === 'closed').length;
+    return { active, due, blocked, completed };
+  }, [assignedTasks]);
+
+  const setTaskStatus = async (task: Task, status: TaskStatus) => {
+    setUpdatingId(task.id);
+    try {
+      await updateTask({ taskId: task.id, patch: { status }, actorId: currentUserId });
+      fireToast(status === 'completed' ? 'Task marked completed' : `Task moved to ${STATUS_LABEL[status].toLowerCase()}`);
+      refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Task update failed');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  return (
+    <div className="ops-my-tasks">
+      <div className="ops-my-header">
+        <div>
+          <div className="ops-mobile-kicker">{role === 'field' ? 'Assigned only' : 'Assigned to me'}</div>
+          <h2>My tasks</h2>
+          <p>{role === 'field' ? 'Start, comment, attach evidence, and complete only work assigned to you.' : 'Your own execution queue inside the manager board.'}</p>
+        </div>
+        <div className="ops-my-counts" aria-label="My task counts">
+          <span><strong>{counts.active}</strong> active</span>
+          <span><strong>{counts.due}</strong> due</span>
+          <span><strong>{counts.blocked}</strong> blocked</span>
+          <span><strong>{counts.completed}</strong> done</span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="ops-my-alert">
+          Live tasks could not load: {error}. Offline queue is not enabled yet, so failed actions stay visible here instead of disappearing.
+        </div>
+      )}
+      {loading && TASKS.length === 0 && <Empty>Loading assigned tasks...</Empty>}
+
+      <div className="ops-my-tabs" role="tablist" aria-label="Task date range">
+        {[
+          ['today', 'Today'],
+          ['tomorrow', 'Tomorrow'],
+          ['week', 'Week'],
+          ['all', 'All'],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={dateTab === id ? 'active' : ''}
+            onClick={() => setDateTab(id as TaskDateTab)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="ops-my-filterbar">
+        <input
+          type="search"
+          placeholder="Search property, title, reservation..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select value={sort} onChange={(e) => setSort(e.target.value as MyTaskSort)} aria-label="Sort my tasks">
+          <option value="suggested">Suggested</option>
+          <option value="due">Due time</option>
+          <option value="priority">Priority</option>
+          <option value="property">Property</option>
+        </select>
+        <select value={department} onChange={(e) => setDepartment(e.target.value as Department | 'all')} aria-label="Department">
+          <option value="all">All departments</option>
+          <option value="cleaning">Cleaning</option>
+          <option value="inspection">Inspection</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="office">Office</option>
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority | 'all')} aria-label="Priority">
+          <option value="all">All priorities</option>
+          <option value="urgent">Urgent</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+          <option value="lowest">Lowest</option>
+        </select>
+        <select value={reservation} onChange={(e) => setReservation(e.target.value as ReservationFilter)} aria-label="Reservation state">
+          <option value="all">Any reservation</option>
+          <option value="linked">Linked reservation</option>
+          <option value="unlinked">No reservation</option>
+        </select>
+        {dateTab === 'all' && (
+          <>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} aria-label="Start date" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} aria-label="End date" />
+          </>
+        )}
+      </div>
+
+      <div className="ops-my-resultline">
+        <span>{visibleTasks.length} assigned task{visibleTasks.length === 1 ? '' : 's'}</span>
+        <span>{error ? 'Sync issue visible' : 'Live sync'}</span>
+      </div>
+
+      <div className="ops-my-groups">
+        {groupedTasks.map(([label, tasks]) => (
+          <section key={label} className="ops-my-group">
+            <div className="ops-my-group-title">
+              <span>{isIsoDateKey(label) ? formatHistoryDate(label) : label}</span>
+              <span>{tasks.length}</span>
+            </div>
+            <div className="ops-my-list">
+              {tasks.map((task) => (
+                <MyTaskCard
+                  key={task.id}
+                  task={task}
+                  busy={updatingId === task.id}
+                  syncLabel={error ? 'Not synced' : 'Live'}
+                  onOpen={() => onOpenTask(task.id)}
+                  onSetStatus={(status) => setTaskStatus(task, status)}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+        {visibleTasks.length === 0 && <Empty>No assigned tasks match this view.</Empty>}
+      </div>
+    </div>
+  );
+}
+
+function MyTaskCard({
+  task,
+  busy,
+  syncLabel,
+  onOpen,
+  onSetStatus,
+}: {
+  task: Task;
+  busy: boolean;
+  syncLabel: string;
+  onOpen: () => void;
+  onSetStatus: (status: TaskStatus) => void;
+}) {
+  const statusSwatch = toneStyle(taskStatusTone(task.status));
+  const prioSwatch = toneStyle(priorityTone(task.priority));
+  const isOverdue = task.dueDate < TODAY && !CLOSED_STATUS.has(task.status);
+  const daysUntil = daysBetween(TODAY, task.dueDate);
+  const primaryAction =
+    task.status === 'scheduled' || task.status === 'ready'
+      ? { label: 'Start', status: 'in_progress' as TaskStatus }
+      : task.status === 'in_progress'
+        ? { label: 'Pause', status: 'paused' as TaskStatus }
+        : task.status === 'paused'
+          ? { label: 'Resume', status: 'in_progress' as TaskStatus }
+          : null;
+
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  return (
+    <article
+      className={'ops-my-card' + (isOverdue ? ' overdue' : '')}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="ops-my-card-top">
+        <span className="mono">{task.propertyCode}</span>
+        <span>{formatTaskDue(task.dueDate, task.dueTime)}</span>
+      </div>
+      <h3>{task.title}</h3>
+      {task.description && <p>{task.description}</p>}
+      <div className="ops-my-card-chips">
+        <span style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
+        <span style={{ background: prioSwatch.background, color: prioSwatch.color }}>{task.priority}</span>
+        <span>{task.department}</span>
+        <span>{task.reservationId ? 'reservation' : 'property issue'}</span>
+        {isOverdue && <span>overdue</span>}
+        {!isOverdue && daysUntil >= 0 && daysUntil <= 1 && <span>{daysUntil === 0 ? 'today' : 'tomorrow'}</span>}
+      </div>
+      <div className="ops-my-card-footer">
+        <span>{task.comments.length} comments</span>
+        <span>{task.attachmentCount} files</span>
+        <span>{syncLabel}</span>
+      </div>
+      <div className="ops-my-card-actions">
+        {primaryAction && (
+          <button
+            type="button"
+            className="btn primary sm"
+            disabled={busy}
+            onClick={(e) => {
+              stop(e);
+              onSetStatus(primaryAction.status);
+            }}
+          >
+            {busy ? 'Saving...' : primaryAction.label}
+          </button>
+        )}
+        {FIELD_EXECUTABLE_STATUS.has(task.status) && (
+          <button
+            type="button"
+            className="btn primary sm"
+            disabled={busy}
+            onClick={(e) => {
+              stop(e);
+              onSetStatus('completed');
+            }}
+          >
+            Complete
+          </button>
+        )}
+        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
+          Comment
+        </button>
+        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
+          Evidence
+        </button>
+        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
+          Details
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
+  const currentUserId = useCurrentUserId();
+  const { tasks: TASKS, loading, error } = useApiTasks();
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState<'week' | 'month' | 'all'>('month');
+
+  const historyTasks = useMemo(() => {
+    const oldest =
+      range === 'week' ? addDays(TODAY, -7) :
+      range === 'month' ? addDays(TODAY, -31) :
+      '0000-01-01';
+    return TASKS
+      .filter((task) => task.assigneeIds.includes(currentUserId))
+      .filter((task) => task.status === 'completed' || task.status === 'closed')
+      .filter((task) => {
+        const done = (task.completedAt ?? task.updatedAt).slice(0, 10);
+        return done >= oldest;
+      })
+      .filter((task) => taskMatchesSearch(task, search))
+      .sort((a, b) => (b.completedAt ?? b.updatedAt).localeCompare(a.completedAt ?? a.updatedAt));
+  }, [TASKS, currentUserId, range, search]);
+
+  const grouped = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    historyTasks.forEach((task) => {
+      const day = (task.completedAt ?? task.updatedAt).slice(0, 10);
+      const list = groups.get(day) ?? [];
+      list.push(task);
+      groups.set(day, list);
+    });
+    return Array.from(groups.entries()).sort(([a], [b]) => b.localeCompare(a));
+  }, [historyTasks]);
+
+  return (
+    <div className="ops-history">
+      <div className="ops-my-header">
+        <div>
+          <div className="ops-mobile-kicker">Completion proof</div>
+          <h2>My history</h2>
+          <p>Completed and closed tasks grouped by completion date, with duration and evidence counts visible.</p>
+        </div>
+      </div>
+      {error && <div className="ops-my-alert">Live history could not load: {error}</div>}
+      {loading && TASKS.length === 0 && <Empty>Loading task history...</Empty>}
+      <div className="ops-my-filterbar">
+        <input
+          type="search"
+          placeholder="Search completed tasks..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select value={range} onChange={(e) => setRange(e.target.value as typeof range)} aria-label="History range">
+          <option value="week">Last 7 days</option>
+          <option value="month">Last 31 days</option>
+          <option value="all">All history</option>
+        </select>
+      </div>
+      <div className="ops-history-groups">
+        {grouped.map(([date, tasks]) => (
+          <section className="ops-history-group" key={date}>
+            <div className="ops-my-group-title">
+              <span>{formatHistoryDate(date)}</span>
+              <span>{tasks.length}</span>
+            </div>
+            {tasks.map((task) => (
+              <button className="ops-history-row" key={task.id} type="button" onClick={() => onOpenTask(task.id)}>
+                <span className="mono">{task.propertyCode}</span>
+                <span>
+                  <strong>{task.title}</strong>
+                  <small>
+                    {task.spentMinutes ? `${task.spentMinutes} min` : 'Duration not captured'} · {task.comments.length} comments · {task.attachmentCount} files
+                  </small>
+                </span>
+                <span>{STATUS_LABEL[task.status]}</span>
+              </button>
+            ))}
+          </section>
+        ))}
+        {historyTasks.length === 0 && <Empty>No completed tasks match this history view.</Empty>}
       </div>
     </div>
   );

@@ -134,7 +134,7 @@ function Header({
 
   return (
     <div style={{ padding: '14px 20px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         {task.bzId && (
           <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
             #{task.bzId}
@@ -143,16 +143,15 @@ function Header({
         <PropertyChip
           code={task.propertyCode}
           className="chip"
-          style={{ fontSize: 11 }}
+          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
         >
           {task.propertyCode}
         </PropertyChip>
-        <span className="chip" style={{ fontSize: 11 }}>
+        <span className="chip" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
           {task.department} · {task.subdepartment.replace('_', ' ')}
         </span>
-        <span style={{ flex: 1 }} />
         {mode === 'drawer' && onExpand && (
-          <button className="fad-util-btn" onClick={onExpand} title="Open as page">
+          <button className="fad-util-btn ops-detail-expand" onClick={onExpand} title="Open as page" style={{ marginLeft: 'auto' }}>
             <IconExpand size={14} />
           </button>
         )}

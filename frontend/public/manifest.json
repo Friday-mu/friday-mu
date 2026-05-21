@@ -46,9 +46,16 @@
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Operations",
+      "name": "My Tasks",
       "short_name": "Tasks",
-      "description": "Tasks, reported issues, approvals, roster",
+      "description": "Assigned field work and task execution",
+      "url": "/fad?m=operations&sub=my",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Operations Dashboard",
+      "short_name": "Ops",
+      "description": "Manager operations dashboard and agenda",
       "url": "/fad?m=operations&sub=overview",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },

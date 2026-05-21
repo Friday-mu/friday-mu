@@ -124,7 +124,11 @@ export function Sidebar({
                 const IconComp = iconFor(mod.icon);
                 const isActive = mod.id === active;
                 const isExpanded = expandedModuleId === mod.id;
-                const hasSubs = !!mod.subPages?.length;
+                const visibleSubPages =
+                  mod.id === 'operations' && role === 'field'
+                    ? mod.subPages?.filter((sp) => sp.id === 'my' || sp.id === 'history')
+                    : mod.subPages;
+                const hasSubs = !!visibleSubPages?.length;
                 const showSubs =
                   hasSubs &&
                   !collapsed &&
@@ -164,7 +168,7 @@ export function Sidebar({
                     </button>
                     {showSubs && (
                       <div className="fad-nav-subs">
-                        {mod.subPages!.map((sp) => {
+                        {visibleSubPages!.map((sp) => {
                           const isLocked = lockedSubs?.[mod.id]?.has(sp.id);
                           const subCount = pendingCountForSubpage(role, userId, mod.id, sp.id);
                           return (
