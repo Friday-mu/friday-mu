@@ -31,6 +31,7 @@
 const { query } = require('../database/client');
 const { defaultComposer } = require('../knowledge/composer');
 const { generateDraftReply, classifyMessageWithKimi, DRAFT_MODEL } = require('../ai/kimi_draft');
+const { translateText } = require('../ai/translate');
 const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
 const { notifyUsers, publishFadEvent, resolveGmWatchers } = require('../realtime');
 
@@ -38,6 +39,13 @@ const DRAFT_INITIAL_STATE = 'friday_drafting';
 const DRAFT_READY_STATE = 'draft_ready';
 const DRAFT_FAILED_STATE = 'generation_failed';
 const DRAFT_SUPERSEDED_STATE = 'superseded';
+
+const OPERATOR_DRAFT_LANGUAGE_CONTRACT = `
+[Operator Draft Language Contract]
+The draft_body stored for FAD operators must always be in English, even when the guest writes in French or another language.
+Do not write the visible operator draft in the guest's language.
+The approve/send path translates the English operator draft back into the guest's language immediately before sending.
+`;
 
 // ────────────────────────────────────────────────────────────────────
 // Helpers ported from friday-gms/src/services/draft-generator.ts
@@ -148,6 +156,31 @@ function correctCurrencyFormatting(text) {
   out = out.replace(/GBP\s*(\d+(?:[.,]\d+)?)/gi, '£$1');
 
   return out;
+}
+
+function languageRoot(lang) {
+  if (!lang || typeof lang !== 'string') return null;
+  const root = lang.toLowerCase().split(/[-_\s(]/)[0].trim();
+  return root || null;
+}
+
+async function ensureOperatorEnglishDraft(draftBody, { message, conversation }) {
+  const guestLanguage = languageRoot(message?.original_language || conversation?.last_detected_language);
+  if (!guestLanguage || guestLanguage === 'en') return draftBody;
+
+  try {
+    const translated = await translateText(draftBody, {
+      conversationId: conversation?.id,
+    });
+    const sourceLanguage = languageRoot(translated?.sourceLang);
+    if (sourceLanguage && sourceLanguage !== 'en' && translated?.translated) {
+      return translated.translated;
+    }
+  } catch (e) {
+    console.warn(`[draft-gen] operator draft language normalization failed: ${e.message}`);
+  }
+
+  return draftBody;
 }
 
 // Confidence scoring. Mirrors GMS's calculateConfidence — starts at 70,
@@ -373,7 +406,10 @@ ${taskDirective}`;
     loadTeachingsBlock(propertyCode),
     loadActionFeedbackBlock(),
   ]);
-  const systemPrompt = composerOutput.system_message + teachingsBlock + feedbackBlock;
+  const systemPrompt = composerOutput.system_message
+    + teachingsBlock
+    + feedbackBlock
+    + OPERATOR_DRAFT_LANGUAGE_CONTRACT;
 
   // 5. Call Kimi.
   const kimi = await generateDraftReply({
@@ -388,7 +424,12 @@ ${taskDirective}`;
 
   // 6. Post-process: strip AI-preamble + currency normalisation.
   const stripped = stripAIPreamble(kimi.text);
-  const draftBody = correctCurrencyFormatting(stripped);
+  const normalizedBody = correctCurrencyFormatting(stripped);
+  const operatorEnglishBody = await ensureOperatorEnglishDraft(normalizedBody, {
+    message,
+    conversation,
+  });
+  const draftBody = correctCurrencyFormatting(operatorEnglishBody);
 
   // 7. Confidence scoring.
   const confidence = calculateConfidence({
@@ -624,4 +665,7 @@ module.exports = {
   resolvePropertyCode,
   detectTaskSignals,
   formatMessageForContext,
+  languageRoot,
+  ensureOperatorEnglishDraft,
+  OPERATOR_DRAFT_LANGUAGE_CONTRACT,
 };
