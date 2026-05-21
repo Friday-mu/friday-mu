@@ -26,7 +26,14 @@ import type {
   TaskVisibility,
   Department,
   Subdepartment,
+  TaskRequirement,
+  TaskRequirementState,
 } from './tasks';
+import {
+  initialRequirementState,
+  normalizeRequirementState,
+  normalizeRequirements,
+} from './taskRequirements';
 import {
   addTaskToCache,
   removeTaskFromCache,
@@ -83,6 +90,8 @@ interface ServerTask {
   is_recurring: boolean;
   awaiting_human_approval: boolean;
   tags: string[];
+  requirements: TaskRequirement[];
+  requirement_state: TaskRequirementState | null;
   assignee_user_ids: string[];
   assignee_display_names: (string | null)[];
   requester_user_id: string | null;
@@ -160,6 +169,8 @@ function mapTask(s: ServerTask): Task {
     attachmentCount: s.attachment_count ?? 0,
     comments: (s.comments || []).map(mapComment),
     costs: (s.costs || []).map(mapCost),
+    requirements: normalizeRequirements(s.requirements),
+    requirementState: normalizeRequirementState(s.requirement_state || initialRequirementState()),
     isRecurring: s.is_recurring,
     template: s.template || undefined,
     tags: s.tags || [],
@@ -249,6 +260,8 @@ export interface CreateTaskInput {
   template?: string;
   status?: TaskStatus;
   externalRef?: string;
+  requirements?: TaskRequirement[];
+  requirementState?: TaskRequirementState;
 }
 
 export interface PendingActionTaskProposal {
@@ -388,6 +401,8 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       category: input.category,
       template: input.template,
       external_ref: input.externalRef,
+      requirements: input.requirements,
+      requirement_state: input.requirementState,
     }),
   })) as ServerTask;
   const task = mapTask(res);
@@ -416,6 +431,8 @@ export interface UpdateTaskInput {
     tags: string[];
     category: string;
     externalRef: string;
+    requirements: TaskRequirement[];
+    requirementState: TaskRequirementState;
   }>;
   actorId?: string;
 }
@@ -441,6 +458,8 @@ export async function updateTask({ taskId, patch }: UpdateTaskInput): Promise<Ta
   if ('tags' in patch) body.tags = patch.tags;
   if ('category' in patch) body.category = patch.category;
   if ('externalRef' in patch) body.external_ref = patch.externalRef;
+  if ('requirements' in patch) body.requirements = patch.requirements;
+  if ('requirementState' in patch) body.requirement_state = patch.requirementState;
 
   const res = (await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
     method: 'PATCH',

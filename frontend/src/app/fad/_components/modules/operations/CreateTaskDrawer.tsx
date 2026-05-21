@@ -13,6 +13,11 @@ import {
   type TaskSource,
 } from '../../../_data/tasks';
 import { createTask } from '../../../_data/tasksClient';
+import {
+  CORE_TASK_TEMPLATE_OPTIONS,
+  initialRequirementState,
+  requirementsForTemplate,
+} from '../../../_data/taskRequirements';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconPlus, IconSparkle } from '../../icons';
@@ -55,6 +60,7 @@ const DEPARTMENTS: Department[] = ['cleaning', 'inspection', 'maintenance', 'off
 const PRIORITIES: TaskPriority[] = ['urgent', 'high', 'medium', 'low', 'lowest'];
 const TEMPLATE_OPTIONS = [
   '',
+  ...CORE_TASK_TEMPLATE_OPTIONS,
   'Maintenance follow-up',
   'Inspection follow-up',
   'Cleaning correction',
@@ -267,6 +273,7 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
         .split(',')
         .map((tag) => tag.trim())
         .filter(Boolean);
+      const requirements = isReportIntent ? [] : requirementsForTemplate(template, department, subdepartment);
       const task = await createTask({
         title: title.trim(),
         description: buildDescription(),
@@ -295,6 +302,8 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
         category: element.trim() || undefined,
         template: template || undefined,
         externalRef: prefill?.externalRef,
+        requirements: requirements.length > 0 ? requirements : undefined,
+        requirementState: requirements.length > 0 ? initialRequirementState() : undefined,
       });
       onCreated(task);
       fireToast(isReportIntent ? 'Issue reported for manager triage' : 'Task scheduled');

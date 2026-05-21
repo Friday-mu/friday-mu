@@ -53,6 +53,9 @@ const VALID_COST_TYPE = new Set([
   'labor', 'material', 'expense', 'tax',
   'skilled_labor', 'unskilled_labor', 'mileage', 'markup',
 ]);
+const VALID_REQUIREMENT_KIND = new Set([
+  'check', 'photo', 'file', 'expense', 'supply', 'time', 'summary',
+]);
 
 // Mig-050-era callers used todo/done. The cutover lifecycle keeps
 // `todo` as a migration alias only.
@@ -68,6 +71,44 @@ function defaultStatusForSource(source) {
     return 'reported';
   }
   return 'scheduled';
+}
+
+function cleanText(value, fallback = '') {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+function normaliseRequirements(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => {
+      const id = cleanText(item.id, `req-${index + 1}`);
+      const label = cleanText(item.label, 'Requirement');
+      const kind = VALID_REQUIREMENT_KIND.has(item.kind) ? item.kind : 'check';
+      return {
+        id,
+        label,
+        kind,
+        required: item.required !== false,
+        description: cleanText(item.description, ''),
+        evidenceHint: cleanText(item.evidenceHint, ''),
+        gate: cleanText(item.gate, ''),
+      };
+    });
+}
+
+function normaliseRequirementState(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const ids = (arr) => (Array.isArray(arr)
+    ? arr.filter((id) => typeof id === 'string' && id.trim().length > 0)
+    : []);
+  return {
+    completedIds: ids(source.completedIds || source.completed_ids),
+    waivedIds: ids(source.waivedIds || source.waived_ids),
+    updatedAt: cleanText(source.updatedAt || source.updated_at, ''),
+  };
 }
 
 function shapeTask(row, comments = [], costs = []) {
@@ -95,6 +136,8 @@ function shapeTask(row, comments = [], costs = []) {
     is_recurring: row.is_recurring,
     awaiting_human_approval: row.awaiting_human_approval,
     tags: row.tags || [],
+    requirements: row.requirements || [],
+    requirement_state: row.requirement_state || { completedIds: [], waivedIds: [] },
     assignee_user_ids: row.assignee_user_ids || [],
     assignee_display_names: row.assignee_display_names || [], // joined
     requester_user_id: row.requester_user_id,
@@ -338,6 +381,8 @@ router.post('/', attachIdentity, async (req, res) => {
       ? body.assignee_user_ids.filter(Boolean)
       : (body.assignee_user_id ? [body.assignee_user_id] : []);
     const tags = Array.isArray(body.tags) ? body.tags.filter(Boolean) : [];
+    const requirements = normaliseRequirements(body.requirements);
+    const requirementState = normaliseRequirementState(body.requirement_state);
     const externalRef = typeof body.external_ref === 'string' && body.external_ref.trim()
       ? body.external_ref.trim()
       : null;
@@ -369,7 +414,8 @@ router.post('/', attachIdentity, async (req, res) => {
          assignee_user_id, assignee_user_ids,
          due_date, due_time, estimated_minutes, spent_minutes,
          is_recurring, template, inbox_thread_id, group_email_id,
-         awaiting_human_approval, tags, external_ref
+         awaiting_human_approval, tags, external_ref,
+         requirements, requirement_state
        )
        VALUES (
          $1, $2, $3, $4, $5,
@@ -379,7 +425,8 @@ router.post('/', attachIdentity, async (req, res) => {
          $17, $18,
          $19, $20, $21, $22,
          $23, $24, $25, $26,
-         $27, $28, $29
+         $27, $28, $29,
+         $30::jsonb, $31::jsonb
        )
        RETURNING *`,
       [
@@ -414,6 +461,8 @@ router.post('/', attachIdentity, async (req, res) => {
         body.awaiting_human_approval === true,
         tags,
         externalRef,
+        JSON.stringify(requirements),
+        JSON.stringify(requirementState),
       ],
     );
     const created = rows[0];
@@ -458,6 +507,7 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     const params = [];
     let i = 1;
     const setCol = (col, val) => { sets.push(`${col} = $${i++}`); params.push(val); };
+    const setJsonCol = (col, val) => { sets.push(`${col} = $${i++}::jsonb`); params.push(JSON.stringify(val)); };
 
     if (typeof body.title === 'string' && body.title.trim().length > 0) setCol('title', body.title.trim());
     if (Object.prototype.hasOwnProperty.call(body, 'description')) setCol('description', body.description || null);
@@ -493,6 +543,12 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(body, 'is_recurring')) setCol('is_recurring', body.is_recurring === true);
     if (Object.prototype.hasOwnProperty.call(body, 'awaiting_human_approval')) setCol('awaiting_human_approval', body.awaiting_human_approval === true);
     if (Object.prototype.hasOwnProperty.call(body, 'tags')) setCol('tags', Array.isArray(body.tags) ? body.tags : []);
+    if (Object.prototype.hasOwnProperty.call(body, 'requirements')) {
+      setJsonCol('requirements', normaliseRequirements(body.requirements));
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'requirement_state')) {
+      setJsonCol('requirement_state', normaliseRequirementState(body.requirement_state));
+    }
     if (Object.prototype.hasOwnProperty.call(body, 'inbox_thread_id')) setCol('inbox_thread_id', body.inbox_thread_id || null);
     if (Object.prototype.hasOwnProperty.call(body, 'group_email_id')) setCol('group_email_id', body.group_email_id || null);
     if (Object.prototype.hasOwnProperty.call(body, 'external_ref')) {

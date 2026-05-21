@@ -303,6 +303,31 @@ export interface TaskCost {
   flowedToFinanceExpenseId?: string;
 }
 
+export type TaskRequirementKind =
+  | 'check'
+  | 'photo'
+  | 'file'
+  | 'expense'
+  | 'supply'
+  | 'time'
+  | 'summary';
+
+export interface TaskRequirement {
+  id: string;
+  label: string;
+  kind: TaskRequirementKind;
+  required: boolean;
+  description?: string;
+  evidenceHint?: string;
+  gate?: string;
+}
+
+export interface TaskRequirementState {
+  completedIds: string[];
+  waivedIds: string[];
+  updatedAt?: string;
+}
+
 export interface ActivityEntry {
   id: string;
   ts: string;
@@ -338,6 +363,8 @@ export interface Task {
   attachmentCount: number;
   comments: TaskComment[];
   costs: TaskCost[];
+  requirements?: TaskRequirement[];
+  requirementState?: TaskRequirementState;
   isRecurring?: boolean;
   template?: string;
   tags: string[];

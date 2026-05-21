@@ -119,3 +119,25 @@
 - Visual QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave4b/`; 320/375/430/768/1440 checks showed 0 document overflow, 0 triage-pane overflow, and 0 triage-pane small targets.
 - Browser interaction check passed with a local mock API: page identity, nonblank render, no console errors, checkbox selection, bulk accept, and manager source/detail controls.
 - Typecheck, frontend build, backend task-service syntax check, and field role-gate smoke passed.
+
+## 2026-05-21 Wave 5 Mini-Research
+
+- Current `fad-rebuild` has `template` on tasks and a manager template picker, but no persisted task requirements, checklist state, required evidence, or completion validation.
+- Current `TaskDetail.tsx` already has execution summary, local evidence queue, costs, timer/spent minutes, and status mutation hooks; Wave 5 should attach requirements there rather than create a second task execution system.
+- `origin/fad-design-os-v01-frontend` has the same broad task fixture shape but no reusable checklist/requirement model for this slice.
+- Feature Catalog has no FAD-specific checklist primitive; reuse the existing adapter boundary and viewport QA harness pattern.
+- Notion Mobile UX Doctrine requires persistent labels, large controls, inline errors, one hierarchy per phone screen, and no fake complete states.
+- Breezeway evidence shows task detail rows for Costs, Supplies, Task details, Task tags, Summary, comments, attachments, and a sticky Start/Complete model; FAD should preserve the useful task-specific requirement concept but not Breezeway's field create-and-complete shortcut.
+- External platform/accessibility research reinforces native form semantics plus explicit text errors for validation; required completion blockers must be visible in the task detail, not only toast/color state.
+- Wave 5 decision: add persisted `requirements` / `requirement_state`, derive core templates for cleaning/inspection/maintenance/buildout/amenities, and block completion until required requirements are satisfied.
+
+## 2026-05-21 Wave 5 Checkpoint
+
+- Added persisted task `requirements` and `requirement_state` JSONB columns through migration 052 and wired them through `/api/tasks` create/patch/detail responses.
+- Added core Operations requirement templates for Standard clean, Post-clean inspection, Preventative maintenance, Home buildout, and Amenities form, with legacy template aliases preserved.
+- Manager scheduled tasks now attach generated requirement definitions through the existing task adapter; field issue reports stay manager-triage-first and do not create executable checklist shortcuts.
+- Task detail now shows a first-class Requirements section, manual checklist/supply confirmation, manager waivers, automatic photo/file/expense/time/summary gates, and inline completion blockers.
+- Completion now refuses to set `status = completed` while required requirements are missing; the blocker is visible in the execution sync state and requirements panel, not only toast state.
+- Browser interaction QA used a local mock `/api/tasks` task: missing requirements blocked Complete, marking reset/supplies, waiving photo, and adding a summary allowed completion to `completed`.
+- Responsive QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave5/`; 320/375/430/768/1440 showed 0 document overflow, 0 task-detail overflow, and 0 small actionable targets.
+- Typecheck, frontend build, restored `next-env.d.ts`, rerun typecheck, backend task-service syntax check, and `git diff --check` passed.

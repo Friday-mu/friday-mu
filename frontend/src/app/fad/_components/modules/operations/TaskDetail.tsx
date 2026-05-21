@@ -8,8 +8,17 @@ import {
   type Task,
   type TaskComment,
   type TaskCost,
+  type TaskRequirement,
+  type TaskRequirementState,
 } from '../../../_data/tasks';
 import { addComment, updateTask } from '../../../_data/tasksClient';
+import {
+  missingRequiredRequirements,
+  normalizeRequirementState,
+  requirementSatisfied,
+  requirementsForTask,
+  type CompletionSignals,
+} from '../../../_data/taskRequirements';
 import { FIN_EXPENSES } from '../../../_data/finance';
 import { useCurrentUserId, useCanAccess, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
@@ -98,6 +107,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   const [queuedStatus, setQueuedStatus] = useState<Task['status'] | null>(null);
   const [closeArmed, setCloseArmed] = useState(false);
   const [evidenceQueue, setEvidenceQueue] = useState<EvidenceItem[]>([]);
+  const [requirementState, setRequirementState] = useState(() => normalizeRequirementState(task.requirementState));
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(() => minutesToSeconds(task.spentMinutes));
   const [timerStartedAt, setTimerStartedAt] = useState<number | null>(() =>
     task.status === 'in_progress' ? Date.now() : null,
@@ -107,11 +117,16 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   useEffect(() => {
     setCompletionSummary(latestExecutionSummary(task));
     setEvidenceQueue([]);
+    setRequirementState(normalizeRequirementState(task.requirementState));
     setQueuedStatus(null);
     setSyncError(null);
     setSyncState('idle');
     setCloseArmed(false);
   }, [task.id]);
+
+  useEffect(() => {
+    setRequirementState(normalizeRequirementState(task.requirementState));
+  }, [task.requirementState]);
 
   useEffect(() => {
     setTimerBaseSeconds(minutesToSeconds(task.spentMinutes));
@@ -138,6 +153,23 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     return timerBaseSeconds + runningSeconds;
   }, [clockNow, task.status, timerBaseSeconds, timerStartedAt]);
 
+  const requirements = useMemo(() => requirementsForTask(task), [task]);
+
+  const spentMinutesForPatch = () => Math.max(task.spentMinutes ?? 0, Math.ceil(elapsedSeconds / 60));
+
+  const completionSignals = useMemo<CompletionSignals>(() => ({
+    attachmentCount: task.attachmentCount,
+    queuedEvidenceCount: evidenceQueue.length,
+    costCount: task.costs.length,
+    elapsedSeconds,
+    spentMinutes: spentMinutesForPatch(),
+    summary: completionSummary,
+  }), [completionSummary, elapsedSeconds, evidenceQueue.length, task.attachmentCount, task.costs.length, task.spentMinutes]);
+
+  const missingCompletionRequirements = useMemo(() => (
+    missingRequiredRequirements(requirements, requirementState, completionSignals)
+  ), [completionSignals, requirementState, requirements]);
+
   const sendComment = async () => {
     const text = draftComment.trim();
     if (!text) return;
@@ -149,8 +181,6 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
       onBumpRev();
     });
   };
-
-  const spentMinutesForPatch = () => Math.max(task.spentMinutes ?? 0, Math.ceil(elapsedSeconds / 60));
 
   const runApiMutation = async (label: string, fn: () => Promise<void>) => {
     setSyncError(null);
@@ -175,6 +205,13 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
 
   const setStatus = async (status: Task['status']) => {
     setCloseArmed(false);
+    if (status === 'completed' && missingCompletionRequirements.length > 0) {
+      const missing = missingCompletionRequirements.map((req) => req.label).join(', ');
+      setSyncState('failed');
+      setSyncError(`Complete blocked: ${missing}.`);
+      fireToast('Complete blocked: finish required checklist');
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setQueuedStatus(status);
       setSyncState('queued');
@@ -196,6 +233,31 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
       }
       onBumpRev();
     });
+  };
+
+  const persistRequirementState = async (next: TaskRequirementState) => {
+    const normalized = normalizeRequirementState({ ...next, updatedAt: new Date().toISOString() });
+    await runApiMutation('requirement checklist', async () => {
+      await updateTask({ taskId: task.id, patch: { requirementState: normalized }, actorId: currentUserId });
+      setRequirementState(normalized);
+      onBumpRev();
+    });
+  };
+
+  const toggleRequirement = async (requirementId: string) => {
+    const complete = requirementState.completedIds.includes(requirementId);
+    const completedIds = complete
+      ? requirementState.completedIds.filter((id) => id !== requirementId)
+      : [...requirementState.completedIds, requirementId];
+    await persistRequirementState({ ...requirementState, completedIds });
+  };
+
+  const toggleWaiver = async (requirementId: string) => {
+    const waived = requirementState.waivedIds.includes(requirementId);
+    const waivedIds = waived
+      ? requirementState.waivedIds.filter((id) => id !== requirementId)
+      : [...requirementState.waivedIds, requirementId];
+    await persistRequirementState({ ...requirementState, waivedIds });
   };
 
   const retryQueuedStatus = async () => {
@@ -266,6 +328,12 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           onSetStatus={setStatus}
           evidenceQueue={evidenceQueue}
           onEvidenceSelected={onEvidenceSelected}
+          requirements={requirements}
+          requirementState={requirementState}
+          completionSignals={completionSignals}
+          missingCompletionRequirements={missingCompletionRequirements}
+          onToggleRequirement={toggleRequirement}
+          onToggleWaiver={toggleWaiver}
           onReportIssue={onReportIssue}
         />
         <Comments
@@ -415,6 +483,12 @@ function Body({
   onSetStatus,
   evidenceQueue,
   onEvidenceSelected,
+  requirements,
+  requirementState,
+  completionSignals,
+  missingCompletionRequirements,
+  onToggleRequirement,
+  onToggleWaiver,
   onReportIssue,
 }: {
   task: Task;
@@ -440,6 +514,12 @@ function Body({
   onSetStatus: (s: Task['status']) => void;
   evidenceQueue: EvidenceItem[];
   onEvidenceSelected: (files: FileList | null) => void;
+  requirements: TaskRequirement[];
+  requirementState: TaskRequirementState;
+  completionSignals: CompletionSignals;
+  missingCompletionRequirements: TaskRequirement[];
+  onToggleRequirement: (requirementId: string) => void;
+  onToggleWaiver: (requirementId: string) => void;
   onReportIssue?: (task: Task) => void;
 }) {
   const assignees = task.assigneeIds.map((id) => TASK_USER_BY_ID[id]).filter(Boolean);
@@ -462,6 +542,19 @@ function Body({
         onRetryQueuedStatus={onRetryQueuedStatus}
         onSetStatus={onSetStatus}
       />
+
+      {requirements.length > 0 && (
+        <RequirementsPanel
+          requirements={requirements}
+          requirementState={requirementState}
+          signals={completionSignals}
+          canEdit={canEdit}
+          canWaive={canManageTasks}
+          missing={missingCompletionRequirements}
+          onToggleRequirement={onToggleRequirement}
+          onToggleWaiver={onToggleWaiver}
+        />
+      )}
 
       {task.description && (
         <Section title="Original description">
@@ -623,6 +716,107 @@ function ExecutionPanel({
         )}
       </div>
     </Section>
+  );
+}
+
+function RequirementsPanel({
+  requirements,
+  requirementState,
+  signals,
+  canEdit,
+  canWaive,
+  missing,
+  onToggleRequirement,
+  onToggleWaiver,
+}: {
+  requirements: TaskRequirement[];
+  requirementState: TaskRequirementState;
+  signals: CompletionSignals;
+  canEdit: boolean;
+  canWaive: boolean;
+  missing: TaskRequirement[];
+  onToggleRequirement: (requirementId: string) => void;
+  onToggleWaiver: (requirementId: string) => void;
+}) {
+  const completed = requirements.filter((req) => requirementSatisfied(req, requirementState, signals)).length;
+  return (
+    <Section title={`Requirements · ${completed}/${requirements.length}`}>
+      <div className="ops-requirements-panel">
+        {missing.length > 0 && (
+          <div className="ops-requirement-alert" role="alert">
+            Complete is blocked by {missing.map((req) => req.label).join(', ')}.
+          </div>
+        )}
+        <div className="ops-requirement-list">
+          {requirements.map((requirement) => (
+            <RequirementRow
+              key={requirement.id}
+              requirement={requirement}
+              state={requirementState}
+              signals={signals}
+              canEdit={canEdit}
+              canWaive={canWaive}
+              onToggleRequirement={onToggleRequirement}
+              onToggleWaiver={onToggleWaiver}
+            />
+          ))}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function RequirementRow({
+  requirement,
+  state,
+  signals,
+  canEdit,
+  canWaive,
+  onToggleRequirement,
+  onToggleWaiver,
+}: {
+  requirement: TaskRequirement;
+  state: TaskRequirementState;
+  signals: CompletionSignals;
+  canEdit: boolean;
+  canWaive: boolean;
+  onToggleRequirement: (requirementId: string) => void;
+  onToggleWaiver: (requirementId: string) => void;
+}) {
+  const waived = state.waivedIds.includes(requirement.id);
+  const done = requirementSatisfied(requirement, state, signals);
+  const manual = requirement.kind === 'check' || requirement.kind === 'supply';
+  const tone = waived ? 'waived' : done ? 'done' : requirement.required ? 'missing' : 'optional';
+  return (
+    <div className={`ops-requirement-row ${tone}`}>
+      <button
+        type="button"
+        className="ops-requirement-toggle"
+        aria-pressed={done}
+        disabled={!canEdit || !manual}
+        onClick={() => onToggleRequirement(requirement.id)}
+        title={manual ? 'Toggle requirement' : 'This requirement is checked from task evidence'}
+      >
+        {done ? 'Done' : manual ? 'Mark' : 'Auto'}
+      </button>
+      <div className="ops-requirement-copy">
+        <div>
+          <strong>{requirement.label}</strong>
+          <span>{requirement.required ? 'Required' : 'Optional'} · {requirementKindLabel(requirement.kind)}</span>
+        </div>
+        {requirement.description && <small>{requirement.description}</small>}
+        <small>{requirementStatusText(requirement, state, signals)}</small>
+      </div>
+      {canWaive && requirement.required && (
+        <button
+          type="button"
+          className="btn ghost sm ops-requirement-waive"
+          onClick={() => onToggleWaiver(requirement.id)}
+        >
+          {waived ? 'Unwaive' : 'Waive'}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1302,6 +1496,45 @@ function minutesToSeconds(minutes?: number): number {
 function shouldPatchSpentMinutes(from: Task['status'], to: Task['status']): boolean {
   if (from === 'in_progress') return true;
   return to === 'completed' || to === 'blocked' || to === 'paused';
+}
+
+function requirementKindLabel(kind: TaskRequirement['kind']): string {
+  const labels: Record<TaskRequirement['kind'], string> = {
+    check: 'Checklist',
+    photo: 'Photo',
+    file: 'File',
+    expense: 'Expense',
+    supply: 'Supply',
+    time: 'Time',
+    summary: 'Summary',
+  };
+  return labels[kind];
+}
+
+function requirementStatusText(
+  requirement: TaskRequirement,
+  state: TaskRequirementState,
+  signals: CompletionSignals,
+): string {
+  if (state.waivedIds.includes(requirement.id)) return 'Waived by manager.';
+  if (requirement.kind === 'check' || requirement.kind === 'supply') {
+    return state.completedIds.includes(requirement.id) ? 'Marked complete.' : 'Needs manual confirmation.';
+  }
+  if (requirement.kind === 'photo' || requirement.kind === 'file') {
+    const count = signals.attachmentCount + signals.queuedEvidenceCount;
+    if (count > 0) return `${count} evidence item${count === 1 ? '' : 's'} attached or queued.`;
+    return requirement.evidenceHint || 'Attach evidence before completing.';
+  }
+  if (requirement.kind === 'expense') {
+    return signals.costCount > 0 ? `${signals.costCount} cost line${signals.costCount === 1 ? '' : 's'} recorded.` : 'Add a cost line before completing.';
+  }
+  if (requirement.kind === 'time') {
+    return signals.spentMinutes > 0 || signals.elapsedSeconds > 0 ? 'Time captured.' : 'Start the timer or record spent minutes.';
+  }
+  if (requirement.kind === 'summary') {
+    return signals.summary.trim() ? 'Summary ready.' : 'Write the execution summary before completing.';
+  }
+  return 'Waiting for completion.';
 }
 
 function formatDuration(seconds: number): string {

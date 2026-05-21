@@ -6492,6 +6492,97 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-sync-notice.queued { border-left-color: var(--color-text-warning); }
 .ops-sync-notice.failed { border-left-color: var(--color-text-danger); }
 
+.ops-requirements-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ops-requirement-alert {
+  padding: 9px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--color-text-danger);
+  background: var(--color-bg-danger);
+  color: var(--color-text-danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ops-requirement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ops-requirement-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-left: 3px solid var(--color-border-secondary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+}
+
+.ops-requirement-row.done { border-left-color: var(--color-text-success); }
+.ops-requirement-row.waived { border-left-color: var(--color-text-warning); }
+.ops-requirement-row.missing { border-left-color: var(--color-text-danger); }
+
+.ops-requirement-toggle {
+  min-width: 54px;
+  min-height: 44px;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: 6px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ops-requirement-toggle[aria-pressed="true"] {
+  border-color: var(--color-text-success);
+  color: var(--color-text-success);
+}
+
+.ops-requirement-toggle:disabled {
+  color: var(--color-text-tertiary);
+}
+
+.ops-requirement-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ops-requirement-copy > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ops-requirement-copy strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.ops-requirement-copy span,
+.ops-requirement-copy small {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ops-requirement-waive {
+  min-width: 72px;
+}
+
 .ops-context-panel,
 .ops-details-grid {
   display: grid;
@@ -6682,6 +6773,14 @@ body:has(.ops-create-drawer) .bug-fab {
   }
   .ops-summary-actions span {
     flex: 0 1 auto;
+  }
+  .ops-requirement-row {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+  .ops-requirement-waive {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
   }
   .ops-mobile-execution-bar {
     gap: 8px;

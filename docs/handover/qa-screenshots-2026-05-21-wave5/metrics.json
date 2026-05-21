@@ -1,0 +1,51 @@
+{
+  "browser": "Browser plugin for interaction proof; standalone Playwright fallback for viewport screenshots because Browser viewport screenshots were blank while DOM was present",
+  "route": "http://localhost:3021/fad?m=operations&sub=all&task=qa-req-1",
+  "viewports": [
+    {
+      "width": 320,
+      "height": 760,
+      "docOverflow": 0,
+      "detailOverflow": 0,
+      "smallTargets": 0,
+      "hasRequirements": true,
+      "hasPrimaryAction": true
+    },
+    {
+      "width": 375,
+      "height": 780,
+      "docOverflow": 0,
+      "detailOverflow": 0,
+      "smallTargets": 0,
+      "hasRequirements": true,
+      "hasPrimaryAction": true
+    },
+    {
+      "width": 430,
+      "height": 820,
+      "docOverflow": 0,
+      "detailOverflow": 0,
+      "smallTargets": 0,
+      "hasRequirements": true,
+      "hasPrimaryAction": true
+    },
+    {
+      "width": 768,
+      "height": 900,
+      "docOverflow": 0,
+      "detailOverflow": 0,
+      "smallTargets": 0,
+      "hasRequirements": true,
+      "hasPrimaryAction": true
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "docOverflow": 0,
+      "detailOverflow": 0,
+      "smallTargets": 0,
+      "hasRequirements": true,
+      "hasPrimaryAction": true
+    }
+  ]
+}
