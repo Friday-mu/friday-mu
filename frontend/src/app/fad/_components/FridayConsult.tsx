@@ -79,6 +79,13 @@ interface ConsultResponse {
   sessionId?: string;
   missingKnowledge?: boolean;
   compacted?: boolean;
+  metadata?: {
+    fallbackUsed?: boolean;
+    degraded?: boolean;
+    modelTimeout?: boolean;
+    fullThread?: boolean;
+    messageCount?: number;
+  };
 }
 
 type ConsultContext =
@@ -161,8 +168,6 @@ interface Props {
    *  there's no currentDraft, this should send the body as a manual
    *  compose (mode=manual). */
   onApproveDraft?: (body: string) => void;
-  /** Reject the active Inbox draft with optional learning feedback. */
-  onRejectDraft?: (reason?: string) => void;
   /** Send as a manual compose (when no currentDraft). Identical to
    *  approve from the operator's POV — Approve & Send always works. */
   onSendManual?: (body: string) => void;
@@ -185,6 +190,7 @@ interface Props {
   pendingQuery?: string | null;
   onPendingQueryConsumed?: () => void;
 
+  onRefreshThread?: () => void;
   onClose: () => void;
 }
 
@@ -197,13 +203,13 @@ export function FridayConsult({
   channelLabel,
   whatsappWindow,
   onApproveDraft,
-  onRejectDraft,
   onSendManual,
   sendBusy = false,
   onBodyChanged,
   onSwitchToNote,
   pendingQuery,
   onPendingQueryConsumed,
+  onRefreshThread,
   onClose,
 }: Props) {
   // The "working draft body" is what the operator will eventually send.
@@ -225,8 +231,6 @@ export function FridayConsult({
     onBodyChanged?.(workingBody);
   }, [workingBody, onBodyChanged]);
 
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
   // Live confidence on the most recent consult turn. Surfaces in the
   // DraftCard header so the operator can see how confident Friday is
   // in their latest rewrite, separate from the original draft confidence
@@ -480,6 +484,11 @@ export function FridayConsult({
 
       if (data?.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
       setMissingKnowledge(Boolean(data?.missingKnowledge));
+      if (data?.metadata?.degraded) {
+        setError('Friday timed out on the full context. Nothing changed; retry with a narrower ask.');
+      } else if (data?.metadata?.fallbackUsed || data?.metadata?.modelTimeout) {
+        setError(null);
+      }
       const nextConfidence = confidenceRatio(data?.confidence);
       if (nextConfidence !== null) setLatestConfidence(nextConfidence);
 
@@ -525,6 +534,9 @@ export function FridayConsult({
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Friday is unreachable right now.';
+      if (msg.includes('draft_stale') || msg.includes('invalid_draft_state')) {
+        onRefreshThread?.();
+      }
       setError(msg);
     } finally {
       setThinking(false);
@@ -537,13 +549,6 @@ export function FridayConsult({
     if (!workingBody.trim() || sendBusy) return;
     if (currentDraft && onApproveDraft) onApproveDraft(workingBody.trim());
     else if (onSendManual) onSendManual(workingBody.trim());
-  };
-
-  const submitReject = () => {
-    if (!onRejectDraft || !currentDraft) return;
-    onRejectDraft(rejectReason.trim() || undefined);
-    setRejecting(false);
-    setRejectReason('');
   };
 
 
@@ -830,13 +835,7 @@ export function FridayConsult({
                 channelLabel={channelLabel}
                 whatsappWindow={whatsappWindow}
                 sendBusy={sendBusy}
-                rejecting={rejecting}
-                rejectReason={rejectReason}
-                setRejectReason={setRejectReason}
                 onApprove={submitApprove}
-                onStartReject={() => setRejecting(true)}
-                onConfirmReject={submitReject}
-                onCancelReject={() => { setRejecting(false); setRejectReason(''); }}
                 onChipClick={submit}
                 onConfirmTeaching={confirmTeaching}
                 onDismissTeaching={dismissTeaching}
@@ -973,8 +972,8 @@ function AskFridayInput({
         type="button"
         onClick={onToggleFullThread}
         title={useFullThread
-          ? 'On — your next question includes the entire thread. Click to turn off.'
-          : 'Off — Friday sees the last 20 messages. Click to include the full thread.'}
+          ? 'On — Friday loads the full thread for your next question. Click to turn off.'
+          : 'Off — Friday loads the recent thread context. Click to include the full thread.'}
         style={{
           padding: '5px 7px',
           fontSize: 10,
@@ -1048,13 +1047,7 @@ function MessageRow({
   channelLabel,
   whatsappWindow,
   sendBusy,
-  rejecting,
-  rejectReason,
-  setRejectReason,
   onApprove,
-  onStartReject,
-  onConfirmReject,
-  onCancelReject,
   onChipClick: _onChipClick,
   onConfirmTeaching,
   onDismissTeaching,
@@ -1068,19 +1061,13 @@ function MessageRow({
   channelLabel?: string;
   whatsappWindow?: WhatsAppWindow;
   sendBusy: boolean;
-  rejecting: boolean;
-  rejectReason: string;
-  setRejectReason: (s: string) => void;
   onApprove: () => void;
-  onStartReject: () => void;
-  onConfirmReject: () => void;
-  onCancelReject: () => void;
   onChipClick: (text: string) => void;
   onConfirmTeaching: (msgIndex: number, actionIndex: number, ta: TeachingAction, extraPropertyCodes?: string[]) => void;
   onDismissTeaching: (msgIndex: number, actionIndex: number) => void;
 }) {
   // Draft-role messages render very differently from chat:
-  //   - Latest = an editable card with Approve & send + Reject buttons
+  //   - Latest = an editable card with Approve & send
   //   - Older = read-only "Friday's draft (rev N)" surface, accent-soft
   if (m.role === 'draft') {
     if (isLatestDraft) {
@@ -1096,14 +1083,8 @@ function MessageRow({
             channelLabel={channelLabel}
             whatsappWindow={whatsappWindow}
             sendBusy={sendBusy}
-            rejecting={rejecting}
-            rejectReason={rejectReason}
-            setRejectReason={setRejectReason}
             onApprove={onApprove}
-            onStartReject={onStartReject}
-            onConfirmReject={onConfirmReject}
-            onCancelReject={onCancelReject}
-            canReject={!!m.draftId}
+            isPersistedDraft={!!m.draftId}
           />
         </div>
       );
@@ -1193,8 +1174,8 @@ function DraftMessageHistory({ body, revisionNumber }: { body: string; revisionN
   );
 }
 
-// Active (latest) draft card — editable textarea + Approve & send +
-// Reject. Replaces the previous EmbeddedDraftCard standalone surface;
+// Active (latest) draft card — editable textarea + Approve & send.
+// Replaces the previous EmbeddedDraftCard standalone surface;
 // now rendered inline as a chat message so revisions stack like
 // tool-call results in conversational order.
 function DraftMessageActive({
@@ -1205,14 +1186,8 @@ function DraftMessageActive({
   channelLabel,
   whatsappWindow,
   sendBusy,
-  rejecting,
-  rejectReason,
-  setRejectReason,
   onApprove,
-  onStartReject,
-  onConfirmReject,
-  onCancelReject,
-  canReject,
+  isPersistedDraft,
 }: {
   workingBody: string;
   setWorkingBody: (s: string) => void;
@@ -1221,14 +1196,8 @@ function DraftMessageActive({
   channelLabel?: string;
   whatsappWindow?: WhatsAppWindow;
   sendBusy: boolean;
-  rejecting: boolean;
-  rejectReason: string;
-  setRejectReason: (s: string) => void;
   onApprove: () => void;
-  onStartReject: () => void;
-  onConfirmReject: () => void;
-  onCancelReject: () => void;
-  canReject: boolean;
+  isPersistedDraft: boolean;
 }) {
   const tier = confidenceTier(liveConfidence ?? undefined);
   const confLabel = typeof liveConfidence === 'number' ? `${Math.round(liveConfidence * 100)}%` : null;
@@ -1291,7 +1260,7 @@ function DraftMessageActive({
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            if (!sendDisabled && !rejecting) onApprove();
+            if (!sendDisabled) onApprove();
           }
         }}
         placeholder="Draft body…"
@@ -1311,86 +1280,32 @@ function DraftMessageActive({
           resize: 'vertical',
           boxSizing: 'border-box',
         }}
-        disabled={sendBusy || rejecting}
+        disabled={sendBusy}
       />
-      {rejecting ? (
-        <div style={{ marginTop: 8 }}>
-          <input
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            placeholder="Why is this draft wrong? (Friday learns — leave empty to dismiss silently)"
-            style={{
-              width: '100%',
-              padding: '7px 10px',
-              fontSize: 12,
-              color: 'var(--color-text-primary)',
-              background: 'var(--color-background-primary)',
-              border: '0.5px solid var(--color-border-secondary)',
-              borderRadius: 'var(--radius-sm)',
-              boxSizing: 'border-box',
-            }}
-            autoFocus
-          />
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            <button
-              type="button"
-              onClick={onConfirmReject}
-              style={{
-                padding: '6px 10px',
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#fff',
-                background: 'var(--color-text-danger)',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              <IconClose size={11} /> {rejectReason.trim() ? 'Reject with feedback' : 'Dismiss'}
-            </button>
-            <button
-              type="button"
-              onClick={onCancelReject}
-              style={{
-                padding: '6px 10px',
-                fontSize: 12,
-                color: 'var(--color-text-secondary)',
-                background: 'transparent',
-                border: '0.5px solid var(--color-border-secondary)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={onApprove}
-            disabled={sendDisabled}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '5px 10px',
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#fff',
-              background: 'var(--color-brand-accent)',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              cursor: sendDisabled ? 'not-allowed' : 'pointer',
-              opacity: sendDisabled ? 0.5 : 1,
-            }}
-            title="Cmd/Ctrl+Enter also sends"
-          >
-            <IconSend size={11} /> Send
-          </button>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={onApprove}
+          disabled={sendDisabled}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '5px 10px',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#fff',
+            background: 'var(--color-brand-accent)',
+            border: 'none',
+            borderRadius: 'var(--radius-sm)',
+            cursor: sendDisabled ? 'not-allowed' : 'pointer',
+            opacity: sendDisabled ? 0.5 : 1,
+          }}
+          title="Cmd/Ctrl+Enter also sends"
+        >
+          <IconSend size={11} /> {isPersistedDraft ? 'Approve & send' : 'Send'}
+        </button>
+      </div>
     </div>
   );
 }

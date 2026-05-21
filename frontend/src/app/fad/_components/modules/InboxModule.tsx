@@ -60,6 +60,25 @@ function formatRelative(iso: string): string {
   if (diffD < 7) return `${diffD}d`;
   return new Date(t).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 }
+
+function isDraftStateChangeError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error || '');
+  return msg.includes('draft_stale') || msg.includes('invalid_draft_state');
+}
+
+function initialSelectedThreadId(): string {
+  if (typeof window === 'undefined') return 't1';
+  const params = new URLSearchParams(window.location.search);
+  return params.get('thread') || params.get('t') || 't1';
+}
+
+function syncSelectedThreadUrl(threadId: string) {
+  if (typeof window === 'undefined' || !threadId || threadId === 't1') return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('m', 'inbox');
+  url.searchParams.set('thread', threadId);
+  window.history.replaceState(null, '', url.toString());
+}
 import { TASK_USERS, TASK_USER_BY_ID } from '../../_data/tasks';
 import { useChannels, useDms } from '../../_data/teamInboxClient';
 import {
@@ -99,7 +118,7 @@ interface Props {
   onAskFriday: () => void;
 }
 
-export function InboxModule({ onAskFriday }: Props) {
+export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   const canSeeGuest = useCanAccess('inbox_guest', 'read');
   const canSeeTeam = useCanAccess('inbox_team', 'read');
 
@@ -120,7 +139,7 @@ export function InboxModule({ onAskFriday }: Props) {
   const [mentionsOnly, setMentionsOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const [selected, setSelected] = useState('t1');
+  const [selected, setSelected] = useState(initialSelectedThreadId);
   // Compose mode — 'reply' goes to the guest, 'note' is internal-only.
   const [composeMode, setComposeMode] = useState<'reply' | 'note'>('reply');
   const [noteDraft, setNoteDraft] = useState('');
@@ -258,6 +277,7 @@ export function InboxModule({ onAskFriday }: Props) {
   // send_failed surface differently (queued-draft retry cards inline in
   // the thread, not in DraftPanel) — out of scope for v1.
   const activeDraft = thread?.drafts?.find((d) => isReviewReady(d.state));
+  const draftingDraft = thread?.drafts?.find((d) => d.state === 'friday_drafting');
   const problemDraft = thread?.drafts?.find((d) =>
     d.state === 'send_failed' || d.state === 'send_queued' || d.state === 'generation_failed',
   );
@@ -301,6 +321,11 @@ export function InboxModule({ onAskFriday }: Props) {
           // WhatsApp 24h window expired — surface the special toast.
           if (msg.includes('whatsapp_window_expired')) {
             fireToast('WhatsApp 24h window expired — use a template');
+          } else if (isDraftStateChangeError(e)) {
+            setDraftError('The conversation changed after this draft was written. Refreshed the thread.');
+            fireToast('Conversation changed — refreshed latest draft');
+            refetchDetail();
+            refetchConversations();
           } else {
             setDraftError(msg);
             fireToast(msg);
@@ -313,7 +338,7 @@ export function InboxModule({ onAskFriday }: Props) {
       setPendingSend((p) => p ? { ...p, countdown: p.countdown - 1 } : null);
     }, 1000);
     return () => clearTimeout(t);
-  }, [pendingSend, refetchDetail]);
+  }, [pendingSend, refetchDetail, refetchConversations]);
 
   // Detect a new draft after a revise. When activeDraft.revisionNumber
   // increases past prevDraftRevRef, clear the revising spinner.
@@ -361,7 +386,7 @@ export function InboxModule({ onAskFriday }: Props) {
     if (!activeDraft) return;
     setDraftError(null);
     // Phase 2: open preflight modal first (channel selector, body
-    // preview, teachables review, learnMode). Modal Confirm → 5s undo
+    // preview, teachables review). Modal Confirm → 5s undo
     // countdown. Modal Cancel → no send.
     const body = opts.draftBody ?? activeDraft.body;
     if (!body.trim()) return;
@@ -372,7 +397,7 @@ export function InboxModule({ onAskFriday }: Props) {
   // is the 5s undo + /api/inbox/drafts/:id/approve path. For manual
   // compose it's a direct sendCompose call without the 5s undo (modal
   // already provided the confirmation step; double-confirmation = friction).
-  const confirmPreflight = (opts: { channel: string; learnMode?: 'learn' | 'no_learn' | 'normal' }) => {
+  const confirmPreflight = (opts: { channel: string }) => {
     if (!preflight || !thread) return;
     const { bodyToSend, fromDraft } = preflight;
     setPreflight(null);
@@ -421,8 +446,15 @@ export function InboxModule({ onAskFriday }: Props) {
       })
       .catch((e: Error) => {
         const msg = e?.message || 'Revise failed';
-        setDraftError(msg);
-        fireToast(msg);
+        if (isDraftStateChangeError(e)) {
+          setDraftError('The conversation changed after this draft was written. Refreshed the thread.');
+          fireToast('Conversation changed — refreshed latest draft');
+          refetchDetail();
+          refetchConversations();
+        } else {
+          setDraftError(msg);
+          fireToast(msg);
+        }
       })
       .finally(() => setDraftBusy(false));
   };
@@ -438,8 +470,15 @@ export function InboxModule({ onAskFriday }: Props) {
       })
       .catch((e: Error) => {
         const msg = e?.message || 'Retry failed';
-        setDraftError(msg);
-        fireToast(msg);
+        if (isDraftStateChangeError(e)) {
+          setDraftError('The conversation changed after this failed draft. Refreshed the thread.');
+          fireToast('Conversation changed — refreshed latest draft');
+          refetchDetail();
+          refetchConversations();
+        } else {
+          setDraftError(msg);
+          fireToast(msg);
+        }
       })
       .finally(() => setDraftBusy(false));
   };
@@ -498,8 +537,8 @@ export function InboxModule({ onAskFriday }: Props) {
   // ─── Send preflight modal ────────────────────────────────────────────
   // Phase 2 of the guest inbox: a preflight check between Approve & Send
   // and the 5s undo countdown. Modal lets the operator confirm channel,
-  // review the body + translated version, see pending teachables, set
-  // learnMode. Confirm → countdown → POST. Cancel → no send.
+  // review the body + translated version, and see pending teachables.
+  // Confirm → countdown → POST. Cancel → no send.
   //
   // Why both modal AND countdown: preflight catches "wrong channel /
   // wrong body / forgot to commit a teach". Countdown catches "I just
@@ -623,6 +662,35 @@ export function InboxModule({ onAskFriday }: Props) {
 
   const actions = (
     <>
+      {canSeeGuest && (
+        <button
+          className={'btn ghost sm' + (triageFilter === 'review' ? ' active' : '')}
+          onClick={() => {
+            setEntityFilter('all');
+            setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
+          }}
+          title="Show guest threads with a draft ready for operator approval"
+          style={{
+            background: triageFilter === 'review' ? 'var(--color-background-tertiary)' : undefined,
+            color: triageFilter === 'review' ? 'var(--color-brand-accent)' : undefined,
+          }}
+        >
+          <IconClock size={14} />
+          <span>Needs reply</span>
+          <span
+            className="mono"
+            style={{
+              fontSize: 10,
+              padding: '0 5px',
+              borderRadius: 8,
+              background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
+              color: triageFilter === 'review' ? 'white' : 'var(--color-text-secondary)',
+            }}
+          >
+            {reviewCount}
+          </span>
+        </button>
+      )}
       <FilterButton
         triageFilter={triageFilter}
         setTriageFilter={setTriageFilter}
@@ -656,28 +724,6 @@ export function InboxModule({ onAskFriday }: Props) {
 
   const chipsRow = (
     <div className="inbox-chips-row">
-      {canSeeGuest && (
-        <button
-          className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}
-          onClick={() => {
-            setEntityFilter('all');
-            setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
-          }}
-          title="Threads with an AI draft awaiting your approval (per old GMS 'in review' section)"
-          style={{
-            // Subtle accent so this stands out from the entity chips
-            // — it's a triage filter, not an entity filter.
-            color: triageFilter === 'review' ? '#fff' : 'var(--color-brand-accent)',
-            borderColor: 'var(--color-brand-accent)',
-            background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'transparent',
-          }}
-        >
-          ● Awaiting reply{' '}
-          <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.85 }}>
-            {reviewCount}
-          </span>
-        </button>
-      )}
       {canSeeGuest && externalChips.map((c) => (
         <button
           key={c.key}
@@ -823,6 +869,7 @@ export function InboxModule({ onAskFriday }: Props) {
               onClick={() => {
                 if (selected !== t.id) manualUnreadThreadRef.current = null;
                 setSelected(t.id);
+                syncSelectedThreadUrl(t.id);
                 setMobileThreadOpen(true);
               }}
               style={{
@@ -864,20 +911,40 @@ export function InboxModule({ onAskFriday }: Props) {
                   </span>
                   {(t.latestDraftState === 'draft_ready' || t.latestDraftState === 'under_review') && (
                     <span
-                      title="Friday drafted a reply — awaiting your approval"
+                      title="Friday drafted a reply for operator approval"
                       style={{
-                        fontSize: 9,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        fontSize: 10,
                         color: '#fff',
-                        padding: '1px 5px',
+                        padding: '1px 5px 1px 4px',
                         background: 'var(--color-brand-accent)',
                         borderRadius: 4,
                         flexShrink: 0,
                         fontWeight: 600,
                       }}
                     >
-                      ● reply
+                      <IconClock size={10} stroke={2} />
+                      Reply
+                    </span>
+                  )}
+                  {t.latestDraftState === 'friday_drafting' && (
+                    <span
+                      title="Friday is drafting a reply"
+                      style={{
+                        fontSize: 9,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        color: 'var(--color-brand-accent)',
+                        padding: '1px 5px',
+                        background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.08))',
+                        borderRadius: 4,
+                        flexShrink: 0,
+                        fontWeight: 600,
+                      }}
+                    >
+                      drafting
                     </span>
                   )}
                   {t.entity !== 'guest' && (
@@ -1100,13 +1167,28 @@ export function InboxModule({ onAskFriday }: Props) {
             {INBOX_INTERNAL_NOTES.filter((n) => n.threadId === thread.id).map((n) => (
               <InternalNoteBubble key={n.id} note={n} />
             ))}
-            {/* The fake "Drafting a reply… use ⌘K" placeholder bubble was
-                purged 2026-05-13 (design-be-19). It was a fixture-era hint
-                that rendered for every thread regardless of whether the
-                user was actually drafting; the compose textarea below
-                already exposes the draft surface. */}
-          </div>
-          {problemDraft && (
+	            {/* The fake "Drafting a reply… use ⌘K" placeholder bubble was
+	                purged 2026-05-13 (design-be-19). It was a fixture-era hint
+	                that rendered for every thread regardless of whether the
+	                user was actually drafting; the compose textarea below
+	                already exposes the draft surface. */}
+	          </div>
+	          {draftingDraft && !activeDraft && (
+	            <div
+	              style={{
+	                margin: '8px 12px',
+	                padding: '8px 10px',
+	                fontSize: 12,
+	                color: 'var(--color-text-secondary)',
+	                background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.06))',
+	                border: '0.5px solid var(--color-border-accent, rgba(56, 132, 255, 0.25))',
+	                borderRadius: 'var(--radius-sm)',
+	              }}
+	            >
+	              <IconSparkle size={12} /> Friday is drafting a reply. This thread will refresh when it is ready.
+	            </div>
+	          )}
+	          {problemDraft && (
             <DraftProblemCard
               draft={problemDraft}
               busy={draftBusy}
@@ -1126,6 +1208,11 @@ export function InboxModule({ onAskFriday }: Props) {
               key={selected}
               pendingQuery={pendingConsultQuery}
               onPendingQueryConsumed={() => setPendingConsultQuery(null)}
+              onRefreshThread={() => {
+                fireToast('Conversation changed — refreshed latest thread');
+                refetchDetail();
+                refetchConversations();
+              }}
               threadScope={thread.guest}
               conversationId={thread.id}
               currentDraft={activeDraft ?? null}
@@ -1136,12 +1223,10 @@ export function InboxModule({ onAskFriday }: Props) {
               sendBusy={draftBusy || composeBusy || !!pendingSend || !!preflight}
               onApproveDraft={(body) => {
                 // Open preflight instead of going straight to 5s undo.
-                // Modal confirms channel + learnMode + lets operator
-                // review teachables; then countdown fires.
+                // Modal confirms channel/body; then countdown fires.
                 if (!body.trim()) return;
                 setPreflight({ bodyToSend: body, fromDraft: true });
               }}
-              onRejectDraft={handleReject}
               onSendManual={(body) => {
                 // Manual compose path also funnels through preflight.
                 // Different downstream API (mode=manual via compose),
@@ -1277,7 +1362,10 @@ export function InboxModule({ onAskFriday }: Props) {
           )}
           <ReservationRightPanel
             thread={thread}
-            onAskFriday={onAskFriday}
+            onAskFriday={() => {
+              setConsultOpen(true);
+              setPendingConsultQuery('Review this reservation and conversation context. What should I know before replying?');
+            }}
           />
         </div>
       </div>
@@ -1500,6 +1588,37 @@ function ReservationRightPanel({
     return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
   };
 
+  const partyLabel = (): string => {
+    if (!r) return '—';
+    const total = typeof r.numGuests === 'number' ? `${r.numGuests} ${r.numGuests === 1 ? 'guest' : 'guests'}` : '—';
+    const breakdown = [
+      typeof r.adults === 'number' ? `${r.adults} adult${r.adults === 1 ? '' : 's'}` : '',
+      typeof r.children === 'number' && r.children > 0 ? `${r.children} child${r.children === 1 ? '' : 'ren'}` : '',
+      typeof r.infants === 'number' && r.infants > 0 ? `${r.infants} infant${r.infants === 1 ? '' : 's'}` : '',
+    ].filter(Boolean);
+    return breakdown.length ? `${total} · ${breakdown.join(', ')}` : total;
+  };
+
+  const availabilityLabel = (): string | null => {
+    const a = r?.availability;
+    if (!a) return null;
+    if (a.status === 'missing' || a.status === 'error') return a.message || statusLabel(a.status);
+    const bits = [
+      typeof a.rowsCached === 'number' && typeof a.nightsRequested === 'number'
+        ? `${a.rowsCached}/${a.nightsRequested} nights cached`
+        : typeof a.rowsCached === 'number'
+          ? `${a.rowsCached} nights cached`
+          : '',
+      a.blockedDates?.length ? `${a.blockedDates.length} blocked` : '',
+      typeof a.minPrice === 'number' && typeof a.maxPrice === 'number'
+        ? a.minPrice === a.maxPrice
+          ? fmtMoney(a.minPrice, a.currency || r?.currency)
+          : `${fmtMoney(a.minPrice, a.currency || r?.currency)}-${fmtMoney(a.maxPrice, a.currency || r?.currency)}`
+        : '',
+    ].filter(Boolean);
+    return bits.join(' · ') || statusLabel(a.status);
+  };
+
   return (
     <>
       <div className="inbox-right-section">
@@ -1518,6 +1637,12 @@ function ReservationRightPanel({
               <span className="label">Status</span>
               <span className="value">{statusLabel(r.status)}</span>
             </div>
+            {(r.confirmationCode || r.guestyReservationId) && (
+              <div className="inbox-right-row">
+                <span className="label">Code</span>
+                <span className="value mono" style={{ fontSize: 11 }}>{r.confirmationCode || r.guestyReservationId}</span>
+              </div>
+            )}
             <div className="inbox-right-row">
               <span className="label">Check-in</span>
               <span className="value">{fmtDate(r.checkIn)}</span>
@@ -1535,12 +1660,14 @@ function ReservationRightPanel({
             </div>
             <div className="inbox-right-row">
               <span className="label">Guests</span>
-              <span className="value">{r.numGuests ?? '—'}</span>
+              <span className="value">{partyLabel()}</span>
             </div>
-            <div className="inbox-right-row">
-              <span className="label">Total</span>
-              <span className="value">{fmtMoney(r.totalPrice, r.currency)}</span>
-            </div>
+            {(r.channel || r.source) && (
+              <div className="inbox-right-row">
+                <span className="label">Source</span>
+                <span className="value">{[r.channel, r.source].filter(Boolean).join(' · ')}</span>
+              </div>
+            )}
             {r.specialRequests && (
               <div className="inbox-right-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
                 <span className="label">Special requests</span>
@@ -1552,6 +1679,54 @@ function ReservationRightPanel({
           </>
         )}
       </div>
+
+      {r && (
+        <div className="inbox-right-section">
+          <h4>Financials</h4>
+          <div className="inbox-right-row">
+            <span className="label">Total</span>
+            <span className="value">{fmtMoney(r.totalPrice, r.currency)}</span>
+          </div>
+          <div className="inbox-right-row">
+            <span className="label">Paid</span>
+            <span className="value">{fmtMoney(r.amountPaid, r.currency)}</span>
+          </div>
+          <div className="inbox-right-row">
+            <span className="label">Outstanding</span>
+            <span className="value">{fmtMoney(r.outstandingBalance, r.currency)}</span>
+          </div>
+          {r.paymentStatus && (
+            <div className="inbox-right-row">
+              <span className="label">Payment</span>
+              <span className="value">{statusLabel(r.paymentStatus)}</span>
+            </div>
+          )}
+          {(r.nightlyRate != null || r.cleaningFee != null || r.accommodationFare != null) && (
+            <>
+              <div className="inbox-right-row">
+                <span className="label">Nightly</span>
+                <span className="value">{fmtMoney(r.nightlyRate, r.currency)}</span>
+              </div>
+              <div className="inbox-right-row">
+                <span className="label">Cleaning</span>
+                <span className="value">{fmtMoney(r.cleaningFee, r.currency)}</span>
+              </div>
+              <div className="inbox-right-row">
+                <span className="label">Stay fare</span>
+                <span className="value">{fmtMoney(r.accommodationFare, r.currency)}</span>
+              </div>
+            </>
+          )}
+          {availabilityLabel() && (
+            <div className="inbox-right-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <span className="label">Availability cache</span>
+              <span className="value" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                {availabilityLabel()}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="inbox-right-section">
         <h4>Guest</h4>
@@ -1727,7 +1902,7 @@ function WhatsAppTimer({
 const TRIAGE_OPTIONS: { value: 'all' | 'unread' | 'review' | 'open' | 'done'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'unread', label: 'Unread' },
-  { value: 'review', label: 'Review' },
+  { value: 'review', label: 'Needs reply' },
   { value: 'open', label: 'Open' },
   { value: 'done', label: 'Done' },
 ];

@@ -109,6 +109,8 @@ describe('conversation list route', () => {
     const sql = query.mock.calls[0][0];
     expect(sql).toContain("d.state IN ('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')");
     expect(sql).toContain("draft_message.direction = 'inbound'");
+    expect(sql).toContain('COALESCE(draft_message.is_auto_response, false) = false');
+    expect(sql).toContain('COALESCE(newer_message.is_auto_response, false) = false');
     expect(sql).toContain('newer_message');
   });
 });

@@ -13,6 +13,123 @@ const CURRENT_STATUSES = new Set([
   'staying',
 ]);
 
+function isoDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function moneyLabel(value, currency) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const code = String(currency || '').trim().toUpperCase();
+  if (!code) return n.toFixed(2);
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return `${code} ${n.toFixed(2)}`;
+  }
+}
+
+function asObject(value) {
+  if (!value) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function getPath(obj, path) {
+  return String(path).split('.').reduce((acc, key) => {
+    if (acc && typeof acc === 'object' && Object.prototype.hasOwnProperty.call(acc, key)) return acc[key];
+    return undefined;
+  }, obj);
+}
+
+function firstValue(obj, paths) {
+  for (const path of paths) {
+    const value = getPath(obj, path);
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
+
+function numberValue(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return numberValue(value.amount ?? value.value ?? value.total ?? value.hostAmount ?? value.guestAmount);
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function moneyValue(obj, paths) {
+  const value = firstValue(obj, paths);
+  return numberValue(value);
+}
+
+function inferFinancialContext(row) {
+  const raw = asObject(row?.raw);
+  const money = asObject(raw.money);
+  const payments = Array.isArray(raw.payments)
+    ? raw.payments
+    : Array.isArray(money.payments)
+      ? money.payments
+      : [];
+  const paidFromPayments = payments.reduce((sum, payment) => {
+    const amount = numberValue(payment?.amount ?? payment?.value ?? payment?.paidAmount);
+    const status = String(payment?.status || '').toLowerCase();
+    if (amount == null || ['failed', 'cancelled', 'canceled', 'void', 'refunded'].includes(status)) return sum;
+    return sum + amount;
+  }, 0);
+  const amountPaid = moneyValue(raw, [
+    'money.totalPaid',
+    'money.paid',
+    'money.paidAmount',
+    'money.amountPaid',
+    'money.paymentsTotal',
+    'payment.totalPaid',
+    'payment.paidAmount',
+    'financials.totalPaid',
+  ]);
+  const outstandingBalance = moneyValue(raw, [
+    'money.balanceDue',
+    'money.remainingBalance',
+    'money.outstandingBalance',
+    'money.balance',
+    'payment.balanceDue',
+    'payment.outstandingBalance',
+    'financials.balanceDue',
+  ]);
+  const paymentStatus = firstValue(raw, [
+    'paymentStatus',
+    'payment.status',
+    'money.paymentStatus',
+    'money.status',
+    'financialStatus',
+  ]);
+  return {
+    amount_paid: amountPaid != null ? amountPaid : (paidFromPayments > 0 ? paidFromPayments : null),
+    outstanding_balance: outstandingBalance,
+    payment_status: paymentStatus ? String(paymentStatus) : null,
+    fare_accommodation: moneyValue(raw, ['money.fareAccommodation', 'money.accommodationFare', 'money.subtotalPrice']),
+    cleaning_fee: moneyValue(raw, ['money.cleaningFee', 'money.fareCleaning', 'money.cleaningFeeValue']),
+    nightly_rate: moneyValue(raw, ['money.nightlyRate', 'money.averageNightlyRate']),
+  };
+}
+
 function normalizeName(value) {
   return String(value || '')
     .toLowerCase()
@@ -94,12 +211,14 @@ function shapeReservationForInbox(row, source = 'legacy') {
   if (!row) return null;
   const totalMinor = row.total_amount_minor == null ? null : Number(row.total_amount_minor);
   const totalMajor = Number.isFinite(totalMinor) ? totalMinor / 100 : null;
+  const financial = inferFinancialContext(row);
   const guestName = row.guest_name
     || [row.guest_first_name, row.guest_last_name].filter(Boolean).join(' ').trim()
     || null;
   return {
     id: row.id,
     guesty_reservation_id: row.guesty_reservation_id || row.guesty_id || null,
+    confirmation_code: row.confirmation_code || null,
     listing_name: row.listing_name || row.listing_nickname || row.listing_guesty_id || null,
     listing_guesty_id: row.listing_guesty_id || null,
     status: row.status || null,
@@ -107,16 +226,25 @@ function shapeReservationForInbox(row, source = 'legacy') {
     source,
     check_in: row.check_in || row.check_in_date || null,
     check_out: row.check_out || row.check_out_date || null,
-    number_of_nights: row.number_of_nights || row.nights || null,
-    num_guests: row.num_guests || row.guests_count || null,
+    number_of_nights: row.number_of_nights ?? row.nights ?? null,
+    num_guests: row.num_guests ?? row.guests_count ?? null,
+    adults: row.adults ?? null,
+    children: row.children ?? null,
+    infants: row.infants ?? null,
     guest_name: guestName,
     guest_email: row.guest_email || null,
     guest_phone: row.guest_phone || null,
     total_price: row.total_price != null ? row.total_price : totalMajor,
     currency: row.currency || row.currency_code || null,
-    cleaning_fee: row.cleaning_fee || null,
-    nightly_rate: row.nightly_rate || null,
+    amount_paid: financial.amount_paid,
+    outstanding_balance: financial.outstanding_balance,
+    payment_status: financial.payment_status,
+    cleaning_fee: row.cleaning_fee ?? financial.cleaning_fee ?? null,
+    nightly_rate: row.nightly_rate ?? financial.nightly_rate ?? null,
+    accommodation_fare: financial.fare_accommodation,
     special_requests: row.special_requests || null,
+    listing_base_price: row.listing_base_price_minor == null ? null : Number(row.listing_base_price_minor) / 100,
+    listing_currency: row.listing_currency_code || null,
     operational_context_source: source,
   };
 }
@@ -130,8 +258,121 @@ function applyReservationContextToConversation(conversation, reservation) {
     check_out_date: reservation.check_out || conversation.check_out_date,
     num_guests: reservation.num_guests || conversation.num_guests,
     guesty_reservation_id: reservation.guesty_reservation_id || conversation.guesty_reservation_id,
+    reservation_context: reservation,
+    reservation_total_price: reservation.total_price,
+    reservation_currency: reservation.currency,
+    reservation_amount_paid: reservation.amount_paid,
+    reservation_outstanding_balance: reservation.outstanding_balance,
+    reservation_payment_status: reservation.payment_status,
+    reservation_cleaning_fee: reservation.cleaning_fee,
+    reservation_nightly_rate: reservation.nightly_rate,
+    reservation_accommodation_fare: reservation.accommodation_fare,
+    reservation_special_requests: reservation.special_requests,
+    reservation_channel: reservation.channel,
+    reservation_number_of_nights: reservation.number_of_nights,
+    reservation_availability_context: reservation.availability_context || null,
     reservation_context_source: reservation.operational_context_source || null,
   };
+}
+
+async function loadAvailabilityContextForReservation(reservation, tenantId) {
+  if (!tenantId || !reservation?.listing_guesty_id) return null;
+  const from = isoDate(reservation.check_in);
+  const to = isoDate(reservation.check_out);
+  if (!from || !to || from >= to) return null;
+  const { rows } = await query(
+    `SELECT date::text AS date, is_available, status, price_minor, currency_code, min_nights
+       FROM guesty_calendar
+      WHERE tenant_id = $1
+        AND listing_guesty_id = $2
+        AND date >= $3::date
+        AND date < $4::date
+      ORDER BY date ASC`,
+    [tenantId, reservation.listing_guesty_id, from, to],
+  );
+  if (rows.length === 0) {
+    return {
+      source: 'guesty_calendar',
+      status: 'missing',
+      listing_guesty_id: reservation.listing_guesty_id,
+      from,
+      to,
+      nights_requested: reservation.number_of_nights || null,
+      message: 'No cached availability/pricing rows for this stay window. Do not invent rates or open dates.',
+    };
+  }
+  const prices = rows
+    .map((r) => (r.price_minor == null ? null : Number(r.price_minor) / 100))
+    .filter((n) => Number.isFinite(n));
+  const blockedDates = rows
+    .filter((r) => r.is_available === false)
+    .map((r) => String(r.date).slice(0, 10));
+  const currencies = [...new Set(rows.map((r) => r.currency_code).filter(Boolean))];
+  return {
+    source: 'guesty_calendar',
+    status: 'loaded',
+    listing_guesty_id: reservation.listing_guesty_id,
+    from,
+    to,
+    nights_requested: reservation.number_of_nights || rows.length,
+    rows_cached: rows.length,
+    blocked_dates: blockedDates,
+    min_price: prices.length ? Math.min(...prices) : null,
+    max_price: prices.length ? Math.max(...prices) : null,
+    currency: currencies[0] || reservation.currency || reservation.listing_currency || null,
+    min_nights: rows.map((r) => r.min_nights).filter((v) => v != null)[0] || null,
+  };
+}
+
+async function enrichReservationContext(reservation, tenantId) {
+  if (!reservation) return null;
+  const enriched = { ...reservation };
+  try {
+    enriched.availability_context = await loadAvailabilityContextForReservation(enriched, tenantId);
+  } catch (e) {
+    enriched.availability_context = {
+      source: 'guesty_calendar',
+      status: 'error',
+      message: `Availability/pricing cache could not be loaded: ${e.message}`,
+    };
+  }
+  return enriched;
+}
+
+function availabilityPromptLine(availability) {
+  if (!availability) return 'Availability/pricing cache: unavailable; do not invent rates or open dates.';
+  if (availability.status === 'missing' || availability.status === 'error') {
+    return `Availability/pricing cache: ${availability.message || availability.status}; do not invent rates or open dates.`;
+  }
+  const bits = [
+    `${availability.rows_cached || 0}/${availability.nights_requested || '?'} stay nights cached`,
+  ];
+  if (availability.blocked_dates?.length) {
+    bits.push(`blocked dates in cache: ${availability.blocked_dates.join(', ')} (may reflect the confirmed reservation itself)`);
+  }
+  const min = moneyLabel(availability.min_price, availability.currency);
+  const max = moneyLabel(availability.max_price, availability.currency);
+  if (min && max) bits.push(min === max ? `nightly cache price: ${min}` : `nightly cache price range: ${min}-${max}`);
+  if (availability.min_nights) bits.push(`min nights: ${availability.min_nights}`);
+  return `Availability/pricing cache: ${bits.join('; ')}`;
+}
+
+function formatReservationContextForPrompt(reservation) {
+  if (!reservation) return '';
+  const currency = reservation.currency || reservation.listing_currency;
+  const lines = [
+    `[Reservation / Financial / Availability Context]`,
+    `- Source: ${reservation.operational_context_source || reservation.source || 'unknown'}`,
+    `- Reservation: ${reservation.guesty_reservation_id || reservation.id || 'unknown'} (${reservation.status || 'unknown status'})`,
+    `- Guest: ${reservation.guest_name || 'unknown'}; listing: ${reservation.listing_name || reservation.listing_guesty_id || 'unknown'}`,
+    `- Channel: ${reservation.channel || 'unknown'}`,
+    `- Stay: ${reservation.check_in || 'n/a'} -> ${reservation.check_out || 'n/a'}; nights: ${reservation.number_of_nights || 'n/a'}; guests: ${reservation.num_guests || 'n/a'}`,
+    `- Total: ${moneyLabel(reservation.total_price, currency) || 'unknown'}; paid: ${moneyLabel(reservation.amount_paid, currency) || 'unknown'}; outstanding: ${moneyLabel(reservation.outstanding_balance, currency) || 'unknown'}; payment status: ${reservation.payment_status || 'unknown'}`,
+    `- Nightly: ${moneyLabel(reservation.nightly_rate, currency) || 'unknown'}; cleaning: ${moneyLabel(reservation.cleaning_fee, currency) || 'unknown'}; accommodation fare: ${moneyLabel(reservation.accommodation_fare, currency) || 'unknown'}`,
+    `- Special requests: ${reservation.special_requests || 'none recorded'}`,
+    `- ${availabilityPromptLine(reservation.availability_context)}`,
+  ];
+  return lines.join('\n');
 }
 
 async function loadLegacyReservation(conversationId) {
@@ -165,7 +406,9 @@ async function loadGuestyReservationsForConversation(conversation, tenantId) {
   if (filters.length === 0) return [];
 
   const { rows } = await query(
-    `SELECT gr.*, l.nickname AS listing_nickname
+    `SELECT gr.*, l.nickname AS listing_nickname,
+            l.base_price_minor AS listing_base_price_minor,
+            l.currency_code AS listing_currency_code
        FROM guesty_reservations gr
        LEFT JOIN guesty_listings l
          ON l.tenant_id = gr.tenant_id
@@ -190,17 +433,25 @@ async function resolveInboxReservationContext(conversation, { tenantId } = {}) {
   ]);
 
   const liveCandidate = chooseCurrentReservationCandidate(liveRows, conversation);
-  if (liveCandidate) return shapeReservationForInbox(liveCandidate, 'guesty_reservations_current');
-  if (legacyRow) return shapeReservationForInbox(legacyRow, 'reservations_legacy');
+  if (liveCandidate) {
+    return enrichReservationContext(shapeReservationForInbox(liveCandidate, 'guesty_reservations_current'), resolvedTenantId);
+  }
+  if (legacyRow) {
+    return enrichReservationContext(shapeReservationForInbox(legacyRow, 'reservations_legacy'), resolvedTenantId);
+  }
   return null;
 }
 
 module.exports = {
   resolveInboxReservationContext,
   applyReservationContextToConversation,
+  formatReservationContextForPrompt,
   _test: {
     chooseCurrentReservationCandidate,
     shapeReservationForInbox,
+    formatReservationContextForPrompt,
+    availabilityPromptLine,
+    inferFinancialContext,
     normalizeName,
     guestNameParts,
     isCurrentStay,

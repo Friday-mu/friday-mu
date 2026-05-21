@@ -10,7 +10,7 @@
 // with neutral fallbacks so a malformed entry never crashes the page.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch, formatConfidencePercent } from '../../../components/types';
+import { API_BASE, apiFetch, formatConfidencePercent, getToken } from '../../../components/types';
 import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState } from './fixtures';
 
 // ───────── enum mappers ─────────
@@ -207,28 +207,53 @@ function transformGmsReservation(raw: Record<string, unknown>): InboxReservation
   const guestName = raw.guest_name
     ? String(raw.guest_name)
     : [raw.guest_first_name, raw.guest_last_name].filter(Boolean).map(String).join(' ').trim();
+  const availabilityRaw = raw.availability_context && typeof raw.availability_context === 'object'
+    ? raw.availability_context as Record<string, unknown>
+    : undefined;
   return {
     id: String(raw.id || raw.guesty_reservation_id || raw.guesty_id || ''),
     guestyReservationId: raw.guesty_reservation_id
       ? String(raw.guesty_reservation_id)
       : (raw.guesty_id ? String(raw.guesty_id) : undefined),
+    confirmationCode: raw.confirmation_code ? String(raw.confirmation_code) : undefined,
+    source: raw.operational_context_source ? String(raw.operational_context_source) : (raw.source ? String(raw.source) : undefined),
     listingName: raw.listing_name
       ? String(raw.listing_name)
       : (raw.listing_nickname ? String(raw.listing_nickname) : (raw.listing_guesty_id ? String(raw.listing_guesty_id) : undefined)),
+    listingGuestyId: raw.listing_guesty_id ? String(raw.listing_guesty_id) : undefined,
     status: raw.status ? String(raw.status) : undefined,
     channel: raw.channel ? String(raw.channel) : (raw.source ? String(raw.source) : undefined),
     checkIn: raw.check_in ? String(raw.check_in) : (raw.check_in_date ? String(raw.check_in_date) : undefined),
     checkOut: raw.check_out ? String(raw.check_out) : (raw.check_out_date ? String(raw.check_out_date) : undefined),
     numberOfNights: num(raw.number_of_nights ?? raw.nights),
     numGuests: num(raw.num_guests ?? raw.guests_count),
+    adults: num(raw.adults),
+    children: num(raw.children),
+    infants: num(raw.infants),
     guestName: guestName || undefined,
     guestEmail: raw.guest_email ? String(raw.guest_email) : undefined,
     guestPhone: raw.guest_phone ? String(raw.guest_phone) : undefined,
     totalPrice: money(raw.total_price, raw.total_amount_minor),
+    amountPaid: num(raw.amount_paid),
+    outstandingBalance: num(raw.outstanding_balance),
+    paymentStatus: raw.payment_status ? String(raw.payment_status) : undefined,
     currency: raw.currency ? String(raw.currency) : (raw.currency_code ? String(raw.currency_code) : undefined),
+    accommodationFare: num(raw.accommodation_fare),
     cleaningFee: num(raw.cleaning_fee),
     nightlyRate: num(raw.nightly_rate),
     specialRequests: raw.special_requests ? String(raw.special_requests) : undefined,
+    availability: availabilityRaw ? {
+      status: availabilityRaw.status ? String(availabilityRaw.status) : undefined,
+      rowsCached: num(availabilityRaw.rows_cached),
+      nightsRequested: num(availabilityRaw.nights_requested),
+      blockedDates: Array.isArray(availabilityRaw.blocked_dates)
+        ? availabilityRaw.blocked_dates.map(String)
+        : undefined,
+      minPrice: num(availabilityRaw.min_price),
+      maxPrice: num(availabilityRaw.max_price),
+      currency: availabilityRaw.currency ? String(availabilityRaw.currency) : undefined,
+      message: availabilityRaw.message ? String(availabilityRaw.message) : undefined,
+    } : undefined,
   };
 }
 
@@ -499,6 +524,29 @@ export function useLiveConversations(): UseLiveConversationsResult {
 
   useEffect(() => {
     refetch();
+  }, [refetch]);
+
+  useEffect(() => {
+    if (typeof EventSource === 'undefined') return undefined;
+    const token = getToken();
+    if (!token) return undefined;
+    const es = new EventSource(`${API_BASE}/api/events/stream?token=${encodeURIComponent(token)}`);
+    const refresh = () => refetch();
+    const eventTypes = [
+      'inbox.message_received',
+      'inbox.draft_ready',
+      'inbox.message_sent',
+      'inbox.consult_message',
+    ];
+    eventTypes.forEach((type) => es.addEventListener(type, refresh));
+    es.onerror = () => {
+      // EventSource auto-reconnects. The manual refetch button remains
+      // the fallback if the stream is unavailable.
+    };
+    return () => {
+      eventTypes.forEach((type) => es.removeEventListener(type, refresh));
+      es.close();
+    };
   }, [refetch]);
 
   return { threads, loading, error, refetch };

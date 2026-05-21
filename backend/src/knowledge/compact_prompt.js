@@ -53,6 +53,7 @@ function buildCompactKnowledgeAppendix({
   propertyCode,
   activeTeachingBlock,
   actionFeedbackBlock,
+  runtimeKnowledgeBlock,
 }) {
   const parts = [
     '[Compact KB + Learning Context]\nUse this as binding context during fallback. If a fact is not in the thread, property card, active teachings, or compact KB below, do not invent it.',
@@ -76,6 +77,7 @@ function buildCompactKnowledgeAppendix({
 
   addSection(parts, 'active teachings', activeTeachingBlock, 2600);
   addSection(parts, 'team action feedback', actionFeedbackBlock, 1800);
+  addSection(parts, 'runtime STR / platform / ops / sales context', runtimeKnowledgeBlock, 4200);
 
   return `\n\n${parts.join('\n\n')}`;
 }

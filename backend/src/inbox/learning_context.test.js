@@ -5,7 +5,7 @@ jest.mock('../database/client', () => ({
 }));
 
 const { query } = require('../database/client');
-const { loadActionFeedbackBlock } = require('./learning_context');
+const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
 
 describe('inbox learning context', () => {
   beforeEach(() => {
@@ -43,5 +43,19 @@ describe('inbox learning context', () => {
     expect(block).toContain('GOOD (pending_action): "Send check-in details');
     expect(block).toContain('CORRECTED (pending_action): "Follow up about VA-2" -> "Follow up about GBH-C6 instead"');
     expect(block).toContain('AVOID (pending_action): "Send another duplicate check-in" (reason: Duplicate)');
+  });
+
+  test('scopes teachings and action feedback queries by tenant when provided', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await loadTeachingsBlock(null, 'tenant-1');
+    await loadActionFeedbackBlock('tenant-1');
+
+    expect(query.mock.calls[0][0]).toContain('tenant_id = $1');
+    expect(query.mock.calls[0][1]).toEqual(['tenant-1']);
+    expect(query.mock.calls[1][0]).toContain('tenant_id = $1');
+    expect(query.mock.calls[1][1]).toEqual(['tenant-1']);
   });
 });

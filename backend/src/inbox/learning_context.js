@@ -39,13 +39,21 @@ const { query } = require('../database/client');
  * @returns {Promise<string>} formatted block or '' if no relevant
  *   teachings.
  */
-async function loadTeachingsBlock(propertyCode) {
+async function loadTeachingsBlock(propertyCode, tenantId = null) {
   try {
+    const params = [];
+    let tenantWhere = '';
+    if (tenantId) {
+      params.push(tenantId);
+      tenantWhere = 'AND tenant_id = $1';
+    }
     const { rows } = await query(
       `SELECT instruction, scope, property_code, property_codes
          FROM teachings
         WHERE status = 'active'
+          ${tenantWhere}
         ORDER BY taught_at ASC`,
+      params,
     );
     if (rows.length === 0) return '';
 
@@ -81,13 +89,21 @@ async function loadTeachingsBlock(propertyCode) {
  *
  * @returns {Promise<string>} formatted block or '' if no feedback.
  */
-async function loadActionFeedbackBlock() {
+async function loadActionFeedbackBlock(tenantId = null) {
   try {
+    const params = [];
+    let tenantWhere = '';
+    if (tenantId) {
+      params.push(tenantId);
+      tenantWhere = 'AND tenant_id = $1';
+    }
     const { rows } = await query(
       `SELECT feedback_type, action_type, original_text, edited_text, rejection_reason
          FROM action_feedback
         WHERE feedback_type IN ('teach', 'accept', 'edit', 'promote', 'reject')
+          ${tenantWhere}
         ORDER BY created_at DESC LIMIT 20`,
+      params,
     );
     if (rows.length === 0) return '';
 

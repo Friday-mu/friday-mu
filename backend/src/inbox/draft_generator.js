@@ -31,6 +31,7 @@
 const { query } = require('../database/client');
 const { defaultComposer } = require('../knowledge/composer');
 const { buildCompactKnowledgeAppendix } = require('../knowledge/compact_prompt');
+const { buildRuntimeKnowledgeBlock } = require('../knowledge/runtime_context');
 const { generateDraftReply, classifyMessageWithKimi, DRAFT_MODEL } = require('../ai/kimi_draft');
 const { translateText } = require('../ai/translate');
 const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
@@ -38,6 +39,7 @@ const { notifyUsers, publishFadEvent, resolveGmWatchers } = require('../realtime
 const {
   resolveInboxReservationContext,
   applyReservationContextToConversation,
+  formatReservationContextForPrompt,
 } = require('./reservation_context');
 const { safeConversationSummary } = require('./summary_quality');
 
@@ -58,7 +60,7 @@ const DRAFT_PRIMARY_MAX_RETRIES = Number(process.env.KIMI_DRAFT_PRIMARY_MAX_RETR
 const DRAFT_FALLBACK_MODEL = process.env.KIMI_DRAFT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || 'moonshot-v1-8k';
 const DRAFT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_FALLBACK_TIMEOUT_MS) || 45_000;
 const DRAFT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_RETRIES) || 0;
-const DRAFT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_TOKENS) || 1400;
+const DRAFT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_TOKENS) || 2000;
 const DRAFT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|overloaded|temporarily|unavailable|gateway|502|503|504)/i;
 
 // ────────────────────────────────────────────────────────────────────
@@ -238,9 +240,10 @@ function isTransientDraftFailure(result) {
   return DRAFT_TRANSIENT_FAILURE_RE.test(String(result.error || ''));
 }
 
-function buildDraftUserMessage({ ctxLines, history, taskDirective }) {
+function buildDraftUserMessage({ ctxLines, contextBlocks = [], history, taskDirective }) {
   return `CONVERSATION CONTEXT:
 ${ctxLines.map((l) => `- ${l}`).join('\n')}
+${contextBlocks.length > 0 ? `\n\n${contextBlocks.join('\n\n')}` : ''}
 
 PREVIOUS MESSAGES:
 ${history}
@@ -310,6 +313,50 @@ function languageRoot(lang) {
   if (!lang || typeof lang !== 'string') return null;
   const root = lang.toLowerCase().split(/[-_\s(]/)[0].trim();
   return root || null;
+}
+
+async function ensureTriggerMessageEnglishContext(message, conversation) {
+  if (!message?.body || message.translated_body) return message;
+  const knownLanguage = languageRoot(message.original_language || conversation?.last_detected_language);
+  if (knownLanguage === 'en') return message;
+
+  try {
+    const translated = await translateText(message.body, {
+      conversationId: conversation?.id,
+      sourceLang: message.original_language || undefined,
+      cacheKey: message.id ? `message:${message.id}` : undefined,
+    });
+    const sourceLanguage = languageRoot(translated?.sourceLang);
+    if (!translated?.translated || sourceLanguage === 'en') {
+      if (message.id && sourceLanguage && !message.original_language) {
+        await query(
+          `UPDATE messages
+              SET original_language = $2
+            WHERE id = $1 AND original_language IS NULL`,
+          [message.id, sourceLanguage],
+        ).catch(() => {});
+      }
+      return { ...message, original_language: message.original_language || sourceLanguage || null };
+    }
+    const next = {
+      ...message,
+      original_language: sourceLanguage || message.original_language || knownLanguage || null,
+      translated_body: translated.translated,
+    };
+    if (message.id) {
+      await query(
+        `UPDATE messages
+            SET original_language = COALESCE(original_language, $2),
+                translated_body = COALESCE(translated_body, $3)
+          WHERE id = $1`,
+        [message.id, next.original_language, next.translated_body],
+      ).catch(() => {});
+    }
+    return next;
+  } catch (e) {
+    console.warn(`[draft-gen] trigger-message translation warmup failed: ${e.message}`);
+    return message;
+  }
 }
 
 async function ensureOperatorEnglishDraft(draftBody, { message, conversation }) {
@@ -434,7 +481,8 @@ async function latestSubstantiveMessage(conversationId) {
     `SELECT id, direction
        FROM messages
       WHERE conversation_id = $1
-      ORDER BY created_at DESC, id DESC
+        AND COALESCE(is_auto_response, false) = false
+      ORDER BY created_at DESC, id::text DESC
       LIMIT 1`,
     [conversationId],
   );
@@ -476,6 +524,13 @@ async function generateDraft({ message, conversation, revisionInstruction, previ
       ORDER BY created_at ASC`,
     [conversation.id],
   );
+
+  message = await ensureTriggerMessageEnglishContext(message, conversation);
+  const localMessage = allMessages.find((m) => String(m.id) === String(message.id));
+  if (localMessage) {
+    localMessage.original_language = message.original_language;
+    localMessage.translated_body = message.translated_body;
+  }
 
   // 2. Classify the triggering message — used for both confidence and
   //    (potentially) lazy-load signals. Fail-open to 'other'.
@@ -521,6 +576,9 @@ async function generateDraft({ message, conversation, revisionInstruction, previ
   if (conversation.notes) ctxLines.push(`Staff notes: ${conversation.notes}`);
   const priorSummary = safeConversationSummary(conversation.conversation_summary, { messages: allMessages });
   if (priorSummary) ctxLines.push(`Prior summary (unverified; prefer actual messages): ${priorSummary}`);
+  const contextBlocks = [];
+  const reservationBlock = formatReservationContextForPrompt(conversation.reservation_context);
+  if (reservationBlock) contextBlocks.push(reservationBlock);
 
   let taskDirective;
   if (revisionInstruction) {
@@ -543,7 +601,7 @@ Messages labeled [Automated reply already sent] or [System notification] indicat
 Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
   }
 
-  const userMessage = buildDraftUserMessage({ ctxLines, history, taskDirective });
+  const userMessage = buildDraftUserMessage({ ctxLines, contextBlocks, history, taskDirective });
 
   // 4b. Dynamic learning blocks — restored after Sprint 8/9 audit
   // (2026-05-19): the structured composer doesn't include them, but
@@ -551,10 +609,21 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
   // and Sprint 9 explicitly preserved the contract. Appended to the
   // composer's system_message so they augment rather than replace.
   const [teachingsBlock, feedbackBlock] = await Promise.all([
-    loadTeachingsBlock(propertyCode),
-    loadActionFeedbackBlock(),
+    loadTeachingsBlock(propertyCode, conversation.tenant_id),
+    loadActionFeedbackBlock(conversation.tenant_id),
   ]);
+  const runtimeKnowledgeBlock = buildRuntimeKnowledgeBlock({
+    channel: conversation.channel,
+    contextText: [
+      guestText,
+      history.slice(-12000),
+      revisionInstruction,
+      previousDraftBody,
+      reservationBlock,
+    ].filter(Boolean).join('\n\n'),
+  });
   const systemPrompt = composerOutput.system_message
+    + runtimeKnowledgeBlock
     + teachingsBlock
     + feedbackBlock
     + OPERATOR_DRAFT_LANGUAGE_CONTRACT;
@@ -578,6 +647,7 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
     console.warn(`[draft-gen] full-context call failed (${fullContextError}); retrying compact draft context`);
     const compactUserMessage = buildDraftUserMessage({
       ctxLines,
+      contextBlocks,
       history: compactHistoryMessages(allMessages, message.id),
       taskDirective,
     });
@@ -591,6 +661,7 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
           propertyCode: composerOutput.metadata.property_code || propertyCode,
           activeTeachingBlock: teachingsBlock,
           actionFeedbackBlock: feedbackBlock,
+          runtimeKnowledgeBlock,
         }),
       }),
       user: compactUserMessage,

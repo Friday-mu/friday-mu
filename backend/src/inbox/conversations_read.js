@@ -35,6 +35,7 @@ const router = express.Router();
 
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const ACTIONABLE_DRAFT_STATES_SQL = "('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')";
+const SUBSTANTIVE_MESSAGE_SQL = 'COALESCE(is_auto_response, false) = false';
 
 function currentActionableDraftPredicate(draftAlias = 'd') {
   return `
@@ -45,10 +46,12 @@ function currentActionableDraftPredicate(draftAlias = 'd') {
        WHERE draft_message.id = ${draftAlias}.message_id
          AND draft_message.conversation_id = ${draftAlias}.conversation_id
          AND draft_message.direction = 'inbound'
+         AND ${SUBSTANTIVE_MESSAGE_SQL.replace('is_auto_response', 'draft_message.is_auto_response')}
          AND NOT EXISTS (
            SELECT 1
              FROM messages newer_message
             WHERE newer_message.conversation_id = draft_message.conversation_id
+              AND ${SUBSTANTIVE_MESSAGE_SQL.replace('is_auto_response', 'newer_message.is_auto_response')}
               AND (
                 newer_message.created_at > draft_message.created_at
                 OR (
@@ -67,6 +70,7 @@ async function supersedeStaleActionableDrafts(conversationId) {
        SELECT id, direction
         FROM messages
        WHERE conversation_id = $1
+         AND ${SUBSTANTIVE_MESSAGE_SQL}
         ORDER BY created_at DESC, id::text DESC
         LIMIT 1
      ),

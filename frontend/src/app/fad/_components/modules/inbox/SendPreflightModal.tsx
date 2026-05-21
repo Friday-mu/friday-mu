@@ -62,7 +62,7 @@ export interface SendPreflightModalProps {
    *  channel is WhatsApp + window is closed. */
   whatsappWindow?: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
   /** Operator clicked Send. Modal closes; parent starts the 5s undo. */
-  onConfirm: (opts: { channel: string; learnMode?: 'learn' | 'no_learn' | 'normal' }) => void;
+  onConfirm: (opts: { channel: string }) => void;
   /** Operator clicked Cancel or dismissed. Modal closes, no send. */
   onCancel: () => void;
   /** Operator clicked "Review in chat" — close modal, focus chat. */
@@ -84,7 +84,6 @@ export function SendPreflightModal({
   onReviewTeachings,
 }: SendPreflightModalProps) {
   const [channel, setChannel] = useState<string>(defaultChannel);
-  const [learnMode, setLearnMode] = useState<'learn' | 'no_learn' | 'normal'>('normal');
   const [whatsappState, setWhatsappState] = useState<{ open: boolean; minutes: number }>({
     open: !!whatsappWindow?.open,
     minutes: whatsappWindow?.expiresInMinutes ?? 0,
@@ -376,51 +375,6 @@ export function SendPreflightModal({
             </div>
           )}
 
-          {/* Learn-mode toggle */}
-          {currentDraft && (
-            <div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.5,
-                  color: 'var(--color-text-tertiary)',
-                  marginBottom: 6,
-                }}
-              >
-                Friday learns from this send
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {(['normal', 'learn', 'no_learn'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setLearnMode(mode)}
-                    style={{
-                      padding: '5px 10px',
-                      fontSize: 11,
-                      color: learnMode === mode ? '#fff' : 'var(--color-text-secondary)',
-                      background: learnMode === mode ? 'var(--color-brand-accent)' : 'var(--color-background-secondary)',
-                      border: `0.5px solid ${learnMode === mode ? 'var(--color-brand-accent)' : 'var(--color-border-tertiary)'}`,
-                      borderRadius: 'var(--radius-sm)',
-                      cursor: 'pointer',
-                      textTransform: 'capitalize',
-                    }}
-                    title={
-                      mode === 'learn'
-                        ? 'Save this approval as a positive teaching signal'
-                        : mode === 'no_learn'
-                          ? 'Skip — don\'t propagate this to future drafts'
-                          : 'Default — auto-learn heuristic'
-                    }
-                  >
-                    {mode.replace('_', ' ')}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
@@ -451,7 +405,7 @@ export function SendPreflightModal({
           </button>
           <button
             type="button"
-            onClick={() => { if (canConfirm) onConfirm({ channel, learnMode }); }}
+            onClick={() => { if (canConfirm) onConfirm({ channel }); }}
             disabled={!canConfirm}
             style={{
               display: 'inline-flex',

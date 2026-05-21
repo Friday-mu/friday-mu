@@ -75,21 +75,41 @@ export interface InboxDraft {
 export interface InboxReservation {
   id: string;
   guestyReservationId?: string;
+  confirmationCode?: string;
+  source?: string;
   listingName?: string;
+  listingGuestyId?: string;
   status?: string;
   channel?: string;
   checkIn?: string;
   checkOut?: string;
   numberOfNights?: number;
   numGuests?: number;
+  adults?: number;
+  children?: number;
+  infants?: number;
   guestName?: string;
   guestEmail?: string;
   guestPhone?: string;
   totalPrice?: number;
+  amountPaid?: number;
+  outstandingBalance?: number;
+  paymentStatus?: string;
   currency?: string;
+  accommodationFare?: number;
   cleaningFee?: number;
   nightlyRate?: number;
   specialRequests?: string;
+  availability?: {
+    status?: string;
+    rowsCached?: number;
+    nightsRequested?: number;
+    blockedDates?: string[];
+    minPrice?: number;
+    maxPrice?: number;
+    currency?: string;
+    message?: string;
+  };
 }
 
 export interface InboxThread {

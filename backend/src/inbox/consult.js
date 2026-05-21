@@ -5,6 +5,7 @@ const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { defaultComposer } = require('../knowledge/composer');
 const { buildCompactKnowledgeAppendix } = require('../knowledge/compact_prompt');
+const { buildRuntimeKnowledgeBlock } = require('../knowledge/runtime_context');
 const { generateDraftReply, DRAFT_MODEL } = require('../ai/kimi_draft');
 const { loadActionFeedbackBlock } = require('./learning_context');
 const {
@@ -18,19 +19,21 @@ const {
 const {
   resolveInboxReservationContext,
   applyReservationContextToConversation,
+  formatReservationContextForPrompt,
 } = require('./reservation_context');
 const { safeConversationSummary } = require('./summary_quality');
 const { publishFadEvent } = require('../realtime');
 
 const router = express.Router();
-const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 45_000;
+const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 90_000;
 const CONSULT_MAX_RETRIES = Number(process.env.KIMI_CONSULT_MAX_RETRIES) || 0;
-const CONSULT_MAX_TOKENS = Number(process.env.KIMI_CONSULT_MAX_TOKENS) || 1800;
+const CONSULT_MAX_TOKENS = Number(process.env.KIMI_CONSULT_MAX_TOKENS) || 3200;
 const CONSULT_FALLBACK_MODEL = process.env.KIMI_CONSULT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || 'moonshot-v1-8k';
-const CONSULT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_FALLBACK_TIMEOUT_MS) || 25_000;
+const CONSULT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_FALLBACK_TIMEOUT_MS) || 45_000;
 const CONSULT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_RETRIES) || 0;
-const CONSULT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_TOKENS) || 900;
+const CONSULT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_TOKENS) || 1800;
 const CONSULT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|rate limit|too many requests|overloaded|temporarily|unavailable|gateway|502|503|504)/i;
+const CONSULT_RECENT_MESSAGE_LIMIT = Number(process.env.CONSULT_RECENT_MESSAGE_LIMIT) || 80;
 
 const VALID_CONTEXTS = new Set([
   'revision',
@@ -53,7 +56,7 @@ const CONVERSATION_REQUIRED_CONTEXTS = new Set([
 const CONTEXT_TO_SURFACE = {
   revision: 'inbox-drafts',
   compose: 'inbox-drafts',
-  draft_review: 'inbox-advisory',
+  draft_review: 'inbox-drafts',
   pending_action: 'pending-actions',
   next_step: 'pending-actions',
   teaching: 'inbox-advisory',
@@ -199,7 +202,7 @@ function contextTaskInstruction(context) {
       return `Task: Review the draft only against Friday rules, active teachings, property facts, and platform constraints. If the operator asks for a rewrite, provide [DRAFT_UPDATE].`;
     case 'pending_action':
     case 'next_step':
-      return `Task: Advise the team on the pending action or next operational step. If it should become an Ops task, say so plainly and include who should own it if known.`;
+      return `Task: Advise the team on the pending action or next operational step. Inbox may propose a pending action; Ops owns real task creation and lifecycle. Do not create or imply a task was created.`;
     case 'teaching':
     case 'learning_candidate':
       return `Task: Decide whether this pattern is worth learning. Use [TEACH] JSON only when the operator should confirm a durable rule.`;
@@ -218,6 +221,7 @@ function buildConsultUserMessage({
   draftBody,
   sessionHistory,
   currentSessionSummary,
+  fullThread = false,
 }) {
   const parts = [];
   parts.push(`[Consult context]\n- Mode: ${context}`);
@@ -235,9 +239,12 @@ function buildConsultUserMessage({
     if (priorSummary) convLines.push(`Prior summary (unverified; prefer actual messages): ${priorSummary}`);
     if (conversation.notes) convLines.push(`Staff notes: ${conversation.notes}`);
     parts.push(`[Conversation]\n${convLines.map((l) => `- ${l}`).join('\n')}`);
+    const reservationBlock = formatReservationContextForPrompt(conversation.reservation_context);
+    if (reservationBlock) parts.push(reservationBlock);
   }
   if (messages && messages.length > 0) {
-    parts.push(`[Recent thread messages]\n${messages.map(formatMessageForContext).join('\n\n')}`);
+    const label = fullThread ? 'Full thread messages' : 'Recent thread messages';
+    parts.push(`[${label}]\n${messages.map(formatMessageForContext).join('\n\n')}`);
   }
   if (draftBody) {
     parts.push(`[Current working draft]\n${draftBody}`);
@@ -290,6 +297,8 @@ function buildCompactConsultUserMessage({
       convLines.push(`Prior summary (unverified): ${truncateText(priorSummary, 900)}`);
     }
     parts.push(`[Conversation]\n${convLines.map((l) => `- ${l}`).join('\n')}`);
+    const reservationBlock = formatReservationContextForPrompt(conversation.reservation_context);
+    if (reservationBlock) parts.push(truncateText(reservationBlock, 1800));
   }
   const recentMessages = Array.isArray(messages)
     ? messages.slice(-8).map((m) => truncateText(formatMessageForContext(m), 900))
@@ -339,13 +348,29 @@ If you cannot safely answer from the compact context, say exactly what is missin
 Surface: ${selectConsultSurface(context)}${propertyCode ? `\nProperty code: ${propertyCode}` : ''}${compactKnowledgeAppendix || ''}`;
 }
 
-function composeSystemPrompt({ context, propertyCode, instruction, draftBody, activeTeachingBlock, actionFeedbackBlock }) {
+function composeSystemPrompt({
+  context,
+  propertyCode,
+  instruction,
+  draftBody,
+  conversation,
+  messages,
+  activeTeachingBlock,
+  actionFeedbackBlock,
+}) {
   const surface = selectConsultSurface(context);
   const acceptsPropertyCard = surface !== 'learning-analyzer';
+  const conversationText = [
+    conversation?.channel,
+    conversation?.communication_channel,
+    conversation?.property_name,
+    formatReservationContextForPrompt(conversation?.reservation_context),
+    Array.isArray(messages) ? messages.slice(-16).map((m) => `${m.body || ''}\n${m.translated_body || ''}`).join('\n\n') : '',
+  ].filter(Boolean).join('\n\n');
   const composerOpts = {
     property_code: acceptsPropertyCard ? (propertyCode || undefined) : undefined,
-    context_text: [instruction, draftBody].filter(Boolean).join('\n\n').slice(0, 3000),
-    task_signals: detectTaskSignals([instruction, draftBody].filter(Boolean).join('\n\n')),
+    context_text: [instruction, draftBody, conversationText].filter(Boolean).join('\n\n').slice(0, 8000),
+    task_signals: detectTaskSignals([instruction, draftBody, conversationText].filter(Boolean).join('\n\n')),
   };
 
   let composed;
@@ -383,12 +408,17 @@ TEACHING PROTOCOL:
 [TEACH]{"action":"flag_conflict","conflicting":"T2","instruction":"Always mention pool hours for this property","reason":"T2 says keep messages brief"}[/TEACH]
 
 Be concise. Surface missing knowledge honestly. Do not invent prices, availability, property features, refunds, or operational commitments.`;
+  const runtimeKnowledgeBlock = buildRuntimeKnowledgeBlock({
+    channel: conversation?.channel || conversation?.communication_channel,
+    contextText: [instruction, draftBody, conversationText].filter(Boolean).join('\n\n'),
+  });
 
   return {
-    systemPrompt: `${protocol}\n\n${composed.system_message}${activeTeachingBlock || ''}${actionFeedbackBlock || ''}`,
+    systemPrompt: `${protocol}\n\n${composed.system_message}${runtimeKnowledgeBlock}${activeTeachingBlock || ''}${actionFeedbackBlock || ''}`,
     missingKnowledge,
     metadata: composed.metadata,
     composerSystemMessage: composed.system_message,
+    runtimeKnowledgeBlock,
   };
 }
 
@@ -407,18 +437,29 @@ async function appendConsultSessionError({ sessionId, context, message, phase })
   );
 }
 
-async function loadConversationBundle(conversationId, tenantId) {
+async function loadConversationBundle(conversationId, tenantId, { fullThread = false } = {}) {
   if (!conversationId) return { conversation: null, messages: [] };
   if (!isUuid(conversationId)) return { conversation: null, messages: [] };
-  const [convResult, messagesResult] = await Promise.all([
-    query('SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2', [conversationId, tenantId]),
-    query(
+  const messagesPromise = fullThread
+    ? query(
       `SELECT * FROM messages
         WHERE conversation_id = $1
-        ORDER BY created_at ASC
-        LIMIT 80`,
+        ORDER BY created_at ASC, id::text ASC`,
       [conversationId],
-    ),
+    )
+    : query(
+      `SELECT * FROM (
+         SELECT * FROM messages
+          WHERE conversation_id = $1
+          ORDER BY created_at DESC, id::text DESC
+          LIMIT $2
+       ) recent
+       ORDER BY created_at ASC, id::text ASC`,
+      [conversationId, CONSULT_RECENT_MESSAGE_LIMIT],
+    );
+  const [convResult, messagesResult] = await Promise.all([
+    query('SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2', [conversationId, tenantId]),
+    messagesPromise,
   ]);
   if (convResult.rows.length === 0) {
     const err = new Error('Conversation not found');
@@ -436,6 +477,61 @@ async function loadConversationBundle(conversationId, tenantId) {
     conversation,
     messages: messagesResult.rows,
   };
+}
+
+async function validateConsultDraftContext({ draftId, conversationId, tenantId }) {
+  if (!draftId) return null;
+  if (!isUuid(draftId)) {
+    const err = new Error('Invalid draft id');
+    err.statusCode = 400;
+    err.code = 'invalid_draft_id';
+    throw err;
+  }
+  const { rows } = await query(
+    `SELECT d.id, d.conversation_id, d.message_id, d.state,
+            latest.id AS latest_message_id,
+            latest.direction AS latest_direction
+       FROM drafts d
+       JOIN conversations c ON c.id = d.conversation_id
+       LEFT JOIN LATERAL (
+         SELECT id, direction
+           FROM messages
+          WHERE conversation_id = d.conversation_id
+            AND COALESCE(is_auto_response, false) = false
+          ORDER BY created_at DESC, id::text DESC
+          LIMIT 1
+       ) latest ON true
+      WHERE d.id = $1
+        AND c.tenant_id = $2
+      LIMIT 1`,
+    [draftId, tenantId],
+  );
+  const draft = rows[0];
+  if (!draft) {
+    const err = new Error('Draft not found');
+    err.statusCode = 404;
+    err.code = 'draft_not_found';
+    throw err;
+  }
+  if (conversationId && String(draft.conversation_id) !== String(conversationId)) {
+    const err = new Error('Draft does not belong to this conversation');
+    err.statusCode = 409;
+    err.code = 'draft_conversation_mismatch';
+    throw err;
+  }
+  if (!['draft_ready', 'under_review'].includes(draft.state)) {
+    const err = new Error(`Draft is no longer reviewable (${draft.state})`);
+    err.statusCode = 409;
+    err.code = 'invalid_draft_state';
+    throw err;
+  }
+  if (!draft.latest_message_id || draft.latest_direction !== 'inbound' || String(draft.latest_message_id) !== String(draft.message_id)) {
+    const err = new Error('The conversation changed after this draft was created. Refresh the thread before refining.');
+    err.statusCode = 409;
+    err.code = 'draft_stale';
+    throw err;
+  }
+  return draft;
 }
 
 async function loadTeachingBlockWithIds(tenantId, propertyCode) {
@@ -554,6 +650,7 @@ router.post('/', attachIdentity, async (req, res) => {
     const sessionConversationId = conversationIdForSession(conversationId);
     const draftId = req.body?.draftId || null;
     const draftBody = cleanInstruction(req.body?.draftBody);
+    const fullThread = req.body?.fullThread === true;
 
     if (!instruction || !context) {
       return res.status(400).json({ error: 'Missing required fields: instruction (or text), context' });
@@ -566,7 +663,8 @@ router.post('/', attachIdentity, async (req, res) => {
     }
 
     const processTurn = async () => {
-      const { conversation, messages } = await loadConversationBundle(conversationId, req.tenantId);
+      const { conversation, messages } = await loadConversationBundle(conversationId, req.tenantId, { fullThread });
+      await validateConsultDraftContext({ draftId, conversationId: sessionConversationId, tenantId: req.tenantId });
       const propertyCode = conversation ? resolvePropertyCode(conversation) : null;
       const session = await getOrCreateSession({
         req,
@@ -584,7 +682,7 @@ router.post('/', attachIdentity, async (req, res) => {
 
       const [{ block: teachingsBlock, teachingIdMap }, actionFeedbackBlock] = await Promise.all([
         loadTeachingBlockWithIds(req.tenantId, propertyCode),
-        loadActionFeedbackBlock(),
+        loadActionFeedbackBlock(req.tenantId),
       ]);
 
       const composed = composeSystemPrompt({
@@ -592,6 +690,8 @@ router.post('/', attachIdentity, async (req, res) => {
         propertyCode,
         instruction,
         draftBody,
+        conversation,
+        messages,
         activeTeachingBlock: teachingsBlock,
         actionFeedbackBlock,
       });
@@ -604,6 +704,7 @@ router.post('/', attachIdentity, async (req, res) => {
         draftBody,
         sessionHistory,
         currentSessionSummary: session.running_summary || session.summary || null,
+        fullThread,
       });
 
       let result = await generateDraftReply({
@@ -648,6 +749,7 @@ router.post('/', attachIdentity, async (req, res) => {
               propertyCode: composed.metadata.property_code || propertyCode,
               activeTeachingBlock: teachingsBlock,
               actionFeedbackBlock,
+              runtimeKnowledgeBlock: composed.runtimeKnowledgeBlock,
             }),
           }),
           user: compactUserMessage,
@@ -766,6 +868,8 @@ router.post('/', attachIdentity, async (req, res) => {
           degraded,
           modelTimeout,
           statusUpdateSafetyApplied,
+          fullThread,
+          messageCount: messages.length,
         },
         ...(composed.missingKnowledge ? { missingKnowledge: true } : {}),
       });
@@ -786,7 +890,10 @@ router.post('/', attachIdentity, async (req, res) => {
         phase: 'route_error',
       }).catch(() => {});
     }
-    res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : 'Consultation failed', details: e.message });
+    res.status(e.statusCode || 500).json({
+      error: e.code || (e.statusCode ? e.message : 'Consultation failed'),
+      details: e.message,
+    });
   }
 });
 

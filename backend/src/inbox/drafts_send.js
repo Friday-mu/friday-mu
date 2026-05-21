@@ -417,7 +417,8 @@ async function latestSubstantiveMessage(conversationId) {
     `SELECT id, direction
        FROM messages
       WHERE conversation_id = $1
-      ORDER BY created_at DESC, id DESC
+        AND COALESCE(is_auto_response, false) = false
+      ORDER BY created_at DESC, id::text DESC
       LIMIT 1`,
     [conversationId],
   );
@@ -630,7 +631,8 @@ router.post('/:id/retry', attachIdentity, async (req, res) => {
            SELECT id, direction
              FROM messages
             WHERE conversation_id = d.conversation_id
-            ORDER BY created_at DESC, id DESC
+              AND COALESCE(is_auto_response, false) = false
+            ORDER BY created_at DESC, id::text DESC
             LIMIT 1
          ) latest ON true
         WHERE d.id = $1

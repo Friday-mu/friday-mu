@@ -37,6 +37,7 @@ describe('FAD-native Consult helpers', () => {
 
   test('maps Consult contexts onto FAD knowledge surfaces', () => {
     expect(selectConsultSurface('compose')).toBe('inbox-drafts');
+    expect(selectConsultSurface('draft_review')).toBe('inbox-drafts');
     expect(selectConsultSurface('pending_action')).toBe('pending-actions');
     expect(selectConsultSurface('message_review')).toBe('inbox-advisory');
     expect(selectConsultSurface('learning_candidate')).toBe('learning-analyzer');
@@ -60,6 +61,19 @@ describe('FAD-native Consult helpers', () => {
         check_out_date: '2026-06-08',
         num_guests: 2,
         status: 'active',
+        reservation_context: {
+          guesty_reservation_id: 'g-1',
+          listing_name: 'BS-1',
+          status: 'confirmed',
+          channel: 'whatsapp',
+          check_in: '2026-06-01',
+          check_out: '2026-06-08',
+          number_of_nights: 7,
+          num_guests: 2,
+          total_price: 1400,
+          currency: 'EUR',
+          availability_context: { status: 'missing', message: 'No cached rows' },
+        },
       },
       messages: [],
       draftBody: 'Long draft',
@@ -67,6 +81,9 @@ describe('FAD-native Consult helpers', () => {
       currentSessionSummary: 'Prior decision',
     });
     expect(message).toContain('Guest: Guest A');
+    expect(message).toContain('Reservation / Financial / Availability Context');
+    expect(message).toContain('€1,400.00');
+    expect(message).toContain('do not invent rates or open dates');
     expect(message).toContain('[Current working draft]');
     expect(message).toContain('Long draft');
     expect(message).toContain('Prior decision');

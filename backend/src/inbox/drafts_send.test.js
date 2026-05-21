@@ -96,6 +96,7 @@ describe('draft revise route', () => {
       revision_number: 2,
       state: 'revision_requested',
     });
+    expect(query.mock.calls[1][0]).toContain('COALESCE(is_auto_response, false) = false');
     expect(triggerDraftGeneration).toHaveBeenCalledWith(MESSAGE_ID, CONVERSATION_ID, {
       revisionInstruction: 'Make this warmer',
       revisionNumber: 2,
@@ -118,6 +119,7 @@ describe('draft revise route', () => {
       .expect(409);
 
     expect(res.body.error).toBe('draft_stale');
+    expect(query.mock.calls[1][0]).toContain('COALESCE(is_auto_response, false) = false');
     expect(query.mock.calls[2][0]).toContain("state = 'superseded'");
     expect(triggerDraftGeneration).not.toHaveBeenCalled();
   });
@@ -151,6 +153,7 @@ describe('draft approve route', () => {
       .expect(409);
 
     expect(res.body.error).toBe('draft_stale');
+    expect(query.mock.calls[1][0]).toContain('COALESCE(is_auto_response, false) = false');
     expect(query.mock.calls[2][0]).toContain("state = 'superseded'");
   });
 });
@@ -189,6 +192,7 @@ describe('draft retry route', () => {
       state: 'friday_drafting',
       retry_type: 'generation',
     });
+    expect(query.mock.calls[0][0]).toContain('COALESCE(is_auto_response, false) = false');
     expect(query.mock.calls[1][0]).toContain("state = 'superseded'");
     expect(triggerDraftGeneration).toHaveBeenCalledWith(MESSAGE_ID, CONVERSATION_ID);
   });
@@ -214,6 +218,7 @@ describe('draft retry route', () => {
       .expect(409);
 
     expect(res.body.error).toBe('draft_stale');
+    expect(query.mock.calls[0][0]).toContain('COALESCE(is_auto_response, false) = false');
     expect(query.mock.calls[1][0]).toContain("state = 'superseded'");
     expect(triggerDraftGeneration).not.toHaveBeenCalled();
   });
