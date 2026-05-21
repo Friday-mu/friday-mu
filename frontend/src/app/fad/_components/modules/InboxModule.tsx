@@ -127,9 +127,9 @@ export function InboxModule({ onAskFriday }: Props) {
   const [noteMentions, setNoteMentions] = useState<string[]>([]);
   const [, setNotesRev] = useState(0);
   const currentUserId = useCurrentUserId();
-  // Friday Consult is the default reply surface. It stays mounted on
-  // thread open so operators can compose a guest reply, ask Friday, or
-  // review an AI draft without hunting for a second entrypoint.
+  // Friday Consult is the default reply surface, but it must stay
+  // closeable so operators can switch to internal notes or the compact
+  // DraftPanel without losing their typed reply.
   const [consultOpen, setConsultOpen] = useState(true);
   // Track which draft id we've auto-opened consult for, so we don't
   // fight the operator after they explicitly close — only auto-opens
@@ -1165,23 +1165,6 @@ export function InboxModule({ onAskFriday }: Props) {
               }}
               onClose={() => setConsultOpen(false)}
             />
-          )}
-          {!consultOpen && !activeDraft && (
-            <div style={{ padding: '8px 12px 10px', borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-              <button
-                type="button"
-                className="btn primary sm"
-                onClick={() => setConsultOpen(true)}
-                style={{
-                  width: '100%',
-                  minHeight: 38,
-                  justifyContent: 'center',
-                  gap: 6,
-                }}
-              >
-                <IconSparkle size={13} /> Ask Friday / compose reply
-              </button>
-            </div>
           )}
           {/* AI draft review panel — shown when consult is CLOSED and GMS
               has an active draft. When consult is open, the draft is
