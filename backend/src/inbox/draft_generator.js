@@ -518,7 +518,7 @@ async function generateDraft({ message, conversation, revisionInstruction, previ
     `Triggering message classified as: ${category}`,
   ];
   if (conversation.notes) ctxLines.push(`Staff notes: ${conversation.notes}`);
-  const priorSummary = safeConversationSummary(conversation.conversation_summary);
+  const priorSummary = safeConversationSummary(conversation.conversation_summary, { messages: allMessages });
   if (priorSummary) ctxLines.push(`Prior summary (unverified; prefer actual messages): ${priorSummary}`);
 
   let taskDirective;

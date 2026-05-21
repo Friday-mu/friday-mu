@@ -211,7 +211,7 @@ function buildConsultUserMessage({
       `Guests: ${conversation.num_guests || 'n/a'}`,
       `Status: ${conversation.status || 'unknown'}`,
     ];
-    const priorSummary = safeConversationSummary(conversation.conversation_summary);
+    const priorSummary = safeConversationSummary(conversation.conversation_summary, { messages });
     if (priorSummary) convLines.push(`Prior summary (unverified; prefer actual messages): ${priorSummary}`);
     if (conversation.notes) convLines.push(`Staff notes: ${conversation.notes}`);
     parts.push(`[Conversation]\n${convLines.map((l) => `- ${l}`).join('\n')}`);
@@ -265,7 +265,7 @@ function buildCompactConsultUserMessage({
       `Guests: ${conversation.num_guests || 'n/a'}`,
       `Status: ${conversation.status || 'unknown'}`,
     ];
-    const priorSummary = safeConversationSummary(conversation.conversation_summary);
+    const priorSummary = safeConversationSummary(conversation.conversation_summary, { messages });
     if (priorSummary) {
       convLines.push(`Prior summary (unverified): ${truncateText(priorSummary, 900)}`);
     }
