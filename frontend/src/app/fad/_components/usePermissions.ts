@@ -55,6 +55,19 @@ function pickUserForRole(role: Role): string {
   return user?.id ?? DEFAULT_USER_ID;
 }
 
+function decodeJwtUserId(token: string | null): string | null {
+  if (!token || typeof window === 'undefined' || typeof window.atob !== 'function') return null;
+  try {
+    const payloadPart = token.split('.')[1] || '';
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    const payload = JSON.parse(window.atob(padded));
+    return typeof payload?.user_id === 'string' ? payload.user_id : null;
+  } catch {
+    return null;
+  }
+}
+
 interface ProviderProps {
   children: ReactNode;
   /** Override for tests / SSR. Skipped when localStorage has a value. */
@@ -142,6 +155,13 @@ export function useCurrentRole(): Role {
 
 export function useCurrentUserId(): string {
   return ctx().currentUserId;
+}
+
+export function useJwtUserId(): string | null {
+  return useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return decodeJwtUserId(localStorage.getItem('gms_token'));
+  }, []);
 }
 
 /** Hook: imperative permission checks. */

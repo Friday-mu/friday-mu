@@ -6,14 +6,20 @@ export interface InboxMessage {
   name: string;
   time: string;
   body: string;
+  bodyOriginal?: string;
+  bodyLang?: string;
+  via?: string;
+  viaSystem?: 'FAD' | 'Guesty' | string;
+  viaChannel?: string;
 }
 
-export type InboxEntity = 'guest' | 'owner' | 'vendor';
+export type InboxEntity = 'guest' | 'owner' | 'vendor' | 'unclassified';
 export type InboxChannel =
   | 'airbnb'
   | 'booking'
   | 'whatsapp'
   | 'email'
+  | 'website'
   | 'owner_email'
   | 'owner_whatsapp'
   | 'vendor_breezeway'
@@ -37,11 +43,62 @@ export interface InternalNote {
   createdAt: string;
 }
 
+export type DraftState =
+  | 'friday_drafting'
+  | 'generation_failed'
+  | 'draft_ready'
+  | 'under_review'
+  | 'revision_requested'
+  | 'send_queued'
+  | 'send_failed'
+  | 'sent'
+  | 'approved'
+  | 'rejected'
+  | 'dismissed';
+
+export interface InboxDraft {
+  id: string;
+  state: DraftState;
+  body: string;
+  bodyTranslated?: string;
+  confidence?: number;
+  revisionNumber?: number;
+  revisionInstruction?: string;
+  modelUsed?: string;
+  createdAt: string;
+  sentAt?: string;
+  retryCount?: number;
+  nextRetryAt?: string;
+  rejectionReason?: string;
+}
+
+export interface InboxReservation {
+  id: string;
+  guestyReservationId?: string;
+  listingName?: string;
+  status?: string;
+  channel?: string;
+  checkIn?: string;
+  checkOut?: string;
+  numberOfNights?: number;
+  numGuests?: number;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  totalPrice?: number;
+  currency?: string;
+  cleaningFee?: number;
+  nightlyRate?: number;
+  specialRequests?: string;
+}
+
 export interface InboxThread {
   id: string;
   unread: boolean;
   urgent?: 'red' | 'amber' | 'neutral' | 'accent';
   guest: string;
+  guestEmail?: string;
+  guestPhone?: string;
   subject: string;
   preview: string;
   channel: string;
@@ -61,7 +118,13 @@ export interface InboxThread {
   summary?: string;
   sentiment?: 'positive' | 'neutral' | 'negative' | 'urgent';
   language?: 'EN' | 'FR' | 'PT' | 'IT' | 'NL';
-  whatsappWindow?: { open: boolean; expiresInMinutes?: number };
+  whatsappWindow?: { open: boolean; expiresInMinutes?: number; expiresAt?: string };
+  reservation?: InboxReservation;
+  drafts?: InboxDraft[];
+  availableChannels?: string[];
+  recommendedChannel?: string;
+  latestDraftState?: DraftState;
+  latestDraftConfidence?: number;
 }
 
 export const INBOX_THREADS: InboxThread[] = [
