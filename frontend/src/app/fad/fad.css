@@ -6272,6 +6272,41 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   flex: 1 1 220px;
 }
 
+.ops-mention-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ops-mention-picker button {
+  min-height: 44px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 999px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.ops-mention-picker button.active {
+  border-color: var(--color-brand-accent);
+  background: var(--color-brand-accent-soft);
+  color: var(--color-brand-accent);
+}
+
+.ops-mention-preview {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--color-brand-accent);
+  border-radius: 6px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
 @media (max-width: 520px) {
   .ops-form-grid.two,
   .ops-form-grid.three,
@@ -7119,6 +7154,8 @@ body:has(.ops-create-drawer) .bug-fab {
   color: var(--color-text-tertiary);
   cursor: pointer;
   font-size: 14px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 2px 6px;
   flex-shrink: 0;
   align-self: center;
@@ -7140,6 +7177,40 @@ body:has(.ops-create-drawer) .bug-fab {
 .fad-notif-viewall:hover { background: var(--color-background-primary); }
 
 /* Notifications full-screen page (3-column layout) */
+.notif-top-tabs,
+.notif-category-strip {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  overflow-x: auto;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.notif-top-tabs button,
+.notif-category-strip button {
+  min-height: 44px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 6px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notif-header-action {
+  min-height: 36px;
+}
+
+.notif-top-tabs button.active,
+.notif-category-strip button.active {
+  border-color: var(--color-brand-accent);
+  background: var(--color-brand-accent-soft);
+  color: var(--color-brand-accent);
+}
+
 .notif-page {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 380px;
@@ -7170,6 +7241,7 @@ body:has(.ops-create-drawer) .bug-fab {
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 44px;
   padding: 6px 8px;
   background: transparent;
   border: none;
@@ -7225,6 +7297,30 @@ body:has(.ops-create-drawer) .bug-fab {
 .notif-list-row.selected {
   background: var(--color-brand-accent-soft);
   border-left: 2px solid var(--color-brand-accent);
+}
+
+.fad-notif-archive {
+  min-width: 64px;
+  min-height: 44px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 6px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.notif-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 2px;
+  color: var(--color-brand-accent);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .notif-row-dot {

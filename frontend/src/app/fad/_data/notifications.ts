@@ -35,12 +35,17 @@ export interface Notification {
   ts: string; // ISO
   severity: Severity;
   module: ModuleId;
+  category?: 'mention' | 'comment' | 'watching' | 'department';
   /** Cross-link record id within the source module. */
   sourceId?: string;
+  /** Optional exact source comment id when the event came from a task comment. */
+  commentId?: string;
   /** Optional URL override — falls back to module-id link. */
   href?: string;
   /** True when the current user is @mentioned (force-pinned). */
   isMention?: boolean;
+  /** Optional user target for per-user generated events. */
+  targetUserId?: string;
   /** AI ranking score 0-1 (filled in by `rankNotifications`). */
   aiPriority?: number;
   /** AI ranking explanation surfaced on hover. */
@@ -159,6 +164,83 @@ export function markAllRead(notifications: Notification[]): void {
   notifications.forEach((n) => s.add(n.id));
   writeSet(s);
   bumpNotificationsRev();
+}
+
+// ───────────────── Archive state ─────────────────
+
+const ARCHIVE_KEY = 'fad:notif-archived';
+
+function readArchiveSet(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(ARCHIVE_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function writeArchiveSet(s: Set<string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(ARCHIVE_KEY, JSON.stringify([...s]));
+  } catch {
+    // ignore
+  }
+}
+
+export function isArchived(id: string): boolean {
+  return readArchiveSet().has(id);
+}
+
+export function archiveNotification(id: string): void {
+  const s = readArchiveSet();
+  s.add(id);
+  writeArchiveSet(s);
+  markRead(id);
+  bumpNotificationsRev();
+}
+
+export function unarchiveNotification(id: string): void {
+  const s = readArchiveSet();
+  s.delete(id);
+  writeArchiveSet(s);
+  bumpNotificationsRev();
+}
+
+// ───────────────── Task-comment mention events ─────────────────
+
+const TASK_COMMENT_NOTIFICATIONS_KEY = 'fad:notif-task-comment-mentions';
+
+function readTaskCommentNotifications(): Notification[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(TASK_COMMENT_NOTIFICATIONS_KEY);
+    return raw ? JSON.parse(raw) as Notification[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTaskCommentNotifications(items: Notification[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(TASK_COMMENT_NOTIFICATIONS_KEY, JSON.stringify(items));
+  } catch {
+    // ignore storage failures; the task comment remains canonical.
+  }
+}
+
+export function taskCommentMentionNotifications(): Notification[] {
+  return readTaskCommentNotifications();
+}
+
+export function recordTaskCommentMentionNotification(notification: Notification): boolean {
+  const existing = readTaskCommentNotifications();
+  if (existing.some((item) => item.id === notification.id)) return false;
+  writeTaskCommentNotifications([...existing, notification]);
+  bumpNotificationsRev();
+  return true;
 }
 
 // ───────────────── Per-module contributions ─────────────────
@@ -366,7 +448,7 @@ const SEEDED_NOTIFICATIONS: Notification[] = [
 
 export function allNotifications(role: Role, userId: string): Notification[] {
   if (role === 'external') return [];
-  const merged = [...SEEDED_NOTIFICATIONS, ...moduleNotifications(role, userId)];
+  const merged = [...SEEDED_NOTIFICATIONS, ...moduleNotifications(role, userId), ...taskCommentMentionNotifications()];
   // Dedupe by id
   const seen = new Set<string>();
   const unique = merged.filter((n) => {
@@ -376,6 +458,7 @@ export function allNotifications(role: Role, userId: string): Notification[] {
   });
   // Filter out items I forwarded (still show in the destination user's feed)
   const visible = unique.filter((n) => {
+    if (n.targetUserId && n.targetUserId !== userId) return false;
     const ctx = getContext(n.id);
     if (ctx.forwardedTo && ctx.forwardedTo !== userId) return false;
     return true;

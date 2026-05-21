@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import {
   AI_TASK_DRAFTS,
@@ -184,6 +184,12 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   const [createIntent, setCreateIntent] = useState<CreateTaskIntent | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const detailTask = detailTaskId ? liveTasks.find((t) => t.id === detailTaskId) : null;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const taskId = new URLSearchParams(window.location.search).get('task');
+    if (taskId) setDetailTaskId(taskId);
+  }, []);
 
   const openManagerCreate = (prefill?: CreateTaskPrefill) => {
     setCreateIntent({ mode: 'manager_schedule', prefill });

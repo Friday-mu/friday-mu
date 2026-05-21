@@ -107,6 +107,14 @@ export interface TeamMessage {
   kind?: TeamMessageKind;
   /** for kind: 'task_link' */
   linkedTaskId?: string;
+  /** for kind: 'task_link' task-comment bridge messages */
+  taskComment?: {
+    taskId: string;
+    taskTitle: string;
+    propertyCode: string;
+    commentId: string;
+    commentPreview: string;
+  };
   /** for kind: 'call_scheduled' — fixture Meet URL */
   callMeta?: TeamCallMeta;
   /** for kind: 'finance_escalation' — see FinanceEscalationMeta */
@@ -285,3 +293,45 @@ export const TEAM_MESSAGES: TeamMessage[] = [
 export const SCHEDULED_CALLS: TeamCallMeta[] = TEAM_MESSAGES
   .filter((m): m is TeamMessage & { callMeta: TeamCallMeta } => !!m.callMeta)
   .map((m) => m.callMeta);
+
+const TASK_COMMENT_MESSAGES_KEY = 'fad:team-task-comment-messages';
+
+function readTaskCommentMessages(): TeamMessage[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(TASK_COMMENT_MESSAGES_KEY);
+    return raw ? JSON.parse(raw) as TeamMessage[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTaskCommentMessages(messages: TeamMessage[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(TASK_COMMENT_MESSAGES_KEY, JSON.stringify(messages));
+  } catch {
+    // ignore storage failures; task comments remain canonical on the task.
+  }
+}
+
+export function taskCommentTeamMessages(): TeamMessage[] {
+  return readTaskCommentMessages();
+}
+
+export function allTeamMessages(): TeamMessage[] {
+  const byId = new Map<string, TeamMessage>();
+  [...TEAM_MESSAGES, ...readTaskCommentMessages()].forEach((message) => {
+    if (!byId.has(message.id)) byId.set(message.id, message);
+  });
+  return Array.from(byId.values()).sort((a, b) => b.ts.localeCompare(a.ts));
+}
+
+export function recordTaskCommentTeamMessage(message: TeamMessage): boolean {
+  const existing = readTaskCommentMessages();
+  if (TEAM_MESSAGES.some((m) => m.id === message.id) || existing.some((m) => m.id === message.id)) {
+    return false;
+  }
+  writeTaskCommentMessages([...existing, message]);
+  return true;
+}

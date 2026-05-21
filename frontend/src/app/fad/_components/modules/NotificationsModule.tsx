@@ -10,12 +10,15 @@ import {
   markRead,
   markUnread,
   isRead,
+  archiveNotification,
   subscribeNotifications,
   getContext,
   setContext,
   clearContext,
   snoozeNotification,
   isSnoozedNow,
+  isArchived,
+  unarchiveNotification,
   type Notification,
   type Severity,
   type ModuleId,
@@ -25,6 +28,8 @@ import { fireToast } from '../Toaster';
 
 type ReadFilter = 'all' | 'unread' | 'read';
 type SortMode = 'ai' | 'recent';
+type NotificationTab = 'inbox' | 'archived';
+type CategoryFilter = 'all' | 'mentions' | 'comments' | 'watching' | 'department';
 
 const MODULE_LABELS: Record<ModuleId, string> = {
   inbox: 'Inbox',
@@ -49,6 +54,8 @@ export function NotificationsModule() {
   useEffect(() => subscribeNotifications(setRev), []);
 
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
+  const [notificationTab, setNotificationTab] = useState<NotificationTab>('inbox');
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [moduleFilter, setModuleFilter] = useState<Set<ModuleId>>(new Set());
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
   const [mentionsOnly, setMentionsOnly] = useState(false);
@@ -56,13 +63,21 @@ export function NotificationsModule() {
   const [sortMode, setSortMode] = useState<SortMode>('ai');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filtersOpenMobile, setFiltersOpenMobile] = useState(false);
+  const [expandedPreviewIds, setExpandedPreviewIds] = useState<Set<string>>(new Set());
 
   const all = allNotifications(role, userId);
+  const inboxItems = all.filter((n) => !isArchived(n.id));
+  const archivedItems = all.filter((n) => isArchived(n.id));
+  const activeTabItems = notificationTab === 'archived' ? archivedItems : inboxItems;
 
   const filtered = useMemo(() => {
-    let out = all.slice();
+    let out = activeTabItems.slice();
     if (readFilter === 'unread') out = out.filter((n) => !isRead(n.id));
     else if (readFilter === 'read') out = out.filter((n) => isRead(n.id));
+    if (categoryFilter === 'mentions') out = out.filter((n) => n.isMention);
+    if (categoryFilter === 'comments') out = out.filter((n) => n.category === 'comment' || /comment/i.test(`${n.title} ${n.body}`));
+    if (categoryFilter === 'watching') out = out.filter((n) => n.module === 'operations' || n.module === 'properties');
+    if (categoryFilter === 'department') out = out.filter((n) => n.category === 'department' || n.module === 'operations' || n.module === 'hr');
     if (moduleFilter.size > 0) out = out.filter((n) => moduleFilter.has(n.module));
     if (severityFilter.size > 0) out = out.filter((n) => severityFilter.has(n.severity));
     if (mentionsOnly) out = out.filter((n) => n.isMention);
@@ -76,7 +91,7 @@ export function NotificationsModule() {
       out.sort((a, b) => (a.ts < b.ts ? 1 : -1));
     }
     return out;
-  }, [all, readFilter, moduleFilter, severityFilter, mentionsOnly, search, sortMode]);
+  }, [activeTabItems, categoryFilter, moduleFilter, readFilter, severityFilter, mentionsOnly, search, sortMode]);
 
   const selected = selectedId ? all.find((n) => n.id === selectedId) ?? null : null;
 
@@ -86,11 +101,24 @@ export function NotificationsModule() {
   }, [selected?.id]);
 
   const counts = {
-    all: all.length,
-    unread: all.filter((n) => !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
+    all: inboxItems.length,
+    archived: archivedItems.length,
+    unread: inboxItems.filter((n) => !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
     mentions: all.filter((n) => n.isMention).length,
-    urgent: all.filter((n) => n.severity === 'urgent' && !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
+    comments: all.filter((n) => n.category === 'comment' || /comment/i.test(`${n.title} ${n.body}`)).length,
+    watching: all.filter((n) => n.module === 'operations' || n.module === 'properties').length,
+    department: all.filter((n) => n.category === 'department' || n.module === 'operations' || n.module === 'hr').length,
+    urgent: inboxItems.filter((n) => n.severity === 'urgent' && !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
     snoozed: all.filter((n) => isSnoozedNow(getContext(n.id))).length,
+  };
+  const tabCounts = {
+    all: activeTabItems.length,
+    unread: activeTabItems.filter((n) => !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
+    read: activeTabItems.filter((n) => isRead(n.id)).length,
+    mentions: activeTabItems.filter((n) => n.isMention).length,
+    comments: activeTabItems.filter((n) => n.category === 'comment' || /comment/i.test(`${n.title} ${n.body}`)).length,
+    watching: activeTabItems.filter((n) => n.module === 'operations' || n.module === 'properties').length,
+    department: activeTabItems.filter((n) => n.category === 'department' || n.module === 'operations' || n.module === 'hr').length,
   };
 
   const moduleCounts = useMemo(() => {
@@ -106,10 +134,16 @@ export function NotificationsModule() {
     setModuleFilter(new Set());
     setSeverityFilter(new Set());
     setMentionsOnly(false);
+    setCategoryFilter('all');
     setReadFilter('all');
     setSearch('');
   };
-  const filtersActive = moduleFilter.size > 0 || severityFilter.size > 0 || mentionsOnly || readFilter !== 'all' || search.trim().length > 0;
+  const filtersActive = moduleFilter.size > 0 || severityFilter.size > 0 || mentionsOnly || categoryFilter !== 'all' || readFilter !== 'all' || search.trim().length > 0;
+  const toggleExpandedPreview = (id: string) => setExpandedPreviewIds((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -118,36 +152,61 @@ export function NotificationsModule() {
         subtitle={`${counts.unread} unread${counts.urgent > 0 ? ` · ${counts.urgent} urgent` : ''}${counts.snoozed > 0 ? ` · ${counts.snoozed} snoozed` : ''} · ${counts.all} total`}
         actions={
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn ghost sm notif-mobile-filter-btn" onClick={() => setFiltersOpenMobile(true)}>
+            <button className="btn ghost sm notif-mobile-filter-btn notif-header-action" onClick={() => setFiltersOpenMobile(true)}>
               ☰ Filters
             </button>
-            <button className="btn ghost sm" onClick={() => setSortMode(sortMode === 'ai' ? 'recent' : 'ai')} title="Toggle ranking">
+            <button className="btn ghost sm notif-header-action" onClick={() => setSortMode(sortMode === 'ai' ? 'recent' : 'ai')} title="Toggle ranking">
               {sortMode === 'ai' ? '✨ AI priority' : 'Chronological'}
             </button>
-            <button className="btn ghost sm" onClick={handleMarkAllRead}>Mark all read</button>
+            <button className="btn ghost sm notif-header-action" onClick={handleMarkAllRead}>Mark all read</button>
           </div>
         }
       />
+
+      <div className="notif-top-tabs">
+        {([
+          ['inbox', `Inbox (${counts.all})`],
+          ['archived', `Archived (${counts.archived})`],
+        ] as const).map(([id, label]) => (
+          <button key={id} className={notificationTab === id ? 'active' : ''} onClick={() => setNotificationTab(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="notif-category-strip" aria-label="Notification filters">
+        {([
+          ['all', `All ${tabCounts.all}`],
+          ['mentions', `Mentions ${tabCounts.mentions}`],
+          ['comments', `Comments ${tabCounts.comments}`],
+          ['watching', `Watching ${tabCounts.watching}`],
+          ['department', `Department ${tabCounts.department}`],
+        ] as const).map(([id, label]) => (
+          <button key={id} className={categoryFilter === id ? 'active' : ''} onClick={() => setCategoryFilter(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="notif-page" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* Filter sidebar */}
         <aside className={'notif-filters' + (filtersOpenMobile ? ' mobile-open' : '')}>
           <div className="notif-filters-mobile-header">
             <span style={{ fontWeight: 500 }}>Filters</span>
-            <button className="btn ghost sm" onClick={() => setFiltersOpenMobile(false)}>Close</button>
+            <button className="btn ghost sm notif-header-action" onClick={() => setFiltersOpenMobile(false)}>Close</button>
           </div>
           <div className="notif-filter-section">
             <h4>Read state</h4>
-            <FilterRow label="All" count={counts.all} active={readFilter === 'all'} onClick={() => setReadFilter('all')} />
-            <FilterRow label="Unread" count={counts.unread} active={readFilter === 'unread'} onClick={() => setReadFilter('unread')} />
-            <FilterRow label="Read" count={counts.all - counts.unread - counts.snoozed} active={readFilter === 'read'} onClick={() => setReadFilter('read')} />
+            <FilterRow label="All" count={tabCounts.all} active={readFilter === 'all'} onClick={() => setReadFilter('all')} />
+            <FilterRow label="Unread" count={tabCounts.unread} active={readFilter === 'unread'} onClick={() => setReadFilter('unread')} />
+            <FilterRow label="Read" count={tabCounts.read} active={readFilter === 'read'} onClick={() => setReadFilter('read')} />
           </div>
 
           <div className="notif-filter-section">
             <h4>Mentions</h4>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
               <input type="checkbox" checked={mentionsOnly} onChange={() => setMentionsOnly(!mentionsOnly)} />
-              <span>Only @mentions ({counts.mentions})</span>
+              <span>Only @mentions ({tabCounts.mentions})</span>
             </label>
           </div>
 
@@ -196,7 +255,14 @@ export function NotificationsModule() {
             ) : (
               filtered.map((n) => (
                 <ListRow key={n.id} notif={n} selected={selectedId === n.id} showAi={sortMode === 'ai'}
+                  archived={notificationTab === 'archived'}
+                  expanded={expandedPreviewIds.has(n.id)}
                   onSelect={() => setSelectedId(n.id)}
+                  onToggleExpanded={() => toggleExpandedPreview(n.id)}
+                  onArchiveToggle={() => {
+                    if (isArchived(n.id)) unarchiveNotification(n.id);
+                    else archiveNotification(n.id);
+                  }}
                   onToggleRead={() => { if (isRead(n.id)) markUnread(n.id); else markRead(n.id); }} />
               ))
             )}
@@ -306,16 +372,32 @@ function FilterRow({ label, count, active, onClick }: { label: string; count: nu
 
 // ───────────────── List row ─────────────────
 
-function ListRow({ notif, selected, showAi, onSelect, onToggleRead }: {
-  notif: Notification; selected: boolean; showAi: boolean; onSelect: () => void; onToggleRead: () => void;
+function ListRow({ notif, selected, showAi, archived, expanded, onSelect, onToggleRead, onArchiveToggle, onToggleExpanded }: {
+  notif: Notification;
+  selected: boolean;
+  showAi: boolean;
+  archived: boolean;
+  expanded: boolean;
+  onSelect: () => void;
+  onToggleRead: () => void;
+  onArchiveToggle: () => void;
+  onToggleExpanded: () => void;
 }) {
   const read = isRead(notif.id);
   const ctx = getContext(notif.id);
   const snoozed = isSnoozedNow(ctx);
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       className={'notif-list-row' + (read ? ' read' : '') + (selected ? ' selected' : '') + (snoozed ? ' snoozed' : '')}
       title={showAi && notif.aiReason ? `Ranked: ${notif.aiReason}` : notif.title}
     >
@@ -333,17 +415,46 @@ function ListRow({ notif, selected, showAi, onSelect, onToggleRead }: {
           {ctx.note && !snoozed && <span className="chip sm" style={{ fontSize: 9 }}>💬 noted</span>}
           {ctx.waitingOn && <span className="chip sm" style={{ fontSize: 9 }}>⌛ waiting</span>}
         </div>
-        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--color-text-tertiary)',
+            overflow: expanded ? 'visible' : 'hidden',
+            textOverflow: expanded ? 'clip' : 'ellipsis',
+            whiteSpace: expanded ? 'pre-wrap' : 'nowrap',
+            lineHeight: 1.45,
+          }}
+        >
           {notif.body}
         </div>
+        {notif.body.length > 140 && (
+          <span
+            role="button"
+            tabIndex={0}
+            className="notif-preview-toggle"
+            onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleExpanded();
+              }
+            }}
+          >
+            {expanded ? 'View less' : 'View more'}
+          </span>
+        )}
         <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           {MODULE_LABELS[notif.module]} · {notif.ts.slice(5, 16).replace('T', ' ')}
         </div>
       </div>
+      <button onClick={(e) => { e.stopPropagation(); onArchiveToggle(); }} className="fad-notif-archive" title={archived ? 'Restore' : 'Archive'}>
+        {archived ? 'Restore' : 'Archive'}
+      </button>
       <button onClick={(e) => { e.stopPropagation(); onToggleRead(); }} className="fad-notif-toggle" title={read ? 'Mark unread' : 'Mark read'}>
         {read ? '○' : '●'}
       </button>
-    </button>
+    </div>
   );
 }
 
@@ -357,6 +468,7 @@ function DetailPane({ notification, onClose }: { notification: Notification; onC
   const [forwardOpen, setForwardOpen] = useState(false);
 
   const snoozed = isSnoozedNow(ctx);
+  const archived = isArchived(notification.id);
 
   const doSnooze = (hours: number) => {
     const until = new Date(Date.now() + hours * 3600 * 1000);
@@ -432,6 +544,16 @@ function DetailPane({ notification, onClose }: { notification: Notification; onC
           Open in {MODULE_LABELS[notification.module]} →
         </button>
       )}
+
+      <button
+        className="btn ghost sm"
+        onClick={() => {
+          if (archived) unarchiveNotification(notification.id);
+          else archiveNotification(notification.id);
+        }}
+      >
+        {archived ? 'Restore to inbox' : 'Archive notification'}
+      </button>
 
       {/* My context section */}
       <div className="notif-context-section">

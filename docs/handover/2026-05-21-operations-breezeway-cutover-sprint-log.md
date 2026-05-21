@@ -71,3 +71,26 @@
 - `createTask` now passes `template` to the backend task service; fixture staff ids for assignees/requesters are still filtered by the adapter until production auth/users provide UUIDs.
 - Visual QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave3b/`; metrics show 9 screenshots with 0 document overflow, 0 Operations/drawer overflow, and 0 small targets across 320/375/430/768/1440.
 - Typecheck, frontend build, and backend task-service syntax check passed.
+
+## 2026-05-21 Wave 4 Mini-Research
+
+- Current `TaskDetail.tsx` has comments and mention rendering, but comment send does not parse mentions or emit TeamInbox/Notifications events.
+- Backend `POST /api/tasks/:id/comments` already accepts a `mentions` array, so the bridge can stay on the existing task comment endpoint.
+- `teamInbox.ts` already has `task_link` message kind, `mentions`, and `linkedTaskId`; `TeamInbox.tsx` renders regular text/call/roster messages but not task-comment cards yet.
+- `notifications.ts` already models `isMention`, module links, read state, local context, and a rev subscription; it lacks archive state and dynamic task-comment mention notifications.
+- Breezeway notification screenshot `IMG_3252.png` shows Inbox/Archived tabs, horizontal filters for All/Mentions/Comments/Watching/Department, long comment previews, unread dots, and archive controls.
+- Notion/plan doctrine: task comments remain source-of-truth; TeamInbox/Notifications are event surfaces with backlinks to the exact task/comment, not duplicate threads.
+- Feature Catalog did not have a more specific task-comment bridge; the existing voice dictation hook remains useful later for comment input but is deferred because Wave 4 is event plumbing.
+- External platform research confirms browser/system notifications are permission- and support-dependent, so this slice keeps FAD in-app Notifications first and leaves push for later.
+- Wave 4 decision: implement a local idempotent task-comment mention bridge, wire comment mention picker/parsing, add TeamInbox task-comment card rendering, and upgrade Notifications with archive/category filters plus expandable comment previews.
+
+## 2026-05-21 Wave 4 Checkpoint
+
+- Implemented task-comment mention parsing, mention chips, and API `mentions` payloads in the Operations task detail composer.
+- Added an idempotent local task-comment bridge: one TeamInbox `task_link` card per comment and one targeted Notification per mentioned user.
+- TeamInbox now merges dynamic task-comment messages with seeded team messages and shows the newest task event first with task/property/comment backlinks.
+- Notifications now has Inbox/Archived tabs, All/Mentions/Comments/Watching/Department filters, expandable long previews, archive/restore actions, and task/comment backlinks.
+- Backlinks from Notifications/TeamInbox can open Operations directly by task query param; task comments remain the source-of-truth thread.
+- Fixed the notification row nested-button hydration warning by making rows keyboard-accessible containers while keeping Archive/Read as real buttons.
+- Visual QA screenshots live in `docs/handover/qa-screenshots-2026-05-21-wave4/`; 320/375/430/768/1440 checks showed no horizontal overflow, and the remaining tiny checkbox is inside a larger label target.
+- Typecheck, frontend build, backend task-service syntax check, and browser console rerun passed after the row-container fix.

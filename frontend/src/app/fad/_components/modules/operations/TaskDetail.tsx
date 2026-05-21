@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  TASK_USERS,
   TASK_USER_BY_ID,
   type ActivityEntry,
   type Task,
@@ -26,6 +27,11 @@ import {
   STATUS_LABEL as RES_STATUS_LABEL,
   formatStayWindow,
 } from '../../../_data/reservations';
+import {
+  appendMentionToken,
+  publishTaskCommentMentionBridge,
+  resolveTaskCommentMentions,
+} from '../../../_data/taskCommentBridge';
 
 interface DetailProps {
   task: Task;
@@ -135,8 +141,10 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   const sendComment = async () => {
     const text = draftComment.trim();
     if (!text) return;
+    const mentionIds = resolveTaskCommentMentions(text);
     await runApiMutation('comment', async () => {
-      await addComment({ taskId: task.id, authorId: currentUserId, text });
+      const comment = await addComment({ taskId: task.id, authorId: currentUserId, text, mentions: mentionIds });
+      publishTaskCommentMentionBridge({ task, comment, authorId: currentUserId, mentionIds });
       setDraftComment('');
       onBumpRev();
     });
@@ -260,7 +268,13 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           onEvidenceSelected={onEvidenceSelected}
           onReportIssue={onReportIssue}
         />
-        <Comments task={task} draft={draftComment} setDraft={setDraftComment} onSend={canEdit ? sendComment : undefined} />
+        <Comments
+          task={task}
+          draft={draftComment}
+          setDraft={setDraftComment}
+          currentUserId={currentUserId}
+          onSend={canEdit ? sendComment : undefined}
+        />
       </div>
       <MobileExecutionBar
         task={task}
@@ -1130,15 +1144,22 @@ function Comments({
   task,
   draft,
   setDraft,
+  currentUserId,
   onSend,
 }: {
   task: Task;
   draft: string;
   setDraft: (s: string) => void;
+  currentUserId: string;
   onSend?: () => void;
 }) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const sortedComments = useMemo(() => [...task.comments].sort((a, b) => a.ts.localeCompare(b.ts)), [task]);
+  const mentionIds = useMemo(() => resolveTaskCommentMentions(draft), [draft]);
+  const mentionCandidates = useMemo(
+    () => TASK_USERS.filter((user) => user.active && user.role !== 'external' && user.id !== currentUserId).slice(0, 8),
+    [currentUserId],
+  );
 
   return (
     <Section title={`Comments · ${task.comments.length}`}>
@@ -1181,6 +1202,23 @@ function Comments({
             onChange={(e) => setDraft(e.target.value)}
             style={{ width: '100%', minHeight: 60, padding: 8, fontSize: 13, fontFamily: 'inherit' }}
           />
+          <div className="ops-mention-picker" aria-label="Mention staff">
+            {mentionCandidates.map((user) => (
+              <button
+                key={user.id}
+                type="button"
+                className={mentionIds.includes(user.id) ? 'active' : ''}
+                onClick={() => setDraft(appendMentionToken(draft, user.id))}
+              >
+                @{user.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+          {mentionIds.length > 0 && (
+            <div className="ops-mention-preview">
+              Notifies {mentionIds.map((id) => TASK_USER_BY_ID[id]?.name ?? id).join(', ')} in TeamInbox and Notifications.
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
             <button className="btn primary sm" onClick={onSend} disabled={!draft.trim()}>
               Post comment

@@ -5,6 +5,7 @@ import {
   TEAM_CHANNELS,
   TEAM_DMS,
   TEAM_MESSAGES,
+  allTeamMessages,
   type ChannelKey,
   type TeamCallMeta,
   type TeamDM,
@@ -69,9 +70,9 @@ export function TeamInbox({
   const messages = useMemo(() => {
     let msgs: TeamMessage[];
     if (selection.kind === 'channel') {
-      msgs = TEAM_MESSAGES.filter((m) => m.channelKey === selection.channelKey);
+      msgs = allTeamMessages().filter((m) => m.channelKey === selection.channelKey);
     } else {
-      msgs = TEAM_MESSAGES.filter((m) => m.dmId === selection.dm.id);
+      msgs = allTeamMessages().filter((m) => m.dmId === selection.dm.id);
     }
     if (mentionsOnly) {
       msgs = msgs.filter((m) => m.mentions?.includes(currentUserId));
@@ -281,6 +282,9 @@ export function TeamInbox({
               if (m.kind === 'roster_publish') {
                 return <SystemMessage key={m.id} icon="🤖" title="Roster published" body={m.text} ts={m.ts} author={author} />;
               }
+              if (m.kind === 'task_link' && m.taskComment) {
+                return <TaskCommentMessage key={m.id} message={m} author={author} />;
+              }
               return <TextMessage key={m.id} message={m} author={author} />;
             })}
           </div>
@@ -379,6 +383,44 @@ function TextMessage({ message, author }: { message: TeamMessage; author?: TaskU
           {message.threadCount} repl{message.threadCount === 1 ? 'y' : 'ies'}
         </div>
       )}
+    </div>
+  );
+}
+
+function TaskCommentMessage({ message, author }: { message: TeamMessage; author?: TaskUser }) {
+  const meta = message.taskComment!;
+  return (
+    <div
+      className="msg-bubble"
+      style={{
+        background: 'var(--color-background-secondary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderLeft: '3px solid var(--color-brand-accent)',
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 8,
+        maxWidth: 'unset',
+      }}
+    >
+      <div className="msg-meta" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 500 }}>{author?.name ?? 'Unknown'}</span>
+        <span style={{ color: 'var(--color-text-tertiary)' }}>commented on a task · {formatTs(message.ts)}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--color-brand-accent)' }}>{meta.propertyCode}</span>
+        <strong style={{ fontSize: 13 }}>{meta.taskTitle}</strong>
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+        {renderMentions(meta.commentPreview, message.mentions)}
+      </div>
+      <button
+        type="button"
+        className="btn ghost sm"
+        style={{ marginTop: 10 }}
+        onClick={() => { window.location.href = `/fad?m=operations&task=${encodeURIComponent(meta.taskId)}&comment=${encodeURIComponent(meta.commentId)}`; }}
+      >
+        Open task
+      </button>
     </div>
   );
 }
