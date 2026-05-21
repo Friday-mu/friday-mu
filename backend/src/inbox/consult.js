@@ -97,6 +97,7 @@ function truncateText(value, maxLength) {
 
 function isTransientConsultFailure(result) {
   if (!result || result.ok) return false;
+  if (result.finishReason === 'length') return true;
   const status = Number(result.status);
   if ([408, 409, 425, 429].includes(status)) return true;
   if (status >= 500) return true;

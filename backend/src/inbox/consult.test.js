@@ -73,6 +73,7 @@ describe('FAD-native Consult helpers', () => {
 
   test('classifies Kimi timeouts and temporary upstream failures as transient', () => {
     expect(isTransientConsultFailure({ ok: false, error: 'timeout of 45000ms exceeded' })).toBe(true);
+    expect(isTransientConsultFailure({ ok: false, error: 'empty response (finish_reason=length)', finishReason: 'length' })).toBe(true);
     expect(isTransientConsultFailure({ ok: false, status: 429, error: 'Too Many Requests' })).toBe(true);
     expect(isTransientConsultFailure({ ok: false, status: 503, error: 'upstream unavailable' })).toBe(true);
     expect(isTransientConsultFailure({ ok: false, status: 401, error: 'invalid api key' })).toBe(false);
