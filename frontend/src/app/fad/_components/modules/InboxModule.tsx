@@ -127,10 +127,10 @@ export function InboxModule({ onAskFriday }: Props) {
   const [noteMentions, setNoteMentions] = useState<string[]>([]);
   const [, setNotesRev] = useState(0);
   const currentUserId = useCurrentUserId();
-  // Friday Consult is the default reply surface, but it must stay
-  // closeable so operators can switch to internal notes or the compact
-  // DraftPanel without losing their typed reply.
-  const [consultOpen, setConsultOpen] = useState(true);
+  // Friday Consult opens when there is content to review, or when the
+  // operator explicitly asks Friday. Keeping it closed for empty threads
+  // prevents a blank panel from stealing vertical space on mobile.
+  const [consultOpen, setConsultOpen] = useState(false);
   // Track which draft id we've auto-opened consult for, so we don't
   // fight the operator after they explicitly close — only auto-opens
   // again when a NEW draft replaces the current one (revision).
@@ -523,7 +523,7 @@ export function InboxModule({ onAskFriday }: Props) {
   useEffect(() => {
     setReplyBody('');
     setComposeMode('reply');
-    setConsultOpen(true);
+    setConsultOpen(false);
   }, [selected]);
 
   // Mark conversation as read when the operator opens it (Mary bug

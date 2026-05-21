@@ -26,6 +26,10 @@ const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { publishFadEvent } = require('../realtime');
 const { translateText } = require('../ai/translate');
+const {
+  resolveInboxReservationContext,
+  applyReservationContextToConversation,
+} = require('./reservation_context');
 
 const router = express.Router();
 
@@ -447,7 +451,7 @@ router.get('/:id', attachIdentity, async (req, res) => {
     const { id } = req.params;
     await supersedeStaleActionableDrafts(id);
 
-    const [convResult, messagesResult, draftsResult, reservationResult, channelsResult] =
+    const [convResult, messagesResult, draftsResult, channelsResult] =
       await Promise.all([
         query(
           `SELECT c.*,
@@ -458,10 +462,6 @@ router.get('/:id', attachIdentity, async (req, res) => {
         ),
         query('SELECT * FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC', [id]),
         query('SELECT * FROM drafts WHERE conversation_id = $1 ORDER BY created_at DESC', [id]),
-        query(
-          'SELECT r.* FROM reservations r JOIN conversations c ON c.reservation_id = r.id WHERE c.id = $1',
-          [id],
-        ),
         query(
           'SELECT DISTINCT module_type FROM messages WHERE conversation_id = $1 AND module_type IS NOT NULL',
           [id],
@@ -501,6 +501,8 @@ router.get('/:id', attachIdentity, async (req, res) => {
       if (['airbnb', 'booking', 'whatsapp', 'email'].includes(ch)) channelSet.add(ch);
     }
     const available_channels = channelSet.size > 0 ? Array.from(channelSet) : null;
+    const reservation = await resolveInboxReservationContext(conv, { tenantId: FR_TENANT_ID });
+    const conversationForResponse = applyReservationContextToConversation(conv, reservation);
 
     // Smart channel routing — recommend, don't restrict
     const bookingSource = String(conv.channel || conv.communication_channel || '').toLowerCase();
@@ -539,10 +541,10 @@ router.get('/:id', attachIdentity, async (req, res) => {
     );
 
     res.json({
-      conversation: conv,
+      conversation: conversationForResponse,
       messages: messagesResult.rows,
       drafts: draftsResult.rows,
-      reservation: reservationResult.rows[0] || null,
+      reservation,
       whatsapp_window_open,
       whatsapp_window_expires_at,
       available_channels,
@@ -577,16 +579,18 @@ router.get('/:id/messages', attachIdentity, async (req, res) => {
 // ────────────────────────────────────────────────────────────────────
 router.get('/:id/reservation', attachIdentity, async (req, res) => {
   try {
-    const result = await query(
-      `SELECT r.* FROM reservations r
-         JOIN conversations c ON c.reservation_id = r.id
-         WHERE c.id = $1`,
-      [req.params.id],
+    const { rows } = await query(
+      'SELECT * FROM conversations WHERE id = $1 AND tenant_id = $2 LIMIT 1',
+      [req.params.id, FR_TENANT_ID],
     );
-    if (result.rows.length === 0) {
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    const reservation = await resolveInboxReservationContext(rows[0], { tenantId: FR_TENANT_ID });
+    if (!reservation) {
       return res.status(404).json({ error: 'No reservation linked to this conversation' });
     }
-    res.json({ reservation: result.rows[0] });
+    res.json({ reservation });
   } catch (err) {
     console.error('[inbox/conversations] reservation error:', err.message);
     res.status(500).json({ error: 'Failed to get reservation', details: err.message });

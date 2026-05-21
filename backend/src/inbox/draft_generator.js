@@ -34,6 +34,11 @@ const { generateDraftReply, classifyMessageWithKimi, DRAFT_MODEL } = require('..
 const { translateText } = require('../ai/translate');
 const { loadTeachingsBlock, loadActionFeedbackBlock } = require('./learning_context');
 const { notifyUsers, publishFadEvent, resolveGmWatchers } = require('../realtime');
+const {
+  resolveInboxReservationContext,
+  applyReservationContextToConversation,
+} = require('./reservation_context');
+const { safeConversationSummary } = require('./summary_quality');
 
 const DRAFT_INITIAL_STATE = 'friday_drafting';
 const DRAFT_READY_STATE = 'draft_ready';
@@ -46,6 +51,14 @@ The draft_body stored for FAD operators must always be in English, even when the
 Do not write the visible operator draft in the guest's language.
 The approve/send path translates the English operator draft back into the guest's language immediately before sending.
 `;
+
+const DRAFT_PRIMARY_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_PRIMARY_TIMEOUT_MS) || 90_000;
+const DRAFT_PRIMARY_MAX_RETRIES = Number(process.env.KIMI_DRAFT_PRIMARY_MAX_RETRIES) || 0;
+const DRAFT_FALLBACK_MODEL = process.env.KIMI_DRAFT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || 'moonshot-v1-8k';
+const DRAFT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_FALLBACK_TIMEOUT_MS) || 45_000;
+const DRAFT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_RETRIES) || 0;
+const DRAFT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_TOKENS) || 1400;
+const DRAFT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|overloaded|temporarily|unavailable|gateway|502|503|504)/i;
 
 // ────────────────────────────────────────────────────────────────────
 // Helpers ported from friday-gms/src/services/draft-generator.ts
@@ -134,6 +147,67 @@ function stripAIPreamble(text) {
   }
 
   return out;
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value || '');
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 18)).trimEnd()}\n[truncated]`;
+}
+
+function isTransientDraftFailure(result) {
+  if (!result || result.ok) return false;
+  if (result.finishReason === 'length') return true;
+  const status = Number(result.status);
+  if ([408, 409, 425].includes(status)) return true;
+  if (status >= 500) return true;
+  return DRAFT_TRANSIENT_FAILURE_RE.test(String(result.error || ''));
+}
+
+function buildDraftUserMessage({ ctxLines, history, taskDirective }) {
+  return `CONVERSATION CONTEXT:
+${ctxLines.map((l) => `- ${l}`).join('\n')}
+
+PREVIOUS MESSAGES:
+${history}
+
+${taskDirective}`;
+}
+
+function compactDraftSystemPrompt({ propertyCode, category }) {
+  return `You are Friday Retreats' guest-message drafting assistant.
+
+Use this compact fallback only when the full knowledge prompt is too large or times out.
+
+Rules:
+- Draft in English for the FAD operator. Translation happens later at send time.
+- Reply only to the latest guest message.
+- Prefer the current reservation/property context shown in the prompt.
+- Be concise, warm, operationally precise, and do not invent prices, availability, refunds, access instructions, or commitments.
+- If key operational facts are missing, write a useful reply that says the team will verify and come back.
+- Output the reply text only. No preamble or commentary.
+
+Context hints:
+- Property code: ${propertyCode || 'unknown'}
+- Trigger category: ${category || 'other'}`;
+}
+
+function compactHistoryMessages(allMessages, triggeringMessageId) {
+  const messages = Array.isArray(allMessages) ? allMessages : [];
+  const first = messages.slice(0, 2);
+  const recent = messages.slice(-12);
+  const byId = new Map();
+  for (const msg of [...first, ...recent]) {
+    byId.set(String(msg.id || `${msg.created_at}-${byId.size}`), msg);
+  }
+  if (triggeringMessageId) {
+    const triggering = messages.find((msg) => String(msg.id) === String(triggeringMessageId));
+    if (triggering) byId.set(String(triggering.id), triggering);
+  }
+  return [...byId.values()]
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .map((msg) => truncateText(formatMessageForContext(msg), 900))
+    .join('\n\n');
 }
 
 // Currency normalisation. Mirrors GMS's correctCurrencyFormatting —
@@ -371,7 +445,8 @@ async function generateDraft({ message, conversation, revisionInstruction, previ
     `Triggering message classified as: ${category}`,
   ];
   if (conversation.notes) ctxLines.push(`Staff notes: ${conversation.notes}`);
-  if (conversation.conversation_summary) ctxLines.push(`Prior summary: ${conversation.conversation_summary}`);
+  const priorSummary = safeConversationSummary(conversation.conversation_summary);
+  if (priorSummary) ctxLines.push(`Prior summary (unverified; prefer actual messages): ${priorSummary}`);
 
   let taskDirective;
   if (revisionInstruction) {
@@ -389,13 +464,7 @@ Messages labeled [Automated reply already sent] or [System notification] indicat
 Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
   }
 
-  const userMessage = `CONVERSATION CONTEXT:
-${ctxLines.map((l) => `- ${l}`).join('\n')}
-
-PREVIOUS MESSAGES:
-${history}
-
-${taskDirective}`;
+  const userMessage = buildDraftUserMessage({ ctxLines, history, taskDirective });
 
   // 4b. Dynamic learning blocks — restored after Sprint 8/9 audit
   // (2026-05-19): the structured composer doesn't include them, but
@@ -411,12 +480,38 @@ ${taskDirective}`;
     + feedbackBlock
     + OPERATOR_DRAFT_LANGUAGE_CONTRACT;
 
-  // 5. Call Kimi.
-  const kimi = await generateDraftReply({
+  // 5. Call Kimi. The first pass uses the full FAD knowledge prompt,
+  // but does not retry the same long prompt repeatedly. If it fails
+  // because the context is too large or the model times out, retry once
+  // with a compact prompt and truncated history.
+  let kimi = await generateDraftReply({
     system: systemPrompt,
     user: userMessage,
     meter: { feature: 'inbox_draft' },
+    timeoutMs: DRAFT_PRIMARY_TIMEOUT_MS,
+    maxRetries: DRAFT_PRIMARY_MAX_RETRIES,
   });
+  let fallbackUsed = false;
+
+  if (!kimi.ok && isTransientDraftFailure(kimi)) {
+    fallbackUsed = true;
+    const fullContextError = kimi.error || 'transient draft model failure';
+    console.warn(`[draft-gen] full-context call failed (${fullContextError}); retrying compact draft context`);
+    const compactUserMessage = buildDraftUserMessage({
+      ctxLines,
+      history: compactHistoryMessages(allMessages, message.id),
+      taskDirective,
+    });
+    kimi = await generateDraftReply({
+      system: compactDraftSystemPrompt({ propertyCode, category }),
+      user: compactUserMessage,
+      meter: { feature: 'inbox_draft_compact' },
+      timeoutMs: DRAFT_FALLBACK_TIMEOUT_MS,
+      maxRetries: DRAFT_FALLBACK_MAX_RETRIES,
+      maxTokens: DRAFT_FALLBACK_MAX_TOKENS,
+      model: DRAFT_FALLBACK_MODEL,
+    });
+  }
 
   if (!kimi.ok) {
     throw new Error(`Kimi draft call failed: ${kimi.error || 'unknown'}`);
@@ -456,6 +551,7 @@ ${taskDirective}`;
     loadedSkills: composerOutput.metadata.loaded_skills || [],
     tokenEstimate: composerOutput.metadata.token_estimate || 0,
     promptLatencyMs: kimi.latencyMs || null,
+    fallbackUsed,
   };
 }
 
@@ -541,6 +637,14 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
       throw new Error(`message ${messageId} or conversation ${conversationId} not found`);
     }
     conversationRow = convRows.rows[0];
+    try {
+      const reservationContext = await resolveInboxReservationContext(conversationRow, {
+        tenantId: conversationRow.tenant_id,
+      });
+      conversationRow = applyReservationContextToConversation(conversationRow, reservationContext);
+    } catch (e) {
+      console.warn(`[draft-gen] reservation context overlay failed for ${conversationId}: ${e.message}`);
+    }
 
     // Previous draft body — only fetched on revision so the revision
     // prompt can show what's being rewritten.
@@ -557,7 +661,7 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
 
     const result = await generateDraft({
       message: messageRows.rows[0],
-      conversation: convRows.rows[0],
+      conversation: conversationRow,
       revisionInstruction,
       previousDraftBody,
     });
@@ -667,5 +771,9 @@ module.exports = {
   formatMessageForContext,
   languageRoot,
   ensureOperatorEnglishDraft,
+  isTransientDraftFailure,
+  buildDraftUserMessage,
+  compactDraftSystemPrompt,
+  compactHistoryMessages,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
 };

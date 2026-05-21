@@ -946,6 +946,25 @@ export function FridayConsult({
             >
               <IconRefresh size={9} /> History
             </button>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Collapse Friday Consult"
+              style={{
+                width: 24,
+                height: 24,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--color-text-tertiary)',
+                background: 'transparent',
+                border: '0.5px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              <IconClose size={11} />
+            </button>
           </div>
         </div>
       )}

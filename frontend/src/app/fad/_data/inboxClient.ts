@@ -78,6 +78,20 @@ function confidenceRatio(value: unknown): number | undefined {
   return percent == null ? undefined : percent / 100;
 }
 
+const BAD_SUMMARY_PATTERNS = [
+  /\bi['’]?m ready to help summarize conversations\b/i,
+  /\bplease (?:provide|share) the actual conversation\b/i,
+  /\bi don['’]?t see a conversation history\b/i,
+  /\bthere is no conversation (?:history|provided)\b/i,
+];
+
+export function usableConversationSummary(value: unknown): string | undefined {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return undefined;
+  if (BAD_SUMMARY_PATTERNS.some((pattern) => pattern.test(text))) return undefined;
+  return text;
+}
+
 // ───────── shape adapters ─────────
 //
 // Real GMS conversation shape (verified 2026-05-12):
@@ -184,21 +198,34 @@ interface WhatsAppWindowInfo {
 function transformGmsReservation(raw: Record<string, unknown>): InboxReservation {
   const num = (v: unknown): number | undefined =>
     v == null ? undefined : (Number.isFinite(Number(v)) ? Number(v) : undefined);
+  const money = (major: unknown, minor: unknown): number | undefined => {
+    const majorValue = num(major);
+    if (majorValue !== undefined) return majorValue;
+    const minorValue = num(minor);
+    return minorValue === undefined ? undefined : minorValue / 100;
+  };
+  const guestName = raw.guest_name
+    ? String(raw.guest_name)
+    : [raw.guest_first_name, raw.guest_last_name].filter(Boolean).map(String).join(' ').trim();
   return {
-    id: String(raw.id || raw.guesty_reservation_id || ''),
-    guestyReservationId: raw.guesty_reservation_id ? String(raw.guesty_reservation_id) : undefined,
-    listingName: raw.listing_name ? String(raw.listing_name) : undefined,
+    id: String(raw.id || raw.guesty_reservation_id || raw.guesty_id || ''),
+    guestyReservationId: raw.guesty_reservation_id
+      ? String(raw.guesty_reservation_id)
+      : (raw.guesty_id ? String(raw.guesty_id) : undefined),
+    listingName: raw.listing_name
+      ? String(raw.listing_name)
+      : (raw.listing_nickname ? String(raw.listing_nickname) : (raw.listing_guesty_id ? String(raw.listing_guesty_id) : undefined)),
     status: raw.status ? String(raw.status) : undefined,
     channel: raw.channel ? String(raw.channel) : (raw.source ? String(raw.source) : undefined),
-    checkIn: raw.check_in ? String(raw.check_in) : undefined,
-    checkOut: raw.check_out ? String(raw.check_out) : undefined,
-    numberOfNights: num(raw.number_of_nights),
-    numGuests: num(raw.num_guests),
-    guestName: raw.guest_name ? String(raw.guest_name) : undefined,
+    checkIn: raw.check_in ? String(raw.check_in) : (raw.check_in_date ? String(raw.check_in_date) : undefined),
+    checkOut: raw.check_out ? String(raw.check_out) : (raw.check_out_date ? String(raw.check_out_date) : undefined),
+    numberOfNights: num(raw.number_of_nights ?? raw.nights),
+    numGuests: num(raw.num_guests ?? raw.guests_count),
+    guestName: guestName || undefined,
     guestEmail: raw.guest_email ? String(raw.guest_email) : undefined,
     guestPhone: raw.guest_phone ? String(raw.guest_phone) : undefined,
-    totalPrice: num(raw.total_price),
-    currency: raw.currency ? String(raw.currency) : undefined,
+    totalPrice: money(raw.total_price, raw.total_amount_minor),
+    currency: raw.currency ? String(raw.currency) : (raw.currency_code ? String(raw.currency_code) : undefined),
     cleaningFee: num(raw.cleaning_fee),
     nightlyRate: num(raw.nightly_rate),
     specialRequests: raw.special_requests ? String(raw.special_requests) : undefined,
@@ -248,8 +275,8 @@ export function transformGmsConversation(
   // (1 - confidence) gives an urgency proxy; 0.5+ confidence-gap → amber.
   const draftUrgency = confidence !== undefined ? 1 - confidence : undefined;
 
-  const preview = String(raw.last_message_body || raw.conversation_summary || '').slice(0, 200);
-  const summary = raw.conversation_summary ? String(raw.conversation_summary) : undefined;
+  const summary = usableConversationSummary(raw.conversation_summary);
+  const preview = String(raw.last_message_body || summary || '').slice(0, 200);
   // GMS has no subject field — guests just send messages. Use summary as
   // "subject line" when present; fall back to first 80 chars of preview.
   const subject = summary

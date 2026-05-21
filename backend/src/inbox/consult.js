@@ -11,6 +11,11 @@ const {
   formatMessageForContext,
   detectTaskSignals,
 } = require('./draft_generator');
+const {
+  resolveInboxReservationContext,
+  applyReservationContextToConversation,
+} = require('./reservation_context');
+const { safeConversationSummary } = require('./summary_quality');
 const { publishFadEvent } = require('../realtime');
 
 const router = express.Router();
@@ -194,7 +199,8 @@ function buildConsultUserMessage({
       `Guests: ${conversation.num_guests || 'n/a'}`,
       `Status: ${conversation.status || 'unknown'}`,
     ];
-    if (conversation.conversation_summary) convLines.push(`Prior summary: ${conversation.conversation_summary}`);
+    const priorSummary = safeConversationSummary(conversation.conversation_summary);
+    if (priorSummary) convLines.push(`Prior summary (unverified; prefer actual messages): ${priorSummary}`);
     if (conversation.notes) convLines.push(`Staff notes: ${conversation.notes}`);
     parts.push(`[Conversation]\n${convLines.map((l) => `- ${l}`).join('\n')}`);
   }
@@ -240,8 +246,9 @@ function buildCompactConsultUserMessage({
       `Guests: ${conversation.num_guests || 'n/a'}`,
       `Status: ${conversation.status || 'unknown'}`,
     ];
-    if (conversation.conversation_summary) {
-      convLines.push(`Prior summary: ${truncateText(conversation.conversation_summary, 900)}`);
+    const priorSummary = safeConversationSummary(conversation.conversation_summary);
+    if (priorSummary) {
+      convLines.push(`Prior summary (unverified): ${truncateText(priorSummary, 900)}`);
     }
     parts.push(`[Conversation]\n${convLines.map((l) => `- ${l}`).join('\n')}`);
   }
@@ -367,8 +374,15 @@ async function loadConversationBundle(conversationId, tenantId) {
     err.statusCode = 404;
     throw err;
   }
+  let conversation = convResult.rows[0];
+  try {
+    const reservationContext = await resolveInboxReservationContext(conversation, { tenantId });
+    conversation = applyReservationContextToConversation(conversation, reservationContext);
+  } catch (e) {
+    console.warn(`[consult] reservation context overlay failed for ${conversationId}: ${e.message}`);
+  }
   return {
-    conversation: convResult.rows[0],
+    conversation,
     messages: messagesResult.rows,
   };
 }
