@@ -182,6 +182,12 @@ function dateParts(value: string | undefined): [number, number, number] | null {
   return [year, month, day];
 }
 
+function mergeTaskSlices(...slices: Task[][]): Task[] {
+  const byId = new Map<string, Task>();
+  slices.flat().forEach((task) => byId.set(task.id, task));
+  return [...byId.values()];
+}
+
 export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   const { role } = usePermissions();
   const canSeeApprovals = useCanSee('tasks', 'approve');
@@ -382,13 +388,34 @@ function OverviewPage({
 }) {
   const { role } = usePermissions();
   const currentUserId = useCurrentUserId();
-  const overviewTaskFilter = useMemo(() => (
-    role === 'field' ? { assignee: 'me' as const } : undefined
-  ), [role]);
-  const { tasks: TASKS, loading, error, refetch } = useApiTasks(overviewTaskFilter);
   const [dashboardDate, setDashboardDate] = useState(TODAY);
   const [dashboardStatus, setDashboardStatus] = useState<DashboardStatusFilter>('open');
   const [savingTimeId, setSavingTimeId] = useState<string | null>(null);
+  const overviewAssignee = role === 'field' ? 'me' as const : undefined;
+  const overviewDayQuery = useMemo(() => ({
+    assignee: overviewAssignee,
+    dueAfter: dashboardDate,
+    dueBefore: dashboardDate,
+    limit: 500,
+    sort: 'dueDate' as const,
+    dir: 'asc' as const,
+  }), [dashboardDate, overviewAssignee]);
+  const overviewOpenQuery = useMemo(() => ({
+    assignee: overviewAssignee,
+    status: OPEN_SCHEDULE_STATUSES,
+    limit: 500,
+    sort: 'dueDate' as const,
+    dir: 'asc' as const,
+  }), [overviewAssignee]);
+  const dayPage = useApiTasksPage(overviewDayQuery);
+  const openPage = useApiTasksPage(overviewOpenQuery);
+  const TASKS = useMemo(() => mergeTaskSlices(openPage.tasks, dayPage.tasks), [dayPage.tasks, openPage.tasks]);
+  const loading = (dayPage.loading && dayPage.tasks.length === 0) || (openPage.loading && openPage.tasks.length === 0);
+  const error = dayPage.error || openPage.error;
+  const refetch = () => {
+    dayPage.refetch();
+    openPage.refetch();
+  };
   const scopedTasks = TASKS;
   const kpis = useMemo(() => {
     const openToday = scopedTasks.filter((t) => t.dueDate === TODAY && !CLOSED_STATUS.has(t.status)).length;

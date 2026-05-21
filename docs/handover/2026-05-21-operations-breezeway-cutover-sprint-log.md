@@ -408,4 +408,4 @@
 - The All Tasks UI defaulted to 200 rows and offered 500 rows, so each first page pulled a large task payload before anything useful appeared.
 - Current Reported Issues has no production `source = reported_issue` / `status = reported` rows; historical accepted issues need a clean reported-issues export or API marker rather than title-text inference.
 - Safe display decision: keep Breezeway provenance as `Imported`, do not expose the provider as a permanent runtime label, and replace redacted imported titles in the UI with `Sensitive imported task` without unredacting the source data.
-- First fix slice: normalize due dates at the adapter boundary, remove the parent-level full task fetch, default task pages/API to 50 rows, add an animated F loader, and make status visually stronger while priority becomes quieter.
+- First fix slice: normalize due dates at the adapter boundary, remove the parent-level and Overview full-history task fetches, default task pages/API to 50 rows, add an animated F loader, and make status visually stronger while priority becomes quieter.
