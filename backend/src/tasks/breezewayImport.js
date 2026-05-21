@@ -259,6 +259,13 @@ function countMapPush(map, value, rowNumber) {
   map.set(key, entry);
 }
 
+function extractPropertyCode(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = raw.toUpperCase().match(/^([A-Z]{1,5}(?:-[A-Z0-9]{1,5}){1,3})(?=\b|\s|$)/);
+  return match ? match[1] : null;
+}
+
 function mapToArray(map) {
   return [...map.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }
@@ -306,6 +313,9 @@ function resolveProperty(row, options, report) {
     if (mapped) return String(mapped).trim();
     if (known.has(candidate.toUpperCase())) return candidate.toUpperCase();
   }
+
+  const propertyCode = extractPropertyCode(row.Property);
+  if (propertyCode) return propertyCode;
 
   if (candidates.length > 0) {
     countMapPush(report._unknownProperties, candidates.join(' | '), row.__rowNumber);
@@ -737,4 +747,5 @@ module.exports = {
   parseCsv,
   previewBreezewayCsv,
   applyBreezewayCsv,
+  extractPropertyCode,
 };

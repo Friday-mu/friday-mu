@@ -1,0 +1,1296 @@
+{
+  "generatedAt": "2026-05-21T15:32:48.921Z",
+  "sourceDirectory": "/Users/judith/Desktop/Friday/Friday OS/Ops Module",
+  "tenantId": "00000000-0000-0000-0000-000000000001",
+  "mode": "preview_only",
+  "files": {
+    "summary": {
+      "path": "/Users/judith/Desktop/Friday/Friday OS/Ops Module/breezeway-task-summary-export.csv",
+      "rows": 5174,
+      "headers": [
+        "Department",
+        "Subdepartment",
+        "Task ID",
+        "Property",
+        "Property ID",
+        "Property Marketing ID",
+        "Property Internal ID",
+        "Property Group",
+        "Property Time Zone",
+        "Task title",
+        "Status",
+        "Priority",
+        "Created by",
+        "Created date",
+        "Created time",
+        "Last updated date",
+        "Started date",
+        "Started time",
+        "Due date",
+        "Due time",
+        "Assignees",
+        "Assigned Employee IDs",
+        "Completed date",
+        "Completed time",
+        "Completed by",
+        "Total time",
+        "Task description",
+        "Task summary",
+        "Task tags",
+        "Estimated time",
+        "Rate paid",
+        "Rate type",
+        "Total cost",
+        "Currency",
+        "Bill to",
+        "Requested by"
+      ]
+    },
+    "custom": {
+      "path": "/Users/judith/Desktop/Friday/Friday OS/Ops Module/breezeway-task-custom-export.csv",
+      "rows": 5174,
+      "headers": [
+        "Task title",
+        "Property",
+        "Department",
+        "Subdepartment",
+        "Assignees",
+        "Due date",
+        "Issues",
+        "Comments",
+        "Status",
+        "Priority",
+        "Guest arrival rating",
+        "Total cost",
+        "Currency (Total cost)",
+        "Bill to",
+        "Requested by",
+        "Task tags",
+        "Estimated time",
+        "Created date",
+        "Created by",
+        "Completed date",
+        "Completed by",
+        "Last updated date",
+        "Task report link",
+        "Property Time Zone"
+      ]
+    },
+    "cost": {
+      "path": "/Users/judith/Desktop/Friday/Friday OS/Ops Module/breezeway-task-cost-export.csv",
+      "rows": 5186,
+      "headers": [
+        "Department",
+        "Subdepartment",
+        "Task ID",
+        "Property",
+        "Property ID",
+        "Property Marketing ID",
+        "Property Internal ID",
+        "Property Group",
+        "Property Time Zone",
+        "Task title",
+        "Status",
+        "Priority",
+        "Created by",
+        "Created date",
+        "Created time",
+        "Last updated date",
+        "Started date",
+        "Started time",
+        "Due date",
+        "Due time",
+        "Assignees",
+        "Assigned Employee IDs",
+        "Completed date",
+        "Completed time",
+        "Completed by",
+        "Total time",
+        "Task description",
+        "Task summary",
+        "Task tags",
+        "Bill to",
+        "Cost type",
+        "Cost description",
+        "Cost amount",
+        "Cost bill to",
+        "Supply ID",
+        "Supply name",
+        "Supply quantity",
+        "Supply unit cost",
+        "Supply markup rate",
+        "Supply markup type",
+        "Supply price",
+        "Supply bill to"
+      ]
+    },
+    "payroll": {
+      "path": "/Users/judith/Desktop/Friday/Friday OS/Ops Module/breezeway-task-payroll-export.csv",
+      "rows": 5791,
+      "headers": [
+        "Department",
+        "Subdepartment",
+        "Task ID",
+        "Property",
+        "Property ID",
+        "Property internal ID",
+        "Property Time Zone",
+        "Task title",
+        "Task description",
+        "Task summary",
+        "Due date",
+        "Due time",
+        "Completed date",
+        "Completed time",
+        "Assignee",
+        "Employee ID",
+        "Number of people",
+        "Default rate",
+        "Rate paid",
+        "Default rate type",
+        "Rate type",
+        "Estimated time",
+        "Total time"
+      ]
+    },
+    "supplies": {
+      "path": "/Users/judith/Desktop/Friday/Friday OS/Ops Module/breezeway-task-supplies-export.csv",
+      "rows": 1,
+      "headers": [
+        "Department",
+        "Subdepartment",
+        "Task ID",
+        "Property",
+        "Property ID",
+        "Property Marketing ID",
+        "Property Internal ID",
+        "Property Group",
+        "Property Time Zone",
+        "Task title",
+        "Status",
+        "Priority",
+        "Created by",
+        "Created date",
+        "Created time",
+        "Last updated date",
+        "Started date",
+        "Started time",
+        "Due date",
+        "Due time",
+        "Assignees",
+        "Assigned Employee IDs",
+        "Completed date",
+        "Completed time",
+        "Completed by",
+        "Total time",
+        "Task description",
+        "Task summary",
+        "Task tags",
+        "Supply ID",
+        "Supply name",
+        "Supply description",
+        "Supply quantity",
+        "Supply unit cost",
+        "Supply markup rate",
+        "Supply markup type",
+        "Supply unit type",
+        "Supply price",
+        "Supply total cost",
+        "Supply is billable",
+        "Supply bill to",
+        "Supply total charge"
+      ]
+    }
+  },
+  "summaryTaskPreview": {
+    "fileName": "breezeway-task-summary-export.csv",
+    "totalRows": 5174,
+    "validRows": 5174,
+    "insertableRows": 5174,
+    "duplicates": {
+      "taskIds": [],
+      "externalRefs": [],
+      "existingExternalRefs": []
+    },
+    "unknownProperties": [
+      {
+        "value": "Office / Store / Admin | 1099484",
+        "count": 649,
+        "rows": [
+          3590,
+          3591,
+          3592,
+          3593,
+          3594,
+          3595,
+          3596,
+          3597,
+          3598,
+          3599
+        ]
+      },
+      {
+        "value": "GBH | GBH | Grand Baie Heights | 1268645",
+        "count": 42,
+        "rows": [
+          5084,
+          5085,
+          5086,
+          5087,
+          5088,
+          5089,
+          5090,
+          5091,
+          5092,
+          5093
+        ]
+      }
+    ],
+    "unknownAssignees": [
+      {
+        "value": "(no id) | Bryan Henri",
+        "count": 1374,
+        "rows": [
+          42,
+          43,
+          46,
+          47,
+          48,
+          55,
+          60,
+          61,
+          70,
+          71
+        ]
+      },
+      {
+        "value": "(no id) | Alex Legentil",
+        "count": 1119,
+        "rows": [
+          286,
+          295,
+          296,
+          297,
+          299,
+          300,
+          301,
+          302,
+          303,
+          305
+        ]
+      },
+      {
+        "value": "(no id) | Ishant  Ayadassen",
+        "count": 557,
+        "rows": [
+          6,
+          7,
+          8,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23
+        ]
+      },
+      {
+        "value": "(no id) | Oracle cleaning service limited",
+        "count": 517,
+        "rows": [
+          266,
+          278,
+          279,
+          335,
+          336,
+          337,
+          338,
+          339,
+          340,
+          341
+        ]
+      },
+      {
+        "value": "(no id) | Franny Henri",
+        "count": 473,
+        "rows": [
+          49,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          66
+        ]
+      },
+      {
+        "value": "(no id) | Hans Jowaheer",
+        "count": 387,
+        "rows": [
+          37,
+          166,
+          271,
+          272,
+          273,
+          274,
+          275,
+          276,
+          277,
+          378
+        ]
+      },
+      {
+        "value": "(no id) | Mathias Duval",
+        "count": 379,
+        "rows": [
+          69,
+          70,
+          73,
+          90,
+          91,
+          94,
+          95,
+          97,
+          99,
+          135
+        ]
+      },
+      {
+        "value": "(no id) | Debora Gourdin",
+        "count": 334,
+        "rows": [
+          27,
+          29,
+          30,
+          31,
+          35,
+          36,
+          37,
+          40,
+          100,
+          132
+        ]
+      },
+      {
+        "value": "(no id) | Mary Oladimeji",
+        "count": 191,
+        "rows": [
+          41,
+          59,
+          62,
+          63,
+          64,
+          69,
+          70,
+          73,
+          93,
+          94
+        ]
+      },
+      {
+        "value": "(no id) | Matthieu Duval",
+        "count": 106,
+        "rows": [
+          262,
+          263,
+          336,
+          368,
+          369,
+          370,
+          371,
+          372,
+          373,
+          412
+        ]
+      },
+      {
+        "value": "(no id) | DHB cleaning service ltd",
+        "count": 93,
+        "rows": [
+          39,
+          44,
+          101,
+          102,
+          103,
+          104,
+          105,
+          106,
+          107,
+          129
+        ]
+      },
+      {
+        "value": "(no id) | Chris Lisette",
+        "count": 76,
+        "rows": [
+          374,
+          377,
+          394,
+          575,
+          577,
+          584,
+          667,
+          728,
+          729,
+          730
+        ]
+      },
+      {
+        "value": "(no id) | Third Party",
+        "count": 68,
+        "rows": [
+          137,
+          143,
+          243,
+          249,
+          386,
+          462,
+          541,
+          759,
+          836,
+          934
+        ]
+      },
+      {
+        "value": "(no id) | Océanne La Gaité",
+        "count": 65,
+        "rows": [
+          280,
+          281,
+          282,
+          384,
+          602,
+          604,
+          605,
+          668,
+          832,
+          933
+        ]
+      },
+      {
+        "value": "(no id) | Dylan Luchmun",
+        "count": 50,
+        "rows": [
+          259,
+          260,
+          261,
+          409,
+          482,
+          483,
+          484,
+          539,
+          725,
+          726
+        ]
+      },
+      {
+        "value": "(no id) | Catherine Henri",
+        "count": 40,
+        "rows": [
+          98,
+          122,
+          123,
+          231,
+          565,
+          916,
+          926,
+          1012,
+          1015,
+          1632
+        ]
+      },
+      {
+        "value": "ALEX | Oracle cleaning service limited",
+        "count": 25,
+        "rows": [
+          342,
+          492,
+          688,
+          750,
+          963,
+          964,
+          1235,
+          1883,
+          2120,
+          2121
+        ]
+      },
+      {
+        "value": "(no id) | Sephora Henri",
+        "count": 7,
+        "rows": [
+          1401,
+          1442,
+          5108,
+          5154,
+          5159,
+          5160,
+          5172
+        ]
+      },
+      {
+        "value": "(no id) | Adrien Migale",
+        "count": 6,
+        "rows": [
+          469,
+          802,
+          1029,
+          1994,
+          3209,
+          3724
+        ]
+      },
+      {
+        "value": "(no id) | Alexandra LEGENTIL",
+        "count": 3,
+        "rows": [
+          1136,
+          2737,
+          3997
+        ]
+      },
+      {
+        "value": "(no id) | Judith Friday",
+        "count": 2,
+        "rows": [
+          3612,
+          4136
+        ]
+      },
+      {
+        "value": "(no id) | Pierre Corlet",
+        "count": 2,
+        "rows": [
+          1875,
+          2673
+        ]
+      },
+      {
+        "value": "(no id) | Breezeway Assist",
+        "count": 1,
+        "rows": [
+          1402
+        ]
+      },
+      {
+        "value": "(no id) | Cherlvin Ittoo",
+        "count": 1,
+        "rows": [
+          3826
+        ]
+      }
+    ],
+    "unknownStatuses": [],
+    "unknownPriorities": [
+      {
+        "value": "Watch",
+        "count": 12,
+        "rows": [
+          784,
+          1049,
+          2037,
+          2094,
+          2162,
+          2186,
+          2188,
+          3158,
+          4373,
+          4602
+        ]
+      }
+    ],
+    "unknownDepartments": [],
+    "emptyCriticalFields": [],
+    "skippedRows": [],
+    "skippedRowsTruncated": 0,
+    "sensitiveRedactionCount": 502,
+    "formulaEscapeCount": 150,
+    "sampleTransformedRecords": [
+      {
+        "rowNumber": 2,
+        "externalRef": "breezeway:130484603",
+        "bzId": "130484603",
+        "title": "Amenities Form",
+        "status": "scheduled",
+        "priority": "medium",
+        "department": "inspection",
+        "subdepartment": null,
+        "propertyCode": "VA-4",
+        "dueDate": "2026-03-01",
+        "dueTime": null,
+        "assigneeCount": 0,
+        "unresolvedAssigneeCount": 0,
+        "sourceCompletedAt": null,
+        "totalCostMinor": null,
+        "currency": null
+      },
+      {
+        "rowNumber": 3,
+        "externalRef": "breezeway:130484619",
+        "bzId": "130484619",
+        "title": "Gap Analysis",
+        "status": "scheduled",
+        "priority": "medium",
+        "department": "inspection",
+        "subdepartment": null,
+        "propertyCode": "VA-4",
+        "dueDate": "2026-03-01",
+        "dueTime": null,
+        "assigneeCount": 0,
+        "unresolvedAssigneeCount": 0,
+        "sourceCompletedAt": null,
+        "totalCostMinor": null,
+        "currency": null
+      },
+      {
+        "rowNumber": 4,
+        "externalRef": "breezeway:130484623",
+        "bzId": "130484623",
+        "title": "[redacted: sensitive operational detail]",
+        "status": "scheduled",
+        "priority": "high",
+        "department": "inspection",
+        "subdepartment": "safety",
+        "propertyCode": "VA-4",
+        "dueDate": "2026-03-01",
+        "dueTime": null,
+        "assigneeCount": 0,
+        "unresolvedAssigneeCount": 0,
+        "sourceCompletedAt": null,
+        "totalCostMinor": null,
+        "currency": null
+      },
+      {
+        "rowNumber": 5,
+        "externalRef": "breezeway:130484628",
+        "bzId": "130484628",
+        "title": "Aesthetics Check",
+        "status": "scheduled",
+        "priority": "medium",
+        "department": "inspection",
+        "subdepartment": null,
+        "propertyCode": "VA-4",
+        "dueDate": "2026-03-01",
+        "dueTime": null,
+        "assigneeCount": 0,
+        "unresolvedAssigneeCount": 0,
+        "sourceCompletedAt": null,
+        "totalCostMinor": null,
+        "currency": null
+      },
+      {
+        "rowNumber": 6,
+        "externalRef": "breezeway:141553380",
+        "bzId": "141553380",
+        "title": "Talk to Owner",
+        "status": "scheduled",
+        "priority": "medium",
+        "department": "inspection",
+        "subdepartment": null,
+        "propertyCode": "VA-4",
+        "dueDate": "2026-04-13",
+        "dueTime": null,
+        "assigneeCount": 0,
+        "unresolvedAssigneeCount": 1,
+        "sourceCompletedAt": null,
+        "totalCostMinor": null,
+        "currency": null
+      }
+    ]
+  },
+  "supplementalJoinPreview": {
+    "cost": {
+      "rows": 5186,
+      "headers": [
+        "Department",
+        "Subdepartment",
+        "Task ID",
+        "Property",
+        "Property ID",
+        "Property Marketing ID",
+        "Property Internal ID",
+        "Property Group",
+        "Property Time Zone",
+        "Task title",
+        "Status",
+        "Priority",
+        "Created by",
+        "Created date",
+        "Created time",
+        "Last updated date",
+        "Started date",
+        "Started time",
+        "Due date",
+        "Due time",
+        "Assignees",
+        "Assigned Employee IDs",
+        "Completed date",
+        "Completed time",
+        "Completed by",
+        "Total time",
+        "Task description",
+        "Task summary",
+        "Task tags",
+        "Bill to",
+        "Cost type",
+        "Cost description",
+        "Cost amount",
+        "Cost bill to",
+        "Supply ID",
+        "Supply name",
+        "Supply quantity",
+        "Supply unit cost",
+        "Supply markup rate",
+        "Supply markup type",
+        "Supply price",
+        "Supply bill to"
+      ],
+      "taskIdRows": 5186,
+      "uniqueTaskIds": 5171,
+      "missingTaskIdRows": 0,
+      "duplicateTaskRows": 15,
+      "duplicateTaskIds": [
+        {
+          "value": "112928226",
+          "count": 3,
+          "rows": [
+            2730,
+            2731,
+            2732
+          ]
+        },
+        {
+          "value": "112928236",
+          "count": 3,
+          "rows": [
+            2454,
+            2455,
+            2456
+          ]
+        },
+        {
+          "value": "112928237",
+          "count": 3,
+          "rows": [
+            740,
+            741,
+            742
+          ]
+        },
+        {
+          "value": "112335268",
+          "count": 2,
+          "rows": [
+            336,
+            337
+          ]
+        },
+        {
+          "value": "112511879",
+          "count": 2,
+          "rows": [
+            1613,
+            1614
+          ]
+        },
+        {
+          "value": "112760154",
+          "count": 2,
+          "rows": [
+            3404,
+            3405
+          ]
+        },
+        {
+          "value": "113867048",
+          "count": 2,
+          "rows": [
+            1635,
+            1636
+          ]
+        },
+        {
+          "value": "113886381",
+          "count": 2,
+          "rows": [
+            1522,
+            1523
+          ]
+        },
+        {
+          "value": "114033170",
+          "count": 2,
+          "rows": [
+            1163,
+            1164
+          ]
+        },
+        {
+          "value": "115515156",
+          "count": 2,
+          "rows": [
+            3407,
+            3408
+          ]
+        },
+        {
+          "value": "117440173",
+          "count": 2,
+          "rows": [
+            3778,
+            3779
+          ]
+        },
+        {
+          "value": "118242635",
+          "count": 2,
+          "rows": [
+            2182,
+            2183
+          ]
+        }
+      ],
+      "taskIdsMissingFromSummaryCount": 0,
+      "taskIdsMissingFromSummarySamples": [],
+      "summaryTaskIdsMissingFromFileCount": 3,
+      "summaryTaskIdsMissingFromFileSamples": [
+        "134551944",
+        "114958301",
+        "122290431"
+      ],
+      "supplementalLineRows": 208,
+      "statusMismatchSamples": []
+    },
+    "payroll": {
+      "rows": 5791,
+      "headers": [
+        "Department",
+        "Subdepartment",
+        "Task ID",
+        "Property",
+        "Property ID",
+        "Property internal ID",
+        "Property Time Zone",
+        "Task title",
+        "Task description",
+        "Task summary",
+        "Due date",
+        "Due time",
+        "Completed date",
+        "Completed time",
+        "Assignee",
+        "Employee ID",
+        "Number of people",
+        "Default rate",
+        "Rate paid",
+        "Default rate type",
+        "Rate type",
+        "Estimated time",
+        "Total time"
+      ],
+      "taskIdRows": 5791,
+      "uniqueTaskIds": 4995,
+      "missingTaskIdRows": 0,
+      "duplicateTaskRows": 796,
+      "duplicateTaskIds": [
+        {
+          "value": "128524994",
+          "count": 5,
+          "rows": [
+            63,
+            64,
+            65,
+            66,
+            67
+          ]
+        },
+        {
+          "value": "119432330",
+          "count": 4,
+          "rows": [
+            1226,
+            1227,
+            1228,
+            1229
+          ]
+        },
+        {
+          "value": "124149953",
+          "count": 4,
+          "rows": [
+            2194,
+            2195,
+            2196,
+            2197
+          ]
+        },
+        {
+          "value": "124480142",
+          "count": 4,
+          "rows": [
+            489,
+            490,
+            491,
+            492
+          ]
+        },
+        {
+          "value": "127082394",
+          "count": 4,
+          "rows": [
+            3793,
+            3794,
+            3795,
+            3796
+          ]
+        },
+        {
+          "value": "127082992",
+          "count": 4,
+          "rows": [
+            3797,
+            3798,
+            3799,
+            3800
+          ]
+        },
+        {
+          "value": "135491566",
+          "count": 4,
+          "rows": [
+            501,
+            502,
+            503,
+            504
+          ]
+        },
+        {
+          "value": "138170348",
+          "count": 4,
+          "rows": [
+            4344,
+            4345,
+            4346,
+            4347
+          ]
+        },
+        {
+          "value": "143010992",
+          "count": 4,
+          "rows": [
+            2256,
+            2257,
+            2258,
+            2259
+          ]
+        },
+        {
+          "value": "112153198",
+          "count": 3,
+          "rows": [
+            512,
+            513,
+            514
+          ]
+        },
+        {
+          "value": "113599417",
+          "count": 3,
+          "rows": [
+            849,
+            850,
+            851
+          ]
+        },
+        {
+          "value": "114600732",
+          "count": 3,
+          "rows": [
+            1108,
+            1109,
+            1110
+          ]
+        },
+        {
+          "value": "114889017",
+          "count": 3,
+          "rows": [
+            4416,
+            4417,
+            4418
+          ]
+        },
+        {
+          "value": "115647335",
+          "count": 3,
+          "rows": [
+            4076,
+            4077,
+            4078
+          ]
+        },
+        {
+          "value": "115706371",
+          "count": 3,
+          "rows": [
+            1786,
+            1787,
+            1788
+          ]
+        },
+        {
+          "value": "116323117",
+          "count": 3,
+          "rows": [
+            1772,
+            1773,
+            1774
+          ]
+        },
+        {
+          "value": "116453497",
+          "count": 3,
+          "rows": [
+            1775,
+            1776,
+            1777
+          ]
+        },
+        {
+          "value": "116543038",
+          "count": 3,
+          "rows": [
+            863,
+            864,
+            865
+          ]
+        },
+        {
+          "value": "116591869",
+          "count": 3,
+          "rows": [
+            1200,
+            1201,
+            1202
+          ]
+        },
+        {
+          "value": "116598723",
+          "count": 3,
+          "rows": [
+            2728,
+            2729,
+            2730
+          ]
+        },
+        {
+          "value": "116623800",
+          "count": 3,
+          "rows": [
+            291,
+            292,
+            293
+          ]
+        },
+        {
+          "value": "117235848",
+          "count": 3,
+          "rows": [
+            1441,
+            1442,
+            1443
+          ]
+        },
+        {
+          "value": "117325755",
+          "count": 3,
+          "rows": [
+            1778,
+            1779,
+            1780
+          ]
+        },
+        {
+          "value": "117343394",
+          "count": 3,
+          "rows": [
+            1204,
+            1205,
+            1206
+          ]
+        },
+        {
+          "value": "117575732",
+          "count": 3,
+          "rows": [
+            1632,
+            1633,
+            1634
+          ]
+        }
+      ],
+      "taskIdsMissingFromSummaryCount": 0,
+      "taskIdsMissingFromSummarySamples": [],
+      "summaryTaskIdsMissingFromFileCount": 179,
+      "summaryTaskIdsMissingFromFileSamples": [
+        "130484603",
+        "130484619",
+        "130484623",
+        "130484628",
+        "140051844",
+        "140051845",
+        "140051846",
+        "140624907",
+        "140624910",
+        "140624911",
+        "140624914",
+        "145303720",
+        "130484607",
+        "130484611",
+        "140051852",
+        "140624913",
+        "140690982",
+        "140690984",
+        "140690994",
+        "140690986",
+        "135630128",
+        "135630179",
+        "135630202",
+        "135630206",
+        "135630219"
+      ],
+      "supplementalLineRows": 5791,
+      "statusMismatchSamples": []
+    },
+    "supplies": {
+      "rows": 1,
+      "headers": [
+        "Department",
+        "Subdepartment",
+        "Task ID",
+        "Property",
+        "Property ID",
+        "Property Marketing ID",
+        "Property Internal ID",
+        "Property Group",
+        "Property Time Zone",
+        "Task title",
+        "Status",
+        "Priority",
+        "Created by",
+        "Created date",
+        "Created time",
+        "Last updated date",
+        "Started date",
+        "Started time",
+        "Due date",
+        "Due time",
+        "Assignees",
+        "Assigned Employee IDs",
+        "Completed date",
+        "Completed time",
+        "Completed by",
+        "Total time",
+        "Task description",
+        "Task summary",
+        "Task tags",
+        "Supply ID",
+        "Supply name",
+        "Supply description",
+        "Supply quantity",
+        "Supply unit cost",
+        "Supply markup rate",
+        "Supply markup type",
+        "Supply unit type",
+        "Supply price",
+        "Supply total cost",
+        "Supply is billable",
+        "Supply bill to",
+        "Supply total charge"
+      ],
+      "taskIdRows": 1,
+      "uniqueTaskIds": 1,
+      "missingTaskIdRows": 0,
+      "duplicateTaskRows": 0,
+      "duplicateTaskIds": [],
+      "taskIdsMissingFromSummaryCount": 0,
+      "taskIdsMissingFromSummarySamples": [],
+      "summaryTaskIdsMissingFromFileCount": 5173,
+      "summaryTaskIdsMissingFromFileSamples": [
+        "130484603",
+        "130484619",
+        "130484623",
+        "130484628",
+        "141553380",
+        "112516635",
+        "112516633",
+        "140051844",
+        "140051845",
+        "140051846",
+        "140624907",
+        "140624910",
+        "140624911",
+        "140624914",
+        "145303720",
+        "112516636",
+        "112516637",
+        "112516638",
+        "112516639",
+        "112516640",
+        "112516642",
+        "112516643",
+        "112516644",
+        "112516645",
+        "112516646"
+      ],
+      "supplementalLineRows": 1,
+      "statusMismatchSamples": []
+    },
+    "custom": {
+      "rows": 5174,
+      "headers": [
+        "Task title",
+        "Property",
+        "Department",
+        "Subdepartment",
+        "Assignees",
+        "Due date",
+        "Issues",
+        "Comments",
+        "Status",
+        "Priority",
+        "Guest arrival rating",
+        "Total cost",
+        "Currency (Total cost)",
+        "Bill to",
+        "Requested by",
+        "Task tags",
+        "Estimated time",
+        "Created date",
+        "Created by",
+        "Completed date",
+        "Completed by",
+        "Last updated date",
+        "Task report link",
+        "Property Time Zone"
+      ],
+      "joinable": false,
+      "reason": "custom_export_has_no_task_id_column",
+      "taskReportLinkRows": 5174,
+      "note": "Do not join this file heuristically for apply mode. Re-export with Task ID if these custom fields are required."
+    }
+  },
+  "applyReadiness": {
+    "readyToApply": false,
+    "blockers": [
+      "review_unknown_properties_and_assignees",
+      "supplemental_cost_payroll_supply_apply_not_implemented_yet",
+      "custom_export_has_no_task_id_column"
+    ],
+    "recommendation": "Use summary export as the base task import only after property/user mappings are accepted. Treat cost/payroll/supply imports as follow-up child-row migrations joined by Task ID."
+  }
+}
