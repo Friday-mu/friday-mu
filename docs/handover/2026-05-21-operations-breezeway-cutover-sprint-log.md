@@ -419,3 +419,14 @@
 - Existing Ops imported tasks are idempotently keyed as `external_ref = breezeway:<Task ID>`; the update should only mark matching existing tasks and never create field-visible work.
 - Preserve `source = breezeway` as import provenance; add explicit accepted reported-issue tags and source-payload metadata so future UI/reporting can distinguish them from routine imported tasks.
 - Apply must be preview-first with counts for total rows, unique IDs, duplicates, missing existing tasks, already-marked tasks, candidate updates, and status/source breakdown.
+
+### Checkpoint
+
+- Added `backend/scripts/mark-breezeway-reported-issues.js` for preview/apply marking by `external_ref = breezeway:<Task ID>`.
+- Production preview: 1,984 CSV rows, 1,984 unique Task IDs, 0 duplicates, 1,841 matched existing FAD tasks, 143 missing existing tasks, 0 already marked.
+- Matched status mix: 1,536 completed, 148 closed, 137 scheduled, 20 in_progress; all matched tasks had `source = breezeway` and empty category before marking.
+- Applied production marker batch `reported-issues-dace8ce5cd24` to 1,841 existing tasks.
+- Applied metadata: tags `reported_issue`, `reported_issue:accepted`, `breezeway:reported_issue`; `category = reported_issue` where empty; `source_payload.reportedIssue` with export row provenance.
+- Post-check: 1,841 already marked, 0 candidate updates remaining, no task statuses or `source = breezeway` provenance changed.
+- Reports backed up on VPS: `/var/backups/fad-reported-issues-preview-dace8ce5cd24.json` and `/var/backups/fad-reported-issues-apply-dace8ce5cd24.json`.
+- Missing 143 need a separate import decision: 131 `Office / Store / Admin`, 11 `Grand Baie Heights`, 1 `RC-16` task (`Water Leak Behind Washing Machine`, due 2026-05-22).
