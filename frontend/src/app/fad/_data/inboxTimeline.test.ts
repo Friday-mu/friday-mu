@@ -52,4 +52,20 @@ describe('sentDraftHasMatchingOutbound', () => {
 
     expect(sentDraftHasMatchingOutbound(draft, messages)).toBe(true);
   });
+
+  it('hides same-second FAD outbound rows even when the operator edited text before send', () => {
+    const draft: InboxDraft = {
+      ...sentDraft,
+      body: 'Hi Lubna, the exact address is Avenue Des Toucans, 90502 Flic en Flac, Mauritius. The building is part of the Royal Coast residences. Warm regards, Friday Retreats',
+    };
+    const messages: InboxMessage[] = [{
+      from: 'us',
+      name: 'Ishant',
+      time: '2026-05-21T06:47:30.466Z',
+      body: 'Hi Lubna, the exact address is Avenue Des Toucans, 90502 Flic en Flac, Mauritius. The building is part of the Residence Camelia. Warm regards, Friday Retreats',
+      viaSystem: 'FAD',
+    }];
+
+    expect(sentDraftHasMatchingOutbound(draft, messages)).toBe(true);
+  });
 });
