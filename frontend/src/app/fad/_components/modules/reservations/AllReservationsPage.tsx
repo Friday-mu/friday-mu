@@ -10,6 +10,8 @@ import {
   type ReservationChannel,
   type ReservationStatus,
 } from '../../../_data/reservations';
+import { useLiveReservations } from '../../../_data/reservationsClient';
+import { liveOnlyMode } from '../../../_data/demoMode';
 import { FilterBar, FilterPill } from '../../FilterBar';
 import { IconSearch } from '../../icons';
 
@@ -20,9 +22,7 @@ interface Props {
   onOpen: (reservationId: string) => void;
 }
 
-// @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
-// Hardcoded demo date. Replace with new Date() (server-aware).
-const TODAY_ISO = '2026-04-27';
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
 function statusToneClass(s: ReservationStatus): string {
   switch (s) {
@@ -63,7 +63,12 @@ export function AllReservationsPage({ onOpen }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('checkIn');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
-  const allInScope = useMemo(() => RESERVATIONS.filter(isInScope), []);
+  // Live reservations from /api/reservations (guesty_reservations cache);
+  // falls back to fixture during loading / on backend failure so the page
+  // never blanks out. Per Phase-1 wiring 2026-05-17 (queue item R).
+  const { reservations: liveReservations } = useLiveReservations();
+  const sourceReservations = liveReservations ?? (liveOnlyMode() ? [] : RESERVATIONS);
+  const allInScope = useMemo(() => sourceReservations.filter(isInScope), [sourceReservations]);
   const properties = useMemo(
     () => Array.from(new Set(allInScope.map((r) => r.propertyCode))).sort(),
     [allInScope],

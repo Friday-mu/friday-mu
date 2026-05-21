@@ -82,7 +82,14 @@ export const MODULES: ModuleDef[] = [
   { id: 'analytics', label: 'Analytics', group: 'Growth', tier: 'preview', ship: "Jun '26", icon: 'IconChart', path: '/gms/analytics' },
   { id: 'intelligence', label: 'Intelligence', group: 'Growth', tier: 'pitch', ship: "Aug '26", icon: 'IconIntel', path: '/gms/intelligence' },
   { id: 'syndic', label: 'Syndic', group: 'Units', tier: 'tease', ship: "Q1 '27", icon: 'IconSyndic', path: '/gms/syndic' },
-  { id: 'interior', label: 'Interior', group: 'Units', tier: 'tease', ship: "Q2 '27", icon: 'IconInterior', path: '/gms/interior' },
+  { id: 'design', label: 'Design', group: 'Units', tier: 'preview', warning: true, ship: "May '26", icon: 'IconInterior', path: '/fad/design', subPages: [
+    { id: 'overview', label: 'Overview' },
+    { id: 'projects', label: 'Projects' },
+    { id: 'leads', label: 'Leads' },
+    { id: 'vendors', label: 'Vendors' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'settings', label: 'Settings' },
+  ] },
   { id: 'agency', label: 'Agency', group: 'Units', tier: 'tease', ship: 'TBD', icon: 'IconAgency', path: '/gms/agency' },
   { id: 'notifications', label: 'Notifications', group: 'System', tier: 'live', ship: 'live', icon: 'IconBell', path: '/fad/notifications' },
   { id: 'training', label: 'Training', group: 'System', tier: 'preview', ship: "May '26", icon: 'IconAI', path: '/gms/training' },
@@ -98,3 +105,13 @@ export const GROUPS: GroupDef[] = [
   { id: 'Units', label: 'Business Units', tier: 'manage' },
   { id: 'System', label: 'System', tier: 'manage' },
 ];
+
+export function visibleSubPagesForModuleRole(mod: ModuleDef, role: string): SubPage[] {
+  const subPages = mod.subPages ?? [];
+  if (mod.id !== 'operations') return subPages;
+  if (role === 'field') {
+    const allowed = new Set(['my', 'all', 'issues', 'roster']);
+    return subPages.filter((sp) => allowed.has(sp.id));
+  }
+  return subPages.filter((sp) => sp.id !== 'my');
+}

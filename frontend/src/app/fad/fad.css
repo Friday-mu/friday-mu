@@ -8333,6 +8333,8 @@ body:has(.ops-create-drawer) .bug-fab {
 .prop-row:last-child td {
   border-bottom: 0;
 }
+.prop-mobile-list { display: none; }
+.design-project-mobile-list { display: none; }
 
 /* Properties · Overview — needs-attention row */
 .prop-attn-row {
@@ -8354,9 +8356,85 @@ body:has(.ops-create-drawer) .bug-fab {
 }
 
 @media (max-width: 768px) {
-  /* Compact table on narrow screens */
-  .prop-table th, .prop-table td {
-    padding: 8px 8px;
+  /* Mobile gets scannable property cards instead of a clipped table. */
+  .prop-table-wrap { display: none; }
+  .prop-mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .prop-mobile-card {
+    padding: 12px;
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+  }
+  .prop-mobile-card-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .prop-mobile-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .prop-mobile-title .mono {
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+  }
+  .prop-mobile-title strong {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+  .prop-mobile-meta,
+  .prop-mobile-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+  }
+  .prop-mobile-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .prop-mobile-stats span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--color-background-secondary);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .prop-mobile-stats small {
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .prop-mobile-foot {
+    justify-content: space-between;
+    border-top: 0.5px solid var(--color-border-tertiary);
+    padding-top: 8px;
+  }
+  .prop-mobile-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--color-text-tertiary);
     font-size: 12px;
   }
   .prop-attn-row {
@@ -8831,4 +8909,139 @@ body:has(.ops-create-drawer) .bug-fab {
     border-left: none;
     box-shadow: none;
   }
+}
+
+/* ─────────────── Design module mobile affordances ─────────────── */
+@media (max-width: 768px) {
+  .design-projects-table-wrap { display: none; }
+  .design-project-mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .design-project-mobile-card {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    text-align: left;
+  }
+  .design-project-mobile-top,
+  .design-project-mobile-stage,
+  .design-project-mobile-foot {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .design-project-mobile-top strong {
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.25;
+  }
+  .design-project-mobile-top > span,
+  .design-project-mobile-stage > span:last-child {
+    flex: 0 0 auto;
+    font-family: var(--font-mono-fad);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+  }
+  .design-project-mobile-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+  }
+  .design-project-mobile-stage {
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-background-secondary);
+    font-size: 12px;
+  }
+  .design-project-mobile-stage > span:first-child {
+    color: var(--color-text-info);
+    font-weight: 500;
+  }
+  .design-project-mobile-foot {
+    border-top: 0.5px solid var(--color-border-tertiary);
+    padding-top: 8px;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+  }
+  .design-project-mobile-foot > span:first-child {
+    min-width: 0;
+    line-height: 1.35;
+  }
+}
+
+.fad-design-phase-tabs {
+  position: relative;
+  scroll-snap-type: x proximity;
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 48px), transparent 100%);
+}
+.fad-design-phase-tabs > button {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1024px) and (min-width: 769px) {
+  .fad-design-stage-pill {
+    min-width: 48px !important;
+    padding: 6px 2px 4px !important;
+  }
+  .fad-design-stage-pill-label {
+    max-width: 56px;
+  }
+  .fad-design-stage-pill-optional {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .fad-design-phase-tabs::after {
+    content: '›';
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    font-size: 18px;
+    line-height: 1;
+    color: var(--color-text-tertiary);
+    pointer-events: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .fad-design-stage-pill {
+    min-width: 56px !important;
+    padding: 6px 4px 4px !important;
+  }
+  .fad-design-stage-pill-label {
+    display: inline-block;
+    max-width: 64px;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fad-design-stage-pill-optional {
+    display: none;
+  }
+  .fad-design-task-row input[type="date"] {
+    flex: 1 0 auto;
+    min-width: 130px;
+    max-width: 160px;
+  }
+  .fad-design-task-row input[title="Assignee user id"] {
+    width: 70px !important;
+    min-width: 50px;
+  }
+  .fad-design-payments-table { display: none !important; }
+  .fad-design-payments-cards { display: flex !important; }
 }

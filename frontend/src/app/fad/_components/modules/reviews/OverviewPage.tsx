@@ -16,6 +16,7 @@ import {
   type Cohort,
   type ReviewChannel,
 } from '../../../_data/reviews';
+import { useLiveReviews } from '../../../_data/reviewsClient';
 import { TASK_PROPERTY_BY_CODE } from '../../../_data/tasks';
 import { createTask } from '../../../_data/breezeway';
 import { useCurrentUserId } from '../../usePermissions';
@@ -29,16 +30,21 @@ interface Props {
 export function OverviewPage({ onNavigate }: Props) {
   const currentUserId = useCurrentUserId();
 
-  const last30 = useMemo(() => reviewsInWindow(30), []);
+  // Live Guesty data via useLiveReviews; falls back to fixture REVIEWS during
+  // initial load or on backend failure so KPIs always render.
+  const { reviews: liveReviews, loading: liveLoading, error: liveError } = useLiveReviews();
+  const reviewSource = liveReviews ?? REVIEWS;
+
+  const last30 = useMemo(() => reviewsInWindow(30, reviewSource), [reviewSource]);
   const prior30 = useMemo(
-    () => REVIEWS.filter((rv) => {
+    () => reviewSource.filter((rv) => {
       const days = Math.round(
         (new Date('2026-04-27').getTime() - new Date(rv.submittedAt).getTime()) /
           (24 * 60 * 60 * 1000),
       );
       return days > 30 && days <= 60;
     }),
-    [],
+    [reviewSource],
   );
 
   const avg30 = avgRating(last30);
@@ -48,19 +54,19 @@ export function OverviewPage({ onNavigate }: Props) {
   const dist = ratingDistribution(last30);
   const distMax = Math.max(...Object.values(dist));
 
-  const unreplied = unrepliedReviews();
+  const unreplied = unrepliedReviews(reviewSource);
   const replyRate = last30.length === 0 ? 0
     : (last30.filter((r) => r.replyStatus === 'sent').length / last30.length) * 100;
 
-  const byChannel = reviewsByChannel();
-  const byCohort = reviewsByCohort();
+  const byChannel = reviewsByChannel(reviewSource);
+  const byCohort = reviewsByCohort(reviewSource);
 
   const acceptSuggestedTask = async (sa: typeof SUGGESTED_ACTIONS[number]) => {
     await createTask({
       title: sa.taskTitle,
       description: sa.taskDescription,
       propertyCode: sa.reviewId
-        ? (REVIEWS.find((r) => r.id === sa.reviewId)?.propertyCode ?? 'OFFICE')
+        ? (reviewSource.find((r) => r.id === sa.reviewId)?.propertyCode ?? 'OFFICE')
         : 'OFFICE',
       department: sa.department,
       subdepartment: sa.subdepartment as never,
@@ -177,7 +183,7 @@ export function OverviewPage({ onNavigate }: Props) {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
             {SUGGESTED_ACTIONS.map((sa) => {
-              const review = REVIEWS.find((r) => r.id === sa.reviewId);
+              const review = reviewSource.find((r) => r.id === sa.reviewId);
               return (
                 <div
                   key={sa.id}
@@ -279,7 +285,7 @@ export function OverviewPage({ onNavigate }: Props) {
           </button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {REVIEWS.slice(0, 5).map((rv) => {
+          {reviewSource.slice(0, 5).map((rv) => {
             const prop = TASK_PROPERTY_BY_CODE[rv.propertyCode];
             return (
               <div

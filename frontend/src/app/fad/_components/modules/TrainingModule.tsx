@@ -6,7 +6,7 @@
 // hardcoded mock data). Replace with real backend-driven content when
 // the module ships, or render a 'Coming soon' placeholder until then.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AUTOMATIONS,
   BRAND_VOICE,
@@ -16,12 +16,13 @@ import {
   LEARNING_SOURCE_SUMMARY,
   PERFORMANCE_KPI,
   STAFF_PERFORMANCE,
-  TEACHINGS,
   type Automation,
   type LearningCandidate,
   type LearningSource,
   type Teaching,
 } from '../../_data/gms';
+import { apiFetch } from '../../../../components/types';
+import { liveOnlyMode } from '../../_data/demoMode';
 import { FilterBar, FilterChip, FilterPill } from '../FilterBar';
 import { IconAI, IconCheck, IconClose, IconPlus, IconSparkle } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
@@ -40,6 +41,7 @@ export function TrainingModule() {
   const [tab, setTab] = useState('teachings');
   const tabs = TAB_DEFS.map((t) => ({ id: t.id, label: t.label }));
   const activeDef = TAB_DEFS.find((t) => t.id === tab);
+  const liveOnly = liveOnlyMode();
   return (
     <>
       <ModuleHeader
@@ -57,14 +59,23 @@ export function TrainingModule() {
           </div>
         )}
         {tab === 'teachings' && <TeachingsTab />}
-        {tab === 'queue' && <LearningQueueTab />}
-        {tab === 'sources' && <SourcesTab />}
-        {tab === 'performance' && <PerformanceTab />}
-        {tab === 'knowledge' && <KnowledgeTab />}
-        {tab === 'voice' && <VoiceTab />}
-        {tab === 'automations' && <AutomationsTab />}
+        {liveOnly && tab !== 'teachings' && <TrainingTabPlaceholder label={activeDef?.label || 'This tab'} />}
+        {!liveOnly && tab === 'queue' && <LearningQueueTab />}
+        {!liveOnly && tab === 'sources' && <SourcesTab />}
+        {!liveOnly && tab === 'performance' && <PerformanceTab />}
+        {!liveOnly && tab === 'knowledge' && <KnowledgeTab />}
+        {!liveOnly && tab === 'voice' && <VoiceTab />}
+        {!liveOnly && tab === 'automations' && <AutomationsTab />}
       </div>
     </>
+  );
+}
+
+function TrainingTabPlaceholder({ label }: { label: string }) {
+  return (
+    <div className="card" style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+      {label} is still demo-backed. It stays hidden while FAD is in live-only mode.
+    </div>
   );
 }
 
@@ -72,11 +83,91 @@ function sourceLabel(s: Teaching['source']) {
   return s === 'manual' ? 'Manual' : s === 'auto_pattern' ? 'Auto-pattern' : 'From approved reply';
 }
 
+type LiveTeachingRow = {
+  id: string;
+  instruction: string;
+  scope: string | null;
+  property_code: string | null;
+  property_codes: string[] | null;
+  source: string | null;
+  status: string | null;
+  taught_by: string | null;
+  taught_at: string | null;
+  evidence_count: number | null;
+};
+
+function relativeAge(value: string | null): string {
+  if (!value) return '—';
+  const ts = new Date(value).getTime();
+  if (Number.isNaN(ts)) return '—';
+  const diffMin = Math.max(0, Math.floor((Date.now() - ts) / 60_000));
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 45) return `${diffDays}d ago`;
+  const diffMonths = Math.floor(diffDays / 30);
+  return `${diffMonths}mo ago`;
+}
+
+function mapLiveTeaching(row: LiveTeachingRow): Teaching {
+  const propertyCodes = Array.isArray(row.property_codes) ? row.property_codes.filter(Boolean) : [];
+  const singleProperty = row.property_code || propertyCodes[0] || null;
+  const source: Teaching['source'] =
+    row.source === 'manual'
+      ? 'manual'
+      : row.source === 'approved_reply'
+      ? 'approved_reply'
+      : 'auto_pattern';
+  const status: Teaching['status'] =
+    row.status === 'active' ? 'active' : row.status === 'draft' ? 'draft' : 'retired';
+  return {
+    id: row.id,
+    instruction: row.instruction,
+    scope: row.scope === 'global'
+      ? { kind: 'global' }
+      : propertyCodes.length > 1
+      ? { kind: 'property_group', targets: propertyCodes }
+      : { kind: 'property', targets: singleProperty ? [singleProperty] : [] },
+    channel: 'any',
+    source,
+    status,
+    taughtBy: row.taught_by || 'Friday',
+    age: relativeAge(row.taught_at),
+    applications: Number(row.evidence_count) || 0,
+  };
+}
+
 function TeachingsTab() {
   const [source, setSource] = useState<string>('all');
   const [status, setStatus] = useState<string>('active');
+  const [teachings, setTeachings] = useState<Teaching[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Teaching | null>(null);
-  const filtered = TEACHINGS.filter((t) => {
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    apiFetch('/api/inbox/teachings?status=all')
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray((data as { teachings?: LiveTeachingRow[] }).teachings)
+          ? (data as { teachings: LiveTeachingRow[] }).teachings
+          : [];
+        setTeachings(rows.map(mapLiveTeaching));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load teachings');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const filtered = teachings.filter((t) => {
     if (source !== 'all' && t.source !== source) return false;
     if (status !== 'all' && t.status !== status) return false;
     return true;
@@ -85,7 +176,7 @@ function TeachingsTab() {
     <>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{ flex: 1 }}>
-          <FilterBar count={`${filtered.length} of ${TEACHINGS.length}`}>
+          <FilterBar count={loading ? 'Loading live teachings…' : `${filtered.length} of ${teachings.length}`}>
             <FilterPill
               label="Status"
               value={status}
@@ -114,7 +205,17 @@ function TeachingsTab() {
           <IconPlus size={12} /> New rule
         </button>
       </div>
+      {error && (
+        <div role="alert" style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 6, background: 'var(--color-bg-danger)', color: 'var(--color-text-danger)', fontSize: 12 }}>
+          Live teachings failed to load: {error}
+        </div>
+      )}
       <div className="card">
+        {!loading && filtered.length === 0 && !error && (
+          <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+            No live teachings match this filter.
+          </div>
+        )}
         {filtered.map((t) => (
           <div key={t.id} className="row" onClick={() => setSel(t)} style={{ padding: '14px 16px' }}>
             <div style={{ flex: 1 }}>

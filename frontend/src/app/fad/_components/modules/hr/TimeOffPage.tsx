@@ -7,6 +7,11 @@ import { useCurrentUserId, usePermissions } from '../../usePermissions';
 import { TimeOffDrawer } from './TimeOffDrawer';
 import { IconPlus } from '../../icons';
 import { timeOffStatusTone, toneStyle } from '../../palette';
+import {
+  useTimeOffRequests,
+  apiRequestToFixtureShape,
+  type AdaptedTimeOff,
+} from '../../../_data/hrClient';
 
 type StatusFilter = TimeOffRequest['status'] | 'all';
 
@@ -24,11 +29,19 @@ export function TimeOffPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [requestDrawer, setRequestDrawer] = useState<{ kind: 'new' } | { kind: 'detail'; id: string } | null>(null);
-  const [, setRev] = useState(0);
-  const bumpRev = () => setRev((n) => n + 1);
+
+  // Live time-off requests from FAD HR backend. Falls back to fixture
+  // during initial load / when API unreachable so the page never blanks.
+  const { requests: liveRequests, refetch: refetchRequests } = useTimeOffRequests();
+  const liveAdapted = useMemo(
+    () => (liveRequests ? liveRequests.map(apiRequestToFixtureShape) : null),
+    [liveRequests],
+  );
+  const sourceRequests: TimeOffRequest[] = liveAdapted ?? TIME_OFF_REQUESTS;
+  const bumpRev = refetchRequests;
 
   const visible = useMemo(() => {
-    let reqs = [...TIME_OFF_REQUESTS];
+    let reqs = [...sourceRequests];
 
     // Field + Mathias: only see own
     if (role === 'field' || role === 'commercial_marketing') {
@@ -39,9 +52,9 @@ export function TimeOffPage() {
       reqs = reqs.filter((r) => r.status === statusFilter);
     }
     return reqs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [statusFilter, role, currentUserId]);
+  }, [statusFilter, role, currentUserId, sourceRequests]);
 
-  const selected = TIME_OFF_REQUESTS.find((r) => r.id === selectedId) ?? visible[0];
+  const selected = sourceRequests.find((r) => r.id === selectedId) ?? visible[0];
 
   return (
     <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
@@ -58,7 +71,7 @@ export function TimeOffPage() {
                 {s === 'all' ? 'All' : TIME_OFF_STATUS_LABEL[s]}
                 {s !== 'all' && (
                   <span style={{ marginLeft: 4, opacity: 0.6 }}>
-                    {TIME_OFF_REQUESTS.filter((r) => r.status === s && (role === 'field' || role === 'commercial_marketing' ? r.userId === currentUserId : true)).length}
+                    {sourceRequests.filter((r) => r.status === s && (role === 'field' || role === 'commercial_marketing' ? r.userId === currentUserId : true)).length}
                   </span>
                 )}
               </button>
@@ -67,7 +80,18 @@ export function TimeOffPage() {
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {visible.map((r) => {
-            const user = TASK_USER_BY_ID[r.userId];
+            // Live-data fields fall through to fixture lookup. r is sometimes
+            // an AdaptedTimeOff (live) carrying _staffName/_staffAvatarColor;
+            // sometimes a fixture row keyed by userId.
+            const adapted = r as AdaptedTimeOff;
+            const fixtureUser = TASK_USER_BY_ID[r.userId];
+            const user = adapted._staffName
+              ? {
+                  name: adapted._staffName,
+                  initials: adapted._staffInitials ?? '??',
+                  avatarColor: adapted._staffAvatarColor ?? '#94a3b8',
+                }
+              : fixtureUser;
             const isSelected = selected?.id === r.id;
             const days = daysBetween(r.startDate, r.endDate);
             const badge = statusBadge(r.status);
@@ -313,9 +337,16 @@ function DecisionForm({
   const reviewerId = useCurrentUserId();
 
   const submit = async () => {
-    const { decideTimeOff } = await import('../../../_data/breezeway');
-    await decideTimeOff(req.id, decision === 'approve' ? 'approved' : 'declined', reviewerId, note || undefined);
-    onAfter();
+    try {
+      const { decideTimeOffRequest } = await import('../../../_data/hrClient');
+      await decideTimeOffRequest(req.id, {
+        status: decision === 'approve' ? 'approved' : 'rejected',
+        review_notes: note || undefined,
+      });
+      onAfter();
+    } catch (e) {
+      console.error('[time-off] decide failed:', e);
+    }
   };
 
   return (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type MouseEvent } from 'react';
-import { MODULES, type ModuleDef } from '../_data/modules';
+import { MODULES, visibleSubPagesForModuleRole, type ModuleDef } from '../_data/modules';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { CommandPalette } from './CommandPalette';
@@ -27,15 +27,18 @@ import {
 } from './modules/Tier3Modules';
 import { ReviewsModule } from './modules/ReviewsModule';
 import { BugReportFab } from './BugReport';
+import { ChangePasswordModal } from './ChangePasswordModal';
+import { UpdateBanner } from './UpdateBanner';
 import { AnalyticsModule } from './modules/AnalyticsModule';
 import { ReservationsModule } from './modules/ReservationsModule';
 import { TrainingModule } from './modules/TrainingModule';
 import { NotificationsModule } from './modules/NotificationsModule';
 import { HRModule } from './modules/HRModule';
-import { MODULE_RESOURCE, PermissionsProvider } from './usePermissions';
+import { DesignModule } from './modules/DesignModule';
+import { MODULE_RESOURCE, PermissionsProvider, useCurrentRole } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
-import { getToken } from '../../../components/types';
+import { apiFetch, getToken } from '../../../components/types';
 
 type Theme = 'light' | 'dark';
 
@@ -71,6 +74,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const role = useCurrentRole();
 
   useEffect(() => {
     if (!getToken()) {
@@ -78,20 +83,28 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       return;
     }
     setAuthChecked(true);
+    void apiFetch('/api/auth/me')
+      .then((data) => {
+        if (data?.must_change_password) setMustChangePassword(true);
+      })
+      .catch(() => undefined);
 
     const params = new URLSearchParams(window.location.search);
     let urlMod = params.get('m');
     const urlSub = params.get('sub');
     // Legacy redirect: 'tasks' module was renamed to 'operations'.
     if (urlMod === 'tasks') urlMod = 'operations';
+    // Legacy redirect: 'interior' was renamed to the live Design module.
+    if (urlMod === 'interior') urlMod = 'design';
     if (urlMod && MODULES.some((m) => m.id === urlMod)) {
       setActive(urlMod);
       setFridayFs(false);
       const modDef = MODULES.find((m) => m.id === urlMod);
-      if (urlSub && modDef?.subPages?.some((s) => s.id === urlSub)) {
+      const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+      if (urlSub && visibleSubPages.some((s) => s.id === urlSub)) {
         setSubPage(urlSub);
-      } else if (modDef?.subPages?.length) {
-        setSubPage(modDef.subPages[0].id);
+      } else if (visibleSubPages.length) {
+        setSubPage(visibleSubPages[0].id);
       }
     }
     setCollapsed(localStorage.getItem('fad:collapsed') === '1');
@@ -206,6 +219,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
 
   return (
     <div className="fad-app">
+      <UpdateBanner />
       <Header
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenFriday={() => fridayOpen ? closeFriday() : openFriday()}
@@ -240,7 +254,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
           onSelect={(id) => {
             setActive(id);
             const modDef = MODULES.find((m) => m.id === id);
-            setSubPage(modDef?.subPages?.length ? modDef.subPages[0].id : null);
+            const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+            setSubPage(visibleSubPages.length ? visibleSubPages[0].id : null);
             setFridayFs(false);
           }}
           onSelectSub={(modId, sub) => {
@@ -267,7 +282,8 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
               onNavigate={(m) => {
                 setActive(m);
                 const modDef = MODULES.find((md) => md.id === m);
-                setSubPage(modDef?.subPages?.length ? modDef.subPages[0].id : null);
+                const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+                setSubPage(visibleSubPages.length ? visibleSubPages[0].id : null);
                 setFridayFs(false);
               }}
               onExit={() => setFridayFs(false)}
@@ -296,6 +312,9 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       />
       <BugReportFab currentModuleLabel={fridayFs ? 'Ask Friday' : mod.label} />
       <Toaster />
+      {mustChangePassword && (
+        <ChangePasswordModal onChanged={() => setMustChangePassword(false)} />
+      )}
     </div>
   );
 }
@@ -360,8 +379,9 @@ function renderModuleInner(
       return <AnalyticsModule />;
     case 'notifications':
       return <NotificationsModule />;
+    case 'design':
+      return <DesignModule subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} openFriday={ctx.openFriday} />;
     case 'syndic':
-    case 'interior':
     case 'agency':
       return <TeaseModule mod={mod} />;
     default:

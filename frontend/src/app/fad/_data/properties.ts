@@ -9,6 +9,7 @@
 // during the migration; full retirement happens in commit 4.
 
 import type { Cohort } from './reviews';
+import { liveOnlyMode } from './demoMode';
 
 // ───────────────── Lifecycle ─────────────────
 
@@ -487,7 +488,7 @@ const FULL_CHECKLIST: OnboardingChecklist = ONBOARDING_REQUIRED.reduce(
 );
 
 /** Most properties are "live + complete checklist." */
-const LIVE_COMPLETE = (): OnboardingChecklist => ({ ...FULL_CHECKLIST });
+export const LIVE_COMPLETE = (): OnboardingChecklist => ({ ...FULL_CHECKLIST });
 
 export const PROPERTIES: Property[] = [
   // ── Flic en Flac / west · single-unit live ──
@@ -878,6 +879,10 @@ export const PROPERTIES: Property[] = [
     occupancyYTD: 0.81, occupancy90d: 0.84, adr: 450, rating: 4.84, ratingCount: 33, lastActivityAt: '2026-04-26',
   },
 ];
+
+if (liveOnlyMode()) {
+  PROPERTIES.length = 0;
+}
 
 // ───────────────── Lookups + helpers ─────────────────
 
@@ -1625,3 +1630,62 @@ export const PROPERTY_COHORT_SHIM: Record<string, Cohort> = PROPERTIES.reduce(
   (acc, p) => ({ ...acc, [p.code]: p.region }),
   {} as Record<string, Cohort>,
 );
+
+// ───────────────── Hydration support ─────────────────
+
+/** Re-derive every PROPERTIES-dependent map / shim in place. Call after
+ *  any code that mutates `PROPERTIES` (e.g. propertiesClient hydrating
+ *  from /api/properties) so consumers reading PROPERTY_BY_CODE,
+ *  PROPERTY_OWNERS, the legacy shims, etc. see the new rows. Mutates
+ *  in place so the existing `const` exports keep their references.
+ */
+export function rebuildDerivedPropertyMaps(): void {
+  // PROPERTY_BY_CODE / PROPERTY_BY_ID — wipe keys, then refill from PROPERTIES.
+  for (const k of Object.keys(PROPERTY_BY_CODE)) delete PROPERTY_BY_CODE[k];
+  for (const k of Object.keys(PROPERTY_BY_ID)) delete PROPERTY_BY_ID[k];
+  for (const p of PROPERTIES) {
+    PROPERTY_BY_CODE[p.code] = p;
+    PROPERTY_BY_ID[p.id] = p;
+  }
+
+  // PROPERTY_OWNERS — replace in place.
+  PROPERTY_OWNERS.length = 0;
+  for (const p of PROPERTIES) {
+    PROPERTY_OWNERS.push({
+      propertyId: p.id,
+      ownerId: p.primaryOwnerId,
+      ownershipPct: 100,
+      isPrimary: true,
+    });
+  }
+
+  // PROPERTY_PHOTOS + PHOTO_BY_ID — replace in place.
+  PROPERTY_PHOTOS.length = 0;
+  for (const k of Object.keys(PHOTO_BY_ID)) delete PHOTO_BY_ID[k];
+  for (const p of PROPERTIES) {
+    p.photoIds.forEach((id, idx) => {
+      const photo = makePhoto(p.id, id, idx);
+      PROPERTY_PHOTOS.push(photo);
+      PHOTO_BY_ID[id] = photo;
+    });
+  }
+
+  // Back-compat shims.
+  TASK_PROPERTIES_SHIM.length = 0;
+  PROPERTIES.forEach((p) =>
+    TASK_PROPERTIES_SHIM.push({ code: p.code, name: p.name, zone: p.zone, tier: p.tier }),
+  );
+  TASK_PROPERTIES_SHIM.push(OFFICE_META);
+
+  FIN_PROPERTIES_SHIM.length = 0;
+  PROPERTIES
+    .filter((p) => p.lifecycleStatus !== 'onboarding')
+    .forEach((p) =>
+      FIN_PROPERTIES_SHIM.push({ code: p.code, name: p.name, ownerId: p.primaryOwnerId }),
+    );
+
+  for (const k of Object.keys(PROPERTY_COHORT_SHIM)) delete PROPERTY_COHORT_SHIM[k];
+  for (const p of PROPERTIES) {
+    PROPERTY_COHORT_SHIM[p.code] = p.region;
+  }
+}

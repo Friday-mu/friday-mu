@@ -1,82 +1,74 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import {
-  INQUIRIES,
-  INQUIRY_STATUS_LABEL,
-  formatMoney,
-  type Inquiry,
-  type InquiryStatus,
-} from '../../../_data/reservations';
+import { useWebsiteInquiryThreads, type WebsiteThreadStatus } from '../../../_data/websiteInboxClient';
 import { fireToast } from '../../Toaster';
 
 interface Props {
   onOpenReservation: (reservationId: string) => void;
 }
 
-const ACTIVE_STATUSES: InquiryStatus[] = ['pending_quote', 'quote_sent', 'guest_reviewing'];
+const STATUS_LABEL: Record<WebsiteThreadStatus, string> = {
+  open: 'Open',
+  in_progress: 'In progress',
+  paid: 'Paid',
+  closed: 'Closed',
+};
 
-function statusToneClass(s: InquiryStatus): string {
+function statusToneClass(s: WebsiteThreadStatus): string {
   switch (s) {
-    case 'pending_quote':
+    case 'open':
       return 'warn';
-    case 'quote_sent':
-    case 'guest_reviewing':
+    case 'in_progress':
       return 'info';
-    case 'converted':
-      return '';
-    case 'abandoned':
+    case 'paid':
+    case 'closed':
       return '';
   }
 }
 
 function daysSince(iso: string): number {
-  // @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
-  // Hardcoded demo date. Replace `new Date('2026-04-27')` with `new Date()`.
-  const days = (new Date('2026-04-27').getTime() - new Date(iso).getTime()) / 86_400_000;
+  const days = (Date.now() - new Date(iso).getTime()) / 86_400_000;
   return Math.max(0, Math.round(days));
 }
 
 export function InquiriesPage({ onOpenReservation }: Props) {
-  const [statusFilter, setStatusFilter] = useState<'active' | InquiryStatus | 'all'>('active');
+  const [statusFilter, setStatusFilter] = useState<'active' | WebsiteThreadStatus | 'all'>('active');
+  const { threads, loading, error, refetch } = useWebsiteInquiryThreads();
+  const rows = threads ?? [];
 
   const filtered = useMemo(() => {
-    let list = [...INQUIRIES];
+    let list = [...rows];
     if (statusFilter === 'active') {
-      list = list.filter((i) => ACTIVE_STATUSES.includes(i.status));
+      list = list.filter((i) => i.status === 'open' || i.status === 'in_progress');
     } else if (statusFilter !== 'all') {
       list = list.filter((i) => i.status === statusFilter);
     }
     return list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }, [statusFilter]);
+  }, [rows, statusFilter]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { active: 0 };
-    for (const i of INQUIRIES) {
+    for (const i of rows) {
       c[i.status] = (c[i.status] || 0) + 1;
-      if (ACTIVE_STATUSES.includes(i.status)) c.active = (c.active || 0) + 1;
+      if (i.status === 'open' || i.status === 'in_progress') c.active = (c.active || 0) + 1;
     }
     return c;
-  }, []);
+  }, [rows]);
 
-  // Conversion rate metric — funnel signal per scoping pack §9.
   const conversionRate = useMemo(() => {
-    const settled = INQUIRIES.filter((i) => i.status === 'converted' || i.status === 'abandoned');
+    const settled = rows.filter((i) => i.status === 'paid' || i.status === 'closed');
     if (settled.length === 0) return null;
-    const converted = settled.filter((i) => i.status === 'converted').length;
+    const converted = settled.filter((i) => i.status === 'paid').length;
     return Math.round((converted / settled.length) * 100);
-  }, []);
+  }, [rows]);
 
-  const handleConvert = (inq: Inquiry) => {
-    if (inq.status === 'converted' && inq.convertedToReservationId) {
-      onOpenReservation(inq.convertedToReservationId);
+  const handleOpenReservation = (reservationId?: string) => {
+    if (reservationId) {
+      onOpenReservation(reservationId);
       return;
     }
-    fireToast('Convert to reservation — Phase 2 triggers Guesty confirmation + creates Reservation (per scoping pack §9).');
-  };
-
-  const handleSendQuote = (inq: Inquiry) => {
-    fireToast(`Send quote — opens Calendar Find-availability with ${inq.propertyCodes.length} property pre-selected. Phase 2 generates friday.mu link via Guesty quote-builder.`);
+    fireToast('No Guesty reservation is linked to this website inquiry yet.');
   };
 
   return (
@@ -89,13 +81,13 @@ export function InquiriesPage({ onOpenReservation }: Props) {
         </div>
         <div className="kpi">
           <div className="kpi-label">Converted</div>
-          <div className="kpi-value">{counts.converted || 0}</div>
-          <div className="kpi-sub">linked reservations</div>
+          <div className="kpi-value">{counts.paid || 0}</div>
+          <div className="kpi-sub">paid website threads</div>
         </div>
         <div className="kpi">
-          <div className="kpi-label">Abandoned</div>
-          <div className="kpi-value">{counts.abandoned || 0}</div>
-          <div className="kpi-sub">→ Leads/CRM-lite when that ships</div>
+          <div className="kpi-label">Closed</div>
+          <div className="kpi-value">{counts.closed || 0}</div>
+          <div className="kpi-sub">archived website inquiries</div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Conversion rate</div>
@@ -105,23 +97,36 @@ export function InquiriesPage({ onOpenReservation }: Props) {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 16, marginBottom: 12, flexWrap: 'wrap' }}>
-        {(['active', 'pending_quote', 'quote_sent', 'guest_reviewing', 'converted', 'abandoned', 'all'] as const).map((s) => (
+        {(['active', 'open', 'in_progress', 'paid', 'closed', 'all'] as const).map((s) => (
           <button
             key={s}
             className={'btn ghost sm' + (statusFilter === s ? ' active' : '')}
             onClick={() => setStatusFilter(s)}
           >
-            {s === 'active' ? 'Active' : s === 'all' ? 'All' : INQUIRY_STATUS_LABEL[s]}
+            {s === 'active' ? 'Active' : s === 'all' ? 'All' : STATUS_LABEL[s]}
             {s === 'active' && counts.active > 0 ? ` · ${counts.active}` : ''}
             {s !== 'active' && s !== 'all' && counts[s] ? ` · ${counts[s]}` : ''}
           </button>
         ))}
+        <button className="btn sm" onClick={refetch} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
       </div>
 
       <div className="card" style={{ overflow: 'hidden' }}>
-        {filtered.length === 0 && (
+        {error && (
+          <div style={{ padding: 16, color: 'var(--color-status-error)', fontSize: 13 }}>
+            Failed to load website inquiries: {error}
+          </div>
+        )}
+        {loading && rows.length === 0 && (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
-            No inquiries match this filter.
+            Loading website inquiries…
+          </div>
+        )}
+        {!loading && filtered.length === 0 && (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+            No live website inquiries match this filter.
           </div>
         )}
         {filtered.map((inq, i) => (
@@ -136,67 +141,39 @@ export function InquiriesPage({ onOpenReservation }: Props) {
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                   <span style={{ fontWeight: 500 }}>{inq.guestName}</span>
-                  <span className={'chip sm ' + statusToneClass(inq.status)}>{INQUIRY_STATUS_LABEL[inq.status]}</span>
+                  <span className={'chip sm ' + statusToneClass(inq.status)}>{STATUS_LABEL[inq.status]}</span>
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                    via {inq.source}
+                    via website
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                  {inq.propertyCodes.length === 1 ? '1 property' : `${inq.propertyCodes.length} properties`} · {' '}
-                  <span className="mono">{inq.propertyCodes.join(' · ')}</span>
+                  {inq.guestEmail || 'No email captured'}
+                  {inq.guestPhone ? ` · ${inq.guestPhone}` : ''}
+                  {inq.propertyCode ? <> · <span className="mono">{inq.propertyCode}</span></> : null}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                  {inq.checkIn.slice(5, 10)} → {inq.checkOut.slice(5, 10)} · {' '}
-                  {inq.partySize.adults}A
-                  {inq.partySize.children ? `+${inq.partySize.children}C` : ''}
-                  {inq.partySize.infants ? `+${inq.partySize.infants}I` : ''}
+                  {inq.lastEventType || 'website inquiry'} · {inq.eventCount} event{inq.eventCount === 1 ? '' : 's'}
                 </div>
-                {inq.notes && (
+                {inq.notes || inq.subject ? (
                   <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.5 }}>
-                    {inq.notes}
+                    {inq.notes || inq.subject}
                   </div>
-                )}
+                ) : null}
               </div>
               <div style={{ textAlign: 'right', minWidth: 110 }}>
-                {inq.quoteAmount && (
-                  <div className="mono" style={{ fontSize: 13, fontWeight: 500 }}>
-                    {formatMoney(inq.quoteAmount, inq.currency)}
-                  </div>
-                )}
+                {inq.reservationId && <div className="mono" style={{ fontSize: 11 }}>{inq.reservationId.slice(-8)}</div>}
                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
                   {daysSince(inq.updatedAt)}d ago
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              {inq.status === 'pending_quote' && (
-                <button className="btn primary sm" onClick={() => handleSendQuote(inq)}>
-                  Send quote
-                </button>
-              )}
-              {(inq.status === 'quote_sent' || inq.status === 'guest_reviewing') && (
-                <>
-                  <button className="btn primary sm" onClick={() => handleConvert(inq)}>
-                    Convert to reservation
-                  </button>
-                  <button className="btn ghost sm" onClick={() => fireToast(`Re-send quote link — ${inq.quoteLink || 'No link yet'}`)}>
-                    Re-send link
-                  </button>
-                </>
-              )}
-              {inq.status === 'converted' && inq.convertedToReservationId && (
-                <button className="btn sm" onClick={() => onOpenReservation(inq.convertedToReservationId!)}>
-                  View reservation →
-                </button>
-              )}
-              {inq.status === 'abandoned' && (
-                <button
-                  className="btn ghost sm"
-                  onClick={() => fireToast('Re-engage — wires to Leads/CRM-lite when that module ships (parking-lot per decisions log §7).')}
-                >
-                  Re-engage
-                </button>
-              )}
+              <button className="btn primary sm" onClick={() => fireToast('Open this inquiry from the unified Inbox to continue by email or link it to Guesty.')}>
+                Continue in Inbox
+              </button>
+              <button className="btn ghost sm" onClick={() => handleOpenReservation(inq.reservationId)}>
+                View reservation
+              </button>
             </div>
           </div>
         ))}

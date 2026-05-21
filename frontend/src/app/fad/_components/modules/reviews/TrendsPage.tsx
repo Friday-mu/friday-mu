@@ -64,18 +64,12 @@ export function TrendsPage() {
 function CohortSummaries() {
   const byCohort = reviewsByCohort();
   const last90 = reviewsInWindow(90);
-  const last90ByCohort: Record<Cohort, typeof REVIEWS> = {
-    flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
-  };
-  for (const rv of last90) last90ByCohort[rv.cohort].push(rv);
+  const last90ByCohort = reviewsByCohort(last90);
   const prior90 = REVIEWS.filter((rv) => {
     const days = Math.round((new Date('2026-04-27').getTime() - new Date(rv.submittedAt).getTime()) / (86400000));
     return days > 90 && days <= 180;
   });
-  const prior90ByCohort: Record<Cohort, typeof REVIEWS> = {
-    flic_en_flac: [], grand_baie: [], pereybere: [], bel_ombre: [],
-  };
-  for (const rv of prior90) prior90ByCohort[rv.cohort].push(rv);
+  const prior90ByCohort = reviewsByCohort(prior90);
 
   return (
     <>

@@ -257,7 +257,7 @@ export const MODULE_RESOURCE: Record<string, Resource[]> = {
   // Tease/preview business-unit + system modules. Gated by `owners` so Field
   // (no owners scope) doesn't see them in the sidebar; Director / Commercial /
   // Ops all retain visibility. Refine semantics when these modules ship for real.
-  interior: ['owners'],
+  design: ['owners'],
   agency: ['owners'],
   training: ['owners'],
   settings: ['settings'],

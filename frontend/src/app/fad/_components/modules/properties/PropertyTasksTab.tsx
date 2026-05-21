@@ -38,7 +38,7 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 const STATUS_TONE: Record<TaskStatus, string> = {
   reported: 'warn',
   scheduled: '',
-  ready: '',
+  ready: 'info',
   in_progress: 'info',
   paused: '',
   blocked: 'warn',
@@ -206,7 +206,7 @@ export function PropertyTasksTab({ property }: Props) {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>Source:</span>
           <ChipFilter label="All" active={sourceFilter === 'all'} onClick={() => setSourceFilter('all')} />
-          {(['manual', 'breezeway', 'inbox_ai', 'recurring', 'reservation_trigger', 'review', 'syndic'] as TaskSource[]).map((s) => (
+          {(['manual', 'breezeway', 'inbox_ai', 'recurring', 'reservation_trigger', 'review'] as TaskSource[]).map((s) => (
             <ChipFilter key={s} label={SOURCE_LABEL[s]} active={sourceFilter === s} onClick={() => setSourceFilter(s)} />
           ))}
         </div>

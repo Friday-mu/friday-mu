@@ -4,6 +4,8 @@
 // Finance fixtures — match schema v1 from finance brief (section 7).
 // Static seed data for Phase 1 surfaces: Overview, Transactions, Capture, Approvals.
 
+import { getCachedTenantCurrency } from './currencyCache';
+
 export type Entity = 'FR' | 'FI' | 'S';
 export type BillTo = 'owner' | 'internal_fr' | 'internal_fi' | 'internal_s';
 export type ExpenseStatus =
@@ -798,11 +800,38 @@ export const FRIDAY_GUEST_FLAGS: Record<string, { severity: 'low' | 'medium' | '
 
 // ───────────────── Helpers ─────────────────
 
-export const formatMUR = (minor: number) => 'Rs ' + (minor / 100).toLocaleString('en-MU', { maximumFractionDigits: 0 });
-export const formatEUR = (minor: number) => '€ ' + (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
-export const formatUSD = (minor: number) => '$ ' + (minor / 100).toLocaleString('en-US', { maximumFractionDigits: 0 });
-export const formatCurrency = (minor: number, ccy: Currency) =>
-  ccy === 'EUR' ? formatEUR(minor) : ccy === 'USD' ? formatUSD(minor) : formatMUR(minor);
+export function formatMoney(
+  minor: number | null,
+  currency: string = 'MUR',
+  locale?: string,
+): string {
+  if (minor === null || Number.isNaN(minor)) return '—';
+  const major = minor / 100;
+  switch (currency) {
+    case 'MUR': return 'Rs ' + major.toLocaleString(locale || 'en-MU', { maximumFractionDigits: 0 });
+    case 'USD': return '$' + major.toLocaleString(locale || 'en-US', { maximumFractionDigits: 0 });
+    case 'EUR': return '€ ' + major.toLocaleString(locale || 'en-GB', { maximumFractionDigits: 0 });
+    case 'GBP': return '£' + major.toLocaleString(locale || 'en-GB', { maximumFractionDigits: 0 });
+    default:
+      try {
+        return new Intl.NumberFormat(locale || 'en', {
+          style: 'currency',
+          currency,
+          maximumFractionDigits: 0,
+        }).format(major);
+      } catch {
+        return currency + ' ' + major.toLocaleString(locale || 'en', { maximumFractionDigits: 0 });
+      }
+  }
+}
+
+export const formatMUR = (minor: number | null): string => {
+  const { currency, locale } = getCachedTenantCurrency();
+  return formatMoney(minor, currency, locale);
+};
+export const formatEUR = (minor: number) => formatMoney(minor, 'EUR');
+export const formatUSD = (minor: number) => formatMoney(minor, 'USD');
+export const formatCurrency = (minor: number, ccy: Currency) => formatMoney(minor, ccy);
 
 export const billToLabel = (b: BillTo): string =>
   b === 'owner' ? 'Owner' : b === 'internal_fr' ? 'FR' : b === 'internal_fi' ? 'FI' : 'S';

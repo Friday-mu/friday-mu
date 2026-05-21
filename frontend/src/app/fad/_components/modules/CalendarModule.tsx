@@ -14,6 +14,8 @@ import {
   type ReservationNote,
 } from '../../_data/reservations';
 import { TASKS, TASK_USERS, TASK_USER_BY_ID, type Task } from '../../_data/tasks';
+import { useLiveReservations } from '../../_data/reservationsClient';
+import { liveOnlyMode } from '../../_data/demoMode';
 import { addReservationNote, updateReservationTimes } from '../../_data/breezeway';
 import { useCurrentUserId } from '../usePermissions';
 import { fireToast } from '../Toaster';
@@ -22,7 +24,7 @@ import { IconClose, IconPlus, IconRefresh } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
 
-type CalView = 'day' | 'week' | 'month';
+type CalView = 'agenda' | 'day' | 'week' | 'month';
 
 interface ViewDay {
   isoDate: string;
@@ -35,9 +37,7 @@ interface ViewDay {
   inFocusMonth: boolean;
 }
 
-// @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
-// Hardcoded demo date. Replace with new Date() (server-aware).
-const TODAY_ISO = '2026-04-27';
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const EVENT_TYPES: { id: 'reservation' | 'task' | 'maint' | 'meeting'; label: string; dot: string }[] = [
@@ -101,7 +101,7 @@ function computeViewDays(viewDate: Date, view: CalView): ViewDay[] {
   if (view === 'day') {
     return [make(viewDate)];
   }
-  if (view === 'week') {
+  if (view === 'week' || view === 'agenda') {
     const monday = startOfWeek(viewDate);
     return Array.from({ length: 7 }, (_, i) => make(addDays(monday, i)));
   }
@@ -117,7 +117,7 @@ function viewSubtitle(viewDate: Date, view: CalView, days: ViewDay[]): string {
   if (view === 'day') {
     return fmt(days[0].isoDate, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
   }
-  if (view === 'week') {
+  if (view === 'week' || view === 'agenda') {
     const first = days[0].isoDate;
     const last = days[days.length - 1].isoDate;
     return `${fmt(first, { month: 'short', day: 'numeric' })} → ${fmt(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
@@ -129,6 +129,20 @@ function dayIndexFor(iso: string, days: ViewDay[]): number {
   return days.findIndex((d) => d.isoDate === iso.slice(0, 10));
 }
 
+function eventHour(iso: string, fallback: number): number {
+  if (!iso || /^\d{4}-\d{2}-\d{2}$/.test(iso)) return fallback;
+  if (/T00:00:00(?:\.000)?Z?$/.test(iso)) return fallback;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.getHours();
+}
+
+function previousISODate(iso: string): string {
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  d.setDate(d.getDate() - 1);
+  return isoDay(d);
+}
+
 function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
   // Used by mobile day-list and DayView to surface check-in / check-out events at
   // their precise hour. WeekView renders these as continuous bars instead.
@@ -136,7 +150,7 @@ function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
   const inIdx = dayIndexFor(rsv.checkIn, days);
   const outIdx = dayIndexFor(rsv.checkOut, days);
   if (inIdx >= 0) {
-    const hour = new Date(rsv.checkIn).getHours();
+    const hour = eventHour(rsv.checkIn, 15);
     events.push({
       day: inIdx,
       start: hour,
@@ -146,7 +160,7 @@ function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
     });
   }
   if (outIdx >= 0) {
-    const hour = new Date(rsv.checkOut).getHours();
+    const hour = eventHour(rsv.checkOut, 11);
     events.push({
       day: outIdx,
       start: hour,
@@ -176,28 +190,33 @@ interface Stay {
   endsThisWeek: boolean;
 }
 
-function computeStaysInWindow(days: ViewDay[]): Stay[] {
+function computeStaysInWindow(days: ViewDay[], reservations: Reservation[]): Stay[] {
   if (days.length === 0) return [];
   const firstISO = days[0].isoDate;
   const lastISO = days[days.length - 1].isoDate;
-  return RESERVATIONS
+  return reservations
     .filter((r) => {
       if (r.status === 'cancelled') return false;
       const inISO = r.checkIn.slice(0, 10);
       const outISO = r.checkOut.slice(0, 10);
-      return outISO >= firstISO && inISO <= lastISO;
+      return outISO > firstISO && inISO <= lastISO;
     })
     .map((r) => {
-      const inIdx = days.findIndex((d) => d.isoDate === r.checkIn.slice(0, 10));
-      const outIdx = days.findIndex((d) => d.isoDate === r.checkOut.slice(0, 10));
+      const inISO = r.checkIn.slice(0, 10);
+      const outISO = r.checkOut.slice(0, 10);
+      const lastNightISO = previousISODate(outISO);
+      const inIdx = days.findIndex((d) => d.isoDate === inISO);
+      const lastNightIdx = days.findIndex((d) => d.isoDate === lastNightISO);
+      const outIdx = days.findIndex((d) => d.isoDate === outISO);
       return {
         rsv: r,
         startIdx: inIdx >= 0 ? inIdx : 0,
-        endIdx: outIdx >= 0 ? outIdx : days.length - 1,
+        endIdx: lastNightIdx >= 0 ? lastNightIdx : days.length - 1,
         startsThisWeek: inIdx >= 0,
         endsThisWeek: outIdx >= 0,
       };
     })
+    .filter((s) => s.endIdx >= s.startIdx)
     .sort((a, b) => a.startIdx - b.startIdx || a.endIdx - b.endIdx);
 }
 
@@ -232,7 +251,16 @@ type FilterChipId = 'reservation' | 'task' | 'maint' | 'meeting';
 
 export function CalendarModule() {
   const currentUserId = useCurrentUserId();
-  const [tab, setTab] = useState<CalView>('week');
+  // Live reservations from /api/reservations — falls back to the
+  // RESERVATIONS fixture when the API is unreachable so the calendar
+  // still renders something useful during outages. Same pattern as
+  // OverviewPage / AllReservationsPage (commit 1d70cc4).
+  const demoData = !liveOnlyMode();
+  const { reservations: liveReservations } = useLiveReservations();
+  const sourceReservations = liveReservations ?? (demoData ? RESERVATIONS : []);
+  const [tab, setTab] = useState<CalView>(() => (
+    typeof window !== 'undefined' && window.innerWidth <= 768 ? 'agenda' : 'week'
+  ));
   const [viewDate, setViewDate] = useState<Date>(() => new Date(`${TODAY_ISO}T12:00:00`));
   const [typeFilter, setTypeFilter] = useState<Set<FilterChipId>>(
     new Set(EVENT_TYPES.map((t) => t.id)),
@@ -253,6 +281,7 @@ export function CalendarModule() {
   const [rev, setRev] = useState(0);
   const bumpRev = () => setRev((n) => n + 1);
   const tabs = [
+    { id: 'agenda', label: 'Agenda' },
     { id: 'day', label: 'Day' },
     { id: 'week', label: 'Week' },
     { id: 'month', label: 'Month' },
@@ -261,16 +290,16 @@ export function CalendarModule() {
   const days = useMemo(() => computeViewDays(viewDate, tab), [viewDate, tab]);
 
   const allEvents = useMemo<CalEvent[]>(() => {
-    const reservationEvents = RESERVATIONS.flatMap((r) => reservationToEvents(r, days));
-    const filteredTasks = mineOnly
+    const reservationEvents = sourceReservations.flatMap((r) => reservationToEvents(r, days));
+    const filteredTasks = !demoData ? [] : mineOnly
       ? TASKS.filter((t) => t.assigneeIds.includes(currentUserId))
       : TASKS;
     const taskEvents = filteredTasks.map((t) => taskToEvent(t, days)).filter((e): e is CalEvent => Boolean(e));
-    const fixedEvents = CAL_EVENTS.map((e) => fixedToEvent(e, days)).filter((e): e is CalEvent => Boolean(e));
+    const fixedEvents = (demoData ? CAL_EVENTS : []).map((e) => fixedToEvent(e, days)).filter((e): e is CalEvent => Boolean(e));
     return [...fixedEvents, ...reservationEvents, ...taskEvents];
-  }, [days, mineOnly, currentUserId, rev]);
+  }, [days, mineOnly, currentUserId, rev, sourceReservations, demoData]);
 
-  const stays = useMemo(() => packStays(computeStaysInWindow(days)), [days, rev]);
+  const stays = useMemo(() => packStays(computeStaysInWindow(days, sourceReservations)), [days, rev, sourceReservations]);
   const staysVisible = typeFilter.has('reservation');
 
   // Map "reservation" chip to checkin/checkout event types so the existing per-type filter
@@ -308,7 +337,7 @@ export function CalendarModule() {
   const navStep = (dir: -1 | 1) => {
     setViewDate((prev) => {
       if (tab === 'day') return addDays(prev, dir);
-      if (tab === 'week') return addDays(prev, dir * 7);
+      if (tab === 'week' || tab === 'agenda') return addDays(prev, dir * 7);
       return new Date(prev.getFullYear(), prev.getMonth() + dir, 1);
     });
   };
@@ -331,6 +360,7 @@ export function CalendarModule() {
               onChange={(e) => setTab(e.target.value as CalView)}
               aria-label="Calendar view"
             >
+              <option value="agenda">Agenda</option>
               <option value="day">Day</option>
               <option value="week">Week</option>
               <option value="month">Month</option>
@@ -382,7 +412,13 @@ export function CalendarModule() {
           </FilterChip>
         </FilterBar>
 
-        {tab === 'month' ? (
+        {tab === 'agenda' ? (
+          <AgendaView
+            days={days}
+            events={visibleEvents}
+            onEventClick={(ev, x, y) => setSelectedEvent({ ev, x, y })}
+          />
+        ) : tab === 'month' ? (
           <MonthView
             days={days}
             viewDate={viewDate}
@@ -485,6 +521,73 @@ export function CalendarModule() {
         />
       )}
     </>
+  );
+}
+
+function AgendaView({
+  days,
+  events,
+  onEventClick,
+}: {
+  days: ViewDay[];
+  events: CalEvent[];
+  onEventClick: (ev: CalEvent, x: number, y: number) => void;
+}) {
+  const grouped = days.map((day, idx) => {
+    const dayEvents = events
+      .filter((e) => e.day === idx)
+      .sort((a, b) => {
+        const aStart = a.allDay ? -1 : a.start;
+        const bStart = b.allDay ? -1 : b.start;
+        return aStart - bStart;
+      });
+    return { day, events: dayEvents };
+  });
+  const total = grouped.reduce((sum, g) => sum + g.events.length, 0);
+
+  return (
+    <div className="cal-agenda" aria-label="Calendar agenda">
+      <div className="cal-agenda-summary">
+        <div>
+          <span>Next 7 days</span>
+          <strong>{total === 0 ? 'Nothing scheduled' : `${total} scheduled item${total === 1 ? '' : 's'}`}</strong>
+        </div>
+      </div>
+      {grouped.map(({ day, events: dayEvents }) => (
+        <section key={day.isoDate} className="cal-agenda-day">
+          <div className={'cal-agenda-date' + (day.today ? ' today' : '')}>
+            <span>{day.label}</span>
+            <strong>{new Date(day.isoDate).toLocaleString('en-US', { month: 'short', day: 'numeric' })}</strong>
+          </div>
+          {dayEvents.length === 0 ? (
+            <div className="cal-agenda-empty">Nothing scheduled.</div>
+          ) : (
+            <div className="cal-agenda-events">
+              {dayEvents.map((e, i) => (
+                <button
+                  key={`${e.title}-${i}`}
+                  type="button"
+                  className={'cal-agenda-event ' + e.type}
+                  onClick={(evt) => {
+                    const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect();
+                    onEventClick(e, rect.left + 16, rect.top + 16);
+                  }}
+                >
+                  <span className="cal-agenda-time mono">
+                    {e.allDay || e.start < 0 ? 'All day' : `${String(e.start).padStart(2, '0')}:00`}
+                  </span>
+                  <span className="cal-agenda-main">
+                    <span>{TYPE_LABEL[e.type]}</span>
+                    <strong>{e.title}</strong>
+                  </span>
+                  <span className="cal-agenda-open">{eventOpenLabel(e.type)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -1366,6 +1469,22 @@ function StayPopover({
               {formatMoney(Math.round(rsv.totalAmount / Math.max(rsv.nights, 1)), rsv.currency)}
             </span>
           </div>
+          {rsv.calendarPricing?.nightlyAverage != null && (
+            <div className="cal-popover-finance-row">
+              <span>Guesty nightly</span>
+              <span className="mono" style={{ color: 'var(--color-text-secondary)' }}>
+                {formatMoney(rsv.calendarPricing.nightlyAverage, rsv.calendarPricing.currency || rsv.currency)}
+              </span>
+            </div>
+          )}
+          {rsv.calendarPricing?.syncedAt && (
+            <div className="cal-popover-finance-row">
+              <span>Calendar sync</span>
+              <span className="mono" style={{ color: 'var(--color-text-tertiary)' }}>
+                {rsv.calendarPricing.nightsCached}/{rsv.nights} nights · {rsv.calendarPricing.syncedAt.slice(0, 10)}
+              </span>
+            </div>
+          )}
           <div className="cal-popover-finance-row">
             <span>Tourist tax</span>
             <span className="mono" style={{ color: 'var(--color-text-secondary)' }}>

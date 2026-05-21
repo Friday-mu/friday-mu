@@ -13,6 +13,8 @@ import {
   type Cohort,
   type ReviewTag,
 } from '../../../_data/reviews';
+import { useLiveReviews } from '../../../_data/reviewsClient';
+import { useTranslation } from '../../../_data/translateClient';
 import { TASK_PROPERTY_BY_CODE, TASK_USER_BY_ID } from '../../../_data/tasks';
 import { RESERVATION_BY_ID } from '../../../_data/reservations';
 import { CreateTaskDrawer } from '../operations/CreateTaskDrawer';
@@ -37,8 +39,13 @@ export function AllReviewsPage({ onMutated }: Props) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [taskFromReview, setTaskFromReview] = useState<Review | null>(null);
 
+  // Live data from Guesty via /api/reviews/list. Fallback to fixture REVIEWS
+  // during initial load OR on backend failure — keeps the page rendered.
+  const { reviews: liveReviews, loading: liveLoading, error: liveError } = useLiveReviews();
+  const reviewSource = liveReviews ?? REVIEWS;
+
   const filtered = useMemo(() => {
-    let list = [...REVIEWS];
+    let list = [...reviewSource];
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -64,7 +71,7 @@ export function AllReviewsPage({ onMutated }: Props) {
       return b.rating - a.rating;
     });
     return list;
-  }, [search, channelFilter, cohortFilter, ratingFilter, hasReplyFilter, sort]);
+  }, [search, channelFilter, cohortFilter, ratingFilter, hasReplyFilter, sort, reviewSource]);
 
   const selected = filtered.find((rv) => rv.id === selectedId) ?? filtered[0];
 
@@ -116,7 +123,13 @@ export function AllReviewsPage({ onMutated }: Props) {
               </select>
             </div>
             <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              {filtered.length} of {REVIEWS.length} reviews
+              {filtered.length} of {reviewSource.length} reviews
+              {liveLoading && <span style={{ marginLeft: 6, opacity: 0.7 }}>· loading…</span>}
+              {liveError && (
+                <span style={{ marginLeft: 6, color: 'var(--color-text-warning)' }} title={liveError}>
+                  · using fixtures (backend unreachable)
+                </span>
+              )}
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -289,11 +302,11 @@ function ReviewDetail({
         </span>
       </div>
 
-      {/* Title + body */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{rv.title}</div>
-        <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>{rv.reviewText}</div>
-      </div>
+      {/* Title + body — auto-translated to English when source is non-EN.
+          Toggle reveals original. Translation cached per review-id both
+          client- and server-side. */}
+      <ReviewBody rv={rv} />
+
 
       {/* Tags */}
       {tags.length > 0 && (
@@ -414,12 +427,10 @@ function ReviewDetail({
           style={{ width: '100%', minHeight: 80, fontSize: 12, fontFamily: 'inherit', padding: 8 }}
         />
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 6 }}>
-          <button
-            className="btn ghost sm"
-            onClick={() => fireToast('AI draft polished · stub for now')}
-          >
-            ✨ Polish with Friday
-          </button>
+          {/* 'Polish with Friday' removed 2026-05-17 — was a toast stub
+              and Mary reported it as broken (clicked, nothing happened).
+              Reply tone polishing for reviews can be a future targeted
+              feature; for now operators edit directly. */}
           <button
             className="btn primary sm"
             onClick={sendReply}
@@ -496,6 +507,61 @@ function TagChip({ tag }: { tag: ReviewTag }) {
     >
       {tag.tag}
     </span>
+  );
+}
+
+// Detail-panel body. Auto-translates to English on mount; toggle reveals
+// original. When no AI providers are configured the backend returns the
+// original text unchanged and the toggle/footer message reflects that.
+function ReviewBody({ rv }: { rv: Review }) {
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  // Translate body (always non-empty for both channels) + title (Booking only).
+  const bodyT = useTranslation(rv.reviewText, `r:${rv.id}:body`);
+  const titleT = useTranslation(rv.title || undefined, `r:${rv.id}:title`);
+
+  const titleTranslated = titleT.result?.translated || rv.title;
+  const bodyTranslated = bodyT.result?.translated || rv.reviewText;
+
+  // Only offer the toggle when translated text differs from original.
+  const wasTranslated = !!(
+    bodyT.result?.translated
+    && bodyT.result.translated !== bodyT.result.original
+  );
+
+  const showTitle = showOriginal ? rv.title : titleTranslated;
+  const showBody = showOriginal ? rv.reviewText : bodyTranslated;
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      {rv.title && (
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{showTitle}</div>
+      )}
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+        {showBody}
+      </div>
+      {bodyT.loading && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>
+          Translating…
+        </div>
+      )}
+      {wasTranslated && (
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => setShowOriginal((v) => !v)}
+          style={{ fontSize: 11, marginTop: 8 }}
+        >
+          {showOriginal ? 'Show translated' : 'Show original'}
+          {bodyT.result?.sourceLang ? ` · ${bodyT.result.sourceLang}` : ''}
+        </button>
+      )}
+      {bodyT.error && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>
+          Translation unavailable · {bodyT.error}
+        </div>
+      )}
+    </div>
   );
 }
 
