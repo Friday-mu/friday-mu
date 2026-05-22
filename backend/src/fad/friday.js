@@ -12,6 +12,7 @@ const router = express.Router();
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const MAX_QUESTION_CHARS = 1200;
 const MAX_HISTORY_TURNS = 8;
+const ASK_FRIDAY_MAX_TOKENS = Number(process.env.KIMI_FAD_ASK_MAX_TOKENS) || 4096;
 const ACTION_TYPES = new Set(['navigate', 'create_task', 'send_team_message', 'request_approval']);
 const ACTION_RISKS = new Set(['navigation', 'safe', 'approval']);
 
@@ -368,6 +369,7 @@ Rules:
 - Keep ownership boundaries clear: Inbox owns guest communication context; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
 - Prefer concise operational answers: answer first, then the evidence or next check.
 - If confidence is low, ask one targeted clarification instead of inventing.
+- For operational questions, return at least one concrete next step or safe action when the supplied context supports it.
 - Safe internal actions may be proposed as create_task or send_team_message.
 - Guest-facing, revenue-impacting, access-code, payment, pricing, reservation, HR-record, and approval-sensitive changes must be request_approval only. Never propose direct execution for those.
 - Use navigate actions to send the operator to the owning module when that is the best next step.
@@ -496,7 +498,7 @@ router.post('/ask', attachIdentity, async (req, res) => {
         { role: 'user', content: buildUserPrompt({ question, scope, context }) },
       ],
       model: req.body?.model || 'auto',
-      maxTokens: 1400,
+      maxTokens: ASK_FRIDAY_MAX_TOKENS,
       meter: { tenantId: req.tenantId, feature: 'fad_ask_friday' },
     });
     if (!result.ok) {
@@ -533,5 +535,6 @@ module.exports = {
     cleanAction,
     sanitizeActions,
     shouldLoad,
+    ASK_FRIDAY_MAX_TOKENS,
   },
 };

@@ -8,6 +8,7 @@ describe('FAD Ask Friday helpers', () => {
     expect(prompt).toContain('command surface');
     expect(prompt).toContain('create_task');
     expect(prompt).toContain('request_approval');
+    expect(prompt).toContain('concrete next step');
     expect(prompt).toContain('Inbox');
     expect(prompt).toContain('Operations');
     expect(prompt).toContain('HR');
@@ -28,6 +29,10 @@ describe('FAD Ask Friday helpers', () => {
     for (const module of modules) {
       expect(_test.shouldLoad({ question: 'What needs attention?', scope: 'All of FAD' }, module)).toBe(true);
     }
+  });
+
+  test('keeps enough output budget for Kimi K2.6 visible answers', () => {
+    expect(_test.ASK_FRIDAY_MAX_TOKENS).toBeGreaterThanOrEqual(4096);
   });
 
   test('parses strict JSON and falls back to raw text', () => {

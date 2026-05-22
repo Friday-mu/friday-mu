@@ -119,6 +119,21 @@ async function invokeKimi({ system, messages, tools, model, maxTokens }) {
     const choice = data?.choices?.[0];
     const text = choice?.message?.content || '';
     const toolCalls = Array.isArray(choice?.message?.tool_calls) ? choice.message.tool_calls : undefined;
+    const finishReason = choice?.finish_reason || 'unknown';
+    if (!String(text).trim() && !toolCalls?.length) {
+      return {
+        ok: false,
+        error: `empty response (finish_reason=${finishReason})`,
+        status: 502,
+        usage: {
+          input_tokens: data?.usage?.prompt_tokens ?? null,
+          output_tokens: data?.usage?.completion_tokens ?? null,
+          total_tokens: data?.usage?.total_tokens ?? null,
+        },
+        finishReason,
+        latencyMs: Date.now() - start,
+      };
+    }
     return {
       ok: true,
       message: {
@@ -132,7 +147,7 @@ async function invokeKimi({ system, messages, tools, model, maxTokens }) {
         total_tokens: data?.usage?.total_tokens ?? null,
       },
       model: m,
-      finishReason: choice?.finish_reason || 'unknown',
+      finishReason,
       latencyMs: Date.now() - start,
     };
   } catch (e) {
