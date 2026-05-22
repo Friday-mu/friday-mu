@@ -90,8 +90,9 @@ function hasSimilarAction(actions, candidate) {
     if (action.type !== candidate.type) return false;
     if (action.type === 'navigate') return action.module === candidate.module;
     if (action.type === 'create_task') {
-      return cleanString(action.payload?.title, 120).toLowerCase() ===
-        cleanString(candidate.payload?.title, 120).toLowerCase();
+      // The model may phrase the same requested task differently from the
+      // deterministic fallback. One create-task button is enough.
+      return true;
     }
     return action.label.toLowerCase() === candidate.label.toLowerCase();
   });
