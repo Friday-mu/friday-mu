@@ -1692,7 +1692,7 @@ function SchedulePage({
             >
               <span>
                 <strong>{task.title}</strong>
-                <small>{task.propertyCode || 'No property'} · {STATUS_LABEL[task.status]} · {task.priority}</small>
+                <small>{task.propertyCode || 'No property'} · {formatTaskDue(task.dueDate, task.dueTime, task.status)} · {STATUS_LABEL[task.status]}</small>
               </span>
               <span onClick={(e) => e.stopPropagation()}>
                 <button className="btn ghost sm" type="button" disabled={savingTaskId === task.id} onClick={() => scheduleToday(task)}>
@@ -1959,14 +1959,17 @@ function PlannerCompactCell({
                 type="button"
                 className="ops-planner-chip"
                 data-status={task.status}
-                style={{ borderLeftColor: statusSwatch.color, background: statusSwatch.background, color: statusSwatch.color }}
+                style={{ borderLeftColor: statusSwatch.color }}
                 title={`${task.title} · ${task.propertyCode || 'No property'} · ${STATUS_LABEL[task.status]}`}
                 draggable={dragEnabled && savingTaskId !== task.id}
                 onDragStart={(event) => onDragStart(event, task)}
                 onClick={() => onOpenTask(task.id)}
               >
                 <span className="ops-planner-chip-title">{task.title}</span>
-                <span className="ops-planner-chip-meta">{meta}</span>
+                <span className="ops-planner-chip-meta">
+                  <span className="ops-planner-chip-status-dot" style={{ background: statusSwatch.color }} />
+                  {meta}
+                </span>
               </button>
               <button
                 type="button"
@@ -2268,6 +2271,15 @@ function MyTaskCard({
   const statusSwatch = toneStyle(taskStatusTone(task.status));
   const isOverdue = Boolean(task.dueDate) && task.dueDate < TODAY && !CLOSED_STATUS.has(task.status);
   const daysUntil = daysBetween(TODAY, task.dueDate);
+  const comments = taskCommentCount(task);
+  const attachments = taskAttachmentCount(task);
+  const meta = [
+    task.department,
+    task.reservationId ? 'Reservation linked' : 'No reservation',
+    comments > 0 ? `${comments} comment${comments === 1 ? '' : 's'}` : null,
+    attachments > 0 ? `${attachments} file${attachments === 1 ? '' : 's'}` : null,
+    syncLabel,
+  ].filter(Boolean).join(' · ');
   const primaryAction =
     task.status === 'scheduled' || task.status === 'ready'
       ? { label: 'Start', status: 'in_progress' as TaskStatus }
@@ -2284,6 +2296,7 @@ function MyTaskCard({
       className={'ops-my-card' + (isOverdue ? ' overdue' : '')}
       data-status={task.status}
       style={{ borderLeftColor: statusSwatch.color }}
+      title={task.description || taskTitle(task)}
       onClick={onOpen}
       role="button"
       tabIndex={0}
@@ -2299,19 +2312,12 @@ function MyTaskCard({
         <span className={isOverdue ? 'ops-my-due overdue' : 'ops-my-due'}>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
       </div>
       <h3>{taskTitle(task)}</h3>
-      {task.description && <p>{task.description}</p>}
+      <div className="ops-my-card-meta">{meta}</div>
       <div className="ops-my-card-chips">
         <span style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
         <PriorityLabel priority={task.priority} />
-        <span>{task.department}</span>
-        <span>{task.reservationId ? 'reservation' : 'property issue'}</span>
         {isOverdue && <span>overdue</span>}
         {!isOverdue && daysUntil >= 0 && daysUntil <= 1 && <span>{daysUntil === 0 ? 'today' : 'tomorrow'}</span>}
-      </div>
-      <div className="ops-my-card-footer">
-        <span>{task.comments.length} comments</span>
-        <span>{task.attachmentCount} files</span>
-        <span>{syncLabel}</span>
       </div>
       <div className="ops-my-card-actions">
         {primaryAction && (
