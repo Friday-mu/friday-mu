@@ -6798,6 +6798,10 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   .ops-schedule-segment {
     width: 100%;
   }
+  .ops-schedule-filters input {
+    width: 100%;
+    flex: 0 0 auto;
+  }
   .ops-planner-edit {
     grid-template-columns: minmax(0, 1fr) minmax(140px, 1fr);
   }
