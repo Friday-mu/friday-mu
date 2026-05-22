@@ -14,6 +14,7 @@ describe('FAD Ask Friday helpers', () => {
     expect(prompt).toContain('HR');
     expect(prompt).toContain('Reviews');
     expect(prompt).toContain('Design');
+    expect(prompt).toContain('Do not use markdown tables');
     expect(prompt).toContain('Return JSON only');
   });
 
