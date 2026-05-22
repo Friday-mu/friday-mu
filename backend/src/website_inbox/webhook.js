@@ -300,4 +300,4 @@ function mountWebhook(router) {
   });
 }
 
-module.exports = { mountWebhook };
+module.exports = { mountWebhook, verifySignature };

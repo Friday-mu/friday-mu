@@ -15,6 +15,7 @@
 const express = require('express');
 const { mountWebhook } = require('./webhook');
 const { mountThreads } = require('./threads');
+const { mountAiHandoff, mountAiHandoffStaffRoutes } = require('./ai_handoff');
 const { startWorker } = require('./jobs');
 
 const router = express.Router();
@@ -24,12 +25,14 @@ const router = express.Router();
 const webhookRouter = express.Router();
 webhookRouter.use(express.raw({ type: '*/*', limit: '1mb' }));
 mountWebhook(webhookRouter);
+mountAiHandoff(webhookRouter);
 router.use(webhookRouter);
 
 // ── Threads (JSON, auth required at the call sites) ───────────
 const threadsRouter = express.Router();
 threadsRouter.use(express.json({ limit: '256kb' }));
 mountThreads(threadsRouter);
+mountAiHandoffStaffRoutes(threadsRouter);
 router.use(threadsRouter);
 
 module.exports = { router, startWorker };

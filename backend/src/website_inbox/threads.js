@@ -24,6 +24,7 @@ const {
   reviseWebsiteDraft,
   rejectWebsiteDraft,
 } = require('./drafts');
+const { recordAiTakeoverForThread } = require('./ai_handoff');
 
 function mountThreads(router) {
   // ── LIST ──────────────────────────────────────────────────────
@@ -55,6 +56,22 @@ function mountThreads(router) {
           latest_draft.id AS latest_draft_id,
           latest_draft.payload->>'state' AS latest_draft_state,
           latest_draft.payload->>'confidence' AS latest_draft_confidence,
+          latest_handoff.payload->>'handoffId' AS latest_ai_handoff_id,
+          latest_handoff.payload->>'surface' AS latest_ai_surface,
+          latest_handoff.payload->>'confidence' AS latest_ai_confidence,
+          latest_handoff.payload->>'aiReplyState' AS latest_ai_reply_state,
+          latest_handoff.payload->>'escalationReason' AS latest_ai_escalation_reason,
+          latest_handoff.payload->>'recommendedNextAction' AS latest_ai_recommended_next_action,
+          CASE
+            WHEN latest_handoff.id IS NULL THEN NULL
+            WHEN latest_handoff_takeover.id IS NULL THEN 'ai_active'
+            ELSE 'human_takeover'
+          END AS latest_ai_takeover_state,
+          CASE
+            WHEN latest_handoff.id IS NULL THEN NULL
+            WHEN latest_handoff_takeover.id IS NULL THEN TRUE
+            ELSE FALSE
+          END AS latest_ai_may_reply,
           (SELECT COUNT(*) FROM inbox_events e WHERE e.thread_id = t.id) AS event_count
         FROM inbox_threads t
         LEFT JOIN LATERAL (
@@ -84,6 +101,24 @@ function mountThreads(router) {
            ORDER BY d.created_at DESC, d.id::text DESC
            LIMIT 1
         ) latest_draft ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT e.id, e.payload, e.created_at
+            FROM inbox_events e
+           WHERE e.thread_id = t.id
+             AND e.event_type = 'website.ai_handoff'
+           ORDER BY e.created_at DESC, e.id::text DESC
+           LIMIT 1
+        ) latest_handoff ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT e.id, e.payload, e.created_at
+            FROM inbox_events e
+           WHERE e.thread_id = t.id
+             AND latest_handoff.id IS NOT NULL
+             AND e.created_at >= latest_handoff.created_at
+             AND e.event_type IN ('website.ai_handoff_takeover', 'staff.reply_sent')
+           ORDER BY e.created_at DESC, e.id::text DESC
+           LIMIT 1
+        ) latest_handoff_takeover ON TRUE
         ${where}
         ORDER BY t.last_event_at DESC
         LIMIT 200
@@ -197,6 +232,19 @@ function mountThreads(router) {
       const t = threadRes.rows[0];
       const toEmail = t.guest_email_raw || t.guest_email;
       if (!toEmail) return res.status(409).json({ error: 'missing_guest_email' });
+      if (/^website-ai\+/i.test(toEmail)) {
+        return res.status(409).json({
+          error: 'website_ai_handoff_reply_not_connected',
+          message: 'This is a website AI handoff. Take over the AI first; live visitor reply delivery is handled by the website handoff contract, not email.',
+          state: 'blocked',
+        });
+      }
+
+      await recordAiTakeoverForThread({
+        threadId: req.params.id,
+        identity: req.identity,
+        reason: 'staff_reply_sent',
+      });
 
       const subject = String(req.body?.subject || 'Re: Your Friday enquiry').slice(0, 200);
       const result = await sendEmail({
@@ -251,7 +299,7 @@ function mountThreads(router) {
   router.post('/threads/:id/drafts', attachIdentity, async (req, res) => {
     try {
       const latest = await query(
-        `SELECT id
+        `SELECT id, event_type
            FROM inbox_events
           WHERE thread_id = $1
             AND source <> 'fad'
@@ -263,6 +311,12 @@ function mountThreads(router) {
       );
       const sourceEvent = latest.rows[0];
       if (!sourceEvent) return res.status(409).json({ error: 'no_website_event_to_draft' });
+      if (sourceEvent.event_type === 'website.ai_handoff') {
+        return res.status(409).json({
+          error: 'website_ai_handoff_takeover_only',
+          message: 'Website AI handoff threads require explicit human takeover before any outbound action.',
+        });
+      }
       triggerWebsiteDraftGeneration(req.params.id, sourceEvent.id, {
         revisionInstruction: typeof req.body?.instruction === 'string' ? req.body.instruction : undefined,
       }).catch((e) => {

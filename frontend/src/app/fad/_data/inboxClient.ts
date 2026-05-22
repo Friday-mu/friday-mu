@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE, apiFetch, formatConfidencePercent, getToken } from '../../../components/types';
-import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState } from './fixtures';
+import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState, WebsiteAIHandoff } from './fixtures';
 
 // ───────── enum mappers ─────────
 
@@ -389,6 +389,42 @@ interface ConvDetailResp {
 
 function websiteEventBody(eventType: string, payload?: Record<string, unknown>): string {
   if (!payload) return eventType;
+  if (eventType === 'website.ai_handoff') {
+    const extracted = payload.extracted && typeof payload.extracted === 'object' && !Array.isArray(payload.extracted)
+      ? Object.entries(payload.extracted as Record<string, unknown>)
+      : [];
+    const tail = Array.isArray(payload.transcriptTail)
+      ? (payload.transcriptTail as Array<Record<string, unknown>>).slice(-4)
+      : [];
+    return [
+      'Website AI handoff.',
+      payload.surface ? `Surface: ${payload.surface}` : null,
+      payload.confidence ? `Confidence: ${payload.confidence}` : null,
+      payload.aiReplyState ? `AI state: ${payload.aiReplyState}` : null,
+      payload.takeoverState ? `Takeover: ${payload.takeoverState}` : null,
+      payload.escalationReason ? `Escalation: ${payload.escalationReason}` : null,
+      payload.recommendedNextAction ? `Next: ${payload.recommendedNextAction}` : null,
+      payload.visitorTurn ? `Latest visitor turn: ${payload.visitorTurn}` : null,
+      payload.conversationSummary ? `Summary: ${payload.conversationSummary}` : null,
+      extracted.length
+        ? `Extracted:\n${extracted.slice(0, 8).map(([k, v]) => `- ${k}: ${String(v)}`).join('\n')}`
+        : null,
+      tail.length
+        ? `Transcript tail:\n${tail.map((m) => `${m.role || 'message'}: ${String(m.content || '')}`).join('\n')}`
+        : null,
+    ].filter(Boolean).join('\n\n');
+  }
+  if (eventType === 'website.ai_handoff_takeover') {
+    const takenBy = payload.takenBy && typeof payload.takenBy === 'object'
+      ? payload.takenBy as Record<string, unknown>
+      : {};
+    return [
+      'Human takeover started.',
+      'Website AI must not double-reply.',
+      takenBy.displayName ? `By: ${takenBy.displayName}` : null,
+      payload.reason ? `Reason: ${payload.reason}` : null,
+    ].filter(Boolean).join('\n');
+  }
   const body = payload.body || payload.message;
   if (typeof body === 'string' && body.trim()) return body.trim();
   if (eventType === 'booking.request_submitted') {
@@ -408,6 +444,40 @@ function websiteEventBody(eventType: string, payload?: Record<string, unknown>):
     ].filter(Boolean).join('\n');
   }
   return `${eventType}\n${JSON.stringify(payload, null, 2).slice(0, 400)}`;
+}
+
+function aiHandoffFromEvents(events: Array<{
+  event_type?: string;
+  type?: string;
+  source?: string;
+  created_at?: string;
+  ts?: string;
+  payload?: Record<string, unknown>;
+}>): WebsiteAIHandoff | undefined {
+  const handoffs = events.filter((e) => String(e.event_type || e.type || '') === 'website.ai_handoff');
+  const latest = handoffs[handoffs.length - 1];
+  if (!latest?.payload) return undefined;
+  const latestTime = new Date(latest.created_at || latest.ts || 0).getTime();
+  const hasTakeover = events.some((e) => {
+    const eventType = String(e.event_type || e.type || '');
+    if (eventType !== 'website.ai_handoff_takeover' && eventType !== 'staff.reply_sent') return false;
+    const ts = new Date(e.created_at || e.ts || 0).getTime();
+    return Number.isFinite(ts) && Number.isFinite(latestTime) && ts >= latestTime;
+  });
+  const payload = latest.payload;
+  return {
+    handoffId: payload.handoffId ? String(payload.handoffId) : undefined,
+    surface: payload.surface ? String(payload.surface) : undefined,
+    confidence: payload.confidence ? String(payload.confidence) : undefined,
+    aiReplyState: payload.aiReplyState ? String(payload.aiReplyState) : undefined,
+    takeoverState: hasTakeover ? 'human_takeover' : (payload.takeoverState ? String(payload.takeoverState) : 'ai_active'),
+    aiMayReply: hasTakeover ? false : payload.aiMayReply !== false,
+    escalationReason: payload.escalationReason ? String(payload.escalationReason) : undefined,
+    recommendedNextAction: payload.recommendedNextAction ? String(payload.recommendedNextAction) : undefined,
+    pageUrl: payload.pageUrl ? String(payload.pageUrl) : undefined,
+    visitorTurn: payload.visitorTurn ? String(payload.visitorTurn) : undefined,
+    conversationSummary: payload.conversationSummary ? String(payload.conversationSummary) : undefined,
+  };
 }
 
 export async function loadConversations(): Promise<InboxThread[]> {
@@ -432,6 +502,7 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
         status: string;
         notes?: string | null;
         last_event_at?: string | null;
+        last_event_type?: string | null;
       };
       events?: Array<{
         id: string;
@@ -446,31 +517,38 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
     };
     const t = data?.thread;
     const events = data?.events || [];
-    const guest = t?.guest_name || t?.guest_email_raw || t?.guest_email || 'Anonymous';
+    const aiHandoff = aiHandoffFromEvents(events);
+    const guest = aiHandoff
+      ? `Website AI · ${aiHandoff.surface || 'handoff'}`
+      : (t?.guest_name || t?.guest_email_raw || t?.guest_email || 'Anonymous');
     const visibleEvents = events.filter((e) => !String(e.event_type || e.type || '').startsWith('ai.'));
     const messages: InboxMessage[] = visibleEvents.map((e) => {
       const eventType = String(e.event_type || e.type || 'website.event');
       const fromUs = e.source === 'fad' || eventType.startsWith('staff.');
+      const fromWebsiteAi = eventType.startsWith('website.ai_');
       return {
         from: fromUs ? 'us' as const : 'them' as const,
-        name: fromUs ? 'Friday' : guest,
+        name: fromUs ? 'Friday' : (fromWebsiteAi ? 'Website AI' : guest),
         time: e.created_at || e.ts || new Date().toISOString(),
         body: websiteEventBody(eventType, e.payload),
-        via: fromUs ? 'Email' : 'Website',
-        viaSystem: fromUs ? 'FAD' : 'Website',
-        viaChannel: fromUs ? 'Email' : 'Website',
+        via: fromUs ? 'Email' : (fromWebsiteAi ? 'AI handoff' : 'Website'),
+        viaSystem: fromUs ? 'FAD' : (fromWebsiteAi ? 'Website AI' : 'Website'),
+        viaChannel: fromUs ? 'Email' : (fromWebsiteAi ? 'AI handoff' : 'Website'),
       };
     });
     const drafts = (data.drafts || []).map(transformGmsDraft);
     const latestDraft = drafts.find((d) => d.state === 'draft_ready' || d.state === 'under_review' || d.state === 'friday_drafting' || d.state === 'generation_failed');
+    const subject = aiHandoff
+      ? `AI handoff · ${aiHandoff.surface || 'website'} · ${aiHandoff.confidence || 'unknown'} confidence`
+      : (t?.notes ? String(t.notes).slice(0, 100) : 'Website inquiry');
     return {
       id,
-      unread: t?.status === 'open',
+      unread: t?.status === 'open' || aiHandoff?.aiMayReply === true,
       guest,
-      subject: t?.notes ? String(t.notes).slice(0, 100) : 'Website inquiry',
+      subject,
       preview: visibleEvents[visibleEvents.length - 1]?.event_type || visibleEvents[visibleEvents.length - 1]?.type || 'inquiry',
-      channel: 'Website',
-      entity: 'unclassified',
+      channel: aiHandoff ? 'Website AI' : 'Website',
+      entity: aiHandoff?.surface === 'guest' ? 'guest' : aiHandoff?.surface === 'owner' ? 'owner' : 'unclassified',
       channelKey: 'website',
       property: '',
       time: t?.last_event_at || new Date().toISOString(),
@@ -480,13 +558,14 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
       summary: t?.notes || undefined,
       sentiment: 'neutral',
       language: 'EN',
-      guestEmail: t?.guest_email_raw || t?.guest_email || undefined,
+      guestEmail: aiHandoff ? undefined : (t?.guest_email_raw || t?.guest_email || undefined),
       guestPhone: t?.guest_phone || undefined,
       drafts,
-      availableChannels: ['email'],
-      recommendedChannel: 'email',
+      availableChannels: aiHandoff ? [] : ['email'],
+      recommendedChannel: aiHandoff ? undefined : 'email',
       latestDraftState: latestDraft?.state,
       latestDraftConfidence: latestDraft?.confidence,
+      aiHandoff,
     };
   }
 
@@ -630,6 +709,8 @@ export function useThreadDetail(threadId: string | null): UseThreadDetailResult 
       'inbox.message_received',
       'inbox.message_sent',
       'website_inbox.thread_updated',
+      'website_ai.handoff_received',
+      'website_ai.takeover',
     ];
     eventTypes.forEach((type) => es.addEventListener(type, refreshIfThreadMatches));
     es.onerror = () => {};

@@ -920,6 +920,8 @@ const publicAvailabilityRoutes = require('./src/public/availability');
 app.use('/api/public/availability', publicAvailabilityRoutes.router);
 const publicReturningGuestRoutes = require('./src/public/returning_guest');
 app.use('/api/public/returning-guest', publicReturningGuestRoutes.router);
+const publicTeamPresenceRoutes = require('./src/public/team_presence');
+app.use('/api/public/team-presence', publicTeamPresenceRoutes.router);
 
 // /api/public/chat — multi-provider chat-completions proxy. Replaces
 // the website's three direct LLM integrations (Ask Friday hero,

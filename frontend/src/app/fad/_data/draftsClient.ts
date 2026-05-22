@@ -245,6 +245,16 @@ export async function rejectWebsiteDraft(
   }) as Promise<RejectDraftResp>;
 }
 
+export async function takeOverWebsiteAI(
+  threadId: string,
+  reason = 'human_takeover',
+): Promise<{ ok: boolean; takeoverState?: string; aiMayReply?: boolean; handoffId?: string }> {
+  return apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/ai-takeover`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }) as Promise<{ ok: boolean; takeoverState?: string; aiMayReply?: boolean; handoffId?: string }>;
+}
+
 export async function sendWhatsAppTemplate(
   conversationId: string,
   opts: { templateId: string; variables?: Record<string, unknown> },

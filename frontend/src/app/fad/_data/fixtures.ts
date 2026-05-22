@@ -72,6 +72,20 @@ export interface InboxDraft {
   rejectionReason?: string;
 }
 
+export interface WebsiteAIHandoff {
+  handoffId?: string;
+  surface?: 'guest' | 'owner' | 'universal' | 'feedback' | string;
+  confidence?: 'high' | 'medium' | 'low' | string;
+  aiReplyState?: string;
+  takeoverState?: 'ai_active' | 'human_takeover' | string;
+  aiMayReply?: boolean;
+  escalationReason?: string;
+  recommendedNextAction?: string;
+  pageUrl?: string;
+  visitorTurn?: string;
+  conversationSummary?: string;
+}
+
 export interface InboxReservation {
   id: string;
   guestyReservationId?: string;
@@ -145,6 +159,7 @@ export interface InboxThread {
   recommendedChannel?: string;
   latestDraftState?: DraftState;
   latestDraftConfidence?: number;
+  aiHandoff?: WebsiteAIHandoff;
 }
 
 export const INBOX_THREADS: InboxThread[] = [

@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { API_BASE, apiFetch, getToken } from '../../../components/types';
-import type { InboxThread } from './fixtures';
+import type { InboxEntity, InboxThread, WebsiteAIHandoff } from './fixtures';
 import type { DraftState } from './fixtures';
 
 export type WebsiteThreadStatus = 'open' | 'in_progress' | 'paid' | 'closed';
@@ -37,6 +37,14 @@ interface RawWebsiteThread {
   latest_draft_id?: string | null;
   latest_draft_state?: DraftState | string | null;
   latest_draft_confidence?: number | string | null;
+  latest_ai_handoff_id?: string | null;
+  latest_ai_surface?: string | null;
+  latest_ai_confidence?: string | null;
+  latest_ai_reply_state?: string | null;
+  latest_ai_takeover_state?: string | null;
+  latest_ai_may_reply?: boolean | string | null;
+  latest_ai_escalation_reason?: string | null;
+  latest_ai_recommended_next_action?: string | null;
 }
 
 function confidenceRatio(value: unknown): number | undefined {
@@ -61,22 +69,56 @@ export interface WebsiteInquiryThread {
   eventCount: number;
 }
 
+function boolValue(value: unknown): boolean | undefined {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return undefined;
+}
+
+function surfaceEntity(surface: string | null | undefined): InboxEntity {
+  if (surface === 'guest') return 'guest';
+  if (surface === 'owner') return 'owner';
+  return 'unclassified';
+}
+
+function aiHandoffFor(r: RawWebsiteThread): WebsiteAIHandoff | undefined {
+  if (!r.latest_ai_handoff_id) return undefined;
+  return {
+    handoffId: r.latest_ai_handoff_id,
+    surface: r.latest_ai_surface || undefined,
+    confidence: r.latest_ai_confidence || undefined,
+    aiReplyState: r.latest_ai_reply_state || undefined,
+    takeoverState: r.latest_ai_takeover_state || undefined,
+    aiMayReply: boolValue(r.latest_ai_may_reply),
+    escalationReason: r.latest_ai_escalation_reason || undefined,
+    recommendedNextAction: r.latest_ai_recommended_next_action || undefined,
+  };
+}
+
 function mapWebsiteToInboxThread(r: RawWebsiteThread): InboxThread {
-  const guest = r.guest_name || r.guest_email_raw || r.guest_email || 'Anonymous';
-  const preview = `${r.last_event_type || 'inquiry'} · ${guest}${r.guest_email ? ` <${r.guest_email}>` : ''}`;
+  const aiHandoff = aiHandoffFor(r);
+  const guest = aiHandoff
+    ? `Website AI · ${String(aiHandoff.surface || 'handoff')}`
+    : (r.guest_name || r.guest_email_raw || r.guest_email || 'Anonymous');
+  const preview = aiHandoff
+    ? [aiHandoff.escalationReason, aiHandoff.recommendedNextAction].filter(Boolean).join(' · ') || 'Website AI needs human context'
+    : `${r.last_event_type || 'inquiry'} · ${guest}${r.guest_email ? ` <${r.guest_email}>` : ''}`;
+  const subject = aiHandoff
+    ? `AI handoff · ${aiHandoff.surface || 'website'} · ${aiHandoff.confidence || 'unknown'} confidence`
+    : (r.notes
+      ? String(r.notes).slice(0, 100)
+      : (r.last_event_type ? `${r.last_event_type} from ${guest}` : 'Website inquiry'));
   return {
     // Prefix the id so we never collide with Guesty conversation UUIDs
     // when both feeds merge into one list.
     id: `web-${r.id}`,
-    unread: r.status === 'open',
-    urgent: undefined,
+    unread: r.status === 'open' || aiHandoff?.aiMayReply === true,
+    urgent: aiHandoff?.confidence === 'low' ? 'amber' : undefined,
     guest,
-    subject: r.notes
-      ? String(r.notes).slice(0, 100)
-      : (r.last_event_type ? `${r.last_event_type} from ${guest}` : 'Website inquiry'),
+    subject,
     preview,
-    channel: 'Website',
-    entity: 'unclassified',
+    channel: aiHandoff ? 'Website AI' : 'Website',
+    entity: aiHandoff ? surfaceEntity(aiHandoff.surface) : 'unclassified',
     channelKey: 'website',
     property: r.guesty_listing_id || '',
     time: r.last_event_at || new Date().toISOString(),
@@ -88,6 +130,7 @@ function mapWebsiteToInboxThread(r: RawWebsiteThread): InboxThread {
     language: 'EN',
     latestDraftState: r.latest_draft_state ? (String(r.latest_draft_state) as DraftState) : undefined,
     latestDraftConfidence: confidenceRatio(r.latest_draft_confidence),
+    aiHandoff,
   };
 }
 
@@ -152,6 +195,8 @@ export function useWebsiteThreads(): UseWebsiteThreadsResult {
       'inbox.draft_ready',
       'inbox.message_sent',
       'website_inbox.thread_updated',
+      'website_ai.handoff_received',
+      'website_ai.takeover',
     ];
     eventTypes.forEach((type) => es.addEventListener(type, refresh));
     es.onerror = () => {};

@@ -28,6 +28,7 @@ import {
   isReviewReady,
   markRead,
   markUnread,
+  takeOverWebsiteAI,
 } from '../../_data/draftsClient';
 import { DraftPanel } from './inbox/DraftPanel';
 import { SendPreflightModal } from './inbox/SendPreflightModal';
@@ -590,6 +591,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   const [replyBody, setReplyBody] = useState('');
   const [composeBusy, setComposeBusy] = useState(false);
   const [polishBusy, setPolishBusy] = useState(false);
+  const [aiTakeoverBusy, setAiTakeoverBusy] = useState(false);
 
   useEffect(() => {
     setReplyBody('');
@@ -621,6 +623,19 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
         refetchConversations();
       })
       .catch((e: Error) => fireToast(e?.message || 'Could not mark unread'));
+  };
+
+  const handleTakeOverWebsiteAI = () => {
+    if (!thread?.id?.startsWith('web-') || !thread.aiHandoff) return;
+    setAiTakeoverBusy(true);
+    takeOverWebsiteAI(thread.id.slice(4))
+      .then(() => {
+        fireToast('Human takeover started');
+        refetchDetail();
+        refetchConversations();
+      })
+      .catch((e: Error) => fireToast(e?.message || 'Could not take over website AI'))
+      .finally(() => setAiTakeoverBusy(false));
   };
 
   const handleComposeSend = () => {
@@ -977,6 +992,26 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                       }}
                     >
                       drafting
+                    </span>
+                  )}
+                  {t.aiHandoff && (
+                    <span
+                      title={t.aiHandoff.aiMayReply ? 'Website AI is waiting for human takeover' : 'Human takeover active'}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        fontSize: 10,
+                        color: t.aiHandoff.aiMayReply ? '#fff' : 'var(--color-text-secondary)',
+                        padding: '1px 5px 1px 4px',
+                        background: t.aiHandoff.aiMayReply ? 'var(--color-text-warning)' : 'var(--color-background-secondary)',
+                        borderRadius: 4,
+                        flexShrink: 0,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <IconAI size={10} />
+                      AI
                     </span>
                   )}
                   {t.entity !== 'guest' && (
@@ -1394,6 +1429,8 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
           )}
           <ReservationRightPanel
             thread={thread}
+            aiTakeoverBusy={aiTakeoverBusy}
+            onTakeOverWebsiteAI={handleTakeOverWebsiteAI}
             onAskFriday={() => {
               setConsultOpen(true);
               setPendingConsultQuery('Review this reservation and conversation context. What should I know before replying?');
@@ -1584,9 +1621,13 @@ function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: strin
 
 function ReservationRightPanel({
   thread,
+  aiTakeoverBusy,
+  onTakeOverWebsiteAI,
   onAskFriday,
 }: {
   thread: InboxThread | undefined;
+  aiTakeoverBusy: boolean;
+  onTakeOverWebsiteAI: () => void;
   onAskFriday: () => void;
 }) {
   // thread can be undefined briefly before the conversation list resolves.
@@ -1651,8 +1692,69 @@ function ReservationRightPanel({
     return bits.join(' · ') || statusLabel(a.status);
   };
 
+  const ai = thread.aiHandoff;
+
   return (
     <>
+      {ai && (
+        <div className="inbox-right-section">
+          <h4>Website AI</h4>
+          <div className="inbox-right-row">
+            <span className="label">State</span>
+            <span className="value">
+              {ai.aiMayReply ? 'AI active' : 'Human takeover'}
+            </span>
+          </div>
+          <div className="inbox-right-row">
+            <span className="label">Surface</span>
+            <span className="value">{ai.surface || '—'}</span>
+          </div>
+          <div className="inbox-right-row">
+            <span className="label">Confidence</span>
+            <span className="value">{ai.confidence || '—'}</span>
+          </div>
+          {ai.escalationReason && (
+            <div className="inbox-right-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <span className="label">Escalation</span>
+              <span className="value" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                {ai.escalationReason}
+              </span>
+            </div>
+          )}
+          {ai.recommendedNextAction && (
+            <div className="inbox-right-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <span className="label">Next</span>
+              <span className="value" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                {ai.recommendedNextAction}
+              </span>
+            </div>
+          )}
+          {ai.pageUrl && (
+            <div className="inbox-right-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <span className="label">Page</span>
+              <a
+                className="value"
+                href={ai.pageUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: 11, lineHeight: 1.4, color: 'var(--color-brand-accent)' }}
+              >
+                {ai.pageUrl}
+              </a>
+            </div>
+          )}
+          <button
+            className="btn sm"
+            style={{ width: '100%', justifyContent: 'flex-start', marginTop: 8 }}
+            onClick={onTakeOverWebsiteAI}
+            disabled={!ai.aiMayReply || aiTakeoverBusy}
+            title={ai.aiMayReply ? 'Prevent website AI from sending another reply' : 'Human takeover already active'}
+          >
+            <IconAI size={12} /> {ai.aiMayReply ? 'Take over AI' : 'Taken over'}
+          </button>
+        </div>
+      )}
+
       <div className="inbox-right-section">
         <h4>Reservation</h4>
         {!r ? (
