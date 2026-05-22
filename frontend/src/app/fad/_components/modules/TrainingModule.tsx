@@ -39,9 +39,13 @@ const TAB_DEFS = [
 
 export function TrainingModule() {
   const [tab, setTab] = useState('teachings');
-  const tabs = TAB_DEFS.map((t) => ({ id: t.id, label: t.label }));
-  const activeDef = TAB_DEFS.find((t) => t.id === tab);
   const liveOnly = liveOnlyMode();
+  const visibleTabDefs = liveOnly ? TAB_DEFS.filter((t) => t.id === 'teachings') : TAB_DEFS;
+  const tabs = visibleTabDefs.map((t) => ({ id: t.id, label: t.label }));
+  const activeDef = TAB_DEFS.find((t) => t.id === tab);
+  useEffect(() => {
+    if (liveOnly && tab !== 'teachings') setTab('teachings');
+  }, [liveOnly, tab]);
   return (
     <>
       <ModuleHeader
@@ -145,6 +149,11 @@ function TeachingsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Teaching | null>(null);
+  const [newRuleOpen, setNewRuleOpen] = useState(false);
+  const [newInstruction, setNewInstruction] = useState('');
+  const [newScope, setNewScope] = useState<'global' | 'property'>('global');
+  const [newPropertyCode, setNewPropertyCode] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +181,60 @@ function TeachingsTab() {
     if (status !== 'all' && t.status !== status) return false;
     return true;
   });
+
+  const createTeaching = async () => {
+    const instruction = newInstruction.trim();
+    if (!instruction) {
+      setError('Instruction is required.');
+      return;
+    }
+    if (newScope === 'property' && !newPropertyCode.trim()) {
+      setError('Property code is required for property-scoped teachings.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const data = await apiFetch('/api/inbox/teachings', {
+        method: 'POST',
+        body: JSON.stringify({
+          instruction,
+          scope: newScope,
+          property_code: newScope === 'property' ? newPropertyCode.trim() : null,
+          source: 'manual',
+        }),
+      }) as { teaching?: LiveTeachingRow };
+      if (data.teaching) {
+        const mapped = mapLiveTeaching(data.teaching);
+        setTeachings((prev) => [mapped, ...prev.filter((t) => t.id !== mapped.id)]);
+        setSel(mapped);
+      }
+      setNewInstruction('');
+      setNewPropertyCode('');
+      setNewScope('global');
+      setNewRuleOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create teaching');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateTeaching = async (id: string, patch: { instruction?: string; status?: string }) => {
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/inbox/teachings/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }) as { teaching?: LiveTeachingRow };
+      if (!data.teaching) return;
+      const mapped = mapLiveTeaching(data.teaching);
+      setTeachings((prev) => prev.map((t) => t.id === mapped.id ? mapped : t));
+      setSel(mapped);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update teaching');
+    }
+  };
   return (
     <>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
@@ -201,10 +264,41 @@ function TeachingsTab() {
             />
           </FilterBar>
         </div>
-        <button className="btn primary sm">
+        <button className="btn primary sm" onClick={() => setNewRuleOpen((v) => !v)}>
           <IconPlus size={12} /> New rule
         </button>
       </div>
+      {newRuleOpen && (
+        <div className="card" style={{ padding: 12, marginBottom: 12, display: 'grid', gap: 8 }}>
+          <textarea
+            value={newInstruction}
+            onChange={(e) => setNewInstruction(e.target.value)}
+            rows={3}
+            className="fad-input"
+            style={{ resize: 'vertical', fontFamily: 'inherit' }}
+            placeholder="Write the instruction Friday should follow."
+          />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select className="fad-input" value={newScope} onChange={(e) => setNewScope(e.target.value as 'global' | 'property')} style={{ maxWidth: 180 }}>
+              <option value="global">Global</option>
+              <option value="property">Property</option>
+            </select>
+            {newScope === 'property' && (
+              <input
+                value={newPropertyCode}
+                onChange={(e) => setNewPropertyCode(e.target.value)}
+                className="fad-input"
+                style={{ maxWidth: 180 }}
+                placeholder="Property code"
+              />
+            )}
+            <button className="btn primary sm" onClick={createTeaching} disabled={saving}>
+              {saving ? 'Saving…' : 'Save teaching'}
+            </button>
+            <button className="btn ghost sm" onClick={() => setNewRuleOpen(false)} disabled={saving}>Cancel</button>
+          </div>
+        </div>
+      )}
       {error && (
         <div role="alert" style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 6, background: 'var(--color-bg-danger)', color: 'var(--color-text-danger)', fontSize: 12 }}>
           Live teachings failed to load: {error}
@@ -242,12 +336,26 @@ function TeachingsTab() {
           </div>
         ))}
       </div>
-      {sel && <TeachingDetail teaching={sel} onClose={() => setSel(null)} />}
+      {sel && <TeachingDetail teaching={sel} onClose={() => setSel(null)} onUpdate={updateTeaching} />}
     </>
   );
 }
 
-function TeachingDetail({ teaching, onClose }: { teaching: Teaching; onClose: () => void }) {
+function TeachingDetail({
+  teaching,
+  onClose,
+  onUpdate,
+}: {
+  teaching: Teaching;
+  onClose: () => void;
+  onUpdate: (id: string, patch: { instruction?: string; status?: string }) => Promise<void>;
+}) {
+  const editInstruction = () => {
+    const next = window.prompt('Instruction', teaching.instruction);
+    if (next && next.trim() && next.trim() !== teaching.instruction) {
+      void onUpdate(teaching.id, { instruction: next.trim() });
+    }
+  };
   return (
     <>
       <div
@@ -314,12 +422,11 @@ function TeachingDetail({ teaching, onClose }: { teaching: Teaching; onClose: ()
           <div className="task-detail-section">
             <h5>Actions</h5>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button className="btn sm">Edit instruction</button>
-              <button className="btn sm">Change scope</button>
+              <button className="btn sm" onClick={editInstruction}>Edit instruction</button>
               {teaching.status === 'active' ? (
-                <button className="btn ghost sm">Retire</button>
+                <button className="btn ghost sm" onClick={() => { void onUpdate(teaching.id, { status: 'retired' }); }}>Retire</button>
               ) : (
-                <button className="btn ghost sm">Re-activate</button>
+                <button className="btn ghost sm" onClick={() => { void onUpdate(teaching.id, { status: 'active' }); }}>Re-activate</button>
               )}
             </div>
           </div>

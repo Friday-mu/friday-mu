@@ -33,6 +33,7 @@ export interface Notification {
   title: string;
   body: string;
   ts: string; // ISO
+  readAt?: string | null;
   severity: Severity;
   module: ModuleId;
   category?: 'mention' | 'comment' | 'watching' | 'department';
