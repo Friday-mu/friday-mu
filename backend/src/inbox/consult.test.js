@@ -9,6 +9,10 @@ const {
   buildCompactConsultUserMessage,
   compactConsultSystemPrompt,
   conversationIdForSession,
+  websiteThreadIdForConversation,
+  websiteEventBodyForConsult,
+  websiteEventToConsultMessage,
+  websiteConversationFromThread,
   isTransientConsultFailure,
   stripFullThreadEnvelope,
   sanitizeConsultHistory,
@@ -46,6 +50,79 @@ describe('FAD-native Consult helpers', () => {
   test('only UUID conversation ids are persisted on consult sessions', () => {
     expect(conversationIdForSession('6844ad5c-1e74-45e1-95d0-f2ad4e290bca')).toBe('6844ad5c-1e74-45e1-95d0-f2ad4e290bca');
     expect(conversationIdForSession('web-a76f8a9d-fea8-4214-88ed-912dc91e6fb9')).toBeNull();
+  });
+
+  test('recognizes website inbox conversation ids without persisting them as UUID sessions', () => {
+    expect(websiteThreadIdForConversation('web-a76f8a9d-fea8-4214-88ed-912dc91e6fb9')).toBe('a76f8a9d-fea8-4214-88ed-912dc91e6fb9');
+    expect(websiteThreadIdForConversation('a76f8a9d-fea8-4214-88ed-912dc91e6fb9')).toBeNull();
+    expect(websiteThreadIdForConversation('web-not-a-uuid')).toBeNull();
+  });
+
+  test('turns website AI handoff events into Consult-readable message context', () => {
+    const event = {
+      id: '22222222-2222-4222-8222-222222222222',
+      event_type: 'website.ai_handoff',
+      source: 'website_ai',
+      created_at: '2026-05-22T08:00:00.000Z',
+      payload: {
+        visitorTurn: 'Can someone help me with check-in?',
+        conversationSummary: 'Guest is confused about arrival logistics.',
+        transcriptTail: [
+          { role: 'assistant', content: 'How can I help?' },
+          { role: 'user', content: 'Check-in please' },
+        ],
+        extracted: { property: 'GBH-1', eta: '18:00' },
+        toolsUsed: ['policy'],
+        confidence: 'medium',
+        escalationReason: 'Needs operational confirmation',
+      },
+    };
+
+    const body = websiteEventBodyForConsult(event);
+    expect(body).toContain('Latest visitor turn');
+    expect(body).toContain('Can someone help me with check-in?');
+    expect(body).toContain('Website AI summary');
+    expect(body).toContain('Visitor: Check-in please');
+    expect(body).toContain('- property: GBH-1');
+    expect(body).toContain('Escalation reason: Needs operational confirmation');
+
+    const message = websiteEventToConsultMessage(event);
+    expect(message).toMatchObject({
+      direction: 'inbound',
+      sender_name: 'Website AI handoff',
+      module_type: 'website_inbox',
+    });
+  });
+
+  test('builds website thread conversation context with property and summary signals', () => {
+    const conversation = websiteConversationFromThread(
+      {
+        id: 'a76f8a9d-fea8-4214-88ed-912dc91e6fb9',
+        guest_email: 'website-ai+session@friday.mu',
+        guest_email_raw: 'website-ai+session@friday.mu',
+        guest_name: 'Website AI · Guest',
+        guest_phone: null,
+        status: 'in_progress',
+        notes: 'AI handoff (low) — human needed',
+      },
+      [{
+        event_type: 'website.ai_handoff',
+        payload: {
+          conversationSummary: 'Owner asks if Friday can manage a villa.',
+          extracted: { property: 'Tamarin Villa' },
+        },
+      }],
+      'web-a76f8a9d-fea8-4214-88ed-912dc91e6fb9',
+    );
+
+    expect(conversation).toMatchObject({
+      id: 'web-a76f8a9d-fea8-4214-88ed-912dc91e6fb9',
+      source_thread_id: 'a76f8a9d-fea8-4214-88ed-912dc91e6fb9',
+      channel: 'website',
+      communication_channel: 'website',
+      property_name: 'Tamarin Villa',
+      conversation_summary: 'Owner asks if Friday can manage a villa.',
+    });
   });
 
   test('builds a conversation-bound user prompt with draft and session context', () => {

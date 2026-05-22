@@ -253,6 +253,7 @@ export function FridayConsult({
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const sessionScopeKey = `${conversationId || 'none'}:${context}:${currentDraft?.id || 'manual'}`;
   const previousSessionScopeRef = useRef(sessionScopeKey);
+  const defaultFullThread = context === 'draft_review' || String(conversationId || '').startsWith('web-');
 
   // Past consult sessions for this conversation. Fetched on demand
   // when the operator opens the history panel. Endpoint already exists
@@ -315,7 +316,7 @@ export function FridayConsult({
   // thread for Consult. Keep the toggle as an operator intent signal,
   // but do not paste the full thread into the user message; doing so
   // duplicates context, bloats prompts, and pollutes Consult history.
-  const [useFullThread, setUseFullThread] = useState(false);
+  const [useFullThread, setUseFullThread] = useState(defaultFullThread);
 
   // Operator-resizable FC height. Default = AUTO (wraps content up to
   // max-height). Once the operator drags the handle, the height
@@ -429,6 +430,7 @@ export function FridayConsult({
       }).catch(() => {});
     }
     previousSessionScopeRef.current = sessionScopeKey;
+    setUseFullThread(defaultFullThread);
     setSessionId(undefined);
     seededDraftIdRef.current = currentDraft?.id || null;
     setMsgs(currentDraft?.id && currentDraft.body
@@ -439,7 +441,7 @@ export function FridayConsult({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionScopeKey]);
 
-  const submit = async (text: string) => {
+  const submit = async (text: string, opts?: { fullThread?: boolean }) => {
     const q = text.trim();
     if (!q || thinking) return;
 
@@ -453,7 +455,8 @@ export function FridayConsult({
         context,
       };
       if (conversationId) body.conversationId = conversationId;
-      if (useFullThread) body.fullThread = true;
+      const requestFullThread = opts?.fullThread ?? useFullThread;
+      if (requestFullThread) body.fullThread = true;
       if (currentDraft?.id) body.draftId = currentDraft.id;
       // Always send the CURRENT working body so Friday operates on the
       // operator's latest edits, not the stale original draft.
@@ -873,7 +876,9 @@ export function FridayConsult({
               <button
                 key={c}
                 type="button"
-                onClick={() => submit(CHIP_INSTRUCTIONS[c] || c)}
+                onClick={() => submit(CHIP_INSTRUCTIONS[c] || c, {
+                  fullThread: ['Summarise this thread', 'What does the guest want?', 'STR KB'].includes(c),
+                })}
                 disabled={thinking}
                 style={{
                   padding: '3px 7px',

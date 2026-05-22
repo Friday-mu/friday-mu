@@ -35,6 +35,12 @@ const CONSULT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_CONSULT_FALLBACK_MA
 const CONSULT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_TOKENS) || 1800;
 const CONSULT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|rate limit|too many requests|overloaded|temporarily|unavailable|gateway|502|503|504)/i;
 const CONSULT_RECENT_MESSAGE_LIMIT = Number(process.env.CONSULT_RECENT_MESSAGE_LIMIT) || 80;
+const WEBSITE_CONVERSATION_PREFIX = 'web-';
+const WEBSITE_AI_HANDOFF_EVENT_TYPE = 'website.ai_handoff';
+const WEBSITE_VISITOR_MESSAGE_EVENT_TYPE = 'website.visitor_message';
+const WEBSITE_TAKEOVER_EVENT_TYPE = 'website.ai_handoff_takeover';
+const WEBSITE_STAFF_REPLY_EVENT_TYPE = 'staff.reply_sent';
+const WEBSITE_DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
 
 const VALID_CONTEXTS = new Set([
   'revision',
@@ -73,6 +79,185 @@ function isUuid(value) {
 
 function conversationIdForSession(value) {
   return isUuid(value) ? value : null;
+}
+
+function websiteThreadIdForConversation(value) {
+  const text = String(value || '').trim();
+  if (!text.startsWith(WEBSITE_CONVERSATION_PREFIX)) return null;
+  const threadId = text.slice(WEBSITE_CONVERSATION_PREFIX.length);
+  return isUuid(threadId) ? threadId : null;
+}
+
+function firstPayloadString(payload, keys) {
+  if (!payload || typeof payload !== 'object') return '';
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (value != null && typeof value !== 'object') {
+      const text = String(value).trim();
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+function formatTranscriptTailForConsult(transcriptTail) {
+  if (!Array.isArray(transcriptTail) || transcriptTail.length === 0) return '';
+  return transcriptTail
+    .map((message) => {
+      const role = message?.role === 'assistant' ? 'Website AI' : 'Visitor';
+      const content = typeof message?.content === 'string' ? message.content.trim() : '';
+      return content ? `${role}: ${content}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function formatKeyValueObjectForConsult(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  const lines = Object.entries(value)
+    .slice(0, 20)
+    .map(([key, raw]) => {
+      const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+      return text ? `- ${key}: ${text}` : '';
+    })
+    .filter(Boolean);
+  return lines.length ? `${label}\n${lines.join('\n')}` : '';
+}
+
+function websiteEventBodyForConsult(event) {
+  const payload = event?.payload || {};
+  const type = String(event?.event_type || '');
+
+  if (type === WEBSITE_AI_HANDOFF_EVENT_TYPE) {
+    const parts = [
+      firstPayloadString(payload, ['visitorTurn']) ? `Latest visitor turn:\n${firstPayloadString(payload, ['visitorTurn'])}` : '',
+      firstPayloadString(payload, ['conversationSummary']) ? `Website AI summary:\n${firstPayloadString(payload, ['conversationSummary'])}` : '',
+      formatTranscriptTailForConsult(payload.transcriptTail) ? `Transcript tail:\n${formatTranscriptTailForConsult(payload.transcriptTail)}` : '',
+      formatKeyValueObjectForConsult(payload.extracted, 'Extracted website context:'),
+      Array.isArray(payload.toolsUsed) && payload.toolsUsed.length ? `Tools/context used: ${payload.toolsUsed.join(', ')}` : '',
+      payload.confidence ? `Website AI confidence: ${payload.confidence}` : '',
+      firstPayloadString(payload, ['escalationReason']) ? `Escalation reason: ${firstPayloadString(payload, ['escalationReason'])}` : '',
+      firstPayloadString(payload, ['recommendedNextAction']) ? `Recommended next action: ${firstPayloadString(payload, ['recommendedNextAction'])}` : '',
+    ].filter(Boolean);
+    return parts.join('\n\n');
+  }
+
+  if (type === WEBSITE_VISITOR_MESSAGE_EVENT_TYPE) {
+    return firstPayloadString(payload, ['body', 'message', 'visitorTurn']);
+  }
+
+  if (type === WEBSITE_STAFF_REPLY_EVENT_TYPE) {
+    const channel = firstPayloadString(payload, ['channel', 'delivery']);
+    const body = firstPayloadString(payload, ['body', 'message', 'final_body']);
+    return [channel ? `Channel: ${channel}` : '', body].filter(Boolean).join('\n');
+  }
+
+  if (type === WEBSITE_TAKEOVER_EVENT_TYPE) {
+    const reason = firstPayloadString(payload, ['reason']);
+    return [
+      'Human takeover recorded for this website AI conversation.',
+      payload.aiMayReply === false ? 'Website AI may not reply while takeover is active.' : '',
+      reason ? `Reason: ${reason}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  const direct = firstPayloadString(payload, [
+    'body',
+    'message',
+    'question',
+    'notes',
+    'comments',
+    'visitorTurn',
+  ]);
+  if (direct) return direct;
+
+  const facts = [
+    firstPayloadString(payload, ['residence_slug', 'residenceSlug']) ? `Residence: ${firstPayloadString(payload, ['residence_slug', 'residenceSlug'])}` : '',
+    firstPayloadString(payload, ['check_in', 'checkIn']) && firstPayloadString(payload, ['check_out', 'checkOut'])
+      ? `Dates: ${firstPayloadString(payload, ['check_in', 'checkIn'])} - ${firstPayloadString(payload, ['check_out', 'checkOut'])}`
+      : '',
+    firstPayloadString(payload, ['party_size', 'partySize', 'guests']) ? `Guests: ${firstPayloadString(payload, ['party_size', 'partySize', 'guests'])}` : '',
+    firstPayloadString(payload, ['reference']) ? `Reference: ${firstPayloadString(payload, ['reference'])}` : '',
+  ].filter(Boolean);
+  return facts.length ? facts.join('\n') : JSON.stringify(payload, null, 2).slice(0, 2000);
+}
+
+function websiteEventToConsultMessage(event) {
+  const type = String(event?.event_type || '');
+  const isStaff = event?.source === 'fad'
+    || type === WEBSITE_STAFF_REPLY_EVENT_TYPE
+    || type === WEBSITE_TAKEOVER_EVENT_TYPE;
+  let sender = 'Website visitor';
+  if (type === WEBSITE_AI_HANDOFF_EVENT_TYPE) sender = 'Website AI handoff';
+  else if (type === WEBSITE_VISITOR_MESSAGE_EVENT_TYPE) sender = 'Website visitor';
+  else if (type === WEBSITE_STAFF_REPLY_EVENT_TYPE) sender = 'Friday';
+  else if (type === WEBSITE_TAKEOVER_EVENT_TYPE) sender = 'FAD takeover';
+  else if (isStaff) sender = 'Friday';
+
+  const body = websiteEventBodyForConsult(event).trim();
+  if (!body) return null;
+  return {
+    id: event.id,
+    direction: isStaff ? 'outbound' : 'inbound',
+    sender_name: sender,
+    body,
+    translated_body: null,
+    created_at: event.created_at,
+    is_auto_response: false,
+    module_type: 'website_inbox',
+  };
+}
+
+function latestWebsiteHandoffPayload(events) {
+  if (!Array.isArray(events)) return null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]?.event_type === WEBSITE_AI_HANDOFF_EVENT_TYPE) return events[i].payload || null;
+  }
+  return null;
+}
+
+function websitePropertyLabel(thread, events) {
+  if (thread?.guesty_listing_id) return thread.guesty_listing_id;
+  const allPayloads = Array.isArray(events) ? events.map((e) => e?.payload || {}) : [];
+  for (let i = allPayloads.length - 1; i >= 0; i--) {
+    const payload = allPayloads[i];
+    const direct = firstPayloadString(payload, [
+      'property_code',
+      'propertyCode',
+      'residence_slug',
+      'residenceSlug',
+      'listing_slug',
+      'listingSlug',
+      'listing_name',
+      'listingName',
+      'residence',
+      'property',
+    ]);
+    if (direct) return direct;
+    const extracted = payload.extracted;
+    const fromExtracted = firstPayloadString(extracted, ['property', 'property_code', 'residence', 'residence_slug', 'area']);
+    if (fromExtracted) return fromExtracted;
+  }
+  return null;
+}
+
+function websiteConversationFromThread(thread, events, conversationId) {
+  const handoffPayload = latestWebsiteHandoffPayload(events) || {};
+  const summary = firstPayloadString(handoffPayload, ['conversationSummary']);
+  return {
+    ...thread,
+    id: conversationId,
+    source_thread_id: thread.id,
+    guest_name: thread.guest_name || thread.guest_email_raw || thread.guest_email || 'Website visitor',
+    guest_email: thread.guest_email_raw || thread.guest_email || null,
+    property_name: websitePropertyLabel(thread, events),
+    channel: 'website',
+    communication_channel: 'website',
+    status: thread.status || 'open',
+    conversation_summary: summary || thread.notes || null,
+    notes: thread.notes || null,
+  };
 }
 
 function withConversationLock(conversationId, fn) {
@@ -451,6 +636,10 @@ async function appendConsultSessionError({ sessionId, context, message, phase })
 
 async function loadConversationBundle(conversationId, tenantId, { fullThread = false } = {}) {
   if (!conversationId) return { conversation: null, messages: [] };
+  const websiteThreadId = websiteThreadIdForConversation(conversationId);
+  if (websiteThreadId) {
+    return loadWebsiteConversationBundle(conversationId, websiteThreadId, tenantId, { fullThread });
+  }
   if (!isUuid(conversationId)) return { conversation: null, messages: [] };
   const messagesPromise = fullThread
     ? query(
@@ -491,6 +680,54 @@ async function loadConversationBundle(conversationId, tenantId, { fullThread = f
   };
 }
 
+async function loadWebsiteConversationBundle(conversationId, threadId, tenantId, { fullThread = false } = {}) {
+  const eventsPromise = fullThread
+    ? query(
+      `SELECT id, event_type, source, payload, created_at
+         FROM inbox_events
+        WHERE thread_id = $1
+          AND event_type NOT IN ${WEBSITE_DRAFT_EVENT_TYPES_SQL}
+        ORDER BY created_at ASC, id::text ASC`,
+      [threadId],
+    )
+    : query(
+      `SELECT * FROM (
+         SELECT id, event_type, source, payload, created_at
+           FROM inbox_events
+          WHERE thread_id = $1
+            AND event_type NOT IN ${WEBSITE_DRAFT_EVENT_TYPES_SQL}
+          ORDER BY created_at DESC, id::text DESC
+          LIMIT $2
+       ) recent
+       ORDER BY created_at ASC, id::text ASC`,
+      [threadId, CONSULT_RECENT_MESSAGE_LIMIT],
+    );
+
+  const [threadResult, eventsResult] = await Promise.all([
+    query('SELECT * FROM inbox_threads WHERE id = $1', [threadId]),
+    eventsPromise,
+  ]);
+  if (threadResult.rows.length === 0) {
+    const err = new Error('Website thread not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const events = eventsResult.rows || [];
+  let conversation = websiteConversationFromThread(threadResult.rows[0], events, conversationId);
+  try {
+    const reservationContext = await resolveInboxReservationContext(conversation, { tenantId });
+    conversation = applyReservationContextToConversation(conversation, reservationContext);
+  } catch (e) {
+    console.warn(`[consult] website reservation context overlay failed for ${conversationId}: ${e.message}`);
+  }
+
+  return {
+    conversation,
+    messages: events.map(websiteEventToConsultMessage).filter(Boolean),
+  };
+}
+
 async function validateConsultDraftContext({ draftId, conversationId, tenantId }) {
   if (!draftId) return null;
   if (!isUuid(draftId)) {
@@ -498,6 +735,10 @@ async function validateConsultDraftContext({ draftId, conversationId, tenantId }
     err.statusCode = 400;
     err.code = 'invalid_draft_id';
     throw err;
+  }
+  const websiteThreadId = websiteThreadIdForConversation(conversationId);
+  if (websiteThreadId) {
+    return validateWebsiteConsultDraftContext({ draftId, threadId: websiteThreadId });
   }
   const { rows } = await query(
     `SELECT d.id, d.conversation_id, d.message_id, d.state,
@@ -543,6 +784,73 @@ async function validateConsultDraftContext({ draftId, conversationId, tenantId }
     err.code = 'draft_stale';
     throw err;
   }
+  return draft;
+}
+
+async function validateWebsiteConsultDraftContext({ draftId, threadId }) {
+  const [draftRes, latestEventRes, latestReplyRes] = await Promise.all([
+    query(
+      `SELECT id, thread_id, event_type, payload, created_at
+         FROM inbox_events
+        WHERE id = $1
+          AND thread_id = $2
+          AND event_type IN ${WEBSITE_DRAFT_EVENT_TYPES_SQL}
+        LIMIT 1`,
+      [draftId, threadId],
+    ),
+    query(
+      `SELECT id, event_type, source, payload, created_at
+         FROM inbox_events
+        WHERE thread_id = $1
+          AND source <> 'fad'
+          AND event_type NOT LIKE 'ai.%'
+          AND event_type NOT LIKE 'staff.%'
+        ORDER BY created_at DESC, id::text DESC
+        LIMIT 1`,
+      [threadId],
+    ),
+    query(
+      `SELECT id, created_at
+         FROM inbox_events
+        WHERE thread_id = $1
+          AND event_type = $2
+        ORDER BY created_at DESC, id::text DESC
+        LIMIT 1`,
+      [threadId, WEBSITE_STAFF_REPLY_EVENT_TYPE],
+    ),
+  ]);
+  const draft = draftRes.rows[0] || null;
+  if (!draft) {
+    const err = new Error('Draft not found');
+    err.statusCode = 404;
+    err.code = 'draft_not_found';
+    throw err;
+  }
+  const state = draft.payload?.state || '';
+  if (!['draft_ready', 'under_review'].includes(state)) {
+    const err = new Error(`Draft is no longer reviewable (${state})`);
+    err.statusCode = 409;
+    err.code = 'invalid_draft_state';
+    throw err;
+  }
+
+  const latestEvent = latestEventRes.rows[0] || null;
+  const sourceEventId = draft.payload?.source_event_id || null;
+  if (!latestEvent || String(sourceEventId) !== String(latestEvent.id)) {
+    const err = new Error('The website conversation changed after this draft was created. Refresh the thread before refining.');
+    err.statusCode = 409;
+    err.code = 'draft_stale';
+    throw err;
+  }
+
+  const latestReply = latestReplyRes.rows[0] || null;
+  if (latestReply && new Date(latestReply.created_at) > new Date(latestEvent.created_at)) {
+    const err = new Error('The website conversation already has a newer staff reply. Refresh the thread before refining.');
+    err.statusCode = 409;
+    err.code = 'draft_stale';
+    throw err;
+  }
+
   return draft;
 }
 
@@ -676,7 +984,7 @@ router.post('/', attachIdentity, async (req, res) => {
 
     const processTurn = async () => {
       const { conversation, messages } = await loadConversationBundle(conversationId, req.tenantId, { fullThread });
-      await validateConsultDraftContext({ draftId, conversationId: sessionConversationId, tenantId: req.tenantId });
+      await validateConsultDraftContext({ draftId, conversationId, tenantId: req.tenantId });
       const propertyCode = conversation ? resolvePropertyCode(conversation) : null;
       const session = await getOrCreateSession({
         req,
@@ -1028,6 +1336,10 @@ module.exports = router;
 module.exports._test = {
   isUuid,
   conversationIdForSession,
+  websiteThreadIdForConversation,
+  websiteEventBodyForConsult,
+  websiteEventToConsultMessage,
+  websiteConversationFromThread,
   stripProtocolTags,
   parseDraftUpdate,
   parseTeachingActions,
