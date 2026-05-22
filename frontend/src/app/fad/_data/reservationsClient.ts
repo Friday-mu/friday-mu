@@ -34,6 +34,9 @@ interface RawReservation {
     phone?: string | null;
   };
   total_amount_minor?: number | null;
+  amount_paid?: number | null;
+  outstanding_balance?: number | null;
+  payment_status?: string | null;
   currency_code?: string | null;
   calendar_pricing?: {
     nights_cached?: number | null;
@@ -136,6 +139,9 @@ export function transformReservation(r: RawReservation): Reservation {
   const guestName = [r.guest?.first_name, r.guest?.last_name].filter(Boolean).join(' ').trim()
     || (r.guest?.email ? r.guest.email.split('@')[0] : 'Guest');
   const total = r.total_amount_minor != null ? r.total_amount_minor / 100 : 0;
+  const balanceDue = typeof r.outstanding_balance === 'number' && Number.isFinite(r.outstanding_balance)
+    ? r.outstanding_balance
+    : 0;
   const calendarTotal = r.calendar_pricing?.total_minor != null ? r.calendar_pricing.total_minor / 100 : undefined;
   const nightsCached = r.calendar_pricing?.nights_cached ?? 0;
   const adults = r.party?.adults ?? 0;
@@ -177,8 +183,8 @@ export function transformReservation(r: RawReservation): Reservation {
       syncedAt: r.calendar_pricing?.synced_at || undefined,
     },
     touristTax: 0,
-    balanceDue: 0,
-    payoutStatus: 'pending',
+    balanceDue,
+    payoutStatus: balanceDue > 0 ? 'pending' : 'captured',
     currency: r.currency_code || 'EUR',
     // Optional / fixture-only fields — set defaults so the existing UI
     // doesn't blow up when they're missing on live rows.

@@ -9,11 +9,14 @@ const express = require('express');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { syncReservationsForTenant } = require('./sync');
+const { inferReservationFinancials, majorToMinor } = require('./financials');
 
 const router = express.Router();
 
 function shapeReservation(row) {
   if (!row) return null;
+  const financials = inferReservationFinancials(row.raw);
+  const inferredTotalMinor = majorToMinor(financials.total);
   return {
     id: row.id,
     guesty_id: row.guesty_id,
@@ -38,8 +41,11 @@ function shapeReservation(row) {
       email: row.guest_email,
       phone: row.guest_phone,
     },
-    total_amount_minor: row.total_amount_minor != null ? Number(row.total_amount_minor) : null,
-    currency_code: row.currency_code,
+    total_amount_minor: inferredTotalMinor ?? (row.total_amount_minor != null ? Number(row.total_amount_minor) : null),
+    amount_paid: financials.amountPaid,
+    outstanding_balance: financials.balanceDue,
+    payment_status: financials.paymentStatus ? String(financials.paymentStatus) : null,
+    currency_code: financials.currency || row.currency_code,
     calendar_pricing: {
       nights_cached: row.calendar_nights_cached != null ? Number(row.calendar_nights_cached) : 0,
       blocked_nights: row.calendar_blocked_nights != null ? Number(row.calendar_blocked_nights) : 0,
