@@ -583,7 +583,7 @@ async function recoverMissedWebsiteDraftsOnce(opts = {}) {
          WHERE d.thread_id = l.thread_id
            AND d.event_type IN ${DRAFT_EVENT_TYPES_SQL}
            AND d.payload->>'source_event_id' = l.event_id::text
-           AND COALESCE(d.payload->>'state', '') IN ('friday_drafting', 'draft_ready', 'under_review', 'generation_failed')
+           AND COALESCE(d.payload->>'state', '') IN ('friday_drafting', 'draft_ready', 'under_review', 'generation_failed', 'superseded')
       )
         AND NOT EXISTS (
         SELECT 1

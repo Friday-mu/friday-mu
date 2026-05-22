@@ -75,6 +75,7 @@ describe('website inbox draft guards', () => {
     expect(sql).toContain('website.visitor_message');
     expect(sql).toContain('staff.reply_sent');
     expect(sql).toContain("d.payload->>'source_event_id' = l.event_id::text");
+    expect(sql).toContain("'superseded'");
     warn.mockRestore();
   });
 
