@@ -1609,12 +1609,12 @@ function ActivityLog({ entries }: { entries: ActivityEntry[] }) {
   const sorted = [...entries].sort((a, b) => b.ts.localeCompare(a.ts));
   return (
     <div>
-      {sorted.map((e) => {
+      {sorted.map((e, index) => {
         const actor = TASK_USER_BY_ID[e.actorId];
         const actorName = actor?.name || (e.actorId === 'system' ? 'System' : null);
         return (
           <div
-            key={e.id}
+            key={e.id || `${e.kind}-${e.ts}-${index}`}
             style={{
               display: 'flex',
               gap: 8,

@@ -1670,6 +1670,7 @@ function PlannerTaskCard({
   return (
     <div
       className="ops-schedule-task"
+      data-status={task.status}
       style={{ borderLeftColor: priorityBarColor(task.priority) }}
       draggable={dragEnabled && !saving}
       onDragStart={(event) => onDragStart(event, task)}
@@ -1679,7 +1680,7 @@ function PlannerTaskCard({
         <span>
           <strong>{task.title}</strong>
           <small>
-            {task.propertyCode || 'No property'} · {task.department} · {task.reservationId ? 'reservation linked' : 'no reservation'}
+            {task.propertyCode || 'No property'} · {taskStatusLabel(task.status)} · {task.reservationId ? 'reservation' : task.department}
           </small>
         </span>
         <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
@@ -1744,6 +1745,7 @@ function PlannerCompactCell({
               <button
                 type="button"
                 className="ops-planner-chip"
+                data-status={task.status}
                 style={{ borderLeftColor: statusSwatch.color, background: statusSwatch.background, color: statusSwatch.color }}
                 title={`${task.title} · ${task.propertyCode || 'No property'} · ${STATUS_LABEL[task.status]}`}
                 draggable={dragEnabled && savingTaskId !== task.id}
@@ -2086,6 +2088,7 @@ function MyTaskCard({
   return (
     <article
       className={'ops-my-card' + (isOverdue ? ' overdue' : '')}
+      data-status={task.status}
       onClick={onOpen}
       role="button"
       tabIndex={0}
@@ -2100,7 +2103,7 @@ function MyTaskCard({
         <span className="mono">{taskPropertyLabel(task)}</span>
         <span>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
       </div>
-      <h3>{task.title}</h3>
+      <h3>{taskTitle(task)}</h3>
       {task.description && <p>{task.description}</p>}
       <div className="ops-my-card-chips">
         <span style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
@@ -2144,9 +2147,6 @@ function MyTaskCard({
         )}
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
           Comment
-        </button>
-        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
-          Evidence
         </button>
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onReportIssue(); }}>
           Issue
@@ -3157,7 +3157,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
 
   return (
     <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
-      <div className="fad-split-list" style={{ width: 400, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
+      <div className="fad-split-list" style={{ width: 380, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
           {error && (
             <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
@@ -3174,7 +3174,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
             <button
               className="btn ghost sm"
               type="button"
-              style={{ minHeight: 44 }}
+              style={{ minHeight: 34 }}
               onClick={() => {
                 if (selectedIds.length === intakeTasks.length) setSelectedIds([]);
                 else setSelectedIds(intakeTasks.map((task) => task.id));
@@ -3185,13 +3185,13 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
             </button>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button className="btn secondary sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('accept')}>
+            <button className="btn secondary sm" type="button" style={{ minHeight: 34 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('accept')}>
               Accept
             </button>
-            <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('dismiss')}>
+            <button className="btn ghost sm" type="button" style={{ minHeight: 34 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('dismiss')}>
               Dismiss
             </button>
-            <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('stale')}>
+            <button className="btn ghost sm" type="button" style={{ minHeight: 34 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('stale')}>
               Stale
             </button>
           </div>
@@ -3207,26 +3207,26 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                 key={task.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '44px minmax(0, 1fr)',
+                  gridTemplateColumns: '34px minmax(0, 1fr)',
                   gap: 6,
-                  padding: '10px 12px',
+                  padding: '8px 10px',
                   borderBottom: '0.5px solid var(--color-border-tertiary)',
                   background: isSelected ? 'var(--color-background-tertiary)' : 'transparent',
                 }}
               >
-                <label style={{ minHeight: 44, width: 44, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 2, cursor: 'pointer', position: 'relative' }}>
+                <label style={{ minHeight: 34, width: 34, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 1, cursor: 'pointer', position: 'relative' }}>
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(task.id)}
                     onChange={() => toggleSelected(task.id)}
                     aria-label={`Select ${task.title}`}
-                    style={{ position: 'absolute', inset: 0, width: 44, height: 44, margin: 0, opacity: 0, cursor: 'pointer' }}
+                    style={{ position: 'absolute', inset: 0, width: 34, height: 34, margin: 0, opacity: 0, cursor: 'pointer' }}
                   />
                   <span
                     aria-hidden="true"
                     style={{
-                      width: 22,
-                      height: 22,
+                      width: 18,
+                      height: 18,
                       borderRadius: 4,
                       border: '1px solid var(--color-border-secondary)',
                       background: selectedIds.includes(task.id) ? 'var(--color-brand-accent)' : 'var(--color-background-primary)',
@@ -3234,7 +3234,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: 14,
+                      fontSize: 12,
                       lineHeight: 1,
                     }}
                   >
@@ -3257,7 +3257,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                     <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{task.propertyCode || 'No property'}</span>
                     <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{formatRelative(task.createdAt)}</span>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{task.title}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{taskTitle(task)}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status] || 'Reported'}</span>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(task.source)).background, color: toneStyle(taskSourceTone(task.source)).color }}>{SOURCE_LABEL[task.source] || 'Task'}</span>
@@ -3272,11 +3272,11 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
         </div>
       </div>
 
-      <div className="fad-split-detail" style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
+      <div className="fad-split-detail" style={{ flex: 1, padding: 20, overflowY: 'auto' }}>
         <button
           type="button"
           className="btn ghost sm fad-split-back"
-          style={{ minHeight: 44 }}
+          style={{ minHeight: 34 }}
           onClick={() => setDetailOpen(false)}
         >
           ← Back to reported issues
@@ -3288,9 +3288,9 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
                   {selectedTask.propertyCode || 'No property'} · {sourceRefLabel(selectedTask)}
                 </div>
-                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{selectedTask.title}</h2>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{taskTitle(selectedTask)}</h2>
               </div>
-              <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} onClick={() => onOpenTask(selectedTask.id)}>
+              <button className="btn ghost sm" type="button" style={{ minHeight: 34 }} onClick={() => onOpenTask(selectedTask.id)}>
                 Open task
               </button>
             </div>
@@ -3337,7 +3337,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn primary"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'accept')}
               >
@@ -3346,7 +3346,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn ghost"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'duplicate')}
               >
@@ -3355,7 +3355,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn ghost"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'stale')}
               >
@@ -3364,7 +3364,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn ghost"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'dismiss')}
               >
@@ -3407,7 +3407,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn secondary"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={!linkTargetId || Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'link', linkTargetId)}
               >
