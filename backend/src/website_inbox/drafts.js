@@ -40,6 +40,7 @@ const ACTIONABLE_STATES = new Set([
 ]);
 
 const DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
+const DIRECT_WEBSITE_DRAFT_SOURCE_EVENTS_SQL = "('booking.request_submitted', 'experience.enquiry_submitted', 'contact.form_submitted', 'owner.enquiry_submitted')";
 const AI_HANDOFF_EVENT_TYPE = 'website.ai_handoff';
 const TAKEOVER_EVENT_TYPE = 'website.ai_handoff_takeover';
 const STAFF_REPLY_EVENT_TYPE = 'staff.reply_sent';
@@ -545,6 +546,53 @@ async function triggerWebsiteDraftGeneration(threadId, sourceEventId, opts = {})
   }
 }
 
+async function recoverMissedWebsiteDraftsOnce(opts = {}) {
+  const lookbackHours = Math.max(1, Math.floor(Number(opts.lookbackHours || process.env.MISSED_WEBSITE_DRAFT_LOOKBACK_HOURS) || 72));
+  const limit = Math.max(1, Math.floor(Number(opts.limit || process.env.MISSED_WEBSITE_DRAFT_RECOVERY_LIMIT) || 5));
+  const trigger = typeof opts.trigger === 'function' ? opts.trigger : triggerWebsiteDraftGeneration;
+  const { rows } = await query(
+    `WITH latest_draftable AS (
+       SELECT DISTINCT ON (e.thread_id)
+              e.id AS event_id,
+              e.thread_id,
+              e.event_type,
+              e.created_at
+         FROM inbox_events e
+         JOIN inbox_threads t ON t.id = e.thread_id
+        WHERE e.event_type IN ${DIRECT_WEBSITE_DRAFT_SOURCE_EVENTS_SQL}
+          AND e.created_at >= NOW() - INTERVAL '${lookbackHours} hours'
+          AND COALESCE(t.status, 'open') <> 'closed'
+        ORDER BY e.thread_id, e.created_at DESC, e.id::text DESC
+     )
+     SELECT l.thread_id, l.event_id, l.event_type
+       FROM latest_draftable l
+      WHERE NOT EXISTS (
+        SELECT 1
+          FROM inbox_events d
+         WHERE d.thread_id = l.thread_id
+           AND d.event_type IN ${DRAFT_EVENT_TYPES_SQL}
+           AND d.payload->>'source_event_id' = l.event_id::text
+           AND COALESCE(d.payload->>'state', '') IN ('friday_drafting', 'draft_ready', 'under_review', 'generation_failed')
+      )
+        AND NOT EXISTS (
+        SELECT 1
+          FROM inbox_events sr
+         WHERE sr.thread_id = l.thread_id
+           AND sr.event_type = 'staff.reply_sent'
+           AND sr.created_at > l.created_at
+      )
+      ORDER BY l.created_at ASC
+      LIMIT ${limit}`,
+  );
+  if (rows.length === 0) return { recovered: 0 };
+  console.warn(`[website-drafts] recovering ${rows.length} missed website auto-drafts`);
+  for (const row of rows) {
+    trigger(row.thread_id, row.event_id, { recoveryReason: 'missed_website_auto_draft_reaper' })
+      .catch((e) => console.error(`[website-drafts] missed recovery failed for ${row.event_id}:`, e.message));
+  }
+  return { recovered: rows.length };
+}
+
 async function approveWebsiteDraft({ threadId, draftId, body, channel = 'email', identity }) {
   if (channel !== 'email' && channel !== 'website') {
     const err = new Error('channel_not_available');
@@ -773,5 +821,6 @@ module.exports = {
   approveWebsiteDraft,
   reviseWebsiteDraft,
   rejectWebsiteDraft,
+  recoverMissedWebsiteDraftsOnce,
   assertDraftCurrent,
 };

@@ -6,6 +6,7 @@ jest.mock('../realtime', () => ({ publishFadEvent: jest.fn(() => Promise.resolve
 const {
   assertDraftCurrent,
   approveWebsiteDraft,
+  recoverMissedWebsiteDraftsOnce,
   shouldAutoDraftWebsiteEvent,
 } = require('./drafts');
 const { query } = require('../database/client');
@@ -48,6 +49,30 @@ describe('website inbox draft guards', () => {
       latestEvent: { id: 'event-1', created_at: '2026-05-22T08:00:00.000Z' },
       latestReply: { id: 'reply-1', created_at: '2026-05-22T08:02:00.000Z' },
     })).toThrow('draft_stale');
+  });
+
+  test('recovers missed website inquiry drafts without drafting after staff replies', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const trigger = jest.fn(() => Promise.resolve({ draftId: 'draft-1' }));
+    query.mockResolvedValueOnce({
+      rows: [{
+        thread_id: 'thread-1',
+        event_id: 'event-1',
+        event_type: 'booking.request_submitted',
+      }],
+    });
+
+    const result = await recoverMissedWebsiteDraftsOnce({ trigger, lookbackHours: 12, limit: 3 });
+
+    expect(result).toEqual({ recovered: 1 });
+    expect(trigger).toHaveBeenCalledWith('thread-1', 'event-1', {
+      recoveryReason: 'missed_website_auto_draft_reaper',
+    });
+    const sql = query.mock.calls[0][0];
+    expect(sql).toContain('booking.request_submitted');
+    expect(sql).toContain('staff.reply_sent');
+    expect(sql).toContain("d.payload->>'source_event_id' = l.event_id::text");
+    warn.mockRestore();
   });
 
   test('approves website AI handoff drafts into the live website channel after human takeover', async () => {
