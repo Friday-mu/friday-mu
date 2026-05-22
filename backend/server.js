@@ -33,13 +33,16 @@ const limiter = rateLimit({
 app.set('trust proxy', 1);
 
 app.use(cors());
-// Skip the global JSON body parser for the website-inbox webhook —
-// that route needs the RAW bytes to verify the friday.mu HMAC
-// signature, and its own express.raw() middleware can't read the
+// Skip the global JSON body parser for signed website-inbox routes —
+// these routes need the RAW bytes to verify the friday.mu HMAC
+// signature, and their own express.raw() middleware can't read the
 // body once express.json() has consumed it. All other routes still
 // get the default JSON parsing.
 app.use((req, res, next) => {
-  if (req.path === '/api/inbox/website/friday-website') return next();
+  if (
+    req.path === '/api/inbox/website/friday-website' ||
+    req.path.startsWith('/api/inbox/website/friday-website/ai-handoff')
+  ) return next();
   // Stripe webhook needs the RAW body to verify the Stripe-Signature
   // header (HMAC-SHA256 over `${timestamp}.${rawBody}`). Letting
   // express.json() consume the bytes first would re-serialise the
