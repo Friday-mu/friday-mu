@@ -122,6 +122,30 @@ function daysBetween(from: string, to: string): number {
   return Math.round((b.getTime() - a.getTime()) / TASK_DAY_MS);
 }
 
+function textValue(value: string | null | undefined, fallback = ''): string {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function compareText(a: string | null | undefined, b: string | null | undefined): number {
+  return textValue(a).localeCompare(textValue(b));
+}
+
+function taskPropertyLabel(task: Task): string {
+  return textValue(task.propertyCode, 'No property');
+}
+
+function taskSubdepartmentLabel(task: Task): string {
+  return textValue(task.subdepartment, 'admin').replace(/_/g, ' ');
+}
+
+function taskDateKey(value: string | null | undefined): string {
+  return textValue(value, '9999-99-99');
+}
+
+function taskTimestampKey(value: string | null | undefined): string {
+  return textValue(value, '0000-01-01T00:00:00.000Z');
+}
+
 function withinDateTab(task: Task, tab: TaskDateTab, startDate: string, endDate: string): boolean {
   if (!task.dueDate) return false;
   if (tab === 'today') return task.dueDate <= TODAY;
@@ -136,11 +160,11 @@ function taskMatchesSearch(task: Task, query: string): boolean {
   return [
     task.title,
     task.description ?? '',
-    task.propertyCode,
+    taskPropertyLabel(task),
     task.reservationId ?? '',
     task.department,
-    task.subdepartment.replace(/_/g, ' '),
-  ].some((value) => value.toLowerCase().includes(q));
+    taskSubdepartmentLabel(task),
+  ].some((value) => textValue(value).toLowerCase().includes(q));
 }
 
 function reservationState(task: Task): Exclude<ReservationFilter, 'all'> {
@@ -434,17 +458,18 @@ function OverviewPage({
         if (dashboardStatus === 'open') return !CLOSED_STATUS.has(t.status);
         return t.status === dashboardStatus;
       })
-      .sort((a, b) => (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
+      .sort((a, b) => compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99') || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
   ), [scopedTasks, dashboardDate, dashboardStatus]);
 
   const dashboardByProperty = useMemo(() => {
     const groups = new Map<string, Task[]>();
     dashboardTasks.forEach((task) => {
-      const list = groups.get(task.propertyCode) ?? [];
+      const key = taskPropertyLabel(task);
+      const list = groups.get(key) ?? [];
       list.push(task);
-      groups.set(task.propertyCode, list);
+      groups.set(key, list);
     });
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(groups.entries()).sort(([a], [b]) => compareText(a, b));
   }, [dashboardTasks]);
 
   const statusCounts = useMemo(() => {
@@ -498,7 +523,7 @@ function OverviewPage({
     return scopedTasks.flatMap((t) =>
       t.activityLog.map((a) => ({ task: t, entry: a }))
     )
-      .sort((a, b) => b.entry.ts.localeCompare(a.entry.ts))
+      .sort((a, b) => compareText(b.entry.ts, a.entry.ts))
       .slice(0, 6);
   }, [scopedTasks]);
 
@@ -947,7 +972,7 @@ function timeBucketForTask(task: Task): ScheduleBucketId {
 }
 
 function taskTimeSortKey(task: Task): string {
-  return `${task.dueTime || '99:99'}-${PRIORITY_ORDER[task.priority]}-${task.title}`;
+  return `${task.dueTime || '99:99'}-${PRIORITY_ORDER[task.priority] ?? 99}-${textValue(task.title, 'Untitled task')}`;
 }
 
 function taskAssigneeName(task: Task, assigneeId: string, index: number): string {
@@ -973,7 +998,7 @@ function taskScheduleMatchesSearch(task: Task, query: string): boolean {
   if (!query.trim()) return true;
   const q = query.trim().toLowerCase();
   if (taskMatchesSearch(task, q)) return true;
-  return (task.assigneeNames || []).some((name) => name.toLowerCase().includes(q));
+  return (task.assigneeNames || []).some((name) => textValue(name).toLowerCase().includes(q));
 }
 
 function scheduleStatusMatches(task: Task, status: ScheduleStatusFilter): boolean {
@@ -1003,7 +1028,7 @@ function mergeScheduleStaff(directoryUsers: OperationsStaffUser[], tasks: Task[]
     });
   });
 
-  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+  return Array.from(byId.values()).sort((a, b) => compareText(a.name, b.name));
 }
 
 function normalizeScheduleProperty(value: string | undefined): string {
@@ -1019,7 +1044,7 @@ function reservationMatchesSearch(reservation: ScheduleReservation, query: strin
     reservation.guestName,
     reservation.confirmationCode,
     reservation.channel,
-  ].some((value) => value.toLowerCase().includes(q));
+  ].some((value) => textValue(value).toLowerCase().includes(q));
 }
 
 function reservationOverlapsDay(reservation: ScheduleReservation, day: string): boolean {
@@ -1137,7 +1162,7 @@ function SchedulePage({
     rawScheduleTasks
       .filter((task) => scheduleStatusMatches(task, statusFilter))
       .filter((task) => taskScheduleMatchesSearch(task, search))
-      .sort((a, b) => taskTimeSortKey(a).localeCompare(taskTimeSortKey(b)))
+      .sort((a, b) => compareText(taskTimeSortKey(a), taskTimeSortKey(b)))
   ), [rawScheduleTasks, search, statusFilter]);
 
   const unscheduledTasks = useMemo(() => (
@@ -1183,7 +1208,7 @@ function SchedulePage({
       name: 'Unassigned',
       initials: '--',
       role: null,
-      tasks: unassigned.sort((a, b) => taskTimeSortKey(a).localeCompare(taskTimeSortKey(b))),
+      tasks: unassigned.sort((a, b) => compareText(taskTimeSortKey(a), taskTimeSortKey(b))),
     });
 
     staffOptions.forEach((user) => {
@@ -1192,7 +1217,7 @@ function SchedulePage({
         name: user.name,
         initials: user.initials,
         role: user.role,
-        tasks: (byAssignee.get(user.id) || []).sort((a, b) => taskTimeSortKey(a).localeCompare(taskTimeSortKey(b))),
+        tasks: (byAssignee.get(user.id) || []).sort((a, b) => compareText(taskTimeSortKey(a), taskTimeSortKey(b))),
       });
     });
 
@@ -1220,7 +1245,7 @@ function SchedulePage({
     };
 
     scheduleTasks.forEach((task) => {
-      ensure(task.propertyCode).tasks.push(task);
+      ensure(taskPropertyLabel(task)).tasks.push(task);
     });
     reservations
       .filter((reservation) => reservationMatchesSearch(reservation, search))
@@ -1229,7 +1254,7 @@ function SchedulePage({
       });
     return Array.from(groups.values())
       .filter((row) => row.tasks.length > 0 || row.reservations.length > 0)
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .sort((a, b) => compareText(a.label, b.label));
   }, [reservations, scheduleTasks, search]);
 
   const counts = useMemo(() => {
@@ -1261,7 +1286,7 @@ function SchedulePage({
   const patchForDropTarget = (task: Task, target: PlannerDropTarget): Parameters<typeof updateTask>[0]['patch'] | null => {
     const patch: Parameters<typeof updateTask>[0]['patch'] = {};
     if (target.rowType === 'property') {
-      const taskProperty = normalizeScheduleProperty(task.propertyCode);
+      const taskProperty = normalizeScheduleProperty(taskPropertyLabel(task));
       if (taskProperty !== target.propertyCode) {
         fireToast('Open the task to change property before moving it to another property row.');
         return null;
@@ -1837,14 +1862,14 @@ function MyTasksPage({
       .filter((task) => reservation === 'all' || reservationState(task) === reservation)
       .filter((task) => taskMatchesSearch(task, search));
     return [...tasks].sort((a, b) => {
-      if (sort === 'property') return a.propertyCode.localeCompare(b.propertyCode) || a.dueDate.localeCompare(b.dueDate);
-      if (sort === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.dueDate.localeCompare(b.dueDate);
-      if (sort === 'due') return a.dueDate.localeCompare(b.dueDate) || (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99');
+      if (sort === 'property') return compareText(taskPropertyLabel(a), taskPropertyLabel(b)) || compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate));
+      if (sort === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate));
+      if (sort === 'due') return compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) || compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99');
       return (
         STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
         PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
-        a.dueDate.localeCompare(b.dueDate) ||
-        (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99')
+        compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) ||
+        compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99')
       );
     });
   }, [assignedTasks, dateTab, department, endDate, priority, reservation, search, sort, startDate]);
@@ -1852,12 +1877,12 @@ function MyTasksPage({
   const groupedTasks = useMemo(() => {
     const groups = new Map<string, Task[]>();
     visibleTasks.forEach((task) => {
-      const key = dateTab === 'today' || dateTab === 'tomorrow' ? task.propertyCode : task.dueDate;
+      const key = dateTab === 'today' || dateTab === 'tomorrow' ? taskPropertyLabel(task) : taskDateKey(task.dueDate);
       const list = groups.get(key) ?? [];
       list.push(task);
       groups.set(key, list);
     });
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(groups.entries()).sort(([a], [b]) => compareText(a, b));
   }, [dateTab, visibleTasks]);
 
   const counts = useMemo(() => {
@@ -2046,7 +2071,7 @@ function MyTaskCard({
       }}
     >
       <div className="ops-my-card-top">
-        <span className="mono">{task.propertyCode}</span>
+        <span className="mono">{taskPropertyLabel(task)}</span>
         <span>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
       </div>
       <h3>{task.title}</h3>
@@ -2098,7 +2123,7 @@ function MyTaskCard({
           Evidence
         </button>
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onReportIssue(); }}>
-          Report issue
+          Issue
         </button>
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
           Details
@@ -2126,18 +2151,18 @@ function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
         return done >= oldest;
       })
       .filter((task) => taskMatchesSearch(task, search))
-      .sort((a, b) => (b.completedAt ?? b.updatedAt).localeCompare(a.completedAt ?? a.updatedAt));
+      .sort((a, b) => compareText(taskTimestampKey(b.completedAt ?? b.updatedAt), taskTimestampKey(a.completedAt ?? a.updatedAt)));
   }, [TASKS, range, search]);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, Task[]>();
     historyTasks.forEach((task) => {
-      const day = (task.completedAt ?? task.updatedAt).slice(0, 10);
+      const day = taskTimestampKey(task.completedAt ?? task.updatedAt).slice(0, 10);
       const list = groups.get(day) ?? [];
       list.push(task);
       groups.set(day, list);
     });
-    return Array.from(groups.entries()).sort(([a], [b]) => b.localeCompare(a));
+    return Array.from(groups.entries()).sort(([a], [b]) => compareText(b, a));
   }, [historyTasks]);
 
   return (
@@ -2173,7 +2198,7 @@ function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
             </div>
             {tasks.map((task) => (
               <button className="ops-history-row" key={task.id} type="button" onClick={() => onOpenTask(task.id)}>
-                <span className="mono">{task.propertyCode}</span>
+                <span className="mono">{taskPropertyLabel(task)}</span>
                 <span>
                   <strong>{task.title}</strong>
                   <small>
@@ -2216,7 +2241,7 @@ function TaskRowMini({ task, onClick }: { task: Task; onClick: () => void }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 500 }}>{task.title}</div>
         <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-          {task.propertyCode} · {task.subdepartment.replace('_', ' ')} · due {task.dueDate}
+          {taskPropertyLabel(task)} · {taskSubdepartmentLabel(task)} · due {formatTaskDue(task.dueDate, task.dueTime, task.status)}
         </div>
       </div>
     </div>
@@ -2749,7 +2774,7 @@ function StatusPill({ status }: { status: TaskStatus }) {
       className="ops-status-pill-strong"
       style={{ background: swatch.background, color: swatch.color }}
     >
-      {STATUS_LABEL[status]}
+      {STATUS_LABEL[status] || 'Reported'}
     </span>
   );
 }
@@ -2764,7 +2789,7 @@ function PriorityLabel({ priority }: { priority: TaskPriority }) {
 
 function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
   const sourceSwatch = toneStyle(taskSourceTone(task.source));
-  const sourceLabel = SOURCE_LABEL[task.source];
+  const sourceLabel = SOURCE_LABEL[task.source] || 'Task';
   const assignees = taskAssigneePeople(task);
   return (
     <tr
@@ -2775,7 +2800,7 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
         <span style={{ display: 'inline-block', width: 4, height: 24, background: priorityBarColor(task.priority), borderRadius: 2 }} />
       </td>
       <td style={{ padding: '6px 10px' }}>
-        <span className="mono" style={{ fontSize: 11 }}>{task.propertyCode}</span>
+        <span className="mono" style={{ fontSize: 11 }}>{taskPropertyLabel(task)}</span>
       </td>
       <td style={{ padding: '6px 10px', maxWidth: 280 }}>
         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</div>
@@ -2786,7 +2811,7 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
           </div>
         )}
       </td>
-      <td style={{ padding: '6px 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>{task.subdepartment.replace('_', ' ')}</td>
+      <td style={{ padding: '6px 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>{taskSubdepartmentLabel(task)}</td>
       <td style={{ padding: '6px 10px' }}>
         <StatusPill status={task.status} />
       </td>
@@ -2893,9 +2918,9 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
           )}
         </div>
         <div className="fad-task-card-meta">
-          <span className="mono">{task.propertyCode}</span>
+          <span className="mono">{taskPropertyLabel(task)}</span>
           <span>·</span>
-          <span>{task.subdepartment.replace(/_/g, ' ')}</span>
+          <span>{taskSubdepartmentLabel(task)}</span>
           <span>·</span>
           <span>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
         </div>
@@ -2910,7 +2935,7 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
             <StatusPill status={task.status} />
             <PriorityLabel priority={task.priority} />
             <span style={{ ...chipBase, background: sourceSwatch.background, color: sourceSwatch.color }}>
-              {SOURCE_LABEL[task.source]}
+              {SOURCE_LABEL[task.source] || 'Task'}
             </span>
           </div>
           <div className="fad-task-card-avatars">
@@ -2995,8 +3020,8 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
       .filter((task) => INTAKE_SOURCES.has(task.source) && task.status === 'reported')
       .sort((a, b) =>
         PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
-        (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99') ||
-        b.createdAt.localeCompare(a.createdAt)
+        compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) ||
+        compareText(taskTimestampKey(b.createdAt), taskTimestampKey(a.createdAt))
       )
   ), [TASKS]);
 
@@ -3014,7 +3039,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
   const linkTargets = useMemo(() => (
     linkableTasks
       .filter((task) => task.id !== selectedTask?.id && !CLOSED_STATUS.has(task.status))
-      .sort((a, b) => (a.propertyCode || '').localeCompare(b.propertyCode || '') || a.title.localeCompare(b.title))
+      .sort((a, b) => compareText(taskPropertyLabel(a), taskPropertyLabel(b)) || compareText(a.title, b.title))
       .slice(0, 40)
   ), [linkableTasks, selectedTask?.id]);
 
@@ -3208,8 +3233,8 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{task.title}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(task.source)).background, color: toneStyle(taskSourceTone(task.source)).color }}>{SOURCE_LABEL[task.source]}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status] || 'Reported'}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(task.source)).background, color: toneStyle(taskSourceTone(task.source)).color }}>{SOURCE_LABEL[task.source] || 'Task'}</span>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{task.priority}</span>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{sourceRefLabel(task)}</span>
                   </div>
@@ -3246,10 +3271,10 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
 
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
               <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(selectedTask.source)).background, color: toneStyle(taskSourceTone(selectedTask.source)).color }}>
-                {SOURCE_LABEL[selectedTask.source]}
+                {SOURCE_LABEL[selectedTask.source] || 'Task'}
               </span>
               <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskStatusTone(selectedTask.status)).background, color: toneStyle(taskStatusTone(selectedTask.status)).color }}>
-                {STATUS_LABEL[selectedTask.status]}
+                {STATUS_LABEL[selectedTask.status] || 'Reported'}
               </span>
               <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
                 {selectedTask.priority}
@@ -3384,7 +3409,7 @@ function ApprovalsPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
     let tasks = TASKS.filter((task) => task.awaitingHumanApproval || task.status === 'blocked' || task.tags.some((tag) => tag.includes('approval')));
     if (statusFilter === 'pending') tasks = tasks.filter((task) => task.awaitingHumanApproval);
     if (statusFilter === 'blocked') tasks = tasks.filter((task) => task.status === 'blocked');
-    return tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return tasks.sort((a, b) => compareText(taskTimestampKey(b.updatedAt), taskTimestampKey(a.updatedAt)));
   }, [TASKS, statusFilter]);
 
   const selected = visible.find((task) => task.id === selectedId) ?? visible[0] ?? null;

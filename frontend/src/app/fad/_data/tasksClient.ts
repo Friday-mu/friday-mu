@@ -143,12 +143,12 @@ interface ServerTask {
 
 function mapComment(s: ServerComment): TaskComment {
   return {
-    id: s.id,
+    id: s.id || fallbackId('comment'),
     authorId: s.author_user_id || 'unknown',
     authorName: s.author_display_name || undefined,
-    text: s.text,
-    ts: s.created_at,
-    mentions: s.mentions || [],
+    text: s.text || '',
+    ts: s.created_at || new Date().toISOString(),
+    mentions: Array.isArray(s.mentions) ? s.mentions : [],
     syncedToBreezeway: s.synced_to_breezeway,
   };
 }
@@ -190,11 +190,11 @@ function mapSupply(s: ServerSupply): TaskSupply {
 
 // Legacy aliases should not come back from the server once migration 051
 // has run, but keeping the mapper here protects older rows and clients.
-function mapStatus(s: string): TaskStatus {
+function mapStatus(s: string | null | undefined): TaskStatus {
   if (s === 'todo') return 'scheduled';
   if (s === 'done') return 'completed';
   if (s === 'awaiting_approval') return 'blocked';
-  return s as TaskStatus;
+  return (s || 'reported') as TaskStatus;
 }
 
 function dateOnly(value: string | null | undefined): string {
@@ -203,8 +203,12 @@ function dateOnly(value: string | null | undefined): string {
   return match ? match[0] : '';
 }
 
-function taskTitle(value: string): string {
-  const title = value.trim();
+function fallbackId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function taskTitle(value: string | null | undefined): string {
+  const title = (value || '').trim() || 'Untitled task';
   if (title.includes('[redacted: sensitive operational detail]')) {
     return 'Imported task (details restricted)';
   }
@@ -214,8 +218,9 @@ function taskTitle(value: string): string {
 }
 
 function mapTask(s: ServerTask): Task {
+  const fallbackTimestamp = new Date().toISOString();
   return {
-    id: s.id,
+    id: s.id || fallbackId('task'),
     bzId: s.bz_id || undefined,
     externalRef: s.external_ref || undefined,
     title: taskTitle(s.title),
@@ -223,11 +228,11 @@ function mapTask(s: ServerTask): Task {
     propertyCode: s.property_code || '',
     department: (s.department as Department) || 'office',
     subdepartment: (s.subdepartment as Subdepartment) || 'admin',
-    priority: s.priority as TaskPriority,
+    priority: (s.priority as TaskPriority) || 'medium',
     status: mapStatus(s.status),
     source: (s.source as TaskSource) || 'manual',
     visibility: (s.visibility as TaskVisibility) || 'all',
-    assigneeIds: s.assignee_user_ids || [],
+    assigneeIds: Array.isArray(s.assignee_user_ids) ? s.assignee_user_ids.filter(Boolean) : [],
     assigneeNames: (s.assignee_display_names || []).filter((name): name is string => Boolean(name)),
     requesterId: s.requester_user_id || undefined,
     requesterName: s.requester_display_name || undefined,
@@ -240,19 +245,19 @@ function mapTask(s: ServerTask): Task {
     reservationId: s.reservation_guesty_id || undefined,
     ownerCharge: (s.costs || []).some((c) => c.owner_charge) || undefined,
     attachmentCount: s.attachment_count ?? 0,
-    comments: (s.comments || []).map(mapComment),
-    costs: (s.costs || []).map(mapCost),
-    supplies: (s.supplies || []).map(mapSupply),
-    requirements: normalizeRequirements(s.requirements),
+    comments: Array.isArray(s.comments) ? s.comments.map(mapComment) : [],
+    costs: Array.isArray(s.costs) ? s.costs.map(mapCost) : [],
+    supplies: Array.isArray(s.supplies) ? s.supplies.map(mapSupply) : [],
+    requirements: normalizeRequirements(Array.isArray(s.requirements) ? s.requirements : []),
     requirementState: normalizeRequirementState(s.requirement_state || initialRequirementState()),
     isRecurring: s.is_recurring,
     template: s.template || undefined,
-    tags: s.tags || [],
+    tags: Array.isArray(s.tags) ? s.tags.filter(Boolean) : [],
     riskFlags: [],
-    aiSuggestions: s.ai_suggestions || [],
-    activityLog: s.activity_log || [],
-    createdAt: s.created_at,
-    updatedAt: s.updated_at,
+    aiSuggestions: Array.isArray(s.ai_suggestions) ? s.ai_suggestions : [],
+    activityLog: Array.isArray(s.activity_log) ? s.activity_log : [],
+    createdAt: s.created_at || fallbackTimestamp,
+    updatedAt: s.updated_at || s.created_at || fallbackTimestamp,
     completedAt: s.completed_at || undefined,
     importBatchId: s.import_batch_id || undefined,
     sourcePayload: s.source_payload || undefined,

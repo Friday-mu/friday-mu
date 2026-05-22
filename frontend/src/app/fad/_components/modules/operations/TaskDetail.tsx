@@ -131,6 +131,10 @@ function compactText(value?: string | null): string | null {
   return text || null;
 }
 
+function taskSubdepartmentLabel(task: Task): string {
+  return (compactText(task.subdepartment) || 'admin').replace(/_/g, ' ');
+}
+
 function mentionTokensForStaff(user: OperationsStaffUser): string[] {
   const [first] = user.name.split(/\s+/);
   return [`@${user.name}`, first ? `@${first}` : '', `@${user.initials}`].filter(Boolean);
@@ -531,7 +535,7 @@ function Header({
           {task.propertyCode || 'No property'}
         </span>
         <span className="chip" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-          {task.department} · {task.subdepartment.replace('_', ' ')}
+          {task.department} · {taskSubdepartmentLabel(task)}
         </span>
         {mode === 'drawer' && onExpand && (
           <button className="fad-util-btn ops-detail-expand" onClick={onExpand} title="Open as page" style={{ marginLeft: 'auto' }}>
@@ -1658,6 +1662,7 @@ function Comments({
   const sortedComments = useMemo(() => [...task.comments].sort((a, b) => a.ts.localeCompare(b.ts)), [task]);
   const mentionIds = useMemo(() => resolveStaffMentions(draft, staffUsers), [draft, staffUsers]);
   const staffById = useMemo(() => new Map(staffUsers.map((user) => [user.id, user])), [staffUsers]);
+  const showMentionPicker = /(^|\s)@\S*$/.test(draft);
   const mentionCandidates = useMemo(
     () => {
       if (staffUsers.length > 0) {
@@ -1718,18 +1723,20 @@ function Comments({
             onChange={(e) => setDraft(e.target.value)}
             style={{ width: '100%', minHeight: 60, padding: 8, fontSize: 13, fontFamily: 'inherit' }}
           />
-          <div className="ops-mention-picker" aria-label="Mention staff">
-            {mentionCandidates.map((user) => (
-              <button
-                key={user.id}
-                type="button"
-                className={mentionIds.includes(user.id) ? 'active' : ''}
-                onClick={() => setDraft(staffUsers.length > 0 ? appendStaffMentionToken(draft, user) : appendMentionToken(draft, user.id))}
-              >
-                @{user.name.split(' ')[0]}
-              </button>
-            ))}
-          </div>
+          {showMentionPicker && (
+            <div className="ops-mention-picker" aria-label="Mention staff">
+              {mentionCandidates.map((user) => (
+                <button
+                  key={user.id}
+                  type="button"
+                  className={mentionIds.includes(user.id) ? 'active' : ''}
+                  onClick={() => setDraft(staffUsers.length > 0 ? appendStaffMentionToken(draft, user) : appendMentionToken(draft, user.id))}
+                >
+                  @{user.name.split(' ')[0]}
+                </button>
+              ))}
+            </div>
+          )}
           {mentionIds.length > 0 && (
             <div className="ops-mention-preview">
               Notifies {mentionIds.map((id) => staffById.get(id)?.name || TASK_USER_BY_ID[id]?.name || 'selected teammate').join(', ')} in TeamInbox and Notifications.

@@ -6256,7 +6256,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-my-card-actions .btn {
-  min-height: 44px;
+  min-height: 32px;
 }
 
 .ops-report-issue-btn {
@@ -7511,14 +7511,14 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-mention-picker button {
-  min-height: 44px;
+  min-height: 30px;
   border: 0.5px solid var(--color-border-tertiary);
-  border-radius: 999px;
+  border-radius: 5px;
   background: var(--color-background-secondary);
   color: var(--color-text-secondary);
   font: inherit;
-  font-size: 12px;
-  padding: 0 10px;
+  font-size: 11px;
+  padding: 0 8px;
   cursor: pointer;
 }
 
@@ -7536,6 +7536,17 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   background: var(--color-background-secondary);
   color: var(--color-text-secondary);
   font-size: 12px;
+}
+
+@media (max-width: 768px) {
+  .ops-my-card-actions .btn {
+    min-height: 44px;
+  }
+
+  .ops-mention-picker button {
+    min-height: 36px;
+    padding: 0 10px;
+  }
 }
 
 @media (max-width: 520px) {
