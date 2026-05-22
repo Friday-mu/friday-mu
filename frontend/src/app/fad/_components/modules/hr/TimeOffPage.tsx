@@ -37,14 +37,16 @@ export function TimeOffPage() {
     () => (liveRequests ? liveRequests.map(apiRequestToFixtureShape) : null),
     [liveRequests],
   );
+  const usingLiveRequests = liveAdapted !== null;
   const sourceRequests: TimeOffRequest[] = liveAdapted ?? TIME_OFF_REQUESTS;
   const bumpRev = refetchRequests;
 
   const visible = useMemo(() => {
     let reqs = [...sourceRequests];
 
-    // Field + Mathias: only see own
-    if (role === 'field' || role === 'commercial_marketing') {
+    // Backend already scopes live field/commercial reads to the caller's
+    // linked staff record. Fixture fallback still needs client-side scoping.
+    if (!usingLiveRequests && (role === 'field' || role === 'commercial_marketing')) {
       reqs = reqs.filter((r) => r.userId === currentUserId);
     }
 
@@ -52,9 +54,9 @@ export function TimeOffPage() {
       reqs = reqs.filter((r) => r.status === statusFilter);
     }
     return reqs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [statusFilter, role, currentUserId, sourceRequests]);
+  }, [statusFilter, role, currentUserId, sourceRequests, usingLiveRequests]);
 
-  const selected = sourceRequests.find((r) => r.id === selectedId) ?? visible[0];
+  const selected = visible.find((r) => r.id === selectedId) ?? visible[0];
 
   return (
     <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
@@ -71,7 +73,13 @@ export function TimeOffPage() {
                 {s === 'all' ? 'All' : TIME_OFF_STATUS_LABEL[s]}
                 {s !== 'all' && (
                   <span style={{ marginLeft: 4, opacity: 0.6 }}>
-                    {sourceRequests.filter((r) => r.status === s && (role === 'field' || role === 'commercial_marketing' ? r.userId === currentUserId : true)).length}
+                    {sourceRequests.filter((r) => {
+                      if (r.status !== s) return false;
+                      if (usingLiveRequests) return true;
+                      return role === 'field' || role === 'commercial_marketing'
+                        ? r.userId === currentUserId
+                        : true;
+                    }).length}
                   </span>
                 )}
               </button>
@@ -223,8 +231,19 @@ function TimeOffDetail({
   canApprove: boolean;
   onAfterDecide: () => void;
 }) {
-  const user = TASK_USER_BY_ID[req.userId];
-  const reviewer = req.reviewedBy ? TASK_USER_BY_ID[req.reviewedBy] : undefined;
+  const adapted = req as AdaptedTimeOff;
+  const fixtureUser = TASK_USER_BY_ID[req.userId];
+  const user = adapted._staffName
+    ? {
+        name: adapted._staffName,
+        initials: adapted._staffInitials ?? '??',
+        avatarColor: adapted._staffAvatarColor ?? '#94a3b8',
+      }
+    : fixtureUser;
+  const fixtureReviewer = req.reviewedBy ? TASK_USER_BY_ID[req.reviewedBy] : undefined;
+  const reviewer = adapted._reviewerName
+    ? { name: adapted._reviewerName }
+    : fixtureReviewer;
   const days = daysBetween(req.startDate, req.endDate);
   const [open, setOpen] = useState<'approve' | 'decline' | null>(null);
   const [note, setNote] = useState('');
