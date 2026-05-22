@@ -5721,6 +5721,14 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 /* Operations Wave 2 — mobile dashboard, assigned My Tasks, My History */
+.ops-overview-page,
+.ops-insights-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
 .ops-mobile-dashboard,
 .ops-my-tasks,
 .ops-history {
@@ -5730,12 +5738,10 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-mobile-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  padding-bottom: 12px;
   margin-bottom: 12px;
-  border: 0.5px solid var(--color-border-tertiary);
-  border-radius: 8px;
-  background: var(--color-background-secondary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
 }
 
 .ops-mobile-dashboard-head,
@@ -5794,13 +5800,13 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-status-chip {
-  min-height: 30px;
-  min-width: 72px;
+  min-height: 28px;
+  min-width: 66px;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  padding: 0 8px;
+  padding: 0 7px;
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: 6px;
   background: var(--color-background-primary);
@@ -5813,7 +5819,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-status-chip strong {
   color: var(--color-text-primary);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .ops-status-chip.active {
@@ -5826,9 +5832,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 0;
-  border-top: 0.5px solid var(--color-border-tertiary);
-  border-bottom: 0.5px solid var(--color-border-tertiary);
+  padding-top: 8px;
 }
 
 .ops-workbench-head,
@@ -5858,7 +5862,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-workbench-counts span {
-  min-height: 32px;
+  min-height: 30px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -5873,7 +5877,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-workbench-counts strong {
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .ops-workbench-lanes {
@@ -5887,7 +5891,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   min-width: 0;
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: 6px;
-  background: var(--color-background-primary);
+  background: var(--color-background-secondary);
 }
 
 .ops-workbench-lane-head {
@@ -6117,6 +6121,87 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   background: var(--color-background-secondary);
   color: var(--color-text-primary);
   font-size: 12px;
+}
+
+.ops-kpi-strip,
+.ops-overview-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-kpi-strip {
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  margin-bottom: 12px;
+}
+
+.ops-overview-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.ops-kpi-card,
+.ops-section {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 6px;
+  background: var(--color-background-primary);
+}
+
+.ops-kpi-card {
+  min-height: 58px;
+  padding: 9px 10px;
+  border-top-width: 2px;
+}
+
+.ops-kpi-card strong,
+.ops-kpi-card span {
+  display: block;
+}
+
+.ops-kpi-card strong {
+  color: var(--color-text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.ops-kpi-card span {
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.ops-daily-brief {
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  border-left: 3px solid var(--color-brand-accent);
+  border-radius: 6px;
+  background: var(--color-brand-accent-softer);
+}
+
+.ops-section {
+  margin-bottom: 10px;
+  padding: 11px 12px;
+}
+
+.ops-section-title {
+  margin-bottom: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.ops-sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 30px;
+  margin-top: 6px;
 }
 
 .ops-my-tasks,
@@ -7346,6 +7431,11 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 @media (max-width: 768px) {
+  .ops-overview-page,
+  .ops-insights-page {
+    padding: 14px;
+  }
+
   .ops-my-tasks,
   .ops-history,
   .ops-schedule {

@@ -604,7 +604,7 @@ function OverviewPage({
   void pickFromPool;
 
   return (
-    <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+    <div className="ops-overview-page">
       {error && (
         <div style={{ marginBottom: 12, padding: 12, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
           Live tasks could not load: {error}
@@ -695,7 +695,7 @@ function OverviewPage({
       </section>
 
       {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
+      <div className="ops-kpi-strip">
         <KpiCard label="Open today" value={kpis.openToday} accent="var(--color-text-info)" />
         <KpiCard label="Overdue" value={kpis.overdue} accent="var(--color-text-danger)" />
         <KpiCard label="Urgent" value={kpis.urgent} accent="var(--color-text-warning)" />
@@ -706,13 +706,7 @@ function OverviewPage({
       {/* AI Daily Brief — hidden when DAILY_BRIEF_POOL is empty */}
       {todaysBrief && (
         <div
-          style={{
-            padding: 16,
-            background: 'var(--color-brand-accent-softer)',
-            borderLeft: '3px solid var(--color-brand-accent)',
-            borderRadius: 8,
-            marginBottom: 20,
-          }}
+          className="ops-daily-brief"
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <AIBadge size="md" prefix="" />
@@ -728,7 +722,7 @@ function OverviewPage({
       )}
 
       {/* Two-column layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+      <div className="ops-overview-grid">
         <Section title={`Escalations · ${escalations.length}`}>
           {escalations.map((t) => (
             <TaskRowMini key={t.id} task={t} onClick={() => onOpenTask(t.id)} />
@@ -2057,17 +2051,11 @@ function PlannerEditPanel({
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
     <div
-      style={{
-        padding: 14,
-        background: 'var(--color-background-secondary)',
-        borderRadius: 8,
-        borderTop: `2px solid ${accent}`,
-      }}
+      className="ops-kpi-card"
+      style={{ borderTopColor: accent }}
     >
-      <div style={{ fontSize: 24, fontWeight: 500 }}>{value}</div>
-      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2 }}>
-        {label}
-      </div>
+      <strong>{value}</strong>
+      <span>{label}</span>
     </div>
   );
 }
@@ -3902,7 +3890,7 @@ function InsightsPage() {
   ];
 
   return (
-    <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+    <div className="ops-insights-page">
       {error && (
         <div style={{ marginBottom: 12, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
           Insights could not load live tasks: {error}
@@ -3997,7 +3985,7 @@ function BarList({ rows }: { rows: { label: string; value: number; sub?: string 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
   const max = Math.max(1, ...values);
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 40, marginTop: 8 }}>
+    <div className="ops-sparkline">
       {values.map((v, i) => (
         <div
           key={i}
@@ -4112,28 +4100,10 @@ function Workflow({ trigger, actions }: { trigger: string; actions: string[] }) 
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        padding: 16,
-        background: 'var(--color-background-secondary)',
-        borderRadius: 8,
-        marginBottom: 12,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 500,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: 'var(--color-text-tertiary)',
-          marginBottom: 10,
-        }}
-      >
-        {title}
-      </div>
+    <section className="ops-section">
+      <div className="ops-section-title">{title}</div>
       {children}
-    </div>
+    </section>
   );
 }
 
