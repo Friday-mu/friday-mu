@@ -5,12 +5,15 @@ const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { invokeChat } = require('../ai/chat_proxy');
 const { guestyRequest } = require('../integrations/guesty');
+const { callTool } = require('../mcp');
 
 const router = express.Router();
 
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const MAX_QUESTION_CHARS = 1200;
 const MAX_HISTORY_TURNS = 8;
+const ACTION_TYPES = new Set(['navigate', 'create_task', 'send_team_message', 'request_approval']);
+const ACTION_RISKS = new Set(['navigation', 'safe', 'approval']);
 
 function cleanString(value, max = 500) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -18,6 +21,54 @@ function cleanString(value, max = 500) {
 
 function cleanAnswer(value, max = 5000) {
   return String(value || '').trim().slice(0, max);
+}
+
+function cleanPayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, 40)
+      .map(([key, raw]) => {
+        if (raw == null) return [cleanString(key, 80), raw];
+        if (Array.isArray(raw)) {
+          return [cleanString(key, 80), raw.slice(0, 20).map((item) =>
+            typeof item === 'string' ? cleanString(item, 1000) : item,
+          )];
+        }
+        if (typeof raw === 'object') return [cleanString(key, 80), raw];
+        if (typeof raw === 'string') return [cleanString(key, 80), cleanString(raw, 4000)];
+        return [cleanString(key, 80), raw];
+      })
+      .filter(([key]) => key),
+  );
+}
+
+function cleanAction(raw, index = 0) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const type = cleanString(raw.type, 40);
+  if (!ACTION_TYPES.has(type)) return null;
+  const risk = ACTION_RISKS.has(raw.risk) ? raw.risk : (
+    type === 'navigate' ? 'navigation' : type === 'request_approval' ? 'approval' : 'safe'
+  );
+  const label = cleanString(raw.label || raw.cta || raw.title, 80);
+  const payload = cleanPayload(raw.payload);
+  const module = cleanString(raw.module, 80);
+  if (type === 'navigate' && !module) return null;
+  if ((type === 'create_task' || type === 'send_team_message' || type === 'request_approval') && !label) return null;
+  return {
+    id: cleanString(raw.id, 80) || `action_${index + 1}`,
+    type,
+    risk,
+    label: label || 'Open',
+    summary: cleanString(raw.summary || raw.body || raw.description, 240),
+    module: module || null,
+    payload,
+  };
+}
+
+function sanitizeActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  return actions.map(cleanAction).filter(Boolean).slice(0, 4);
 }
 
 function wantsModule({ question = '', scope = '', module }) {
@@ -309,13 +360,18 @@ function buildSystemPrompt() {
 Purpose:
 - Answer staff questions using the supplied live FAD context.
 - Think across Inbox, Operations, HR, Reviews, Design, Reservations, and Properties when present.
-- Stay read-only. You must not send guest messages, approve drafts, create tasks, change reservations, mark payments, edit HR records, or imply that you took action.
+- Act as a command surface: answer, propose next steps, and return structured action buttons when the operator can safely act.
+- You do not execute actions yourself. The UI will only execute an action after a staff member clicks the button.
 
 Rules:
 - Use only the supplied context. If a source is unavailable or missing, say that plainly.
 - Keep ownership boundaries clear: Inbox owns guest communication context; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
 - Prefer concise operational answers: answer first, then the evidence or next check.
 - If confidence is low, ask one targeted clarification instead of inventing.
+- Safe internal actions may be proposed as create_task or send_team_message.
+- Guest-facing, revenue-impacting, access-code, payment, pricing, reservation, HR-record, and approval-sensitive changes must be request_approval only. Never propose direct execution for those.
+- Use navigate actions to send the operator to the owning module when that is the best next step.
+- Never claim an action has been done unless the supplied context says it was already done.
 - Do not expose private credentials, raw tokens, or internal implementation details.
 
 Return JSON only:
@@ -323,7 +379,17 @@ Return JSON only:
   "answer": "markdown answer",
   "confidence": "high|medium|low",
   "followups": ["short suggested follow-up", "..."],
-  "sourcesUsed": ["inbox", "operations"]
+  "sourcesUsed": ["inbox", "operations"],
+  "actions": [
+    {
+      "type": "navigate|create_task|send_team_message|request_approval",
+      "risk": "navigation|safe|approval",
+      "label": "short button label",
+      "summary": "what will happen if clicked",
+      "module": "operations|inbox|hr|reviews|design|reservations|properties|null",
+      "payload": {}
+    }
+  ]
 }`;
 }
 
@@ -346,6 +412,7 @@ function parseModelResponse(text) {
       confidence: ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'medium',
       followups: Array.isArray(parsed.followups) ? parsed.followups.map((f) => cleanString(f, 120)).filter(Boolean).slice(0, 4) : [],
       sourcesUsed: Array.isArray(parsed.sourcesUsed) ? parsed.sourcesUsed.map((s) => cleanString(s, 60)).filter(Boolean).slice(0, 8) : [],
+      actions: sanitizeActions(parsed.actions),
     };
   } catch {
     return {
@@ -353,9 +420,67 @@ function parseModelResponse(text) {
       confidence: 'medium',
       followups: [],
       sourcesUsed: [],
+      actions: [],
     };
   }
 }
+
+function mcpContextFromRequest(req) {
+  return {
+    kind: 'user',
+    userId: req.identity?.userId || null,
+    userRole: req.identity?.userRole || null,
+    username: req.identity?.username || null,
+    displayName: req.identity?.displayName || req.identity?.username || null,
+    tenantId: req.tenantId,
+    scopes: ['mcp:read', 'mcp:write', 'mcp:high-risk'],
+  };
+}
+
+function resultSummary(type, result) {
+  if (type === 'create_task') return `Task created: ${result?.task?.title || result?.task?.id || 'new task'}`;
+  if (type === 'send_team_message') return `Message posted in #${result?.channel?.channel_key || 'team'}`;
+  if (type === 'request_approval') return `Approval request created: ${result?.request?.id || 'pending request'}`;
+  return 'Action completed';
+}
+
+router.post('/actions/execute', attachIdentity, async (req, res) => {
+  try {
+    const action = cleanAction(req.body?.action || req.body, 0);
+    if (!action) return res.status(400).json({ error: 'valid action is required' });
+    if (action.type === 'navigate') {
+      return res.json({ ok: true, action, result: { module: action.module }, summary: `Opened ${action.module}` });
+    }
+
+    const ctx = mcpContextFromRequest(req);
+    let toolName;
+    let args;
+    if (action.type === 'create_task') {
+      toolName = 'tasks.create';
+      args = action.payload;
+    } else if (action.type === 'send_team_message') {
+      toolName = 'team.message.send';
+      args = action.payload;
+    } else if (action.type === 'request_approval') {
+      toolName = 'action.request.create';
+      args = action.payload;
+    } else {
+      return res.status(400).json({ error: 'unsupported action type' });
+    }
+
+    const result = await callTool(ctx, toolName, args);
+    return res.json({
+      ok: true,
+      action,
+      tool: toolName,
+      result,
+      summary: resultSummary(action.type, result),
+    });
+  } catch (e) {
+    console.error('[fad/friday] action execute error:', e.message);
+    return res.status(400).json({ error: 'ask_friday_action_failed', details: e.message });
+  }
+});
 
 router.post('/ask', attachIdentity, async (req, res) => {
   try {
@@ -405,6 +530,8 @@ module.exports = {
     buildUserPrompt,
     parseModelResponse,
     sanitizeHistory,
+    cleanAction,
+    sanitizeActions,
     shouldLoad,
   },
 };

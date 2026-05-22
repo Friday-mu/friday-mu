@@ -11,7 +11,7 @@ interface Props {
 }
 
 export function FridayFullscreen({ onNavigate, onExit }: Props) {
-  const { msgs, submit } = useFridayChat('All of FAD');
+  const { msgs, submit, executeAction } = useFridayChat('All of FAD');
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -44,8 +44,8 @@ export function FridayFullscreen({ onNavigate, onExit }: Props) {
           <div className="friday-fs-home">
             <h1 className="friday-fs-title">What should Friday look into?</h1>
             <p className="friday-fs-sub">
-              Read-only across Inbox, Operations, HR, Reviews, Design, Reservations, and Properties.
-              Human approvals stay in the owning modules.
+              Live context across Inbox, Operations, HR, Reviews, Design, Reservations, and Properties.
+              Safe internal actions require a click; guest and revenue changes stay approval-gated.
             </p>
             <div className="friday-fs-grid">
               {FRIDAY_PROMPTS_HOME.map((g, i) => (
@@ -68,7 +68,13 @@ export function FridayFullscreen({ onNavigate, onExit }: Props) {
         ) : (
           <div className="friday-fs-chat">
             {msgs.map((m, i) => (
-              <FridayMessage key={i} m={m} onNavigate={onNavigate} onFollowup={submit} />
+              <FridayMessage
+                key={i}
+                m={m}
+                onNavigate={onNavigate}
+                onFollowup={submit}
+                onExecuteAction={executeAction}
+              />
             ))}
             <div ref={endRef} />
           </div>
