@@ -10,6 +10,10 @@ const router = express.Router();
 const clients = new Map();
 let listenerStarted = false;
 let listenerClient = null;
+let emailNotificationBackoffUntil = 0;
+
+const EMAIL_NOTIFICATION_BACKOFF_MS = Number(process.env.FAD_EMAIL_NOTIFICATION_BACKOFF_MS) || 15 * 60_000;
+const EMAIL_NOTIFICATION_MAX_RECIPIENTS = Number(process.env.FAD_EMAIL_NOTIFICATION_MAX_RECIPIENTS) || 10;
 
 function activePresenceForTenant(tenantId, now = new Date()) {
   const snapshot = activePresenceSnapshotForTenant(tenantId, now);
@@ -322,6 +326,17 @@ function shouldEmailNotification(type, data = {}) {
 
 async function sendEmailNotifications({ tenantId, userIds, type, title, body = '', url = null, data = {} }) {
   if (!shouldEmailNotification(type, data)) return { sent: 0, skipped: true };
+  if (process.env.FAD_EMAIL_NOTIFICATIONS_DISABLED === 'true') {
+    return { sent: 0, skipped: true, reason: 'disabled' };
+  }
+  if (emailNotificationBackoffUntil > Date.now()) {
+    return {
+      sent: 0,
+      skipped: true,
+      reason: 'provider_backoff',
+      backoffUntil: new Date(emailNotificationBackoffUntil).toISOString(),
+    };
+  }
   const { rows } = await query(
     `SELECT id, email, display_name
        FROM users
@@ -333,7 +348,12 @@ async function sendEmailNotifications({ tenantId, userIds, type, title, body = '
     [tenantId, userIds],
   );
   let sent = 0;
-  await Promise.all(rows.map(async (user) => {
+  const onlineIds = process.env.FAD_EMAIL_NOTIFY_ONLINE_USERS === 'true'
+    ? new Set()
+    : new Set(activePresenceSnapshotForTenant(tenantId).userIds.map(String));
+  const offlineRows = rows.filter((user) => !onlineIds.has(String(user.id)));
+  const recipients = offlineRows.slice(0, Math.max(1, EMAIL_NOTIFICATION_MAX_RECIPIENTS));
+  for (const user of recipients) {
     try {
       await sendEmail({
         to: user.email,
@@ -343,10 +363,31 @@ async function sendEmailNotifications({ tenantId, userIds, type, title, body = '
       });
       sent += 1;
     } catch (e) {
+      if (isEmailRateLimitError(e)) {
+        emailNotificationBackoffUntil = Date.now() + EMAIL_NOTIFICATION_BACKOFF_MS;
+        console.warn(
+          `[realtime] email notification rate-limited; backing off until ${new Date(emailNotificationBackoffUntil).toISOString()}`,
+        );
+        break;
+      }
       console.warn(`[realtime] email notification failed for ${user.id}:`, e.message);
     }
-  }));
-  return { sent, skipped: false };
+  }
+  return {
+    sent,
+    skipped: false,
+    skippedOnline: rows.length - offlineRows.length,
+    skippedByLimit: Math.max(0, offlineRows.length - recipients.length),
+    backoffUntil: emailNotificationBackoffUntil > Date.now()
+      ? new Date(emailNotificationBackoffUntil).toISOString()
+      : null,
+  };
+}
+
+function isEmailRateLimitError(e) {
+  const status = e?.response?.status || e?.status || e?.statusCode;
+  if (Number(status) === 429) return true;
+  return /\b429\b|rate[-\s]?limit|too many requests/i.test(String(e?.message || ''));
 }
 
 function absoluteFadUrl(url) {
@@ -407,5 +448,10 @@ module.exports = {
   _test: {
     activePresenceSnapshotForTenant,
     clients,
+    sendEmailNotifications,
+    shouldEmailNotification,
+    isEmailRateLimitError,
+    resetEmailNotificationBackoff: () => { emailNotificationBackoffUntil = 0; },
+    emailNotificationBackoffSnapshot: () => emailNotificationBackoffUntil,
   },
 };
