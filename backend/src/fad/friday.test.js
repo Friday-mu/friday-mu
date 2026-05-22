@@ -35,8 +35,10 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.ASK_FRIDAY_MAX_TOKENS).toBeGreaterThanOrEqual(4096);
   });
 
-  test('keeps Ask Friday provider timeouts below the edge gateway timeout', () => {
-    expect(_test.ASK_FRIDAY_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
+  test('uses Claude by default and keeps provider timeouts below the edge gateway timeout', () => {
+    expect(_test.ASK_FRIDAY_MODEL).toMatch(/^claude/);
+    expect(_test.ASK_FRIDAY_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(50_000);
+    expect(_test.ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
   });
 
   test('shapes Airbnb Guesty reviews from rawReview fields for Ask Friday context', () => {

@@ -12,8 +12,10 @@ const router = express.Router();
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const MAX_QUESTION_CHARS = 1200;
 const MAX_HISTORY_TURNS = 8;
+const ASK_FRIDAY_MODEL = process.env.FAD_ASK_MODEL || 'claude-sonnet-4-6';
 const ASK_FRIDAY_MAX_TOKENS = Number(process.env.KIMI_FAD_ASK_MAX_TOKENS) || 4096;
-const ASK_FRIDAY_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_PROVIDER_TIMEOUT_MS) || 25_000;
+const ASK_FRIDAY_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_PROVIDER_TIMEOUT_MS) || 45_000;
+const ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_AUTO_PROVIDER_TIMEOUT_MS) || 25_000;
 const ACTION_TYPES = new Set(['navigate', 'create_task', 'send_team_message', 'request_approval']);
 const ACTION_RISKS = new Set(['navigation', 'safe', 'approval']);
 
@@ -587,15 +589,19 @@ router.post('/ask', attachIdentity, async (req, res) => {
     const scope = cleanString(req.body?.scope || 'All of FAD', 120);
     const history = sanitizeHistory(req.body?.history);
     const context = await loadFridayContext({ tenantId: req.tenantId, question, scope });
+    const model = req.body?.model || ASK_FRIDAY_MODEL;
+    const timeoutMs = String(model).toLowerCase() === 'auto'
+      ? ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS
+      : ASK_FRIDAY_PROVIDER_TIMEOUT_MS;
     const result = await invokeChat({
       system: buildSystemPrompt(),
       messages: [
         ...history,
         { role: 'user', content: buildUserPrompt({ question, scope, context }) },
       ],
-      model: req.body?.model || 'auto',
+      model,
       maxTokens: ASK_FRIDAY_MAX_TOKENS,
-      timeoutMs: ASK_FRIDAY_PROVIDER_TIMEOUT_MS,
+      timeoutMs,
       meter: { tenantId: req.tenantId, feature: 'fad_ask_friday' },
     });
     if (!result.ok) {
@@ -634,7 +640,9 @@ module.exports = {
     shouldLoad,
     shapeReview,
     buildListingIndex,
+    ASK_FRIDAY_MODEL,
     ASK_FRIDAY_MAX_TOKENS,
     ASK_FRIDAY_PROVIDER_TIMEOUT_MS,
+    ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS,
   },
 };
