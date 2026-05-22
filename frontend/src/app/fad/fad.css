@@ -6423,21 +6423,10 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-my-card-actions .btn.ghost {
-  max-width: 0;
-  padding-inline: 0;
-  border-color: transparent;
-  opacity: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.ops-my-card:focus-within .ops-my-card-actions .btn.ghost,
-.ops-my-card:hover .ops-my-card-actions .btn.ghost {
-  max-width: 80px;
   padding-inline: 8px;
   border-color: var(--color-border-tertiary);
-  opacity: 1;
   pointer-events: auto;
+  opacity: 0.86;
 }
 
 .ops-my-due {
@@ -6723,6 +6712,17 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-schedule-task[data-status='completed'],
 .ops-schedule-task[data-status='closed'] {
   opacity: 0.78;
+}
+
+.ops-schedule-task[data-status='completed'] .ops-schedule-task-main strong,
+.ops-schedule-task[data-status='closed'] .ops-schedule-task-main strong,
+.ops-planner-chip[data-status='completed'] .ops-planner-chip-title,
+.ops-planner-chip[data-status='closed'] .ops-planner-chip-title,
+.ops-mobile-schedule-row[data-status='completed'] .ops-mobile-schedule-row-main strong,
+.ops-mobile-schedule-row[data-status='closed'] .ops-mobile-schedule-row-main strong {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--color-text-tertiary);
 }
 
 .ops-planner-grid.user-day .ops-schedule-task {
@@ -7047,6 +7047,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   gap: 2px;
   min-width: 0;
   max-width: 100%;
+  position: relative;
 }
 
 .ops-planner-chip,
@@ -7108,19 +7109,26 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-planner-chip-edit {
-  display: none;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0.5px solid var(--color-border-tertiary);
   background: var(--color-background-secondary);
   color: var(--color-text-secondary);
   cursor: pointer;
   min-width: 30px;
-  min-height: 30px;
+  min-height: 24px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .ops-planner-chip-wrap:focus-within .ops-planner-chip-edit,
 .ops-planner-chip-wrap:hover .ops-planner-chip-edit {
-  display: inline-flex;
-  align-items: center;
+  opacity: 1;
+  pointer-events: auto;
   padding: 0 7px;
 }
 

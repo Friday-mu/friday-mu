@@ -194,6 +194,8 @@ function mapStatus(s: string | null | undefined): TaskStatus {
   if (s === 'todo') return 'scheduled';
   if (s === 'done') return 'completed';
   if (s === 'awaiting_approval') return 'blocked';
+  if (s === 'pending' || s === 'open') return 'reported';
+  if (s === 'started') return 'in_progress';
   return (s || 'reported') as TaskStatus;
 }
 

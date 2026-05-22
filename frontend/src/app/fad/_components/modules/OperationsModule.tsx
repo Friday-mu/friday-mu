@@ -381,7 +381,6 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         return (
           <MyTasksPage
             onOpenTask={setDetailTaskId}
-            onReportIssue={openAssignedIssueReport}
           />
         );
       case 'history':
@@ -1143,7 +1142,7 @@ function SchedulePage({
 }) {
   const currentUserId = useCurrentUserId();
   const [selectedDate, setSelectedDate] = useState(TODAY);
-  const [statusFilter, setStatusFilter] = useState<ScheduleStatusFilter>('open');
+  const [statusFilter, setStatusFilter] = useState<ScheduleStatusFilter>('all');
   const [plannerMode, setPlannerMode] = useState<SchedulePlannerMode>('user_day');
   const [search, setSearch] = useState('');
   const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
@@ -1949,7 +1948,7 @@ function PlannerCompactCell({
         {visibleTasks.map((task) => {
           const statusSwatch = toneStyle(taskStatusTone(task.status));
           const assignee = taskAssigneePeople(task)[0]?.name.split(' ')[0] || 'Unassigned';
-          const meta = [task.dueTime ? formatTimeLabel(task.dueTime) : null, assignee].filter(Boolean).join(' · ');
+          const meta = [task.dueTime ? formatTimeLabel(task.dueTime) : null, STATUS_LABEL[task.status], assignee].filter(Boolean).join(' · ');
           return (
             <div className="ops-planner-chip-wrap" key={`${dropTarget.rowId}-${dropTarget.date}-${task.id}`}>
               <button
@@ -2064,12 +2063,8 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
 
 function MyTasksPage({
   onOpenTask,
-  onReportStandalone,
-  onReportIssue,
 }: {
   onOpenTask: (id: string) => void;
-  onReportStandalone?: () => void;
-  onReportIssue: (task: Task) => void;
 }) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
@@ -2152,11 +2147,6 @@ function MyTasksPage({
             <span><strong>{counts.blocked}</strong> blocked</span>
             <span><strong>{counts.completed}</strong> done</span>
           </div>
-          {onReportStandalone && (
-            <button type="button" className="btn primary sm ops-report-issue-btn" onClick={onReportStandalone}>
-              <IconPlus size={12} /> Report property issue
-            </button>
-          )}
         </div>
       </div>
 
@@ -2247,7 +2237,6 @@ function MyTasksPage({
                   syncLabel={error ? 'Not synced' : 'Live'}
                   onOpen={() => onOpenTask(task.id)}
                   onSetStatus={(status) => setTaskStatus(task, status)}
-                  onReportIssue={() => onReportIssue(task)}
                 />
               ))}
             </div>
@@ -2265,14 +2254,12 @@ function MyTaskCard({
   syncLabel,
   onOpen,
   onSetStatus,
-  onReportIssue,
 }: {
   task: Task;
   busy: boolean;
   syncLabel: string;
   onOpen: () => void;
   onSetStatus: (status: TaskStatus) => void;
-  onReportIssue: () => void;
 }) {
   const statusSwatch = toneStyle(taskStatusTone(task.status));
   const isOverdue = Boolean(task.dueDate) && task.dueDate < TODAY && !CLOSED_STATUS.has(task.status);
@@ -2351,12 +2338,6 @@ function MyTaskCard({
         )}
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
           Comment
-        </button>
-        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onReportIssue(); }}>
-          Issue
-        </button>
-        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
-          Details
         </button>
       </div>
     </article>
@@ -3299,7 +3280,9 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
     action: IntakeTriageAction,
     options?: { linkTarget?: string; silent?: boolean },
   ) => {
-    const linkedTask = options?.linkTarget ? TASKS.find((t) => t.id === options.linkTarget) : undefined;
+    const linkedTask = options?.linkTarget
+      ? [...TASKS, ...linkableTasks].find((t) => t.id === options.linkTarget)
+      : undefined;
     const patch: Partial<{
       status: TaskStatus;
       tags: string[];
