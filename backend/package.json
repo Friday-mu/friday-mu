@@ -11,6 +11,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
     "@resvg/resvg-js": "^2.6.2",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "archiver": "^7.0.1",
     "axios": "^1.6.2",
     "bcryptjs": "^3.0.3",
@@ -25,6 +26,8 @@
     "multer": "^1.4.5-lts.1",
     "pdfkit": "^0.15.2",
     "pg": "^8.20.0",
+    "pino": "^9.13.1",
+    "qrcode-terminal": "^0.12.0",
     "socket.io": "^4.7.4",
     "uuid": "^9.0.1",
     "web-push": "^3.6.7",

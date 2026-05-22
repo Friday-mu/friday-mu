@@ -5,4 +5,7 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 backend/.*-cache.json
+backend/.cache/
+backend/.whatsapp-auth/
+backend/whatsapp-auth/
 backend/uploads/

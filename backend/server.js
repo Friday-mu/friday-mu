@@ -1082,6 +1082,13 @@ require('./src/inbox/draft_reaper').start();
 // same cadence; the GMS cron is disabled via GMS_FOLLOWUP_SCANNER_DISABLED.
 require('./src/inbox/followup_scanner').start();
 
+// Disposable-number WhatsApp Web bridge prototype. Disabled by default;
+// enable only with WHATSAPP_BRIDGE_ENABLED=true, a burner WhatsApp
+// account, allowlisted chats, and the global outbound switch understood.
+require('./src/whatsapp_bridge').startWhatsAppBridge().catch((e) => {
+  console.error('[whatsapp-bridge] startup failed:', e.message);
+});
+
 // ─── Unified outbound abstraction ─────────────────────────────────
 // POST /api/outbound/send federates per-channel send paths under one
 // endpoint. Per locked decision §2 — first callers are TeamInbox
