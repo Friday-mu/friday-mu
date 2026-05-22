@@ -1,10 +1,7 @@
 'use client';
 
-// @demo:data — Tag: PROD-DATA-27 — see frontend/DEMO_CRUFT.md
-// Reviews (anomaly callouts, suggested actions, trends, staff perf names)
-// Entire module is inline demo JSX content (cards, tables, charts with
-// hardcoded mock data). Replace with real backend-driven content when
-// the module ships, or render a 'Coming soon' placeholder until then.
+// Reviews is live-data first. Fixture-only trend/staff tabs stay hidden in
+// live-only mode and can only be re-enabled by the guarded demo switch.
 
 import { useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
