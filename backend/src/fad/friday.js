@@ -57,6 +57,88 @@ function cleanPayload(value) {
   );
 }
 
+function stripBlankPayloadValues(payload) {
+  return Object.fromEntries(
+    Object.entries(payload || {}).filter(([, value]) =>
+      value !== undefined && value !== null && value !== '',
+    ),
+  );
+}
+
+function copyAlias(payload, from, to) {
+  if (payload[to] == null && payload[from] != null) payload[to] = payload[from];
+  delete payload[from];
+}
+
+function normalizePriority(value) {
+  const raw = cleanString(value, 40).toLowerCase().replace(/\s+priority$/, '');
+  if (['lowest', 'low', 'medium', 'high', 'urgent'].includes(raw)) return raw;
+  return value;
+}
+
+function normalizeTaskStatus(value) {
+  const raw = cleanString(value, 40).toLowerCase().replace(/\s+/g, '_');
+  if (['todo', 'in_progress', 'paused', 'reported', 'awaiting_approval', 'completed', 'cancelled'].includes(raw)) {
+    return raw;
+  }
+  return value;
+}
+
+function inferApprovalActionType({ label, summary, module, payload }) {
+  const text = `${label || ''} ${summary || ''} ${module || ''} ${JSON.stringify(payload || {})}`.toLowerCase();
+  if (/\b(pric|rate|discount|fee|amount|revenue|refund|payment)\b/.test(text)) return 'pricing_change';
+  if (/\b(availability|available|calendar|block|unblock)\b/.test(text)) return 'availability_change';
+  if (/\b(reply|respond|message|email|whatsapp|guest-facing|guest facing)\b/.test(text)) return 'guest_reply_direct_send';
+  if (/\b(team|internal|channel|mention)\b/.test(text)) return 'team_message_send';
+  return 'reservation_change';
+}
+
+function normalizeActionPayload(type, payload, raw, label, summary, module) {
+  const next = { ...(payload || {}) };
+  if (type === 'create_task') {
+    copyAlias(next, 'taskTitle', 'title');
+    copyAlias(next, 'task_title', 'title');
+    copyAlias(next, 'propertyCode', 'property_code');
+    copyAlias(next, 'property', 'property_code');
+    copyAlias(next, 'dueDate', 'due_date');
+    copyAlias(next, 'reservationGuestyId', 'reservation_guesty_id');
+    copyAlias(next, 'reservationId', 'reservation_guesty_id');
+    copyAlias(next, 'assigneeUserIds', 'assignee_user_ids');
+    if (!cleanString(next.title, 300)) next.title = cleanString(raw.title || raw.taskTitle || raw.task_title || label, 300);
+    if (!cleanString(next.description, 4000)) next.description = cleanString(raw.description || raw.body || raw.summary, 4000);
+    if (next.priority) next.priority = normalizePriority(next.priority);
+    if (next.status) next.status = normalizeTaskStatus(next.status);
+    return stripBlankPayloadValues(next);
+  }
+
+  if (type === 'send_team_message') {
+    copyAlias(next, 'channel_id', 'channelId');
+    copyAlias(next, 'channel_key', 'channelKey');
+    if (!cleanString(next.text, 8000)) {
+      next.text = cleanString(next.message || next.body || raw.text || raw.message || raw.body || raw.summary, 8000);
+    }
+    delete next.message;
+    delete next.body;
+    return stripBlankPayloadValues(next);
+  }
+
+  if (type === 'request_approval') {
+    copyAlias(next, 'action_type', 'actionType');
+    copyAlias(next, 'risk_level', 'riskLevel');
+    if (!cleanString(next.actionType, 100)) {
+      next.actionType = cleanString(raw.actionType || raw.action_type, 100) ||
+        inferApprovalActionType({ label, summary, module, payload: next });
+    }
+    if (!cleanString(next.reason, 1000)) next.reason = cleanString(raw.reason || summary || label, 1000);
+    if (!next.payload || typeof next.payload !== 'object' || Array.isArray(next.payload)) {
+      next.payload = { requestedAction: label, module, details: summary || label };
+    }
+    return stripBlankPayloadValues(next);
+  }
+
+  return stripBlankPayloadValues(next);
+}
+
 function cleanAction(raw, index = 0) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const type = cleanString(raw.type, 40);
@@ -64,17 +146,21 @@ function cleanAction(raw, index = 0) {
   const risk = ACTION_RISKS.has(raw.risk) ? raw.risk : (
     type === 'navigate' ? 'navigation' : type === 'request_approval' ? 'approval' : 'safe'
   );
-  const label = cleanString(raw.label || raw.cta || raw.title, 80);
-  const payload = cleanPayload(raw.payload);
+  const label = cleanString(raw.label || raw.cta || raw.title || raw.payload?.label || raw.payload?.title, 80);
   const module = cleanString(raw.module, 80);
+  const summary = cleanString(raw.summary || raw.body || raw.description, 240);
+  const payload = normalizeActionPayload(type, cleanPayload(raw.payload), raw, label, summary, module);
   if (type === 'navigate' && !module) return null;
+  if (type === 'create_task' && !cleanString(payload.title, 300)) return null;
+  if (type === 'send_team_message' && (!cleanString(payload.text, 8000) || (!payload.channelId && !payload.channelKey))) return null;
+  if (type === 'request_approval' && !cleanString(payload.actionType, 100)) return null;
   if ((type === 'create_task' || type === 'send_team_message' || type === 'request_approval') && !label) return null;
   return {
     id: cleanString(raw.id, 80) || `action_${index + 1}`,
     type,
     risk,
     label: label || 'Open',
-    summary: cleanString(raw.summary || raw.body || raw.description, 240),
+    summary,
     module: module || null,
     payload,
   };

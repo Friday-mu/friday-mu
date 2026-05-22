@@ -1,8 +1,37 @@
 'use strict';
 
-const { _test } = require('./friday');
+const express = require('express');
+const request = require('supertest');
+
+jest.mock('../design/auth', () => ({
+  attachIdentity: (req, _res, next) => {
+    req.identity = {
+      userId: '11111111-1111-4111-8111-111111111111',
+      userRole: 'admin',
+      username: 'ishant@friday.mu',
+      displayName: 'Ishant',
+    };
+    req.tenantId = '00000000-0000-0000-0000-000000000001';
+    next();
+  },
+}));
+jest.mock('../mcp', () => ({ callTool: jest.fn() }));
+
+const { callTool } = require('../mcp');
+const { router, _test } = require('./friday');
+
+function app() {
+  const server = express();
+  server.use(express.json());
+  server.use('/friday', router);
+  return server;
+}
 
 describe('FAD Ask Friday helpers', () => {
+  beforeEach(() => {
+    callTool.mockReset();
+  });
+
   test('builds an action-aware staff assistant system prompt', () => {
     const prompt = _test.buildSystemPrompt();
     expect(prompt).toContain('command surface');
@@ -155,6 +184,44 @@ describe('FAD Ask Friday helpers', () => {
     ]);
   });
 
+  test('normalizes model task action aliases into MCP task arguments', () => {
+    expect(_test.cleanAction({
+      type: 'create_task',
+      label: 'Create task',
+      payload: {
+        taskTitle: 'Check the AC',
+        propertyCode: 'RC-16',
+        dueDate: '2026-05-24',
+        assigneeUserIds: ['11111111-1111-4111-8111-111111111111'],
+        priority: 'High priority',
+      },
+    })).toEqual(expect.objectContaining({
+      type: 'create_task',
+      payload: expect.objectContaining({
+        title: 'Check the AC',
+        property_code: 'RC-16',
+        due_date: '2026-05-24',
+        assignee_user_ids: ['11111111-1111-4111-8111-111111111111'],
+        priority: 'high',
+      }),
+    }));
+  });
+
+  test('drops team message actions that cannot be routed safely', () => {
+    expect(_test.cleanAction({
+      type: 'send_team_message',
+      label: 'Message Ops',
+      payload: { text: 'Can someone check RC-16?' },
+    })).toBeNull();
+    expect(_test.cleanAction({
+      type: 'send_team_message',
+      label: 'Message Ops',
+      payload: { channel_key: 'ops', message: 'Can someone check RC-16?' },
+    })).toEqual(expect.objectContaining({
+      payload: expect.objectContaining({ channelKey: 'ops', text: 'Can someone check RC-16?' }),
+    }));
+  });
+
   test('adds deterministic task action when operator asks Ask Friday to create an ops task', () => {
     const actions = _test.deterministicActions({
       question: 'Create an operations task to check the AC at RC-16 tomorrow morning. Make it high priority.',
@@ -202,5 +269,78 @@ describe('FAD Ask Friday helpers', () => {
       { role: 'assistant', content: 'answer' },
       { role: 'assistant', content: 'previous' },
     ]);
+  });
+});
+
+describe('FAD Ask Friday action execution', () => {
+  beforeEach(() => {
+    callTool.mockReset();
+  });
+
+  test('executes a create-task action through the MCP task tool', async () => {
+    callTool.mockResolvedValueOnce({ task: { id: 'task-1', title: 'Check the AC' } });
+
+    const res = await request(app())
+      .post('/friday/actions/execute')
+      .send({
+        action: {
+          type: 'create_task',
+          label: 'Create Ops Task',
+          module: 'operations',
+          payload: {
+            taskTitle: 'Check the AC',
+            propertyCode: 'RC-16',
+            dueDate: '2026-05-24',
+            priority: 'High priority',
+            tags: ['ask-friday'],
+          },
+        },
+      })
+      .expect(200);
+
+    expect(callTool).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'user',
+      userId: '11111111-1111-4111-8111-111111111111',
+      tenantId: '00000000-0000-0000-0000-000000000001',
+      scopes: ['mcp:read', 'mcp:write', 'mcp:high-risk'],
+    }), 'tasks.create', expect.objectContaining({
+      title: 'Check the AC',
+      property_code: 'RC-16',
+      due_date: '2026-05-24',
+      priority: 'high',
+      tags: ['ask-friday'],
+    }));
+    expect(res.body).toMatchObject({
+      ok: true,
+      tool: 'tasks.create',
+      summary: 'Task created: Check the AC',
+    });
+  });
+
+  test('routes approval actions through the MCP approval ledger instead of executing directly', async () => {
+    callTool.mockResolvedValueOnce({ request: { id: 'approval-1' } });
+
+    const res = await request(app())
+      .post('/friday/actions/execute')
+      .send({
+        action: {
+          type: 'request_approval',
+          label: 'Request approval',
+          summary: 'Ask for approval before changing reservation dates.',
+          module: 'reservations',
+          payload: { risk_level: 'critical' },
+        },
+      })
+      .expect(200);
+
+    expect(callTool).toHaveBeenCalledWith(expect.any(Object), 'action.request.create', expect.objectContaining({
+      actionType: 'reservation_change',
+      riskLevel: 'critical',
+      payload: expect.objectContaining({
+        requestedAction: 'Request approval',
+        module: 'reservations',
+      }),
+    }));
+    expect(res.body.summary).toBe('Approval request created: approval-1');
   });
 });
