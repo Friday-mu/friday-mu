@@ -3,6 +3,7 @@
 const express = require('express');
 
 const VALID_STATUS = new Set(['available', 'limited', 'offline']);
+const VALID_CAPACITY = new Set(['normal', 'limited', 'offline']);
 const MUT_TIMEZONE = 'Indian/Mauritius';
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 let presenceLoadWarned = false;
@@ -10,6 +11,11 @@ let presenceLoadWarned = false;
 function envStatus() {
   const raw = String(process.env.FAD_PUBLIC_TEAM_PRESENCE_STATUS || '').trim().toLowerCase();
   return VALID_STATUS.has(raw) ? raw : null;
+}
+
+function envCapacity() {
+  const raw = String(process.env.FAD_PUBLIC_TEAM_PRESENCE_CAPACITY || '').trim().toLowerCase();
+  return VALID_CAPACITY.has(raw) ? raw : null;
 }
 
 function mauritiusHour(date = new Date()) {
@@ -75,6 +81,12 @@ function defaultMessage(status) {
   return 'The Friday team is away right now and will review this when back.';
 }
 
+function defaultCapacity(status) {
+  if (status === 'available') return 'normal';
+  if (status === 'limited') return 'limited';
+  return 'offline';
+}
+
 function payload(now = new Date(), options = {}) {
   const explicitStatus = envStatus();
   const presence = explicitStatus ? null : Object.prototype.hasOwnProperty.call(options, 'presence')
@@ -82,9 +94,12 @@ function payload(now = new Date(), options = {}) {
     : loadPresenceSnapshot(now);
   const status = explicitStatus || statusWithPresence(now, presence);
   const explicitMessage = String(process.env.FAD_PUBLIC_TEAM_PRESENCE_MESSAGE || '').trim().slice(0, 240);
+  const available = status === 'available';
   return {
-    available: status === 'available',
+    online: available,
+    available,
     status,
+    capacity: envCapacity() || defaultCapacity(status),
     etaMinutes: etaMinutes(),
     message: explicitMessage || defaultMessage(status),
   };
@@ -98,4 +113,4 @@ router.get('/', (req, res) => {
   res.json(out);
 });
 
-module.exports = { router, _test: { payload, defaultStatus, mauritiusHour, statusWithPresence, hasActivePresence } };
+module.exports = { router, _test: { payload, defaultStatus, mauritiusHour, statusWithPresence, hasActivePresence, defaultCapacity } };
