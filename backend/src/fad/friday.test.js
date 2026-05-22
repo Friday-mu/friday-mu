@@ -137,6 +137,42 @@ describe('FAD Ask Friday helpers', () => {
     ]);
   });
 
+  test('adds deterministic task action when operator asks Ask Friday to create an ops task', () => {
+    const actions = _test.deterministicActions({
+      question: 'Create an operations task to check the AC at RC-16 tomorrow morning. Make it high priority.',
+      context: { requestedModules: ['operations'] },
+      modelActions: [],
+    });
+
+    expect(actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'create_task',
+        risk: 'safe',
+        module: 'operations',
+        payload: expect.objectContaining({
+          title: 'Check the AC at RC-16',
+          property_code: 'RC-16',
+          priority: 'high',
+          department: 'maintenance',
+          tags: ['ask-friday'],
+        }),
+      }),
+    ]));
+    expect(actions[0].payload.due_date).toMatch(/^20\d{2}-\d{2}-\d{2}$/);
+  });
+
+  test('adds deterministic inbox navigation for website handoff questions', () => {
+    const actions = _test.deterministicActions({
+      question: 'Any website AI handoffs waiting for takeover?',
+      context: { requestedModules: ['inbox'] },
+      modelActions: [],
+    });
+
+    expect(actions).toEqual([
+      expect.objectContaining({ type: 'navigate', module: 'inbox', label: 'Open Inbox' }),
+    ]);
+  });
+
   test('sanitizes prior chat history for the model', () => {
     const history = _test.sanitizeHistory([
       { role: 'user', content: 'hello' },

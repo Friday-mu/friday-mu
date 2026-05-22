@@ -18,6 +18,16 @@ const ASK_FRIDAY_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_PROVIDER_TIMEO
 const ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_AUTO_PROVIDER_TIMEOUT_MS) || 25_000;
 const ACTION_TYPES = new Set(['navigate', 'create_task', 'send_team_message', 'request_approval']);
 const ACTION_RISKS = new Set(['navigation', 'safe', 'approval']);
+const ACTION_MODULES = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+const MODULE_LABELS = {
+  inbox: 'Inbox',
+  operations: 'Operations',
+  hr: 'HR',
+  reviews: 'Reviews',
+  design: 'Design',
+  reservations: 'Reservations',
+  properties: 'Properties',
+};
 
 function cleanString(value, max = 500) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -73,6 +83,145 @@ function cleanAction(raw, index = 0) {
 function sanitizeActions(actions) {
   if (!Array.isArray(actions)) return [];
   return actions.map(cleanAction).filter(Boolean).slice(0, 4);
+}
+
+function hasSimilarAction(actions, candidate) {
+  return actions.some((action) => {
+    if (action.type !== candidate.type) return false;
+    if (action.type === 'navigate') return action.module === candidate.module;
+    if (action.type === 'create_task') {
+      return cleanString(action.payload?.title, 120).toLowerCase() ===
+        cleanString(candidate.payload?.title, 120).toLowerCase();
+    }
+    return action.label.toLowerCase() === candidate.label.toLowerCase();
+  });
+}
+
+function firstRelevantModule(context) {
+  const modules = Array.isArray(context?.requestedModules) ? context.requestedModules : [];
+  return modules.find((module) => ACTION_MODULES.includes(module)) || null;
+}
+
+function navigateAction(module, reason = '') {
+  if (!ACTION_MODULES.includes(module)) return null;
+  const label = MODULE_LABELS[module] || module;
+  return cleanAction({
+    id: `open_${module}`,
+    type: 'navigate',
+    risk: 'navigation',
+    label: `Open ${label}`,
+    summary: reason || `Open the ${label} module with the current FAD context.`,
+    module,
+    payload: {},
+  });
+}
+
+function todayInMauritius() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Indian/Mauritius',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const pick = (type) => parts.find((part) => part.type === type)?.value;
+  return `${pick('year')}-${pick('month')}-${pick('day')}`;
+}
+
+function addDays(dateIso, days) {
+  const date = new Date(`${dateIso}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function inferTaskDueDate(question) {
+  const q = question.toLowerCase();
+  if (/\btomorrow\b/.test(q)) return addDays(todayInMauritius(), 1);
+  if (/\btoday\b/.test(q)) return todayInMauritius();
+  const explicit = q.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  return explicit ? explicit[1] : undefined;
+}
+
+function inferPriority(question) {
+  const q = question.toLowerCase();
+  if (/\burgent|emergency|asap|critical\b/.test(q)) return 'urgent';
+  if (/\bhigh priority|important|priority\b/.test(q)) return 'high';
+  if (/\blow priority|when possible\b/.test(q)) return 'low';
+  return 'medium';
+}
+
+function inferDepartment(question) {
+  const q = question.toLowerCase();
+  if (/\bac|air.?con|leak|water|drain|paint|door|lock|shower|wifi|electric|maintenance|repair\b/.test(q)) {
+    return 'maintenance';
+  }
+  if (/\bclean|linen|housekeep|laundry\b/.test(q)) return 'housekeeping';
+  if (/\bguest|arrival|check.?in|checkout\b/.test(q)) return 'operations';
+  return 'operations';
+}
+
+function extractPropertyCode(question) {
+  const match = String(question || '').match(/\b([A-Z]{1,4}-[A-Z0-9]{1,4})\b/);
+  return match ? match[1].toUpperCase() : undefined;
+}
+
+function extractTaskTitle(question) {
+  const stripped = cleanString(question, 240)
+    .replace(/\b(create|add|make|open)\b\s+(an?\s+)?(operations?\s+)?(task|todo|issue|work order)\s*(to|for)?\s*/i, '')
+    .replace(/\b(make it|set it as|mark it)\b.*$/i, '')
+    .replace(/\b(tomorrow morning|tomorrow afternoon|tomorrow evening|this morning|this afternoon|this evening|today|tomorrow|morning|afternoon|evening)\b/ig, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.?!]+$/, '');
+  if (!stripped) return 'Follow up from Ask Friday';
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
+function deterministicActions({ question, context, modelActions }) {
+  const actions = sanitizeActions(modelActions);
+  const q = cleanString(question, MAX_QUESTION_CHARS);
+  const qLower = q.toLowerCase();
+  const additions = [];
+
+  if (/\b(create|add|make|open)\b.*\b(task|todo|issue|work order)\b/.test(qLower)) {
+    additions.push(cleanAction({
+      id: 'create_ops_task',
+      type: 'create_task',
+      risk: 'safe',
+      label: 'Create Ops Task',
+      summary: 'Create an internal Operations task from this Ask Friday request.',
+      module: 'operations',
+      payload: {
+        title: extractTaskTitle(q),
+        description: `Created from Ask Friday request: ${q}`,
+        priority: inferPriority(q),
+        status: 'todo',
+        department: inferDepartment(q),
+        property_code: extractPropertyCode(q),
+        due_date: inferTaskDueDate(q),
+        tags: ['ask-friday'],
+      },
+    }));
+  }
+
+  if (
+    actions.length === 0 ||
+    /\b(open|show|go to|take me to|view)\b/.test(qLower) ||
+    /\bwebsite ai|handoff|awaiting takeover|needs? reply|drafts?\b/.test(qLower)
+  ) {
+    const module = /\bwebsite ai|handoff|drafts?|guest conversations?|needs? reply\b/.test(qLower)
+      ? 'inbox'
+      : firstRelevantModule(context);
+    const nav = navigateAction(module, module === 'inbox'
+      ? 'Open Inbox where guest communication, website handoffs, and draft approval live.'
+      : '');
+    if (nav) additions.push(nav);
+  }
+
+  for (const candidate of additions.filter(Boolean)) {
+    if (!hasSimilarAction(actions, candidate)) actions.push(candidate);
+    if (actions.length >= 4) break;
+  }
+  return actions.slice(0, 4);
 }
 
 function wantsModule({ question = '', scope = '', module }) {
@@ -612,8 +761,10 @@ router.post('/ask', attachIdentity, async (req, res) => {
       });
     }
     const parsed = parseModelResponse(result.message?.content || '');
+    const actions = deterministicActions({ question, context, modelActions: parsed.actions });
     return res.json({
       ...parsed,
+      actions,
       model: result.model || null,
       fallbackUsed: !!result.fallbackUsed,
       contextSummary: {
@@ -637,6 +788,7 @@ module.exports = {
     sanitizeHistory,
     cleanAction,
     sanitizeActions,
+    deterministicActions,
     shouldLoad,
     shapeReview,
     buildListingIndex,

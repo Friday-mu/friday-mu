@@ -48,7 +48,7 @@ export function useFridayChat(scope: string) {
       scope,
       steps: [
         { type: 'tool', name: 'read.fad-context', args: scope, ms: 0 },
-        { type: 'tool', name: 'reason.staff-answer', args: 'read-only', ms: 0 },
+        { type: 'tool', name: 'reason.staff-answer', args: 'answer + action chips', ms: 0 },
       ],
       stepsDone: 0,
       ready: false,
