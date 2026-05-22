@@ -11,6 +11,7 @@ describe('public team presence', () => {
     delete process.env.FAD_PUBLIC_TEAM_PRESENCE_STATUS;
     delete process.env.FAD_PUBLIC_TEAM_PRESENCE_ETA_MINUTES;
     delete process.env.FAD_PUBLIC_TEAM_PRESENCE_MESSAGE;
+    delete process.env.FAD_PUBLIC_TEAM_PRESENCE_TENANT_ID;
   });
 
   afterAll(() => {
@@ -37,6 +38,30 @@ describe('public team presence', () => {
       available: true,
       status: 'available',
       etaMinutes: 15,
+    });
+  });
+
+  test('promotes team-hours status to available when FAD has active presence', () => {
+    const payload = _test.payload(new Date('2026-05-22T08:00:00.000Z'), {
+      presence: { activeConnectionCount: 2, activeUserCount: 1, userIds: ['user-a'] },
+    });
+    expect(payload).toEqual({
+      available: true,
+      status: 'available',
+      etaMinutes: null,
+      message: 'The Friday team is available to review this.',
+    });
+    expect(JSON.stringify(payload)).not.toMatch(/user-a|activeConnectionCount|activeUserCount|userIds/i);
+  });
+
+  test('env status override wins over active FAD presence', () => {
+    process.env.FAD_PUBLIC_TEAM_PRESENCE_STATUS = 'offline';
+    const payload = _test.payload(new Date('2026-05-22T08:00:00.000Z'), {
+      presence: { activeConnectionCount: 2, activeUserCount: 1 },
+    });
+    expect(payload).toMatchObject({
+      available: false,
+      status: 'offline',
     });
   });
 });

@@ -11,6 +11,23 @@ const clients = new Map();
 let listenerStarted = false;
 let listenerClient = null;
 
+function activePresenceForTenant(tenantId, now = new Date()) {
+  const targetTenantId = tenantId ? String(tenantId) : null;
+  const activeUserIds = new Set();
+  let activeConnectionCount = 0;
+  for (const client of clients.values()) {
+    if (targetTenantId && String(client.tenantId || '') !== targetTenantId) continue;
+    activeConnectionCount += 1;
+    if (client.userId) activeUserIds.add(String(client.userId));
+  }
+  return {
+    activeConnectionCount,
+    activeUserCount: activeUserIds.size,
+    userIds: [...activeUserIds],
+    checkedAt: now.toISOString(),
+  };
+}
+
 function eventName(type) {
   return String(type || 'fad_event').replace(/[^a-zA-Z0-9_.:-]/g, '_');
 }
@@ -75,6 +92,7 @@ router.get('/stream', authEventSource, (req, res) => {
     res,
     userId: req.identity.userId,
     tenantId: req.tenantId,
+    connectedAt: new Date().toISOString(),
   });
   writeSse(res, {
     type: 'connected',
@@ -305,6 +323,7 @@ function decodeTokenFromQuery(token) {
 
 module.exports = {
   router,
+  activePresenceForTenant,
   publishFadEvent,
   notifyUsers,
   resolveGmWatchers,
