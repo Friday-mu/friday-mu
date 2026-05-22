@@ -709,35 +709,6 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
 
   const actions = (
     <>
-      {canSeeGuest && (
-        <button
-          className={'btn ghost sm' + (triageFilter === 'review' ? ' active' : '')}
-          onClick={() => {
-            setEntityFilter('all');
-            setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
-          }}
-          title="Show guest threads with a draft ready for operator approval"
-          style={{
-            background: triageFilter === 'review' ? 'var(--color-background-tertiary)' : undefined,
-            color: triageFilter === 'review' ? 'var(--color-brand-accent)' : undefined,
-          }}
-        >
-          <IconClock size={14} />
-          <span>Needs reply</span>
-          <span
-            className="mono"
-            style={{
-              fontSize: 10,
-              padding: '0 5px',
-              borderRadius: 8,
-              background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
-              color: triageFilter === 'review' ? 'white' : 'var(--color-text-secondary)',
-            }}
-          >
-            {reviewCount}
-          </span>
-        </button>
-      )}
       <FilterButton
         triageFilter={triageFilter}
         setTriageFilter={setTriageFilter}
@@ -783,6 +754,29 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
           </span>
         </button>
       ))}
+      {canSeeGuest && (
+        <button
+          className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}
+          onClick={() => {
+            setEntityFilter('all');
+            setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
+          }}
+          title="Show threads with a Friday draft ready for operator approval"
+          aria-pressed={triageFilter === 'review'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            marginLeft: 6,
+          }}
+        >
+          <IconClock size={11} />
+          Reply
+          <span className="mono" style={{ fontSize: 10, marginLeft: 2, opacity: 0.8 }}>
+            {reviewCount}
+          </span>
+        </button>
+      )}
       {canSeeTeam && (
         <button
           className={'inbox-chip' + (onTeam ? ' active' : '')}
@@ -2036,7 +2030,7 @@ function WhatsAppTimer({
 const TRIAGE_OPTIONS: { value: 'all' | 'unread' | 'review' | 'open' | 'done'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'unread', label: 'Unread' },
-  { value: 'review', label: 'Needs reply' },
+  { value: 'review', label: 'Draft ready' },
   { value: 'open', label: 'Open' },
   { value: 'done', label: 'Done' },
 ];
