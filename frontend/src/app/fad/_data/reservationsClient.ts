@@ -58,7 +58,7 @@ function compactIdentityPart(value: string | null | undefined): string {
 }
 
 function semanticStayIdentity(r: RawReservation): string {
-  const listing = compactIdentityPart(r.listing_guesty_id || r.listing_nickname);
+  const listing = compactIdentityPart(r.listing_nickname || r.listing_guesty_id);
   const checkIn = compactIdentityPart(r.check_in_date?.slice(0, 10));
   const checkOut = compactIdentityPart(r.check_out_date?.slice(0, 10));
   const guest = compactIdentityPart(

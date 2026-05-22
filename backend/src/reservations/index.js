@@ -15,7 +15,7 @@ const router = express.Router();
 
 const reservationDedupePartitionSql = `COALESCE(
   CASE
-    WHEN NULLIF(LOWER(TRIM(r.listing_guesty_id)), '') IS NOT NULL
+    WHEN COALESCE(NULLIF(LOWER(TRIM(l.nickname)), ''), NULLIF(LOWER(TRIM(r.listing_guesty_id)), '')) IS NOT NULL
      AND r.check_in_date IS NOT NULL
      AND r.check_out_date IS NOT NULL
      AND COALESCE(
@@ -25,7 +25,7 @@ const reservationDedupePartitionSql = `COALESCE(
      ) IS NOT NULL
     THEN CONCAT_WS(
       '|',
-      LOWER(TRIM(r.listing_guesty_id)),
+      COALESCE(NULLIF(LOWER(TRIM(l.nickname)), ''), NULLIF(LOWER(TRIM(r.listing_guesty_id)), '')),
       r.check_in_date::text,
       r.check_out_date::text,
       COALESCE(
@@ -156,6 +156,8 @@ router.get('/', attachIdentity, async (req, res) => {
                     r.created_at DESC NULLS LAST
                 ) AS reservation_rank
            FROM guesty_reservations r
+          LEFT JOIN guesty_listings l
+            ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
           WHERE ${filters.join(' AND ')}
        )
        SELECT r.*, l.nickname AS listing_nickname,

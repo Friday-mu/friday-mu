@@ -7,6 +7,7 @@ describe('reservation schedule overlap filters', () => {
     const sql = reservationsRouter._test.reservationDedupePartitionSql;
 
     expect(sql).toContain('r.listing_guesty_id');
+    expect(sql).toContain('l.nickname');
     expect(sql).toContain('r.check_in_date::text');
     expect(sql).toContain('r.check_out_date::text');
     expect(sql).toContain('r.guest_email');
