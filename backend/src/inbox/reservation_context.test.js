@@ -66,6 +66,54 @@ describe('inbox reservation context resolver helpers', () => {
     expect(candidate).toBeNull();
   });
 
+  test('uses exact email to choose one current reservation when names are ambiguous', () => {
+    const now = new Date('2026-05-21T12:00:00Z');
+    const candidate = chooseCurrentReservationCandidate([
+      {
+        id: 'row-1',
+        confirmation_code: 'A',
+        guest_first_name: 'Maria',
+        guest_email: 'wrong@example.com',
+        check_in_date: '2026-05-10',
+        check_out_date: '2026-05-28',
+      },
+      {
+        id: 'row-2',
+        confirmation_code: 'B',
+        guest_first_name: 'Maria',
+        guest_email: 'guest@example.com',
+        check_in_date: '2026-05-12',
+        check_out_date: '2026-05-29',
+      },
+    ], { guest_name: 'Maria', guest_email: 'Guest@Example.com' }, now);
+
+    expect(candidate.id).toBe('row-2');
+  });
+
+  test('uses phone digits to choose one current reservation when email is missing', () => {
+    const now = new Date('2026-05-21T12:00:00Z');
+    const candidate = chooseCurrentReservationCandidate([
+      {
+        id: 'row-1',
+        confirmation_code: 'A',
+        guest_first_name: 'Sam',
+        guest_phone: '+230 5555 0000',
+        check_in_date: '2026-05-10',
+        check_out_date: '2026-05-28',
+      },
+      {
+        id: 'row-2',
+        confirmation_code: 'B',
+        guest_first_name: 'Sam',
+        guest_phone: '+230 5743 1122',
+        check_in_date: '2026-05-12',
+        check_out_date: '2026-05-29',
+      },
+    ], { guest_name: 'Sam', guest_phone: '57431122' }, now);
+
+    expect(candidate.id).toBe('row-2');
+  });
+
   test('shapes Guesty reservation rows into the Inbox legacy contract', () => {
     const shaped = shapeReservationForInbox({
       id: 'live-id',
@@ -104,6 +152,26 @@ describe('inbox reservation context resolver helpers', () => {
     expect(shaped.payment_status).toBe('partially_paid');
     expect(shaped.cleaning_fee).toBe(95);
     expect(shaped.operational_context_source).toBe('guesty_reservations_current');
+  });
+
+  test('prefers raw Guesty guest total over cached host payout when both are present', () => {
+    const shaped = shapeReservationForInbox({
+      id: 'live-id',
+      guesty_id: 'g-1',
+      total_amount_minor: 90000,
+      currency_code: 'EUR',
+      raw: {
+        money: {
+          totalPrice: 1200,
+          totalPaid: 1200,
+          paymentStatus: 'paid',
+        },
+      },
+    }, 'guesty_reservations_current');
+
+    expect(shaped.total_price).toBe(1200);
+    expect(shaped.amount_paid).toBe(1200);
+    expect(shaped.payment_status).toBe('paid');
   });
 
   test('infers payment totals from cached Guesty raw payloads', () => {

@@ -307,6 +307,21 @@ function guestNameParts(value) {
   };
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function phoneDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function oneKeyMatch(rows, predicate) {
+  const matches = rows.filter(predicate);
+  const keys = new Set(matches.map(reservationKey).filter(Boolean));
+  if (keys.size !== 1) return null;
+  return matches;
+}
+
 function isCurrentStay(row, now = new Date()) {
   if (!row?.check_in_date || !row?.check_out_date) return false;
   const checkIn = new Date(row.check_in_date).getTime();
@@ -343,6 +358,21 @@ function chooseCurrentReservationCandidate(rows, conversation, now = new Date())
 
   const keys = new Set(current.map(reservationKey).filter(Boolean));
   if (keys.size > 1) {
+    const convEmail = normalizeEmail(conversation.guest_email);
+    if (convEmail) {
+      const byEmail = oneKeyMatch(current, (row) => normalizeEmail(row.guest_email) === convEmail);
+      if (byEmail) return chooseCurrentReservationCandidate(byEmail, conversation, now);
+    }
+
+    const convPhone = phoneDigits(conversation.guest_phone);
+    if (convPhone.length >= 6) {
+      const byPhone = oneKeyMatch(current, (row) => {
+        const rowPhone = phoneDigits(row.guest_phone);
+        return rowPhone.length >= 6 && (rowPhone.endsWith(convPhone) || convPhone.endsWith(rowPhone));
+      });
+      if (byPhone) return chooseCurrentReservationCandidate(byPhone, conversation, now);
+    }
+
     const convName = guestNameParts(conversation.guest_name);
     const exactFullName = current.filter((row) => {
       if (!convName.first || !convName.last) return false;
@@ -393,7 +423,7 @@ function shapeReservationForInbox(row, source = 'legacy') {
     guest_name: guestName,
     guest_email: row.guest_email || null,
     guest_phone: row.guest_phone || null,
-    total_price: row.total_price != null ? row.total_price : (totalMajor ?? financial.total_price),
+    total_price: row.total_price != null ? row.total_price : (financial.total_price ?? totalMajor),
     currency: row.currency || row.currency_code || financial.currency || null,
     amount_paid: financial.amount_paid,
     outstanding_balance: financial.outstanding_balance,
@@ -556,6 +586,18 @@ async function loadGuestyReservationsForConversation(conversation, tenantId) {
     params.push(conversation.guesty_reservation_id);
   }
 
+  const email = normalizeEmail(conversation.guest_email);
+  if (email) {
+    filters.push(`LOWER(COALESCE(gr.guest_email, '')) = $${i++}`);
+    params.push(email);
+  }
+
+  const phone = phoneDigits(conversation.guest_phone);
+  if (phone.length >= 6) {
+    filters.push(`REGEXP_REPLACE(COALESCE(gr.guest_phone, ''), '\\D', '', 'g') LIKE $${i++}`);
+    params.push(`%${phone.slice(-8)}`);
+  }
+
   const name = guestNameParts(conversation.guest_name);
   if (name.first) {
     filters.push(`LOWER(COALESCE(gr.guest_first_name, '')) = $${i++}`);
@@ -613,6 +655,8 @@ module.exports = {
     inferFinancialContext,
     inferPartyContext,
     normalizeName,
+    normalizeEmail,
+    phoneDigits,
     guestNameParts,
     isCurrentStay,
   },
