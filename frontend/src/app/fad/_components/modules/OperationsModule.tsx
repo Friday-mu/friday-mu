@@ -3115,8 +3115,6 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
     padding: '2px 6px',
     borderRadius: 4,
     fontWeight: 500,
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
     whiteSpace: 'nowrap',
   };
   return (
