@@ -5,6 +5,7 @@ jest.mock('../ai/translate', () => ({
 }));
 
 const { translateText } = require('../ai/translate');
+const { DRAFT_MODEL } = require('../ai/kimi_draft');
 const {
   ensureOperatorEnglishDraft,
   languageRoot,
@@ -19,6 +20,7 @@ const {
   statusUpdateSafetyInstruction,
   applyStatusUpdateSafety,
   ACTIONABLE_DRAFT_STATES_SQL,
+  DRAFT_FALLBACK_MODEL,
 } = require('./draft_generator');
 
 describe('draft generator language policy', () => {
@@ -77,6 +79,10 @@ describe('draft generator language policy', () => {
 });
 
 describe('draft generator compact fallback policy', () => {
+  test('defaults compact fallback to the long-context draft model', () => {
+    expect(DRAFT_FALLBACK_MODEL).toBe(DRAFT_MODEL);
+  });
+
   test('treats length and timeout failures as compact-retryable', () => {
     expect(isTransientDraftFailure({ ok: false, finishReason: 'length' })).toBe(true);
     expect(isTransientDraftFailure({ ok: false, error: 'timeout of 90000ms exceeded' })).toBe(true);

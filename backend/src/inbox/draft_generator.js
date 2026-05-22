@@ -58,7 +58,10 @@ The approve/send path translates the English operator draft back into the guest'
 
 const DRAFT_PRIMARY_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_PRIMARY_TIMEOUT_MS) || 90_000;
 const DRAFT_PRIMARY_MAX_RETRIES = Number(process.env.KIMI_DRAFT_PRIMARY_MAX_RETRIES) || 0;
-const DRAFT_FALLBACK_MODEL = process.env.KIMI_DRAFT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || 'moonshot-v1-8k';
+// The fallback is a compact prompt, not a small-context model. Compact KB plus
+// reservation/history context can still exceed 8K, so keep K2.6 unless ops
+// explicitly overrides it.
+const DRAFT_FALLBACK_MODEL = process.env.KIMI_DRAFT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || DRAFT_MODEL;
 const DRAFT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_FALLBACK_TIMEOUT_MS) || 45_000;
 const DRAFT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_RETRIES) || 0;
 const DRAFT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_TOKENS) || 2000;
@@ -1008,4 +1011,5 @@ module.exports = {
   applyStatusUpdateSafety,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
   ACTIONABLE_DRAFT_STATES_SQL,
+  DRAFT_FALLBACK_MODEL,
 };

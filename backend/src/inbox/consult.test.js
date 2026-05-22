@@ -1,5 +1,6 @@
 'use strict';
 
+const { DRAFT_MODEL } = require('../ai/kimi_draft');
 const {
   stripProtocolTags,
   parseDraftUpdate,
@@ -16,9 +17,14 @@ const {
   isTransientConsultFailure,
   stripFullThreadEnvelope,
   sanitizeConsultHistory,
+  CONSULT_FALLBACK_MODEL,
 } = require('./consult')._test;
 
 describe('FAD-native Consult helpers', () => {
+  test('defaults compact fallback to the long-context draft model', () => {
+    expect(CONSULT_FALLBACK_MODEL).toBe(DRAFT_MODEL);
+  });
+
   test('extracts draft updates and strips protocol tags from visible response', () => {
     const raw = 'Done.\n[DRAFT_UPDATE]Hello guest\nThanks[/DRAFT_UPDATE]\n[TEACH]{"action":"create","instruction":"Keep it short"}[/TEACH]';
     expect(parseDraftUpdate(raw)).toBe('Hello guest\nThanks');

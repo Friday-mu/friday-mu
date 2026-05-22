@@ -29,7 +29,9 @@ const router = express.Router();
 const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 90_000;
 const CONSULT_MAX_RETRIES = Number(process.env.KIMI_CONSULT_MAX_RETRIES) || 0;
 const CONSULT_MAX_TOKENS = Number(process.env.KIMI_CONSULT_MAX_TOKENS) || 3200;
-const CONSULT_FALLBACK_MODEL = process.env.KIMI_CONSULT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || 'moonshot-v1-8k';
+// Compact Consult retries still carry KB, reservation context, and session
+// history, so default to the long-context draft model unless ops overrides it.
+const CONSULT_FALLBACK_MODEL = process.env.KIMI_CONSULT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || DRAFT_MODEL;
 const CONSULT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_FALLBACK_TIMEOUT_MS) || 45_000;
 const CONSULT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_RETRIES) || 0;
 const CONSULT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_TOKENS) || 1800;
@@ -1352,4 +1354,5 @@ module.exports._test = {
   composeSystemPrompt,
   stripFullThreadEnvelope,
   sanitizeConsultHistory,
+  CONSULT_FALLBACK_MODEL,
 };
