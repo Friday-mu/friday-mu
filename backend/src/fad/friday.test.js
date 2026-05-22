@@ -246,6 +246,41 @@ describe('FAD Ask Friday helpers', () => {
     expect(actions[0].payload.due_date).toMatch(/^20\d{2}-\d{2}-\d{2}$/);
   });
 
+  test('deterministic task fields correct model-created task actions', () => {
+    const actions = _test.deterministicActions({
+      question: 'Create an operations task to check the AC at RC-16 tomorrow morning. Make it high priority.',
+      context: { requestedModules: ['operations', 'properties'] },
+      modelActions: [{
+        type: 'create_task',
+        risk: 'safe',
+        label: 'Create AC Check Task',
+        module: 'operations',
+        payload: {
+          title: 'Check AC at RC-16',
+          property_code: 'RC-16',
+          priority: 'medium',
+          due_date: _test.todayInMauritius(),
+          due_time: '08:00',
+          tags: ['model'],
+        },
+      }],
+    });
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toEqual(expect.objectContaining({
+      label: 'Create AC Check Task',
+      type: 'create_task',
+      payload: expect.objectContaining({
+        title: 'Check the AC at RC-16',
+        property_code: 'RC-16',
+        priority: 'high',
+        due_date: _test.addDays(_test.todayInMauritius(), 1),
+        due_time: '08:00',
+        tags: ['model', 'ask-friday'],
+      }),
+    }));
+  });
+
   test('adds deterministic inbox navigation for website handoff questions', () => {
     const actions = _test.deterministicActions({
       question: 'Any website AI handoffs waiting for takeover?',

@@ -184,6 +184,21 @@ function hasSimilarAction(actions, candidate) {
   });
 }
 
+function mergeCreateTaskAction(existing, deterministic, index) {
+  if (!existing || !deterministic) return existing || deterministic;
+  const existingTags = Array.isArray(existing.payload?.tags) ? existing.payload.tags : [];
+  const deterministicTags = Array.isArray(deterministic.payload?.tags) ? deterministic.payload.tags : [];
+  const mergedTags = Array.from(new Set([...existingTags, ...deterministicTags].filter(Boolean)));
+  return cleanAction({
+    ...existing,
+    payload: {
+      ...(existing.payload || {}),
+      ...(deterministic.payload || {}),
+      ...(mergedTags.length ? { tags: mergedTags } : {}),
+    },
+  }, index);
+}
+
 function firstRelevantModule(context) {
   const modules = Array.isArray(context?.requestedModules) ? context.requestedModules : [];
   return modules.find((module) => ACTION_MODULES.includes(module)) || null;
@@ -330,7 +345,16 @@ function deterministicActions({ question, context, modelActions }) {
   }
 
   for (const candidate of additions.filter(Boolean)) {
-    if (!hasSimilarAction(actions, candidate)) actions.push(candidate);
+    if (candidate.type === 'create_task') {
+      const existingIndex = actions.findIndex((action) => action.type === 'create_task');
+      if (existingIndex >= 0) {
+        actions[existingIndex] = mergeCreateTaskAction(actions[existingIndex], candidate, existingIndex);
+      } else {
+        actions.push(candidate);
+      }
+    } else if (!hasSimilarAction(actions, candidate)) {
+      actions.push(candidate);
+    }
     if (actions.length >= 4) break;
   }
   return actions.slice(0, 4);
@@ -899,6 +923,8 @@ module.exports = {
     cleanAction,
     sanitizeActions,
     deterministicActions,
+    todayInMauritius,
+    addDays,
     isBroadAllFadQuestion,
     questionHintsModule,
     shouldLoad,
