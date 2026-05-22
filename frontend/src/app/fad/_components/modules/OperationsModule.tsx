@@ -1444,7 +1444,9 @@ function SchedulePage({
             Next
           </button>
           <button className="btn primary sm" type="button" onClick={() => onCreate({ dueDate: selectedDate })}>
-            <IconPlus size={12} /> New task
+            <IconPlus size={12} />
+            <span className="ops-schedule-label-full">New task</span>
+            <span className="ops-schedule-label-short">Task</span>
           </button>
         </div>
       </div>
@@ -1510,6 +1512,18 @@ function SchedulePage({
           onPatch={patchTask}
         />
       )}
+
+      <MobileScheduleAgenda
+        mode={plannerMode}
+        tasks={scheduleTasks}
+        propertyRows={propertyRows}
+        visibleDays={visibleDays}
+        staffOptions={staffOptions}
+        loading={taskPage.loading || (plannerMode === 'property_week' && reservationsLoading)}
+        savingTaskId={savingTaskId}
+        onOpenTask={onOpenTask}
+        onEdit={setEditingTaskId}
+      />
 
       {plannerMode === 'user_day' ? (
         <div className="ops-planner-scroll" aria-busy={taskPage.loading}>
@@ -1697,6 +1711,155 @@ function SchedulePage({
         </div>
       </section>
     </div>
+  );
+}
+
+function MobileScheduleAgenda({
+  mode,
+  tasks,
+  propertyRows,
+  visibleDays,
+  staffOptions,
+  loading,
+  savingTaskId,
+  onOpenTask,
+  onEdit,
+}: {
+  mode: SchedulePlannerMode;
+  tasks: Task[];
+  propertyRows: SchedulePropertyRow[];
+  visibleDays: string[];
+  staffOptions: OperationsStaffUser[];
+  loading: boolean;
+  savingTaskId: string | null;
+  onOpenTask: (id: string) => void;
+  onEdit: (id: string) => void;
+}) {
+  const assigneeLabel = (task: Task) => {
+    const assigneeId = task.assigneeIds[0];
+    if (!assigneeId) return 'Unassigned';
+    return staffOptions.find((user) => user.id === assigneeId)?.name
+      || task.assigneeNames?.[0]
+      || 'Assigned';
+  };
+
+  if (mode === 'property_week') {
+    return (
+      <section className="ops-mobile-schedule-agenda" aria-label="Mobile property schedule" aria-busy={loading}>
+        {propertyRows.map((row) => (
+          <div className="ops-mobile-schedule-group" key={row.id}>
+            <div className="ops-mobile-schedule-group-head">
+              <span>
+                <strong>{row.label}</strong>
+                {row.subLabel && <small>{row.subLabel}</small>}
+              </span>
+              <em>{row.tasks.length} tasks</em>
+            </div>
+            <div className="ops-mobile-schedule-list">
+              {row.reservations.slice(0, 3).map((reservation) => (
+                <div className="ops-mobile-reservation-row" key={`${row.id}-${reservation.id}`}>
+                  <span>{reservation.guestName}</span>
+                  <small>{reservation.checkInDate} - {reservation.checkOutDate}</small>
+                </div>
+              ))}
+              {[...row.tasks]
+                .sort((a, b) => compareText(taskTimeSortKey(a), taskTimeSortKey(b)))
+                .map((task) => (
+                  <MobileScheduleTaskRow
+                    key={`${row.id}-${task.id}`}
+                    task={task}
+                    assignee={assigneeLabel(task)}
+                    saving={savingTaskId === task.id}
+                    onOpenTask={onOpenTask}
+                    onEdit={onEdit}
+                  />
+                ))}
+            </div>
+          </div>
+        ))}
+        {propertyRows.length === 0 && <div className="ops-schedule-empty">No scheduled tasks or reservation overlays match this view.</div>}
+      </section>
+    );
+  }
+
+  const groups = mode === 'user_day'
+    ? SCHEDULE_TIME_BUCKETS.map((bucket) => ({
+      key: bucket.id,
+      label: bucket.label,
+      hint: bucket.subLabel,
+      tasks: tasks.filter((task) => timeBucketForTask(task) === bucket.id),
+    })).filter((group) => group.tasks.length > 0)
+    : visibleDays.map((day) => ({
+      key: day,
+      label: formatScheduleDate(day),
+      hint: formatShortDate(day),
+      tasks: tasks.filter((task) => task.dueDate === day),
+    })).filter((group) => group.tasks.length > 0);
+
+  return (
+    <section className="ops-mobile-schedule-agenda" aria-label="Mobile task schedule" aria-busy={loading}>
+      {groups.map((group) => (
+        <div className="ops-mobile-schedule-group" key={group.key}>
+          <div className="ops-mobile-schedule-group-head">
+            <span>
+              <strong>{group.label}</strong>
+              {group.hint && <small>{group.hint}</small>}
+            </span>
+            <em>{group.tasks.length}</em>
+          </div>
+          <div className="ops-mobile-schedule-list">
+            {group.tasks.map((task) => (
+              <MobileScheduleTaskRow
+                key={`${group.key}-${task.id}`}
+                task={task}
+                assignee={assigneeLabel(task)}
+                saving={savingTaskId === task.id}
+                onOpenTask={onOpenTask}
+                onEdit={onEdit}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+      {groups.length === 0 && <div className="ops-schedule-empty">No scheduled tasks match this view.</div>}
+    </section>
+  );
+}
+
+function MobileScheduleTaskRow({
+  task,
+  assignee,
+  saving,
+  onOpenTask,
+  onEdit,
+}: {
+  task: Task;
+  assignee: string;
+  saving: boolean;
+  onOpenTask: (id: string) => void;
+  onEdit: (id: string) => void;
+}) {
+  const statusSwatch = toneStyle(taskStatusTone(task.status));
+  return (
+    <article
+      className="ops-mobile-schedule-row"
+      data-status={task.status}
+      style={{ borderLeftColor: statusSwatch.color }}
+    >
+      <button type="button" className="ops-mobile-schedule-row-main" onClick={() => onOpenTask(task.id)}>
+        <span className="ops-mobile-schedule-time">{formatTimeLabel(task.dueTime)}</span>
+        <span>
+          <strong>{task.title}</strong>
+          <small>{taskPropertyLabel(task)} · {assignee} · {task.priority}</small>
+        </span>
+      </button>
+      <span className="ops-mobile-schedule-side">
+        <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
+        <button className="btn ghost sm" type="button" disabled={saving} onClick={() => onEdit(task.id)}>
+          Edit
+        </button>
+      </span>
+    </article>
   );
 }
 
