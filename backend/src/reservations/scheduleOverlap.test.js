@@ -3,6 +3,17 @@
 const reservationsRouter = require('./index');
 
 describe('reservation schedule overlap filters', () => {
+  test('dedupes same-stay Guesty rows before falling back to confirmation id', () => {
+    const sql = reservationsRouter._test.reservationDedupePartitionSql;
+
+    expect(sql).toContain('r.listing_guesty_id');
+    expect(sql).toContain('r.check_in_date::text');
+    expect(sql).toContain('r.check_out_date::text');
+    expect(sql).toContain('r.guest_email');
+    expect(sql).toContain('r.confirmation_code');
+    expect(sql.indexOf('r.check_in_date::text')).toBeLessThan(sql.indexOf('r.confirmation_code'));
+  });
+
   test('keeps legacy check-in range semantics by default', () => {
     const filters = ['r.tenant_id = $1'];
     const params = ['tenant-1'];

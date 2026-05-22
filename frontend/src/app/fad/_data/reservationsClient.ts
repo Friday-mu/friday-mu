@@ -71,10 +71,10 @@ function semanticStayIdentity(r: RawReservation): string {
 }
 
 function reservationIdentity(r: RawReservation): string {
-  const confirmation = compactIdentityPart(r.confirmation_code);
-  if (confirmation) return `confirmation:${confirmation}`;
   const semantic = semanticStayIdentity(r);
   if (semantic) return semantic;
+  const confirmation = compactIdentityPart(r.confirmation_code);
+  if (confirmation) return `confirmation:${confirmation}`;
   return r.guesty_id || r.id;
 }
 

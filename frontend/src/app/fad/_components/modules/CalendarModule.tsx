@@ -16,6 +16,7 @@ import {
 import { TASKS, TASK_USERS, TASK_USER_BY_ID, type Task } from '../../_data/tasks';
 import { useLiveReservations } from '../../_data/reservationsClient';
 import { useApiTasks } from '../../_data/useApiTasks';
+import type { FetchTasksPageInput } from '../../_data/tasksClient';
 import { liveOnlyMode } from '../../_data/demoMode';
 import { addReservationNote, updateReservationTimes } from '../../_data/breezeway';
 import { useCurrentUserId } from '../usePermissions';
@@ -255,6 +256,17 @@ type FilterChipId = 'reservation' | 'task' | 'maint' | 'meeting';
 export function CalendarModule() {
   const currentUserId = useCurrentUserId();
   const demoData = !liveOnlyMode();
+  const [tab, setTab] = useState<CalView>(() => (
+    typeof window !== 'undefined' && window.innerWidth <= 768 ? 'agenda' : 'week'
+  ));
+  const [viewDate, setViewDate] = useState<Date>(() => new Date(`${TODAY_ISO}T12:00:00`));
+  const days = useMemo(() => computeViewDays(viewDate, tab), [viewDate, tab]);
+  const taskWindowFilter = useMemo<FetchTasksPageInput>(() => ({
+    dueAfter: days[0]?.isoDate,
+    dueBefore: days[days.length - 1]?.isoDate,
+    sort: 'dueDate',
+    limit: 500,
+  }), [days]);
   const {
     reservations: liveReservations,
     loading: reservationsLoading,
@@ -266,14 +278,10 @@ export function CalendarModule() {
     loading: tasksLoading,
     error: tasksError,
     refetch: refetchTasks,
-  } = useApiTasks();
+  } = useApiTasks(taskWindowFilter);
   const sourceReservations = liveReservations ?? (demoData ? RESERVATIONS : []);
   const sourceTasks = demoData ? TASKS : liveTasks;
   const visibleEventTypes = demoData ? EVENT_TYPES : EVENT_TYPES.filter((t) => t.id === 'reservation' || t.id === 'task');
-  const [tab, setTab] = useState<CalView>(() => (
-    typeof window !== 'undefined' && window.innerWidth <= 768 ? 'agenda' : 'week'
-  ));
-  const [viewDate, setViewDate] = useState<Date>(() => new Date(`${TODAY_ISO}T12:00:00`));
   const [typeFilter, setTypeFilter] = useState<Set<FilterChipId>>(
     new Set(EVENT_TYPES.map((t) => t.id)),
   );
@@ -298,8 +306,6 @@ export function CalendarModule() {
     { id: 'week', label: 'Week' },
     { id: 'month', label: 'Month' },
   ];
-
-  const days = useMemo(() => computeViewDays(viewDate, tab), [viewDate, tab]);
 
   const allEvents = useMemo<CalEvent[]>(() => {
     const reservationEvents = sourceReservations.flatMap((r) => reservationToEvents(r, days));

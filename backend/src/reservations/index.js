@@ -13,6 +13,33 @@ const { inferReservationFinancials, majorToMinor } = require('./financials');
 
 const router = express.Router();
 
+const reservationDedupePartitionSql = `COALESCE(
+  CASE
+    WHEN NULLIF(LOWER(TRIM(r.listing_guesty_id)), '') IS NOT NULL
+     AND r.check_in_date IS NOT NULL
+     AND r.check_out_date IS NOT NULL
+     AND COALESCE(
+       NULLIF(LOWER(TRIM(r.guest_email)), ''),
+       NULLIF(LOWER(TRIM(CONCAT_WS(' ', r.guest_first_name, r.guest_last_name))), ''),
+       NULLIF(LOWER(TRIM(r.guest_phone)), '')
+     ) IS NOT NULL
+    THEN CONCAT_WS(
+      '|',
+      LOWER(TRIM(r.listing_guesty_id)),
+      r.check_in_date::text,
+      r.check_out_date::text,
+      COALESCE(
+        NULLIF(LOWER(TRIM(r.guest_email)), ''),
+        NULLIF(LOWER(TRIM(CONCAT_WS(' ', r.guest_first_name, r.guest_last_name))), ''),
+        NULLIF(LOWER(TRIM(r.guest_phone)), '')
+      )
+    )
+    ELSE NULL
+  END,
+  NULLIF(LOWER(TRIM(r.confirmation_code)), ''),
+  r.guesty_id
+)`;
+
 function shapeReservation(row) {
   if (!row) return null;
   const financials = inferReservationFinancials(row.raw);
@@ -116,12 +143,15 @@ router.get('/', attachIdentity, async (req, res) => {
       `WITH ranked AS (
          SELECT r.*,
                 ROW_NUMBER() OVER (
-                  PARTITION BY r.tenant_id, COALESCE(NULLIF(r.confirmation_code, ''), r.guesty_id)
+                  PARTITION BY r.tenant_id, ${reservationDedupePartitionSql}
                   ORDER BY
                     CASE
                       WHEN r.source = 'scrape-l3' OR r.guesty_id LIKE 'scrape:%' THEN 1
                       ELSE 0
                     END,
+                    CASE WHEN NULLIF(TRIM(r.confirmation_code), '') IS NULL THEN 1 ELSE 0 END,
+                    CASE WHEN r.total_amount_minor IS NULL THEN 1 ELSE 0 END,
+                    CASE WHEN r.guest_email IS NULL THEN 1 ELSE 0 END,
                     r.updated_at DESC NULLS LAST,
                     r.created_at DESC NULLS LAST
                 ) AS reservation_rank
@@ -229,4 +259,5 @@ router.post('/sync', attachIdentity, async (req, res) => {
 module.exports = router;
 module.exports._test = {
   appendReservationDateFilters,
+  reservationDedupePartitionSql,
 };

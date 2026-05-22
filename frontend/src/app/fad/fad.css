@@ -1394,6 +1394,176 @@ html.fad-dark .send-split-main { color: #0b0d14; }
 }
 .cal-event .ev-time { font-family: var(--font-mono-fad); font-size: 10px; opacity: 0.85; display: block; }
 
+/* Agenda view */
+.cal-agenda {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.cal-agenda-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--color-background-secondary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.cal-agenda-summary span {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.cal-agenda-summary strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.cal-agenda-day {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.cal-agenda-day:last-child {
+  border-bottom: 0;
+}
+
+.cal-agenda-date {
+  color: var(--color-text-tertiary);
+}
+
+.cal-agenda-date span {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+
+.cal-agenda-date strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.cal-agenda-date.today strong {
+  color: var(--color-brand-accent);
+}
+
+.cal-agenda-empty {
+  padding: 9px 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.cal-agenda-events {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cal-agenda-event {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-left: 3px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cal-agenda-event:hover {
+  background: var(--color-background-secondary);
+}
+
+.cal-agenda-event.checkin {
+  background: var(--color-bg-success);
+  color: var(--color-text-success);
+  border-color: var(--color-text-success);
+}
+
+.cal-agenda-event.checkout {
+  background: var(--color-brand-accent-soft);
+  color: var(--color-brand-accent);
+  border-color: var(--color-brand-accent);
+}
+
+.cal-agenda-event.task {
+  background: var(--color-bg-info);
+  color: var(--color-text-info);
+  border-color: var(--color-text-info);
+}
+
+.cal-agenda-event.maint {
+  background: var(--color-bg-warning);
+  color: var(--color-text-warning);
+  border-color: var(--color-text-warning);
+}
+
+.cal-agenda-event.meeting {
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+}
+
+.cal-agenda-time {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.cal-agenda-main {
+  min-width: 0;
+}
+
+.cal-agenda-main > span {
+  display: block;
+  margin-bottom: 1px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.72;
+}
+
+.cal-agenda-main strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cal-agenda-open {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
 /* ───────────────────── SETTINGS ───────────────────── */
 .settings-layout { display: grid; grid-template-columns: 220px 1fr; gap: 24px; }
 .settings-nav { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--radius-md); padding: 6px; height: fit-content; }
@@ -2870,6 +3040,44 @@ html.fad-dark .cal-popover { box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
     padding-bottom: 8px;
   }
   .cal-mobile-allday-label { font-size: 9px; margin-bottom: 4px; }
+
+  .cal-agenda {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+    margin-inline: -16px;
+  }
+  .cal-agenda-summary {
+    padding: 10px 16px;
+  }
+  .cal-agenda-day {
+    display: block;
+    padding: 12px 16px;
+  }
+  .cal-agenda-date {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .cal-agenda-date span,
+  .cal-agenda-date strong {
+    display: inline;
+    margin: 0;
+  }
+  .cal-agenda-event {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 9px;
+  }
+  .cal-agenda-main strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+  .cal-agenda-open {
+    display: none;
+  }
 
   /* Calendar in-residence strip on day view: shrink pills */
   .cal-day-stays { padding: 6px 10px; }
