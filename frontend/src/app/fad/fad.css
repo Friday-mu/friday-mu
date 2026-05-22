@@ -5699,6 +5699,25 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 /* All Tasks — search + (desktop: inline filter chips · mobile: filter button + sheet) */
+.ops-all-tasks {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ops-all-toolbar {
+  padding: 10px 20px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.ops-all-results {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 18px;
+}
+
 .all-tasks-search-row {
   display: flex;
   gap: 8px;
@@ -5795,11 +5814,11 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-status-pill-strong {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 650;
+  min-height: 19px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
 }
@@ -5815,13 +5834,110 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   font-size: 10px;
   font-weight: 500;
   line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
 .ops-priority-label.urgent {
   color: var(--color-text-danger);
+}
+
+.ops-task-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ops-task-row {
+  cursor: pointer;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.ops-task-row:hover {
+  background: var(--color-background-secondary);
+}
+
+.ops-task-row[data-closed="true"] {
+  color: var(--color-text-tertiary);
+}
+
+.ops-task-row[data-closed="true"] .ops-task-title-line {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.ops-task-priority-cell {
+  width: 4px;
+  padding: 5px 8px 5px 10px;
+}
+
+.ops-task-priority-bar {
+  display: inline-block;
+  width: 3px;
+  height: 22px;
+  border-radius: 3px;
+}
+
+.ops-task-property-cell,
+.ops-task-title-cell,
+.ops-task-muted-cell,
+.ops-task-chip-cell,
+.ops-task-assignees-cell,
+.ops-task-due-cell,
+.ops-task-origin-cell,
+.ops-task-files-cell {
+  padding: 5px 9px;
+  vertical-align: middle;
+}
+
+.ops-task-property-cell .mono {
+  font-size: 10px;
+}
+
+.ops-task-title-cell {
+  max-width: 300px;
+}
+
+.ops-task-title-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.ops-task-risk-line {
+  margin-top: 2px;
+  color: var(--color-text-warning);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.ops-task-muted-cell,
+.ops-task-due-cell {
+  color: var(--color-text-secondary);
+  font-size: 10.5px;
+}
+
+.ops-task-files-cell {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+}
+
+.ops-source-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  max-width: 92px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* All Tasks — table/card swap. Cards hidden on desktop, table swapped out on mobile. */
@@ -6227,6 +6343,11 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   min-height: 34px;
   display: flex;
   align-items: center;
+}
+
+.ops-reported-pane.empty .fad-empty {
+  min-height: 220px;
+  border-top: 0.5px solid var(--color-border-tertiary);
 }
 
 .ops-agenda-list,
@@ -6653,19 +6774,25 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-history-row {
   width: 100%;
-  min-height: 62px;
+  min-height: 46px;
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  padding: 10px;
+  padding: 7px 10px;
   border: 0.5px solid var(--color-border-tertiary);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-background-primary);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.ops-history-row:hover,
+.ops-history-row:focus-visible {
+  background: var(--color-background-secondary);
+  outline: none;
 }
 
 .ops-history-row > span:nth-child(2) {
@@ -6677,8 +6804,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-history-row > span:last-child {
   color: var(--color-text-tertiary);
-  font-size: 11px;
-  text-transform: uppercase;
+  font-size: 10px;
 }
 
 /* Operations Schedule — manager task calendar */

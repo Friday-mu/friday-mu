@@ -83,6 +83,10 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   cancelled: 'Cancelled',
 };
 
+function labelCase(value: string): string {
+  return value ? `${value.slice(0, 1).toUpperCase()}${value.slice(1).toLowerCase()}` : value;
+}
+
 const CLOSED_STATUS = new Set<TaskStatus>(['completed', 'closed', 'cancelled']);
 const FIELD_EXECUTABLE_STATUS = new Set<TaskStatus>(['scheduled', 'ready', 'in_progress', 'paused']);
 const INTAKE_SOURCES = new Set<TaskSource>(['inbox_ai', 'reported_issue', 'group_email', 'review']);
@@ -2714,8 +2718,8 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <div style={{ padding: '12px 20px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+    <div className="ops-all-tasks">
+      <div className="ops-all-toolbar">
         {error && (
           <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
             Live tasks could not load: {error}
@@ -2840,8 +2844,8 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 20px 20px' }}>
-        <table className="fad-tasks-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <div className="ops-all-results">
+        <table className="fad-tasks-table ops-task-table">
           <thead>
             <tr style={{ position: 'sticky', top: 0, background: 'var(--color-background-primary)', zIndex: 1 }}>
               <Th></Th>
@@ -2993,7 +2997,7 @@ function StatusPill({ status }: { status: TaskStatus }) {
 function PriorityLabel({ priority }: { priority: TaskPriority }) {
   return (
     <span className={'ops-priority-label' + (priority === 'urgent' ? ' urgent' : '')}>
-      {priority}
+      {labelCase(priority)}
     </span>
   );
 }
@@ -3002,34 +3006,36 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
   const sourceSwatch = toneStyle(taskSourceTone(task.source));
   const sourceLabel = SOURCE_LABEL[task.source] || 'Task';
   const assignees = taskAssigneePeople(task);
+  const isClosed = CLOSED_STATUS.has(task.status);
   return (
     <tr
+      className="ops-task-row"
+      data-closed={isClosed ? 'true' : undefined}
       onClick={onClick}
-      style={{ cursor: 'pointer', borderBottom: '0.5px solid var(--color-border-tertiary)' }}
     >
-      <td style={{ padding: '6px 10px', width: 4 }}>
-        <span style={{ display: 'inline-block', width: 4, height: 24, background: priorityBarColor(task.priority), borderRadius: 2 }} />
+      <td className="ops-task-priority-cell">
+        <span className="ops-task-priority-bar" style={{ background: priorityBarColor(task.priority) }} />
       </td>
-      <td style={{ padding: '6px 10px' }}>
-        <span className="mono" style={{ fontSize: 11 }}>{taskPropertyLabel(task)}</span>
+      <td className="ops-task-property-cell">
+        <span className="mono">{taskPropertyLabel(task)}</span>
       </td>
-      <td style={{ padding: '6px 10px', maxWidth: 280 }}>
-        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</div>
+      <td className="ops-task-title-cell">
+        <div className="ops-task-title-line">{task.title}</div>
         {task.riskFlags.length > 0 && (
-          <div style={{ fontSize: 10, color: 'var(--color-text-warning)', marginTop: 2 }}>
+          <div className="ops-task-risk-line">
             ⚠ {task.riskFlags.slice(0, 2).join(', ')}
             {task.riskFlags.length > 2 && ` +${task.riskFlags.length - 2}`}
           </div>
         )}
       </td>
-      <td style={{ padding: '6px 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>{taskSubdepartmentLabel(task)}</td>
-      <td style={{ padding: '6px 10px' }}>
+      <td className="ops-task-muted-cell">{taskSubdepartmentLabel(task)}</td>
+      <td className="ops-task-chip-cell">
         <StatusPill status={task.status} />
       </td>
-      <td style={{ padding: '6px 10px' }}>
+      <td className="ops-task-chip-cell">
         <PriorityLabel priority={task.priority} />
       </td>
-      <td style={{ padding: '6px 10px' }}>
+      <td className="ops-task-assignees-cell">
         <div style={{ display: 'flex', gap: 0 }}>
           {assignees.slice(0, 3).map((u, i) => {
             return (
@@ -3058,25 +3064,20 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
           {assignees.length === 0 && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>—</span>}
         </div>
       </td>
-      <td style={{ padding: '6px 10px', fontSize: 11 }}>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</td>
-      <td style={{ padding: '6px 10px' }}>
+      <td className="ops-task-due-cell">{formatTaskDue(task.dueDate, task.dueTime, task.status)}</td>
+      <td className="ops-task-origin-cell">
         <span
+          className="ops-source-label"
           style={{
-            fontSize: 9,
-            padding: '2px 6px',
-            borderRadius: 4,
             background: sourceSwatch.background,
             color: sourceSwatch.color,
-            fontWeight: 500,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
           }}
         >
           {sourceLabel}
         </span>
       </td>
-      <td style={{ padding: '6px 10px', fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-        {task.attachmentCount > 0 && `📎 ${task.attachmentCount}`}
+      <td className="ops-task-files-cell">
+        {task.attachmentCount > 0 && `Files ${task.attachmentCount}`}
       </td>
     </tr>
   );
@@ -3354,10 +3355,19 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
 
   const selectedSourceLabel = selectedTask ? intakeSourceLabel(selectedTask) : '';
   const selectedRefLabel = selectedTask ? sourceRefLabel(selectedTask) : '';
+  const emptyReportedIssues = !loading && intakeTasks.length === 0;
 
   return (
-    <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
-      <div className="fad-split-list" style={{ width: 380, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
+    <div className={'fad-split-pane ops-reported-pane' + (detailOpen ? ' detail-open' : '') + (emptyReportedIssues ? ' empty' : '')}>
+      <div
+        className="fad-split-list"
+        style={{
+          width: emptyReportedIssues ? '100%' : 380,
+          borderRight: emptyReportedIssues ? 0 : '0.5px solid var(--color-border-tertiary)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
           {error && (
             <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
@@ -3475,6 +3485,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
         </div>
       </div>
 
+      {!emptyReportedIssues && (
       <div className="fad-split-detail" style={{ flex: 1, padding: 20, overflowY: 'auto' }}>
         <button
           type="button"
@@ -3627,6 +3638,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
           <Empty>Select a reported task to triage.</Empty>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -3871,6 +3883,7 @@ function InsightsPage() {
       tone: 'success',
     },
   ];
+  const initialLoading = loading && TASKS.length === 0;
 
   return (
     <div className="ops-insights-page">
@@ -3879,24 +3892,27 @@ function InsightsPage() {
           Insights could not load live tasks: {error}
         </div>
       )}
-      <Section title="Attention now">
-        <div className="ops-insight-attention">
-          {attentionRows.map((row) => (
-            <div key={row.label} className="ops-insight-attention-row" data-tone={row.tone}>
-              <strong>{row.value}</strong>
-              <span>{row.label}</span>
-              <small>{row.sub}</small>
+      {initialLoading ? (
+        <LoadingState label="Loading live task metrics" />
+      ) : (
+        <>
+          <Section title="Attention now">
+            <div className="ops-insight-attention">
+              {attentionRows.map((row) => (
+                <div key={row.label} className="ops-insight-attention-row" data-tone={row.tone}>
+                  <strong>{row.value}</strong>
+                  <span>{row.label}</span>
+                  <small>{row.sub}</small>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        {loading && TASKS.length === 0 && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Loading live task metrics...</div>}
-      </Section>
+          </Section>
 
-      <div className="ops-insights-grid">
-        <Section title="Completed last 7 days">
-          <div className="ops-insight-number">{completedTasks.length}</div>
-          <Sparkline values={completed} color="#10b981" />
-        </Section>
+          <div className="ops-insights-grid">
+            <Section title="Completed last 7 days">
+              <div className="ops-insight-number">{completedTasks.length}</div>
+              <Sparkline values={completed} color="#10b981" />
+            </Section>
 
         <Section title="Created last 7 days">
           <div className="ops-insight-number">{createdTasks.length}</div>
@@ -3931,9 +3947,10 @@ function InsightsPage() {
           <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
             No live AI acceptance telemetry has been recorded yet.
           </div>
-          {loading && TASKS.length === 0 && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Loading live task metrics...</div>}
         </Section>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
