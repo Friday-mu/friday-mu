@@ -401,7 +401,6 @@ function websiteEventBody(eventType: string, payload?: Record<string, unknown>):
       payload.surface ? `Surface: ${payload.surface}` : null,
       payload.confidence ? `Confidence: ${payload.confidence}` : null,
       payload.aiReplyState ? `AI state: ${payload.aiReplyState}` : null,
-      payload.takeoverState ? `Takeover: ${payload.takeoverState}` : null,
       payload.escalationReason ? `Escalation: ${payload.escalationReason}` : null,
       payload.recommendedNextAction ? `Next: ${payload.recommendedNextAction}` : null,
       payload.visitorTurn ? `Latest visitor turn: ${payload.visitorTurn}` : null,
