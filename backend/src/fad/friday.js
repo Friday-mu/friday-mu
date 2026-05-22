@@ -4,7 +4,7 @@ const express = require('express');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { invokeChat } = require('../ai/chat_proxy');
-const { guestyRequest } = require('../integrations/guesty');
+const { guestyRequest, listListings } = require('../integrations/guesty');
 const { callTool } = require('../mcp');
 
 const router = express.Router();
@@ -109,19 +109,110 @@ function extractList(payload) {
   return [];
 }
 
-function shapeReview(row) {
-  const guest = row.guestName || row.guest_name || row.reviewerName || row.reviewer_name || row.guest?.fullName || null;
-  const rating = row.rating || row.overallRating || row.reviewRating || row.publicReview?.rating || null;
-  const listing = row.propertyNickname || row.listingNickname || row.listing?.nickname || row.listingId || row.listing_id || null;
-  const body = row.publicReview || row.review || row.text || row.comment || row.content || row.body || null;
+function buildListingIndex(listings) {
+  const byId = new Map();
+  for (const listing of Array.isArray(listings) ? listings : []) {
+    for (const key of [listing?._id, listing?.id, listing?.listingId]) {
+      if (key) byId.set(String(key), listing);
+    }
+  }
+  return byId;
+}
+
+function reviewListing(row, listingIndex) {
+  const ids = [row.listingId, row.listing_id, row.externalListingId, row.listing?._id, row.listing?.id].filter(Boolean);
+  for (const id of ids) {
+    const listing = listingIndex?.get(String(id));
+    if (listing) return listing;
+  }
+  return null;
+}
+
+function reviewChannel(row) {
+  const channel = String(row.channelId || row.channel || row.source || row.integration || '').toLowerCase();
+  if (channel.includes('booking')) return 'booking.com';
+  if (channel.includes('airbnb')) return 'airbnb';
+  if (channel.includes('vrbo')) return 'vrbo';
+  return row.channelId || row.channel || row.source || row.integration || null;
+}
+
+function reviewGuest(row, rawReview) {
+  const reviewer = rawReview?.reviewer || {};
+  const direct = row.guestName || row.guest_name || row.reviewerName || row.reviewer_name ||
+    row.guest?.fullName || reviewer.name;
+  if (direct) return direct;
+  const guestId = row.guestId || row.guest_id || rawReview?.reviewer_id;
+  return guestId ? `Guest ${String(guestId).slice(-6)}` : null;
+}
+
+function reviewRating(row, rawReview) {
+  const scoring = rawReview?.scoring || {};
+  const value = Number(
+    scoring.review_score ??
+    rawReview?.overall_rating ??
+    rawReview?.rating ??
+    row.rating ??
+    row.overallRating ??
+    row.reviewRating ??
+    row.publicReview?.rating,
+  );
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const normalized = value > 5 && value <= 10 ? value / 2 : value;
+  return Math.round(normalized * 10) / 10;
+}
+
+function reviewBody(row, rawReview) {
+  const content = rawReview?.content || {};
+  const bookingText = [
+    content.headline,
+    content.positive ? `Positive: ${content.positive}` : null,
+    content.negative ? `Negative: ${content.negative}` : null,
+  ].filter(Boolean).join(' ');
+  const parts = [
+    bookingText,
+    rawReview?.public_review,
+    rawReview?.review,
+    row.publicReview,
+    row.review,
+    row.text,
+    row.comment,
+    row.content,
+    row.body,
+  ].filter(Boolean);
+  const first = parts.find((part) => typeof part === 'string' && part.trim());
+  return typeof first === 'string' ? first : first?.text || first?.body || '';
+}
+
+function reviewCreatedAt(row, rawReview) {
+  return rawReview?.submitted_at ||
+    rawReview?.created_timestamp ||
+    rawReview?.first_completed_at ||
+    row.createdAt ||
+    row.created_at ||
+    row.submittedAt ||
+    null;
+}
+
+function reviewReplyStatus(row, rawReview) {
+  const replies = Array.isArray(row.reviewReplies) ? row.reviewReplies : [];
+  return replies.length > 0 || !!rawReview?.reply ? 'replied' : 'unreplied';
+}
+
+function shapeReview(row, listingIndex = null) {
+  const rawReview = row.rawReview || {};
+  const listing = reviewListing(row, listingIndex);
+  const listingName = row.propertyNickname || row.listingNickname || listing?.nickname ||
+    row.listing?.nickname || row.externalListingId || row.listingId || row.listing_id || null;
   return {
     id: row.id || row._id || row.reviewId || null,
-    guest,
-    rating,
-    listing,
-    channel: row.channel || row.source || row.integration || null,
-    createdAt: row.createdAt || row.created_at || row.submittedAt || null,
-    excerpt: cleanString(typeof body === 'string' ? body : body?.text || body?.body || '', 220),
+    guest: reviewGuest(row, rawReview),
+    rating: reviewRating(row, rawReview),
+    listing: listingName,
+    propertyTitle: row.propertyTitle || listing?.title || null,
+    channel: reviewChannel(row),
+    createdAt: reviewCreatedAt(row, rawReview),
+    replyStatus: reviewReplyStatus(row, rawReview),
+    excerpt: cleanString(reviewBody(row, rawReview), 280),
   };
 }
 
@@ -262,12 +353,16 @@ async function loadHrContext(tenantId) {
 
 async function loadReviewsContext(tenantId) {
   if (tenantId !== FR_TENANT_ID) return { skipped: 'reviews are currently FR Guesty-only' };
-  const { data } = await guestyRequest({
-    method: 'GET',
-    path: '/reviews',
-    params: { limit: 6 },
-  });
-  return extractList(data).slice(0, 6).map(shapeReview);
+  const [reviewsResp, listings] = await Promise.all([
+    guestyRequest({
+      method: 'GET',
+      path: '/reviews',
+      params: { limit: 8 },
+    }),
+    listListings({ limit: 100, maxPages: 2 }).catch(() => []),
+  ]);
+  const listingIndex = buildListingIndex(listings);
+  return extractList(reviewsResp.data).slice(0, 8).map((row) => shapeReview(row, listingIndex));
 }
 
 async function loadDesignContext(tenantId) {
@@ -535,6 +630,8 @@ module.exports = {
     cleanAction,
     sanitizeActions,
     shouldLoad,
+    shapeReview,
+    buildListingIndex,
     ASK_FRIDAY_MAX_TOKENS,
   },
 };

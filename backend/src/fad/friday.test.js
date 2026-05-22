@@ -35,6 +35,61 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.ASK_FRIDAY_MAX_TOKENS).toBeGreaterThanOrEqual(4096);
   });
 
+  test('shapes Airbnb Guesty reviews from rawReview fields for Ask Friday context', () => {
+    const listingIndex = _test.buildListingIndex([
+      { _id: 'listing-1', nickname: 'GBH-C5', title: 'Grand Baie Heights C5' },
+    ]);
+
+    expect(_test.shapeReview({
+      _id: 'review-1',
+      channelId: 'airbnb2',
+      guestId: 'guest-abcdef',
+      listingId: 'listing-1',
+      reviewReplies: [],
+      rawReview: {
+        overall_rating: 4.8,
+        public_review: 'Beautiful stay and very responsive team.',
+        submitted_at: '2026-05-20T10:00:00.000Z',
+      },
+    }, listingIndex)).toEqual(expect.objectContaining({
+      id: 'review-1',
+      guest: 'Guest abcdef',
+      rating: 4.8,
+      listing: 'GBH-C5',
+      propertyTitle: 'Grand Baie Heights C5',
+      channel: 'airbnb',
+      replyStatus: 'unreplied',
+      excerpt: 'Beautiful stay and very responsive team.',
+    }));
+  });
+
+  test('shapes Booking.com Guesty reviews with normalized ratings and reply status', () => {
+    expect(_test.shapeReview({
+      _id: 'review-2',
+      channelId: 'bookingCom',
+      propertyNickname: 'MV-7',
+      rawReview: {
+        created_timestamp: '2026-05-21T12:00:00.000Z',
+        reviewer: { name: 'Maria Guest' },
+        scoring: { review_score: 8 },
+        content: {
+          headline: 'Good stay',
+          positive: 'Great location.',
+          negative: 'Check-in instructions were hard to find.',
+        },
+        reply: { text: 'Thank you' },
+      },
+    })).toEqual(expect.objectContaining({
+      id: 'review-2',
+      guest: 'Maria Guest',
+      rating: 4,
+      listing: 'MV-7',
+      channel: 'booking.com',
+      replyStatus: 'replied',
+      excerpt: 'Good stay Positive: Great location. Negative: Check-in instructions were hard to find.',
+    }));
+  });
+
   test('parses strict JSON and falls back to raw text', () => {
     expect(_test.parseModelResponse(JSON.stringify({
       answer: 'Check Operations first.',
