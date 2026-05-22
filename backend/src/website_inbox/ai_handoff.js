@@ -11,6 +11,8 @@ const CONFIDENCE = new Set(['high', 'medium', 'low']);
 const LOCALES = new Set(['en', 'fr']);
 const AI_EVENT_TYPE = 'website.ai_handoff';
 const TAKEOVER_EVENT_TYPE = 'website.ai_handoff_takeover';
+const VISITOR_MESSAGE_EVENT_TYPE = 'website.visitor_message';
+const STAFF_REPLY_EVENT_TYPE = 'staff.reply_sent';
 
 function clampText(value, max) {
   if (typeof value !== 'string') return '';
@@ -187,23 +189,166 @@ async function findHandoffById(identifier) {
   return rows[0] || null;
 }
 
+async function handoffWindowStart(handoff) {
+  const conversationKey = handoff?.payload?.conversationKey;
+  if (!conversationKey) return handoff.created_at;
+  const { rows } = await query(
+    `
+    SELECT MIN(created_at) AS started_at
+      FROM inbox_events
+     WHERE thread_id = $1
+       AND event_type = $2
+       AND payload->>'conversationKey' = $3
+    `,
+    [handoff.thread_id, AI_EVENT_TYPE, conversationKey],
+  );
+  return rows[0]?.started_at || handoff.created_at;
+}
+
 async function takeoverStateForHandoff(handoff) {
   if (!handoff) return { takeoverState: 'unknown', aiMayReply: false, takeoverEvent: null };
+  const windowStart = await handoffWindowStart(handoff);
   const { rows } = await query(
     `
     SELECT id, event_type, source, payload, created_at
       FROM inbox_events
      WHERE thread_id = $1
        AND created_at >= $2
-       AND event_type IN ($3, 'staff.reply_sent')
+       AND event_type IN ($3, $4)
      ORDER BY created_at DESC, id::text DESC
      LIMIT 1
     `,
-    [handoff.thread_id, handoff.created_at, TAKEOVER_EVENT_TYPE],
+    [handoff.thread_id, windowStart, TAKEOVER_EVENT_TYPE, STAFF_REPLY_EVENT_TYPE],
   );
   const event = rows[0] || null;
   if (event) return { takeoverState: 'human_takeover', aiMayReply: false, takeoverEvent: event };
   return { takeoverState: 'ai_active', aiMayReply: true, takeoverEvent: null };
+}
+
+function eventBody(event) {
+  const payload = event?.payload || {};
+  const body = payload.body || payload.message || payload.visitorTurn || payload.final_body;
+  return typeof body === 'string' ? body : '';
+}
+
+function eventRole(event) {
+  const type = String(event?.event_type || '');
+  if (type === STAFF_REPLY_EVENT_TYPE) return 'staff';
+  if (type === VISITOR_MESSAGE_EVENT_TYPE) return 'visitor';
+  if (type === AI_EVENT_TYPE) return 'handoff';
+  if (event?.source === 'website_ai') return 'ai';
+  return event?.source === 'fad' ? 'staff' : 'visitor';
+}
+
+async function liveMessagesForHandoff(handoff) {
+  if (!handoff) return [];
+  const windowStart = await handoffWindowStart(handoff);
+  const { rows } = await query(
+    `
+    SELECT id, reference, event_type, source, payload, created_at
+      FROM inbox_events
+     WHERE thread_id = $1
+       AND created_at >= $2
+       AND event_type IN ($3, $4, $5, $6)
+     ORDER BY created_at ASC, id::text ASC
+     LIMIT 100
+    `,
+    [handoff.thread_id, windowStart, AI_EVENT_TYPE, TAKEOVER_EVENT_TYPE, VISITOR_MESSAGE_EVENT_TYPE, STAFF_REPLY_EVENT_TYPE],
+  );
+  return rows.map((event) => ({
+    id: event.id,
+    reference: event.reference || null,
+    eventType: event.event_type,
+    source: event.source,
+    role: eventRole(event),
+    body: eventBody(event),
+    payload: event.payload || {},
+    createdAt: event.created_at,
+  }));
+}
+
+async function recordVisitorMessage({ handoff, body, providerMessageId, createdAt }) {
+  const messageBody = clampText(body, 4000);
+  if (!messageBody) {
+    const err = new Error('message is required');
+    err.status = 400;
+    throw err;
+  }
+  const sentAt = clampText(createdAt, 80) || new Date().toISOString();
+  if (Number.isNaN(new Date(sentAt).getTime())) {
+    const err = new Error('createdAt must be an ISO timestamp');
+    err.status = 400;
+    throw err;
+  }
+  const handoffId = handoff.payload?.handoffId || null;
+  const conversationKey = handoff.payload?.conversationKey || null;
+  const reference = providerMessageId
+    ? `website-ai-visitor:${safeKey(providerMessageId)}`
+    : `website-ai-visitor:${handoffId || handoff.id}:${sha(`${sentAt}.${messageBody}`, 18)}`;
+  const payload = {
+    handoffId,
+    conversationKey,
+    body: messageBody,
+    providerMessageId: clampText(providerMessageId, 160) || null,
+    createdAt: sentAt,
+  };
+
+  let event;
+  let isDuplicate = false;
+  try {
+    const { rows } = await query(
+      `
+      INSERT INTO inbox_events (thread_id, reference, event_type, source, payload)
+      VALUES ($1, $2, $3, 'website', $4::jsonb)
+      RETURNING id, created_at
+      `,
+      [handoff.thread_id, reference, VISITOR_MESSAGE_EVENT_TYPE, JSON.stringify(payload)],
+    );
+    event = rows[0];
+  } catch (err) {
+    if (err && err.code === '23505') {
+      const existing = await query(
+        `SELECT id, created_at FROM inbox_events WHERE reference = $1 AND event_type = $2 LIMIT 1`,
+        [reference, VISITOR_MESSAGE_EVENT_TYPE],
+      );
+      event = existing.rows[0] || null;
+      isDuplicate = true;
+    } else {
+      throw err;
+    }
+  }
+
+  await query(
+    `
+    UPDATE inbox_threads
+       SET last_event_type = $1,
+           last_event_at = NOW(),
+           updated_at = NOW()
+     WHERE id = $2
+    `,
+    [VISITOR_MESSAGE_EVENT_TYPE, handoff.thread_id],
+  );
+
+  await publishFadEvent({
+    type: 'website_ai.visitor_message_received',
+    payload: {
+      threadId: handoff.thread_id,
+      handoffId,
+      eventId: event?.id || null,
+      conversationKey,
+    },
+  });
+  await publishFadEvent({
+    type: 'website_inbox.thread_updated',
+    payload: { threadId: handoff.thread_id, eventId: event?.id || null, eventType: VISITOR_MESSAGE_EVENT_TYPE },
+  });
+
+  return {
+    eventId: event?.id || null,
+    eventCreatedAt: event?.created_at || null,
+    isDuplicate,
+    payload,
+  };
 }
 
 async function recordHandoff({ parsed, signature, signedAt }) {
@@ -292,11 +437,11 @@ async function recordAiTakeoverForThread({ threadId, identity, reason = 'human_t
       FROM inbox_events
      WHERE thread_id = $1
        AND created_at >= $2
-       AND event_type IN ($3, 'staff.reply_sent')
+       AND event_type IN ($3, $4)
      ORDER BY created_at DESC, id::text DESC
      LIMIT 1
     `,
-    [threadId, handoff.created_at, TAKEOVER_EVENT_TYPE],
+    [threadId, await handoffWindowStart(handoff), TAKEOVER_EVENT_TYPE, STAFF_REPLY_EVENT_TYPE],
   );
   if (existing.rows[0]) {
     return {
@@ -429,6 +574,7 @@ function mountAiHandoff(router) {
         created_at: recorded.eventCreatedAt || new Date().toISOString(),
       };
       const state = await takeoverStateForHandoff(handoff);
+      const messages = await liveMessagesForHandoff(handoff);
 
       await publishFadEvent({
         type: 'website_ai.handoff_received',
@@ -454,7 +600,9 @@ function mountAiHandoff(router) {
         threadId: recorded.threadId,
         conversationId: `web-${recorded.threadId}`,
         takeover: state,
+        messages,
         stateUrl: '/api/inbox/website/friday-website/ai-handoff/state',
+        visitorMessageUrl: '/api/inbox/website/friday-website/ai-handoff/visitor-message',
       });
     } catch (err) {
       console.error('[website_inbox/ai_handoff] record error:', err.message);
@@ -471,15 +619,46 @@ function mountAiHandoff(router) {
       const handoff = await findHandoffById(identifier);
       if (!handoff) return res.status(404).json({ error: 'handoff not found' });
       const state = await takeoverStateForHandoff(handoff);
+      const messages = await liveMessagesForHandoff(handoff);
       return res.json({
         handoffId: handoff.payload?.handoffId || null,
         threadId: handoff.thread_id,
         takeoverState: state.takeoverState,
         aiMayReply: state.aiMayReply,
+        messages,
       });
     } catch (err) {
       console.error('[website_inbox/ai_handoff] state error:', err.message);
       return res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/friday-website/ai-handoff/visitor-message', async (req, res) => {
+    const parsedBody = parseSignedJson(req, res);
+    if (!parsedBody) return;
+    const identifier = parsedBody.payload?.handoffId || parsedBody.payload?.eventId || parsedBody.payload?.reference;
+    if (!identifier) return res.status(400).json({ error: 'handoffId is required' });
+    try {
+      const handoff = await findHandoffById(identifier);
+      if (!handoff) return res.status(404).json({ error: 'handoff not found' });
+      const recorded = await recordVisitorMessage({
+        handoff,
+        body: parsedBody.payload?.body || parsedBody.payload?.message || parsedBody.payload?.visitorTurn,
+        providerMessageId: parsedBody.payload?.messageId || parsedBody.payload?.providerMessageId,
+        createdAt: parsedBody.payload?.createdAt,
+      });
+      const state = await takeoverStateForHandoff(handoff);
+      return res.json({
+        status: recorded.isDuplicate ? 'duplicate' : 'accepted',
+        handoffId: handoff.payload?.handoffId || null,
+        threadId: handoff.thread_id,
+        eventId: recorded.eventId,
+        takeoverState: state.takeoverState,
+        aiMayReply: state.aiMayReply,
+      });
+    } catch (err) {
+      console.error('[website_inbox/ai_handoff] visitor message error:', err.message);
+      return res.status(err.status || 500).json({ error: err.message });
     }
   });
 }
@@ -513,5 +692,6 @@ module.exports = {
     sanitizeExtracted,
     sanitizeTools,
     takeoverStateForHandoff,
+    liveMessagesForHandoff,
   },
 };

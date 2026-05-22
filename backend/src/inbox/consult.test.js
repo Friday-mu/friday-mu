@@ -127,6 +127,7 @@ describe('FAD-native Consult helpers', () => {
     });
 
     expect(message).toContain('Latest status update guard');
+    expect(message).toContain('Latest guest turn');
     expect(message).toContain('No staff note with a confirmed new status');
   });
 
@@ -176,6 +177,7 @@ describe('FAD-native Consult helpers', () => {
     expect(message).not.toContain('Message 4');
     expect(message).toContain('Message 5');
     expect(message).toContain('Message 12');
+    expect(message).toContain('Latest guest turn');
     expect(message).not.toContain('Consult turn 1');
     expect(message).toContain('Consult turn 4');
     expect(message).toContain('Consult turn 7');
@@ -210,6 +212,7 @@ describe('FAD-native Consult helpers', () => {
     });
     expect(prompt).toContain('Respond in English');
     expect(prompt).toContain('[DRAFT_UPDATE]');
+    expect(prompt).toContain('Use confidence gates');
     expect(prompt).toContain('Property code: BS-1');
     expect(prompt).toContain('Compact KB + Learning Context');
     expect(prompt).toContain('Keep operational promises verified');

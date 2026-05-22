@@ -62,6 +62,9 @@ const DRAFT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_FALLBACK_TIMEOUT
 const DRAFT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_RETRIES) || 0;
 const DRAFT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_TOKENS) || 2000;
 const DRAFT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|overloaded|temporarily|unavailable|gateway|502|503|504)/i;
+const DRAFT_BURST_DEBOUNCE_MS = Number.isFinite(Number(process.env.DRAFT_BURST_DEBOUNCE_MS))
+  ? Math.max(0, Number(process.env.DRAFT_BURST_DEBOUNCE_MS))
+  : 12_000;
 
 // ────────────────────────────────────────────────────────────────────
 // Helpers ported from friday-gms/src/services/draft-generator.ts
@@ -128,6 +131,35 @@ function latestInboundMessage(messages) {
     if (messages[i]?.direction === 'inbound') return messages[i];
   }
   return null;
+}
+
+function latestGuestTurnMessages(messages, triggeringMessageId) {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+  const triggerIndex = triggeringMessageId
+    ? messages.findIndex((msg) => String(msg.id) === String(triggeringMessageId))
+    : -1;
+  let end = triggerIndex >= 0 ? triggerIndex : messages.length - 1;
+  while (end >= 0 && messages[end]?.direction !== 'inbound') end--;
+  if (end < 0) return [];
+
+  const turn = [];
+  for (let i = end; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg || msg.direction !== 'inbound') break;
+    if (msg.is_auto_response) break;
+    turn.unshift(msg);
+    if (turn.length >= 8) break;
+  }
+  return turn;
+}
+
+function latestGuestTurnPromptBlock(messages, triggeringMessageId) {
+  const turn = latestGuestTurnMessages(messages, triggeringMessageId);
+  if (turn.length === 0) return '';
+  return `[Latest guest turn — answer this whole burst, not just one bubble]
+${turn.map(formatMessageForContext).join('\n\n')}
+
+Treat short corrections, follow-up bubbles, and emojis as part of the same guest turn. Emojis are tone/acknowledgement unless the text around them makes a factual request.`;
 }
 
 function isGuestStatusUpdateRequest(text) {
@@ -229,6 +261,11 @@ function truncateText(value, maxLength) {
   const text = String(value || '');
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 18)).trimEnd()}\n[truncated]`;
+}
+
+function sleep(ms) {
+  if (!ms) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isTransientDraftFailure(result) {
@@ -577,6 +614,8 @@ async function generateDraft({ message, conversation, revisionInstruction, previ
   const priorSummary = safeConversationSummary(conversation.conversation_summary, { messages: allMessages });
   if (priorSummary) ctxLines.push(`Prior summary (unverified; prefer actual messages): ${priorSummary}`);
   const contextBlocks = [];
+  const latestTurnBlock = latestGuestTurnPromptBlock(allMessages, message.id);
+  if (latestTurnBlock) contextBlocks.push(latestTurnBlock);
   const reservationBlock = formatReservationContextForPrompt(conversation.reservation_context);
   if (reservationBlock) contextBlocks.push(reservationBlock);
 
@@ -594,7 +633,7 @@ Rewrite the draft to address the revision instruction above. Preserve everything
       conversation,
       messages: allMessages,
     });
-    taskDirective = `${latestUpdateGuard ? `${latestUpdateGuard}\n\n` : ''}DRAFT A REPLY TO THE LATEST MESSAGE.
+    taskDirective = `${latestUpdateGuard ? `${latestUpdateGuard}\n\n` : ''}DRAFT A REPLY TO THE LATEST GUEST TURN.
 
 Messages labeled [Automated reply already sent] or [System notification] indicate actions already taken — do NOT repeat information that was already sent to the guest.
 
@@ -756,6 +795,15 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
       if (suppress) {
         console.log(`[draft-gen] suppressed for conv ${conversationId}: ${suppress}`);
         return { skipped: suppress };
+      }
+
+      if (!opts.recoveryReason && DRAFT_BURST_DEBOUNCE_MS > 0) {
+        await sleep(DRAFT_BURST_DEBOUNCE_MS);
+        const latest = await latestSubstantiveMessage(conversationId);
+        if (!latest || latest.direction !== 'inbound' || String(latest.id) !== String(messageId)) {
+          console.log(`[draft-gen] debounced draft for msg=${messageId}; latest substantive message is ${latest?.direction || 'missing'} ${latest?.id || ''}`);
+          return { skipped: 'superseded_by_newer_message_before_drafting' };
+        }
       }
     }
 
@@ -948,6 +996,8 @@ module.exports = {
   compactDraftSystemPrompt,
   compactHistoryMessages,
   latestInboundMessage,
+  latestGuestTurnMessages,
+  latestGuestTurnPromptBlock,
   isGuestStatusUpdateRequest,
   isOperationalIncidentContext,
   statusUpdateSafetyApplies,

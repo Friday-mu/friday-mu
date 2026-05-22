@@ -66,10 +66,27 @@ function firstValue(obj, paths) {
   return null;
 }
 
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
+
 function numberValue(value) {
   if (value == null || value === '') return null;
   if (typeof value === 'object' && !Array.isArray(value)) {
-    return numberValue(value.amount ?? value.value ?? value.total ?? value.hostAmount ?? value.guestAmount);
+    return numberValue(
+      value.amount
+      ?? value.value
+      ?? value.total
+      ?? value.gross
+      ?? value.net
+      ?? value.hostAmount
+      ?? value.guestAmount
+      ?? value.amountDue
+      ?? value.balanceDue,
+    );
   }
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -80,53 +97,194 @@ function moneyValue(obj, paths) {
   return numberValue(value);
 }
 
+function firstNumber(obj, paths) {
+  return numberValue(firstValue(obj, paths));
+}
+
+function possiblePaymentArrays(raw, money) {
+  return [
+    raw.payments,
+    raw.payment?.payments,
+    raw.paymentInfo?.payments,
+    raw.invoice?.payments,
+    raw.financials?.payments,
+    money.payments,
+  ].find(Array.isArray) || [];
+}
+
+function inferPartyContext(row) {
+  const raw = asObject(row?.raw);
+  const guests = asObject(raw.guests);
+  const party = asObject(raw.party);
+  const guestBreakdown = asObject(raw.guestBreakdown);
+  const adults = firstPresent(
+    row?.adults,
+    firstNumber(raw, ['adults', 'guests.adults', 'party.adults', 'guestBreakdown.adults']),
+  );
+  const children = firstPresent(
+    row?.children,
+    firstNumber(raw, ['children', 'guests.children', 'party.children', 'guestBreakdown.children']),
+  );
+  const infants = firstPresent(
+    row?.infants,
+    firstNumber(raw, ['infants', 'guests.infants', 'party.infants', 'guestBreakdown.infants']),
+  );
+  const explicitTotal = firstPresent(
+    row?.num_guests,
+    row?.guests_count,
+    firstNumber(raw, [
+      'guestsCount',
+      'guests_count',
+      'numberOfGuests',
+      'numGuests',
+      'occupancy',
+      'guestCount',
+      'guests.total',
+      'guests.count',
+      'guests.guestsCount',
+      'party.total',
+      'party.count',
+      'guestBreakdown.total',
+    ]),
+    numberValue(guests.totalGuests),
+    numberValue(party.totalGuests),
+  );
+  const breakdownTotal = [adults, children, infants]
+    .map(numberValue)
+    .filter((n) => n != null)
+    .reduce((sum, n) => sum + n, 0);
+  return {
+    num_guests: explicitTotal != null ? Number(explicitTotal) : (breakdownTotal > 0 ? breakdownTotal : null),
+    adults: adults == null ? null : Number(adults),
+    children: children == null ? null : Number(children),
+    infants: infants == null ? null : Number(infants),
+  };
+}
+
 function inferFinancialContext(row) {
   const raw = asObject(row?.raw);
   const money = asObject(raw.money);
-  const payments = Array.isArray(raw.payments)
-    ? raw.payments
-    : Array.isArray(money.payments)
-      ? money.payments
-      : [];
+  const payments = possiblePaymentArrays(raw, money);
   const paidFromPayments = payments.reduce((sum, payment) => {
-    const amount = numberValue(payment?.amount ?? payment?.value ?? payment?.paidAmount);
+    const amount = numberValue(
+      payment?.amount
+      ?? payment?.value
+      ?? payment?.paidAmount
+      ?? payment?.totalPaid
+      ?? payment?.amountPaid,
+    );
     const status = String(payment?.status || '').toLowerCase();
     if (amount == null || ['failed', 'cancelled', 'canceled', 'void', 'refunded'].includes(status)) return sum;
     return sum + amount;
   }, 0);
   const amountPaid = moneyValue(raw, [
+    'amountPaid',
+    'paidAmount',
+    'totalPaid',
     'money.totalPaid',
     'money.paid',
     'money.paidAmount',
     'money.amountPaid',
     'money.paymentsTotal',
+    'payment.amountPaid',
     'payment.totalPaid',
     'payment.paidAmount',
+    'paymentInfo.amountPaid',
+    'paymentInfo.totalPaid',
+    'invoice.totalPaid',
+    'invoice.paidAmount',
+    'financials.amountPaid',
     'financials.totalPaid',
+    'financials.paid',
   ]);
   const outstandingBalance = moneyValue(raw, [
+    'balanceDue',
+    'outstandingBalance',
+    'remainingBalance',
+    'amountDue',
     'money.balanceDue',
     'money.remainingBalance',
     'money.outstandingBalance',
     'money.balance',
+    'money.amountDue',
     'payment.balanceDue',
     'payment.outstandingBalance',
+    'payment.amountDue',
+    'paymentInfo.balanceDue',
+    'paymentInfo.outstandingBalance',
+    'invoice.balanceDue',
+    'invoice.outstandingBalance',
     'financials.balanceDue',
+    'financials.outstandingBalance',
+    'financials.remainingBalance',
+  ]);
+  const totalPrice = moneyValue(raw, [
+    'totalPrice',
+    'totalAmount',
+    'guestTotal',
+    'guestTotalPrice',
+    'money.totalPrice',
+    'money.total',
+    'money.guestTotal',
+    'money.guestTotalPrice',
+    'money.invoiceTotal',
+    'money.subtotalPrice',
+    'invoice.total',
+    'invoice.totalAmount',
+    'financials.total',
+    'financials.totalPrice',
+    'financials.guestTotal',
   ]);
   const paymentStatus = firstValue(raw, [
     'paymentStatus',
     'payment.status',
+    'paymentInfo.status',
+    'invoice.paymentStatus',
+    'invoice.status',
     'money.paymentStatus',
     'money.status',
     'financialStatus',
+    'financials.paymentStatus',
+    'financials.status',
   ]);
+  const paid = amountPaid != null ? amountPaid : (paidFromPayments > 0 ? paidFromPayments : null);
+  const derivedTotal = totalPrice != null
+    ? totalPrice
+    : (paid != null && outstandingBalance != null ? paid + outstandingBalance : null);
   return {
-    amount_paid: amountPaid != null ? amountPaid : (paidFromPayments > 0 ? paidFromPayments : null),
+    total_price: derivedTotal,
+    amount_paid: paid,
     outstanding_balance: outstandingBalance,
     payment_status: paymentStatus ? String(paymentStatus) : null,
-    fare_accommodation: moneyValue(raw, ['money.fareAccommodation', 'money.accommodationFare', 'money.subtotalPrice']),
-    cleaning_fee: moneyValue(raw, ['money.cleaningFee', 'money.fareCleaning', 'money.cleaningFeeValue']),
-    nightly_rate: moneyValue(raw, ['money.nightlyRate', 'money.averageNightlyRate']),
+    currency: firstValue(raw, [
+      'currency',
+      'currencyCode',
+      'money.currency',
+      'money.currencyCode',
+      'payment.currency',
+      'paymentInfo.currency',
+      'invoice.currency',
+      'financials.currency',
+    ]),
+    fare_accommodation: moneyValue(raw, [
+      'money.fareAccommodation',
+      'money.accommodationFare',
+      'money.subtotalPrice',
+      'financials.fareAccommodation',
+      'financials.accommodationFare',
+    ]),
+    cleaning_fee: moneyValue(raw, [
+      'money.cleaningFee',
+      'money.fareCleaning',
+      'money.cleaningFeeValue',
+      'financials.cleaningFee',
+    ]),
+    nightly_rate: moneyValue(raw, [
+      'money.nightlyRate',
+      'money.averageNightlyRate',
+      'financials.nightlyRate',
+      'financials.averageNightlyRate',
+    ]),
   };
 }
 
@@ -212,6 +370,7 @@ function shapeReservationForInbox(row, source = 'legacy') {
   const totalMinor = row.total_amount_minor == null ? null : Number(row.total_amount_minor);
   const totalMajor = Number.isFinite(totalMinor) ? totalMinor / 100 : null;
   const financial = inferFinancialContext(row);
+  const party = inferPartyContext(row);
   const guestName = row.guest_name
     || [row.guest_first_name, row.guest_last_name].filter(Boolean).join(' ').trim()
     || null;
@@ -227,15 +386,15 @@ function shapeReservationForInbox(row, source = 'legacy') {
     check_in: row.check_in || row.check_in_date || null,
     check_out: row.check_out || row.check_out_date || null,
     number_of_nights: row.number_of_nights ?? row.nights ?? null,
-    num_guests: row.num_guests ?? row.guests_count ?? null,
-    adults: row.adults ?? null,
-    children: row.children ?? null,
-    infants: row.infants ?? null,
+    num_guests: party.num_guests,
+    adults: party.adults,
+    children: party.children,
+    infants: party.infants,
     guest_name: guestName,
     guest_email: row.guest_email || null,
     guest_phone: row.guest_phone || null,
-    total_price: row.total_price != null ? row.total_price : totalMajor,
-    currency: row.currency || row.currency_code || null,
+    total_price: row.total_price != null ? row.total_price : (totalMajor ?? financial.total_price),
+    currency: row.currency || row.currency_code || financial.currency || null,
     amount_paid: financial.amount_paid,
     outstanding_balance: financial.outstanding_balance,
     payment_status: financial.payment_status,
@@ -452,6 +611,7 @@ module.exports = {
     formatReservationContextForPrompt,
     availabilityPromptLine,
     inferFinancialContext,
+    inferPartyContext,
     normalizeName,
     guestNameParts,
     isCurrentStay,

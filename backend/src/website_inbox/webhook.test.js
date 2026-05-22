@@ -76,4 +76,38 @@ describe('website inbox webhook', () => {
       payload: expect.objectContaining({ threadId, eventId, eventType: 'booking.request_submitted' }),
     }));
   });
+
+  test('recovers missed website draft generation on duplicate inquiry retries', async () => {
+    const threadId = '11111111-1111-4111-8111-111111111111';
+    const eventId = '22222222-2222-4222-8222-222222222222';
+    const duplicate = new Error('duplicate');
+    duplicate.code = '23505';
+    query
+      .mockResolvedValueOnce({ rows: [{ id: threadId }] })
+      .mockRejectedValueOnce(duplicate)
+      .mockResolvedValueOnce({ rows: [{ id: eventId }] });
+
+    const rawBody = JSON.stringify({
+      event_type: 'booking.request_submitted',
+      source: 'website',
+      data: {
+        reference: 'FBR-TEST-1',
+        email: 'guest@example.com',
+        name: 'Guest Example',
+        residence_slug: 'villa-demo',
+      },
+    });
+    const { timestamp, signature } = signedHeaders(rawBody);
+
+    const res = await request(app())
+      .post('/friday-website')
+      .set('Content-Type', 'application/json')
+      .set('X-Friday-Inbox-Timestamp', timestamp)
+      .set('X-Friday-Inbox-Signature', signature)
+      .send(rawBody)
+      .expect(200);
+
+    expect(res.body).toMatchObject({ status: 'duplicate', thread_id: threadId });
+    expect(triggerWebsiteDraftGeneration).toHaveBeenCalledWith(threadId, eventId);
+  });
 });

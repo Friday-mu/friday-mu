@@ -299,7 +299,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     draftId: string;
     websiteThreadId?: string;
     draftBody?: string;   // edited body if operator edited inline
-    sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email';
+    sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website';
     countdown: number;
   };
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
@@ -315,7 +315,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
       setDraftBusy(true);
       setDraftError(null);
       const sendPromise = websiteThreadId
-        ? approveWebsiteDraft(websiteThreadId, draftId, { draftBody, sentVia: 'email' })
+        ? approveWebsiteDraft(websiteThreadId, draftId, { draftBody, sentVia })
         : approveDraft(draftId, { draftBody, sentVia });
       sendPromise
         .then(() => {
@@ -409,7 +409,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     if (!preflight || !thread) return;
     const { bodyToSend, fromDraft } = preflight;
     setPreflight(null);
-    const channel = opts.channel as 'whatsapp' | 'airbnb' | 'booking' | 'email';
+    const channel = opts.channel as 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website';
 
     if (fromDraft && activeDraft) {
       const websiteThreadId = thread.id.startsWith('web-') ? thread.id.slice(4) : undefined;
@@ -417,7 +417,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
         draftId: activeDraft.id,
         websiteThreadId,
         draftBody: bodyToSend !== activeDraft.body ? bodyToSend : undefined,
-        sentVia: websiteThreadId ? 'email' : channel,
+        sentVia: channel,
         countdown: 5,
       });
       return;
@@ -642,7 +642,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     if (!thread || !replyBody.trim() || composeBusy) return;
     setComposeBusy(true);
     const channel = (thread.recommendedChannel || thread.channelKey) as
-      | 'whatsapp' | 'airbnb' | 'booking' | 'email' | undefined;
+      | 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website' | undefined;
     sendCompose(thread.id, {
       mode: 'manual',
       body: replyBody.trim(),

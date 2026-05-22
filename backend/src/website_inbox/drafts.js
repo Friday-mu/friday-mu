@@ -456,6 +456,15 @@ async function approveWebsiteDraft({ threadId, draftId, body, channel = 'email',
   }
   assertDraftCurrent({ draft, latestEvent: latest, latestReply });
 
+  if (channel === 'website') {
+    const err = new Error(/^website-ai\+/i.test(thread.guest_email || thread.guest_email_raw || '')
+      ? 'website_ai_handoff_drafts_takeover_only'
+      : 'website_live_channel_not_available');
+    err.status = 409;
+    err.code = err.message;
+    throw err;
+  }
+
   const toEmail = thread.guest_email_raw || thread.guest_email;
   if (!toEmail) {
     const err = new Error('missing_guest_email');

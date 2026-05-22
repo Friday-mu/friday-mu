@@ -7,6 +7,7 @@ const {
     formatReservationContextForPrompt,
     availabilityPromptLine,
     inferFinancialContext,
+    inferPartyContext,
   },
 } = require('./reservation_context');
 
@@ -122,6 +123,68 @@ describe('inbox reservation context resolver helpers', () => {
     expect(inferred.amount_paid).toBe(300);
     expect(inferred.outstanding_balance).toBe(125);
     expect(inferred.payment_status).toBe('partial');
+  });
+
+  test('infers guests and financials from alternate Guesty raw shapes', () => {
+    const row = {
+      id: 'raw-shape',
+      guesty_id: 'g-raw',
+      status: 'confirmed',
+      raw: {
+        guests: {
+          adults: 2,
+          children: 1,
+          infants: 1,
+        },
+        paymentInfo: {
+          totalPaid: 820,
+          balanceDue: 180,
+          status: 'partially_paid',
+          currency: 'EUR',
+        },
+        financials: {
+          totalPrice: 1000,
+          cleaningFee: 75,
+        },
+      },
+    };
+
+    const party = inferPartyContext(row);
+    const financial = inferFinancialContext(row);
+    const shaped = shapeReservationForInbox(row, 'guesty_reservations_current');
+
+    expect(party).toMatchObject({
+      num_guests: 4,
+      adults: 2,
+      children: 1,
+      infants: 1,
+    });
+    expect(financial).toMatchObject({
+      total_price: 1000,
+      amount_paid: 820,
+      outstanding_balance: 180,
+      payment_status: 'partially_paid',
+      currency: 'EUR',
+      cleaning_fee: 75,
+    });
+    expect(shaped.num_guests).toBe(4);
+    expect(shaped.total_price).toBe(1000);
+    expect(shaped.currency).toBe('EUR');
+  });
+
+  test('derives total from paid plus outstanding when Guesty raw omits total', () => {
+    const inferred = inferFinancialContext({
+      raw: {
+        invoice: {
+          paidAmount: 700,
+          outstandingBalance: 125,
+        },
+      },
+    });
+
+    expect(inferred.total_price).toBe(825);
+    expect(inferred.amount_paid).toBe(700);
+    expect(inferred.outstanding_balance).toBe(125);
   });
 
   test('formats reservation finance and availability context for AI prompts', () => {

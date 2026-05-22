@@ -13,6 +13,7 @@ const {
   formatMessageForContext,
   detectTaskSignals,
   latestInboundMessage,
+  latestGuestTurnPromptBlock,
   statusUpdateSafetyInstruction,
   applyStatusUpdateSafety,
 } = require('./draft_generator');
@@ -245,6 +246,8 @@ function buildConsultUserMessage({
   if (messages && messages.length > 0) {
     const label = fullThread ? 'Full thread messages' : 'Recent thread messages';
     parts.push(`[${label}]\n${messages.map(formatMessageForContext).join('\n\n')}`);
+    const latestTurnBlock = latestGuestTurnPromptBlock(messages);
+    if (latestTurnBlock) parts.push(latestTurnBlock);
   }
   if (draftBody) {
     parts.push(`[Current working draft]\n${draftBody}`);
@@ -305,6 +308,8 @@ function buildCompactConsultUserMessage({
     : [];
   if (recentMessages.length > 0) {
     parts.push(`[Last thread messages]\n${recentMessages.join('\n\n')}`);
+    const latestTurnBlock = latestGuestTurnPromptBlock(messages);
+    if (latestTurnBlock) parts.push(truncateText(latestTurnBlock, 2200));
   }
   if (draftBody) {
     parts.push(`[Current working draft]\n${truncateText(draftBody, 1800)}`);
@@ -344,6 +349,7 @@ Respond in English. Be concise and operational.
 Use only the compact context provided. Do not invent prices, availability, property features, refunds, or operational commitments.
 If the operator asks you to write or modify a guest-facing draft/message, put the complete final text in [DRAFT_UPDATE]...[/DRAFT_UPDATE] and do not repeat it outside the tag.
 If you cannot safely answer from the compact context, say exactly what is missing and what the operator should check.
+Use confidence gates: high confidence means answer directly; medium confidence means answer with a caveat or ask one clarification; low confidence means say human context is needed.
 
 Surface: ${selectConsultSurface(context)}${propertyCode ? `\nProperty code: ${propertyCode}` : ''}${compactKnowledgeAppendix || ''}`;
 }
@@ -408,13 +414,19 @@ TEACHING PROTOCOL:
 [TEACH]{"action":"flag_conflict","conflicting":"T2","instruction":"Always mention pool hours for this property","reason":"T2 says keep messages brief"}[/TEACH]
 
 Be concise. Surface missing knowledge honestly. Do not invent prices, availability, property features, refunds, or operational commitments.`;
+  const confidenceGates = `
+CONFIDENCE GATES:
+- High confidence: answer or draft directly from provided context.
+- Medium confidence: draft with a caveat, or ask one concise clarification if that is safer.
+- Low confidence: say the missing human/property/ops context needed; do not fabricate a guest-facing answer.
+- Treat emojis as tone/acknowledgement unless surrounding text makes them factual.`;
   const runtimeKnowledgeBlock = buildRuntimeKnowledgeBlock({
     channel: conversation?.channel || conversation?.communication_channel,
     contextText: [instruction, draftBody, conversationText].filter(Boolean).join('\n\n'),
   });
 
   return {
-    systemPrompt: `${protocol}\n\n${composed.system_message}${runtimeKnowledgeBlock}${activeTeachingBlock || ''}${actionFeedbackBlock || ''}`,
+    systemPrompt: `${protocol}${confidenceGates}\n\n${composed.system_message}${runtimeKnowledgeBlock}${activeTeachingBlock || ''}${actionFeedbackBlock || ''}`,
     missingKnowledge,
     metadata: composed.metadata,
     composerSystemMessage: composed.system_message,
