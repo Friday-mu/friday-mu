@@ -13,6 +13,7 @@ const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const MAX_QUESTION_CHARS = 1200;
 const MAX_HISTORY_TURNS = 8;
 const ASK_FRIDAY_MAX_TOKENS = Number(process.env.KIMI_FAD_ASK_MAX_TOKENS) || 4096;
+const ASK_FRIDAY_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_PROVIDER_TIMEOUT_MS) || 25_000;
 const ACTION_TYPES = new Set(['navigate', 'create_task', 'send_team_message', 'request_approval']);
 const ACTION_RISKS = new Set(['navigation', 'safe', 'approval']);
 
@@ -594,6 +595,7 @@ router.post('/ask', attachIdentity, async (req, res) => {
       ],
       model: req.body?.model || 'auto',
       maxTokens: ASK_FRIDAY_MAX_TOKENS,
+      timeoutMs: ASK_FRIDAY_PROVIDER_TIMEOUT_MS,
       meter: { tenantId: req.tenantId, feature: 'fad_ask_friday' },
     });
     if (!result.ok) {
@@ -633,5 +635,6 @@ module.exports = {
     shapeReview,
     buildListingIndex,
     ASK_FRIDAY_MAX_TOKENS,
+    ASK_FRIDAY_PROVIDER_TIMEOUT_MS,
   },
 };

@@ -80,4 +80,26 @@ describe('chat proxy', () => {
       },
     });
   });
+
+  test('allows callers to cap non-streaming provider timeout', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: {
+        choices: [
+          {
+            message: { role: 'assistant', content: 'ok' },
+            finish_reason: 'stop',
+          },
+        ],
+      },
+    });
+
+    const { invokeChat } = require('./chat_proxy');
+    await invokeChat({
+      model: 'kimi-k2.6',
+      messages: [{ role: 'user', content: 'fast answer' }],
+      timeoutMs: 25000,
+    });
+
+    expect(axios.post.mock.calls[0][2]).toEqual(expect.objectContaining({ timeout: 25000 }));
+  });
 });

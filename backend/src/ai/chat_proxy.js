@@ -93,7 +93,7 @@ function resolveAnthropicModel(model) {
 // Kimi — non-streaming + streaming
 // ────────────────────────────────────────────────────────────────────
 
-async function invokeKimi({ system, messages, tools, model, maxTokens }) {
+async function invokeKimi({ system, messages, tools, model, maxTokens, timeoutMs }) {
   if (!KIMI_API_KEY) {
     return { ok: false, error: 'KIMI_API_KEY not set', status: 500 };
   }
@@ -114,7 +114,7 @@ async function invokeKimi({ system, messages, tools, model, maxTokens }) {
   try {
     const { data } = await axios.post(`${KIMI_BASE_URL}/chat/completions`, body, {
       headers: { Authorization: `Bearer ${KIMI_API_KEY}`, 'Content-Type': 'application/json' },
-      timeout: KIMI_TIMEOUT_MS,
+      timeout: timeoutMs || KIMI_TIMEOUT_MS,
     });
     const choice = data?.choices?.[0];
     const text = choice?.message?.content || '';
@@ -338,7 +338,7 @@ function anthropicResponseToOpenAI(resp) {
   };
 }
 
-async function invokeAnthropic({ system, messages, tools, model, maxTokens }) {
+async function invokeAnthropic({ system, messages, tools, model, maxTokens, timeoutMs }) {
   const client = getAnthropic();
   if (!client) {
     return { ok: false, error: 'ANTHROPIC_API_KEY not set', status: 500 };
@@ -352,7 +352,7 @@ async function invokeAnthropic({ system, messages, tools, model, maxTokens }) {
       ...(system ? { system } : {}),
       messages: anthropicMessages(messages),
       ...(tools ? { tools: openAIToolsToAnthropic(tools) } : {}),
-    }, { timeout: ANTHROPIC_TIMEOUT_MS });
+    }, { timeout: timeoutMs || ANTHROPIC_TIMEOUT_MS });
     const conv = anthropicResponseToOpenAI(resp);
     return {
       ok: true,
@@ -486,7 +486,7 @@ function shouldFallback(result) {
   return s === 429 || (s >= 500 && s < 600);
 }
 
-async function invokeChat({ system, messages, tools, model, maxTokens, meter }) {
+async function invokeChat({ system, messages, tools, model, maxTokens, meter, timeoutMs }) {
   const provider = resolveProvider(model);
   const order = provider === 'auto' ? ['kimi', 'anthropic'] : [provider];
   let result;
@@ -495,8 +495,8 @@ async function invokeChat({ system, messages, tools, model, maxTokens, meter }) 
   for (let i = 0; i < order.length; i++) {
     const p = order[i];
     result = p === 'kimi'
-      ? await invokeKimi({ system, messages, tools, model, maxTokens })
-      : await invokeAnthropic({ system, messages, tools, model, maxTokens });
+      ? await invokeKimi({ system, messages, tools, model, maxTokens, timeoutMs })
+      : await invokeAnthropic({ system, messages, tools, model, maxTokens, timeoutMs });
     logUsage(meter, {
       provider: p === 'kimi' ? 'moonshot' : 'anthropic',
       model: result.model || (p === 'kimi' ? resolveKimiModel(model) : resolveAnthropicModel(model)),
