@@ -774,6 +774,7 @@ function ManagerWorkbenchPanel({
           title={`Stale-open reminders · ${signals.staleOpen.length}`}
           actionLabel="All tasks"
           onAction={() => onChangeSubPage('all')}
+          defaultOpen={signals.staleOpen.length > 0}
         >
           {staleOpen.map((signal) => (
             <StaleOpenRow key={signal.task.id} signal={signal} onOpenTask={onOpenTask} />
@@ -781,7 +782,10 @@ function ManagerWorkbenchPanel({
           {signals.staleOpen.length === 0 && <WorkbenchEmpty>No stale open work.</WorkbenchEmpty>}
         </WorkbenchLane>
 
-        <WorkbenchLane title={`Reported issues · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}>
+        <WorkbenchLane
+          title={`Reported issues · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}
+          defaultOpen={signals.openReportedIssues.length + signals.inboxAiReported.length > 0}
+        >
           <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('issues')}>
             <span>
               <strong>Reported issues and Inbox proposals</strong>
@@ -802,6 +806,7 @@ function ManagerWorkbenchPanel({
           title={`Supplies and loadouts · ${signals.supplyPrep.length}`}
           actionLabel="Review tasks"
           onAction={() => onChangeSubPage('all')}
+          defaultOpen={signals.supplyPrep.length > 0}
         >
           {supplyPrep.map((signal) => (
             <SupplyPrepRow key={signal.task.id} signal={signal} onOpenTask={onOpenTask} />
@@ -813,6 +818,7 @@ function ManagerWorkbenchPanel({
           title={`Staff load · ${staffLoad.length}`}
           actionLabel={canSeeRoster ? 'Roster' : undefined}
           onAction={canSeeRoster ? () => onChangeSubPage('roster') : undefined}
+          defaultOpen={false}
         >
           {staffLoad.map((signal) => (
             <StaffLoadRow key={signal.assigneeId} signal={signal} />
@@ -832,25 +838,33 @@ function WorkbenchLane({
   title,
   actionLabel,
   onAction,
+  defaultOpen,
   children,
 }: {
   title: string;
   actionLabel?: string;
   onAction?: () => void;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
+  const [isOpen, setIsOpen] = useState(Boolean(defaultOpen));
+
+  useEffect(() => {
+    setIsOpen(Boolean(defaultOpen));
+  }, [defaultOpen, title]);
+
   return (
-    <div className="ops-workbench-lane">
-      <div className="ops-workbench-lane-head">
+    <details className="ops-workbench-lane" open={isOpen} onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+      <summary className="ops-workbench-lane-head">
         <h4>{title}</h4>
         {actionLabel && onAction && (
-          <button type="button" onClick={onAction}>
+          <button type="button" onClick={(event) => { event.preventDefault(); onAction(); }}>
             {actionLabel}
           </button>
         )}
-      </div>
+      </summary>
       <div className="ops-workbench-list">{children}</div>
-    </div>
+    </details>
   );
 }
 

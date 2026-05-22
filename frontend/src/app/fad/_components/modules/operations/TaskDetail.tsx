@@ -522,12 +522,12 @@ function Header({
         <span
           className="chip"
           style={{
-            minWidth: 44,
-            minHeight: 44,
+            minWidth: 0,
+            minHeight: 24,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '0 8px',
+            padding: '0 7px',
             fontSize: 11,
             whiteSpace: 'nowrap',
           }}
@@ -548,7 +548,7 @@ function Header({
           </button>
         )}
       </div>
-      <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 500 }}>{task.title}</h2>
+      <h2 style={{ margin: '0 0 7px', fontSize: 17, fontWeight: 550, lineHeight: 1.25 }}>{task.title}</h2>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <Badge label={STATUS_LABEL[task.status]} bg={statusBadge.background} fg={statusBadge.color} />
         <Badge label={task.priority} bg={priorityBadge.background} fg={priorityBadge.color} />
@@ -696,7 +696,7 @@ function Body({
         </Section>
       )}
 
-      <Section title="Assignees">
+      <CollapsibleSection title="Assignees" defaultOpen={assignees.length > 0 && assignees.length <= 3}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {assignees.length === 0 && <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Unassigned</span>}
           {assignees.map((u) => (
@@ -721,12 +721,12 @@ function Body({
             </span>
           ))}
         </div>
-      </Section>
+      </CollapsibleSection>
 
       {task.reservationId && (
-        <Section title="Staff-safe reservation context">
+        <CollapsibleSection title="Reservation link">
           <ReservationPanel reservationId={task.reservationId} staffMode={role === 'field'} />
-        </Section>
+        </CollapsibleSection>
       )}
 
       <Section title={`Evidence · ${task.attachmentCount + evidenceQueue.length}`}>
@@ -737,25 +737,25 @@ function Body({
         <AccessPanel task={task} role={role} currentUserId={currentUserId} canManageTasks={canManageTasks} />
       </Section>
 
-      <Section title="Details">
+      <CollapsibleSection title="Details">
         <DetailsPanel task={task} />
-      </Section>
+      </CollapsibleSection>
 
       <ImportedHistoryPanel task={task} />
 
       {task.aiSuggestions.length > 0 && (
-        <Section title="AI panel">
+        <CollapsibleSection title={`AI suggestions · ${task.aiSuggestions.length}`} defaultOpen>
           <AIPanel task={task} />
-        </Section>
+        </CollapsibleSection>
       )}
 
       <CostLines task={task} canEdit={canEdit} canSeeFinance={canSeeFinance} onAddCost={onAddCost} />
 
       <SupplyLines task={task} canEdit={canEdit} onAddSupply={onAddSupply} />
 
-      <Section title="Activity">
+      <CollapsibleSection title={`Activity · ${task.activityLog.length}`}>
         <ActivityLog entries={task.activityLog} />
-      </Section>
+      </CollapsibleSection>
     </>
   );
 }
@@ -1222,7 +1222,7 @@ function ImportedHistoryPanel({ task }: { task: Task }) {
   const summary = compactText(enrichment?.summary?.note);
 
   return (
-    <Section title="Imported history">
+    <CollapsibleSection title="Imported history">
       <div className="ops-import-history">
         <div className="ops-import-history-top">
           <strong>{sourceLabel(task.source)}</strong>
@@ -1277,7 +1277,7 @@ function ImportedHistoryPanel({ task }: { task: Task }) {
           </div>
         )}
       </div>
-    </Section>
+    </CollapsibleSection>
   );
 }
 
@@ -1304,7 +1304,7 @@ function SupplyLines({
   const loadout = suggestSupplyLoadout(task).filter((item) => !usedSupplyIds.has(item.id));
   const ownerBillable = supplies.filter((supply) => supply.ownerCharge);
   return (
-    <Section title={`Supplies · ${supplies.length}`}>
+    <CollapsibleSection title={`Supplies · ${supplies.length}`} defaultOpen={supplies.length > 0 || loadout.length > 0}>
       <div className="ops-supplies-panel">
         {loadout.length > 0 && (
           <div className="ops-supply-loadout" aria-label="Suggested supply loadout">
@@ -1352,7 +1352,7 @@ function SupplyLines({
           </button>
         )}
       </div>
-    </Section>
+    </CollapsibleSection>
   );
 }
 
@@ -1406,7 +1406,7 @@ function CostLines({
   const total = task.costs.reduce((s, c) => s + c.amount, 0);
   const ownerBillable = task.costs.filter((c) => c.ownerCharge);
   return (
-    <Section title={`Cost lines · ${task.costs.length}`}>
+    <CollapsibleSection title={`Cost lines · ${task.costs.length}`} defaultOpen={task.costs.length > 0}>
       {task.costs.length === 0 && (
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
           No costs recorded yet.
@@ -1455,7 +1455,7 @@ function CostLines({
           <IconPlus size={11} /> Add cost
         </button>
       )}
-    </Section>
+    </CollapsibleSection>
   );
 }
 
@@ -2082,7 +2082,7 @@ function ReservationPanel({ reservationId, staffMode }: { reservationId: string;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div className="ops-detail-section">
       <div
         style={{
           fontSize: 10,
@@ -2097,6 +2097,31 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </div>
       {children}
     </div>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    setIsOpen(defaultOpen);
+  }, [defaultOpen, title]);
+
+  return (
+    <details className="ops-detail-disclosure" open={isOpen} onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+      <summary>{title}</summary>
+      <div className="ops-detail-disclosure-body">
+        {children}
+      </div>
+    </details>
   );
 }
 
