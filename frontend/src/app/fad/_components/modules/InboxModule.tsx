@@ -299,7 +299,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     draftId: string;
     websiteThreadId?: string;
     draftBody?: string;   // edited body if operator edited inline
-    sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email';
+    sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website';
     countdown: number;
   };
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
@@ -315,7 +315,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
       setDraftBusy(true);
       setDraftError(null);
       const sendPromise = websiteThreadId
-        ? approveWebsiteDraft(websiteThreadId, draftId, { draftBody, sentVia: 'email' })
+        ? approveWebsiteDraft(websiteThreadId, draftId, { draftBody, sentVia })
         : approveDraft(draftId, { draftBody, sentVia });
       sendPromise
         .then(() => {
@@ -409,7 +409,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     if (!preflight || !thread) return;
     const { bodyToSend, fromDraft } = preflight;
     setPreflight(null);
-    const channel = opts.channel as 'whatsapp' | 'airbnb' | 'booking' | 'email';
+    const channel = opts.channel as 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website';
 
     if (fromDraft && activeDraft) {
       const websiteThreadId = thread.id.startsWith('web-') ? thread.id.slice(4) : undefined;
@@ -417,7 +417,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
         draftId: activeDraft.id,
         websiteThreadId,
         draftBody: bodyToSend !== activeDraft.body ? bodyToSend : undefined,
-        sentVia: websiteThreadId ? 'email' : channel,
+        sentVia: channel,
         countdown: 5,
       });
       return;
@@ -642,7 +642,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     if (!thread || !replyBody.trim() || composeBusy) return;
     setComposeBusy(true);
     const channel = (thread.recommendedChannel || thread.channelKey) as
-      | 'whatsapp' | 'airbnb' | 'booking' | 'email' | undefined;
+      | 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website' | undefined;
     sendCompose(thread.id, {
       mode: 'manual',
       body: replyBody.trim(),
@@ -709,35 +709,6 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
 
   const actions = (
     <>
-      {canSeeGuest && (
-        <button
-          className={'btn ghost sm' + (triageFilter === 'review' ? ' active' : '')}
-          onClick={() => {
-            setEntityFilter('all');
-            setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
-          }}
-          title="Show guest threads with a draft ready for operator approval"
-          style={{
-            background: triageFilter === 'review' ? 'var(--color-background-tertiary)' : undefined,
-            color: triageFilter === 'review' ? 'var(--color-brand-accent)' : undefined,
-          }}
-        >
-          <IconClock size={14} />
-          <span>Needs reply</span>
-          <span
-            className="mono"
-            style={{
-              fontSize: 10,
-              padding: '0 5px',
-              borderRadius: 8,
-              background: triageFilter === 'review' ? 'var(--color-brand-accent)' : 'var(--color-background-tertiary)',
-              color: triageFilter === 'review' ? 'white' : 'var(--color-text-secondary)',
-            }}
-          >
-            {reviewCount}
-          </span>
-        </button>
-      )}
       <FilterButton
         triageFilter={triageFilter}
         setTriageFilter={setTriageFilter}
@@ -783,6 +754,29 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
           </span>
         </button>
       ))}
+      {canSeeGuest && (
+        <button
+          className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}
+          onClick={() => {
+            setEntityFilter('all');
+            setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
+          }}
+          title="Show threads with a Friday draft ready for operator approval"
+          aria-pressed={triageFilter === 'review'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            marginLeft: 6,
+          }}
+        >
+          <IconClock size={11} />
+          Reply
+          <span className="mono" style={{ fontSize: 10, marginLeft: 2, opacity: 0.8 }}>
+            {reviewCount}
+          </span>
+        </button>
+      )}
       {canSeeTeam && (
         <button
           className={'inbox-chip' + (onTeam ? ' active' : '')}
@@ -2036,7 +2030,7 @@ function WhatsAppTimer({
 const TRIAGE_OPTIONS: { value: 'all' | 'unread' | 'review' | 'open' | 'done'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'unread', label: 'Unread' },
-  { value: 'review', label: 'Needs reply' },
+  { value: 'review', label: 'Draft ready' },
   { value: 'open', label: 'Open' },
   { value: 'done', label: 'Done' },
 ];

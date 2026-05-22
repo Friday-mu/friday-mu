@@ -1051,6 +1051,8 @@ html.fad-dark .send-split-main { color: #0b0d14; }
   border-radius: var(--radius-sm);
   font-size: 11px;
   overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
   border-left: 2px solid;
   cursor: pointer;
 }
@@ -1166,6 +1168,7 @@ html.fad-dark .send-split-main { color: #0b0d14; }
 
 .cal-stay-label {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1246,6 +1249,7 @@ html.fad-dark .send-split-main { color: #0b0d14; }
 
 .cal-month-stay-label {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2263,6 +2267,13 @@ html.fad-dark .fad-feedback-tab.is-active {
   line-height: 1.55;
   padding: 8px 0 4px;
   color: var(--color-text-primary);
+  white-space: pre-wrap;
+}
+.friday-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 4px;
 }
 .friday-msg-user { font-family: var(--font-sans-fad); }
 

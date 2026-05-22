@@ -14,6 +14,7 @@
 // include it on the mutating routes.
 
 const { query } = require('../database/client');
+const { publishFadEvent } = require('../realtime');
 const { attachIdentity } = require('../design/auth');
 const { confirmReservation } = require('./guesty');
 const { sendEmail } = require('./resend');
@@ -110,11 +111,19 @@ function mountThreads(router) {
            LIMIT 1
         ) latest_handoff ON TRUE
         LEFT JOIN LATERAL (
+          SELECT MIN(e.created_at) AS started_at
+            FROM inbox_events e
+           WHERE e.thread_id = t.id
+             AND latest_handoff.id IS NOT NULL
+             AND e.event_type = 'website.ai_handoff'
+             AND e.payload->>'conversationKey' = latest_handoff.payload->>'conversationKey'
+        ) latest_handoff_window ON TRUE
+        LEFT JOIN LATERAL (
           SELECT e.id, e.payload, e.created_at
             FROM inbox_events e
            WHERE e.thread_id = t.id
              AND latest_handoff.id IS NOT NULL
-             AND e.created_at >= latest_handoff.created_at
+             AND e.created_at >= COALESCE(latest_handoff_window.started_at, latest_handoff.created_at)
              AND e.event_type IN ('website.ai_handoff_takeover', 'staff.reply_sent')
            ORDER BY e.created_at DESC, e.id::text DESC
            LIMIT 1
@@ -233,10 +242,67 @@ function mountThreads(router) {
       const toEmail = t.guest_email_raw || t.guest_email;
       if (!toEmail) return res.status(409).json({ error: 'missing_guest_email' });
       if (/^website-ai\+/i.test(toEmail)) {
-        return res.status(409).json({
-          error: 'website_ai_handoff_reply_not_connected',
-          message: 'This is a website AI handoff. Take over the AI first; live visitor reply delivery is handled by the website handoff contract, not email.',
-          state: 'blocked',
+        if (channel !== 'website') {
+          return res.status(409).json({
+            error: 'website_ai_handoff_reply_requires_website_channel',
+            message: 'Website AI handoff threads can only be continued through the live website channel.',
+            state: 'blocked',
+          });
+        }
+        const takeover = await recordAiTakeoverForThread({
+          threadId: req.params.id,
+          identity: req.identity,
+          reason: 'staff_reply_sent',
+        });
+        if (!takeover.ok && takeover.reason === 'no_ai_handoff') {
+          return res.status(409).json({ error: 'no_ai_handoff' });
+        }
+        const eventRes = await query(
+          `INSERT INTO inbox_events (thread_id, event_type, source, payload)
+           VALUES ($1, 'staff.reply_sent', 'fad', $2::jsonb)
+           RETURNING id, created_at`,
+          [req.params.id, JSON.stringify({
+            channel: 'website',
+            body,
+            delivery: 'website_live',
+            handoff_id: takeover.handoffId || null,
+            sent_by: {
+              user_id: req.identity?.userId || null,
+              display_name: req.identity?.displayName || req.identity?.username || null,
+            },
+          })],
+        );
+
+        await query(
+          `UPDATE inbox_threads
+           SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+               last_event_type = 'staff.reply_sent',
+               last_event_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $1`,
+          [req.params.id],
+        );
+
+        await publishFadEvent({
+          type: 'inbox.message_sent',
+          payload: {
+            conversationId: `web-${req.params.id}`,
+            threadId: req.params.id,
+            messageId: eventRes.rows[0]?.id || null,
+            sentVia: 'website',
+          },
+        }).catch(() => {});
+        await publishFadEvent({
+          type: 'website_inbox.thread_updated',
+          payload: { threadId: req.params.id, eventId: eventRes.rows[0]?.id || null, eventType: 'staff.reply_sent' },
+        }).catch(() => {});
+
+        return res.json({
+          ok: true,
+          message_id: eventRes.rows[0]?.id,
+          sent_at: eventRes.rows[0]?.created_at,
+          sent_via: 'website',
+          delivery: 'website_live',
         });
       }
 

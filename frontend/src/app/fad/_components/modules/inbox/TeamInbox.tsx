@@ -14,6 +14,7 @@ import {
   useTeamMessages,
   useMessageReplies,
   useTenantTeamUsers,
+  useTeamPresence,
   openDm,
   markChannelRead,
   markDmRead,
@@ -90,6 +91,7 @@ export function TeamInbox({
   // virtual row per non-self team member, (b) render real display
   // names instead of raw UUIDs in DM titles + avatars.
   const { users: tenantUsers, byId: tenantUserById } = useTenantTeamUsers();
+  const { onlineUserIds } = useTeamPresence();
 
   const visibleChannels: LiveChannel[] = useMemo(
     () => liveChannels ?? [],
@@ -629,6 +631,8 @@ export function TeamInbox({
                   .map((p) => tenantUserById.get(p))
                   .filter(Boolean)
               : [row.peer];
+            const peerUsers = peer.filter(Boolean) as LiveUser[];
+            const isOnline = peerUsers.some((u) => onlineUserIds.has(u.id));
             const isSel = isReal
               ? (selection.kind === 'dm' && selection.dm.id === row.dm.id)
               : false;
@@ -671,10 +675,22 @@ export function TeamInbox({
                   color: 'var(--color-text-primary)',
                 }}
               >
-                <DmPeerAvatars peers={peer.filter(Boolean) as LiveUser[]} />
+                <DmPeerAvatars peers={peerUsers} onlineUserIds={onlineUserIds} />
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {label}
                 </span>
+                {isOnline && (
+                  <span
+                    title="Online in FAD"
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: 7,
+                      background: 'var(--color-success, #16a34a)',
+                      flex: '0 0 auto',
+                    }}
+                  />
+                )}
                 {unread > 0 && (
                   <span
                     className="chip"
@@ -2085,7 +2101,13 @@ function dmTitleFromUsers(dm: TeamDM, currentUserId: string, byId: Map<string, L
     .join(', ');
 }
 
-function DmPeerAvatars({ peers }: { peers: LiveUser[] }) {
+function DmPeerAvatars({
+  peers,
+  onlineUserIds,
+}: {
+  peers: LiveUser[];
+  onlineUserIds: Set<string>;
+}) {
   const slice = peers.slice(0, 2);
   return (
     <div style={{ display: 'flex' }}>
@@ -2093,21 +2115,37 @@ function DmPeerAvatars({ peers }: { peers: LiveUser[] }) {
         <span
           key={u.id}
           style={{
-            display: 'inline-block',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
             width: 22,
             height: 22,
             borderRadius: 11,
             background: deriveColor(u.displayName),
             color: 'white',
             fontSize: 10,
-            textAlign: 'center',
-            lineHeight: '22px',
             fontWeight: 500,
             marginLeft: i === 0 ? 0 : -8,
             border: '1.5px solid var(--color-background-primary)',
           }}
         >
           {deriveInitials(u.displayName)}
+          {onlineUserIds.has(u.id) && (
+            <span
+              title={`${u.displayName} is online in FAD`}
+              style={{
+                position: 'absolute',
+                right: -1,
+                bottom: -1,
+                width: 7,
+                height: 7,
+                borderRadius: 7,
+                background: 'var(--color-success, #16a34a)',
+                border: '1.5px solid var(--color-background-primary)',
+              }}
+            />
+          )}
         </span>
       ))}
       {slice.length === 0 && (

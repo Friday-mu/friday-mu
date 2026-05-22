@@ -11,7 +11,7 @@
 // channel is visible. useChannels polls every 30s for the unread
 // badges. Pure poll for v1; SSE upgrade in v2.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, API_BASE, getToken } from '../../../components/types';
 import type { ChannelKey, TeamMessage, TeamMessageKind } from './teamInbox';
 
@@ -123,6 +123,22 @@ export interface LiveUser {
   displayName: string;
   email: string;
   role: string | null;
+}
+
+export interface LivePresenceUser {
+  id: string;
+  displayName: string | null;
+  role: string | null;
+  status: 'online';
+  connectionCount: number;
+  connectedAt: string;
+}
+
+export interface LivePresence {
+  checkedAt: string;
+  activeConnectionCount: number;
+  activeUserCount: number;
+  users: LivePresenceUser[];
 }
 
 export interface LiveReactions {
@@ -342,6 +358,16 @@ export async function loadTenantUsers(): Promise<LiveUser[]> {
   return data?.users ?? [];
 }
 
+export async function loadTeamPresence(): Promise<LivePresence> {
+  const data = await apiFetch('/api/events/presence') as Partial<LivePresence>;
+  return {
+    checkedAt: typeof data.checkedAt === 'string' ? data.checkedAt : new Date().toISOString(),
+    activeConnectionCount: Number(data.activeConnectionCount || 0),
+    activeUserCount: Number(data.activeUserCount || 0),
+    users: Array.isArray(data.users) ? data.users : [],
+  };
+}
+
 export async function loadMessageReads(kind: 'channel' | 'dm', messageId: string): Promise<LiveRead[]> {
   const data = await apiFetch(`/api/team/messages/${kind}/${messageId}/reads`) as { reads?: LiveRead[] };
   return data?.reads ?? [];
@@ -454,6 +480,38 @@ export function useDms(): {
   }, [refetch]);
 
   return { dms, loading, error, refetch };
+}
+
+export function useTeamPresence(): {
+  presence: LivePresence | null;
+  onlineUserIds: Set<string>;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
+  const [presence, setPresence] = useState<LivePresence | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    loadTeamPresence()
+      .then((data) => { setPresence(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load presence'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refetch();
+    const id = setInterval(refetch, CHANNELS_POLL_MS);
+    return () => clearInterval(id);
+  }, [refetch]);
+
+  const onlineUserIds = useMemo(
+    () => new Set((presence?.users || []).map((user) => user.id)),
+    [presence],
+  );
+
+  return { presence, onlineUserIds, loading, error, refetch };
 }
 
 /** Live messages for a channel or DM. Polls every 15s while mounted.

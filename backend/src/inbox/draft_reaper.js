@@ -48,11 +48,17 @@ async function reapOnce() {
       console.warn(`[draft-reaper] reaped ${rows.length} stuck drafts: ${ageSummary}`);
     }
     await recoverMissedAutoDraftsOnce();
+    await recoverMissedWebsiteDraftsOnce();
   } catch (e) {
     console.error('[draft-reaper] tick failed:', e.message);
   } finally {
     inFlight = false;
   }
+}
+
+async function recoverMissedWebsiteDraftsOnce() {
+  const { recoverMissedWebsiteDraftsOnce: recover } = require('../website_inbox/drafts');
+  return recover();
 }
 
 async function recoverMissedAutoDraftsOnce() {
@@ -108,4 +114,4 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, reapOnce, recoverMissedAutoDraftsOnce };
+module.exports = { start, stop, reapOnce, recoverMissedAutoDraftsOnce, recoverMissedWebsiteDraftsOnce };

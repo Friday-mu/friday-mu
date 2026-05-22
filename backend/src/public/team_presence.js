@@ -3,11 +3,19 @@
 const express = require('express');
 
 const VALID_STATUS = new Set(['available', 'limited', 'offline']);
+const VALID_CAPACITY = new Set(['normal', 'limited', 'offline']);
 const MUT_TIMEZONE = 'Indian/Mauritius';
+const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+let presenceLoadWarned = false;
 
 function envStatus() {
   const raw = String(process.env.FAD_PUBLIC_TEAM_PRESENCE_STATUS || '').trim().toLowerCase();
   return VALID_STATUS.has(raw) ? raw : null;
+}
+
+function envCapacity() {
+  const raw = String(process.env.FAD_PUBLIC_TEAM_PRESENCE_CAPACITY || '').trim().toLowerCase();
+  return VALID_CAPACITY.has(raw) ? raw : null;
 }
 
 function mauritiusHour(date = new Date()) {
@@ -26,9 +34,37 @@ function defaultStatus(now = new Date()) {
   const { hour, weekday } = mauritiusHour(now);
   const isSunday = weekday.toLowerCase().startsWith('sun');
   if (!Number.isFinite(hour) || isSunday || hour < 9 || hour >= 18) return 'offline';
-  // Without real FAD presence wired, stay conservative. "limited"
-  // means the website can say the team can review, not that a person is online.
+  // Without active FAD presence, stay conservative. "limited" means the
+  // website can say the team can review, not that a person is online.
   return 'limited';
+}
+
+function publicTenantId() {
+  return String(process.env.FAD_PUBLIC_TEAM_PRESENCE_TENANT_ID || FR_TENANT_ID).trim() || FR_TENANT_ID;
+}
+
+function loadPresenceSnapshot(now = new Date()) {
+  try {
+    const { activePresenceForTenant } = require('../realtime');
+    if (typeof activePresenceForTenant !== 'function') return null;
+    return activePresenceForTenant(publicTenantId(), now);
+  } catch (e) {
+    if (!presenceLoadWarned) {
+      presenceLoadWarned = true;
+      console.warn('[team_presence] realtime presence unavailable:', e.message);
+    }
+    return null;
+  }
+}
+
+function hasActivePresence(presence) {
+  return Number(presence?.activeUserCount || 0) > 0 || Number(presence?.activeConnectionCount || 0) > 0;
+}
+
+function statusWithPresence(now = new Date(), presence = null) {
+  const fallback = defaultStatus(now);
+  if (fallback !== 'limited') return fallback;
+  return hasActivePresence(presence) ? 'available' : fallback;
 }
 
 function etaMinutes() {
@@ -45,12 +81,25 @@ function defaultMessage(status) {
   return 'The Friday team is away right now and will review this when back.';
 }
 
-function payload(now = new Date()) {
-  const status = envStatus() || defaultStatus(now);
+function defaultCapacity(status) {
+  if (status === 'available') return 'normal';
+  if (status === 'limited') return 'limited';
+  return 'offline';
+}
+
+function payload(now = new Date(), options = {}) {
+  const explicitStatus = envStatus();
+  const presence = explicitStatus ? null : Object.prototype.hasOwnProperty.call(options, 'presence')
+    ? options.presence
+    : loadPresenceSnapshot(now);
+  const status = explicitStatus || statusWithPresence(now, presence);
   const explicitMessage = String(process.env.FAD_PUBLIC_TEAM_PRESENCE_MESSAGE || '').trim().slice(0, 240);
+  const available = status === 'available';
   return {
-    available: status === 'available',
+    online: available,
+    available,
     status,
+    capacity: envCapacity() || defaultCapacity(status),
     etaMinutes: etaMinutes(),
     message: explicitMessage || defaultMessage(status),
   };
@@ -64,4 +113,4 @@ router.get('/', (req, res) => {
   res.json(out);
 });
 
-module.exports = { router, _test: { payload, defaultStatus, mauritiusHour } };
+module.exports = { router, _test: { payload, defaultStatus, mauritiusHour, statusWithPresence, hasActivePresence, defaultCapacity } };

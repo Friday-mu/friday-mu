@@ -12,10 +12,13 @@ const {
   buildDraftUserMessage,
   compactHistoryMessages,
   compactDraftSystemPrompt,
+  latestGuestTurnMessages,
+  latestGuestTurnPromptBlock,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
   isGuestStatusUpdateRequest,
   statusUpdateSafetyInstruction,
   applyStatusUpdateSafety,
+  ACTIONABLE_DRAFT_STATES_SQL,
 } = require('./draft_generator');
 
 describe('draft generator language policy', () => {
@@ -122,6 +125,67 @@ describe('draft generator compact fallback policy', () => {
     expect(prompt).toContain('Trigger category: request');
     expect(prompt).toContain('Compact KB + Learning Context');
     expect(prompt).toContain('Do not invent operational status updates');
+  });
+});
+
+describe('draft generator latest guest turn handling', () => {
+  test('keeps short inbound bursts together for the drafting prompt', () => {
+    const messages = [
+      {
+        id: 'm-1',
+        direction: 'outbound',
+        body: 'We can arrange that.',
+        sender_name: 'Friday',
+        created_at: '2026-05-22T08:00:00Z',
+      },
+      {
+        id: 'm-2',
+        direction: 'inbound',
+        body: 'Can we check in at 1pm?',
+        sender_name: 'Guest',
+        created_at: '2026-05-22T08:01:00Z',
+      },
+      {
+        id: 'm-3',
+        direction: 'inbound',
+        body: 'Sorry, I meant 2pm',
+        sender_name: 'Guest',
+        created_at: '2026-05-22T08:01:20Z',
+      },
+      {
+        id: 'm-4',
+        direction: 'inbound',
+        body: '🙏',
+        sender_name: 'Guest',
+        created_at: '2026-05-22T08:01:30Z',
+      },
+    ];
+
+    const turn = latestGuestTurnMessages(messages, 'm-4');
+    const block = latestGuestTurnPromptBlock(messages, 'm-4');
+
+    expect(turn.map((m) => m.id)).toEqual(['m-2', 'm-3', 'm-4']);
+    expect(block).toContain('Latest guest turn');
+    expect(block).toContain('I meant 2pm');
+    expect(block).toContain('Emojis are tone');
+  });
+
+  test('stops the guest turn at the latest Friday reply', () => {
+    const messages = [
+      { id: 'm-1', direction: 'inbound', body: 'First question', created_at: '2026-05-22T08:00:00Z' },
+      { id: 'm-2', direction: 'outbound', body: 'Answered', created_at: '2026-05-22T08:01:00Z' },
+      { id: 'm-3', direction: 'inbound', body: 'Follow-up', created_at: '2026-05-22T08:02:00Z' },
+    ];
+
+    expect(latestGuestTurnMessages(messages, 'm-3').map((m) => m.id)).toEqual(['m-3']);
+  });
+});
+
+describe('draft generator stale draft states', () => {
+  test('supersedes every actionable stale draft state before generating a replacement', () => {
+    expect(ACTIONABLE_DRAFT_STATES_SQL).toBe(
+      "('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')",
+    );
   });
 });
 

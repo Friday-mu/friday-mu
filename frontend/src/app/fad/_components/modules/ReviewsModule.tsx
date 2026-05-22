@@ -13,6 +13,7 @@ import { AllReviewsPage } from './reviews/AllReviewsPage';
 import { TrendsPage } from './reviews/TrendsPage';
 import { StaffPerformancePage } from './reviews/StaffPerformancePage';
 import { SettingsPage } from './reviews/SettingsPage';
+import { liveOnlyMode } from '../../_data/demoMode';
 
 interface Props {
   subPage: string;
@@ -20,13 +21,15 @@ interface Props {
 }
 
 export function ReviewsModule({ subPage, onChangeSubPage }: Props) {
-  const tabs = [
+  const liveOnly = liveOnlyMode();
+  const allTabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'all', label: 'All reviews' },
     { id: 'trends', label: 'Trends' },
     { id: 'staff', label: 'Staff performance' },
     { id: 'settings', label: 'Settings' },
   ];
+  const tabs = liveOnly ? allTabs.filter((tab) => tab.id !== 'trends' && tab.id !== 'staff') : allTabs;
   const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
 
   // Bumped after fixture mutations (e.g. reply sent, internal note added).

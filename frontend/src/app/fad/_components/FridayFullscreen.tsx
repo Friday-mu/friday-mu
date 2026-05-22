@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { FRIDAY_PROMPTS_HOME } from '../_data/friday';
+import { FRIDAY_PROMPTS_HOME } from '../_data/fridayPrompts';
 import { useFridayChat, FridayMessage } from './FridayDrawer';
 import { IconArrow, IconChevron, IconSend, IconSparkle } from './icons';
 
@@ -44,7 +44,8 @@ export function FridayFullscreen({ onNavigate, onExit }: Props) {
           <div className="friday-fs-home">
             <h1 className="friday-fs-title">What should Friday look into?</h1>
             <p className="friday-fs-sub">
-              One call per morning. Depth on request. I pull across every module you have access to.
+              Read-only across Inbox, Operations, HR, Reviews, Design, Reservations, and Properties.
+              Human approvals stay in the owning modules.
             </p>
             <div className="friday-fs-grid">
               {FRIDAY_PROMPTS_HOME.map((g, i) => (

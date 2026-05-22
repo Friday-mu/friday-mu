@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { CAL_EVENTS, type CalEvent, type FixedCalEvent } from '../../_data/fixtures';
 import {
   RESERVATIONS,
@@ -15,6 +15,7 @@ import {
 } from '../../_data/reservations';
 import { TASKS, TASK_USERS, TASK_USER_BY_ID, type Task } from '../../_data/tasks';
 import { useLiveReservations } from '../../_data/reservationsClient';
+import { useApiTasks } from '../../_data/useApiTasks';
 import { liveOnlyMode } from '../../_data/demoMode';
 import { addReservationNote, updateReservationTimes } from '../../_data/breezeway';
 import { useCurrentUserId } from '../usePermissions';
@@ -157,6 +158,7 @@ function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
       end: hour + 1,
       type: 'checkin',
       title: `${rsv.guestName.split(' ').slice(-1)[0]} in · ${rsv.propertyCode}`,
+      sourceId: rsv.id,
     });
   }
   if (outIdx >= 0) {
@@ -167,6 +169,7 @@ function reservationToEvents(rsv: Reservation, days: ViewDay[]): CalEvent[] {
       end: hour + 1,
       type: 'checkout',
       title: `${rsv.guestName.split(' ').slice(-1)[0]} out · ${rsv.propertyCode}`,
+      sourceId: rsv.id,
     });
   }
   return events;
@@ -241,23 +244,32 @@ function taskToEvent(task: Task, days: ViewDay[]): CalEvent | null {
   if (idx < 0) return null;
   const title = `${task.propertyCode} · ${task.title}`;
   if (!task.dueTime) {
-    return { day: idx, start: -1, end: -1, type: 'task', title, allDay: true };
+    return { day: idx, start: -1, end: -1, type: 'task', title, sourceId: task.id, allDay: true };
   }
   const hour = parseInt(task.dueTime.slice(0, 2), 10) || 9;
-  return { day: idx, start: hour, end: hour + 1, type: 'task', title };
+  return { day: idx, start: hour, end: hour + 1, type: 'task', title, sourceId: task.id };
 }
 
 type FilterChipId = 'reservation' | 'task' | 'maint' | 'meeting';
 
 export function CalendarModule() {
   const currentUserId = useCurrentUserId();
-  // Live reservations from /api/reservations — falls back to the
-  // RESERVATIONS fixture when the API is unreachable so the calendar
-  // still renders something useful during outages. Same pattern as
-  // OverviewPage / AllReservationsPage (commit 1d70cc4).
   const demoData = !liveOnlyMode();
-  const { reservations: liveReservations } = useLiveReservations();
+  const {
+    reservations: liveReservations,
+    loading: reservationsLoading,
+    error: reservationsError,
+    refetch: refetchReservations,
+  } = useLiveReservations();
+  const {
+    tasks: liveTasks,
+    loading: tasksLoading,
+    error: tasksError,
+    refetch: refetchTasks,
+  } = useApiTasks();
   const sourceReservations = liveReservations ?? (demoData ? RESERVATIONS : []);
+  const sourceTasks = demoData ? TASKS : liveTasks;
+  const visibleEventTypes = demoData ? EVENT_TYPES : EVENT_TYPES.filter((t) => t.id === 'reservation' || t.id === 'task');
   const [tab, setTab] = useState<CalView>(() => (
     typeof window !== 'undefined' && window.innerWidth <= 768 ? 'agenda' : 'week'
   ));
@@ -291,13 +303,13 @@ export function CalendarModule() {
 
   const allEvents = useMemo<CalEvent[]>(() => {
     const reservationEvents = sourceReservations.flatMap((r) => reservationToEvents(r, days));
-    const filteredTasks = !demoData ? [] : mineOnly
-      ? TASKS.filter((t) => t.assigneeIds.includes(currentUserId))
-      : TASKS;
+    const filteredTasks = mineOnly
+      ? sourceTasks.filter((t) => t.assigneeIds.includes(currentUserId))
+      : sourceTasks;
     const taskEvents = filteredTasks.map((t) => taskToEvent(t, days)).filter((e): e is CalEvent => Boolean(e));
     const fixedEvents = (demoData ? CAL_EVENTS : []).map((e) => fixedToEvent(e, days)).filter((e): e is CalEvent => Boolean(e));
     return [...fixedEvents, ...reservationEvents, ...taskEvents];
-  }, [days, mineOnly, currentUserId, rev, sourceReservations, demoData]);
+  }, [days, mineOnly, currentUserId, rev, sourceReservations, sourceTasks, demoData]);
 
   const stays = useMemo(() => packStays(computeStaysInWindow(days, sourceReservations)), [days, rev, sourceReservations]);
   const staysVisible = typeFilter.has('reservation');
@@ -320,7 +332,7 @@ export function CalendarModule() {
   const safeMobileIdx = Math.min(Math.max(mobileDayIdx, 0), days.length - 1);
 
   // Snap mobile day index to today when it falls inside the visible window after nav.
-  useMemo(() => {
+  useEffect(() => {
     if (todayIdxInWindow >= 0) setMobileDayIdx(todayIdxInWindow);
     else setMobileDayIdx(0);
   }, [todayIdxInWindow]);
@@ -378,22 +390,26 @@ export function CalendarModule() {
             </div>
             <button
               className="btn sm cal-action-sync"
-              onClick={() =>
-                fireToast('Sync · stub — will pull/push reservations + tasks to Guesty when integration lands')
-              }
-              title="Sync with Guesty (pending integration)"
+              onClick={() => {
+                refetchReservations();
+                refetchTasks();
+                fireToast('Refreshing live calendar data');
+              }}
+              title="Refresh live reservations and tasks"
             >
-              <IconRefresh size={12} /> Sync
+              <IconRefresh size={12} /> Refresh
             </button>
-            <button className="btn primary sm" onClick={() => setCreateOpen(true)}>
-              <IconPlus size={12} /> Event
-            </button>
+            {demoData && (
+              <button className="btn primary sm" onClick={() => setCreateOpen(true)}>
+                <IconPlus size={12} /> Event
+              </button>
+            )}
           </>
         }
       />
       <div className="fad-module-body">
         <FilterBar>
-          {EVENT_TYPES.map((t) => (
+          {visibleEventTypes.map((t) => (
             <FilterChip
               key={t.id}
               active={typeFilter.has(t.id)}
@@ -411,6 +427,18 @@ export function CalendarModule() {
             Mine only
           </FilterChip>
         </FilterBar>
+        {!demoData && (reservationsLoading || tasksLoading) && (
+          <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            Loading live calendar data…
+          </div>
+        )}
+        {!demoData && (reservationsError || tasksError) && (
+          <div role="alert" style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 6, background: 'var(--color-bg-danger)', color: 'var(--color-text-danger)', fontSize: 12 }}>
+            {reservationsError ? `Reservations failed: ${reservationsError}` : ''}
+            {reservationsError && tasksError ? ' · ' : ''}
+            {tasksError ? `Tasks failed: ${tasksError}` : ''}
+          </div>
+        )}
 
         {tab === 'agenda' ? (
           <AgendaView
@@ -468,7 +496,7 @@ export function CalendarModule() {
             flexWrap: 'wrap',
           }}
         >
-          {EVENT_TYPES.map((t) => (
+          {visibleEventTypes.map((t) => (
             <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className={'dot ' + t.dot} />
               {t.label}
@@ -482,6 +510,7 @@ export function CalendarModule() {
           ev={selectedEvent.ev}
           x={selectedEvent.x}
           y={selectedEvent.y}
+          tasks={sourceTasks}
           onClose={() => setSelectedEvent(null)}
         />
       )}
@@ -491,6 +520,7 @@ export function CalendarModule() {
           x={selectedStay.x}
           y={selectedStay.y}
           authorId={currentUserId}
+          localReservationTools={demoData}
           onClose={() => setSelectedStay(null)}
           onCreateTask={(rsv) => {
             setSelectedStay(null);
@@ -499,7 +529,7 @@ export function CalendarModule() {
           onMutated={bumpRev}
         />
       )}
-      {createOpen && <NewEventModal onClose={() => setCreateOpen(false)} />}
+      {createOpen && demoData && <NewEventModal onClose={() => setCreateOpen(false)} />}
       {/* `key` forces a remount each time the prefilled reservation changes,
           so CreateTaskDrawer's useState picks up the new prefill values
           instead of persisting state from the previous open. */}
@@ -1196,15 +1226,22 @@ function EventPopover({
   ev,
   x,
   y,
+  tasks,
   onClose,
 }: {
   ev: CalEvent;
   x: number;
   y: number;
+  tasks: Task[];
   onClose: () => void;
 }) {
   // Match a task event back to its source record so we can show richer detail.
-  const linkedTask = ev.type === 'task' ? matchTaskFromEventTitle(ev.title) : null;
+  const linkedTask = ev.type === 'task' ? matchTaskFromEventTitle(ev, tasks) : null;
+  const targetHref = linkedTask
+    ? `/fad?m=operations&sub=all&task=${encodeURIComponent(linkedTask.id)}`
+    : (ev.type === 'checkin' || ev.type === 'checkout') && ev.sourceId
+    ? `/fad?m=reservations&sub=overview&rsv=${encodeURIComponent(ev.sourceId)}`
+    : null;
   const timeLabel = ev.allDay
     ? 'All day'
     : `${String(ev.start).padStart(2, '0')}:00 – ${String(ev.end).padStart(2, '0')}:00`;
@@ -1246,21 +1283,33 @@ function EventPopover({
           </div>
         )}
         <div style={{ display: 'flex', gap: 6 }}>
-          <button className="btn sm">{eventOpenLabel(ev.type)}</button>
-          <button className="btn ghost sm">Edit</button>
+          <button
+            className="btn sm"
+            disabled={!targetHref}
+            onClick={() => {
+              if (targetHref) window.location.assign(targetHref);
+            }}
+          >
+            {eventOpenLabel(ev.type)}
+          </button>
         </div>
       </div>
     </>
   );
 }
 
-function matchTaskFromEventTitle(title: string): Task | null {
+function matchTaskFromEventTitle(ev: CalEvent, tasks: Task[]): Task | null {
+  if (ev.sourceId) {
+    const byId = tasks.find((t) => t.id === ev.sourceId);
+    if (byId) return byId;
+  }
   // Title shape from taskToEvent: "{propertyCode} · {task.title}"
+  const title = ev.title;
   const sepIdx = title.indexOf(' · ');
   if (sepIdx < 0) return null;
   const propertyCode = title.slice(0, sepIdx);
   const taskTitle = title.slice(sepIdx + 3);
-  return TASKS.find((t) => t.propertyCode === propertyCode && t.title === taskTitle) ?? null;
+  return tasks.find((t) => t.propertyCode === propertyCode && t.title === taskTitle) ?? null;
 }
 
 function TaskDetailBlock({ task }: { task: Task }) {
@@ -1341,6 +1390,7 @@ function StayPopover({
   x,
   y,
   authorId,
+  localReservationTools,
   onClose,
   onCreateTask,
   onMutated,
@@ -1349,6 +1399,7 @@ function StayPopover({
   x: number;
   y: number;
   authorId: string;
+  localReservationTools: boolean;
   onClose: () => void;
   onCreateTask: (rsv: Reservation) => void;
   onMutated: () => void;
@@ -1359,7 +1410,7 @@ function StayPopover({
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [checkInDraft, setCheckInDraft] = useState(rsv.checkIn.slice(0, 16));
   const [checkOutDraft, setCheckOutDraft] = useState(rsv.checkOut.slice(0, 16));
-  const notes = notesForReservation(rsv.id);
+  const notes = localReservationTools ? notesForReservation(rsv.id) : [];
   const mentionCandidates = TASK_USERS.filter((u) => u.role !== 'external' && u.active && u.id !== authorId);
 
   const insertMention = (userId: string) => {
@@ -1676,13 +1727,15 @@ function StayPopover({
         {panel === 'none' && (
           <>
             <div className="cal-popover-actions">
-              <button
-                className="btn ghost sm"
-                onClick={() => setPanel('note')}
-                title="Attach an internal note to this stay"
-              >
-                + Note
-              </button>
+              {localReservationTools && (
+                <button
+                  className="btn ghost sm"
+                  onClick={() => setPanel('note')}
+                  title="Attach an internal note to this stay"
+                >
+                  + Note
+                </button>
+              )}
               <button
                 className="btn ghost sm"
                 onClick={() => onCreateTask(rsv)}
@@ -1690,13 +1743,15 @@ function StayPopover({
               >
                 + Task
               </button>
-              <button
-                className="btn ghost sm"
-                onClick={() => setPanel('times')}
-                title="Change check-in or check-out time"
-              >
-                Adjust times
-              </button>
+              {localReservationTools && (
+                <button
+                  className="btn ghost sm"
+                  onClick={() => setPanel('times')}
+                  title="Change check-in or check-out time"
+                >
+                  Adjust times
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <button

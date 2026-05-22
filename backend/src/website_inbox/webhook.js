@@ -161,7 +161,11 @@ async function recordEvent({
     // 23505 = unique_violation on Postgres. Retry from friday.mu —
     // event already recorded.
     if (err && err.code === '23505') {
-      return { threadId, eventId: null, isDuplicate: true };
+      const existing = await query(
+        `SELECT id FROM inbox_events WHERE reference = $1 AND event_type = $2 LIMIT 1`,
+        [reference || null, eventType],
+      );
+      return { threadId, eventId: existing.rows[0]?.id || null, isDuplicate: true };
     }
     throw err;
   }
@@ -263,6 +267,11 @@ function mountWebhook(router) {
         signedAt: req.header('X-Friday-Inbox-Timestamp'),
       });
       if (recorded.isDuplicate) {
+        if (recorded.eventId && shouldAutoDraftWebsiteEvent(eventType)) {
+          triggerWebsiteDraftGeneration(recorded.threadId, recorded.eventId).catch((e) => {
+            console.error(`[website_inbox/webhook] duplicate draft recovery failed for ${recorded.eventId}:`, e.message);
+          });
+        }
         return res.json({ status: 'duplicate', thread_id: recorded.threadId });
       }
 

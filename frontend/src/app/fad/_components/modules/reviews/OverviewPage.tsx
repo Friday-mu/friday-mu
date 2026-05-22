@@ -17,6 +17,7 @@ import {
   type ReviewChannel,
 } from '../../../_data/reviews';
 import { useLiveReviews } from '../../../_data/reviewsClient';
+import { liveOnlyMode } from '../../../_data/demoMode';
 import { TASK_PROPERTY_BY_CODE } from '../../../_data/tasks';
 import { createTask } from '../../../_data/breezeway';
 import { useCurrentUserId } from '../../usePermissions';
@@ -29,11 +30,10 @@ interface Props {
 
 export function OverviewPage({ onNavigate }: Props) {
   const currentUserId = useCurrentUserId();
+  const liveOnly = liveOnlyMode();
 
-  // Live Guesty data via useLiveReviews; falls back to fixture REVIEWS during
-  // initial load or on backend failure so KPIs always render.
   const { reviews: liveReviews, loading: liveLoading, error: liveError } = useLiveReviews();
-  const reviewSource = liveReviews ?? REVIEWS;
+  const reviewSource = liveReviews ?? (liveOnly ? [] : REVIEWS);
 
   const last30 = useMemo(() => reviewsInWindow(30, reviewSource), [reviewSource]);
   const prior30 = useMemo(
@@ -108,9 +108,19 @@ export function OverviewPage({ onNavigate }: Props) {
           <div className="kpi-sub">{unreplied.filter((r) => r.urgent).length} urgent</div>
         </div>
       </div>
+      {liveLoading && (
+        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          Loading live Guesty reviews…
+        </div>
+      )}
+      {liveError && (
+        <div role="alert" style={{ marginTop: 12, padding: '8px 10px', borderRadius: 6, background: 'var(--color-bg-danger)', color: 'var(--color-text-danger)', fontSize: 12 }}>
+          Live reviews failed to load: {liveError}
+        </div>
+      )}
 
       {/* Anomaly callouts strip */}
-      {REVIEW_ANOMALIES.length > 0 && (
+      {!liveOnly && REVIEW_ANOMALIES.length > 0 && (
         <div className="card" style={{ marginTop: 16, padding: 14 }}>
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
             <IconAI size={11} /> Anomaly callouts
@@ -167,7 +177,7 @@ export function OverviewPage({ onNavigate }: Props) {
       </div>
 
       {/* AI Suggested Actions */}
-      {SUGGESTED_ACTIONS.length > 0 && (
+      {!liveOnly && SUGGESTED_ACTIONS.length > 0 && (
         <div className="card" style={{ marginTop: 16, padding: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6 }}>

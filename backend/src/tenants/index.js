@@ -21,6 +21,7 @@ const {
   MODULES,
   defaultSignupModuleKeys,
   isKnownModule,
+  alwaysOnModuleKeys,
 } = require('./modules');
 const {
   shapeTenant,
@@ -238,13 +239,14 @@ router.get('/me/modules', attachIdentity, async (req, res) => {
       [req.tenantId],
     );
     const enabledSet = new Set(rows.map((r) => r.module_key));
+    alwaysOnModuleKeys().forEach((key) => enabledSet.add(key));
     const available = Object.entries(MODULES).map(([key, m]) => ({
       key,
       name: m.name,
       description: m.description,
       saleable: m.saleable,
       monthly_price_usd: m.monthly_price_usd,
-      enabled: enabledSet.has(key),
+      enabled: enabledSet.has(key) || !!m.always_on,
     }));
     res.json({
       enabled: Array.from(enabledSet),

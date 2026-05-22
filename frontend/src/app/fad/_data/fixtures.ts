@@ -484,6 +484,7 @@ export interface CalEvent {
   end: number;
   type: 'checkin' | 'checkout' | 'maint' | 'meeting' | 'task';
   title: string;
+  sourceId?: string;
   /** No specific time — render in the all-day strip / "All day" group. */
   allDay?: boolean;
 }

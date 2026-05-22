@@ -16,20 +16,18 @@ import {
   IconTool,
 } from './icons';
 import { RoleSwitcher } from './PermissionGate';
-import { usePermissions, useCurrentUserId } from './usePermissions';
+import { usePermissions } from './usePermissions';
 import { ROLE_LABEL } from '../_data/permissions';
 import { useDisplayedUser } from '../_data/useDisplayedUser';
 import { clearToken } from '../../../components/types';
 import {
-  topNotifications,
-  unreadCount,
-  isRead,
-  markRead,
-  markAllRead,
-  allNotifications,
+  getContext,
+  isArchived,
+  isSnoozedNow,
   subscribeNotifications,
   type Notification,
 } from '../_data/notifications';
+import { notificationRead, useLiveNotifications } from '../_data/notificationsClient';
 
 interface Props {
   onOpenPalette: () => void;
@@ -62,14 +60,28 @@ export function Header({
   onOpenAvatar,
   avatarOpen,
 }: Props) {
-  const { currentUserId, role } = usePermissions();
   const currentUser = useDisplayedUser();
+  const {
+    notifications,
+    markRead,
+    markUnread,
+    markAllRead,
+  } = useLiveNotifications();
 
   // Subscribe to notifications-rev so the bell dot updates reactively
   const [, setNotifRev] = useState(0);
   useEffect(() => subscribeNotifications(setNotifRev), []);
 
-  const counts = unreadCount(role, currentUserId);
+  const visibleNotifications = notifications.filter((n) => !isArchived(n.id));
+  const unreadNotifications = visibleNotifications.filter((n) => {
+    if (notificationRead(n)) return false;
+    if (isSnoozedNow(getContext(n.id))) return false;
+    return true;
+  });
+  const counts = {
+    total: unreadNotifications.length,
+    urgent: unreadNotifications.filter((n) => n.severity === 'urgent').length,
+  };
   const dotTone = counts.urgent > 0 ? 'urgent' : counts.total > 0 ? 'unread' : 'none';
 
   return (
@@ -127,7 +139,14 @@ export function Header({
               </span>
             )}
           </button>
-          {bellOpen && <NotificationsDropdown role={role} userId={currentUserId} />}
+          {bellOpen && (
+            <NotificationsDropdown
+              notifications={visibleNotifications}
+              markRead={markRead}
+              markUnread={markUnread}
+              markAllRead={markAllRead}
+            />
+          )}
         </div>
         <div style={{ position: 'relative' }}>
           <button
@@ -164,15 +183,25 @@ export function Header({
 
 type NotifFilter = 'all' | 'unread' | 'mentions';
 
-function NotificationsDropdown({ role, userId }: { role: ReturnType<typeof usePermissions>['role']; userId: string }) {
+function NotificationsDropdown({
+  notifications,
+  markRead,
+  markUnread,
+  markAllRead,
+}: {
+  notifications: Notification[];
+  markRead: (id: string) => Promise<void>;
+  markUnread: (id: string) => Promise<void>;
+  markAllRead: (items?: Notification[]) => Promise<void>;
+}) {
   const [filter, setFilter] = useState<NotifFilter>('unread');
   const [aiSort, setAiSort] = useState(true);
   const [, setRev] = useState(0);
   useEffect(() => subscribeNotifications(setRev), []);
 
-  const all = allNotifications(role, userId);
+  const all = notifications;
   const filtered = all.filter((n) => {
-    if (filter === 'unread') return !isRead(n.id);
+    if (filter === 'unread') return !notificationRead(n);
     if (filter === 'mentions') return n.isMention;
     return true;
   });
@@ -185,7 +214,7 @@ function NotificationsDropdown({ role, userId }: { role: ReturnType<typeof usePe
 
   const handleMarkAllRead = (e: MouseEvent) => {
     e.stopPropagation();
-    markAllRead(all);
+    void markAllRead(all);
   };
 
   return (
@@ -205,7 +234,7 @@ function NotificationsDropdown({ role, userId }: { role: ReturnType<typeof usePe
       {/* Filter chips */}
       <div className="fad-notif-filters">
         <FilterChip label="All" count={all.length} active={filter === 'all'} onClick={() => setFilter('all')} />
-        <FilterChip label="Unread" count={all.filter((n) => !isRead(n.id)).length} active={filter === 'unread'} onClick={() => setFilter('unread')} />
+        <FilterChip label="Unread" count={all.filter((n) => !notificationRead(n)).length} active={filter === 'unread'} onClick={() => setFilter('unread')} />
         <FilterChip label="@mentions" count={all.filter((n) => n.isMention).length} active={filter === 'mentions'} onClick={() => setFilter('mentions')} />
       </div>
 
@@ -216,7 +245,7 @@ function NotificationsDropdown({ role, userId }: { role: ReturnType<typeof usePe
             {filter === 'unread' ? 'All caught up · no unread.' : 'No notifications.'}
           </div>
         ) : (
-          top.map((n) => <NotifRow key={n.id} notif={n} aiSort={aiSort} />)
+          top.map((n) => <NotifRow key={n.id} notif={n} aiSort={aiSort} markRead={markRead} markUnread={markUnread} />)
         )}
       </div>
 
@@ -239,10 +268,20 @@ function FilterChip({ label, count, active, onClick }: { label: string; count: n
   );
 }
 
-function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
-  const read = isRead(notif.id);
+function NotifRow({
+  notif,
+  aiSort,
+  markRead,
+  markUnread,
+}: {
+  notif: Notification;
+  aiSort: boolean;
+  markRead: (id: string) => Promise<void>;
+  markUnread: (id: string) => Promise<void>;
+}) {
+  const read = notificationRead(notif);
   const handleClick = () => {
-    markRead(notif.id);
+    void markRead(notif.id);
     if (notif.href) {
       window.location.href = notif.href;
     }
@@ -250,13 +289,9 @@ function NotifRow({ notif, aiSort }: { notif: Notification; aiSort: boolean }) {
   const handleToggleRead = (e: MouseEvent) => {
     e.stopPropagation();
     if (read) {
-      // Re-mark as unread
-      const set = new Set([...JSON.parse(localStorage.getItem('fad:notif-read') || '[]')]);
-      set.delete(notif.id);
-      localStorage.setItem('fad:notif-read', JSON.stringify([...set]));
-      window.dispatchEvent(new Event('storage'));
+      void markUnread(notif.id);
     } else {
-      markRead(notif.id);
+      void markRead(notif.id);
     }
   };
 

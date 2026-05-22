@@ -1,15 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
-import { useCurrentRole, useCurrentUserId } from '../usePermissions';
-import { TASK_USERS } from '../../_data/tasks';
 import {
-  allNotifications,
-  markAllRead,
-  markRead,
-  markUnread,
-  isRead,
   archiveNotification,
   subscribeNotifications,
   getContext,
@@ -24,6 +17,8 @@ import {
   type ModuleId,
   type UserContext,
 } from '../../_data/notifications';
+import { notificationRead, useLiveNotifications } from '../../_data/notificationsClient';
+import { useTenantUsers } from '../../_data/useTenantUsers';
 import { fireToast } from '../Toaster';
 
 type ReadFilter = 'all' | 'unread' | 'read';
@@ -47,11 +42,16 @@ const SEVERITY_LABEL: Record<Severity, string> = { info: 'Info', warn: 'Warning'
 const SEVERITY_EMOJI: Record<Severity, string> = { info: '⚪', warn: '🟡', urgent: '🔴' };
 
 export function NotificationsModule() {
-  const role = useCurrentRole();
-  const userId = useCurrentUserId();
-
   const [, setRev] = useState(0);
   useEffect(() => subscribeNotifications(setRev), []);
+  const {
+    notifications: all,
+    loading,
+    error,
+    markRead: markLiveRead,
+    markUnread: markLiveUnread,
+    markAllRead: markLiveAllRead,
+  } = useLiveNotifications();
 
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
   const [notificationTab, setNotificationTab] = useState<NotificationTab>('inbox');
@@ -65,15 +65,15 @@ export function NotificationsModule() {
   const [filtersOpenMobile, setFiltersOpenMobile] = useState(false);
   const [expandedPreviewIds, setExpandedPreviewIds] = useState<Set<string>>(new Set());
 
-  const all = allNotifications(role, userId);
+  const readIds = useMemo(() => new Set(all.filter(notificationRead).map((n) => n.id)), [all]);
   const inboxItems = all.filter((n) => !isArchived(n.id));
   const archivedItems = all.filter((n) => isArchived(n.id));
   const activeTabItems = notificationTab === 'archived' ? archivedItems : inboxItems;
 
   const filtered = useMemo(() => {
     let out = activeTabItems.slice();
-    if (readFilter === 'unread') out = out.filter((n) => !isRead(n.id));
-    else if (readFilter === 'read') out = out.filter((n) => isRead(n.id));
+    if (readFilter === 'unread') out = out.filter((n) => !readIds.has(n.id));
+    else if (readFilter === 'read') out = out.filter((n) => readIds.has(n.id));
     if (categoryFilter === 'mentions') out = out.filter((n) => n.isMention);
     if (categoryFilter === 'comments') out = out.filter((n) => n.category === 'comment' || /comment/i.test(`${n.title} ${n.body}`));
     if (categoryFilter === 'watching') out = out.filter((n) => n.module === 'operations' || n.module === 'properties');
@@ -91,30 +91,55 @@ export function NotificationsModule() {
       out.sort((a, b) => (a.ts < b.ts ? 1 : -1));
     }
     return out;
-  }, [activeTabItems, categoryFilter, moduleFilter, readFilter, severityFilter, mentionsOnly, search, sortMode]);
+  }, [activeTabItems, categoryFilter, moduleFilter, readFilter, readIds, severityFilter, mentionsOnly, search, sortMode]);
 
   const selected = selectedId ? all.find((n) => n.id === selectedId) ?? null : null;
 
+  const handleMarkRead = useCallback(async (id: string) => {
+    try {
+      await markLiveRead(id);
+    } catch (e) {
+      fireToast(e instanceof Error ? `Read state failed: ${e.message}` : 'Read state failed');
+    }
+  }, [markLiveRead]);
+
+  const handleMarkUnread = useCallback(async (id: string) => {
+    try {
+      await markLiveUnread(id);
+    } catch (e) {
+      fireToast(e instanceof Error ? `Read state failed: ${e.message}` : 'Read state failed');
+    }
+  }, [markLiveUnread]);
+
+  const handleArchiveToggle = useCallback((id: string) => {
+    if (isArchived(id)) {
+      unarchiveNotification(id);
+    } else {
+      archiveNotification(id);
+      void handleMarkRead(id);
+    }
+  }, [handleMarkRead]);
+
   // Auto-mark-read when a notification is selected
   useEffect(() => {
-    if (selected && !isRead(selected.id)) markRead(selected.id);
-  }, [selected?.id]);
+    if (selected && !notificationRead(selected)) void handleMarkRead(selected.id);
+  }, [handleMarkRead, selected?.id, selected?.readAt]);
 
   const counts = {
     all: inboxItems.length,
     archived: archivedItems.length,
-    unread: inboxItems.filter((n) => !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
+    unread: inboxItems.filter((n) => !readIds.has(n.id) && !isSnoozedNow(getContext(n.id))).length,
     mentions: all.filter((n) => n.isMention).length,
     comments: all.filter((n) => n.category === 'comment' || /comment/i.test(`${n.title} ${n.body}`)).length,
     watching: all.filter((n) => n.module === 'operations' || n.module === 'properties').length,
     department: all.filter((n) => n.category === 'department' || n.module === 'operations' || n.module === 'hr').length,
-    urgent: inboxItems.filter((n) => n.severity === 'urgent' && !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
+    urgent: inboxItems.filter((n) => n.severity === 'urgent' && !readIds.has(n.id) && !isSnoozedNow(getContext(n.id))).length,
     snoozed: all.filter((n) => isSnoozedNow(getContext(n.id))).length,
   };
   const tabCounts = {
     all: activeTabItems.length,
-    unread: activeTabItems.filter((n) => !isRead(n.id) && !isSnoozedNow(getContext(n.id))).length,
-    read: activeTabItems.filter((n) => isRead(n.id)).length,
+    unread: activeTabItems.filter((n) => !readIds.has(n.id) && !isSnoozedNow(getContext(n.id))).length,
+    read: activeTabItems.filter((n) => readIds.has(n.id)).length,
     mentions: activeTabItems.filter((n) => n.isMention).length,
     comments: activeTabItems.filter((n) => n.category === 'comment' || /comment/i.test(`${n.title} ${n.body}`)).length,
     watching: activeTabItems.filter((n) => n.module === 'operations' || n.module === 'properties').length,
@@ -129,7 +154,11 @@ export function NotificationsModule() {
 
   const toggleModule = (mod: ModuleId) => setModuleFilter((p) => { const n = new Set(p); n.has(mod) ? n.delete(mod) : n.add(mod); return n; });
   const toggleSeverity = (sev: Severity) => setSeverityFilter((p) => { const n = new Set(p); n.has(sev) ? n.delete(sev) : n.add(sev); return n; });
-  const handleMarkAllRead = () => markAllRead(filtered);
+  const handleMarkAllRead = () => {
+    void markLiveAllRead(filtered).catch((e) => {
+      fireToast(e instanceof Error ? `Read state failed: ${e.message}` : 'Read state failed');
+    });
+  };
   const clearFilters = () => {
     setModuleFilter(new Set());
     setSeverityFilter(new Set());
@@ -250,20 +279,18 @@ export function NotificationsModule() {
           <div className="notif-list-rows">
             {filtered.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
-                No notifications match the current filters.
+                {loading ? 'Loading live notifications…' : 'No notifications match the current filters.'}
               </div>
             ) : (
               filtered.map((n) => (
                 <ListRow key={n.id} notif={n} selected={selectedId === n.id} showAi={sortMode === 'ai'}
                   archived={notificationTab === 'archived'}
+                  read={readIds.has(n.id)}
                   expanded={expandedPreviewIds.has(n.id)}
                   onSelect={() => setSelectedId(n.id)}
                   onToggleExpanded={() => toggleExpandedPreview(n.id)}
-                  onArchiveToggle={() => {
-                    if (isArchived(n.id)) unarchiveNotification(n.id);
-                    else archiveNotification(n.id);
-                  }}
-                  onToggleRead={() => { if (isRead(n.id)) markUnread(n.id); else markRead(n.id); }} />
+                  onArchiveToggle={() => handleArchiveToggle(n.id)}
+                  onToggleRead={() => { if (readIds.has(n.id)) void handleMarkUnread(n.id); else void handleMarkRead(n.id); }} />
               ))
             )}
           </div>
@@ -272,30 +299,41 @@ export function NotificationsModule() {
         {/* Detail — right panel only renders when something is selected */}
         {selected && (
           <aside className={'notif-detail' + (selected ? ' mobile-open' : '')}>
-            <DetailPane notification={selected} onClose={() => setSelectedId(null)} />
+            <DetailPane
+              notification={selected}
+              onClose={() => setSelectedId(null)}
+              onMarkRead={handleMarkRead}
+              onMarkUnread={handleMarkUnread}
+              onArchiveToggle={() => handleArchiveToggle(selected.id)}
+            />
           </aside>
         )}
 
         {/* Right-panel default (desktop only, when nothing selected) */}
         {!selected && (
           <aside className="notif-detail notif-detail-empty">
-            <DefaultPane all={all} onSelect={(id) => setSelectedId(id)} />
+            <DefaultPane all={all} readIds={readIds} onSelect={(id) => setSelectedId(id)} />
           </aside>
         )}
       </div>
+      {error && (
+        <div role="alert" style={{ padding: '8px 12px', fontSize: 12, color: 'var(--color-text-danger)', borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+          Live notifications failed to load: {error}
+        </div>
+      )}
     </div>
   );
 }
 
 // ───────────────── Default pane (no selection) ─────────────────
 
-function DefaultPane({ all, onSelect }: { all: Notification[]; onSelect: (id: string) => void }) {
+function DefaultPane({ all, readIds, onSelect }: { all: Notification[]; readIds: Set<string>; onSelect: (id: string) => void }) {
   const top3 = useMemo(() => {
     return [...all]
-      .filter((n) => !isRead(n.id) && !isSnoozedNow(getContext(n.id)))
+      .filter((n) => !readIds.has(n.id) && !isSnoozedNow(getContext(n.id)))
       .sort((a, b) => (b.aiPriority ?? 0) - (a.aiPriority ?? 0))
       .slice(0, 3);
-  }, [all]);
+  }, [all, readIds]);
 
   const wakingUp = useMemo(() => {
     const now = Date.now();
@@ -372,18 +410,18 @@ function FilterRow({ label, count, active, onClick }: { label: string; count: nu
 
 // ───────────────── List row ─────────────────
 
-function ListRow({ notif, selected, showAi, archived, expanded, onSelect, onToggleRead, onArchiveToggle, onToggleExpanded }: {
+function ListRow({ notif, selected, showAi, archived, read, expanded, onSelect, onToggleRead, onArchiveToggle, onToggleExpanded }: {
   notif: Notification;
   selected: boolean;
   showAi: boolean;
   archived: boolean;
+  read: boolean;
   expanded: boolean;
   onSelect: () => void;
   onToggleRead: () => void;
   onArchiveToggle: () => void;
   onToggleExpanded: () => void;
 }) {
-  const read = isRead(notif.id);
   const ctx = getContext(notif.id);
   const snoozed = isSnoozedNow(ctx);
 
@@ -460,8 +498,21 @@ function ListRow({ notif, selected, showAi, archived, expanded, onSelect, onTogg
 
 // ───────────────── Detail pane ─────────────────
 
-function DetailPane({ notification, onClose }: { notification: Notification; onClose: () => void }) {
+function DetailPane({
+  notification,
+  onClose,
+  onMarkRead,
+  onMarkUnread,
+  onArchiveToggle,
+}: {
+  notification: Notification;
+  onClose: () => void;
+  onMarkRead: (id: string) => Promise<void>;
+  onMarkUnread: (id: string) => Promise<void>;
+  onArchiveToggle: () => void;
+}) {
   const ctx = getContext(notification.id);
+  const { users: tenantUsers } = useTenantUsers();
   const [noteDraft, setNoteDraft] = useState(ctx.note ?? '');
   const [waitingDraft, setWaitingDraft] = useState(ctx.waitingOn ?? '');
   const [editingWaiting, setEditingWaiting] = useState(false);
@@ -499,13 +550,13 @@ function DetailPane({ notification, onClose }: { notification: Notification; onC
 
   const doForward = (toUserId: string, toName: string) => {
     setContext(notification.id, { forwardedTo: toUserId });
-    markRead(notification.id);
+    void onMarkRead(notification.id);
     fireToast(`Forwarded to ${toName} · removed from your feed`);
     setForwardOpen(false);
     onClose();
   };
 
-  const candidates = TASK_USERS.filter((u) => u.role !== 'external' && u.active);
+  const candidates = tenantUsers.filter((u) => u.role !== 'external' && u.active);
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14, height: '100%', overflow: 'auto' }}>
@@ -547,10 +598,7 @@ function DetailPane({ notification, onClose }: { notification: Notification; onC
 
       <button
         className="btn ghost sm"
-        onClick={() => {
-          if (archived) unarchiveNotification(notification.id);
-          else archiveNotification(notification.id);
-        }}
+        onClick={onArchiveToggle}
       >
         {archived ? 'Restore to inbox' : 'Archive notification'}
       </button>
@@ -645,7 +693,7 @@ function DetailPane({ notification, onClose }: { notification: Notification; onC
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 'auto', flexWrap: 'wrap' }}>
-        <button className="btn ghost sm" onClick={() => markUnread(notification.id)}>Mark unread</button>
+        <button className="btn ghost sm" onClick={() => { void onMarkUnread(notification.id); }}>Mark unread</button>
       </div>
     </div>
   );

@@ -34,6 +34,9 @@ interface RawReservation {
     phone?: string | null;
   };
   total_amount_minor?: number | null;
+  amount_paid?: number | null;
+  outstanding_balance?: number | null;
+  payment_status?: string | null;
   currency_code?: string | null;
   calendar_pricing?: {
     nights_cached?: number | null;
@@ -45,6 +48,70 @@ interface RawReservation {
     synced_at?: string | null;
   };
   synced_at?: string | null;
+}
+
+function compactIdentityPart(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function semanticStayIdentity(r: RawReservation): string {
+  const listing = compactIdentityPart(r.listing_guesty_id || r.listing_nickname);
+  const checkIn = compactIdentityPart(r.check_in_date?.slice(0, 10));
+  const checkOut = compactIdentityPart(r.check_out_date?.slice(0, 10));
+  const guest = compactIdentityPart(
+    r.guest?.email
+      || [r.guest?.first_name, r.guest?.last_name].filter(Boolean).join(' ')
+      || r.guest?.phone,
+  );
+  if (!listing || !checkIn || !checkOut || !guest) return '';
+  return `stay:${listing}:${checkIn}:${checkOut}:${guest}`;
+}
+
+function reservationIdentity(r: RawReservation): string {
+  const confirmation = compactIdentityPart(r.confirmation_code);
+  if (confirmation) return `confirmation:${confirmation}`;
+  const semantic = semanticStayIdentity(r);
+  if (semantic) return semantic;
+  return r.guesty_id || r.id;
+}
+
+function reservationCompletenessScore(r: RawReservation): number {
+  return [
+    r.listing_nickname,
+    r.listing_guesty_id,
+    r.check_in_date,
+    r.check_out_date,
+    r.guest?.email,
+    r.guest?.phone,
+    r.total_amount_minor,
+    r.calendar_pricing?.total_minor,
+  ].filter((v) => v != null && v !== '').length;
+}
+
+function dedupeRawReservations(rows: RawReservation[]): RawReservation[] {
+  const order: string[] = [];
+  const byKey = new Map<string, RawReservation>();
+  rows.forEach((row) => {
+    const key = reservationIdentity(row);
+    if (!byKey.has(key)) {
+      order.push(key);
+      byKey.set(key, row);
+      return;
+    }
+    const current = byKey.get(key);
+    if (!current) return;
+    const currentScore = reservationCompletenessScore(current);
+    const nextScore = reservationCompletenessScore(row);
+    const currentSynced = new Date(current.synced_at || '').getTime() || 0;
+    const nextSynced = new Date(row.synced_at || '').getTime() || 0;
+    if (nextScore > currentScore || (nextScore === currentScore && nextSynced > currentSynced)) {
+      byKey.set(key, row);
+    }
+  });
+  return order.map((key) => byKey.get(key)).filter((row): row is RawReservation => Boolean(row));
 }
 
 function mapStatus(s?: string | null): ReservationStatus {
@@ -72,6 +139,9 @@ export function transformReservation(r: RawReservation): Reservation {
   const guestName = [r.guest?.first_name, r.guest?.last_name].filter(Boolean).join(' ').trim()
     || (r.guest?.email ? r.guest.email.split('@')[0] : 'Guest');
   const total = r.total_amount_minor != null ? r.total_amount_minor / 100 : 0;
+  const balanceDue = typeof r.outstanding_balance === 'number' && Number.isFinite(r.outstanding_balance)
+    ? r.outstanding_balance
+    : 0;
   const calendarTotal = r.calendar_pricing?.total_minor != null ? r.calendar_pricing.total_minor / 100 : undefined;
   const nightsCached = r.calendar_pricing?.nights_cached ?? 0;
   const adults = r.party?.adults ?? 0;
@@ -113,8 +183,8 @@ export function transformReservation(r: RawReservation): Reservation {
       syncedAt: r.calendar_pricing?.synced_at || undefined,
     },
     touristTax: 0,
-    balanceDue: 0,
-    payoutStatus: 'pending',
+    balanceDue,
+    payoutStatus: balanceDue > 0 ? 'pending' : 'captured',
     currency: r.currency_code || 'EUR',
     // Optional / fixture-only fields — set defaults so the existing UI
     // doesn't blow up when they're missing on live rows.
@@ -130,7 +200,7 @@ export async function loadReservations(): Promise<Reservation[]> {
   // to the empty array. Consumers now stay live-only by default instead of
   // falling back to the RESERVATIONS fixture.
   const data = await apiFetch('/api/reservations?limit=500') as { reservations?: RawReservation[] };
-  return (data?.reservations || []).map(transformReservation);
+  return dedupeRawReservations(data?.reservations || []).map(transformReservation);
 }
 
 export interface UseLiveReservationsResult {
@@ -222,7 +292,7 @@ export async function fetchScheduleReservations(input: FetchScheduleReservations
   qs.set('limit', String(input.limit || 500));
 
   const data = await apiFetch(`/api/reservations?${qs.toString()}`) as { reservations?: RawReservation[] };
-  return (data?.reservations || [])
+  return dedupeRawReservations(data?.reservations || [])
     .map(transformScheduleReservation)
     .filter((reservation) => reservation.checkInDate && reservation.checkOutDate);
 }

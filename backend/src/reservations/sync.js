@@ -12,6 +12,7 @@
 
 const { query } = require('../database/client');
 const { listReservations } = require('../integrations/guesty');
+const { inferReservationFinancials, majorToMinor } = require('./financials');
 
 const DEFAULT_DAYS_BACK = 30;
 const DEFAULT_DAYS_FORWARD = 365;
@@ -63,11 +64,8 @@ async function syncReservationsForTenant(tenantId, opts = {}) {
     const listingId = r.listingId || r.listing?._id;
     if (!listingId) continue; // can't anchor without a listing
     const money = r.money || {};
-    const totalMinor = Number.isFinite(money.hostPayout)
-      ? Math.round(money.hostPayout * 100)
-      : Number.isFinite(money.fareAccommodation)
-        ? Math.round(money.fareAccommodation * 100)
-        : null;
+    const financials = inferReservationFinancials(r);
+    const totalMinor = majorToMinor(financials.total);
     const result = await query(
       `INSERT INTO guesty_reservations (
          tenant_id, guesty_id, listing_guesty_id, confirmation_code,
@@ -119,7 +117,7 @@ async function syncReservationsForTenant(tenantId, opts = {}) {
         r.guest?.email || null,
         r.guest?.phone || null,
         totalMinor,
-        money.currency || null,
+        financials.currency || money.currency || null,
         JSON.stringify(r),
       ],
     );
@@ -152,11 +150,8 @@ async function upsertReservationById(tenantId, reservationId) {
   const listingId = r.listingId || r.listing?._id;
   if (!listingId) throw new Error(`upsertReservationById: reservation ${reservationId} has no listingId`);
   const money = r.money || {};
-  const totalMinor = Number.isFinite(money.hostPayout)
-    ? Math.round(money.hostPayout * 100)
-    : Number.isFinite(money.fareAccommodation)
-      ? Math.round(money.fareAccommodation * 100)
-      : null;
+  const financials = inferReservationFinancials(r);
+  const totalMinor = majorToMinor(financials.total);
   const result = await query(
     `INSERT INTO guesty_reservations (
        tenant_id, guesty_id, listing_guesty_id, confirmation_code,
@@ -208,7 +203,7 @@ async function upsertReservationById(tenantId, reservationId) {
       r.guest?.email || null,
       r.guest?.phone || null,
       totalMinor,
-      money.currency || null,
+      financials.currency || money.currency || null,
       JSON.stringify(r),
     ],
   );
@@ -223,4 +218,8 @@ async function upsertReservationById(tenantId, reservationId) {
 module.exports = {
   syncReservationsForTenant,
   upsertReservationById,
+  _test: {
+    inferReservationFinancials,
+    majorToMinor,
+  },
 };

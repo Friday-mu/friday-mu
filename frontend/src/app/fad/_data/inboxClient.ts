@@ -424,6 +424,10 @@ function websiteEventBody(eventType: string, payload?: Record<string, unknown>):
       payload.reason ? `Reason: ${payload.reason}` : null,
     ].filter(Boolean).join('\n');
   }
+  if (eventType === 'website.visitor_message') {
+    const message = payload.body || payload.message || payload.visitorTurn;
+    return typeof message === 'string' && message.trim() ? message.trim() : 'Visitor sent a follow-up message.';
+  }
   const body = payload.body || payload.message;
   if (typeof body === 'string' && body.trim()) return body.trim();
   if (eventType === 'booking.request_submitted') {
@@ -456,12 +460,19 @@ function aiHandoffFromEvents(events: Array<{
   const handoffs = events.filter((e) => String(e.event_type || e.type || '') === 'website.ai_handoff');
   const latest = handoffs[handoffs.length - 1];
   if (!latest?.payload) return undefined;
-  const latestTime = new Date(latest.created_at || latest.ts || 0).getTime();
+  const latestConversationKey = latest.payload.conversationKey ? String(latest.payload.conversationKey) : '';
+  const windowHandoffs = latestConversationKey
+    ? handoffs.filter((e) => e.payload?.conversationKey && String(e.payload.conversationKey) === latestConversationKey)
+    : [latest];
+  const windowStart = windowHandoffs.reduce((earliest, e) => {
+    const ts = new Date(e.created_at || e.ts || 0).getTime();
+    return Number.isFinite(ts) ? Math.min(earliest, ts) : earliest;
+  }, Number.POSITIVE_INFINITY);
   const hasTakeover = events.some((e) => {
     const eventType = String(e.event_type || e.type || '');
     if (eventType !== 'website.ai_handoff_takeover' && eventType !== 'staff.reply_sent') return false;
     const ts = new Date(e.created_at || e.ts || 0).getTime();
-    return Number.isFinite(ts) && Number.isFinite(latestTime) && ts >= latestTime;
+    return Number.isFinite(ts) && Number.isFinite(windowStart) && ts >= windowStart;
   });
   const payload = latest.payload;
   return {
@@ -525,14 +536,16 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
       const eventType = String(e.event_type || e.type || 'website.event');
       const fromUs = e.source === 'fad' || eventType.startsWith('staff.');
       const fromWebsiteAi = eventType.startsWith('website.ai_');
+      const payloadChannel = typeof e.payload?.channel === 'string' ? e.payload.channel : '';
+      const sentChannel = payloadChannel === 'website' ? 'Website live' : 'Email';
       return {
         from: fromUs ? 'us' as const : 'them' as const,
         name: fromUs ? 'Friday' : (fromWebsiteAi ? 'Website AI' : guest),
         time: e.created_at || e.ts || new Date().toISOString(),
         body: websiteEventBody(eventType, e.payload),
-        via: fromUs ? 'Email' : (fromWebsiteAi ? 'AI handoff' : 'Website'),
+        via: fromUs ? sentChannel : (fromWebsiteAi ? 'AI handoff' : 'Website'),
         viaSystem: fromUs ? 'FAD' : (fromWebsiteAi ? 'Website AI' : 'Website'),
-        viaChannel: fromUs ? 'Email' : (fromWebsiteAi ? 'AI handoff' : 'Website'),
+        viaChannel: fromUs ? sentChannel : (fromWebsiteAi ? 'AI handoff' : 'Website'),
       };
     });
     const drafts = (data.drafts || []).map(transformGmsDraft);
@@ -560,8 +573,8 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
       guestEmail: aiHandoff ? undefined : (t?.guest_email_raw || t?.guest_email || undefined),
       guestPhone: t?.guest_phone || undefined,
       drafts,
-      availableChannels: aiHandoff ? [] : ['email'],
-      recommendedChannel: aiHandoff ? undefined : 'email',
+      availableChannels: aiHandoff ? ['website'] : ['email'],
+      recommendedChannel: aiHandoff ? 'website' : 'email',
       latestDraftState: latestDraft?.state,
       latestDraftConfidence: latestDraft?.confidence,
       aiHandoff,

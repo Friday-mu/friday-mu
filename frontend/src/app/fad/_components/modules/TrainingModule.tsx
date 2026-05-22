@@ -1,28 +1,7 @@
 'use client';
 
-// @demo:data — Tag: PROD-DATA-25 — see frontend/DEMO_CRUFT.md
-// Training (Sources, Performance, Brand voice sub-pages)
-// Entire module is inline demo JSX content (cards, tables, charts with
-// hardcoded mock data). Replace with real backend-driven content when
-// the module ships, or render a 'Coming soon' placeholder until then.
-
 import { useEffect, useState } from 'react';
-import {
-  AUTOMATIONS,
-  BRAND_VOICE,
-  KNOWLEDGE,
-  LEARNING_QUEUE,
-  LEARNING_SOURCES,
-  LEARNING_SOURCE_SUMMARY,
-  PERFORMANCE_KPI,
-  STAFF_PERFORMANCE,
-  type Automation,
-  type LearningCandidate,
-  type LearningSource,
-  type Teaching,
-} from '../../_data/gms';
 import { apiFetch } from '../../../../components/types';
-import { liveOnlyMode } from '../../_data/demoMode';
 import { FilterBar, FilterChip, FilterPill } from '../FilterBar';
 import { IconAI, IconCheck, IconClose, IconPlus, IconSparkle } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
@@ -41,12 +20,11 @@ export function TrainingModule() {
   const [tab, setTab] = useState('teachings');
   const tabs = TAB_DEFS.map((t) => ({ id: t.id, label: t.label }));
   const activeDef = TAB_DEFS.find((t) => t.id === tab);
-  const liveOnly = liveOnlyMode();
   return (
     <>
       <ModuleHeader
         title="Training"
-        subtitle="Friday learns from every module · teachings · queue · sources · performance"
+        subtitle="Live teachings and learning governance"
         tabs={tabs}
         activeTab={tab}
         onTabChange={setTab}
@@ -59,13 +37,7 @@ export function TrainingModule() {
           </div>
         )}
         {tab === 'teachings' && <TeachingsTab />}
-        {liveOnly && tab !== 'teachings' && <TrainingTabPlaceholder label={activeDef?.label || 'This tab'} />}
-        {!liveOnly && tab === 'queue' && <LearningQueueTab />}
-        {!liveOnly && tab === 'sources' && <SourcesTab />}
-        {!liveOnly && tab === 'performance' && <PerformanceTab />}
-        {!liveOnly && tab === 'knowledge' && <KnowledgeTab />}
-        {!liveOnly && tab === 'voice' && <VoiceTab />}
-        {!liveOnly && tab === 'automations' && <AutomationsTab />}
+        {tab !== 'teachings' && <TrainingTabPlaceholder label={activeDef?.label || 'This tab'} />}
       </div>
     </>
   );
@@ -74,10 +46,75 @@ export function TrainingModule() {
 function TrainingTabPlaceholder({ label }: { label: string }) {
   return (
     <div className="card" style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-      {label} is still demo-backed. It stays hidden while FAD is in live-only mode.
+      {label} has no live backend surface wired yet.
     </div>
   );
 }
+
+type Teaching = {
+  id: string;
+  instruction: string;
+  scope:
+    | { kind: 'global' }
+    | { kind: 'property'; targets?: string[] }
+    | { kind: 'property_group'; targets?: string[] };
+  channel: string;
+  source: 'manual' | 'auto_pattern' | 'approved_reply';
+  status: 'active' | 'draft' | 'retired';
+  taughtBy: string;
+  age: string;
+  applications: number;
+};
+
+type LearningCandidate = {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  confidence: number;
+  summary: string;
+  evidence: Array<{ thread: string; edit: string }>;
+  age: string;
+};
+
+type LearningSource = {
+  id: string;
+  origin: string;
+  action: string;
+  time: string;
+  staff?: string;
+  teachingCreated?: string;
+};
+
+type Automation = {
+  id: string;
+  trigger: string;
+  action: string;
+  tier: 'auto' | 'internal' | 'external';
+  confidence: number;
+  fires30d: number;
+  lastFired: string;
+  active: boolean;
+};
+
+const LEARNING_QUEUE: LearningCandidate[] = [];
+const LEARNING_SOURCES: LearningSource[] = [];
+const LEARNING_SOURCE_SUMMARY: Array<{ origin: string; count: number; teachings: number }> = [];
+const PERFORMANCE_KPI: Array<{ label: string; value: string; sub: string }> = [];
+const STAFF_PERFORMANCE: Array<{
+  name: string;
+  role: string;
+  conversations: number;
+  firstDraftAcceptance: number;
+  teachingsContributed: number;
+  avgResponseTime: string;
+  creditSpend: number;
+}> = [];
+const KNOWLEDGE: Array<{ id: string; category: string; lastUpdated: string; title: string; body: string }> = [];
+const BRAND_VOICE: {
+  principles: Array<{ title: string; detail: string }>;
+  examples: { good: string[]; bad: string[] };
+  tones: Array<{ situation: string; tone: string }>;
+} = { principles: [], examples: { good: [], bad: [] }, tones: [] };
+const AUTOMATIONS: Automation[] = [];
 
 function sourceLabel(s: Teaching['source']) {
   return s === 'manual' ? 'Manual' : s === 'auto_pattern' ? 'Auto-pattern' : 'From approved reply';
@@ -145,6 +182,11 @@ function TeachingsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Teaching | null>(null);
+  const [newRuleOpen, setNewRuleOpen] = useState(false);
+  const [newInstruction, setNewInstruction] = useState('');
+  const [newScope, setNewScope] = useState<'global' | 'property'>('global');
+  const [newPropertyCode, setNewPropertyCode] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +214,60 @@ function TeachingsTab() {
     if (status !== 'all' && t.status !== status) return false;
     return true;
   });
+
+  const createTeaching = async () => {
+    const instruction = newInstruction.trim();
+    if (!instruction) {
+      setError('Instruction is required.');
+      return;
+    }
+    if (newScope === 'property' && !newPropertyCode.trim()) {
+      setError('Property code is required for property-scoped teachings.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const data = await apiFetch('/api/inbox/teachings', {
+        method: 'POST',
+        body: JSON.stringify({
+          instruction,
+          scope: newScope,
+          property_code: newScope === 'property' ? newPropertyCode.trim() : null,
+          source: 'manual',
+        }),
+      }) as { teaching?: LiveTeachingRow };
+      if (data.teaching) {
+        const mapped = mapLiveTeaching(data.teaching);
+        setTeachings((prev) => [mapped, ...prev.filter((t) => t.id !== mapped.id)]);
+        setSel(mapped);
+      }
+      setNewInstruction('');
+      setNewPropertyCode('');
+      setNewScope('global');
+      setNewRuleOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create teaching');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateTeaching = async (id: string, patch: { instruction?: string; status?: string }) => {
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/inbox/teachings/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }) as { teaching?: LiveTeachingRow };
+      if (!data.teaching) return;
+      const mapped = mapLiveTeaching(data.teaching);
+      setTeachings((prev) => prev.map((t) => t.id === mapped.id ? mapped : t));
+      setSel(mapped);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update teaching');
+    }
+  };
   return (
     <>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
@@ -201,10 +297,41 @@ function TeachingsTab() {
             />
           </FilterBar>
         </div>
-        <button className="btn primary sm">
+        <button className="btn primary sm" onClick={() => setNewRuleOpen((v) => !v)}>
           <IconPlus size={12} /> New rule
         </button>
       </div>
+      {newRuleOpen && (
+        <div className="card" style={{ padding: 12, marginBottom: 12, display: 'grid', gap: 8 }}>
+          <textarea
+            value={newInstruction}
+            onChange={(e) => setNewInstruction(e.target.value)}
+            rows={3}
+            className="fad-input"
+            style={{ resize: 'vertical', fontFamily: 'inherit' }}
+            placeholder="Write the instruction Friday should follow."
+          />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select className="fad-input" value={newScope} onChange={(e) => setNewScope(e.target.value as 'global' | 'property')} style={{ maxWidth: 180 }}>
+              <option value="global">Global</option>
+              <option value="property">Property</option>
+            </select>
+            {newScope === 'property' && (
+              <input
+                value={newPropertyCode}
+                onChange={(e) => setNewPropertyCode(e.target.value)}
+                className="fad-input"
+                style={{ maxWidth: 180 }}
+                placeholder="Property code"
+              />
+            )}
+            <button className="btn primary sm" onClick={createTeaching} disabled={saving}>
+              {saving ? 'Saving…' : 'Save teaching'}
+            </button>
+            <button className="btn ghost sm" onClick={() => setNewRuleOpen(false)} disabled={saving}>Cancel</button>
+          </div>
+        </div>
+      )}
       {error && (
         <div role="alert" style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 6, background: 'var(--color-bg-danger)', color: 'var(--color-text-danger)', fontSize: 12 }}>
           Live teachings failed to load: {error}
@@ -242,12 +369,26 @@ function TeachingsTab() {
           </div>
         ))}
       </div>
-      {sel && <TeachingDetail teaching={sel} onClose={() => setSel(null)} />}
+      {sel && <TeachingDetail teaching={sel} onClose={() => setSel(null)} onUpdate={updateTeaching} />}
     </>
   );
 }
 
-function TeachingDetail({ teaching, onClose }: { teaching: Teaching; onClose: () => void }) {
+function TeachingDetail({
+  teaching,
+  onClose,
+  onUpdate,
+}: {
+  teaching: Teaching;
+  onClose: () => void;
+  onUpdate: (id: string, patch: { instruction?: string; status?: string }) => Promise<void>;
+}) {
+  const editInstruction = () => {
+    const next = window.prompt('Instruction', teaching.instruction);
+    if (next && next.trim() && next.trim() !== teaching.instruction) {
+      void onUpdate(teaching.id, { instruction: next.trim() });
+    }
+  };
   return (
     <>
       <div
@@ -314,12 +455,11 @@ function TeachingDetail({ teaching, onClose }: { teaching: Teaching; onClose: ()
           <div className="task-detail-section">
             <h5>Actions</h5>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button className="btn sm">Edit instruction</button>
-              <button className="btn sm">Change scope</button>
+              <button className="btn sm" onClick={editInstruction}>Edit instruction</button>
               {teaching.status === 'active' ? (
-                <button className="btn ghost sm">Retire</button>
+                <button className="btn ghost sm" onClick={() => { void onUpdate(teaching.id, { status: 'retired' }); }}>Retire</button>
               ) : (
-                <button className="btn ghost sm">Re-activate</button>
+                <button className="btn ghost sm" onClick={() => { void onUpdate(teaching.id, { status: 'active' }); }}>Re-activate</button>
               )}
             </div>
           </div>

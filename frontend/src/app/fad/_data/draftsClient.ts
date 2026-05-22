@@ -28,7 +28,7 @@ export interface ApproveDraftOpts {
   reviewedBy?: string;
   /** Channel used for the send. Required when the GMS auto-pick would
    *  be wrong (e.g. recommended is WhatsApp but operator wants email). */
-  sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email';
+  sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website';
   /** If the operator edited the draft inline, send the final body here
    *  — server uses it instead of the persisted draft_body and creates
    *  the audit trail with the edited version. */
@@ -141,7 +141,7 @@ export interface ComposeOpts {
   /** Required for mode=draft|direct_send. */
   instruction?: string;
   /** Channel selection (defaults to recommended_channel from detail bundle). */
-  channel?: 'whatsapp' | 'airbnb' | 'booking' | 'email';
+  channel?: 'whatsapp' | 'airbnb' | 'booking' | 'email' | 'website';
 }
 
 export interface ComposeResp {
@@ -190,7 +190,7 @@ export async function sendCompose(conversationId: string, opts: ComposeOpts): Pr
   if (opts.mode === 'manual' && opts.body !== undefined) meta.instruction = opts.body;
   const r = await outboundSend({
     audience: 'guest',
-    channel: opts.channel || 'whatsapp',
+    channel: opts.channel === 'website' ? 'email' : (opts.channel || 'whatsapp'),
     contextId: conversationId,
     body: opts.body ?? '',
     meta,
