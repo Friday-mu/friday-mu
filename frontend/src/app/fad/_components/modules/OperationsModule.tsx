@@ -422,7 +422,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
           <button className="btn primary sm" onClick={openStandaloneReport}>
             <IconPlus size={12} /> Report issue
           </button>
-        ) : (
+        ) : active === 'schedule' ? null : (
           <button className="btn primary sm" onClick={() => openManagerCreate()}>
             <IconPlus size={12} /> New task
           </button>

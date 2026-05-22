@@ -7258,6 +7258,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-planner-scroll {
+  width: 100%;
   margin-top: 10px;
   max-width: 100%;
   min-height: 280px;
@@ -7269,16 +7270,18 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-planner-grid {
   display: grid;
-  min-width: max-content;
+  width: 100%;
   align-items: stretch;
 }
 
 .ops-planner-grid.user-day {
-  grid-template-columns: 156px repeat(9, 96px);
+  grid-template-columns: minmax(144px, 176px) repeat(9, minmax(88px, 1fr));
+  min-width: 936px;
 }
 
 .ops-planner-grid.week {
-  grid-template-columns: 156px repeat(7, 112px);
+  grid-template-columns: minmax(144px, 176px) repeat(7, minmax(104px, 1fr));
+  min-width: 872px;
 }
 
 .ops-planner-row-fragment {
@@ -7878,10 +7881,12 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
     overflow-y: auto;
   }
   .ops-planner-grid.user-day {
-    grid-template-columns: 156px repeat(9, 96px);
+    grid-template-columns: minmax(144px, 176px) repeat(9, minmax(88px, 1fr));
+    min-width: 936px;
   }
   .ops-planner-grid.week {
-    grid-template-columns: 156px repeat(7, 112px);
+    grid-template-columns: minmax(144px, 176px) repeat(7, minmax(104px, 1fr));
+    min-width: 872px;
   }
   .ops-planner-row-head {
     min-height: 50px;
