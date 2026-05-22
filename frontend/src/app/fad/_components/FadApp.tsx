@@ -38,7 +38,7 @@ import { DesignModule } from './modules/DesignModule';
 import { TenantSettingsModule } from './modules/TenantSettingsModule';
 import { BillingModule } from './modules/BillingModule';
 import { AdminAnalyticsModule } from './modules/AdminAnalyticsModule';
-import { MODULE_RESOURCE, PermissionsProvider, useCurrentRole } from './usePermissions';
+import { MODULE_RESOURCE, PermissionsProvider, canSeeModule, useCurrentRole } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
 import { apiFetch, getToken } from '../../../components/types';
@@ -86,6 +86,14 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   useAnnexA();
   useTenantCurrency();
 
+  const firstAllowedModule = () => {
+    return MODULES.find((candidate) => canSeeModule(role, candidate.id)) ?? MODULES[0];
+  };
+
+  const firstVisibleSubPage = (modDef: ModuleDef) => {
+    return visibleSubPagesForModuleRole(modDef, role)[0]?.id ?? null;
+  };
+
   useEffect(() => {
     if (!getToken()) {
       window.location.replace('/');
@@ -106,14 +114,19 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
     // Legacy redirect: 'interior' was renamed to the live Design module.
     if (urlMod === 'interior') urlMod = 'design';
     if (urlMod && MODULES.some((m) => m.id === urlMod)) {
-      setActive(urlMod);
+      const requestedMod = MODULES.find((m) => m.id === urlMod);
+      const modDef = requestedMod && canSeeModule(role, requestedMod.id)
+        ? requestedMod
+        : firstAllowedModule();
+      setActive(modDef.id);
       setFridayFs(false);
-      const modDef = MODULES.find((m) => m.id === urlMod);
-      const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+      const visibleSubPages = visibleSubPagesForModuleRole(modDef, role);
       if (urlSub && visibleSubPages.some((s) => s.id === urlSub)) {
         setSubPage(urlSub);
       } else if (visibleSubPages.length) {
         setSubPage(visibleSubPages[0].id);
+      } else {
+        setSubPage(null);
       }
     }
     setCollapsed(localStorage.getItem('fad:collapsed') === '1');
@@ -155,6 +168,25 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   useEffect(() => {
     if (hydrated) localStorage.setItem('fad:collapsed', collapsed ? '1' : '0');
   }, [collapsed, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || fridayFs) return;
+    const activeMod = MODULES.find((m) => m.id === active);
+    if (!activeMod || !canSeeModule(role, activeMod.id)) {
+      const fallback = firstAllowedModule();
+      setActive(fallback.id);
+      setSubPage(firstVisibleSubPage(fallback));
+      return;
+    }
+    const visibleSubPages = visibleSubPagesForModuleRole(activeMod, role);
+    if (visibleSubPages.length === 0) {
+      if (subPage !== null) setSubPage(null);
+      return;
+    }
+    if (!subPage || !visibleSubPages.some((s) => s.id === subPage)) {
+      setSubPage(visibleSubPages[0].id);
+    }
+  }, [active, fridayFs, hydrated, role, subPage]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -290,9 +322,12 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
           {fridayFs ? (
             <FridayFullscreen
               onNavigate={(m) => {
-                setActive(m);
-                const modDef = MODULES.find((md) => md.id === m);
-                const visibleSubPages = modDef ? visibleSubPagesForModuleRole(modDef, role) : [];
+                const requestedMod = MODULES.find((md) => md.id === m);
+                const modDef = requestedMod && canSeeModule(role, requestedMod.id)
+                  ? requestedMod
+                  : firstAllowedModule();
+                setActive(modDef.id);
+                const visibleSubPages = visibleSubPagesForModuleRole(modDef, role);
                 setSubPage(visibleSubPages.length ? visibleSubPages[0].id : null);
                 setFridayFs(false);
               }}

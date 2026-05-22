@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { TASK_USER_BY_ID, TASK_USERS } from '../../../_data/tasks';
+import { TASK_USER_BY_ID } from '../../../_data/tasks';
 import { type TimeOffRequest } from '../../../_data/timeOff';
 import { submitTimeOffRequest, apiRequestToFixtureShape } from '../../../_data/hrClient';
 import { useCurrentUserId } from '../../usePermissions';
@@ -22,16 +22,14 @@ export function TimeOffDrawer({ mode, canApprove, onClose, onSaved }: Props) {
   const currentUserId = useCurrentUserId();
   const me = TASK_USER_BY_ID[currentUserId];
 
-  const [userId, setUserId] = useState(currentUserId);
   const [startDate, setStartDate] = useState('2026-05-04');
   const [endDate, setEndDate] = useState('2026-05-04');
   const [type, setType] = useState<TimeOffRequest['type']>('annual');
   const [reason, setReason] = useState('');
 
   const submit = async () => {
-    // userId field is decorative in the live API — the backend resolves
-    // staff_id from the JWT, so users submit only for themselves. Selecting
-    // a different user in the dropdown is ignored server-side.
+    // The live API resolves staff_id from the JWT, so a request is always
+    // submitted for the current staff member.
     try {
       const apiType = type === 'personal' ? 'other' : type;
       const req = await submitTimeOffRequest({
@@ -61,14 +59,9 @@ export function TimeOffDrawer({ mode, canApprove, onClose, onSaved }: Props) {
         </div>
         <div className="fad-drawer-body" style={{ padding: 16 }}>
           <Field label="For">
-            <select value={userId} onChange={(e) => setUserId(e.target.value)}>
-              <option value={currentUserId}>{me?.name ?? 'Me'} (self)</option>
-              {TASK_USERS.filter((u) => u.id !== currentUserId && u.role !== 'external').map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
+            <div style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
+              {me?.name ?? 'Me'} <span style={{ color: 'var(--color-text-tertiary)' }}>(self)</span>
+            </div>
           </Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <Field label="Start date">

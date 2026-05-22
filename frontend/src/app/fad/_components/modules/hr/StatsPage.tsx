@@ -55,7 +55,9 @@ export function StatsPage() {
 
   const allStats = useMemo(() => computeStats(), []);
   const visible = useMemo(() => {
-    if (role === 'commercial_marketing') return allStats.filter((s) => s.user.id === currentUserId);
+    if (role === 'field' || role === 'commercial_marketing') {
+      return allStats.filter((s) => s.user.id === currentUserId);
+    }
     return allStats;
   }, [allStats, role, currentUserId]);
 
@@ -81,7 +83,9 @@ export function StatsPage() {
     <div style={{ padding: 24, overflowY: 'auto' }}>
       <h2 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 500 }}>People stats</h2>
       <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 24 }}>
-        Coverage and fairness signals. Used by Franny when drafting next week's roster.
+        {role === 'field' || role === 'commercial_marketing'
+          ? 'Your coverage, standby, and leave signals.'
+          : "Coverage and fairness signals. Used by the ops lead when drafting next week's roster."}
       </div>
 
       {/* Per-staff cards */}
@@ -164,7 +168,7 @@ export function StatsPage() {
       </div>
 
       {/* Weekend off distribution chart */}
-      {role !== 'commercial_marketing' && (
+      {role !== 'field' && role !== 'commercial_marketing' && (
         <div
           style={{
             padding: 20,
