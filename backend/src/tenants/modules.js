@@ -222,10 +222,17 @@ function allModuleKeys() {
   return Object.keys(MODULES);
 }
 
+function alwaysOnModuleKeys() {
+  return Object.entries(MODULES)
+    .filter(([, module]) => module.always_on)
+    .map(([key]) => key);
+}
+
 module.exports = {
   MODULES,
   isKnownModule,
   getModule,
   defaultSignupModuleKeys,
   allModuleKeys,
+  alwaysOnModuleKeys,
 };
