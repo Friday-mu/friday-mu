@@ -29,6 +29,7 @@ const WEBSITE_DRAFT_SOURCE_EVENTS = new Set([
   'experience.enquiry_submitted',
   'contact.form_submitted',
   'owner.enquiry_submitted',
+  'website.visitor_message',
 ]);
 
 const ACTIONABLE_STATES = new Set([
@@ -39,6 +40,9 @@ const ACTIONABLE_STATES = new Set([
 ]);
 
 const DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
+const AI_HANDOFF_EVENT_TYPE = 'website.ai_handoff';
+const TAKEOVER_EVENT_TYPE = 'website.ai_handoff_takeover';
+const STAFF_REPLY_EVENT_TYPE = 'staff.reply_sent';
 
 function shouldAutoDraftWebsiteEvent(eventType) {
   return WEBSITE_DRAFT_SOURCE_EVENTS.has(String(eventType || ''));
@@ -118,6 +122,113 @@ async function latestStaffReply(threadId) {
     [threadId],
   );
   return rows[0] || null;
+}
+
+async function latestAiHandoff(threadId) {
+  const { rows } = await query(
+    `SELECT id, reference, payload, created_at
+       FROM inbox_events
+      WHERE thread_id = $1
+        AND event_type = $2
+      ORDER BY created_at DESC, id::text DESC
+      LIMIT 1`,
+    [threadId, AI_HANDOFF_EVENT_TYPE],
+  );
+  return rows[0] || null;
+}
+
+async function handoffWindowStart(handoff) {
+  const conversationKey = handoff?.payload?.conversationKey;
+  if (!handoff || !conversationKey) return handoff?.created_at || new Date().toISOString();
+  const { rows } = await query(
+    `SELECT MIN(created_at) AS started_at
+       FROM inbox_events
+      WHERE thread_id = $1
+        AND event_type = $2
+        AND payload->>'conversationKey' = $3`,
+    [handoff.thread_id, AI_HANDOFF_EVENT_TYPE, conversationKey],
+  );
+  return rows[0]?.started_at || handoff.created_at;
+}
+
+async function ensureWebsiteAiTakeoverForDraft({ threadId, identity, reason = 'draft_approved' }) {
+  const handoff = await latestAiHandoff(threadId);
+  if (!handoff) return { ok: false, reason: 'no_ai_handoff' };
+  const windowStart = await handoffWindowStart({ ...handoff, thread_id: threadId });
+  const existing = await query(
+    `SELECT id, event_type, payload, created_at
+       FROM inbox_events
+      WHERE thread_id = $1
+        AND created_at >= $2
+        AND event_type IN ($3, $4)
+      ORDER BY created_at DESC, id::text DESC
+      LIMIT 1`,
+    [threadId, windowStart, TAKEOVER_EVENT_TYPE, STAFF_REPLY_EVENT_TYPE],
+  );
+  if (existing.rows[0]) {
+    return {
+      ok: true,
+      duplicate: true,
+      handoffId: handoff.payload?.handoffId || null,
+      eventId: existing.rows[0].id,
+      takeoverState: 'human_takeover',
+      aiMayReply: false,
+    };
+  }
+
+  const payload = {
+    handoffId: handoff.payload?.handoffId || null,
+    conversationKey: handoff.payload?.conversationKey || null,
+    takeoverState: 'human_takeover',
+    aiMayReply: false,
+    reason,
+    takenBy: {
+      userId: identity?.userId || null,
+      displayName: identity?.displayName || identity?.username || null,
+    },
+    createdAt: new Date().toISOString(),
+  };
+  const eventRes = await query(
+    `INSERT INTO inbox_events (thread_id, reference, event_type, source, payload)
+     VALUES ($1, $2, $3, 'fad', $4::jsonb)
+     RETURNING id, created_at`,
+    [
+      threadId,
+      payload.handoffId ? `website-ai-takeover:${payload.handoffId}` : null,
+      TAKEOVER_EVENT_TYPE,
+      JSON.stringify(payload),
+    ],
+  );
+  await query(
+    `UPDATE inbox_threads
+        SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+            last_event_type = $1,
+            last_event_at = NOW(),
+            updated_at = NOW()
+      WHERE id = $2`,
+    [TAKEOVER_EVENT_TYPE, threadId],
+  );
+  await publishFadEvent({
+    type: 'website_ai.takeover',
+    payload: {
+      threadId,
+      handoffId: payload.handoffId,
+      eventId: eventRes.rows[0].id,
+      takeoverState: 'human_takeover',
+      aiMayReply: false,
+    },
+  }).catch(() => {});
+  await publishFadEvent({
+    type: 'website_inbox.thread_updated',
+    payload: { threadId, eventId: eventRes.rows[0].id, eventType: TAKEOVER_EVENT_TYPE },
+  }).catch(() => {});
+  return {
+    ok: true,
+    handoffId: payload.handoffId,
+    eventId: eventRes.rows[0].id,
+    takeoverState: 'human_takeover',
+    aiMayReply: false,
+  };
 }
 
 async function getVisibleDraftsForThread(threadId) {
@@ -457,12 +568,85 @@ async function approveWebsiteDraft({ threadId, draftId, body, channel = 'email',
   assertDraftCurrent({ draft, latestEvent: latest, latestReply });
 
   if (channel === 'website') {
-    const err = new Error(/^website-ai\+/i.test(thread.guest_email || thread.guest_email_raw || '')
-      ? 'website_ai_handoff_drafts_takeover_only'
-      : 'website_live_channel_not_available');
-    err.status = 409;
-    err.code = err.message;
-    throw err;
+    if (!/^website-ai\+/i.test(thread.guest_email || thread.guest_email_raw || '')) {
+      const err = new Error('website_live_channel_not_available');
+      err.status = 409;
+      err.code = err.message;
+      throw err;
+    }
+    const messageBody = String(body || draft.payload?.draft_body || '').trim();
+    if (!messageBody) {
+      const err = new Error('empty_draft_body');
+      err.status = 400;
+      throw err;
+    }
+    const takeover = await ensureWebsiteAiTakeoverForDraft({
+      threadId,
+      identity,
+      reason: 'draft_approved',
+    });
+    if (!takeover.ok) {
+      const err = new Error(takeover.reason || 'no_ai_handoff');
+      err.status = 409;
+      err.code = err.message;
+      throw err;
+    }
+    const eventRes = await query(
+      `INSERT INTO inbox_events (thread_id, event_type, source, payload)
+       VALUES ($1, 'staff.reply_sent', 'fad', $2::jsonb)
+       RETURNING id, created_at`,
+      [threadId, JSON.stringify({
+        channel: 'website',
+        body: messageBody,
+        delivery: 'website_live',
+        draft_id: draftId,
+        handoff_id: takeover.handoffId || null,
+        sent_by: {
+          user_id: identity?.userId || null,
+          display_name: identity?.displayName || identity?.username || null,
+        },
+      })],
+    );
+    await query(
+      `UPDATE inbox_threads
+          SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+              last_event_type = 'staff.reply_sent',
+              last_event_at = NOW(),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [threadId],
+    );
+    await updateDraftEvent(draftId, 'ai.draft_ready', {
+      state: 'sent',
+      sent_at: new Date().toISOString(),
+      sent_message_id: eventRes.rows[0]?.id || null,
+      final_body: messageBody,
+    });
+    await publishFadEvent({
+      tenantId: FR_TENANT_ID,
+      type: 'inbox.message_sent',
+      payload: {
+        conversationId: `web-${threadId}`,
+        threadId,
+        draftId,
+        messageId: eventRes.rows[0]?.id || null,
+        sentVia: 'website',
+      },
+    }).catch(() => {});
+    await publishFadEvent({
+      tenantId: FR_TENANT_ID,
+      type: 'website_inbox.thread_updated',
+      payload: { threadId, eventId: eventRes.rows[0]?.id || null, eventType: STAFF_REPLY_EVENT_TYPE },
+    }).catch(() => {});
+    return {
+      ok: true,
+      message_id: eventRes.rows[0]?.id,
+      sent_at: eventRes.rows[0]?.created_at,
+      sent_via: 'website',
+      delivery: 'website_live',
+      takeoverState: 'human_takeover',
+      aiMayReply: false,
+    };
   }
 
   const toEmail = thread.guest_email_raw || thread.guest_email;

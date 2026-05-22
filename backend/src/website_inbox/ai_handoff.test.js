@@ -8,9 +8,13 @@ jest.mock('../database/client', () => ({ query: jest.fn() }));
 jest.mock('../realtime', () => ({
   publishFadEvent: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('./drafts', () => ({
+  triggerWebsiteDraftGeneration: jest.fn(() => Promise.resolve({ draftId: 'draft-live-1' })),
+}));
 
 const { query } = require('../database/client');
 const { publishFadEvent } = require('../realtime');
+const { triggerWebsiteDraftGeneration } = require('./drafts');
 const { mountAiHandoff, _test } = require('./ai_handoff');
 
 function app() {
@@ -34,6 +38,7 @@ describe('website AI handoff', () => {
     process.env.FRIDAY_WEBSITE_INBOX_SECRET = 'test-secret';
     query.mockReset();
     publishFadEvent.mockClear();
+    triggerWebsiteDraftGeneration.mockClear();
   });
 
   test('sanitizes to summary plus the latest eight transcript messages', () => {
@@ -190,6 +195,7 @@ describe('website AI handoff', () => {
       type: 'website_ai.visitor_message_received',
       payload: expect.objectContaining({ threadId, handoffId, eventId }),
     }));
+    expect(triggerWebsiteDraftGeneration).toHaveBeenCalledWith(threadId, eventId);
   });
 
   test('reports duplicate visitor follow-up messages truthfully', async () => {
@@ -236,6 +242,7 @@ describe('website AI handoff', () => {
       takeoverState: 'ai_active',
       aiMayReply: true,
     });
+    expect(triggerWebsiteDraftGeneration).not.toHaveBeenCalled();
   });
 
   test('rejects unsigned handoffs', async () => {

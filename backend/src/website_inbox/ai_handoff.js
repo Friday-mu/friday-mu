@@ -648,6 +648,12 @@ function mountAiHandoff(router) {
         createdAt: parsedBody.payload?.createdAt,
       });
       const state = await takeoverStateForHandoff(handoff);
+      if (!recorded.isDuplicate && state.aiMayReply === false && recorded.eventId) {
+        const { triggerWebsiteDraftGeneration } = require('./drafts');
+        triggerWebsiteDraftGeneration(handoff.thread_id, recorded.eventId).catch((e) => {
+          console.error(`[website_inbox/ai_handoff] visitor draft trigger failed for ${recorded.eventId}:`, e.message);
+        });
+      }
       return res.json({
         status: recorded.isDuplicate ? 'duplicate' : 'accepted',
         handoffId: handoff.payload?.handoffId || null,
