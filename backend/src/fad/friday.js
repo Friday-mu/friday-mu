@@ -756,6 +756,7 @@ Rules:
 - Use navigate actions to send the operator to the owning module when that is the best next step.
 - Never claim an action has been done unless the supplied context says it was already done.
 - Do not expose private credentials, raw tokens, or internal implementation details.
+- Use the supplied mauritiusCalendar values for relative dates like today and tomorrow. Do not infer Mauritius dates from UTC timestamps.
 
 Return JSON only:
 {
@@ -780,6 +781,10 @@ function buildUserPrompt({ question, scope, context }) {
   return JSON.stringify({
     question: cleanString(question, MAX_QUESTION_CHARS),
     scope: cleanString(scope || 'All of FAD', 120),
+    mauritiusCalendar: {
+      today: todayInMauritius(),
+      tomorrow: addDays(todayInMauritius(), 1),
+    },
     context,
   }, null, 2);
 }

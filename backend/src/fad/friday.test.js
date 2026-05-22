@@ -43,8 +43,22 @@ describe('FAD Ask Friday helpers', () => {
     expect(prompt).toContain('HR');
     expect(prompt).toContain('Reviews');
     expect(prompt).toContain('Design');
+    expect(prompt).toContain('mauritiusCalendar');
     expect(prompt).toContain('Do not use markdown tables');
     expect(prompt).toContain('Return JSON only');
+  });
+
+  test('supplies Mauritius calendar dates to the model prompt', () => {
+    const payload = JSON.parse(_test.buildUserPrompt({
+      question: 'Create a task tomorrow',
+      scope: 'All of FAD',
+      context: { requestedModules: ['operations'], sections: [] },
+    }));
+
+    expect(payload.mauritiusCalendar).toEqual({
+      today: _test.todayInMauritius(),
+      tomorrow: _test.addDays(_test.todayInMauritius(), 1),
+    });
   });
 
   test('selects module context from question and scope', () => {
