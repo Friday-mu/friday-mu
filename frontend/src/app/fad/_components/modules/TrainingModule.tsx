@@ -1,28 +1,7 @@
 'use client';
 
-// @demo:data — Tag: PROD-DATA-25 — see frontend/DEMO_CRUFT.md
-// Training (Sources, Performance, Brand voice sub-pages)
-// Entire module is inline demo JSX content (cards, tables, charts with
-// hardcoded mock data). Replace with real backend-driven content when
-// the module ships, or render a 'Coming soon' placeholder until then.
-
 import { useEffect, useState } from 'react';
-import {
-  AUTOMATIONS,
-  BRAND_VOICE,
-  KNOWLEDGE,
-  LEARNING_QUEUE,
-  LEARNING_SOURCES,
-  LEARNING_SOURCE_SUMMARY,
-  PERFORMANCE_KPI,
-  STAFF_PERFORMANCE,
-  type Automation,
-  type LearningCandidate,
-  type LearningSource,
-  type Teaching,
-} from '../../_data/gms';
 import { apiFetch } from '../../../../components/types';
-import { liveOnlyMode } from '../../_data/demoMode';
 import { FilterBar, FilterChip, FilterPill } from '../FilterBar';
 import { IconAI, IconCheck, IconClose, IconPlus, IconSparkle } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
@@ -39,18 +18,13 @@ const TAB_DEFS = [
 
 export function TrainingModule() {
   const [tab, setTab] = useState('teachings');
-  const liveOnly = liveOnlyMode();
-  const visibleTabDefs = liveOnly ? TAB_DEFS.filter((t) => t.id === 'teachings') : TAB_DEFS;
-  const tabs = visibleTabDefs.map((t) => ({ id: t.id, label: t.label }));
+  const tabs = TAB_DEFS.map((t) => ({ id: t.id, label: t.label }));
   const activeDef = TAB_DEFS.find((t) => t.id === tab);
-  useEffect(() => {
-    if (liveOnly && tab !== 'teachings') setTab('teachings');
-  }, [liveOnly, tab]);
   return (
     <>
       <ModuleHeader
         title="Training"
-        subtitle="Friday learns from every module · teachings · queue · sources · performance"
+        subtitle="Live teachings and learning governance"
         tabs={tabs}
         activeTab={tab}
         onTabChange={setTab}
@@ -63,13 +37,7 @@ export function TrainingModule() {
           </div>
         )}
         {tab === 'teachings' && <TeachingsTab />}
-        {liveOnly && tab !== 'teachings' && <TrainingTabPlaceholder label={activeDef?.label || 'This tab'} />}
-        {!liveOnly && tab === 'queue' && <LearningQueueTab />}
-        {!liveOnly && tab === 'sources' && <SourcesTab />}
-        {!liveOnly && tab === 'performance' && <PerformanceTab />}
-        {!liveOnly && tab === 'knowledge' && <KnowledgeTab />}
-        {!liveOnly && tab === 'voice' && <VoiceTab />}
-        {!liveOnly && tab === 'automations' && <AutomationsTab />}
+        {tab !== 'teachings' && <TrainingTabPlaceholder label={activeDef?.label || 'This tab'} />}
       </div>
     </>
   );
@@ -78,10 +46,75 @@ export function TrainingModule() {
 function TrainingTabPlaceholder({ label }: { label: string }) {
   return (
     <div className="card" style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-      {label} is still demo-backed. It stays hidden while FAD is in live-only mode.
+      {label} has no live backend surface wired yet.
     </div>
   );
 }
+
+type Teaching = {
+  id: string;
+  instruction: string;
+  scope:
+    | { kind: 'global' }
+    | { kind: 'property'; targets?: string[] }
+    | { kind: 'property_group'; targets?: string[] };
+  channel: string;
+  source: 'manual' | 'auto_pattern' | 'approved_reply';
+  status: 'active' | 'draft' | 'retired';
+  taughtBy: string;
+  age: string;
+  applications: number;
+};
+
+type LearningCandidate = {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  confidence: number;
+  summary: string;
+  evidence: Array<{ thread: string; edit: string }>;
+  age: string;
+};
+
+type LearningSource = {
+  id: string;
+  origin: string;
+  action: string;
+  time: string;
+  staff?: string;
+  teachingCreated?: string;
+};
+
+type Automation = {
+  id: string;
+  trigger: string;
+  action: string;
+  tier: 'auto' | 'internal' | 'external';
+  confidence: number;
+  fires30d: number;
+  lastFired: string;
+  active: boolean;
+};
+
+const LEARNING_QUEUE: LearningCandidate[] = [];
+const LEARNING_SOURCES: LearningSource[] = [];
+const LEARNING_SOURCE_SUMMARY: Array<{ origin: string; count: number; teachings: number }> = [];
+const PERFORMANCE_KPI: Array<{ label: string; value: string; sub: string }> = [];
+const STAFF_PERFORMANCE: Array<{
+  name: string;
+  role: string;
+  conversations: number;
+  firstDraftAcceptance: number;
+  teachingsContributed: number;
+  avgResponseTime: string;
+  creditSpend: number;
+}> = [];
+const KNOWLEDGE: Array<{ id: string; category: string; lastUpdated: string; title: string; body: string }> = [];
+const BRAND_VOICE: {
+  principles: Array<{ title: string; detail: string }>;
+  examples: { good: string[]; bad: string[] };
+  tones: Array<{ situation: string; tone: string }>;
+} = { principles: [], examples: { good: [], bad: [] }, tones: [] };
+const AUTOMATIONS: Automation[] = [];
 
 function sourceLabel(s: Teaching['source']) {
   return s === 'manual' ? 'Manual' : s === 'auto_pattern' ? 'Auto-pattern' : 'From approved reply';

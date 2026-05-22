@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
-import { TASK_USERS } from '../../_data/tasks';
 import {
   archiveNotification,
   subscribeNotifications,
@@ -19,6 +18,7 @@ import {
   type UserContext,
 } from '../../_data/notifications';
 import { notificationRead, useLiveNotifications } from '../../_data/notificationsClient';
+import { useTenantUsers } from '../../_data/useTenantUsers';
 import { fireToast } from '../Toaster';
 
 type ReadFilter = 'all' | 'unread' | 'read';
@@ -512,6 +512,7 @@ function DetailPane({
   onArchiveToggle: () => void;
 }) {
   const ctx = getContext(notification.id);
+  const { users: tenantUsers } = useTenantUsers();
   const [noteDraft, setNoteDraft] = useState(ctx.note ?? '');
   const [waitingDraft, setWaitingDraft] = useState(ctx.waitingOn ?? '');
   const [editingWaiting, setEditingWaiting] = useState(false);
@@ -555,7 +556,7 @@ function DetailPane({
     onClose();
   };
 
-  const candidates = TASK_USERS.filter((u) => u.role !== 'external' && u.active);
+  const candidates = tenantUsers.filter((u) => u.role !== 'external' && u.active);
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14, height: '100%', overflow: 'auto' }}>
