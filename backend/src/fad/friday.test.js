@@ -21,6 +21,13 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.shouldLoad({ question: 'What is the design blocker?', scope: 'Design' }, 'design')).toBe(true);
   });
 
+  test('all of FAD scope loads every owned context family', () => {
+    const modules = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+    for (const module of modules) {
+      expect(_test.shouldLoad({ question: 'What needs attention?', scope: 'All of FAD' }, module)).toBe(true);
+    }
+  });
+
   test('parses strict JSON and falls back to raw text', () => {
     expect(_test.parseModelResponse(JSON.stringify({
       answer: 'Check Operations first.',

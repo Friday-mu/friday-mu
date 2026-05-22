@@ -51,8 +51,6 @@ If you write something demo-only or fake-backend, add a `// @demo:*` comment in 
 | PROD-DATA-10 | `frontend/src/app/fad/_data/roster.ts` | Staff roster, scheduled by week, with publish state | **Partly replaced 2026-05-22:** Operations Roster page now uses `GET/PUT /api/hr/roster?week_start=:date` and `POST /api/hr/roster/publish`; fixture rows remain for notification/pending-count demo consumers until notifications are backend-backed |
 | PROD-DATA-11 | `frontend/src/app/fad/_data/teamInbox.ts` | Team-internal threads | `GET /api/inbox/team-threads` |
 | PROD-DATA-12 | `frontend/src/app/fad/_data/breezeway.ts` | Breezeway integration / synced data | `GET /api/integrations/breezeway` |
-| PROD-DATA-13 | `frontend/src/app/fad/_data/friday.ts` | Friday-the-AI card metadata + prompts | `GET /api/friday/cards`, `GET /api/friday/prompts` |
-| PROD-DATA-14 | `frontend/src/app/fad/_data/notifications.ts` | Notification entries | `GET /api/notifications` (per-user) |
 | PROD-DATA-15 | `frontend/src/app/fad/_data/aiFixtures.ts` | AI inference context fixtures | Depends on AI integration — likely returned alongside conversation fetch |
 | PROD-DATA-16 | `frontend/src/app/fad/_components/modules/FinanceModule.tsx` (~line 1373) `PNL_BY_ENTITY` | Inline P&L by entity (FR/FI/S/all) with hardcoded MUR figures | `GET /api/finance/pnl?entity=:entity&period=:period` |
 | PROD-DATA-17 | `frontend/src/app/fad/_components/modules/properties/PropertyDetail.tsx` (~line 525) `AI_SUGGESTIONS_BY_CODE` | Hardcoded AI Card suggestions per property code | `GET /api/properties/:code/ai-suggestions` (server-side LLM-derived) |

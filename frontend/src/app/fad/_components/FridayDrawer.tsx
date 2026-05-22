@@ -230,8 +230,8 @@ export function FridayDrawer({ open, onClose, scope, onNavigate, onExpand }: Pro
             <div className="friday-empty">
               <div className="friday-empty-title">Hi {greetName} — ask me anything.</div>
               <div className="friday-empty-sub">
-                I&apos;ll pull from Inbox, Finance, Calendar, Operations, and the module you&apos;re
-                viewing.
+                I&apos;ll read live Inbox, Operations, HR, Reviews, Design, Reservations, and
+                Properties context. I won&apos;t send, approve, or change records.
               </div>
               <div className="friday-prompt-grid">
                 {FRIDAY_PROMPTS_HOME.slice(0, 2).map((g, i) => (
