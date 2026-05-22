@@ -120,8 +120,8 @@ export function visibleSubPagesForModuleRole(mod: ModuleDef, role: string): SubP
   const subPages = mod.subPages ?? [];
   if (mod.id !== 'operations') return subPages;
   if (role === 'field') {
-    const allowed = new Set(['my', 'all', 'issues', 'roster']);
+    const allowed = new Set(['my', 'history']);
     return subPages.filter((sp) => allowed.has(sp.id));
   }
-  return subPages.filter((sp) => sp.id !== 'my');
+  return subPages;
 }

@@ -204,9 +204,13 @@ function dateOnly(value: string | null | undefined): string {
 }
 
 function taskTitle(value: string): string {
-  return value.includes('[redacted: sensitive operational detail]')
-    ? 'Sensitive imported task'
-    : value;
+  const title = value.trim();
+  if (title.includes('[redacted: sensitive operational detail]')) {
+    return 'Imported task (details restricted)';
+  }
+  return title
+    .replace(/^Breezeway\s+Added:\s*/i, '')
+    .replace(/^Breezeway\s+Template:\s*/i, 'Template: ');
 }
 
 function mapTask(s: ServerTask): Task {
