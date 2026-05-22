@@ -24,11 +24,28 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.shouldLoad({ question: 'What is the design blocker?', scope: 'Design' }, 'design')).toBe(true);
   });
 
-  test('all of FAD scope loads every owned context family', () => {
+  test('broad all of FAD question loads every owned context family', () => {
     const modules = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
     for (const module of modules) {
       expect(_test.shouldLoad({ question: 'What needs attention?', scope: 'All of FAD' }, module)).toBe(true);
     }
+  });
+
+  test('specific all of FAD questions keep context narrow', () => {
+    const modules = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+    const loadedForHandoff = modules.filter((module) =>
+      _test.shouldLoad({ question: 'Any website AI handoffs waiting for takeover?', scope: 'All of FAD' }, module),
+    );
+    const loadedForReviews = modules.filter((module) =>
+      _test.shouldLoad({ question: 'What should we learn from recent guest reviews?', scope: 'All of FAD' }, module),
+    );
+    const loadedForTask = modules.filter((module) =>
+      _test.shouldLoad({ question: 'Create a task to check the AC at RC-16 tomorrow', scope: 'All of FAD' }, module),
+    );
+
+    expect(loadedForHandoff).toEqual(['inbox']);
+    expect(loadedForReviews).toEqual(['reviews']);
+    expect(loadedForTask).toEqual(['operations', 'properties']);
   });
 
   test('keeps enough output budget for Kimi K2.6 visible answers', () => {

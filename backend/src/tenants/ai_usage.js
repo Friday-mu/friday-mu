@@ -68,6 +68,11 @@ const RATE_TABLE = {
   // tokens. Used by Phase 3.1 draft-generator + Phase 3.3 followup
   // draft generator. Source: platform.moonshot.ai/docs/pricing.
   'kimi-k2.6':                     { kind: 'text',  inputUsdPerM:  0.75,  outputUsdPerM: 3.50 },
+  // Anthropic Sonnet 4.5 / 4.6 standard-context text pricing.
+  // Official Anthropic API rate as of 2026-05: $3 / $15 per M tokens.
+  'claude-sonnet-4-5':             { kind: 'text',  inputUsdPerM:  3.00,  outputUsdPerM: 15.00 },
+  'claude-sonnet-4-5-20250929':    { kind: 'text',  inputUsdPerM:  3.00,  outputUsdPerM: 15.00 },
+  'claude-sonnet-4-6':             { kind: 'text',  inputUsdPerM:  3.00,  outputUsdPerM: 15.00 },
 };
 
 // Unknown model? Default to a moderate text rate so we still capture

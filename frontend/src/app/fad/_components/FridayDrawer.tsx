@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { FridayCard, FridayStep } from '../_data/friday';
 import { FRIDAY_PROMPTS_HOME } from '../_data/fridayPrompts';
 import { askFriday, executeAskFridayAction, type AskFridayAction } from '../_data/fridayClient';
@@ -202,7 +203,11 @@ export function FridayMessage({
               {m.error && <span className="chip warn">live read failed</span>}
             </div>
           )}
-          {m.text && <div className="friday-msg-text">{m.text}</div>}
+          {m.text && (
+            <div className="friday-msg-text">
+              <ReactMarkdown>{m.text}</ReactMarkdown>
+            </div>
+          )}
           {visibleCards.map((c, i) => (
             <div key={i} style={{ marginTop: 8 }}>
               <FCard card={c} onNavigate={onNavigate} />

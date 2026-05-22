@@ -165,6 +165,31 @@ function extractPropertyCode(question) {
   return match ? match[1].toUpperCase() : undefined;
 }
 
+function isAllFadScope(scope = '') {
+  return cleanString(scope, 120).toLowerCase().includes('all of fad');
+}
+
+function questionHintsModule(question = '', module) {
+  const hasPropertyCode = Boolean(extractPropertyCode(question));
+  if (module === 'inbox') return /\b(inbox|guest conversation|conversation|message|reply|draft|website|ask friday|handoff|takeover)\b/i.test(question);
+  if (module === 'operations') return /\b(task|todo|work order|ops|operation|issue|maintenance|repair|schedule|roster|runner|inspection|housekeeping)\b/i.test(question);
+  if (module === 'hr') return /\b(hr|staff|team|leave|time off|roster|availability|who is on)\b/i.test(question);
+  if (module === 'reviews') return /\b(reviews?|ratings?|guest feedback|airbnb|booking\.?com|booking com)\b/i.test(question);
+  if (module === 'design') return /\b(design|interior|project|vendor|moodboard|renovation|blocker)\b/i.test(question);
+  if (module === 'reservations') return /\b(reservation|booking|arrival|arriving|check.?in|checkout|stay|returning guest|who'?s checking in)\b/i.test(question);
+  if (module === 'properties') return hasPropertyCode || /\b(property|properties|villa|listing|availability|calendar|amenit|bedroom|bathroom)\b/i.test(question);
+  return false;
+}
+
+function isBroadAllFadQuestion({ question = '', scope = '' }) {
+  if (!isAllFadScope(scope)) return false;
+  const q = String(question || '').toLowerCase();
+  if (!q.trim()) return false;
+  const hasSpecificModuleHint = ACTION_MODULES.some((module) => questionHintsModule(question, module));
+  if (hasSpecificModuleHint) return false;
+  return /\b(what needs|needs my attention|what should i know|daily brief|overview|status|priorit|risk|blocker|today|this week|across fad|all of fad|everything)\b/i.test(q);
+}
+
 function extractTaskTitle(question) {
   const stripped = cleanString(question, 240)
     .replace(/\b(create|add|make|open)\b\s+(an?\s+)?(operations?\s+)?(task|todo|issue|work order)\s*(to|for)?\s*/i, '')
@@ -235,14 +260,11 @@ function wantsModule({ question = '', scope = '', module }) {
 
 function shouldLoad({ question, scope }, module) {
   if (!question && !scope) return false;
-  if (scope.toLowerCase().includes('all of fad')) return true;
-  if (scope.toLowerCase().includes(module)) return true;
-  if (module === 'inbox' && /\b(inbox|guest|message|reply|draft|website|ask friday|handoff)\b/i.test(question)) return true;
-  if (module === 'operations' && /\b(task|ops|operation|issue|maintenance|schedule|roster)\b/i.test(question)) return true;
-  if (module === 'hr' && /\b(hr|staff|team|leave|time off|roster|availability)\b/i.test(question)) return true;
-  if (module === 'reviews' && /\b(review|rating|guest feedback|airbnb|booking.com)\b/i.test(question)) return true;
-  if (module === 'design' && /\b(design|interior|project|vendor|moodboard|renovation)\b/i.test(question)) return true;
-  if (module === 'reservations' || module === 'properties') return wantsModule({ question, scope, module });
+  const normalizedScope = cleanString(scope, 120).toLowerCase();
+  if (!isAllFadScope(scope) && normalizedScope.includes(module)) return true;
+  if (isBroadAllFadQuestion({ question, scope })) return true;
+  if (questionHintsModule(question, module)) return true;
+  if (!isAllFadScope(scope) && (module === 'reservations' || module === 'properties')) return wantsModule({ question, scope, module });
   return false;
 }
 
@@ -790,6 +812,8 @@ module.exports = {
     cleanAction,
     sanitizeActions,
     deterministicActions,
+    isBroadAllFadQuestion,
+    questionHintsModule,
     shouldLoad,
     shapeReview,
     buildListingIndex,
