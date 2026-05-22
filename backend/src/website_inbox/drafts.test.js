@@ -72,6 +72,7 @@ describe('website inbox draft guards', () => {
     const sql = query.mock.calls[0][0];
     expect(sql).toContain('booking.request_submitted');
     expect(sql).toContain('website.ai_handoff');
+    expect(sql).toContain('website.visitor_message');
     expect(sql).toContain('staff.reply_sent');
     expect(sql).toContain("d.payload->>'source_event_id' = l.event_id::text");
     warn.mockRestore();

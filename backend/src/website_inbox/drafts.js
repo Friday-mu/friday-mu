@@ -41,7 +41,7 @@ const ACTIONABLE_STATES = new Set([
 ]);
 
 const DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
-const DIRECT_WEBSITE_DRAFT_SOURCE_EVENTS_SQL = "('booking.request_submitted', 'experience.enquiry_submitted', 'contact.form_submitted', 'owner.enquiry_submitted', 'website.ai_handoff')";
+const DIRECT_WEBSITE_DRAFT_SOURCE_EVENTS_SQL = "('booking.request_submitted', 'experience.enquiry_submitted', 'contact.form_submitted', 'owner.enquiry_submitted', 'website.ai_handoff', 'website.visitor_message')";
 const AI_HANDOFF_EVENT_TYPE = 'website.ai_handoff';
 const TAKEOVER_EVENT_TYPE = 'website.ai_handoff_takeover';
 const STAFF_REPLY_EVENT_TYPE = 'staff.reply_sent';
