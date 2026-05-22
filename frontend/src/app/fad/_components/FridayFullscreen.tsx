@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { FRIDAY_PROMPTS_HOME } from '../_data/friday';
+import { FRIDAY_PROMPTS_HOME } from '../_data/fridayPrompts';
 import { useFridayChat, FridayMessage } from './FridayDrawer';
 import { IconArrow, IconChevron, IconSend, IconSparkle } from './icons';
 

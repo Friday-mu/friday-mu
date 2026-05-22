@@ -2263,6 +2263,13 @@ html.fad-dark .fad-feedback-tab.is-active {
   line-height: 1.55;
   padding: 8px 0 4px;
   color: var(--color-text-primary);
+  white-space: pre-wrap;
+}
+.friday-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 4px;
 }
 .friday-msg-user { font-family: var(--font-sans-fad); }
 

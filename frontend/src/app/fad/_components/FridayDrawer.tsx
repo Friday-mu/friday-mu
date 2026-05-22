@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { FridayCard, FridayStep } from '../_data/friday';
-import { FRIDAY_PROMPTS_HOME, pickScript } from '../_data/friday';
+import { FRIDAY_PROMPTS_HOME } from '../_data/fridayPrompts';
+import { askFriday } from '../_data/fridayClient';
 import { FCard } from './FridayCards';
 import { IconCheck, IconClose, IconExpand, IconSend, IconSparkle } from './icons';
 import { canSeeFridayCard, useCurrentRole, useCurrentUserId } from './usePermissions';
@@ -10,6 +11,7 @@ import { TASK_USER_BY_ID } from '../_data/tasks';
 
 interface AIMessage {
   role: 'ai';
+  id: string;
   scope: string;
   steps: FridayStep[];
   stepsDone: number;
@@ -17,6 +19,9 @@ interface AIMessage {
   text: string;
   cards: FridayCard[];
   followups: string[];
+  confidence?: 'high' | 'medium' | 'low';
+  sourcesUsed?: string[];
+  error?: string;
 }
 type UserMessage = { role: 'user'; body: string };
 type Message = UserMessage | AIMessage;
@@ -26,40 +31,62 @@ export function useFridayChat(scope: string) {
 
   const submit = (q: string) => {
     if (!q.trim()) return;
-    const script = pickScript(q);
+    const history = msgs.slice(-8).map((m) => ({
+      role: m.role === 'ai' ? 'assistant' as const : 'user' as const,
+      content: m.role === 'ai' ? m.text : m.body,
+    })).filter((m) => m.content.trim());
     const user: UserMessage = { role: 'user', body: q };
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const ai: AIMessage = {
       role: 'ai',
+      id,
       scope,
-      steps: script.steps,
+      steps: [
+        { type: 'tool', name: 'read.fad-context', args: scope, ms: 0 },
+        { type: 'tool', name: 'reason.staff-answer', args: 'read-only', ms: 0 },
+      ],
       stepsDone: 0,
       ready: false,
-      text: script.reply.text,
-      cards: script.reply.cards,
-      followups: script.reply.followups,
+      text: '',
+      cards: [],
+      followups: [],
     };
     setMsgs((m) => [...m, user, ai]);
 
-    let cumulative = 0;
-    script.steps.forEach((s, i) => {
-      cumulative += s.ms;
-      setTimeout(() => {
-        setMsgs((m) => {
-          const copy = [...m];
-          const last = copy[copy.length - 1];
-          if (last?.role === 'ai') copy[copy.length - 1] = { ...last, stepsDone: i + 1 };
-          return copy;
-        });
-      }, cumulative);
-    });
     setTimeout(() => {
       setMsgs((m) => {
-        const copy = [...m];
-        const last = copy[copy.length - 1];
-        if (last?.role === 'ai') copy[copy.length - 1] = { ...last, ready: true };
-        return copy;
+        return m.map((entry) => entry.role === 'ai' && entry.id === id
+          ? { ...entry, stepsDone: 1 }
+          : entry);
       });
-    }, cumulative + 150);
+    }, 180);
+
+    askFriday({ question: q.trim(), scope, history })
+      .then((reply) => {
+        setMsgs((m) => m.map((entry) => entry.role === 'ai' && entry.id === id
+          ? {
+              ...entry,
+              stepsDone: entry.steps.length,
+              ready: true,
+              text: reply.answer,
+              followups: reply.followups || [],
+              confidence: reply.confidence,
+              sourcesUsed: reply.sourcesUsed || reply.contextSummary?.requestedModules || [],
+            }
+          : entry));
+      })
+      .catch((err) => {
+        setMsgs((m) => m.map((entry) => entry.role === 'ai' && entry.id === id
+          ? {
+              ...entry,
+              stepsDone: entry.steps.length,
+              ready: true,
+              text: 'Friday could not read the live FAD context for this request. No action was taken.',
+              followups: [],
+              error: err instanceof Error ? err.message : 'Ask Friday failed',
+            }
+          : entry));
+      });
   };
 
   return { msgs, submit };
@@ -114,6 +141,15 @@ export function FridayMessage({
       )}
       {m.ready && (
         <>
+          {(m.confidence || m.sourcesUsed?.length || m.error) && (
+            <div className="friday-context-row">
+              {m.confidence && <span className="chip">confidence · {m.confidence}</span>}
+              {m.sourcesUsed?.slice(0, 4).map((s) => (
+                <span key={s} className="chip">{s}</span>
+              ))}
+              {m.error && <span className="chip warn">live read failed</span>}
+            </div>
+          )}
           {m.text && <div className="friday-msg-text">{m.text}</div>}
           {visibleCards.map((c, i) => (
             <div key={i} style={{ marginTop: 8 }}>
