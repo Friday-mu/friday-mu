@@ -14,6 +14,7 @@ import {
   type ReviewTag,
 } from '../../../_data/reviews';
 import { useLiveReviews } from '../../../_data/reviewsClient';
+import { liveOnlyMode } from '../../../_data/demoMode';
 import { useTranslation } from '../../../_data/translateClient';
 import { TASK_PROPERTY_BY_CODE, TASK_USER_BY_ID } from '../../../_data/tasks';
 import { RESERVATION_BY_ID } from '../../../_data/reservations';
@@ -38,11 +39,10 @@ export function AllReviewsPage({ onMutated }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [taskFromReview, setTaskFromReview] = useState<Review | null>(null);
+  const liveOnly = liveOnlyMode();
 
-  // Live data from Guesty via /api/reviews/list. Fallback to fixture REVIEWS
-  // during initial load OR on backend failure — keeps the page rendered.
   const { reviews: liveReviews, loading: liveLoading, error: liveError } = useLiveReviews();
-  const reviewSource = liveReviews ?? REVIEWS;
+  const reviewSource = liveReviews ?? (liveOnly ? [] : REVIEWS);
 
   const filtered = useMemo(() => {
     let list = [...reviewSource];
@@ -126,8 +126,8 @@ export function AllReviewsPage({ onMutated }: Props) {
               {filtered.length} of {reviewSource.length} reviews
               {liveLoading && <span style={{ marginLeft: 6, opacity: 0.7 }}>· loading…</span>}
               {liveError && (
-                <span style={{ marginLeft: 6, color: 'var(--color-text-warning)' }} title={liveError}>
-                  · using fixtures (backend unreachable)
+                <span style={{ marginLeft: 6, color: 'var(--color-text-danger)' }} title={liveError}>
+                  · live load failed
                 </span>
               )}
             </div>
@@ -199,6 +199,7 @@ export function AllReviewsPage({ onMutated }: Props) {
           {selected ? (
             <ReviewDetail
               rv={selected}
+              liveOnly={liveOnly}
               onCreateTask={() => setTaskFromReview(selected)}
               onMutated={onMutated}
             />
@@ -236,10 +237,12 @@ export function AllReviewsPage({ onMutated }: Props) {
 
 function ReviewDetail({
   rv,
+  liveOnly,
   onCreateTask,
   onMutated,
 }: {
   rv: Review;
+  liveOnly: boolean;
   onCreateTask: () => void;
   onMutated: () => void;
 }) {
@@ -254,6 +257,10 @@ function ReviewDetail({
 
   const sendReply = () => {
     if (!replyDraft.trim()) return;
+    if (liveOnly) {
+      fireToast('Review reply sending is not wired to the live channel yet');
+      return;
+    }
     rv.replyText = replyDraft;
     rv.replyStatus = 'sent';
     rv.replySentAt = new Date().toISOString();
@@ -263,6 +270,10 @@ function ReviewDetail({
 
   const postNote = () => {
     if (!noteDraft.trim()) return;
+    if (liveOnly) {
+      fireToast('Review internal notes need a live backend endpoint before saving');
+      return;
+    }
     rv.privateFeedback = (rv.privateFeedback ? rv.privateFeedback + '\n\n' : '') + noteDraft;
     setNoteDraft('');
     setNoteOpen(false);
@@ -417,7 +428,7 @@ function ReviewDetail({
             {rv.replyStatus === 'sent' ? 'Reply sent' : 'Reply'}
           </div>
           <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-            Pushes to {CHANNEL_LABEL[rv.channel]}
+            {liveOnly ? 'Live send not enabled' : `Pushes to ${CHANNEL_LABEL[rv.channel]}`}
           </span>
         </div>
         <textarea
@@ -434,9 +445,10 @@ function ReviewDetail({
           <button
             className="btn primary sm"
             onClick={sendReply}
-            disabled={!replyDraft.trim() || replyDraft === rv.replyText}
+            disabled={liveOnly || !replyDraft.trim() || replyDraft === rv.replyText}
+            title={liveOnly ? 'Live review reply sending needs a backend channel endpoint first' : undefined}
           >
-            {rv.replyStatus === 'sent' ? 'Update reply' : 'Send reply'}
+            {liveOnly ? 'Send disabled' : rv.replyStatus === 'sent' ? 'Update reply' : 'Send reply'}
           </button>
         </div>
       </div>
@@ -446,15 +458,20 @@ function ReviewDetail({
         <button className="btn sm" onClick={onCreateTask}>
           <IconPlus size={11} /> Create task from review
         </button>
+        {!liveOnly && (
+          <button
+            className="btn ghost sm"
+            onClick={() => setNoteOpen((v) => !v)}
+          >
+            + Internal note
+          </button>
+        )}
         <button
           className="btn ghost sm"
-          onClick={() => setNoteOpen((v) => !v)}
-        >
-          + Internal note
-        </button>
-        <button
-          className="btn ghost sm"
-          onClick={() => fireToast(`Channel link: ${rv.channelUrl ?? 'not available'}`)}
+          disabled={!rv.channelUrl}
+          onClick={() => {
+            if (rv.channelUrl) window.open(rv.channelUrl, '_blank', 'noopener');
+          }}
         >
           Open on {CHANNEL_LABEL[rv.channel]}
         </button>
