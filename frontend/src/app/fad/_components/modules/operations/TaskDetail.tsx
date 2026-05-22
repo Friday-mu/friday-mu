@@ -687,10 +687,10 @@ function Body({
         <Section title="Report related issue">
           <div className="ops-related-report">
             <span>
-              Create a separate reported issue from this task. Property and reservation context are inherited, but guest/access details are not copied into the report text.
+              Log a separate property issue linked to this task. Private guest/access notes stay out of the report.
             </span>
             <button type="button" className="btn ghost sm" onClick={() => onReportIssue(task)}>
-              Report issue
+              Report related issue
             </button>
           </div>
         </Section>
