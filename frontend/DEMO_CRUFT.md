@@ -184,6 +184,7 @@ Hardcoded values that are not fake data but will become tenant-configurable once
 | PROD-CONFIG-7 | `app/fad/_components/modules/inbox/ScheduleCallDrawer.tsx:65` | `https://meet.google.com/…` hardcoded as video conferencing provider. No abstraction for Zoom/Teams. | `GET /api/integrations/video-conferencing` returning active provider + URL template |
 | PROD-CONFIG-8 | `app/fad/_components/modules/reservations/ReservationDetail.tsx:267` | `https://www.airbnb.com/hosting/reservations` hardcoded in Airbnb resolution handler. Won't route correctly for BDC/Vrbo channels. | `GET /api/integrations/channels/:channelId/resolution-url` returning channel-specific management URL |
 | PROD-CONFIG-9 | `app/fad/_components/modules/OperationsModule.tsx:1254, 1311` `r.currency ?? 'MUR'` (×2) | 'MUR' hardcoded as fallback currency in spend-request display (list item + detail view). | Replace with `defaultCurrency` from `GET /api/tenant/config` |
+| PROD-CONFIG-10 | `app/fad/_components/modules/OperationsModule.tsx` `SETTINGS_TEMPLATES` / booking policies / recurring rules | Operations settings displays hardcoded template and automation policy labels while the backend policy/config API is not wired. | `GET /api/operations/settings` returning task templates, booking-trigger rules, recurring schedules, and live/paused state per tenant |
 
 ## Notes for backend wiring
 

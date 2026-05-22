@@ -3624,6 +3624,45 @@ function InsightsPage() {
     .sort((a, b) => b.issues - a.issues)
     .slice(0, 5);
   const escalations = days.map((day) => TASKS.filter((task) => task.updatedAt.slice(0, 10) === day && (task.status === 'blocked' || task.priority === 'urgent')).length);
+  const openTasks = TASKS.filter((task) => !CLOSED_STATUS.has(task.status));
+  const attentionRows = [
+    {
+      label: 'Open today',
+      value: openTasks.filter((task) => task.dueDate === TODAY).length,
+      sub: 'due now',
+      tone: 'neutral',
+    },
+    {
+      label: 'Overdue',
+      value: openTasks.filter((task) => task.dueDate && task.dueDate < TODAY).length,
+      sub: 'needs action',
+      tone: 'danger',
+    },
+    {
+      label: 'Blocked',
+      value: openTasks.filter((task) => task.status === 'blocked' || task.awaitingHumanApproval).length,
+      sub: 'manager queue',
+      tone: 'warning',
+    },
+    {
+      label: 'Unassigned',
+      value: openTasks.filter((task) => task.assigneeIds.length === 0).length,
+      sub: 'open tasks',
+      tone: 'warning',
+    },
+    {
+      label: 'Reported',
+      value: TASKS.filter((task) => INTAKE_SOURCES.has(task.source) && task.status === 'reported').length,
+      sub: 'triage intake',
+      tone: 'neutral',
+    },
+    {
+      label: 'Active',
+      value: TASKS.filter((task) => task.status === 'in_progress' || task.status === 'paused').length,
+      sub: 'in field',
+      tone: 'success',
+    },
+  ];
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
@@ -3632,19 +3671,32 @@ function InsightsPage() {
           Insights could not load live tasks: {error}
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+      <Section title="Attention now">
+        <div className="ops-insight-attention">
+          {attentionRows.map((row) => (
+            <div key={row.label} className="ops-insight-attention-row" data-tone={row.tone}>
+              <strong>{row.value}</strong>
+              <span>{row.label}</span>
+              <small>{row.sub}</small>
+            </div>
+          ))}
+        </div>
+        {loading && TASKS.length === 0 && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Loading live task metrics...</div>}
+      </Section>
+
+      <div className="ops-insights-grid">
         <Section title="Completed last 7 days">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{completedTasks.length}</div>
+          <div className="ops-insight-number">{completedTasks.length}</div>
           <Sparkline values={completed} color="#10b981" />
         </Section>
 
         <Section title="Created last 7 days">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{createdTasks.length}</div>
+          <div className="ops-insight-number">{createdTasks.length}</div>
           <Sparkline values={created} color="#7c3aed" />
         </Section>
 
         <Section title="Avg completion time">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{avgCompletionMinutes}m</div>
+          <div className="ops-insight-number">{avgCompletionMinutes}m</div>
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>across all departments</div>
         </Section>
 
@@ -3728,75 +3780,79 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 
 // ───────────────── Settings ─────────────────
 
+// @demo:config — Tag: PROD-CONFIG-10 — see frontend/DEMO_CRUFT.md
+const SETTINGS_TEMPLATES = [
+  { id: 'std-clean', name: 'Standard cleaning', route: 'cleaning > standard_clean', estimate: '2h', state: 'Manual selection; checkout trigger pending' },
+  { id: 'post-clean', name: 'Post-clean inspection', route: 'inspection > post_clean', estimate: '30m', state: 'Manual selection; checkout trigger pending' },
+  { id: 'pre-arrival', name: 'Pre-arrival inspection', route: 'inspection > pre_arrival', estimate: '45m', state: 'Manual selection; check-in trigger pending' },
+  { id: 'deep-clean', name: 'Deep clean', route: 'cleaning > deep_clean', estimate: '6h', state: 'Manual selection' },
+  { id: 'pool', name: 'Pool clarity check', route: 'maintenance > pool', estimate: '45m', state: 'Manual selection' },
+];
+
+const SETTINGS_BOOKING_POLICIES = [
+  { trigger: 'Checkout received', actions: ['Create standard cleaning for checkout day', 'Create post-clean inspection after cleaning is due', 'Current state: trigger pending backend verification'] },
+  {
+    trigger: 'Two days before check-in',
+    actions: [
+      'If property is empty more than 3 days or flagged, create pre-arrival inspection',
+      'Otherwise skip to avoid noise',
+      'Current state: trigger pending backend verification',
+    ],
+  },
+];
+
+const SETTINGS_RECURRING_RULES = [
+  { trigger: 'Pest control per property', actions: ['Every 3 months'] },
+  { trigger: 'AC servicing per property', actions: ['Every 6 months'] },
+  { trigger: 'Preventative maintenance', actions: ['Monthly - all properties'] },
+  { trigger: 'Aesthetic check', actions: ['Monthly - all properties'] },
+  { trigger: 'Amenities form gap analysis', actions: ['Monthly - sequential'] },
+];
+
 function SettingsPage({ onCreate }: { onCreate: () => void }) {
   return (
     <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 500 }}>Settings</h2>
         <button className="btn primary sm" onClick={onCreate} style={{ marginLeft: 'auto' }}>
-          <IconPlus size={12} /> Manual create task
+          <IconPlus size={12} /> New task
         </button>
       </div>
 
-      <div
-        style={{
-          padding: 12,
-          background: 'var(--color-background-secondary)',
-          borderLeft: '3px solid var(--color-brand-accent)',
-          borderRadius: 4,
-          marginBottom: 20,
-          fontSize: 12,
-        }}
-      >
-        Current Operations workflow policy. The next cutover slice wires these rules to automatic task generation.
+      <div className="ops-settings-policy-note">
+        Manual task creation is live. Booking-trigger automation below is policy only until the backend trigger job is wired and verified.
       </div>
 
       <Section title="Templates">
-        {[
-          { id: 'std-clean', name: 'Standard cleaning', dept: 'cleaning > standard_clean', items: 82, est: '2h', uses30d: 287 },
-          { id: 'post-clean', name: 'Post-clean inspection', dept: 'inspection > post_clean', items: 45, est: '30m', uses30d: 261 },
-          { id: 'pre-arrival', name: 'Pre-arrival inspection', dept: 'inspection > pre_arrival', items: 38, est: '45m', uses30d: 198 },
-          { id: 'deep-clean', name: 'Deep clean', dept: 'cleaning > deep_clean', items: 134, est: '6h', uses30d: 32 },
-          { id: 'pool', name: 'Pool clarity check', dept: 'maintenance > pool', items: 12, est: '45m', uses30d: 64 },
-        ].map((t) => (
+        <div className="ops-settings-grid-row head">
+          <span>Template</span>
+          <span>Route</span>
+          <span>Estimate</span>
+          <span>Current state</span>
+        </div>
+        {SETTINGS_TEMPLATES.map((t) => (
           <div
             key={t.id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '2fr 2fr 1fr 1fr 1fr',
-              gap: 8,
-              padding: '10px 12px',
-              borderBottom: '0.5px solid var(--color-border-tertiary)',
-              fontSize: 12,
-              alignItems: 'center',
-            }}
+            className="ops-settings-grid-row"
           >
             <span style={{ fontWeight: 500 }}>{t.name}</span>
-            <span style={{ color: 'var(--color-text-secondary)' }}>{t.dept}</span>
-            <span className="mono">{t.items} items</span>
-            <span className="mono">{t.est}</span>
-            <span className="mono" style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>{t.uses30d} uses 30d</span>
+            <span style={{ color: 'var(--color-text-secondary)' }}>{t.route}</span>
+            <span className="mono">{t.estimate}</span>
+            <span style={{ color: 'var(--color-text-tertiary)' }}>{t.state}</span>
           </div>
         ))}
       </Section>
 
-      <Section title="Workflows · auto-task generation">
-        <Workflow trigger="On checkout" actions={['Standard cleaning (same day)', 'Post-clean inspection (same day, after cleaning)']} />
-        <Workflow
-          trigger="2 days before check-in"
-          actions={[
-            'IF property empty >3 days OR pre-arrival flag → Arrival inspection (1 day before check-in)',
-            'ELSE skip',
-          ]}
-        />
+      <Section title="Booking-trigger policy">
+        {SETTINGS_BOOKING_POLICIES.map((workflow) => (
+          <Workflow key={workflow.trigger} trigger={workflow.trigger} actions={workflow.actions} />
+        ))}
       </Section>
 
       <Section title="Recurring rules">
-        <Workflow trigger="Pest control · per property" actions={['Every 3 months']} />
-        <Workflow trigger="AC servicing · per property" actions={['Every 6 months']} />
-        <Workflow trigger="Preventative maintenance" actions={['Monthly · all properties']} />
-        <Workflow trigger="Aesthetic check" actions={['Monthly · all properties']} />
-        <Workflow trigger="Amenities form → Gap analysis" actions={['Monthly · sequential']} />
+        {SETTINGS_RECURRING_RULES.map((workflow) => (
+          <Workflow key={workflow.trigger} trigger={workflow.trigger} actions={workflow.actions} />
+        ))}
       </Section>
     </div>
   );
@@ -3808,7 +3864,7 @@ function Workflow({ trigger, actions }: { trigger: string; actions: string[] }) 
       <div style={{ fontWeight: 500, marginBottom: 4 }}>{trigger}</div>
       {actions.map((a, i) => (
         <div key={i} style={{ paddingLeft: 16, color: 'var(--color-text-secondary)' }}>
-          → {a}
+          - {a}
         </div>
       ))}
     </div>
