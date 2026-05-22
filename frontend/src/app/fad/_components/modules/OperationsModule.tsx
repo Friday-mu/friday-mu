@@ -3072,10 +3072,20 @@ function addTags(existing: string[], ...next: string[]): string[] {
 
 function sourceRefLabel(task: Task): string {
   if (task.externalRef?.startsWith('pending_action:')) {
-    return task.externalRef.replace('pending_action:', '');
+    return 'Pending action';
   }
-  if (task.externalRef) return task.externalRef;
-  return task.source === 'reported_issue' ? 'Field report' : 'No source ref';
+  if (task.externalRef) return `Ref ${task.externalRef}`;
+  if (task.inboxThreadId) return 'Conversation linked';
+  if (task.reservationId) return 'Reservation linked';
+  return intakeSourceLabel(task);
+}
+
+function intakeSourceLabel(task: Task): string {
+  if (task.source === 'reported_issue') return 'Field report';
+  if (task.source === 'inbox_ai') return 'Inbox proposal';
+  if (task.source === 'group_email') return 'Team message';
+  if (task.source === 'review') return 'Review follow-up';
+  return SOURCE_LABEL[task.source] || 'Task intake';
 }
 
 function appendTriageNote(task: Task, note: string): string {
@@ -3208,6 +3218,9 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
     }
   };
 
+  const selectedSourceLabel = selectedTask ? intakeSourceLabel(selectedTask) : '';
+  const selectedRefLabel = selectedTask ? sourceRefLabel(selectedTask) : '';
+
   return (
     <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
       <div className="fad-split-list" style={{ width: 380, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
@@ -3254,7 +3267,9 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
           {loading && intakeTasks.length === 0 && <LoadingState label="Loading reported issues" />}
           {intakeTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
-            const statusSwatch = toneStyle(taskStatusTone(task.status));
+            const sourceSwatch = toneStyle(taskSourceTone(task.source));
+            const sourceLabel = intakeSourceLabel(task);
+            const refLabel = sourceRefLabel(task);
             return (
               <div
                 key={task.id}
@@ -3312,10 +3327,11 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{taskTitle(task)}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status] || 'Reported'}</span>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(task.source)).background, color: toneStyle(taskSourceTone(task.source)).color }}>{SOURCE_LABEL[task.source] || 'Task'}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: sourceSwatch.background, color: sourceSwatch.color }}>{sourceLabel}</span>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{task.priority}</span>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{sourceRefLabel(task)}</span>
+                    {refLabel !== sourceLabel && (
+                      <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{refLabel}</span>
+                    )}
                   </div>
                 </button>
               </div>
@@ -3339,7 +3355,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
-                  {selectedTask.propertyCode || 'No property'} · {sourceRefLabel(selectedTask)}
+                  {selectedTask.propertyCode || 'No property'} · {selectedSourceLabel}
                 </div>
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{taskTitle(selectedTask)}</h2>
               </div>
@@ -3349,15 +3365,20 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
             </div>
 
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
-              <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(selectedTask.source)).background, color: toneStyle(taskSourceTone(selectedTask.source)).color }}>
-                {SOURCE_LABEL[selectedTask.source] || 'Task'}
-              </span>
               <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskStatusTone(selectedTask.status)).background, color: toneStyle(taskStatusTone(selectedTask.status)).color }}>
                 {STATUS_LABEL[selectedTask.status] || 'Reported'}
+              </span>
+              <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(selectedTask.source)).background, color: toneStyle(taskSourceTone(selectedTask.source)).color }}>
+                {selectedSourceLabel}
               </span>
               <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
                 {selectedTask.priority}
               </span>
+              {selectedRefLabel !== selectedSourceLabel && !selectedTask.reservationId && !selectedTask.inboxThreadId && (
+                <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
+                  {selectedRefLabel}
+                </span>
+              )}
               {selectedTask.reservationId && (
                 <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
                   reservation linked
