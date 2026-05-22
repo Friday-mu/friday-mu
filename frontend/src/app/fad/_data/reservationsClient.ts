@@ -47,8 +47,32 @@ interface RawReservation {
   synced_at?: string | null;
 }
 
+function compactIdentityPart(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function semanticStayIdentity(r: RawReservation): string {
+  const listing = compactIdentityPart(r.listing_guesty_id || r.listing_nickname);
+  const checkIn = compactIdentityPart(r.check_in_date?.slice(0, 10));
+  const checkOut = compactIdentityPart(r.check_out_date?.slice(0, 10));
+  const guest = compactIdentityPart(
+    r.guest?.email
+      || [r.guest?.first_name, r.guest?.last_name].filter(Boolean).join(' ')
+      || r.guest?.phone,
+  );
+  if (!listing || !checkIn || !checkOut || !guest) return '';
+  return `stay:${listing}:${checkIn}:${checkOut}:${guest}`;
+}
+
 function reservationIdentity(r: RawReservation): string {
-  return r.guesty_id || r.confirmation_code || r.id;
+  const confirmation = compactIdentityPart(r.confirmation_code);
+  if (confirmation) return `confirmation:${confirmation}`;
+  const semantic = semanticStayIdentity(r);
+  if (semantic) return semantic;
+  return r.guesty_id || r.id;
 }
 
 function reservationCompletenessScore(r: RawReservation): number {

@@ -520,6 +520,7 @@ export function CalendarModule() {
           x={selectedStay.x}
           y={selectedStay.y}
           authorId={currentUserId}
+          localReservationTools={demoData}
           onClose={() => setSelectedStay(null)}
           onCreateTask={(rsv) => {
             setSelectedStay(null);
@@ -1389,6 +1390,7 @@ function StayPopover({
   x,
   y,
   authorId,
+  localReservationTools,
   onClose,
   onCreateTask,
   onMutated,
@@ -1397,6 +1399,7 @@ function StayPopover({
   x: number;
   y: number;
   authorId: string;
+  localReservationTools: boolean;
   onClose: () => void;
   onCreateTask: (rsv: Reservation) => void;
   onMutated: () => void;
@@ -1407,7 +1410,7 @@ function StayPopover({
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [checkInDraft, setCheckInDraft] = useState(rsv.checkIn.slice(0, 16));
   const [checkOutDraft, setCheckOutDraft] = useState(rsv.checkOut.slice(0, 16));
-  const notes = notesForReservation(rsv.id);
+  const notes = localReservationTools ? notesForReservation(rsv.id) : [];
   const mentionCandidates = TASK_USERS.filter((u) => u.role !== 'external' && u.active && u.id !== authorId);
 
   const insertMention = (userId: string) => {
@@ -1724,13 +1727,15 @@ function StayPopover({
         {panel === 'none' && (
           <>
             <div className="cal-popover-actions">
-              <button
-                className="btn ghost sm"
-                onClick={() => setPanel('note')}
-                title="Attach an internal note to this stay"
-              >
-                + Note
-              </button>
+              {localReservationTools && (
+                <button
+                  className="btn ghost sm"
+                  onClick={() => setPanel('note')}
+                  title="Attach an internal note to this stay"
+                >
+                  + Note
+                </button>
+              )}
               <button
                 className="btn ghost sm"
                 onClick={() => onCreateTask(rsv)}
@@ -1738,13 +1743,15 @@ function StayPopover({
               >
                 + Task
               </button>
-              <button
-                className="btn ghost sm"
-                onClick={() => setPanel('times')}
-                title="Change check-in or check-out time"
-              >
-                Adjust times
-              </button>
+              {localReservationTools && (
+                <button
+                  className="btn ghost sm"
+                  onClick={() => setPanel('times')}
+                  title="Change check-in or check-out time"
+                >
+                  Adjust times
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <button
