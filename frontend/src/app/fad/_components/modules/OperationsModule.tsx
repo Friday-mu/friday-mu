@@ -178,6 +178,45 @@ function withinDateTab(task: Task, tab: TaskDateTab, startDate: string, endDate:
   return task.dueDate >= startDate && task.dueDate <= endDate;
 }
 
+function taskDueCompare(a: Task, b: Task): number {
+  return (
+    compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) ||
+    compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99') ||
+    PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+    compareText(taskTitle(a), taskTitle(b))
+  );
+}
+
+function myTaskTimeGroup(task: Task, tab: TaskDateTab): string {
+  if (!task.dueDate) return 'No due date';
+  if (task.dueDate < TODAY && !CLOSED_STATUS.has(task.status)) return 'Overdue';
+  if (tab === 'week' || tab === 'all') return task.dueDate;
+  if (!task.dueTime) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow · no time' : 'Today · no time';
+  const hour = Number(task.dueTime.slice(0, 2));
+  if (!Number.isFinite(hour)) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow · no time' : 'Today · no time';
+  if (hour < 12) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow morning' : 'Morning';
+  if (hour < 16) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow afternoon' : 'Afternoon';
+  return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow evening' : 'Evening';
+}
+
+function myTaskGroupRank(label: string): number {
+  const fixed: Record<string, number> = {
+    Overdue: 0,
+    Morning: 10,
+    Afternoon: 20,
+    Evening: 30,
+    'Today · no time': 40,
+    'Tomorrow morning': 50,
+    'Tomorrow afternoon': 60,
+    'Tomorrow evening': 70,
+    'Tomorrow · no time': 80,
+    'No due date': 999,
+  };
+  if (fixed[label] != null) return fixed[label];
+  if (isIsoDateKey(label)) return 100 + daysBetween(TODAY, label);
+  return 500;
+}
+
 function taskMatchesSearch(task: Task, query: string): boolean {
   if (!query.trim()) return true;
   const q = query.trim().toLowerCase();
@@ -1685,7 +1724,7 @@ function PlannerTaskCard({
     <div
       className="ops-schedule-task"
       data-status={task.status}
-      style={{ borderLeftColor: priorityBarColor(task.priority) }}
+      style={{ borderLeftColor: statusSwatch.color }}
       draggable={dragEnabled && !saving}
       onDragStart={(event) => onDragStart(event, task)}
     >
@@ -1890,7 +1929,7 @@ function MyTasksPage({
   const [department, setDepartment] = useState<Department | 'all'>('all');
   const [priority, setPriority] = useState<TaskPriority | 'all'>('all');
   const [reservation, setReservation] = useState<ReservationFilter>('all');
-  const [sort, setSort] = useState<MyTaskSort>('suggested');
+  const [sort, setSort] = useState<MyTaskSort>('due');
   const [startDate, setStartDate] = useState(TODAY);
   const [endDate, setEndDate] = useState(addDays(TODAY, 13));
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -1904,14 +1943,13 @@ function MyTasksPage({
       .filter((task) => reservation === 'all' || reservationState(task) === reservation)
       .filter((task) => taskMatchesSearch(task, search));
     return [...tasks].sort((a, b) => {
-      if (sort === 'property') return compareText(taskPropertyLabel(a), taskPropertyLabel(b)) || compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate));
-      if (sort === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate));
-      if (sort === 'due') return compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) || compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99');
+      if (sort === 'property') return compareText(taskPropertyLabel(a), taskPropertyLabel(b)) || taskDueCompare(a, b);
+      if (sort === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || taskDueCompare(a, b);
+      if (sort === 'due') return taskDueCompare(a, b);
       return (
         STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
         PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
-        compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) ||
-        compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99')
+        taskDueCompare(a, b)
       );
     });
   }, [assignedTasks, dateTab, department, endDate, priority, reservation, search, sort, startDate]);
@@ -1919,12 +1957,12 @@ function MyTasksPage({
   const groupedTasks = useMemo(() => {
     const groups = new Map<string, Task[]>();
     visibleTasks.forEach((task) => {
-      const key = dateTab === 'today' || dateTab === 'tomorrow' ? taskPropertyLabel(task) : taskDateKey(task.dueDate);
+      const key = myTaskTimeGroup(task, dateTab);
       const list = groups.get(key) ?? [];
       list.push(task);
       groups.set(key, list);
     });
-    return Array.from(groups.entries()).sort(([a], [b]) => compareText(a, b));
+    return Array.from(groups.entries()).sort(([a], [b]) => myTaskGroupRank(a) - myTaskGroupRank(b) || compareText(a, b));
   }, [dateTab, visibleTasks]);
 
   const counts = useMemo(() => {
@@ -2103,6 +2141,7 @@ function MyTaskCard({
     <article
       className={'ops-my-card' + (isOverdue ? ' overdue' : '')}
       data-status={task.status}
+      style={{ borderLeftColor: statusSwatch.color }}
       onClick={onOpen}
       role="button"
       tabIndex={0}
@@ -2115,7 +2154,7 @@ function MyTaskCard({
     >
       <div className="ops-my-card-top">
         <span className="mono">{taskPropertyLabel(task)}</span>
-        <span>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
+        <span className={isOverdue ? 'ops-my-due overdue' : 'ops-my-due'}>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
       </div>
       <h3>{taskTitle(task)}</h3>
       {task.description && <p>{task.description}</p>}

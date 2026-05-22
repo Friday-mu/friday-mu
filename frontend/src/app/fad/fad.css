@@ -6113,7 +6113,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px 20px;
 }
 
 .ops-my-header {
@@ -6130,9 +6130,9 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-my-counts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(68px, 1fr));
-  gap: 8px;
-  min-width: 320px;
+  grid-template-columns: repeat(4, minmax(58px, 1fr));
+  gap: 6px;
+  min-width: 270px;
 }
 
 .ops-my-header-side {
@@ -6143,13 +6143,13 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-my-counts span {
-  min-height: 52px;
+  min-height: 40px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 8px;
+  padding: 6px 8px;
   border: 0.5px solid var(--color-border-tertiary);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-background-secondary);
   color: var(--color-text-tertiary);
   font-size: 11px;
@@ -6157,7 +6157,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-my-counts strong {
   color: var(--color-text-primary);
-  font-size: 18px;
+  font-size: 14px;
 }
 
 .ops-my-alert {
@@ -6178,7 +6178,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-my-tabs button {
-  min-height: 44px;
+  min-height: 36px;
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: 6px;
   background: var(--color-background-secondary);
@@ -6215,25 +6215,26 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-my-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .ops-my-card {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 10px 11px;
+  display: grid;
+  grid-template-columns: minmax(92px, 128px) minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 10px;
   border: 0.5px solid var(--color-border-tertiary);
-  border-left: 4px solid var(--color-border-tertiary);
+  border-left: 3px solid var(--color-border-tertiary);
   border-radius: 6px;
   background: var(--color-background-primary);
   cursor: pointer;
 }
 
 .ops-my-card.overdue {
-  border-left-color: var(--color-text-danger);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-warning) 22%, transparent);
 }
 
 .ops-my-card:focus-visible,
@@ -6255,30 +6256,54 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-my-card-top,
 .ops-my-card-footer {
-  justify-content: space-between;
   color: var(--color-text-tertiary);
   font-size: 11px;
 }
 
+.ops-my-card-top {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+}
+
+.ops-my-card-footer {
+  grid-column: 3;
+  grid-row: 1;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
 .ops-my-card h3 {
+  grid-column: 2;
+  grid-row: 1;
   margin: 0;
-  font-size: 14px;
-  line-height: 1.3;
+  font-size: 13px;
+  line-height: 1.25;
 }
 
 .ops-my-card p {
+  grid-column: 2;
+  grid-row: 2;
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.35;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
 
+.ops-my-card-chips {
+  grid-column: 2;
+  grid-row: 3;
+}
+
 .ops-my-card-chips span {
-  padding: 3px 7px;
+  padding: 2px 6px;
   border-radius: 5px;
   background: var(--color-background-secondary);
   color: var(--color-text-secondary);
@@ -6289,12 +6314,43 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-my-card-actions {
+  grid-column: 3;
+  grid-row: 2 / span 2;
+  justify-content: flex-end;
+  align-self: center;
   padding-top: 2px;
 }
 
 .ops-my-card-actions .btn {
-  min-height: 30px;
-  padding-inline: 9px;
+  min-height: 28px;
+  padding-inline: 8px;
+}
+
+.ops-my-card-actions .btn.ghost {
+  max-width: 0;
+  padding-inline: 0;
+  border-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ops-my-card:focus-within .ops-my-card-actions .btn.ghost,
+.ops-my-card:hover .ops-my-card-actions .btn.ghost {
+  max-width: 80px;
+  padding-inline: 8px;
+  border-color: var(--color-border-tertiary);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ops-my-due {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.ops-my-due.overdue {
+  color: var(--color-text-warning);
 }
 
 .ops-report-issue-btn {
@@ -7138,7 +7194,36 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
     width: 120px;
   }
   .ops-my-list {
+    display: flex;
+  }
+  .ops-my-card {
     grid-template-columns: 1fr;
+  }
+  .ops-my-card-top,
+  .ops-my-card-footer,
+  .ops-my-card h3,
+  .ops-my-card p,
+  .ops-my-card-chips,
+  .ops-my-card-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .ops-my-card-top {
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .ops-my-card-footer,
+  .ops-my-card-actions {
+    justify-content: flex-start;
+    white-space: normal;
+  }
+  .ops-my-card-actions .btn.ghost {
+    max-width: none;
+    padding-inline: 8px;
+    border-color: var(--color-border-tertiary);
+    opacity: 1;
+    pointer-events: auto;
   }
   .ops-planner-scroll {
     overflow-x: auto;
