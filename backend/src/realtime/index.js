@@ -12,19 +12,82 @@ let listenerStarted = false;
 let listenerClient = null;
 
 function activePresenceForTenant(tenantId, now = new Date()) {
+  const snapshot = activePresenceSnapshotForTenant(tenantId, now);
+  return {
+    activeConnectionCount: snapshot.activeConnectionCount,
+    activeUserCount: snapshot.activeUserCount,
+    userIds: snapshot.userIds,
+    checkedAt: snapshot.checkedAt,
+  };
+}
+
+function activePresenceSnapshotForTenant(tenantId, now = new Date()) {
   const targetTenantId = tenantId ? String(tenantId) : null;
-  const activeUserIds = new Set();
+  const usersById = new Map();
   let activeConnectionCount = 0;
   for (const client of clients.values()) {
     if (targetTenantId && String(client.tenantId || '') !== targetTenantId) continue;
     activeConnectionCount += 1;
-    if (client.userId) activeUserIds.add(String(client.userId));
+    if (!client.userId) continue;
+    const userId = String(client.userId);
+    const existing = usersById.get(userId);
+    usersById.set(userId, {
+      userId,
+      connectionCount: (existing?.connectionCount || 0) + 1,
+      connectedAt: earlierIso(existing?.connectedAt, client.connectedAt),
+    });
   }
+  const users = [...usersById.values()].sort((a, b) => a.connectedAt.localeCompare(b.connectedAt));
   return {
     activeConnectionCount,
-    activeUserCount: activeUserIds.size,
-    userIds: [...activeUserIds],
+    activeUserCount: users.length,
+    userIds: users.map((u) => u.userId),
+    users,
     checkedAt: now.toISOString(),
+  };
+}
+
+function earlierIso(a, b) {
+  if (!a) return b || new Date().toISOString();
+  if (!b) return a;
+  return new Date(a).getTime() <= new Date(b).getTime() ? a : b;
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+async function activePresenceUsersForTenant(tenantId, now = new Date()) {
+  const snapshot = activePresenceSnapshotForTenant(tenantId, now);
+  const userIds = snapshot.userIds.filter(isUuid);
+  let rows = [];
+  if (userIds.length > 0) {
+    const result = await query(
+      `SELECT id, display_name, username, role
+         FROM users
+        WHERE tenant_id = $1
+          AND id = ANY($2::uuid[])
+          AND is_active = TRUE`,
+      [tenantId, userIds],
+    );
+    rows = result.rows || [];
+  }
+  const usersById = new Map(rows.map((row) => [String(row.id), row]));
+  return {
+    checkedAt: snapshot.checkedAt,
+    activeConnectionCount: snapshot.activeConnectionCount,
+    activeUserCount: snapshot.activeUserCount,
+    users: snapshot.users.map((entry) => {
+      const user = usersById.get(entry.userId) || {};
+      return {
+        id: entry.userId,
+        displayName: user.display_name || user.username || null,
+        role: user.role || null,
+        status: 'online',
+        connectionCount: entry.connectionCount,
+        connectedAt: entry.connectedAt,
+      };
+    }),
   };
 }
 
@@ -111,6 +174,17 @@ router.get('/stream', authEventSource, (req, res) => {
     clearInterval(heartbeat);
     clients.delete(id);
   });
+});
+
+router.get('/presence', attachIdentity, async (req, res) => {
+  try {
+    const out = await activePresenceUsersForTenant(req.tenantId);
+    res.set('Cache-Control', 'no-store');
+    res.json(out);
+  } catch (e) {
+    console.error('[realtime] presence list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.get('/notifications', attachIdentity, async (req, res) => {
@@ -324,9 +398,14 @@ function decodeTokenFromQuery(token) {
 module.exports = {
   router,
   activePresenceForTenant,
+  activePresenceUsersForTenant,
   publishFadEvent,
   notifyUsers,
   resolveGmWatchers,
   startPgListener,
   decodeTokenFromQuery,
+  _test: {
+    activePresenceSnapshotForTenant,
+    clients,
+  },
 };
