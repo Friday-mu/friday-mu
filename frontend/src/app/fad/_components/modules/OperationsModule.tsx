@@ -401,7 +401,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       case 'insights':
         return <InsightsPage />;
       case 'settings':
-        return canSeeSettings ? <SettingsPage onCreate={() => openManagerCreate()} /> : null;
+        return canSeeSettings ? <SettingsPage /> : null;
       default:
         return null;
     }
@@ -4034,14 +4034,11 @@ const SETTINGS_RECURRING_RULES = [
   { trigger: 'Amenities form gap analysis', actions: ['Monthly - sequential'] },
 ];
 
-function SettingsPage({ onCreate }: { onCreate: () => void }) {
+function SettingsPage() {
   return (
-    <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 500 }}>Settings</h2>
-        <button className="btn primary sm" onClick={onCreate} style={{ marginLeft: 'auto' }}>
-          <IconPlus size={12} /> New task
-        </button>
+    <div className="ops-settings-page">
+      <div className="ops-settings-head">
+        <h2>Settings</h2>
       </div>
 
       <div className="ops-settings-policy-note">
@@ -4060,10 +4057,10 @@ function SettingsPage({ onCreate }: { onCreate: () => void }) {
             key={t.id}
             className="ops-settings-grid-row"
           >
-            <span style={{ fontWeight: 500 }}>{t.name}</span>
-            <span style={{ color: 'var(--color-text-secondary)' }}>{t.route}</span>
-            <span className="mono">{t.estimate}</span>
-            <span style={{ color: 'var(--color-text-tertiary)' }}>{t.state}</span>
+            <span className="ops-settings-template" data-label="Template">{t.name}</span>
+            <span className="ops-settings-route" data-label="Route">{t.route}</span>
+            <span className="mono ops-settings-estimate" data-label="Estimate">{t.estimate}</span>
+            <span className="ops-settings-state" data-label="State">{t.state}</span>
           </div>
         ))}
       </Section>
