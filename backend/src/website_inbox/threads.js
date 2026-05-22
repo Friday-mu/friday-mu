@@ -17,6 +17,13 @@ const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { confirmReservation } = require('./guesty');
 const { sendEmail } = require('./resend');
+const {
+  getVisibleDraftsForThread,
+  triggerWebsiteDraftGeneration,
+  approveWebsiteDraft,
+  reviseWebsiteDraft,
+  rejectWebsiteDraft,
+} = require('./drafts');
 
 function mountThreads(router) {
   // ── LIST ──────────────────────────────────────────────────────
@@ -27,15 +34,15 @@ function mountThreads(router) {
       const params = [];
       if (status && ['open', 'in_progress', 'paid', 'closed'].includes(status)) {
         params.push(status);
-        filters.push(`status = $${params.length}`);
+        filters.push(`t.status = $${params.length}`);
       } else {
         // Default to active (not closed) so the inbox doesn't show
         // archived threads on first load.
-        filters.push(`status <> 'closed'`);
+        filters.push(`t.status <> 'closed'`);
       }
       if (typeof q === 'string' && q.trim().length > 0) {
         params.push(`%${q.trim().toLowerCase()}%`);
-        filters.push(`(LOWER(guest_email) LIKE $${params.length} OR LOWER(COALESCE(guest_name, '')) LIKE $${params.length})`);
+        filters.push(`(LOWER(t.guest_email) LIKE $${params.length} OR LOWER(COALESCE(t.guest_name, '')) LIKE $${params.length})`);
       }
       const where = filters.length ? 'WHERE ' + filters.join(' AND ') : '';
       const { rows } = await query(
@@ -45,8 +52,38 @@ function mountThreads(router) {
           t.status, t.last_event_type, t.last_event_at,
           t.guesty_reservation_id, t.guesty_listing_id, t.guesty_reservation_status,
           t.guesty_expiration_at, t.paid_at, t.notes,
+          latest_draft.id AS latest_draft_id,
+          latest_draft.payload->>'state' AS latest_draft_state,
+          latest_draft.payload->>'confidence' AS latest_draft_confidence,
           (SELECT COUNT(*) FROM inbox_events e WHERE e.thread_id = t.id) AS event_count
         FROM inbox_threads t
+        LEFT JOIN LATERAL (
+          SELECT e.id, e.created_at
+            FROM inbox_events e
+           WHERE e.thread_id = t.id
+             AND e.source <> 'fad'
+             AND e.event_type NOT LIKE 'ai.%'
+             AND e.event_type NOT LIKE 'staff.%'
+           ORDER BY e.created_at DESC, e.id::text DESC
+           LIMIT 1
+        ) latest_guest_event ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT d.id, d.payload, d.created_at
+            FROM inbox_events d
+           WHERE d.thread_id = t.id
+             AND d.event_type IN ('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')
+             AND d.payload->>'source_event_id' = latest_guest_event.id::text
+             AND COALESCE(d.payload->>'state', '') IN ('friday_drafting', 'draft_ready', 'under_review', 'generation_failed')
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM inbox_events sr
+                WHERE sr.thread_id = t.id
+                  AND sr.event_type = 'staff.reply_sent'
+                  AND sr.created_at > latest_guest_event.created_at
+             )
+           ORDER BY d.created_at DESC, d.id::text DESC
+           LIMIT 1
+        ) latest_draft ON TRUE
         ${where}
         ORDER BY t.last_event_at DESC
         LIMIT 200
@@ -89,9 +126,11 @@ function mountThreads(router) {
         `,
         [req.params.id],
       );
+      const drafts = await getVisibleDraftsForThread(req.params.id);
       res.json({
         thread: threadRes.rows[0],
         events: eventsRes.rows,
+        drafts,
         guesty_jobs: jobsRes.rows,
       });
     } catch (err) {
@@ -203,6 +242,81 @@ function mountThreads(router) {
     } catch (err) {
       console.error('[website_inbox/threads] reply error:', err.message);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── AI DRAFTS FOR WEBSITE THREADS ───────────────────────────────────
+  // Website threads do not have Guesty conversation IDs, so their draft
+  // lifecycle is stored as inbox_events and sends via email only.
+  router.post('/threads/:id/drafts', attachIdentity, async (req, res) => {
+    try {
+      const latest = await query(
+        `SELECT id
+           FROM inbox_events
+          WHERE thread_id = $1
+            AND source <> 'fad'
+            AND event_type NOT LIKE 'ai.%'
+            AND event_type NOT LIKE 'staff.%'
+          ORDER BY created_at DESC, id::text DESC
+          LIMIT 1`,
+        [req.params.id],
+      );
+      const sourceEvent = latest.rows[0];
+      if (!sourceEvent) return res.status(409).json({ error: 'no_website_event_to_draft' });
+      triggerWebsiteDraftGeneration(req.params.id, sourceEvent.id, {
+        revisionInstruction: typeof req.body?.instruction === 'string' ? req.body.instruction : undefined,
+      }).catch((e) => {
+        console.error(`[website_inbox/threads] draft create trigger failed for ${sourceEvent.id}:`, e.message);
+      });
+      return res.status(202).json({ ok: true, state: 'friday_drafting' });
+    } catch (err) {
+      console.error('[website_inbox/threads] draft create error:', err.message);
+      res.status(err.status || 500).json({ error: err.code || err.message });
+    }
+  });
+
+  router.post('/threads/:id/drafts/:draftId/approve', attachIdentity, async (req, res) => {
+    try {
+      const result = await approveWebsiteDraft({
+        threadId: req.params.id,
+        draftId: req.params.draftId,
+        body: req.body?.draft_body || req.body?.body,
+        channel: String(req.body?.channel || 'email').toLowerCase(),
+        identity: req.identity,
+      });
+      res.json(result);
+    } catch (err) {
+      console.error('[website_inbox/threads] draft approve error:', err.message);
+      res.status(err.status || 500).json({ error: err.code || err.message });
+    }
+  });
+
+  router.post('/threads/:id/drafts/:draftId/revise', attachIdentity, async (req, res) => {
+    try {
+      const result = await reviseWebsiteDraft({
+        threadId: req.params.id,
+        draftId: req.params.draftId,
+        instruction: req.body?.revision_instruction || req.body?.instruction,
+      });
+      res.status(202).json(result);
+    } catch (err) {
+      console.error('[website_inbox/threads] draft revise error:', err.message);
+      res.status(err.status || 500).json({ error: err.code || err.message });
+    }
+  });
+
+  router.post('/threads/:id/drafts/:draftId/reject', attachIdentity, async (req, res) => {
+    try {
+      const result = await rejectWebsiteDraft({
+        threadId: req.params.id,
+        draftId: req.params.draftId,
+        reason: req.body?.reason,
+        identity: req.identity,
+      });
+      res.json(result);
+    } catch (err) {
+      console.error('[website_inbox/threads] draft reject error:', err.message);
+      res.status(err.status || 500).json({ error: err.code || err.message });
     }
   });
 

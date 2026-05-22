@@ -155,6 +155,18 @@ export interface ComposeResp {
 export async function sendCompose(conversationId: string, opts: ComposeOpts): Promise<ComposeResp> {
   if (conversationId.startsWith('web-')) {
     const webId = conversationId.slice(4);
+    if (opts.mode === 'draft') {
+      const r = await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(webId)}/drafts`, {
+        method: 'POST',
+        body: JSON.stringify({
+          instruction: opts.instruction || opts.body || '',
+        }),
+      }) as { ok?: boolean; draft_id?: string; state?: string };
+      return {
+        ok: !!r.ok,
+        draft_id: r.draft_id,
+      };
+    }
     const r = await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(webId)}/reply`, {
       method: 'POST',
       body: JSON.stringify({
@@ -188,6 +200,49 @@ export async function sendCompose(conversationId: string, opts: ComposeOpts): Pr
     message_id: r.messageId ?? undefined,
     draft_id: r.draftId ?? undefined,
   };
+}
+
+export async function approveWebsiteDraft(
+  threadId: string,
+  draftId: string,
+  opts: { draftBody?: string; sentVia?: string } = {},
+): Promise<ApproveDraftResp> {
+  const body: Record<string, unknown> = {
+    channel: opts.sentVia === 'website' ? 'website' : 'email',
+  };
+  if (opts.draftBody !== undefined) body.draft_body = opts.draftBody;
+  const r = await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/drafts/${encodeURIComponent(draftId)}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as { ok?: boolean; message_id?: string; sent_at?: string; sent_via?: string };
+  return {
+    ok: !!r.ok,
+    message_id: r.message_id,
+    sent_at: r.sent_at,
+    sent_via: r.sent_via,
+  };
+}
+
+export async function reviseWebsiteDraft(
+  threadId: string,
+  draftId: string,
+  instruction: string,
+): Promise<ReviseDraftResp> {
+  return apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/drafts/${encodeURIComponent(draftId)}/revise`, {
+    method: 'POST',
+    body: JSON.stringify({ revision_instruction: instruction }),
+  }) as Promise<ReviseDraftResp>;
+}
+
+export async function rejectWebsiteDraft(
+  threadId: string,
+  draftId: string,
+  reason?: string,
+): Promise<RejectDraftResp> {
+  return apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/drafts/${encodeURIComponent(draftId)}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason || '' }),
+  }) as Promise<RejectDraftResp>;
 }
 
 export async function sendWhatsAppTemplate(

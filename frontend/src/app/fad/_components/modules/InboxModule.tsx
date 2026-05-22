@@ -22,6 +22,9 @@ import {
   retryDraft,
   failDraft,
   dismissDraft,
+  approveWebsiteDraft,
+  rejectWebsiteDraft,
+  reviseWebsiteDraft,
   isReviewReady,
   markRead,
   markUnread,
@@ -293,6 +296,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   // banner renders at the bottom; cancel restores the draft.
   type PendingSend = {
     draftId: string;
+    websiteThreadId?: string;
     draftBody?: string;   // edited body if operator edited inline
     sentVia?: 'whatsapp' | 'airbnb' | 'booking' | 'email';
     countdown: number;
@@ -305,11 +309,14 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     if (!pendingSend) return;
     if (pendingSend.countdown <= 0) {
       // Fire the send.
-      const { draftId, draftBody, sentVia } = pendingSend;
+      const { draftId, websiteThreadId, draftBody, sentVia } = pendingSend;
       setPendingSend(null);
       setDraftBusy(true);
       setDraftError(null);
-      approveDraft(draftId, { draftBody, sentVia })
+      const sendPromise = websiteThreadId
+        ? approveWebsiteDraft(websiteThreadId, draftId, { draftBody, sentVia: 'email' })
+        : approveDraft(draftId, { draftBody, sentVia });
+      sendPromise
         .then(() => {
           import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_approve', { sent_via: sentVia })).catch(() => {});
           fireToast('Sent ✓');
@@ -404,10 +411,12 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     const channel = opts.channel as 'whatsapp' | 'airbnb' | 'booking' | 'email';
 
     if (fromDraft && activeDraft) {
+      const websiteThreadId = thread.id.startsWith('web-') ? thread.id.slice(4) : undefined;
       setPendingSend({
         draftId: activeDraft.id,
+        websiteThreadId,
         draftBody: bodyToSend !== activeDraft.body ? bodyToSend : undefined,
-        sentVia: channel,
+        sentVia: websiteThreadId ? 'email' : channel,
         countdown: 5,
       });
       return;
@@ -435,10 +444,13 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   };
 
   const handleRevise = (instruction: string, mode: 'standard' | 'teach') => {
-    if (!activeDraft) return;
+    if (!activeDraft || !thread) return;
     setDraftBusy(true);
     setDraftError(null);
-    reviseDraft(activeDraft.id, instruction, { mode })
+    const revisePromise = thread.id.startsWith('web-')
+      ? reviseWebsiteDraft(thread.id.slice(4), activeDraft.id, instruction)
+      : reviseDraft(activeDraft.id, instruction, { mode });
+    revisePromise
       .then(() => {
         import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_revise', { mode })).catch(() => {});
         setDraftRevising(true);
@@ -460,6 +472,23 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   };
 
   const handleRetryProblemDraft = (draft: InboxDraft) => {
+    if (thread?.id.startsWith('web-')) {
+      setDraftBusy(true);
+      setDraftError(null);
+      sendCompose(thread.id, { mode: 'draft', instruction: 'Retry draft generation for the latest website inquiry.' })
+        .then(() => {
+          fireToast('Retrying website draft generation');
+          refetchDetail();
+          refetchConversations();
+        })
+        .catch((e: Error) => {
+          const msg = e?.message || 'Retry failed';
+          setDraftError(msg);
+          fireToast(msg);
+        })
+        .finally(() => setDraftBusy(false));
+      return;
+    }
     setDraftBusy(true);
     setDraftError(null);
     retryDraft(draft.id)
@@ -508,10 +537,13 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   };
 
   const handleReject = (reason?: string) => {
-    if (!activeDraft) return;
+    if (!activeDraft || !thread) return;
     setDraftBusy(true);
     setDraftError(null);
-    rejectDraft(activeDraft.id, reason)
+    const rejectPromise = thread.id.startsWith('web-')
+      ? rejectWebsiteDraft(thread.id.slice(4), activeDraft.id, reason)
+      : rejectDraft(activeDraft.id, reason);
+    rejectPromise
       .then(() => {
         import('../../../../lib/analytics').then(m => m.trackEvent('inbox_draft_reject', { has_reason: !!reason })).catch(() => {});
         fireToast(reason ? 'Draft rejected — Friday will learn from this' : 'Draft dismissed');

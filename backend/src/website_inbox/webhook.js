@@ -24,7 +24,9 @@
 
 const crypto = require('node:crypto');
 const { query } = require('../database/client');
+const { publishFadEvent } = require('../realtime');
 const { listingIdForSlug } = require('./property-map');
+const { shouldAutoDraftWebsiteEvent, triggerWebsiteDraftGeneration } = require('./drafts');
 
 // 5-minute replay window. Slightly generous to absorb clock drift +
 // network delay; tight enough to make replay attacks impractical.
@@ -272,6 +274,18 @@ function mountWebhook(router) {
           payload: data,
         });
       }
+
+      if (shouldAutoDraftWebsiteEvent(eventType)) {
+        triggerWebsiteDraftGeneration(recorded.threadId, recorded.eventId).catch((e) => {
+          console.error(`[website_inbox/webhook] draft trigger failed for ${recorded.eventId}:`, e.message);
+        });
+      }
+
+      publishFadEvent({
+        tenantId: '00000000-0000-0000-0000-000000000001',
+        type: 'website_inbox.thread_updated',
+        payload: { threadId: recorded.threadId, eventId: recorded.eventId, eventType },
+      }).catch(() => {});
 
       return res.json({
         status: 'accepted',

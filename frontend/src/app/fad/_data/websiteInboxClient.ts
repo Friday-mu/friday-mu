@@ -14,8 +14,9 @@
 // + inline 'Create reservation' affordance are Phase 2/3.
 
 import { useCallback, useEffect, useState } from 'react';
-import { apiFetch } from '../../../components/types';
+import { API_BASE, apiFetch, getToken } from '../../../components/types';
 import type { InboxThread } from './fixtures';
+import type { DraftState } from './fixtures';
 
 export type WebsiteThreadStatus = 'open' | 'in_progress' | 'paid' | 'closed';
 
@@ -33,6 +34,16 @@ interface RawWebsiteThread {
   guesty_reservation_status?: string | null;
   notes?: string | null;
   event_count?: number | string;
+  latest_draft_id?: string | null;
+  latest_draft_state?: DraftState | string | null;
+  latest_draft_confidence?: number | string | null;
+}
+
+function confidenceRatio(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  return n > 1 ? Math.max(0, Math.min(100, n)) / 100 : Math.max(0, Math.min(1, n));
 }
 
 export interface WebsiteInquiryThread {
@@ -75,6 +86,8 @@ function mapWebsiteToInboxThread(r: RawWebsiteThread): InboxThread {
     summary: r.notes || undefined,
     sentiment: 'neutral',
     language: 'EN',
+    latestDraftState: r.latest_draft_state ? (String(r.latest_draft_state) as DraftState) : undefined,
+    latestDraftConfidence: confidenceRatio(r.latest_draft_confidence),
   };
 }
 
@@ -128,6 +141,25 @@ export function useWebsiteThreads(): UseWebsiteThreadsResult {
   }, []);
 
   useEffect(() => { refetch(); }, [refetch]);
+
+  useEffect(() => {
+    if (typeof EventSource === 'undefined') return undefined;
+    const token = getToken();
+    if (!token) return undefined;
+    const es = new EventSource(`${API_BASE}/api/events/stream?token=${encodeURIComponent(token)}`);
+    const refresh = () => refetch();
+    const eventTypes = [
+      'inbox.draft_ready',
+      'inbox.message_sent',
+      'website_inbox.thread_updated',
+    ];
+    eventTypes.forEach((type) => es.addEventListener(type, refresh));
+    es.onerror = () => {};
+    return () => {
+      eventTypes.forEach((type) => es.removeEventListener(type, refresh));
+      es.close();
+    };
+  }, [refetch]);
 
   return { threads, loading, error, refetch };
 }

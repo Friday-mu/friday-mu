@@ -442,11 +442,13 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
         ts?: string;
         payload?: Record<string, unknown>;
       }>;
+      drafts?: Record<string, unknown>[];
     };
     const t = data?.thread;
     const events = data?.events || [];
     const guest = t?.guest_name || t?.guest_email_raw || t?.guest_email || 'Anonymous';
-    const messages: InboxMessage[] = events.map((e) => {
+    const visibleEvents = events.filter((e) => !String(e.event_type || e.type || '').startsWith('ai.'));
+    const messages: InboxMessage[] = visibleEvents.map((e) => {
       const eventType = String(e.event_type || e.type || 'website.event');
       const fromUs = e.source === 'fad' || eventType.startsWith('staff.');
       return {
@@ -459,12 +461,14 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
         viaChannel: fromUs ? 'Email' : 'Website',
       };
     });
+    const drafts = (data.drafts || []).map(transformGmsDraft);
+    const latestDraft = drafts.find((d) => d.state === 'draft_ready' || d.state === 'under_review' || d.state === 'friday_drafting' || d.state === 'generation_failed');
     return {
       id,
       unread: t?.status === 'open',
       guest,
       subject: t?.notes ? String(t.notes).slice(0, 100) : 'Website inquiry',
-      preview: events[events.length - 1]?.type || 'inquiry',
+      preview: visibleEvents[visibleEvents.length - 1]?.event_type || visibleEvents[visibleEvents.length - 1]?.type || 'inquiry',
       channel: 'Website',
       entity: 'unclassified',
       channelKey: 'website',
@@ -476,6 +480,13 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
       summary: t?.notes || undefined,
       sentiment: 'neutral',
       language: 'EN',
+      guestEmail: t?.guest_email_raw || t?.guest_email || undefined,
+      guestPhone: t?.guest_phone || undefined,
+      drafts,
+      availableChannels: ['email'],
+      recommendedChannel: 'email',
+      latestDraftState: latestDraft?.state,
+      latestDraftConfidence: latestDraft?.confidence,
     };
   }
 
@@ -597,6 +608,36 @@ export function useThreadDetail(threadId: string | null): UseThreadDetailResult 
         setLoading(false);
       });
   }, [threadId, refreshSeq]);
+
+  useEffect(() => {
+    if (!threadId || typeof EventSource === 'undefined') return undefined;
+    const token = getToken();
+    if (!token) return undefined;
+    const es = new EventSource(`${API_BASE}/api/events/stream?token=${encodeURIComponent(token)}`);
+    const refreshIfThreadMatches = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data || '{}') as { payload?: Record<string, unknown> };
+        const payload = data.payload || {};
+        const eventConversationId = payload.conversationId ? String(payload.conversationId) : null;
+        const eventThreadId = payload.threadId ? `web-${String(payload.threadId)}` : null;
+        if (eventConversationId === threadId || eventThreadId === threadId) refetch();
+      } catch {
+        refetch();
+      }
+    };
+    const eventTypes = [
+      'inbox.draft_ready',
+      'inbox.message_received',
+      'inbox.message_sent',
+      'website_inbox.thread_updated',
+    ];
+    eventTypes.forEach((type) => es.addEventListener(type, refreshIfThreadMatches));
+    es.onerror = () => {};
+    return () => {
+      eventTypes.forEach((type) => es.removeEventListener(type, refreshIfThreadMatches));
+      es.close();
+    };
+  }, [threadId, refetch]);
 
   return { thread, loading, error, refetch };
 }
