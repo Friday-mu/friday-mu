@@ -47,6 +47,46 @@ interface RawReservation {
   synced_at?: string | null;
 }
 
+function reservationIdentity(r: RawReservation): string {
+  return r.guesty_id || r.confirmation_code || r.id;
+}
+
+function reservationCompletenessScore(r: RawReservation): number {
+  return [
+    r.listing_nickname,
+    r.listing_guesty_id,
+    r.check_in_date,
+    r.check_out_date,
+    r.guest?.email,
+    r.guest?.phone,
+    r.total_amount_minor,
+    r.calendar_pricing?.total_minor,
+  ].filter((v) => v != null && v !== '').length;
+}
+
+function dedupeRawReservations(rows: RawReservation[]): RawReservation[] {
+  const order: string[] = [];
+  const byKey = new Map<string, RawReservation>();
+  rows.forEach((row) => {
+    const key = reservationIdentity(row);
+    if (!byKey.has(key)) {
+      order.push(key);
+      byKey.set(key, row);
+      return;
+    }
+    const current = byKey.get(key);
+    if (!current) return;
+    const currentScore = reservationCompletenessScore(current);
+    const nextScore = reservationCompletenessScore(row);
+    const currentSynced = new Date(current.synced_at || '').getTime() || 0;
+    const nextSynced = new Date(row.synced_at || '').getTime() || 0;
+    if (nextScore > currentScore || (nextScore === currentScore && nextSynced > currentSynced)) {
+      byKey.set(key, row);
+    }
+  });
+  return order.map((key) => byKey.get(key)).filter((row): row is RawReservation => Boolean(row));
+}
+
 function mapStatus(s?: string | null): ReservationStatus {
   const v = String(s ?? '').toLowerCase();
   if (v === 'confirmed' || v === 'reserved') return 'confirmed';
@@ -130,7 +170,7 @@ export async function loadReservations(): Promise<Reservation[]> {
   // to the empty array. Consumers now stay live-only by default instead of
   // falling back to the RESERVATIONS fixture.
   const data = await apiFetch('/api/reservations?limit=500') as { reservations?: RawReservation[] };
-  return (data?.reservations || []).map(transformReservation);
+  return dedupeRawReservations(data?.reservations || []).map(transformReservation);
 }
 
 export interface UseLiveReservationsResult {
@@ -222,7 +262,7 @@ export async function fetchScheduleReservations(input: FetchScheduleReservations
   qs.set('limit', String(input.limit || 500));
 
   const data = await apiFetch(`/api/reservations?${qs.toString()}`) as { reservations?: RawReservation[] };
-  return (data?.reservations || [])
+  return dedupeRawReservations(data?.reservations || [])
     .map(transformScheduleReservation)
     .filter((reservation) => reservation.checkInDate && reservation.checkOutDate);
 }
