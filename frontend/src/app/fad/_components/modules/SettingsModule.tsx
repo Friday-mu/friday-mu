@@ -11,11 +11,13 @@
 
 import { useEffect, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
-import { useCurrentRole } from '../usePermissions';
+import { useCurrentRole, usePermissions } from '../usePermissions';
 import { SavedRepliesImport } from './properties/SavedRepliesImport';
 import { apiFetch } from '../../../../components/types';
 import { ChangePasswordModal } from '../ChangePasswordModal';
 import { fireToast } from '../Toaster';
+import { TASK_USER_BY_ID } from '../../_data/tasks';
+import { ROLE_LABEL } from '../../_data/permissions';
 
 interface Props {
   theme: 'light' | 'dark';
@@ -40,7 +42,10 @@ export function SettingsModule({ theme, onToggleTheme }: Props) {
   const [section, setSection] = useState(sections[0]?.id ?? 'appearance');
   return (
     <>
-      <ModuleHeader title="Settings" subtitle="Your profile, team, GMS, and system preferences" />
+      <ModuleHeader
+        title="Settings"
+        subtitle={role === 'field' ? 'Your profile and device preferences' : 'Your profile, team, GMS, and system preferences'}
+      />
       <div className="fad-module-body">
         <div className="settings-layout">
           <div className="settings-nav">
@@ -101,7 +106,19 @@ function Appearance({ theme, onToggleTheme }: Props) {
 }
 
 function Account() {
+  const { role, currentUserId } = usePermissions();
+  const fixtureUser = TASK_USER_BY_ID[currentUserId];
+  const [displayName, setDisplayName] = useState(fixtureUser?.name ?? 'Current user');
   const [pwOpen, setPwOpen] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('gms_display_name');
+    setDisplayName(stored || fixtureUser?.name || 'Current user');
+  }, [fixtureUser?.name]);
+
+  const email = fixtureUser?.email ?? 'Not set';
+  const roleLabel = ROLE_LABEL[role] ?? role;
+
   return (
     <div className="card settings-section">
       <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>Account</h3>
@@ -113,21 +130,21 @@ function Account() {
           <h5>Name</h5>
           <p>Shown on messages and threads.</p>
         </div>
-        <span className="settings-value">Ishant Sagoo</span>
+        <span className="settings-value">{displayName}</span>
       </div>
       <div className="settings-row">
         <div>
           <h5>Email</h5>
           <p>Login + notifications.</p>
         </div>
-        <span className="settings-value">ishant@friday.mu</span>
+        <span className="settings-value">{email}</span>
       </div>
       <div className="settings-row">
         <div>
           <h5>Role</h5>
-          <p>Admin sees all, writes all.</p>
+          <p>{role === 'field' ? 'Personal access for assigned work.' : 'Access is scoped by role.'}</p>
         </div>
-        <span className="chip info">Admin</span>
+        <span className="chip info">{roleLabel}</span>
       </div>
       <div className="settings-row">
         <div>
