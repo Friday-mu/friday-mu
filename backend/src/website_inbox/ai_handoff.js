@@ -592,6 +592,12 @@ function mountAiHandoff(router) {
         type: 'website_inbox.thread_updated',
         payload: { threadId: recorded.threadId, eventId: recorded.eventId, eventType: AI_EVENT_TYPE },
       });
+      if (!recorded.isDuplicate && recorded.eventId) {
+        const { triggerWebsiteDraftGeneration } = require('./drafts');
+        triggerWebsiteDraftGeneration(recorded.threadId, recorded.eventId).catch((e) => {
+          console.error(`[website_inbox/ai_handoff] handoff draft trigger failed for ${recorded.eventId}:`, e.message);
+        });
+      }
 
       return res.json({
         status: recorded.isDuplicate ? 'duplicate' : 'accepted',

@@ -23,6 +23,7 @@ describe('website inbox draft guards', () => {
     expect(shouldAutoDraftWebsiteEvent('experience.enquiry_submitted')).toBe(true);
     expect(shouldAutoDraftWebsiteEvent('contact.form_submitted')).toBe(true);
     expect(shouldAutoDraftWebsiteEvent('owner.enquiry_submitted')).toBe(true);
+    expect(shouldAutoDraftWebsiteEvent('website.ai_handoff')).toBe(true);
     expect(shouldAutoDraftWebsiteEvent('website.visitor_message')).toBe(true);
     expect(shouldAutoDraftWebsiteEvent('booking.proof_uploaded')).toBe(false);
   });
@@ -70,6 +71,7 @@ describe('website inbox draft guards', () => {
     });
     const sql = query.mock.calls[0][0];
     expect(sql).toContain('booking.request_submitted');
+    expect(sql).toContain('website.ai_handoff');
     expect(sql).toContain('staff.reply_sent');
     expect(sql).toContain("d.payload->>'source_event_id' = l.event_id::text");
     warn.mockRestore();

@@ -29,6 +29,7 @@ const WEBSITE_DRAFT_SOURCE_EVENTS = new Set([
   'experience.enquiry_submitted',
   'contact.form_submitted',
   'owner.enquiry_submitted',
+  'website.ai_handoff',
   'website.visitor_message',
 ]);
 
@@ -40,7 +41,7 @@ const ACTIONABLE_STATES = new Set([
 ]);
 
 const DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
-const DIRECT_WEBSITE_DRAFT_SOURCE_EVENTS_SQL = "('booking.request_submitted', 'experience.enquiry_submitted', 'contact.form_submitted', 'owner.enquiry_submitted')";
+const DIRECT_WEBSITE_DRAFT_SOURCE_EVENTS_SQL = "('booking.request_submitted', 'experience.enquiry_submitted', 'contact.form_submitted', 'owner.enquiry_submitted', 'website.ai_handoff')";
 const AI_HANDOFF_EVENT_TYPE = 'website.ai_handoff';
 const TAKEOVER_EVENT_TYPE = 'website.ai_handoff_takeover';
 const STAFF_REPLY_EVENT_TYPE = 'staff.reply_sent';
@@ -56,14 +57,24 @@ function draftGenerationDisabled() {
 
 function payloadText(payload) {
   if (!payload || typeof payload !== 'object') return '';
-  const direct = payload.body || payload.message || payload.question || payload.notes || payload.comments;
+  const direct = payload.body || payload.message || payload.visitorTurn || payload.question || payload.notes || payload.comments;
   if (typeof direct === 'string' && direct.trim()) return direct.trim();
   const parts = [
+    payload.conversationSummary ? `Website AI summary: ${payload.conversationSummary}` : null,
+    payload.escalationReason ? `Escalation reason: ${payload.escalationReason}` : null,
+    payload.recommendedNextAction ? `Recommended next action: ${payload.recommendedNextAction}` : null,
     payload.residence_slug ? `Residence: ${payload.residence_slug}` : null,
     payload.check_in && payload.check_out ? `Dates: ${payload.check_in} - ${payload.check_out}` : null,
     payload.checkIn && payload.checkOut ? `Dates: ${payload.checkIn} - ${payload.checkOut}` : null,
     payload.party_size || payload.partySize || payload.guests ? `Guests: ${payload.party_size || payload.partySize || payload.guests}` : null,
     payload.reference ? `Reference: ${payload.reference}` : null,
+    Array.isArray(payload.transcriptTail)
+      ? payload.transcriptTail.slice(-6).map((m) => {
+        const role = m?.role === 'assistant' || m?.role === 'ai' ? 'Website AI' : 'Visitor';
+        const content = typeof m?.content === 'string' ? m.content.trim() : '';
+        return content ? `${role}: ${content}` : '';
+      }).filter(Boolean).join('\n')
+      : null,
   ].filter(Boolean);
   return parts.length ? parts.join('\n') : JSON.stringify(payload, null, 2).slice(0, 1200);
 }

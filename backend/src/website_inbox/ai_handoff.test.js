@@ -113,6 +113,7 @@ describe('website AI handoff', () => {
       type: 'website_ai.handoff_received',
       payload: expect.objectContaining({ threadId, eventId, surface: 'owner' }),
     }));
+    expect(triggerWebsiteDraftGeneration).toHaveBeenCalledWith(threadId, eventId);
   });
 
   test('preserves human takeover across newer handoffs in the same website conversation', async () => {
