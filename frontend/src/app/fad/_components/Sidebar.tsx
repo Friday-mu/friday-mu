@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { MODULES, GROUPS, type ModuleDef } from '../_data/modules';
+import { MODULES, GROUPS, visibleSubPagesForModuleRole, type ModuleDef } from '../_data/modules';
 import { iconFor, IconExpand, IconSparkle } from './icons';
 import { canSeeModule, useCurrentRole, useCurrentUserId } from './usePermissions';
 import { pendingCountFor, pendingCountForSubpage, subscribePendingRev, type PendingCount } from '../_data/pendingCounts';
@@ -131,10 +131,7 @@ export function Sidebar({
                 const IconComp = iconFor(mod.icon);
                 const isActive = mod.id === active;
                 const isExpanded = expandedModuleId === mod.id;
-                const visibleSubPages =
-                  mod.id === 'operations' && role === 'field'
-                    ? mod.subPages?.filter((sp) => sp.id === 'my' || sp.id === 'history')
-                    : mod.subPages;
+                const visibleSubPages = visibleSubPagesForModuleRole(mod, role);
                 const hasSubs = !!visibleSubPages?.length;
                 const showSubs =
                   hasSubs &&

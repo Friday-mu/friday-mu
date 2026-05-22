@@ -6,9 +6,8 @@
 // hardcoded mock data). Replace with real backend-driven content when
 // the module ships, or render a 'Coming soon' placeholder until then.
 
-import { useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
-import { useCanSee } from '../usePermissions';
+import { useCanSee, useCurrentRole } from '../usePermissions';
 import { StaffPage } from './hr/StaffPage';
 import { TimeOffPage } from './hr/TimeOffPage';
 import { StatsPage } from './hr/StatsPage';
@@ -20,6 +19,7 @@ interface Props {
 }
 
 export function HRModule({ subPage, onChangeSubPage }: Props) {
+  const role = useCurrentRole();
   const canSeeStaff = useCanSee('hr_staff', 'read');
   const canSeeTimeOff = useCanSee('hr_time_off', 'read');
   const canSeeStats = useCanSee('hr_stats', 'read');
@@ -53,7 +53,7 @@ export function HRModule({ subPage, onChangeSubPage }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
         title="HR"
-        subtitle="Staff · time-off · stats · permissions"
+        subtitle={role === 'field' ? 'Time-off · personal stats' : 'Staff · time-off · stats · permissions'}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}

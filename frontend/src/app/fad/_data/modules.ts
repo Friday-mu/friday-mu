@@ -118,9 +118,13 @@ export const GROUPS: GroupDef[] = [
 
 export function visibleSubPagesForModuleRole(mod: ModuleDef, role: string): SubPage[] {
   const subPages = mod.subPages ?? [];
-  if (mod.id !== 'operations') return subPages;
-  if (role === 'field') {
+  if (role !== 'field') return subPages;
+  if (mod.id === 'operations') {
     const allowed = new Set(['my', 'history']);
+    return subPages.filter((sp) => allowed.has(sp.id));
+  }
+  if (mod.id === 'hr') {
+    const allowed = new Set(['time-off', 'stats']);
     return subPages.filter((sp) => allowed.has(sp.id));
   }
   return subPages;

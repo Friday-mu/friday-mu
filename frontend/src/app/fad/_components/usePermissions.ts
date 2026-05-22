@@ -259,12 +259,12 @@ export const MODULE_RESOURCE: Record<string, Resource[]> = {
   // Ops all retain visibility. Refine semantics when these modules ship for real.
   design: ['owners'],
   agency: ['owners'],
-  'tenant-settings': ['settings'],
-  billing: ['settings'],
-  'admin-analytics': ['settings'],
+  'tenant-settings': ['tenant_settings'],
+  billing: ['billing'],
+  'admin-analytics': ['admin_analytics'],
   training: ['owners'],
   settings: ['settings'],
-  hr: ['hr_staff'],
+  hr: ['hr_staff', 'hr_time_off', 'hr_stats'],
 };
 
 /**

@@ -23,6 +23,9 @@ export type Resource =
   | 'hr_time_off'
   | 'hr_stats'
   | 'hr_permissions'
+  | 'tenant_settings'
+  | 'billing'
+  | 'admin_analytics'
   | 'settings';
 
 export type Action = 'read' | 'write' | 'approve' | 'delete';
@@ -62,6 +65,13 @@ const SELF_ONLY: { [A in Action]: Scope } = {
   delete: 'none',
 };
 
+const LIMITED_SETTINGS_ACCESS: { [A in Action]: Scope } = {
+  read: 'all',
+  write: 'self',
+  approve: 'none',
+  delete: 'none',
+};
+
 // Director gets full access on every resource. Encoded explicitly here so
 // the UI can render the matrix without special-casing director, but the
 // `useCanAccess` hook will still short-circuit on role === 'director' for
@@ -82,6 +92,9 @@ const DIRECTOR_PERMS: RolePermissions = {
   hr_time_off: FULL_ACCESS,
   hr_stats: FULL_ACCESS,
   hr_permissions: FULL_ACCESS,
+  tenant_settings: FULL_ACCESS,
+  billing: FULL_ACCESS,
+  admin_analytics: FULL_ACCESS,
   settings: FULL_ACCESS,
 };
 
@@ -101,7 +114,10 @@ const COMMERCIAL_MARKETING_PERMS: RolePermissions = {
   hr_time_off: SELF_ONLY,
   hr_stats: {},
   hr_permissions: {},
-  settings: { read: 'all', write: 'self', approve: 'none', delete: 'none' },
+  tenant_settings: LIMITED_SETTINGS_ACCESS,
+  billing: LIMITED_SETTINGS_ACCESS,
+  admin_analytics: LIMITED_SETTINGS_ACCESS,
+  settings: LIMITED_SETTINGS_ACCESS,
 };
 
 const OPS_MANAGER_PERMS: RolePermissions = {
@@ -120,7 +136,10 @@ const OPS_MANAGER_PERMS: RolePermissions = {
   finance: { read: 'all', write: 'all', approve: 'none', delete: 'none' },
   reservations: FULL_ACCESS,
   properties: FULL_ACCESS,
-  settings: { read: 'all', write: 'self', approve: 'none', delete: 'none' },
+  tenant_settings: LIMITED_SETTINGS_ACCESS,
+  billing: LIMITED_SETTINGS_ACCESS,
+  admin_analytics: LIMITED_SETTINGS_ACCESS,
+  settings: LIMITED_SETTINGS_ACCESS,
 };
 
 const FIELD_PERMS: RolePermissions = {
@@ -129,21 +148,20 @@ const FIELD_PERMS: RolePermissions = {
   inbox_guest: {},
   inbox_syndic: {},
   inbox_group: {},
-  hr_staff: SELF_ONLY,
+  hr_staff: {},
   hr_roster: { read: 'self', write: 'none', approve: 'none', delete: 'none' },
   hr_time_off: SELF_ONLY,
-  hr_stats: {},
+  hr_stats: SELF_ONLY,
   hr_permissions: {},
   crm: {},
   owners: {},
   finance: {},
-  // Field/Contributor (per Reservations scoping pack §6) sees the reservation
-  // itself but not finance sub-tabs — Folio/Accounting/Payments are gated
-  // separately inside ReservationDetail by `financialAccessFor(role)`.
-  reservations: READ_ONLY,
+  reservations: {},
   properties: {},
-  // Field gets a slimmed Settings (Appearance + Account only — section gating in
-  // SettingsModule). SELF_ONLY here unlocks the module; sections handle the rest.
+  tenant_settings: {},
+  billing: {},
+  admin_analytics: {},
+  // Field gets slimmed personal Settings. Section gating lives in SettingsModule.
   settings: SELF_ONLY,
 };
 
@@ -175,6 +193,9 @@ export const RESOURCE_LABEL: Record<Resource, string> = {
   hr_time_off: 'HR · Time-off',
   hr_stats: 'HR · Stats',
   hr_permissions: 'HR · Permissions',
+  tenant_settings: 'Tenant settings',
+  billing: 'Billing',
+  admin_analytics: 'Admin analytics',
   settings: 'Settings',
 };
 
