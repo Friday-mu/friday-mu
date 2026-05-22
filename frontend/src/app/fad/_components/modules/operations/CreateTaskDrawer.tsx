@@ -84,6 +84,97 @@ function addDaysIso(date: string, days: number): string {
 
 const TODAY = todayIso();
 
+function compactTaskTitle(value: string): string {
+  const cleaned = value
+    .replace(/\s+/g, ' ')
+    .replace(/^(please\s+)?(can you\s+)?(create|schedule|assign|add|make|report)\s+(a\s+|this\s+)?(task\s+)?(for|to)?\s*/i, '')
+    .trim();
+  const title = cleaned || value.trim();
+  const capped = title.length > 72 ? `${title.slice(0, 69).trim()}...` : title;
+  return capped.charAt(0).toUpperCase() + capped.slice(1);
+}
+
+function timeFromParts(hourValue: number, minuteValue: number): string | null {
+  if (!Number.isFinite(hourValue) || hourValue < 0 || hourValue > 23) return null;
+  if (!Number.isFinite(minuteValue) || minuteValue < 0 || minuteValue > 59) return null;
+  return `${String(hourValue).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')}`;
+}
+
+function timeFromText(text: string): string | null {
+  const meridiem = text.match(/\b(?:at|by|around|for)?\s*(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*(am|pm)\b/);
+  if (meridiem) {
+    let hour = Number(meridiem[1]);
+    const minute = Number(meridiem[2] || 0);
+    if (meridiem[3] === 'pm' && hour !== 12) hour += 12;
+    if (meridiem[3] === 'am' && hour === 12) hour = 0;
+    return timeFromParts(hour, minute);
+  }
+
+  const hourMinute = text.match(/\b(?:at|by|around|for)?\s*([01]?\d|2[0-3])[:h]([0-5]\d)\b/);
+  if (hourMinute) {
+    return timeFromParts(Number(hourMinute[1]), Number(hourMinute[2]));
+  }
+
+  const bareHour = text.match(/\b(?:at|by|around|for)\s+([01]?\d|2[0-3])\b/);
+  if (bareHour) {
+    let hour = Number(bareHour[1]);
+    if (hour >= 1 && hour <= 6) hour += 12;
+    return timeFromParts(hour, 0);
+  }
+
+  if (/\b(end of day|eod|evening)\b/.test(text)) return '17:00';
+  if (/\b(noon|midday)\b/.test(text)) return '12:00';
+  if (/\bafternoon\b/.test(text)) return '14:00';
+  if (/\bmorning\b/.test(text)) return '09:00';
+  return null;
+}
+
+function durationFromText(text: string): number | null {
+  const hourMatch =
+    text.match(/\b(?:estimate(?:d)?|duration|takes?|should take|about|approx\.?|for)\s+(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours)\b/) ||
+    text.match(/\b(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours)\b/);
+  if (hourMatch) return Math.round(Number(hourMatch[1]) * 60);
+
+  const minuteMatch = text.match(/\b(?:estimate(?:d)?|duration|takes?|should take|about|approx\.?|for)\s+(\d{1,3})\s*(m|min|mins|minute|minutes)\b/);
+  if (minuteMatch) return Number(minuteMatch[1]);
+  return null;
+}
+
+function mentionedPropertyCode(rawText: string): string | null {
+  const explicitCode = rawText.match(/\b([A-Z]{2,4}-[\w-]{1,6})\b/);
+  if (explicitCode) return explicitCode[1].toUpperCase();
+
+  const text = rawText.toLowerCase();
+  const property = TASK_PROPERTIES.find((item) => (
+    text.includes(item.code.toLowerCase()) ||
+    (item.name.length > 6 && text.includes(item.name.toLowerCase()))
+  ));
+  return property?.code ?? null;
+}
+
+function assigneeIdsFromText(text: string): string[] {
+  const ids = new Set<string>();
+  if (/\bbrian\b/.test(text)) ids.add('u-bryan');
+  TASK_USERS
+    .filter((user) => user.active && user.role !== 'external')
+    .forEach((user) => {
+      const [firstName] = user.name.toLowerCase().split(/\s+/);
+      const fullName = user.name.toLowerCase();
+      if (new RegExp(`\\b${firstName}\\b`).test(text) || text.includes(fullName)) {
+        ids.add(user.id);
+      }
+    });
+  return Array.from(ids);
+}
+
+function mergeTags(existing: string, next: string[]): string {
+  const values = [
+    ...existing.split(',').map((tag) => tag.trim()).filter(Boolean),
+    ...next,
+  ];
+  return Array.from(new Set(values)).join(', ');
+}
+
 export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, prefill }: Props) {
   const currentUserId = useCurrentUserId();
   const { role, can } = usePermissions();
@@ -167,39 +258,79 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     // @demo:logic — Tag: PROD-LOGIC-4 — see frontend/DEMO_CRUFT.md
     // Replace with: POST /api/intent/parse-task (real LLM intent endpoint).
     // Phase 1: regex-based intent parsing. Phase 2 swaps to real LLM.
+    const raw = nl.trim();
     const text = nl.toLowerCase();
 
-    const propMatch = nl.match(/\b([A-Z]{2,4}-\w{1,3})\b/);
-    if (propMatch) setPropertyCode(propMatch[1].toUpperCase());
+    const property = mentionedPropertyCode(raw);
+    if (property) {
+      setPropertyCode(property);
+      setPropertyQuery(property);
+    }
+
+    const assignees = assigneeIdsFromText(text);
+    if (assignees.length > 0) setAssigneeIds(assignees);
 
     if (/\bclean\b|\bturnover\b|\blinen\b|\bdeep\b/.test(text)) {
       setDepartment('cleaning');
       setSubdepartment(/\bdeep\b/.test(text) ? 'deep_clean' : 'standard_clean');
+      setTemplate(/\bdeep\b/.test(text) ? 'Deep clean' : 'Standard clean');
     } else if (/\binspection\b|\binspect\b|\bpre-arrival\b/.test(text)) {
       setDepartment('inspection');
-      setSubdepartment('pre_arrival');
-    } else if (/\bplumbing\b|\bleak\b|\bsink\b|\btoilet\b/.test(text)) {
+      setSubdepartment(/\bpost\b|\bafter clean\b|\bpost-clean\b/.test(text) ? 'post_clean' : 'pre_arrival');
+      setTemplate(/\bpost\b|\bafter clean\b|\bpost-clean\b/.test(text) ? 'Post-clean inspection' : 'Inspection follow-up');
+    } else if (/\bplumbing\b|\bleak\b|\bsink\b|\btoilet\b|\bshower\b|\bdrain\b|\bwater\b|\bpressure\b/.test(text)) {
       setDepartment('maintenance');
       setSubdepartment('plumbing');
+      setTemplate('Preventative maintenance');
+      setElement(/\btoilet\b/.test(text) ? 'Toilet' : /\bshower\b/.test(text) ? 'Shower' : 'Plumbing');
     } else if (/\bac\b|\baircon\b|\bcooling\b/.test(text)) {
       setDepartment('maintenance');
       setSubdepartment('aircon');
+      setTemplate('Preventative maintenance');
+      setElement('AC');
     } else if (/\bgarden\b|\bhedge\b|\blawn\b/.test(text)) {
       setDepartment('maintenance');
       setSubdepartment('garden');
+      setTemplate('Preventative maintenance');
+      setElement('Garden');
     } else if (/\bpool\b/.test(text)) {
       setDepartment('maintenance');
       setSubdepartment('pool');
+      setTemplate('Preventative maintenance');
+      setElement('Pool');
+    } else if (/\bamenit(y|ies)\b|\bwelcome pack\b|\bconsumable\b/.test(text)) {
+      setDepartment('cleaning');
+      setSubdepartment('amenities');
+      setTemplate('Amenities form');
     }
 
-    if (/\burgent\b|\bnow\b|\basap\b/.test(text)) setPriority('urgent');
+    if (/\burgent\b|\bnow\b|\basap\b|\bbefore guest\b|\bbefore arrival\b/.test(text)) setPriority('urgent');
     else if (/\bhigh\b|\bsoon\b|\btoday\b/.test(text)) setPriority('high');
+    else if (/\bno rush\b|\blow priority\b/.test(text)) setPriority('low');
 
     if (/\btomorrow\b/.test(text)) setDueDate(addDaysIso(TODAY, 1));
     else if (/\btoday\b/.test(text)) setDueDate(TODAY);
-    else if (/\bweek\b/.test(text)) setDueDate(addDaysIso(TODAY, 6));
+    else if (/\bnext week\b|\bweek\b/.test(text)) setDueDate(addDaysIso(TODAY, 6));
 
-    setTitle(nl.charAt(0).toUpperCase() + nl.slice(1, 90));
+    const parsedTime = timeFromText(text);
+    if (parsedTime) setDueTime(parsedTime);
+
+    const duration = durationFromText(text);
+    if (duration) setEstimatedMinutes(String(duration));
+
+    const nextTags = [
+      /\bowner\b|\bbillable\b|\bcharge\b/.test(text) ? 'owner-billable' : '',
+      /\baccess\b|\bkey\b|\bgate\b|\block\b/.test(text) ? 'access' : '',
+      /\barrival\b|\bcheck-?in\b/.test(text) ? 'arrival' : '',
+      /\bfollow[- ]?up\b/.test(text) ? 'follow-up' : '',
+    ].filter(Boolean);
+    if (nextTags.length > 0) setTagText((current) => mergeTags(current, nextTags));
+
+    const nextTitle = assignees.includes('u-bryan')
+      ? compactTaskTitle(raw).replace(/\bBrian\b/g, 'Bryan')
+      : compactTaskTitle(raw);
+    setTitle(nextTitle);
+    if (!description.trim()) setDescription(raw);
     fireToast('Form pre-filled from your description · review and submit');
   };
 
@@ -334,10 +465,10 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
           : 'New operation task';
   const introText =
     resolvedMode === 'manager_schedule'
-      ? 'Managers can report an intake item or schedule assigned work. Field create-and-complete stays disabled.'
+      ? 'Create an intake item or scheduled task.'
       : isAssignedIssue
-        ? 'Property and reservation context are inherited from your assigned task. Access details are never copied into the report.'
-        : 'Select the property and describe what you saw. A manager will triage before scheduling or assigning work.';
+        ? 'Inherited context is copied safely.'
+        : 'Report a property issue for manager triage.';
 
   return (
     <>
@@ -353,19 +484,21 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
           <div className="ops-form-alert neutral">{introText}</div>
 
           {isManagerMode && !prefill && (
-            <section className="ops-form-section">
+            <section className="ops-form-section ops-quickfill-section">
               <div className="ops-form-section-title">
-                <IconSparkle size={12} /> Quick fill
+                <IconSparkle size={12} /> Draft from note
               </div>
               <textarea
                 value={nl}
                 onChange={(e) => setNl(e.target.value)}
-                placeholder="e.g. urgent AC repair at LB-2 tomorrow morning"
+                placeholder="Assign Bryan to check low water pressure at GBH-C8 tomorrow morning. Guest says shower drops after 2 minutes."
                 rows={3}
               />
-              <button className="btn ghost sm" type="button" onClick={parseNl} disabled={!nl.trim()}>
-                Parse and fill
-              </button>
+              <div className="ops-quickfill-action">
+                <button className="btn secondary sm" type="button" onClick={parseNl} disabled={!nl.trim()}>
+                  Draft task
+                </button>
+              </div>
             </section>
           )}
 

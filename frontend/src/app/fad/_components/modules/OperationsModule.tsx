@@ -178,6 +178,45 @@ function withinDateTab(task: Task, tab: TaskDateTab, startDate: string, endDate:
   return task.dueDate >= startDate && task.dueDate <= endDate;
 }
 
+function taskDueCompare(a: Task, b: Task): number {
+  return (
+    compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) ||
+    compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99') ||
+    PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+    compareText(taskTitle(a), taskTitle(b))
+  );
+}
+
+function myTaskTimeGroup(task: Task, tab: TaskDateTab): string {
+  if (!task.dueDate) return 'No due date';
+  if (task.dueDate < TODAY && !CLOSED_STATUS.has(task.status)) return 'Overdue';
+  if (tab === 'week' || tab === 'all') return task.dueDate;
+  if (!task.dueTime) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow · no time' : 'Today · no time';
+  const hour = Number(task.dueTime.slice(0, 2));
+  if (!Number.isFinite(hour)) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow · no time' : 'Today · no time';
+  if (hour < 12) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow morning' : 'Morning';
+  if (hour < 16) return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow afternoon' : 'Afternoon';
+  return task.dueDate === addDays(TODAY, 1) ? 'Tomorrow evening' : 'Evening';
+}
+
+function myTaskGroupRank(label: string): number {
+  const fixed: Record<string, number> = {
+    Overdue: 0,
+    Morning: 10,
+    Afternoon: 20,
+    Evening: 30,
+    'Today · no time': 40,
+    'Tomorrow morning': 50,
+    'Tomorrow afternoon': 60,
+    'Tomorrow evening': 70,
+    'Tomorrow · no time': 80,
+    'No due date': 999,
+  };
+  if (fixed[label] != null) return fixed[label];
+  if (isIsoDateKey(label)) return 100 + daysBetween(TODAY, label);
+  return 500;
+}
+
 function taskMatchesSearch(task: Task, query: string): boolean {
   if (!query.trim()) return true;
   const q = query.trim().toLowerCase();
@@ -774,6 +813,7 @@ function ManagerWorkbenchPanel({
           title={`Stale-open reminders · ${signals.staleOpen.length}`}
           actionLabel="All tasks"
           onAction={() => onChangeSubPage('all')}
+          defaultOpen={signals.staleOpen.length > 0}
         >
           {staleOpen.map((signal) => (
             <StaleOpenRow key={signal.task.id} signal={signal} onOpenTask={onOpenTask} />
@@ -781,7 +821,10 @@ function ManagerWorkbenchPanel({
           {signals.staleOpen.length === 0 && <WorkbenchEmpty>No stale open work.</WorkbenchEmpty>}
         </WorkbenchLane>
 
-        <WorkbenchLane title={`Reported issues · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}>
+        <WorkbenchLane
+          title={`Reported issues · ${signals.openReportedIssues.length + signals.inboxAiReported.length}`}
+          defaultOpen={signals.openReportedIssues.length + signals.inboxAiReported.length > 0}
+        >
           <button type="button" className="ops-workbench-row" onClick={() => onChangeSubPage('issues')}>
             <span>
               <strong>Reported issues and Inbox proposals</strong>
@@ -802,6 +845,7 @@ function ManagerWorkbenchPanel({
           title={`Supplies and loadouts · ${signals.supplyPrep.length}`}
           actionLabel="Review tasks"
           onAction={() => onChangeSubPage('all')}
+          defaultOpen={signals.supplyPrep.length > 0}
         >
           {supplyPrep.map((signal) => (
             <SupplyPrepRow key={signal.task.id} signal={signal} onOpenTask={onOpenTask} />
@@ -813,6 +857,7 @@ function ManagerWorkbenchPanel({
           title={`Staff load · ${staffLoad.length}`}
           actionLabel={canSeeRoster ? 'Roster' : undefined}
           onAction={canSeeRoster ? () => onChangeSubPage('roster') : undefined}
+          defaultOpen={false}
         >
           {staffLoad.map((signal) => (
             <StaffLoadRow key={signal.assigneeId} signal={signal} />
@@ -832,25 +877,33 @@ function WorkbenchLane({
   title,
   actionLabel,
   onAction,
+  defaultOpen,
   children,
 }: {
   title: string;
   actionLabel?: string;
   onAction?: () => void;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
+  const [isOpen, setIsOpen] = useState(Boolean(defaultOpen));
+
+  useEffect(() => {
+    setIsOpen(Boolean(defaultOpen));
+  }, [defaultOpen, title]);
+
   return (
-    <div className="ops-workbench-lane">
-      <div className="ops-workbench-lane-head">
+    <details className="ops-workbench-lane" open={isOpen} onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+      <summary className="ops-workbench-lane-head">
         <h4>{title}</h4>
         {actionLabel && onAction && (
-          <button type="button" onClick={onAction}>
+          <button type="button" onClick={(event) => { event.preventDefault(); onAction(); }}>
             {actionLabel}
           </button>
         )}
-      </div>
+      </summary>
       <div className="ops-workbench-list">{children}</div>
-    </div>
+    </details>
   );
 }
 
@@ -1670,7 +1723,8 @@ function PlannerTaskCard({
   return (
     <div
       className="ops-schedule-task"
-      style={{ borderLeftColor: priorityBarColor(task.priority) }}
+      data-status={task.status}
+      style={{ borderLeftColor: statusSwatch.color }}
       draggable={dragEnabled && !saving}
       onDragStart={(event) => onDragStart(event, task)}
     >
@@ -1679,7 +1733,7 @@ function PlannerTaskCard({
         <span>
           <strong>{task.title}</strong>
           <small>
-            {task.propertyCode || 'No property'} · {task.department} · {task.reservationId ? 'reservation linked' : 'no reservation'}
+            {task.propertyCode || 'No property'} · {taskStatusLabel(task.status)} · {task.reservationId ? 'reservation' : task.department}
           </small>
         </span>
         <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
@@ -1744,6 +1798,7 @@ function PlannerCompactCell({
               <button
                 type="button"
                 className="ops-planner-chip"
+                data-status={task.status}
                 style={{ borderLeftColor: statusSwatch.color, background: statusSwatch.background, color: statusSwatch.color }}
                 title={`${task.title} · ${task.propertyCode || 'No property'} · ${STATUS_LABEL[task.status]}`}
                 draggable={dragEnabled && savingTaskId !== task.id}
@@ -1874,7 +1929,7 @@ function MyTasksPage({
   const [department, setDepartment] = useState<Department | 'all'>('all');
   const [priority, setPriority] = useState<TaskPriority | 'all'>('all');
   const [reservation, setReservation] = useState<ReservationFilter>('all');
-  const [sort, setSort] = useState<MyTaskSort>('suggested');
+  const [sort, setSort] = useState<MyTaskSort>('due');
   const [startDate, setStartDate] = useState(TODAY);
   const [endDate, setEndDate] = useState(addDays(TODAY, 13));
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -1888,14 +1943,13 @@ function MyTasksPage({
       .filter((task) => reservation === 'all' || reservationState(task) === reservation)
       .filter((task) => taskMatchesSearch(task, search));
     return [...tasks].sort((a, b) => {
-      if (sort === 'property') return compareText(taskPropertyLabel(a), taskPropertyLabel(b)) || compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate));
-      if (sort === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate));
-      if (sort === 'due') return compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) || compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99');
+      if (sort === 'property') return compareText(taskPropertyLabel(a), taskPropertyLabel(b)) || taskDueCompare(a, b);
+      if (sort === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || taskDueCompare(a, b);
+      if (sort === 'due') return taskDueCompare(a, b);
       return (
         STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
         PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
-        compareText(taskDateKey(a.dueDate), taskDateKey(b.dueDate)) ||
-        compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99')
+        taskDueCompare(a, b)
       );
     });
   }, [assignedTasks, dateTab, department, endDate, priority, reservation, search, sort, startDate]);
@@ -1903,12 +1957,12 @@ function MyTasksPage({
   const groupedTasks = useMemo(() => {
     const groups = new Map<string, Task[]>();
     visibleTasks.forEach((task) => {
-      const key = dateTab === 'today' || dateTab === 'tomorrow' ? taskPropertyLabel(task) : taskDateKey(task.dueDate);
+      const key = myTaskTimeGroup(task, dateTab);
       const list = groups.get(key) ?? [];
       list.push(task);
       groups.set(key, list);
     });
-    return Array.from(groups.entries()).sort(([a], [b]) => compareText(a, b));
+    return Array.from(groups.entries()).sort(([a], [b]) => myTaskGroupRank(a) - myTaskGroupRank(b) || compareText(a, b));
   }, [dateTab, visibleTasks]);
 
   const counts = useMemo(() => {
@@ -2086,6 +2140,8 @@ function MyTaskCard({
   return (
     <article
       className={'ops-my-card' + (isOverdue ? ' overdue' : '')}
+      data-status={task.status}
+      style={{ borderLeftColor: statusSwatch.color }}
       onClick={onOpen}
       role="button"
       tabIndex={0}
@@ -2098,9 +2154,9 @@ function MyTaskCard({
     >
       <div className="ops-my-card-top">
         <span className="mono">{taskPropertyLabel(task)}</span>
-        <span>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
+        <span className={isOverdue ? 'ops-my-due overdue' : 'ops-my-due'}>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
       </div>
-      <h3>{task.title}</h3>
+      <h3>{taskTitle(task)}</h3>
       {task.description && <p>{task.description}</p>}
       <div className="ops-my-card-chips">
         <span style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</span>
@@ -2144,9 +2200,6 @@ function MyTaskCard({
         )}
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
           Comment
-        </button>
-        <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onOpen(); }}>
-          Evidence
         </button>
         <button type="button" className="btn ghost sm" onClick={(e) => { stop(e); onReportIssue(); }}>
           Issue
@@ -3019,10 +3072,20 @@ function addTags(existing: string[], ...next: string[]): string[] {
 
 function sourceRefLabel(task: Task): string {
   if (task.externalRef?.startsWith('pending_action:')) {
-    return task.externalRef.replace('pending_action:', '');
+    return 'Pending action';
   }
-  if (task.externalRef) return task.externalRef;
-  return task.source === 'reported_issue' ? 'Field report' : 'No source ref';
+  if (task.externalRef) return `Ref ${task.externalRef}`;
+  if (task.inboxThreadId) return 'Conversation linked';
+  if (task.reservationId) return 'Reservation linked';
+  return intakeSourceLabel(task);
+}
+
+function intakeSourceLabel(task: Task): string {
+  if (task.source === 'reported_issue') return 'Field report';
+  if (task.source === 'inbox_ai') return 'Inbox proposal';
+  if (task.source === 'group_email') return 'Team message';
+  if (task.source === 'review') return 'Review follow-up';
+  return SOURCE_LABEL[task.source] || 'Task intake';
 }
 
 function appendTriageNote(task: Task, note: string): string {
@@ -3155,9 +3218,12 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
     }
   };
 
+  const selectedSourceLabel = selectedTask ? intakeSourceLabel(selectedTask) : '';
+  const selectedRefLabel = selectedTask ? sourceRefLabel(selectedTask) : '';
+
   return (
     <div className={'fad-split-pane' + (detailOpen ? ' detail-open' : '')}>
-      <div className="fad-split-list" style={{ width: 400, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
+      <div className="fad-split-list" style={{ width: 380, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
           {error && (
             <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
@@ -3174,7 +3240,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
             <button
               className="btn ghost sm"
               type="button"
-              style={{ minHeight: 44 }}
+              style={{ minHeight: 34 }}
               onClick={() => {
                 if (selectedIds.length === intakeTasks.length) setSelectedIds([]);
                 else setSelectedIds(intakeTasks.map((task) => task.id));
@@ -3185,13 +3251,13 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
             </button>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button className="btn secondary sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('accept')}>
+            <button className="btn secondary sm" type="button" style={{ minHeight: 34 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('accept')}>
               Accept
             </button>
-            <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('dismiss')}>
+            <button className="btn ghost sm" type="button" style={{ minHeight: 34 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('dismiss')}>
               Dismiss
             </button>
-            <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('stale')}>
+            <button className="btn ghost sm" type="button" style={{ minHeight: 34 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('stale')}>
               Stale
             </button>
           </div>
@@ -3201,32 +3267,34 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
           {loading && intakeTasks.length === 0 && <LoadingState label="Loading reported issues" />}
           {intakeTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
-            const statusSwatch = toneStyle(taskStatusTone(task.status));
+            const sourceSwatch = toneStyle(taskSourceTone(task.source));
+            const sourceLabel = intakeSourceLabel(task);
+            const refLabel = sourceRefLabel(task);
             return (
               <div
                 key={task.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '44px minmax(0, 1fr)',
+                  gridTemplateColumns: '34px minmax(0, 1fr)',
                   gap: 6,
-                  padding: '10px 12px',
+                  padding: '8px 10px',
                   borderBottom: '0.5px solid var(--color-border-tertiary)',
                   background: isSelected ? 'var(--color-background-tertiary)' : 'transparent',
                 }}
               >
-                <label style={{ minHeight: 44, width: 44, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 2, cursor: 'pointer', position: 'relative' }}>
+                <label style={{ minHeight: 34, width: 34, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 1, cursor: 'pointer', position: 'relative' }}>
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(task.id)}
                     onChange={() => toggleSelected(task.id)}
                     aria-label={`Select ${task.title}`}
-                    style={{ position: 'absolute', inset: 0, width: 44, height: 44, margin: 0, opacity: 0, cursor: 'pointer' }}
+                    style={{ position: 'absolute', inset: 0, width: 34, height: 34, margin: 0, opacity: 0, cursor: 'pointer' }}
                   />
                   <span
                     aria-hidden="true"
                     style={{
-                      width: 22,
-                      height: 22,
+                      width: 18,
+                      height: 18,
                       borderRadius: 4,
                       border: '1px solid var(--color-border-secondary)',
                       background: selectedIds.includes(task.id) ? 'var(--color-brand-accent)' : 'var(--color-background-primary)',
@@ -3234,7 +3302,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: 14,
+                      fontSize: 12,
                       lineHeight: 1,
                     }}
                   >
@@ -3257,12 +3325,13 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                     <span className="mono" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{task.propertyCode || 'No property'}</span>
                     <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{formatRelative(task.createdAt)}</span>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{task.title}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{taskTitle(task)}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status] || 'Reported'}</span>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(task.source)).background, color: toneStyle(taskSourceTone(task.source)).color }}>{SOURCE_LABEL[task.source] || 'Task'}</span>
+                    <span style={{ ...TRIAGE_CHIP_STYLE, background: sourceSwatch.background, color: sourceSwatch.color }}>{sourceLabel}</span>
                     <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{task.priority}</span>
-                    <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{sourceRefLabel(task)}</span>
+                    {refLabel !== sourceLabel && (
+                      <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>{refLabel}</span>
+                    )}
                   </div>
                 </button>
               </div>
@@ -3272,11 +3341,11 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
         </div>
       </div>
 
-      <div className="fad-split-detail" style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
+      <div className="fad-split-detail" style={{ flex: 1, padding: 20, overflowY: 'auto' }}>
         <button
           type="button"
           className="btn ghost sm fad-split-back"
-          style={{ minHeight: 44 }}
+          style={{ minHeight: 34 }}
           onClick={() => setDetailOpen(false)}
         >
           ← Back to reported issues
@@ -3286,25 +3355,30 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
-                  {selectedTask.propertyCode || 'No property'} · {sourceRefLabel(selectedTask)}
+                  {selectedTask.propertyCode || 'No property'} · {selectedSourceLabel}
                 </div>
-                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{selectedTask.title}</h2>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{taskTitle(selectedTask)}</h2>
               </div>
-              <button className="btn ghost sm" type="button" style={{ minHeight: 44 }} onClick={() => onOpenTask(selectedTask.id)}>
+              <button className="btn ghost sm" type="button" style={{ minHeight: 34 }} onClick={() => onOpenTask(selectedTask.id)}>
                 Open task
               </button>
             </div>
 
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
-              <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(selectedTask.source)).background, color: toneStyle(taskSourceTone(selectedTask.source)).color }}>
-                {SOURCE_LABEL[selectedTask.source] || 'Task'}
-              </span>
               <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskStatusTone(selectedTask.status)).background, color: toneStyle(taskStatusTone(selectedTask.status)).color }}>
                 {STATUS_LABEL[selectedTask.status] || 'Reported'}
+              </span>
+              <span style={{ ...TRIAGE_CHIP_STYLE, background: toneStyle(taskSourceTone(selectedTask.source)).background, color: toneStyle(taskSourceTone(selectedTask.source)).color }}>
+                {selectedSourceLabel}
               </span>
               <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
                 {selectedTask.priority}
               </span>
+              {selectedRefLabel !== selectedSourceLabel && !selectedTask.reservationId && !selectedTask.inboxThreadId && (
+                <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
+                  {selectedRefLabel}
+                </span>
+              )}
               {selectedTask.reservationId && (
                 <span style={{ ...TRIAGE_CHIP_STYLE, background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)' }}>
                   reservation linked
@@ -3337,7 +3411,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn primary"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'accept')}
               >
@@ -3346,7 +3420,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn ghost"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'duplicate')}
               >
@@ -3355,7 +3429,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn ghost"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'stale')}
               >
@@ -3364,7 +3438,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn ghost"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'dismiss')}
               >
@@ -3407,7 +3481,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               <button
                 className="btn secondary"
                 type="button"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 36 }}
                 disabled={!linkTargetId || Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'link', linkTargetId)}
               >
@@ -3624,6 +3698,45 @@ function InsightsPage() {
     .sort((a, b) => b.issues - a.issues)
     .slice(0, 5);
   const escalations = days.map((day) => TASKS.filter((task) => task.updatedAt.slice(0, 10) === day && (task.status === 'blocked' || task.priority === 'urgent')).length);
+  const openTasks = TASKS.filter((task) => !CLOSED_STATUS.has(task.status));
+  const attentionRows = [
+    {
+      label: 'Open today',
+      value: openTasks.filter((task) => task.dueDate === TODAY).length,
+      sub: 'due now',
+      tone: 'neutral',
+    },
+    {
+      label: 'Overdue',
+      value: openTasks.filter((task) => task.dueDate && task.dueDate < TODAY).length,
+      sub: 'needs action',
+      tone: 'danger',
+    },
+    {
+      label: 'Blocked',
+      value: openTasks.filter((task) => task.status === 'blocked' || task.awaitingHumanApproval).length,
+      sub: 'manager queue',
+      tone: 'warning',
+    },
+    {
+      label: 'Unassigned',
+      value: openTasks.filter((task) => task.assigneeIds.length === 0).length,
+      sub: 'open tasks',
+      tone: 'warning',
+    },
+    {
+      label: 'Reported',
+      value: TASKS.filter((task) => INTAKE_SOURCES.has(task.source) && task.status === 'reported').length,
+      sub: 'triage intake',
+      tone: 'neutral',
+    },
+    {
+      label: 'Active',
+      value: TASKS.filter((task) => task.status === 'in_progress' || task.status === 'paused').length,
+      sub: 'in field',
+      tone: 'success',
+    },
+  ];
 
   return (
     <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
@@ -3632,19 +3745,32 @@ function InsightsPage() {
           Insights could not load live tasks: {error}
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+      <Section title="Attention now">
+        <div className="ops-insight-attention">
+          {attentionRows.map((row) => (
+            <div key={row.label} className="ops-insight-attention-row" data-tone={row.tone}>
+              <strong>{row.value}</strong>
+              <span>{row.label}</span>
+              <small>{row.sub}</small>
+            </div>
+          ))}
+        </div>
+        {loading && TASKS.length === 0 && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Loading live task metrics...</div>}
+      </Section>
+
+      <div className="ops-insights-grid">
         <Section title="Completed last 7 days">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{completedTasks.length}</div>
+          <div className="ops-insight-number">{completedTasks.length}</div>
           <Sparkline values={completed} color="#10b981" />
         </Section>
 
         <Section title="Created last 7 days">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{createdTasks.length}</div>
+          <div className="ops-insight-number">{createdTasks.length}</div>
           <Sparkline values={created} color="#7c3aed" />
         </Section>
 
         <Section title="Avg completion time">
-          <div style={{ fontSize: 28, fontWeight: 500 }}>{avgCompletionMinutes}m</div>
+          <div className="ops-insight-number">{avgCompletionMinutes}m</div>
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>across all departments</div>
         </Section>
 
@@ -3728,75 +3854,79 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 
 // ───────────────── Settings ─────────────────
 
+// @demo:config — Tag: PROD-CONFIG-10 — see frontend/DEMO_CRUFT.md
+const SETTINGS_TEMPLATES = [
+  { id: 'std-clean', name: 'Standard cleaning', route: 'cleaning > standard_clean', estimate: '2h', state: 'Manual selection; checkout trigger pending' },
+  { id: 'post-clean', name: 'Post-clean inspection', route: 'inspection > post_clean', estimate: '30m', state: 'Manual selection; checkout trigger pending' },
+  { id: 'pre-arrival', name: 'Pre-arrival inspection', route: 'inspection > pre_arrival', estimate: '45m', state: 'Manual selection; check-in trigger pending' },
+  { id: 'deep-clean', name: 'Deep clean', route: 'cleaning > deep_clean', estimate: '6h', state: 'Manual selection' },
+  { id: 'pool', name: 'Pool clarity check', route: 'maintenance > pool', estimate: '45m', state: 'Manual selection' },
+];
+
+const SETTINGS_BOOKING_POLICIES = [
+  { trigger: 'Checkout received', actions: ['Create standard cleaning for checkout day', 'Create post-clean inspection after cleaning is due', 'Current state: trigger pending backend verification'] },
+  {
+    trigger: 'Two days before check-in',
+    actions: [
+      'If property is empty more than 3 days or flagged, create pre-arrival inspection',
+      'Otherwise skip to avoid noise',
+      'Current state: trigger pending backend verification',
+    ],
+  },
+];
+
+const SETTINGS_RECURRING_RULES = [
+  { trigger: 'Pest control per property', actions: ['Every 3 months'] },
+  { trigger: 'AC servicing per property', actions: ['Every 6 months'] },
+  { trigger: 'Preventative maintenance', actions: ['Monthly - all properties'] },
+  { trigger: 'Aesthetic check', actions: ['Monthly - all properties'] },
+  { trigger: 'Amenities form gap analysis', actions: ['Monthly - sequential'] },
+];
+
 function SettingsPage({ onCreate }: { onCreate: () => void }) {
   return (
     <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 500 }}>Settings</h2>
         <button className="btn primary sm" onClick={onCreate} style={{ marginLeft: 'auto' }}>
-          <IconPlus size={12} /> Manual create task
+          <IconPlus size={12} /> New task
         </button>
       </div>
 
-      <div
-        style={{
-          padding: 12,
-          background: 'var(--color-background-secondary)',
-          borderLeft: '3px solid var(--color-brand-accent)',
-          borderRadius: 4,
-          marginBottom: 20,
-          fontSize: 12,
-        }}
-      >
-        Current Operations workflow policy. The next cutover slice wires these rules to automatic task generation.
+      <div className="ops-settings-policy-note">
+        Manual task creation is live. Booking-trigger automation below is policy only until the backend trigger job is wired and verified.
       </div>
 
       <Section title="Templates">
-        {[
-          { id: 'std-clean', name: 'Standard cleaning', dept: 'cleaning > standard_clean', items: 82, est: '2h', uses30d: 287 },
-          { id: 'post-clean', name: 'Post-clean inspection', dept: 'inspection > post_clean', items: 45, est: '30m', uses30d: 261 },
-          { id: 'pre-arrival', name: 'Pre-arrival inspection', dept: 'inspection > pre_arrival', items: 38, est: '45m', uses30d: 198 },
-          { id: 'deep-clean', name: 'Deep clean', dept: 'cleaning > deep_clean', items: 134, est: '6h', uses30d: 32 },
-          { id: 'pool', name: 'Pool clarity check', dept: 'maintenance > pool', items: 12, est: '45m', uses30d: 64 },
-        ].map((t) => (
+        <div className="ops-settings-grid-row head">
+          <span>Template</span>
+          <span>Route</span>
+          <span>Estimate</span>
+          <span>Current state</span>
+        </div>
+        {SETTINGS_TEMPLATES.map((t) => (
           <div
             key={t.id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '2fr 2fr 1fr 1fr 1fr',
-              gap: 8,
-              padding: '10px 12px',
-              borderBottom: '0.5px solid var(--color-border-tertiary)',
-              fontSize: 12,
-              alignItems: 'center',
-            }}
+            className="ops-settings-grid-row"
           >
             <span style={{ fontWeight: 500 }}>{t.name}</span>
-            <span style={{ color: 'var(--color-text-secondary)' }}>{t.dept}</span>
-            <span className="mono">{t.items} items</span>
-            <span className="mono">{t.est}</span>
-            <span className="mono" style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>{t.uses30d} uses 30d</span>
+            <span style={{ color: 'var(--color-text-secondary)' }}>{t.route}</span>
+            <span className="mono">{t.estimate}</span>
+            <span style={{ color: 'var(--color-text-tertiary)' }}>{t.state}</span>
           </div>
         ))}
       </Section>
 
-      <Section title="Workflows · auto-task generation">
-        <Workflow trigger="On checkout" actions={['Standard cleaning (same day)', 'Post-clean inspection (same day, after cleaning)']} />
-        <Workflow
-          trigger="2 days before check-in"
-          actions={[
-            'IF property empty >3 days OR pre-arrival flag → Arrival inspection (1 day before check-in)',
-            'ELSE skip',
-          ]}
-        />
+      <Section title="Booking-trigger policy">
+        {SETTINGS_BOOKING_POLICIES.map((workflow) => (
+          <Workflow key={workflow.trigger} trigger={workflow.trigger} actions={workflow.actions} />
+        ))}
       </Section>
 
       <Section title="Recurring rules">
-        <Workflow trigger="Pest control · per property" actions={['Every 3 months']} />
-        <Workflow trigger="AC servicing · per property" actions={['Every 6 months']} />
-        <Workflow trigger="Preventative maintenance" actions={['Monthly · all properties']} />
-        <Workflow trigger="Aesthetic check" actions={['Monthly · all properties']} />
-        <Workflow trigger="Amenities form → Gap analysis" actions={['Monthly · sequential']} />
+        {SETTINGS_RECURRING_RULES.map((workflow) => (
+          <Workflow key={workflow.trigger} trigger={workflow.trigger} actions={workflow.actions} />
+        ))}
       </Section>
     </div>
   );
@@ -3808,7 +3938,7 @@ function Workflow({ trigger, actions }: { trigger: string; actions: string[] }) 
       <div style={{ fontWeight: 500, marginBottom: 4 }}>{trigger}</div>
       {actions.map((a, i) => (
         <div key={i} style={{ paddingLeft: 16, color: 'var(--color-text-secondary)' }}>
-          → {a}
+          - {a}
         </div>
       ))}
     </div>

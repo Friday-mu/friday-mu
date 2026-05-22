@@ -557,6 +557,8 @@ interface WorkloadSummary {
   byDay: Array<{ date: string; count: number }>;
   byDepartment: Array<{ label: string; count: number }>;
   byStaff: Array<{ label: string; count: number }>;
+  unassignedCount: number;
+  priorityCount: number;
   total: number;
 }
 
@@ -576,7 +578,36 @@ function buildWorkload(tasks: Task[], dates: string[], staff: OperationsStaffUse
     if (task.assigneeIds.length === 0) acc.Unassigned = (acc.Unassigned || 0) + 1;
     return acc;
   }, {})).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 6);
-  return { byDay, byDepartment, byStaff, total: tasks.length };
+  const unassignedCount = tasks.filter((task) => task.assigneeIds.length === 0).length;
+  const priorityCount = tasks.filter((task) => task.priority === 'urgent' || task.priority === 'high').length;
+  return { byDay, byDepartment, byStaff, unassignedCount, priorityCount, total: tasks.length };
+}
+
+function buildRosterReview(workload: WorkloadSummary, staff: OperationsStaffUser[], assignableCount: number): Array<{ tone: 'neutral' | 'warning' | 'danger'; label: string; detail: string }> {
+  const busiestDay = [...workload.byDay].sort((a, b) => b.count - a.count)[0];
+  const busiestStaff = workload.byStaff.find((row) => row.label !== 'Unassigned');
+  const rows: Array<{ tone: 'neutral' | 'warning' | 'danger'; label: string; detail: string }> = [];
+
+  if (workload.unassignedCount > 0) {
+    rows.push({ tone: 'danger', label: `${workload.unassignedCount} unassigned`, detail: 'Assign before publishing the week.' });
+  }
+  if (workload.priorityCount > 0) {
+    rows.push({ tone: 'warning', label: `${workload.priorityCount} high priority`, detail: 'Check coverage before field handoff.' });
+  }
+  if (busiestDay && busiestDay.count > 0) {
+    const day = DAY_LABEL[new Date(`${busiestDay.date}T00:00:00Z`).getUTCDay()];
+    rows.push({ tone: 'neutral', label: `${day} is busiest`, detail: `${busiestDay.count} task${busiestDay.count === 1 ? '' : 's'} scheduled.` });
+  }
+  if (busiestStaff && busiestStaff.count > 0) {
+    rows.push({ tone: 'neutral', label: `${busiestStaff.label}`, detail: `${busiestStaff.count} assigned task${busiestStaff.count === 1 ? '' : 's'} this week.` });
+  }
+  if (staff.length > assignableCount) {
+    rows.push({ tone: 'warning', label: `${staff.length - assignableCount} login gaps`, detail: 'Link HR staff to app users.' });
+  }
+  if (rows.length === 0) {
+    rows.push({ tone: 'neutral', label: 'No task load', detail: 'No scheduled tasks found for this week.' });
+  }
+  return rows.slice(0, 4);
 }
 
 function RosterWorkload({
@@ -599,6 +630,7 @@ function RosterWorkload({
   dirty: boolean;
 }) {
   const unlinked = staff.length - assignableCount;
+  const reviewRows = buildRosterReview(workload, staff, assignableCount);
   return (
     <div>
       <h3>Roster · {formatWeekLabel(weekStart)}</h3>
@@ -610,6 +642,16 @@ function RosterWorkload({
         <div><strong>{unlinked}</strong><span>needs login link</span></div>
         <div><strong>{statusLabel(rosterStatus)}</strong><span>{dirty ? 'unsaved edits' : 'saved state'}</span></div>
       </div>
+
+      <section className="ops-roster-review">
+        <h4>Review</h4>
+        {reviewRows.map((row) => (
+          <div className="ops-roster-review-row" data-tone={row.tone} key={`${row.label}-${row.detail}`}>
+            <strong>{row.label}</strong>
+            <span>{row.detail}</span>
+          </div>
+        ))}
+      </section>
 
       <RosterBars title="Tasks by day" rows={workload.byDay.map((day) => ({ label: DAY_LABEL[new Date(`${day.date}T00:00:00Z`).getUTCDay()], count: day.count }))} />
       <RosterBars title="By department" rows={workload.byDepartment} />
