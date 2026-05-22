@@ -134,8 +134,32 @@ function taskPropertyLabel(task: Task): string {
   return textValue(task.propertyCode, 'No property');
 }
 
+function taskTitle(task: Task): string {
+  return textValue(task.title, 'Untitled task');
+}
+
 function taskSubdepartmentLabel(task: Task): string {
   return textValue(task.subdepartment, 'admin').replace(/_/g, ' ');
+}
+
+function taskStatusLabel(status: TaskStatus | null | undefined): string {
+  return STATUS_LABEL[status as TaskStatus] || 'Reported';
+}
+
+function taskPriorityOrder(priority: TaskPriority | null | undefined): number {
+  return PRIORITY_ORDER[priority as TaskPriority] ?? 99;
+}
+
+function taskRiskFlags(task: Task): string[] {
+  return Array.isArray(task.riskFlags) ? task.riskFlags.filter(Boolean) : [];
+}
+
+function taskCommentCount(task: Task): number {
+  return Array.isArray(task.comments) ? task.comments.length : 0;
+}
+
+function taskAttachmentCount(task: Task): number {
+  return Number.isFinite(task.attachmentCount) ? Math.max(0, task.attachmentCount) : 0;
 }
 
 function taskDateKey(value: string | null | undefined): string {
@@ -446,7 +470,7 @@ function OverviewPage({
     const overdue = scopedTasks.filter((t) => t.dueDate && t.dueDate < TODAY && !CLOSED_STATUS.has(t.status)).length;
     const urgent = scopedTasks.filter((t) => t.priority === 'urgent' && !CLOSED_STATUS.has(t.status)).length;
     const awaitingApproval = scopedTasks.filter((t) => t.status === 'blocked' || t.awaitingHumanApproval).length;
-    const reportedToday = scopedTasks.filter((t) => INTAKE_SOURCES.has(t.source) && t.status === 'reported' && t.createdAt.slice(0, 10) === TODAY).length;
+    const reportedToday = scopedTasks.filter((t) => INTAKE_SOURCES.has(t.source) && t.status === 'reported' && taskTimestampKey(t.createdAt).slice(0, 10) === TODAY).length;
     return { openToday, overdue, urgent, awaitingApproval, reportedToday };
   }, [scopedTasks]);
 
@@ -458,7 +482,7 @@ function OverviewPage({
         if (dashboardStatus === 'open') return !CLOSED_STATUS.has(t.status);
         return t.status === dashboardStatus;
       })
-      .sort((a, b) => compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99') || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
+      .sort((a, b) => compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99') || taskPriorityOrder(a.priority) - taskPriorityOrder(b.priority))
   ), [scopedTasks, dashboardDate, dashboardStatus]);
 
   const dashboardByProperty = useMemo(() => {
@@ -487,7 +511,9 @@ function OverviewPage({
       cancelled: 0,
     };
     dayTasks.forEach((task) => {
-      counts[task.status] += 1;
+      if (Object.prototype.hasOwnProperty.call(counts, task.status)) {
+        counts[task.status as TaskStatus] += 1;
+      }
     });
     return { open, total: dayTasks.length, counts };
   }, [scopedTasks, dashboardDate]);
@@ -512,16 +538,16 @@ function OverviewPage({
   };
 
   const escalations = scopedTasks.filter(
-    (t) => t.riskFlags.includes('overdue') || t.riskFlags.includes('blocked_access') || t.priority === 'urgent',
+    (t) => taskRiskFlags(t).includes('overdue') || taskRiskFlags(t).includes('blocked_access') || t.priority === 'urgent',
   ).slice(0, 4);
 
   const reservationDriven = scopedTasks.filter(
-    (t) => t.riskFlags.includes('reservation_imminent') && !CLOSED_STATUS.has(t.status),
+    (t) => taskRiskFlags(t).includes('reservation_imminent') && !CLOSED_STATUS.has(t.status),
   );
 
   const recentActivity = useMemo(() => {
     return scopedTasks.flatMap((t) =>
-      t.activityLog.map((a) => ({ task: t, entry: a }))
+      (Array.isArray(t.activityLog) ? t.activityLog : []).map((a) => ({ task: t, entry: a }))
     )
       .sort((a, b) => compareText(b.entry.ts, a.entry.ts))
       .slice(0, 6);
@@ -599,14 +625,14 @@ function OverviewPage({
                 <button className="ops-agenda-row" type="button" key={task.id} onClick={() => onOpenTask(task.id)}>
                   <span className="ops-agenda-priority" style={{ background: priorityBarColor(task.priority) }} />
                   <span className="ops-agenda-main">
-                    <strong>{task.title}</strong>
+                    <strong>{taskTitle(task)}</strong>
                     <small>
-                      {STATUS_LABEL[task.status]} · {task.department} · {task.reservationId ? 'reservation linked' : 'no reservation'}
+                      {taskStatusLabel(task.status)} · {task.department} · {task.reservationId ? 'reservation linked' : 'no reservation'}
                     </small>
                   </span>
                   <span className="ops-agenda-indicators">
-                    {task.attachmentCount > 0 && <span>{task.attachmentCount} files</span>}
-                    {task.comments.length > 0 && <span>{task.comments.length} comments</span>}
+                    {taskAttachmentCount(task) > 0 && <span>{taskAttachmentCount(task)} files</span>}
+                    {taskCommentCount(task) > 0 && <span>{taskCommentCount(task)} comments</span>}
                   </span>
                   <span className="ops-agenda-time" onClick={(e) => e.stopPropagation()}>
                     {role === 'field' ? (
@@ -615,7 +641,7 @@ function OverviewPage({
                       <input
                         type="time"
                         value={task.dueTime ?? ''}
-                        aria-label={`Due time for ${task.title}`}
+                        aria-label={`Due time for ${taskTitle(task)}`}
                         disabled={savingTimeId === task.id}
                         onChange={(e) => updateDueTime(task, e.target.value)}
                       />
@@ -693,9 +719,9 @@ function OverviewPage({
                 onClick={() => onOpenTask(task.id)}
               >
                 <span style={{ color: 'var(--color-brand-accent)', fontWeight: 500 }}>
-                  {entry.kind.replace('_', ' ')}
+                  {textValue(entry.kind, 'activity').replace('_', ' ')}
                 </span>
-                <span style={{ marginLeft: 6 }}>{task.title.slice(0, 50)}</span>
+                <span style={{ marginLeft: 6 }}>{taskTitle(task).slice(0, 50)}</span>
                 <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
                   {actor?.name.split(' ')[0] ?? 'system'} · {entry.detail || ''}
                 </div>
@@ -832,10 +858,10 @@ function StaleOpenRow({ signal, onOpenTask }: { signal: StaleOpenTaskSignal; onO
   return (
     <button type="button" className="ops-workbench-row urgent" onClick={() => onOpenTask(signal.task.id)}>
       <span>
-        <strong>{signal.task.title}</strong>
-        <small>{signal.task.propertyCode} · {STATUS_LABEL[signal.task.status]} · {signal.reason}</small>
+        <strong>{taskTitle(signal.task)}</strong>
+        <small>{taskPropertyLabel(signal.task)} · {taskStatusLabel(signal.task.status)} · {signal.reason}</small>
       </span>
-      <span className="ops-workbench-badge">{signal.task.priority}</span>
+      <span className="ops-workbench-badge">{textValue(signal.task.priority, 'medium')}</span>
     </button>
   );
 }
@@ -848,10 +874,10 @@ function SupplyPrepRow({ signal, onOpenTask }: { signal: SupplyPrepSignal; onOpe
   return (
     <button type="button" className="ops-workbench-row" onClick={() => onOpenTask(signal.task.id)}>
       <span>
-        <strong>{signal.task.propertyCode} · {signal.task.title}</strong>
+        <strong>{taskPropertyLabel(signal.task)} · {taskTitle(signal.task)}</strong>
         <small>{supplyLabel} · {signal.reason}</small>
       </span>
-      <span className="ops-workbench-badge">{signal.task.dueDate === TODAY ? 'today' : formatShortDate(signal.task.dueDate)}</span>
+      <span className="ops-workbench-badge">{signal.task.dueDate === TODAY ? 'today' : formatShortDate(textValue(signal.task.dueDate))}</span>
     </button>
   );
 }

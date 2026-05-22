@@ -61,7 +61,7 @@ export function detectStaleOpenTasks(
   return tasks
     .filter((task) => isOpenTask(task) && WATCHED_OPEN_STATUSES.has(task.status))
     .map((task): StaleOpenTaskSignal | null => {
-      const updatedAt = Date.parse(task.updatedAt || task.createdAt);
+      const updatedAt = Date.parse(textValue(task.updatedAt, textValue(task.createdAt)));
       const minutesSinceUpdate = Number.isFinite(updatedAt)
         ? Math.max(0, Math.floor((now.getTime() - updatedAt) / 60_000))
         : undefined;
@@ -69,13 +69,14 @@ export function detectStaleOpenTasks(
         ? task.spentMinutes - task.estimatedMinutes
         : undefined;
 
-      if (task.riskFlags.includes('no_progress')) {
+      const riskFlags = taskRiskFlags(task);
+      if (riskFlags.includes('no_progress')) {
         return { task, reason: 'No progress flagged', minutesSinceUpdate, overEstimateMinutes };
       }
       if (typeof overEstimateMinutes === 'number' && overEstimateMinutes >= 30) {
         return { task, reason: `${overEstimateMinutes} min over estimate`, minutesSinceUpdate, overEstimateMinutes };
       }
-      if (task.status === 'blocked' || task.riskFlags.includes('blocked_access')) {
+      if (task.status === 'blocked' || riskFlags.includes('blocked_access')) {
         return { task, reason: 'Blocked and needs manager action', minutesSinceUpdate, overEstimateMinutes };
       }
       if (typeof minutesSinceUpdate === 'number' && minutesSinceUpdate >= staleAfterHours * 60) {
@@ -123,22 +124,24 @@ export function buildManagerWorkbenchSignals(
     .sort((a, b) => sortTasks(a.task, b.task));
 
   const unassignedOpen = activeTasks
-    .filter((task) => task.assigneeIds.length === 0)
+    .filter((task) => taskAssigneeIds(task).length === 0)
     .sort(sortTasks);
 
   const loadByAssignee = new Map<string, StaffLoadSignal>();
   activeTasks.forEach((task) => {
-    const assigneeIds = task.assigneeIds.length ? task.assigneeIds : ['unassigned'];
+    const taskAssignees = taskAssigneeIds(task);
+    const assigneeNames = taskAssigneeNames(task);
+    const assigneeIds = taskAssignees.length ? taskAssignees : ['unassigned'];
     assigneeIds.forEach((assigneeId, index) => {
       const current = loadByAssignee.get(assigneeId) ?? {
         assigneeId,
-        assigneeName: task.assigneeNames?.[index],
+        assigneeName: assigneeNames[index],
         openCount: 0,
         urgentCount: 0,
         staleCount: 0,
       };
-      if (!current.assigneeName && task.assigneeNames?.[index]) {
-        current.assigneeName = task.assigneeNames[index];
+      if (!current.assigneeName && assigneeNames[index]) {
+        current.assigneeName = assigneeNames[index];
       }
       current.openCount += 1;
       if (task.priority === 'urgent' || task.priority === 'high') current.urgentCount += 1;
@@ -152,7 +155,7 @@ export function buildManagerWorkbenchSignals(
       b.staleCount - a.staleCount ||
       b.urgentCount - a.urgentCount ||
       b.openCount - a.openCount ||
-      (a.assigneeName || a.assigneeId).localeCompare(b.assigneeName || b.assigneeId)
+      compareText(a.assigneeName || a.assigneeId, b.assigneeName || b.assigneeId)
     ));
 
   return {
@@ -167,12 +170,36 @@ export function buildManagerWorkbenchSignals(
 
 function sortTasks(a: Task, b: Task): number {
   return (
-    PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority] ||
-    a.dueDate.localeCompare(b.dueDate) ||
-    (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') ||
-    a.propertyCode.localeCompare(b.propertyCode) ||
-    a.title.localeCompare(b.title)
+    priorityWeight(a.priority) - priorityWeight(b.priority) ||
+    compareText(a.dueDate, b.dueDate) ||
+    compareText(a.dueTime ?? '99:99', b.dueTime ?? '99:99') ||
+    compareText(a.propertyCode, b.propertyCode) ||
+    compareText(a.title, b.title)
   );
+}
+
+function textValue(value: string | null | undefined, fallback = ''): string {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function compareText(a: string | null | undefined, b: string | null | undefined): number {
+  return textValue(a).localeCompare(textValue(b));
+}
+
+function priorityWeight(priority: TaskPriority | null | undefined): number {
+  return PRIORITY_WEIGHT[priority as TaskPriority] ?? 99;
+}
+
+function taskRiskFlags(task: Task): string[] {
+  return Array.isArray(task.riskFlags) ? task.riskFlags.filter(Boolean) : [];
+}
+
+function taskAssigneeIds(task: Task): string[] {
+  return Array.isArray(task.assigneeIds) ? task.assigneeIds.filter(Boolean) : [];
+}
+
+function taskAssigneeNames(task: Task): string[] {
+  return Array.isArray(task.assigneeNames) ? task.assigneeNames.filter(Boolean) : [];
 }
 
 function isoDate(date: Date): string {
