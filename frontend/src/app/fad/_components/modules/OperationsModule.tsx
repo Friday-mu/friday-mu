@@ -294,7 +294,6 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         return (
           <MyTasksPage
             onOpenTask={setDetailTaskId}
-            onReportStandalone={isField ? openStandaloneReport : undefined}
             onReportIssue={openAssignedIssueReport}
           />
         );
@@ -1454,7 +1453,6 @@ function SchedulePage({
                           onDragStart={handleDragStart}
                           onOpenTask={onOpenTask}
                           onEdit={setEditingTaskId}
-                          onPatch={patchTask}
                         />
                       ))}
                     </div>
@@ -1606,7 +1604,6 @@ function PlannerTaskCard({
   onDragStart,
   onOpenTask,
   onEdit,
-  onPatch,
 }: {
   task: Task;
   staffOptions: OperationsStaffUser[];
@@ -1615,7 +1612,6 @@ function PlannerTaskCard({
   onDragStart: (event: React.DragEvent<HTMLElement>, task: Task) => void;
   onOpenTask: (id: string) => void;
   onEdit: (id: string) => void;
-  onPatch: (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => Promise<void>;
 }) {
   const statusSwatch = toneStyle(taskStatusTone(task.status));
   const selectedAssignee = task.assigneeIds[0] || '';
@@ -1637,40 +1633,8 @@ function PlannerTaskCard({
         </span>
         <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
       </button>
-      <div className="ops-schedule-task-controls">
-        <label>
-          <span>Date</span>
-          <input
-            type="date"
-            value={task.dueDate || ''}
-            disabled={saving}
-            onChange={(e) => void onPatch(task, { dueDate: e.target.value, status: task.status === 'reported' ? 'scheduled' : task.status }, 'Task date updated')}
-          />
-        </label>
-        <label>
-          <span>Time</span>
-          <input
-            type="time"
-            value={task.dueTime?.slice(0, 5) || ''}
-            disabled={saving}
-            onChange={(e) => void onPatch(task, { dueTime: e.target.value }, 'Task time updated')}
-          />
-        </label>
-        <label>
-          <span>Assignee</span>
-          <select
-            value={selectedAssignee}
-            disabled={saving}
-            onChange={(e) => void onPatch(task, { assigneeIds: e.target.value ? [e.target.value] : [] }, 'Task assignee updated')}
-          >
-            <option value="">Unassigned</option>
-            {staffOptions.filter((user) => user.canAssign).map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="ops-schedule-task-controls compact">
+        <span>{selectedAssignee ? staffOptions.find((user) => user.id === selectedAssignee)?.name || 'Assigned' : 'Unassigned'}</span>
         <button className="btn ghost sm" type="button" disabled={saving} onClick={() => onEdit(task.id)}>
           Edit schedule
         </button>
@@ -1720,28 +1684,35 @@ function PlannerCompactCell({
         </div>
       ))}
       <div className="ops-planner-chip-row">
-        {visibleTasks.map((task) => (
-          <div className="ops-planner-chip-wrap" key={`${dropTarget.rowId}-${dropTarget.date}-${task.id}`}>
-            <button
-              type="button"
-              className="ops-planner-chip"
-              title={`${task.title} · ${task.propertyCode || 'No property'} · ${STATUS_LABEL[task.status]}`}
-              draggable={dragEnabled && savingTaskId !== task.id}
-              onDragStart={(event) => onDragStart(event, task)}
-              onClick={() => onOpenTask(task.id)}
-            >
-              <span>{taskIconLabel(task)}</span>
-            </button>
-            <button
-              type="button"
-              className="ops-planner-chip-edit"
-              disabled={savingTaskId === task.id}
-              onClick={() => onEdit(task.id)}
-            >
-              Edit
-            </button>
-          </div>
-        ))}
+        {visibleTasks.map((task) => {
+          const statusSwatch = toneStyle(taskStatusTone(task.status));
+          const assignee = taskAssigneePeople(task)[0]?.name.split(' ')[0] || 'Unassigned';
+          const meta = [task.dueTime ? formatTimeLabel(task.dueTime) : null, assignee].filter(Boolean).join(' · ');
+          return (
+            <div className="ops-planner-chip-wrap" key={`${dropTarget.rowId}-${dropTarget.date}-${task.id}`}>
+              <button
+                type="button"
+                className="ops-planner-chip"
+                style={{ borderLeftColor: statusSwatch.color, background: statusSwatch.background, color: statusSwatch.color }}
+                title={`${task.title} · ${task.propertyCode || 'No property'} · ${STATUS_LABEL[task.status]}`}
+                draggable={dragEnabled && savingTaskId !== task.id}
+                onDragStart={(event) => onDragStart(event, task)}
+                onClick={() => onOpenTask(task.id)}
+              >
+                <span className="ops-planner-chip-title">{task.title}</span>
+                <span className="ops-planner-chip-meta">{meta}</span>
+              </button>
+              <button
+                type="button"
+                className="ops-planner-chip-edit"
+                disabled={savingTaskId === task.id}
+                onClick={() => onEdit(task.id)}
+              >
+                Edit
+              </button>
+            </div>
+          );
+        })}
         {overflow > 0 && <span className="ops-planner-overflow">+{overflow}</span>}
       </div>
     </div>
@@ -1812,14 +1783,6 @@ function PlannerEditPanel({
       </button>
     </div>
   );
-}
-
-function taskIconLabel(task: Task): string {
-  if (task.source === 'reported_issue' || task.tags.includes('reported_issue')) return '!';
-  if (task.department === 'maintenance') return 'M';
-  if (task.department === 'cleaning') return 'C';
-  if (task.status === 'completed' || task.status === 'closed') return 'C';
-  return 'T';
 }
 
 function KpiCard({ label, value, accent }: { label: string; value: number; accent: string }) {
@@ -2084,7 +2047,7 @@ function MyTaskCard({
     >
       <div className="ops-my-card-top">
         <span className="mono">{task.propertyCode}</span>
-        <span>{formatTaskDue(task.dueDate, task.dueTime)}</span>
+        <span>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
       </div>
       <h3>{task.title}</h3>
       {task.description && <p>{task.description}</p>}
@@ -2222,7 +2185,7 @@ function MyHistoryPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
             ))}
           </section>
         ))}
-        {historyTasks.length === 0 && <Empty>No completed tasks match this history view.</Empty>}
+        {!loading && historyTasks.length === 0 && <Empty>No completed tasks match this history view.</Empty>}
       </div>
     </div>
   );
@@ -2859,7 +2822,7 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
           {assignees.length === 0 && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>—</span>}
         </div>
       </td>
-      <td style={{ padding: '6px 10px', fontSize: 11 }}>{formatTaskDue(task.dueDate, task.dueTime)}</td>
+      <td style={{ padding: '6px 10px', fontSize: 11 }}>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</td>
       <td style={{ padding: '6px 10px' }}>
         <span
           style={{
@@ -2883,7 +2846,7 @@ function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
   );
 }
 
-function formatTaskDue(dueDate: string, dueTime?: string): string {
+function formatTaskDue(dueDate: string, dueTime?: string, status?: TaskStatus): string {
   if (!dueDate) return 'No due date';
   const time = dueTime ? `, ${formatTimeLabel(dueTime)}` : '';
   if (dueDate === TODAY) return `Today${time}`;
@@ -2903,7 +2866,7 @@ function formatTaskDue(dueDate: string, dueTime?: string): string {
     ...(sameYear ? {} : { year: 'numeric' }),
   });
   if (diff === 1) return `Tomorrow${time}`;
-  if (diff < 0) return `${fmt}${time} · overdue`;
+  if (diff < 0 && (!status || !CLOSED_STATUS.has(status))) return `${fmt}${time} · overdue`;
   return `${fmt}${time}`;
 }
 
@@ -2934,7 +2897,7 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
           <span>·</span>
           <span>{task.subdepartment.replace(/_/g, ' ')}</span>
           <span>·</span>
-          <span>{formatTaskDue(task.dueDate, task.dueTime)}</span>
+          <span>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</span>
         </div>
         {task.riskFlags.length > 0 && (
           <div className="fad-task-card-risk">
@@ -3657,7 +3620,7 @@ function InsightsPage() {
           <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
             No live AI acceptance telemetry has been recorded yet.
           </div>
-          {loading && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Loading live task metrics...</div>}
+          {loading && TASKS.length === 0 && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Loading live task metrics...</div>}
         </Section>
       </div>
     </div>

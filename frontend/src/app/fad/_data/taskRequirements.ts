@@ -159,6 +159,7 @@ export function normalizeRequirements(requirements?: TaskRequirement[] | null): 
 export function requirementsForTask(task: Pick<Task, 'requirements' | 'template' | 'department' | 'subdepartment'>): TaskRequirement[] {
   const persisted = normalizeRequirements(task.requirements);
   if (persisted.length > 0) return persisted;
+  if (!task.template?.trim()) return [];
   return requirementsForTemplate(task.template, task.department, task.subdepartment);
 }
 

@@ -6595,6 +6595,19 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   white-space: nowrap;
 }
 
+.ops-schedule-task-controls.compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.ops-schedule-task-controls.compact .btn {
+  min-height: 30px;
+}
+
 .ops-schedule-empty {
   min-height: 44px;
   display: flex;
@@ -6796,6 +6809,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  min-width: 0;
   max-width: 100%;
 }
 
@@ -6810,11 +6824,42 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 .ops-planner-chip {
-  width: 44px;
-  border: 0;
-  background: #0f7a49;
-  color: white;
+  width: min(148px, 100%);
+  min-width: 112px;
+  min-height: 38px;
+  padding: 5px 7px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-left: 3px solid currentColor;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.ops-planner-chip-title,
+.ops-planner-chip-meta {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ops-planner-chip-title {
+  color: var(--color-text-primary);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.ops-planner-chip-meta {
+  color: currentColor;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .ops-planner-chip-edit {
