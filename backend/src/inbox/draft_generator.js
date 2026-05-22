@@ -47,6 +47,7 @@ const DRAFT_INITIAL_STATE = 'friday_drafting';
 const DRAFT_READY_STATE = 'draft_ready';
 const DRAFT_FAILED_STATE = 'generation_failed';
 const DRAFT_SUPERSEDED_STATE = 'superseded';
+const ACTIONABLE_DRAFT_STATES_SQL = "('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')";
 
 const OPERATOR_DRAFT_LANGUAGE_CONTRACT = `
 [Operator Draft Language Contract]
@@ -812,8 +813,8 @@ async function triggerDraftGeneration(messageId, conversationId, opts = {}) {
     await query(
       `UPDATE drafts
           SET state = $1, updated_at = NOW()
-        WHERE conversation_id = $2 AND state IN ($3, 'under_review')`,
-      [DRAFT_SUPERSEDED_STATE, conversationId, DRAFT_READY_STATE],
+        WHERE conversation_id = $2 AND state IN ${ACTIONABLE_DRAFT_STATES_SQL}`,
+      [DRAFT_SUPERSEDED_STATE, conversationId],
     );
 
     // Insert the placeholder friday_drafting row so the inbox UI can
@@ -1006,4 +1007,5 @@ module.exports = {
   guestFirstName,
   applyStatusUpdateSafety,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
+  ACTIONABLE_DRAFT_STATES_SQL,
 };

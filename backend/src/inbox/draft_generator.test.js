@@ -18,6 +18,7 @@ const {
   isGuestStatusUpdateRequest,
   statusUpdateSafetyInstruction,
   applyStatusUpdateSafety,
+  ACTIONABLE_DRAFT_STATES_SQL,
 } = require('./draft_generator');
 
 describe('draft generator language policy', () => {
@@ -177,6 +178,14 @@ describe('draft generator latest guest turn handling', () => {
     ];
 
     expect(latestGuestTurnMessages(messages, 'm-3').map((m) => m.id)).toEqual(['m-3']);
+  });
+});
+
+describe('draft generator stale draft states', () => {
+  test('supersedes every actionable stale draft state before generating a replacement', () => {
+    expect(ACTIONABLE_DRAFT_STATES_SQL).toBe(
+      "('draft_ready', 'under_review', 'friday_drafting', 'generation_failed', 'send_queued', 'send_failed')",
+    );
   });
 });
 
