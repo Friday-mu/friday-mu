@@ -151,10 +151,13 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - UI grouped by surfaceId, version-desc, status pills (draft / approved / published / retired). "New draft" prompts for surface + version, creates an empty draft. "Publish" warns first then atomically flips to published + auto-approves referenced KB candidates (via the existing publisher.js code path).
 - DB still has 0 packs — first concrete pack content remains a product call (open question per the Core handover: manual-first vs. KB-candidate-driven). UI is ready for Ishant to author once the first pack content is decided.
 
-### T3.2 — Multi-tenant safety sweep
-- Effort: L · Blocks: rolling FAD out to non-FR tenants · Status: open
-- Audit Ask Friday, Inbox, Ops, Website handoff, Notifications, module clients for tenant safety.
-- No cross-tenant data in global context loaders.
+### T3.2 — Multi-tenant safety sweep — partial-shipped 2026-05-24
+- Effort: L · Blocks: rolling FAD out to non-FR tenants · Status: **partial-shipped + new blocker logged**
+- ✓ Audit complete for: `tasks/`, `inbox/conversations_read`, `inbox/consult`, `mcp/`, `fad/friday`, `expenses/`, `properties/` + `reservations/` (W1 today), `ai_usage`. All tenant-safe.
+- ✗ **HIGH-severity known limitation surfaced**: `website_inbox/*` (~30 SQL sites on `inbox_threads` + `inbox_events` + `inbox_guesty_jobs`) — these tables have no `tenant_id` column (mig 033 is pre-multi-tenant). Acceptable today (FR-only) but a **blocker for non-FR rollout**. Server.js:1024 has the matching TODO.
+- ✗ **Deferred audit**: `ask_friday_*`, `design_*`, `hr_*`, `push_subscriptions`, `learning_events`, `kb_candidates`, `context_packs`. Spot-checks during W1 work showed tenant_id usage; no exhaustive pass.
+- **Full audit report**: [`docs/SECURITY_AUDIT_2026-05-24.md`](SECURITY_AUDIT_2026-05-24.md)
+- **Promoted to new item**: **T3.7 — website_inbox tenant_id migration** (M-L, blocker for non-FR rollout). Schema migration + backfill + 30+ SQL updates + flow regression.
 
 ### T3.3 — Stay portal coordination
 - Effort: M · Blocks: Stay Portal launch · Status: open
@@ -176,6 +179,13 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - Assignment: round-robin field team? Property-zone routing?
   - Avoid duplicates: idempotency via reservation_id + template_id
 - Possible implementation: extend `backend/src/reservations/webhook.js` post-upsert hook → call a new `taskAutomation.fromReservation(reservation, eventType)` that consults a tenant-level rules table.
+
+### T3.7 — website_inbox tenant_id migration (NEW, promoted from T3.2 audit)
+- Effort: M-L · Blocks: non-FR tenant rollout (T3.2 closure) · Status: open
+- `inbox_threads` + `inbox_events` + `inbox_guesty_jobs` + `inbox_drafts(?)` lack `tenant_id` columns (mig 033 era).
+- ~30 SQL sites in `backend/src/website_inbox/*` operate without tenant filters; 2 routes (GET /threads, PATCH /threads/:id) don't even use `attachIdentity`.
+- Fix: migration to add tenant_id + backfill FR + 30+ SQL updates + middleware additions + flow regression test (AI handoff, manual reply, mark-paid, draft approval, Guesty confirm worker).
+- See [`docs/SECURITY_AUDIT_2026-05-24.md`](SECURITY_AUDIT_2026-05-24.md) §HIGH for the full inventory.
 
 ### T3.5 — GEMINI_API_KEY rotation
 - Effort: XS · Blocks: security debt (key pasted in chat) · Status: **waiting-on-ishant**
@@ -262,6 +272,8 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-24 (today, this session)
+- **T3.2 — Multi-tenant safety sweep, partial** (`<this commit>`) — audited 9 high-traffic surfaces (all tenant-safe); surfaced `website_inbox/*` as a known blocker for non-FR rollout (~30 SQL sites without tenant_id; the underlying tables don't have the column). Full report at `docs/SECURITY_AUDIT_2026-05-24.md`. Promoted to T3.7 in Tier 3.
+- **T4.34 — Optimistic UI for W1 write paths** (`07e23e0e`) — CreatePropertyDrawer + CreateReservationDrawer + ReservationDetail cancel now feel instant. Drawer closes immediately, optimistic row in list, background reconcile + rollback on error.
 - **T4.35 — AI telemetry mislabel fixed** (`87b608c8`) — design/ai_{rough_budget,ask,annex_b_edit} + ai/translate now report the real provider+model+tokens from `runTextCompletion`. Cost reports finally reflect Gemini-primary routing. Bonus: token counts in 3 design endpoints were always null due to `parseKimiUsage(result.data)` reading an undefined field — now populated. Backend re-deployed; pm2 restart 256.
 - **T4.36 + T4.37 scope docs landed** (`e23ba92c`) — guest portal chat + field-staff map v0.1 drafts at `docs/scoping/2026-05-24-*.md`, both linked from backlog Tier 4. Await Ishant decisions on the 15 + 12 open questions.
 - **Properties + Reservations W1 backbone shipped + DEPLOYED** — full FAD-native overlay layer per v0.2 LOCKED scopes. Live at frontend+backend `a5038a83` (with a follow-up table-rename commit). Migrations applied to prod DB via SSH + boot-time runner (idempotent).
