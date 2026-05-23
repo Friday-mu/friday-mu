@@ -47,10 +47,8 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Recover prior Calendar work if regressed
 - *Note*: per `ops-convergence-handover.md`, Calendar was parked for a future slice. That slice is now.
 
-### T1.4 — Old CaptureDrawer mock removal
-- Effort: XS · Blocks: nothing (cleanup) · Status: open
-- Dead code in `frontend/src/app/fad/_components/modules/FinanceModule.tsx` after slice 3b wired the real drawer in.
-- Remove the function + its imports cleanly.
+### T1.4 — Old CaptureDrawer mock removal ✓ shipped 2026-05-23
+- Removed in commit (this batch). 338 lines deleted: `CaptureDrawer` + `ReceiptExtraction` + `CaptureProps` interface + orphaned `captureMode` state + orphaned `ApprovalTier` import.
 
 ### T1.5 — Update banner stale-asset detection verification
 - Effort: XS · Blocks: confidence that PR #4's 5-min `/version.json` poll actually fires · Status: open
