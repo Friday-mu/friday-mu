@@ -87,10 +87,10 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 
 ## Tier 2 — Blocking the team
 
-### T2.1 — Inbox: reservation side panel restoration
-- Effort: M · Blocks: Mary, Bryan, Franny daily inbox context · Status: open
-- Restore guest count, financial details, payment / status, reservation status, stay context
-- Live API wiring; not fake.
+### T2.1 — Inbox: reservation side panel restoration ✓ shipped 2026-05-23
+- Investigation finding: the `ReservationRightPanel` component IS comprehensive (Reservation / Financials / Guest / AI handoff / Actions sections, all wired to `thread.reservation`). The bug was that **`@media (max-width: 1180px) { .inbox-right { display: none; } }`** hid the entire panel on tablet + mobile + small laptops.
+- Fix: added a slide-in **"Reservation context" drawer** for narrow viewports (≤1180px). Same `ReservationRightPanel` content. Triggered by a new "Reservation" button in the thread header (only visible when narrow). Desktop ≥1180 keeps the existing inline sidebar.
+- Drawer uses the standard `.fad-drawer` slide-in — full-width on mobile (via the 2026-05-23 PWA fix), capped at 420px on tablet. Safe-area-inset-bottom respected.
 
 ### T2.2 — Inbox: awaiting-reply behavior + placement
 - Effort: S-M · Blocks: triage flow · Status: open
@@ -240,6 +240,7 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-23 (today, this session)
+- **T2.1 — Inbox reservation context drawer for narrow viewports** (this commit) — added slide-in drawer triggered by a new "Reservation" button in thread header, since CSS hid the inline panel below 1180px. Restores reservation context for tablet + mobile + small-laptop operators.
 - **T1.3 partial — Calendar font consistency** (`0dbf21a`) — month-day 11→13px + investigation notes
 - **T1.6 — Stale deploy docs cleanup** (`e41343a`) — rewrote `docs/deploy.md`, deleted dead `deploy.sh` + `deploy-production.sh`, fixed `CLAUDE.md` paths
 - **T1.2 audit — Guesty bookings DO NOT auto-create Ops tasks** (`5872dda`) — promoted to new T3.6 scope item

@@ -199,6 +199,12 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // Narrow = anything that the CSS rule at .inbox-right { display: none }
+  // applies to (≤1180px). Includes mobile + tablet + small-laptop. Drives
+  // the slide-in Reservation drawer fallback so mid-size viewports aren't
+  // left with zero reservation context.
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
   const [aiToolbarExpanded, setAiToolbarExpanded] = useState(false);
   // Collapsed-by-default. Operator clicks the label to expand when
   // they want the summary; otherwise it's wasted vertical space.
@@ -213,10 +219,14 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     setRightCollapsed(localStorage.getItem('fad:inbox:right') === '1');
     const mobile = window.innerWidth <= 768;
     setIsMobile(mobile);
+    setIsNarrow(window.innerWidth <= 1180);
     if (mobile) {
       setComposeCollapsed(true);
     }
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    const onResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+      setIsNarrow(window.innerWidth <= 1180);
+    };
     window.addEventListener('resize', onResize);
     setHydrated(true);
     return () => window.removeEventListener('resize', onResize);
@@ -1114,7 +1124,24 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                 </button>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6, gap: 6, flexWrap: 'wrap' }}>
+              {/* Narrow-viewport (≤1180px) Reservation button — the inline
+                  right panel is hidden by CSS below that breakpoint, so
+                  this drawer is the only way to see financials / payment
+                  status / special requests / AI handoff / guest contact
+                  for tablet + mobile operators. */}
+              {isNarrow && (
+                <button
+                  type="button"
+                  className={'btn ghost sm' + (rightDrawerOpen ? ' active' : '')}
+                  onClick={() => setRightDrawerOpen(true)}
+                  title="Show reservation context, financials, and guest details"
+                  style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
+                  aria-expanded={rightDrawerOpen}
+                >
+                  <IconPin size={10} /> Reservation
+                </button>
+              )}
               <button
                 type="button"
                 className="btn ghost sm"
@@ -1463,6 +1490,41 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
             }}
           />
         </div>
+        {/* Narrow-viewport drawer mount — same ReservationRightPanel content
+            inside a `fad-drawer` overlay. Slides in from the right when the
+            "Reservation" button in the thread header is tapped. Drawer is
+            full-width on phones (via the 2026-05-23 PWA fix) and capped at
+            420px on tablet. */}
+        {isNarrow && rightDrawerOpen && (
+          <>
+            <div className="fad-drawer-overlay open" onClick={() => setRightDrawerOpen(false)} />
+            <aside className="fad-drawer open inbox-context-drawer">
+              <div className="fad-drawer-header">
+                <div className="fad-drawer-title">Reservation context</div>
+                <button
+                  className="fad-util-btn"
+                  onClick={() => setRightDrawerOpen(false)}
+                  title="Close"
+                  style={{ marginLeft: 'auto' }}
+                >
+                  <IconClose />
+                </button>
+              </div>
+              <div className="fad-drawer-body">
+                <ReservationRightPanel
+                  thread={thread}
+                  aiTakeoverBusy={aiTakeoverBusy}
+                  onTakeOverWebsiteAI={handleTakeOverWebsiteAI}
+                  onAskFriday={() => {
+                    setRightDrawerOpen(false);
+                    setConsultOpen(true);
+                    setPendingConsultQuery('Review this reservation and conversation context. What should I know before replying?');
+                  }}
+                />
+              </div>
+            </aside>
+          </>
+        )}
       </div>
     </div>
   );

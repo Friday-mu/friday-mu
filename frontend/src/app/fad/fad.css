@@ -986,7 +986,45 @@ html.fad-dark .send-split-main { color: #0b0d14; }
 
 @media (max-width: 1180px) {
   .inbox-list { width: 260px; flex: 0 0 260px; }
+  /* Inline right panel hidden — replaced on narrow viewports by the
+   * .inbox-context-drawer slide-in (mounted in InboxModule on isNarrow). */
   .inbox-right { display: none; }
+}
+
+/* Inbox reservation drawer — same ReservationRightPanel content as the
+ * inline right rail, but available on tablet + mobile where the inline
+ * version is hidden. Width capped at 420 on tablet, full-screen on
+ * mobile via the .fad-drawer @media rules. The drawer body inherits
+ * scroll behavior + safe-area-bottom padding from .fad-drawer-body. */
+.inbox-context-drawer { width: 420px; }
+.inbox-context-drawer .inbox-right-section {
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.inbox-context-drawer .inbox-right-section:last-child { border-bottom: 0; }
+.inbox-context-drawer .inbox-right-section h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin: 0 0 8px;
+  font-weight: 500;
+}
+.inbox-context-drawer .inbox-right-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.inbox-context-drawer .inbox-right-row .label {
+  color: var(--color-text-tertiary);
+  flex: 0 0 auto;
+}
+.inbox-context-drawer .inbox-right-row .value {
+  color: var(--color-text-primary);
+  text-align: right;
 }
 @media (max-width: 860px) {
   .inbox-list { width: 220px; flex: 0 0 220px; }
