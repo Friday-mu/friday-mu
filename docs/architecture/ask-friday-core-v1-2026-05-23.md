@@ -263,6 +263,7 @@ FAD staff routes:
 - `GET /surfaces`
 - `POST /surfaces`
 - `POST /context-packs`
+- `POST /context-packs/publish`
 - `GET /kb-candidates`
 - `POST /kb-candidates`
 - `PATCH /kb-candidates/:candidateId`
@@ -273,12 +274,18 @@ FAD staff routes:
 - `POST /analyzer/run`
 - `GET /eval-cases`
 - `POST /eval-cases`
+- `GET /eval-runs`
+- `POST /eval-runs`
 
 ## Eval Plan
 
 Start with lightweight JSON eval cases in FAD Postgres, then add runner/tooling.
 
-The current backend includes a manual analyzer endpoint, `POST /api/ask-friday/core/analyzer/run`, which inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
+The current backend includes:
+
+- Manual analyzer endpoint: `POST /api/ask-friday/core/analyzer/run`. It inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
+- Context-pack publisher: `POST /api/ask-friday/core/context-packs/publish`. It requires approved candidate IDs or explicit `manualApproval:true`, then creates a new published context pack version.
+- Deterministic eval runner: `POST /api/ask-friday/core/eval-runs`. It checks eval case shape, privacy redaction, allowed tools, and required knowledge scopes. Checks that require model output are recorded as skipped, not guessed.
 
 Initial suites:
 
@@ -328,7 +335,7 @@ FAD backend/core session:
 
 - Own migrations, contracts, public API routes, review queue routes, eval tables, identity/consent tables.
 - Avoid active FAB UI files until the polish branch is merged or parked.
-- Current branch includes a manual analyzer route. Later: scheduled analyzer workflow, review UI, eval runner, context-pack publisher.
+- Current branch includes a manual analyzer route, context-pack publisher, and deterministic eval runner. Later: scheduled analyzer workflow, review UI, model-backed evals, and context-pack publisher UX.
 
 Website session:
 

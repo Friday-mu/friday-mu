@@ -16,6 +16,8 @@ const {
   safeJson,
 } = require('./contracts');
 const { runAnalyzer } = require('./analyzer');
+const { runEvalSuite } = require('./eval_runner');
+const { publishContextPack } = require('./publisher');
 
 const router = express.Router();
 
@@ -372,6 +374,22 @@ router.post('/context-packs', attachIdentity, async (req, res) => {
     res.status(201).json({ contextPack: shapeContextPack(rows[0]) });
   } catch (error) {
     return respondError(res, error, 'context_pack_write_failed');
+  }
+});
+
+router.post('/context-packs/publish', attachIdentity, async (req, res) => {
+  try {
+    const result = await publishContextPack({
+      ...req.body,
+      tenantId: req.tenantId,
+      approvedBy: req.body?.approvedBy || req.body?.approved_by || actorName(req),
+    });
+    res.status(201).json({
+      contextPack: shapeContextPack(result.contextPack),
+      approvedCandidates: result.approvedCandidates.map(shapeKbCandidate),
+    });
+  } catch (error) {
+    return respondError(res, error, 'context_pack_publish_failed');
   }
 });
 
@@ -821,6 +839,65 @@ router.post('/eval-cases', attachIdentity, async (req, res) => {
     res.status(201).json({ evalCase: shapeEvalCase(rows[0]) });
   } catch (error) {
     return respondError(res, error, 'eval_case_write_failed');
+  }
+});
+
+router.get('/eval-runs', attachIdentity, async (req, res) => {
+  try {
+    const suiteId = cleanString(req.query.suiteId || req.query.suite_id, 160);
+    const params = [req.tenantId];
+    const filters = ['tenant_id = $1'];
+    if (suiteId) {
+      params.push(suiteId);
+      filters.push(`suite_id = $${params.length}`);
+    }
+    const { rows } = await query(
+      `SELECT *
+         FROM ask_friday_eval_runs
+        WHERE ${filters.join(' AND ')}
+        ORDER BY created_at DESC
+        LIMIT ${parseLimit(req.query.limit, 50, 200)}`,
+      params,
+    );
+    res.json({
+      evalRuns: rows.map((row) => ({
+        runId: row.run_id,
+        suiteId: row.suite_id,
+        contextPackId: row.context_pack_id,
+        contextPackVersion: row.context_pack_version,
+        status: row.status,
+        summary: row.summary || {},
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        createdAt: row.created_at,
+      })),
+    });
+  } catch (error) {
+    return respondError(res, error, 'eval_runs_list_failed');
+  }
+});
+
+router.post('/eval-runs', attachIdentity, async (req, res) => {
+  try {
+    const result = await runEvalSuite({
+      ...req.body,
+      tenantId: req.tenantId,
+    });
+    res.status(201).json({
+      evalRun: {
+        runId: result.run.run_id,
+        suiteId: result.run.suite_id,
+        contextPackId: result.run.context_pack_id,
+        contextPackVersion: result.run.context_pack_version,
+        status: result.run.status,
+        summary: result.run.summary || result.summary,
+        startedAt: result.run.started_at,
+        completedAt: result.run.completed_at,
+        createdAt: result.run.created_at,
+      },
+    });
+  } catch (error) {
+    return respondError(res, error, 'eval_run_failed');
   }
 });
 
