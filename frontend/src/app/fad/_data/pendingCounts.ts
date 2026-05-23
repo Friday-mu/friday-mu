@@ -22,6 +22,7 @@ import { REVIEWS } from './reviews';
 import { ROSTERS } from './roster';
 import { PROPERTIES } from './properties';
 import { portfolioInsights } from './properties';
+import { liveOnlyMode } from './demoMode';
 
 const TODAY = '2026-04-27';
 const TODAY_MS = new Date(TODAY).getTime();
@@ -99,6 +100,7 @@ export function pendingOperations(role: Role, userId: string): PendingCount {
 
 export function pendingOperationsApprovals(role: Role): PendingCount {
   if (role !== 'director' && role !== 'ops_manager') return ZERO;
+  if (liveOnlyMode()) return ZERO;
   // Director sees all pending; ops_manager sees medium-tier and below
   const pending = FIN_EXPENSES.filter((e) => {
     if (e.approvalStatus !== 'pending' && e.approvalStatus !== 'partial_proposed') return false;
@@ -205,6 +207,7 @@ export function pendingReviews(role: Role, _userId: string): PendingCount {
 export function pendingFinance(role: Role, _userId: string): PendingCount {
   if (role === 'field' || role === 'external') return ZERO;
   if (role !== 'director' && role !== 'ops_manager') return ZERO;
+  if (liveOnlyMode()) return ZERO;
 
   const approvals = FIN_EXPENSES.filter((e) => {
     if (e.approvalStatus !== 'pending' && e.approvalStatus !== 'partial_proposed') return false;
@@ -230,6 +233,7 @@ export function pendingFinance(role: Role, _userId: string): PendingCount {
 
 export function pendingFinanceApprovals(role: Role): PendingCount {
   if (role !== 'director' && role !== 'ops_manager') return ZERO;
+  if (liveOnlyMode()) return ZERO;
   const pending = FIN_EXPENSES.filter((e) => {
     if (e.approvalStatus !== 'pending' && e.approvalStatus !== 'partial_proposed') return false;
     if (role === 'ops_manager') return e.approvalTier !== 'major';
@@ -294,6 +298,7 @@ export function pendingHR(role: Role, userId: string): PendingCount {
 // ───────────────── Master switchboard ─────────────────
 
 export function pendingCountFor(role: Role, userId: string, moduleId: string): PendingCount {
+  if (liveOnlyMode()) return ZERO;
   switch (moduleId) {
     case 'inbox': return pendingInbox(role, userId);
     case 'operations': return pendingOperations(role, userId);
@@ -308,6 +313,7 @@ export function pendingCountFor(role: Role, userId: string, moduleId: string): P
 }
 
 export function pendingCountForSubpage(role: Role, userId: string, moduleId: string, subPageId: string): PendingCount {
+  if (liveOnlyMode()) return ZERO;
   if (moduleId === 'properties' && subPageId === 'onboarding') return pendingPropertiesOnboarding(role);
   if (moduleId === 'properties' && subPageId === 'insights') return pendingPropertiesInsights(role);
   if (moduleId === 'finance' && subPageId === 'approvals') return pendingFinanceApprovals(role);

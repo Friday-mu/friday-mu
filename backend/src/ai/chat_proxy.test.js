@@ -9,7 +9,13 @@ describe('chat proxy', () => {
 
   beforeEach(() => {
     jest.resetModules();
-    process.env = { ...OLD_ENV, KIMI_API_KEY: 'test-kimi-key', KIMI_CHAT_MODEL: 'kimi-k2.6' };
+    process.env = {
+      ...OLD_ENV,
+      KIMI_API_KEY: 'test-kimi-key',
+      KIMI_CHAT_MODEL: 'kimi-k2.6',
+      GEMINI_API_KEY: 'test-gemini-key',
+      GEMINI_CHAT_MODEL: 'gemini-3.5-flash',
+    };
     axios = require('axios');
     axios.post.mockReset();
   });
@@ -78,6 +84,72 @@ describe('chat proxy', () => {
         role: 'assistant',
         content: '{"answer":"Done"}',
       },
+    });
+  });
+
+  test('routes explicit Gemini Flash requests to the Gemini API', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: {
+        candidates: [
+          {
+            content: { parts: [{ text: '{"answer":"Gemini done"}' }] },
+            finishReason: 'STOP',
+          },
+        ],
+        usageMetadata: { promptTokenCount: 14, candidatesTokenCount: 9, totalTokenCount: 23 },
+      },
+    });
+
+    const { invokeChat } = require('./chat_proxy');
+    const result = await invokeChat({
+      model: 'gemini-3.5-flash',
+      system: 'Return JSON',
+      messages: [{ role: 'user', content: 'answer as JSON' }],
+    });
+
+    expect(axios.post.mock.calls[0][0]).toContain('/models/gemini-3.5-flash:generateContent');
+    expect(axios.post.mock.calls[0][2].headers).toEqual(expect.objectContaining({
+      'x-goog-api-key': 'test-gemini-key',
+    }));
+    expect(result).toMatchObject({
+      ok: true,
+      model: 'gemini-3.5-flash',
+      finishReason: 'STOP',
+      message: { role: 'assistant', content: '{"answer":"Gemini done"}' },
+      usage: { input_tokens: 14, output_tokens: 9, total_tokens: 23 },
+    });
+  });
+
+  test('falls back from Gemini to the default Kimi model on provider failure', async () => {
+    axios.post
+      .mockRejectedValueOnce({
+        response: { status: 429, data: { error: { message: 'quota exceeded' } } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"answer":"Kimi fallback"}' },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+        },
+      });
+
+    const { invokeChat } = require('./chat_proxy');
+    const result = await invokeChat({
+      model: 'gemini-3.5-flash',
+      messages: [{ role: 'user', content: 'answer as JSON' }],
+    });
+
+    expect(axios.post.mock.calls[0][0]).toContain('/models/gemini-3.5-flash:generateContent');
+    expect(axios.post.mock.calls[1][1]).toEqual(expect.objectContaining({ model: 'kimi-k2.6' }));
+    expect(result).toMatchObject({
+      ok: true,
+      model: 'kimi-k2.6',
+      fallbackUsed: true,
+      message: { role: 'assistant', content: '{"answer":"Kimi fallback"}' },
     });
   });
 

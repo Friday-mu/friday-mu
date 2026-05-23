@@ -2,7 +2,7 @@
 
 // Public-chat proxy — multi-provider chat-completions for /api/public/chat.
 //
-// Centralises Kimi (Moonshot) + Anthropic chat surfaces so that
+// Centralises Gemini + Kimi (Moonshot) + Anthropic chat surfaces so that
 // friday.mu can drop its three direct API integrations (Ask Friday
 // hero, owner-enquiry chat, feedback FAB chat) per the FAD-HANDOFF-
 // PUBLIC-CHAT-2026-05-18 brief.
@@ -23,7 +23,9 @@
 //   "kimi-k2"          → kimi-k2.6  (Moonshot)
 //   "kimi-k2.6"        → kimi-k2.6  (alias)
 //   "claude-sonnet-4-6"→ claude-sonnet-4-5  (Anthropic)
+//   "gemini-3.5-flash"→ Gemini API
 //   "auto" (default)   → try Kimi first, fall back to Claude on 429
+//   explicit Gemini    → try Gemini first, fall back to Kimi on 429/5xx
 //
 // Tool calls flow through verbatim in OpenAI shape (Kimi already speaks
 // it; we convert Anthropic's tool_use blocks to that shape on the way
@@ -39,12 +41,16 @@ const { recordUsage } = require('../tenants/ai_usage');
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const KIMI_API_KEY = process.env.KIMI_API_KEY;
+const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NANOBANANA_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 const KIMI_CHAT_MODEL = process.env.KIMI_CHAT_MODEL || 'kimi-k2.6';
+const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
 const ANTHROPIC_CHAT_MODEL = process.env.ANTHROPIC_CHAT_MODEL || 'claude-sonnet-4-5';
 
 const KIMI_TIMEOUT_MS = Number(process.env.KIMI_CHAT_TIMEOUT_MS) || 55_000;
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_CHAT_TIMEOUT_MS) || 45_000;
 const ANTHROPIC_TIMEOUT_MS = Number(process.env.ANTHROPIC_CHAT_TIMEOUT_MS) || 55_000;
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
@@ -74,6 +80,7 @@ function logUsage(meter, fields) {
 function resolveProvider(model) {
   const m = String(model || 'auto').toLowerCase();
   if (m === 'auto') return 'auto';
+  if (m.startsWith('gemini') || m.startsWith('google/')) return 'gemini';
   if (m.startsWith('kimi') || m.startsWith('moonshot')) return 'kimi';
   if (m.startsWith('claude')) return 'anthropic';
   return 'auto'; // unknown → safe fallback
@@ -84,9 +91,112 @@ function resolveKimiModel(model) {
   return String(model);
 }
 
+function resolveGeminiModel(model) {
+  const m = String(model || '').replace(/^google\//, '');
+  if (!m || m === 'auto' || m === 'gemini-flash' || m === 'gemini-3.5-flash') return GEMINI_CHAT_MODEL;
+  return m;
+}
+
 function resolveAnthropicModel(model) {
   if (!model || model === 'auto' || model === 'claude-sonnet-4-6') return ANTHROPIC_CHAT_MODEL;
   return String(model);
+}
+
+function providerOrder(provider, { stream = false } = {}) {
+  if (provider === 'auto') return ['kimi', 'anthropic'];
+  if (provider === 'gemini') return stream ? ['kimi'] : ['gemini', 'kimi'];
+  return [provider];
+}
+
+function modelForProvider(model, provider, targetProvider) {
+  return provider === targetProvider ? model : 'auto';
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Gemini — non-streaming
+// ────────────────────────────────────────────────────────────────────
+
+function geminiContents(messages) {
+  return (messages || [])
+    .filter((m) => m.role !== 'system')
+    .map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: typeof m.content === 'string' ? m.content : String(m.content || '') }],
+    }))
+    .filter((m) => m.parts[0].text);
+}
+
+function geminiText(candidate) {
+  const parts = candidate?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map((part) => part?.text || '').join('');
+}
+
+async function invokeGemini({ system, messages, tools, model, maxTokens, timeoutMs }) {
+  if (!GEMINI_API_KEY) {
+    return { ok: false, error: 'GEMINI_API_KEY not set', status: 500 };
+  }
+  if (Array.isArray(tools) && tools.length > 0) {
+    return { ok: false, error: 'Gemini tool-call adapter is not enabled in chat_proxy', status: 501 };
+  }
+
+  const start = Date.now();
+  const m = resolveGeminiModel(model);
+  const body = {
+    ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    contents: geminiContents(messages),
+    generationConfig: {
+      maxOutputTokens: maxTokens || 4096,
+      temperature: 0.4,
+    },
+  };
+  try {
+    const { data } = await axios.post(
+      `${GEMINI_BASE_URL}/models/${encodeURIComponent(m)}:generateContent`,
+      body,
+      {
+        headers: { 'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json' },
+        timeout: timeoutMs || GEMINI_TIMEOUT_MS,
+      },
+    );
+    const candidate = data?.candidates?.[0];
+    const text = geminiText(candidate);
+    const finishReason = candidate?.finishReason || 'unknown';
+    const usage = data?.usageMetadata || {};
+    if (!String(text).trim()) {
+      return {
+        ok: false,
+        error: `empty response (finish_reason=${finishReason})`,
+        status: 502,
+        usage: {
+          input_tokens: usage.promptTokenCount ?? null,
+          output_tokens: usage.candidatesTokenCount ?? null,
+          total_tokens: usage.totalTokenCount ?? null,
+        },
+        finishReason,
+        latencyMs: Date.now() - start,
+      };
+    }
+    return {
+      ok: true,
+      message: { role: 'assistant', content: text },
+      usage: {
+        input_tokens: usage.promptTokenCount ?? null,
+        output_tokens: usage.candidatesTokenCount ?? null,
+        total_tokens: usage.totalTokenCount ?? null,
+      },
+      model: m,
+      finishReason,
+      latencyMs: Date.now() - start,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.response?.data?.error?.message || e.message,
+      status: e.response?.status || 500,
+      latencyMs: Date.now() - start,
+    };
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -488,18 +598,23 @@ function shouldFallback(result) {
 
 async function invokeChat({ system, messages, tools, model, maxTokens, meter, timeoutMs }) {
   const provider = resolveProvider(model);
-  const order = provider === 'auto' ? ['kimi', 'anthropic'] : [provider];
+  const order = providerOrder(provider);
   let result;
   let fallbackUsed = false;
 
   for (let i = 0; i < order.length; i++) {
     const p = order[i];
-    result = p === 'kimi'
-      ? await invokeKimi({ system, messages, tools, model, maxTokens, timeoutMs })
-      : await invokeAnthropic({ system, messages, tools, model, maxTokens, timeoutMs });
+    const providerModel = modelForProvider(model, provider, p);
+    if (p === 'gemini') {
+      result = await invokeGemini({ system, messages, tools, model: providerModel, maxTokens, timeoutMs });
+    } else if (p === 'kimi') {
+      result = await invokeKimi({ system, messages, tools, model: providerModel, maxTokens, timeoutMs });
+    } else {
+      result = await invokeAnthropic({ system, messages, tools, model: providerModel, maxTokens, timeoutMs });
+    }
     logUsage(meter, {
-      provider: p === 'kimi' ? 'moonshot' : 'anthropic',
-      model: result.model || (p === 'kimi' ? resolveKimiModel(model) : resolveAnthropicModel(model)),
+      provider: p === 'gemini' ? 'google' : p === 'kimi' ? 'moonshot' : 'anthropic',
+      model: result.model || (p === 'gemini' ? resolveGeminiModel(providerModel) : p === 'kimi' ? resolveKimiModel(providerModel) : resolveAnthropicModel(providerModel)),
       promptTokens: result.usage?.input_tokens,
       completionTokens: result.usage?.output_tokens,
       durationMs: result.latencyMs,
@@ -521,7 +636,7 @@ async function invokeChat({ system, messages, tools, model, maxTokens, meter, ti
 
 async function streamChat({ system, messages, tools, model, maxTokens, meter, res }) {
   const provider = resolveProvider(model);
-  const order = provider === 'auto' ? ['kimi', 'anthropic'] : [provider];
+  const order = providerOrder(provider, { stream: true });
 
   // Start SSE response headers ONCE up front. If the primary fails
   // before emitting any chunk, the fallback also writes to this same
@@ -538,12 +653,13 @@ async function streamChat({ system, messages, tools, model, maxTokens, meter, re
 
   for (let i = 0; i < order.length; i++) {
     const p = order[i];
+    const providerModel = modelForProvider(model, provider, p);
     result = p === 'kimi'
-      ? await streamKimi({ system, messages, tools, model, maxTokens, res })
-      : await streamAnthropic({ system, messages, tools, model, maxTokens, res });
+      ? await streamKimi({ system, messages, tools, model: providerModel, maxTokens, res })
+      : await streamAnthropic({ system, messages, tools, model: providerModel, maxTokens, res });
     logUsage(meter, {
       provider: p === 'kimi' ? 'moonshot' : 'anthropic',
-      model: result.model || (p === 'kimi' ? resolveKimiModel(model) : resolveAnthropicModel(model)),
+      model: result.model || (p === 'kimi' ? resolveKimiModel(providerModel) : resolveAnthropicModel(providerModel)),
       promptTokens: result.inputTokens ?? result.usage?.input_tokens,
       completionTokens: result.outputTokens ?? result.usage?.output_tokens,
       durationMs: result.latencyMs,
@@ -573,6 +689,7 @@ module.exports = {
   streamChat,
   // Exported for unit tests / inspection
   resolveProvider,
+  resolveGeminiModel,
   resolveKimiModel,
   resolveAnthropicModel,
 };

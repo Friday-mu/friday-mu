@@ -44,6 +44,8 @@ describe('FAD Ask Friday helpers', () => {
     expect(prompt).toContain('Reviews');
     expect(prompt).toContain('Design');
     expect(prompt).toContain('mauritiusCalendar');
+    expect(prompt).toContain('context.dataTruth');
+    expect(prompt).toContain('demo/fixture');
     expect(prompt).toContain('Do not use markdown tables');
     expect(prompt).toContain('Return JSON only');
   });
@@ -59,6 +61,14 @@ describe('FAD Ask Friday helpers', () => {
       today: _test.todayInMauritius(),
       tomorrow: _test.addDays(_test.todayInMauritius(), 1),
     });
+  });
+
+  test('declares live-only context truth and excluded fixture modules', () => {
+    expect(_test.contextDataTruth()).toEqual(expect.objectContaining({
+      mode: 'live-only',
+      fixtureDataExcluded: true,
+      excludedModules: expect.arrayContaining(['finance', 'calendar', 'training', 'notifications']),
+    }));
   });
 
   test('selects module context from question and scope', () => {
@@ -96,8 +106,8 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.ASK_FRIDAY_MAX_TOKENS).toBeGreaterThanOrEqual(4096);
   });
 
-  test('uses Claude by default and keeps provider timeouts below the edge gateway timeout', () => {
-    expect(_test.ASK_FRIDAY_MODEL).toMatch(/^claude/);
+  test('uses Gemini Flash by default and keeps provider timeouts below the edge gateway timeout', () => {
+    expect(_test.ASK_FRIDAY_MODEL).toBe('gemini-3.5-flash');
     expect(_test.ASK_FRIDAY_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(50_000);
     expect(_test.ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
   });
@@ -234,6 +244,24 @@ describe('FAD Ask Friday helpers', () => {
     })).toEqual(expect.objectContaining({
       payload: expect.objectContaining({ channelKey: 'ops', text: 'Can someone check RC-16?' }),
     }));
+  });
+
+  test('rejects direct execution when action risk does not match the registry', () => {
+    expect(_test.actionPolicyError({
+      type: 'create_task',
+      risk: 'approval',
+      label: 'Create risky task',
+      module: 'operations',
+      payload: { title: 'Change access code' },
+    })).toContain('risk mismatch');
+
+    expect(_test.actionPolicyError({
+      type: 'request_approval',
+      risk: 'approval',
+      label: 'Request approval',
+      module: 'reservations',
+      payload: { actionType: 'reservation_change' },
+    })).toBeNull();
   });
 
   test('adds deterministic task action when operator asks Ask Friday to create an ops task', () => {
@@ -391,5 +419,25 @@ describe('FAD Ask Friday action execution', () => {
       }),
     }));
     expect(res.body.summary).toBe('Approval request created: approval-1');
+  });
+
+  test('does not execute approval-risk actions through safe tools', async () => {
+    const res = await request(app())
+      .post('/friday/actions/execute')
+      .send({
+        action: {
+          type: 'create_task',
+          risk: 'approval',
+          label: 'Create access task',
+          module: 'operations',
+          payload: { title: 'Change a guest access code' },
+        },
+      })
+      .expect(400);
+
+    expect(callTool).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({
+      error: 'ask_friday_action_policy_rejected',
+    });
   });
 });

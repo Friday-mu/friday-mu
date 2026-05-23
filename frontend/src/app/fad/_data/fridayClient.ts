@@ -15,7 +15,23 @@ export interface AskFridayResponse {
   fallbackUsed?: boolean;
   contextSummary?: {
     requestedModules: string[];
-    sourceStatus: Array<{ name: string; ok: boolean; error?: string | null }>;
+    dataTruth?: {
+      mode: string;
+      fixtureDataExcluded: boolean;
+      excludedModules: string[];
+      policy: string;
+    };
+    sourceStatus: Array<{
+      name: string;
+      ok: boolean;
+      source?: {
+        kind: string;
+        demo: boolean;
+        freshness: string;
+        checkedAt: string;
+      } | null;
+      error?: string | null;
+    }>;
   };
 }
 
@@ -43,9 +59,11 @@ export function askFriday(input: {
   question: string;
   scope: string;
   history?: AskFridayHistoryTurn[];
+  signal?: AbortSignal;
 }): Promise<AskFridayResponse> {
   return apiFetch('/api/friday/ask', {
     method: 'POST',
+    signal: input.signal,
     body: JSON.stringify({
       question: input.question,
       scope: input.scope,

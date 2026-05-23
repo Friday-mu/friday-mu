@@ -12,13 +12,35 @@ const router = express.Router();
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const MAX_QUESTION_CHARS = 1200;
 const MAX_HISTORY_TURNS = 8;
-const ASK_FRIDAY_MODEL = process.env.FAD_ASK_MODEL || 'claude-sonnet-4-6';
+const ASK_FRIDAY_MODEL = process.env.FAD_ASK_MODEL || 'gemini-3.5-flash';
 const ASK_FRIDAY_MAX_TOKENS = Number(process.env.KIMI_FAD_ASK_MAX_TOKENS) || 4096;
 const ASK_FRIDAY_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_PROVIDER_TIMEOUT_MS) || 45_000;
 const ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_AUTO_PROVIDER_TIMEOUT_MS) || 25_000;
 const ACTION_TYPES = new Set(['navigate', 'create_task', 'send_team_message', 'request_approval']);
 const ACTION_RISKS = new Set(['navigation', 'safe', 'approval']);
 const ACTION_MODULES = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+const ACTION_REGISTRY = {
+  navigate: {
+    risk: 'navigation',
+    tool: null,
+    direct: true,
+  },
+  create_task: {
+    risk: 'safe',
+    tool: 'tasks.create',
+    direct: true,
+  },
+  send_team_message: {
+    risk: 'safe',
+    tool: 'team.message.send',
+    direct: true,
+  },
+  request_approval: {
+    risk: 'approval',
+    tool: 'action.request.create',
+    direct: false,
+  },
+};
 const MODULE_LABELS = {
   inbox: 'Inbox',
   operations: 'Operations',
@@ -27,6 +49,27 @@ const MODULE_LABELS = {
   design: 'Design',
   reservations: 'Reservations',
   properties: 'Properties',
+};
+const ASK_FRIDAY_CONTEXT_MODULES = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+const ASK_FRIDAY_EXCLUDED_DEMO_MODULES = [
+  'finance',
+  'calendar',
+  'training',
+  'analytics',
+  'guests',
+  'owners',
+  'notifications',
+];
+const SECTION_SOURCE_KIND = {
+  inbox: 'fad_db',
+  guest_inbox: 'fad_db',
+  website_ai_handoffs: 'fad_db',
+  operations: 'fad_db',
+  hr: 'fad_db',
+  reviews: 'guesty_api',
+  design: 'fad_db',
+  reservations: 'fad_db',
+  properties: 'fad_db',
 };
 
 function cleanString(value, max = 500) {
@@ -164,6 +207,19 @@ function cleanAction(raw, index = 0) {
     module: module || null,
     payload,
   };
+}
+
+function actionPolicyError(action) {
+  const policy = ACTION_REGISTRY[action?.type];
+  if (!policy) return 'unsupported action type';
+  if (action.type === 'navigate') return null;
+  if (action.risk !== policy.risk) {
+    return `risk mismatch: ${action.type} must be ${policy.risk}`;
+  }
+  if (action.risk === 'approval' && action.type !== 'request_approval') {
+    return 'approval-risk actions must be routed through request_approval';
+  }
+  return null;
 }
 
 function sanitizeActions(actions) {
@@ -378,11 +434,30 @@ function shouldLoad({ question, scope }, module) {
   return false;
 }
 
+function sectionSource(name) {
+  return {
+    kind: SECTION_SOURCE_KIND[name] || 'live_api',
+    demo: false,
+    freshness: 'live',
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+function contextDataTruth() {
+  return {
+    mode: 'live-only',
+    fixtureDataExcluded: true,
+    excludedModules: ASK_FRIDAY_EXCLUDED_DEMO_MODULES,
+    policy: 'Ask Friday context loaders must use live database/API sources only. Fixture/demo module data is excluded from production prompts.',
+  };
+}
+
 async function safeSection(name, loader) {
+  const source = sectionSource(name);
   try {
-    return { name, ok: true, data: await loader() };
+    return { name, ok: true, source, data: await loader() };
   } catch (e) {
-    return { name, ok: false, error: cleanString(e.message, 240) };
+    return { name, ok: false, source, error: cleanString(e.message, 240) };
   }
 }
 
@@ -706,7 +781,7 @@ async function loadPropertiesContext(tenantId) {
 }
 
 async function loadFridayContext({ tenantId, question, scope }) {
-  const requested = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties']
+  const requested = ASK_FRIDAY_CONTEXT_MODULES
     .filter((module) => shouldLoad({ question, scope }, module));
   const effective = requested.length > 0 ? requested : ['inbox', 'operations', 'reservations', 'properties'];
   const loaders = {
@@ -723,6 +798,7 @@ async function loadFridayContext({ tenantId, question, scope }) {
     tenantId,
     requestedModules: effective,
     checkedAt: new Date().toISOString(),
+    dataTruth: contextDataTruth(),
     sections,
   };
 }
@@ -746,6 +822,7 @@ Purpose:
 
 Rules:
 - Use only the supplied context. If a source is unavailable or missing, say that plainly.
+- Treat context.dataTruth as binding. Never infer from, cite, summarize, or act on demo/fixture module data. If a module is excluded because it is not live-wired yet, say that plainly.
 - Keep ownership boundaries clear: Inbox owns guest communication context; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
 - Prefer concise operational answers: answer first, then the evidence or next check.
 - Do not use markdown tables. Use compact bullets so the FAD panel stays readable on desktop and mobile.
@@ -836,6 +913,8 @@ router.post('/actions/execute', attachIdentity, async (req, res) => {
   try {
     const action = cleanAction(req.body?.action || req.body, 0);
     if (!action) return res.status(400).json({ error: 'valid action is required' });
+    const policyError = actionPolicyError(action);
+    if (policyError) return res.status(400).json({ error: 'ask_friday_action_policy_rejected', details: policyError });
     if (action.type === 'navigate') {
       return res.json({ ok: true, action, result: { module: action.module }, summary: `Opened ${action.module}` });
     }
@@ -844,13 +923,13 @@ router.post('/actions/execute', attachIdentity, async (req, res) => {
     let toolName;
     let args;
     if (action.type === 'create_task') {
-      toolName = 'tasks.create';
+      toolName = ACTION_REGISTRY.create_task.tool;
       args = action.payload;
     } else if (action.type === 'send_team_message') {
-      toolName = 'team.message.send';
+      toolName = ACTION_REGISTRY.send_team_message.tool;
       args = action.payload;
     } else if (action.type === 'request_approval') {
-      toolName = 'action.request.create';
+      toolName = ACTION_REGISTRY.request_approval.tool;
       args = action.payload;
     } else {
       return res.status(400).json({ error: 'unsupported action type' });
@@ -908,7 +987,13 @@ router.post('/ask', attachIdentity, async (req, res) => {
       fallbackUsed: !!result.fallbackUsed,
       contextSummary: {
         requestedModules: context.requestedModules,
-        sourceStatus: context.sections.map((s) => ({ name: s.name, ok: s.ok, error: s.error || null })),
+        dataTruth: context.dataTruth,
+        sourceStatus: context.sections.map((s) => ({
+          name: s.name,
+          ok: s.ok,
+          source: s.source || null,
+          error: s.error || null,
+        })),
       },
       usage: result.usage || null,
     });
@@ -926,8 +1011,10 @@ module.exports = {
     parseModelResponse,
     sanitizeHistory,
     cleanAction,
+    actionPolicyError,
     sanitizeActions,
     deterministicActions,
+    contextDataTruth,
     todayInMauritius,
     addDays,
     isBroadAllFadQuestion,
