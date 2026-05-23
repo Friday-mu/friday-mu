@@ -683,7 +683,19 @@ function Body({
         <PropertyContextPanel task={task} canViewSensitiveContext={canViewSensitiveContext} />
       </Section>
 
-      {onReportIssue && canEdit && (
+      {/* Bug fix (2026-05-23, Franny feedback af4d... 10:52) — was
+          previously gated on `canEdit` (= can-manage-tasks OR assigned
+          to the task), which hid the Report button from field staff
+          looking at any task they weren't directly assigned to. Per
+          the Ops convergence handover ("Field staff should be able to
+          report issues from My Tasks without duplicated issue
+          buttons"), reporting is a non-destructive action that creates
+          a separate triage task — anyone who can see the source task
+          should be able to flag a related issue from it. The parent
+          module (OperationsModule.openAssignedIssueReport) already
+          gates whether reporting is available at all; if it passes
+          onReportIssue, we show the button. */}
+      {onReportIssue && (
         <Section title="Report related issue">
           <div className="ops-related-report">
             <span>
