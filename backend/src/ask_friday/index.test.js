@@ -313,4 +313,119 @@ describe('Ask Friday Core router', () => {
     expect(query.mock.calls[0][1][0]).toBe(TENANT_ID);
     expect(query.mock.calls[1][1][3]).toBe('friday-website');
   });
+
+  test('publishes context packs from approved KB candidates through staff route', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          candidate_id: 'cand-1',
+          candidate_type: 'behavior_rule',
+          target_layer: 'surface_behavior',
+          proposed_change: { add: 'Ask one follow-up.' },
+          source_event_ids: ['evt-1'],
+          evidence_summary: 'Approved evidence.',
+          risk_class: 'medium',
+          trust_tier: 'surface_evidence',
+          review_status: 'approved',
+          reviewer: 'Ishant Sagoo',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ next_version: 5 }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          pack_id: 'website_ask_friday_fab_v5',
+          surface_id: 'website_ask_friday_fab',
+          version: 5,
+          status: 'published',
+          knowledge_scopes: ['public_brand'],
+          behavior_rules: [{ id: 'ask_one_followup' }],
+          tool_policy: { allowedTools: ['search_residences'] },
+          memory_policy: { anonymous: 'session_only' },
+          source_snapshot_refs: [{ type: 'kb_candidate', candidateId: 'cand-1' }],
+          pack_payload: { compactPrompt: 'Approved context' },
+          approved_by: 'Ishant Sagoo',
+          approved_at: new Date('2026-05-23T08:00:00.000Z'),
+          published_at: new Date('2026-05-23T08:00:00.000Z'),
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/context-packs/publish')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        surfaceId: 'website_ask_friday_fab',
+        candidateIds: ['cand-1'],
+        knowledgeScopes: ['public_brand'],
+        behaviorRules: [{ id: 'ask_one_followup' }],
+        toolPolicy: { allowedTools: ['search_residences'] },
+        memoryPolicy: { anonymous: 'session_only' },
+        packPayload: { compactPrompt: 'Approved context' },
+      })
+      .expect(201);
+
+    expect(res.body.contextPack).toMatchObject({
+      packId: 'website_ask_friday_fab_v5',
+      status: 'published',
+      approvedBy: 'Ishant Sagoo',
+    });
+    expect(res.body.approvedCandidates).toHaveLength(1);
+    expect(query).toHaveBeenCalledTimes(4);
+  });
+
+  test('records deterministic eval runs from active eval cases', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          pack_id: 'website_ask_friday_fab_v5',
+          surface_id: 'website_ask_friday_fab',
+          version: 5,
+          status: 'published',
+          knowledge_scopes: ['public_residences'],
+          tool_policy: { allowedTools: ['search_residences'] },
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          eval_id: 'eval-1',
+          suite_id: 'website_ask_friday_fab_regression',
+          surface_id: 'website_ask_friday_fab',
+          source_event_ids: ['evt-1'],
+          input_payload: { promptSummary: 'Asked for a residence.', toolsUsed: ['search_residences'] },
+          expected: { requiredKnowledgeScopes: ['public_residences'] },
+          assertions: [{ type: 'privacy_redaction' }, { type: 'tool_policy' }, { type: 'grounding' }],
+          status: 'active',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          run_id: 'run-1',
+          suite_id: 'website_ask_friday_fab_regression',
+          context_pack_id: 'website_ask_friday_fab_v5',
+          context_pack_version: 5,
+          status: 'completed',
+          summary: { cases: 1, failedCases: 0, status: 'passed' },
+          started_at: new Date('2026-05-23T08:00:00.000Z'),
+          completed_at: new Date('2026-05-23T08:00:00.000Z'),
+          created_at: new Date('2026-05-23T08:00:00.000Z'),
+        }],
+      });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/eval-runs')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        runId: 'run-1',
+        suiteId: 'website_ask_friday_fab_regression',
+        surfaceId: 'website_ask_friday_fab',
+      })
+      .expect(201);
+
+    expect(res.body.evalRun).toMatchObject({
+      runId: 'run-1',
+      status: 'completed',
+      contextPackId: 'website_ask_friday_fab_v5',
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+  });
 });

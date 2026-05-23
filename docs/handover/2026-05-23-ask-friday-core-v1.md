@@ -14,11 +14,15 @@ Added a FAD-owned Ask Friday Core V1 scaffold:
 - Migration: `backend/migrations/074_ask_friday_core.sql`
 - Contract normalizers: `backend/src/ask_friday/contracts.js`
 - Manual analyzer: `backend/src/ask_friday/analyzer.js`
+- Context-pack publisher: `backend/src/ask_friday/publisher.js`
+- Deterministic eval runner: `backend/src/ask_friday/eval_runner.js`
 - Core router: `backend/src/ask_friday/index.js`
 - Server mount: `backend/server.js` at `/api/ask-friday/core`
 - Tests:
   - `backend/src/ask_friday/contracts.test.js`
   - `backend/src/ask_friday/analyzer.test.js`
+  - `backend/src/ask_friday/publisher.test.js`
+  - `backend/src/ask_friday/eval_runner.test.js`
   - `backend/src/ask_friday/index.test.js`
 - Architecture note: `docs/architecture/ask-friday-core-v1-2026-05-23.md`
 
@@ -55,6 +59,7 @@ FAD staff routes:
 - `GET /surfaces`
 - `POST /surfaces`
 - `POST /context-packs`
+- `POST /context-packs/publish`
 - `GET /kb-candidates`
 - `POST /kb-candidates`
 - `PATCH /kb-candidates/:candidateId`
@@ -65,6 +70,8 @@ FAD staff routes:
 - `POST /analyzer/run`
 - `GET /eval-cases`
 - `POST /eval-cases`
+- `GET /eval-runs`
+- `POST /eval-runs`
 
 ## Verification
 
@@ -76,7 +83,7 @@ npm ci
 npm test -- ask_friday
 ```
 
-Result after analyzer slice: 3 suites passed, 15 tests passed.
+Result after publisher/eval-runner slice: 5 suites passed, 23 tests passed.
 
 Note: `npm ci` reported existing dependency audit issues from the repo lockfile: 12 vulnerabilities, 9 moderate and 3 high. This branch did not change dependencies.
 
@@ -105,7 +112,7 @@ No new public/product surface should use the earlier mistaken label. FridayOS re
 - Scheduled/background learning analyzer worker.
 - Review queue UI.
 - Context-pack publisher UI/process.
-- Eval runner.
+- Model-backed eval runner and eval UI.
 - Website emitters and context-pack consumption.
 - Public MCP implementation.
 - Direct booking/payment/write execution.
@@ -121,7 +128,7 @@ No new public/product surface should use the earlier mistaken label. FridayOS re
 2. FAD review queue:
    - List/filter pending KB candidates.
    - Approve/reject/needs-info with Ishant as default reviewer.
-   - Publish a new context pack only after explicit approval.
+   - Call the existing context-pack publisher only after explicit approval.
 
 3. Website emitters:
    - Guest hero, Ask Friday FAB, owner enquiry, feedback FAB.
@@ -129,8 +136,8 @@ No new public/product surface should use the earlier mistaken label. FridayOS re
    - Preserve takeover stop conditions.
 
 4. Eval runner:
-   - Start with JSON fixtures from `ask_friday_eval_cases`.
-   - Score grounding, routing, handoff, action safety, privacy, language match.
+   - Extend deterministic `eval_runner.js` with model-backed trace scoring.
+   - Score final answer quality, handoff correctness, action safety, language match, and low-confidence honesty.
 
 ## Coordination Notes
 
@@ -148,7 +155,7 @@ No new public/product surface should use the earlier mistaken label. FridayOS re
 ```plain text
 Ask Friday Core V1 backend scaffold is on FAD branch codex/ask-friday-core-v1-20260523.
 
-It adds migration 074, contract normalizers, a manual analyzer, /api/ask-friday/core routes, tests, and docs. It does not touch Website or active FAD FAB UI files. Focused tests pass: npm test -- ask_friday, 3 suites / 15 tests.
+It adds migration 074, contract normalizers, a manual analyzer, context-pack publisher, deterministic eval runner, /api/ask-friday/core routes, tests, and docs. It does not touch Website or active FAD FAB UI files. Focused tests pass: npm test -- ask_friday, 5 suites / 23 tests.
 
 Public routes are API-client scoped:
 - ask-friday:events:write
@@ -158,5 +165,5 @@ Public routes are API-client scoped:
 
 Staff routes are standard FAD JWT auth.
 
-Next safe slice: review queue or scheduled analyzer workflow. Do not implement auto-publish. Do not expose private staff/owner/guest/payment/secret data. User-facing name is Ask Friday.
+Next safe slice: review queue UI/API polish or scheduled analyzer workflow. Do not implement auto-publish. Do not expose private staff/owner/guest/payment/secret data. User-facing name is Ask Friday.
 ```
