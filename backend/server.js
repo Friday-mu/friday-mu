@@ -939,6 +939,8 @@ app.use('/api/public/chat', publicChatRoutes);
 // because the router handles tenant scoping itself.
 const fadFridayRoutes = require('./src/fad/friday');
 app.use('/api/friday', fadFridayRoutes.router);
+const askFridayCoreRoutes = require('./src/ask_friday');
+app.use('/api/ask-friday/core', askFridayCoreRoutes.router);
 
 // Defensive multitenant lockdown — applied to every route mounted
 // below this line. Non-FR tenants get 403 on any non-design / non-
