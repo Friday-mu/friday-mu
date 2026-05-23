@@ -106,10 +106,15 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.ASK_FRIDAY_MAX_TOKENS).toBeGreaterThanOrEqual(4096);
   });
 
-  test('uses Gemini Flash by default and keeps provider timeouts below the edge gateway timeout', () => {
+  test('uses Gemini Flash by default with provider timeouts within the new generous nginx edge ceiling', () => {
+    // 2026-05-23 — nginx /api/ proxy_read_timeout bumped 60s → 600s so
+    // app-side timeouts can be generous. Provider timeout is allowed
+    // up to 8 min (480s); auto-mode stays snappier (interactive) at
+    // ≤90s. Both must stay strictly under the nginx ceiling so a
+    // hanging model is still cut server-side (not by nginx 504).
     expect(_test.ASK_FRIDAY_MODEL).toBe('gemini-3.5-flash');
-    expect(_test.ASK_FRIDAY_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(50_000);
-    expect(_test.ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
+    expect(_test.ASK_FRIDAY_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(540_000);
+    expect(_test.ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(120_000);
   });
 
   test('shapes Airbnb Guesty reviews from rawReview fields for Ask Friday context', () => {

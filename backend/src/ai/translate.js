@@ -173,7 +173,10 @@ async function callKimi(text) {
           Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000,
+        // 2026-05-23 — bumped 30s → 90s. Translation calls are
+        // typically <5s but Kimi tail-latency can spike. Coordinated
+        // with nginx proxy_read_timeout (60s → 600s).
+        timeout: 90_000,
       },
     );
     const raw = data?.choices?.[0]?.message?.content;

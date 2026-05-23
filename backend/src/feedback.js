@@ -33,7 +33,10 @@ const router = express.Router();
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
-const KIMI_TIMEOUT_MS = 20_000;
+// 2026-05-23 — bumped 20s → 90s. Interactive feedback chat clarifier;
+// 90s is generous for a single-turn follow-up question. Coordinated
+// with nginx proxy_read_timeout (60s → 600s).
+const KIMI_TIMEOUT_MS = 90_000;
 
 // Gemini multimodal — used for the chat clarifier when the frontend
 // attaches a viewport screenshot. Lets Friday actually see what the user
@@ -44,7 +47,7 @@ const KIMI_TIMEOUT_MS = 20_000;
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NANOBANANA_API_KEY;
 const GEMINI_FEEDBACK_VISION_MODEL = process.env.GEMINI_FEEDBACK_VISION_MODEL || process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash';
-const GEMINI_FEEDBACK_TIMEOUT_MS = Number(process.env.GEMINI_FEEDBACK_TIMEOUT_MS) || 30_000;
+const GEMINI_FEEDBACK_TIMEOUT_MS = Number(process.env.GEMINI_FEEDBACK_TIMEOUT_MS) || 90_000;
 // 1.5 MB raw base64 cap. The full feedback submission accepts up to 5 MB
 // (MAX_SCREENSHOT_BYTES below) for archival; the chat clarifier sees a
 // smaller window because we pay model latency on each turn. The final

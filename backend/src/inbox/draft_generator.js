@@ -56,13 +56,17 @@ Do not write the visible operator draft in the guest's language.
 The approve/send path translates the English operator draft back into the guest's language immediately before sending.
 `;
 
-const DRAFT_PRIMARY_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_PRIMARY_TIMEOUT_MS) || 90_000;
+// 2026-05-23 — timeouts bumped 90s/45s → 8min/5min. Coordinated with
+// nginx proxy_read_timeout bump (60s → 600s). kimi_draft tries Gemini
+// first (typically <15s); the long ceiling covers Kimi fallback on
+// reasoning-heavy prompts.
+const DRAFT_PRIMARY_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_PRIMARY_TIMEOUT_MS) || 480_000;
 const DRAFT_PRIMARY_MAX_RETRIES = Number(process.env.KIMI_DRAFT_PRIMARY_MAX_RETRIES) || 0;
 // The fallback is a compact prompt, not a small-context model. Compact KB plus
 // reservation/history context can still exceed 8K, so keep K2.6 unless ops
 // explicitly overrides it.
 const DRAFT_FALLBACK_MODEL = process.env.KIMI_DRAFT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || DRAFT_MODEL;
-const DRAFT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_FALLBACK_TIMEOUT_MS) || 45_000;
+const DRAFT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_FALLBACK_TIMEOUT_MS) || 300_000;
 const DRAFT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_RETRIES) || 0;
 const DRAFT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_DRAFT_FALLBACK_MAX_TOKENS) || 2000;
 const DRAFT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|overloaded|temporarily|unavailable|gateway|502|503|504)/i;

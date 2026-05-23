@@ -49,9 +49,14 @@ const KIMI_CHAT_MODEL = process.env.KIMI_CHAT_MODEL || 'kimi-k2.6';
 const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
 const ANTHROPIC_CHAT_MODEL = process.env.ANTHROPIC_CHAT_MODEL || 'claude-sonnet-4-5';
 
-const KIMI_TIMEOUT_MS = Number(process.env.KIMI_CHAT_TIMEOUT_MS) || 55_000;
-const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_CHAT_TIMEOUT_MS) || 45_000;
-const ANTHROPIC_TIMEOUT_MS = Number(process.env.ANTHROPIC_CHAT_TIMEOUT_MS) || 55_000;
+// 2026-05-23 — all bumped to 8 min default. Coordinated with nginx
+// proxy_read_timeout bump (60s → 600s). Callers that need a tighter
+// per-call bound pass `timeoutMs` explicitly — interactive chat
+// surfaces (Ask Friday auto mode, feedback chat clarifier) cap their
+// own at 60-90s.
+const KIMI_TIMEOUT_MS = Number(process.env.KIMI_CHAT_TIMEOUT_MS) || 480_000;
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_CHAT_TIMEOUT_MS) || 480_000;
+const ANTHROPIC_TIMEOUT_MS = Number(process.env.ANTHROPIC_CHAT_TIMEOUT_MS) || 480_000;
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 

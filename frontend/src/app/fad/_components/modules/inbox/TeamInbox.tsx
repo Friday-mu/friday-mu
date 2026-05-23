@@ -976,7 +976,12 @@ export function TeamInbox({
                 onSelect={composeMention.onSelect}
                 onKeyDown={(e) => {
                   if (composeMention.onKeyDown(e)) return;
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  // Bug #4 fix (2026-05-23) — chat convention: plain
+                  // Enter sends; Shift+Enter inserts a newline. Cmd/
+                  // Ctrl+Enter also sends (backwards compat). Matches
+                  // Slack/WhatsApp/Discord; Mary reported the prior
+                  // Cmd-only requirement as awkward.
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     sendMessage();
                   }
@@ -1953,7 +1958,11 @@ function ThreadSurface({
             onSelect={mention.onSelect}
             onKeyDown={(e) => {
               if (mention.onKeyDown(e)) return;
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              // Bug #4 fix (2026-05-23) — plain Enter sends, Shift+
+              // Enter inserts a newline. Cmd/Ctrl+Enter also sends
+              // (backwards compat). Same convention as the top-level
+              // composer above.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
               }

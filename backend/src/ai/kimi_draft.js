@@ -26,6 +26,24 @@ const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const DRAFT_MODEL = process.env.KIMI_DRAFT_MODEL || 'kimi-k2.6';
 const CLASSIFY_MODEL = process.env.KIMI_CLASSIFY_MODEL || 'moonshot-v1-8k';
 
+// Gemini primary path — added 2026-05-23 per Ishant's "Gemini 3.5 Flash
+// everywhere, Kimi backup everywhere" decision. callWithRetry below
+// tries Gemini once per generation call; on failure (no key, bad
+// payload, model error, timeout) it falls back to the Kimi path for
+// this call AND all retries — never blocks the user on a vision-path
+// hiccup, and never bursts Gemini on retry storms.
+//
+// Why we don't route through chat_proxy.invokeChat() here: kimi_draft
+// is the shared draft-generation helper consumed by 5+ inbox surfaces
+// (consult, drafts, followup_draft_generator, plus extractStructuredOutput
+// for action_detector + auto_resolve). chat_proxy currently doesn't
+// support JSON-mode (`response_format: json_object`) for Gemini, which
+// extractStructuredOutput depends on. Inline Gemini call here keeps the
+// migration self-contained without forking the chat_proxy contract.
+const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NANOBANANA_API_KEY;
+const GEMINI_DRAFT_MODEL = process.env.GEMINI_DRAFT_MODEL || 'gemini-3.5-flash';
+
 // Default tenant — FAD is FR-only today. Callers can override via
 // `meter.tenantId` if multi-tenant logging is needed later.
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
@@ -60,14 +78,17 @@ const DRAFT_TEMPERATURE = Number(process.env.KIMI_DRAFT_TEMPERATURE) || 1;
 // rarely exceed 800 tokens).
 const DRAFT_MAX_TOKENS = Number(process.env.KIMI_DRAFT_MAX_TOKENS) || 4096;
 
-// Timeout for one Kimi call. Bumped 45s → 90s on 2026-05-19 after
-// production saw timeouts on long-context prompts when the property
-// card was missing (composer falls back to a larger generic prompt
-// when properties/<code>.json doesn't exist — TRR-4, MV-1, VA-3,
-// VA-4 are all missing cards). K2.6's reasoning step on a generic
-// prompt + full conversation history can exceed 45s. 90s gives
-// headroom; A3 card-creation task is the upstream fix.
-const DRAFT_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_TIMEOUT_MS) || 90_000;
+// Timeout for one provider call. Bumped 90s → 8 min on 2026-05-23 per
+// Ishant's "if we're putting a timeout it should be 5-10 min, the
+// model needs time to do its thing" decision. Backed by a coordinated
+// nginx proxy_read_timeout bump (was effectively 60s default, now 600s
+// for /api/) — without the nginx side, app-side timeouts > 60s are
+// dead because nginx returns 504 first. Gemini path is typically
+// 5-20s; the long ceiling is mainly for Kimi K2.6's reasoning step on
+// generic prompts (TRR-4/MV-1/VA-3/VA-4 missing property cards force
+// the composer to a larger prompt) and edge cases where the provider
+// itself is slow.
+const DRAFT_TIMEOUT_MS = Number(process.env.KIMI_DRAFT_TIMEOUT_MS) || 480_000;
 
 // Retry policy. Matches GMS's draft-generator: 3 retries, exponential
 // backoff. Each retry doubles the wait — 2s, 4s, 8s. Total worst-case
@@ -79,9 +100,85 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Tolerant JSON parse for extractStructuredOutput. Models occasionally
+// wrap their JSON in ```json fences or surround it with prose; this
+// pulls out the first {...} block as a fallback before giving up.
+// Returns the parsed object or null.
+function parseJsonish(raw) {
+  if (typeof raw !== 'string') return null;
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+  try { return JSON.parse(cleaned); } catch { /* fall through */ }
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch { /* fall through */ }
+  }
+  return null;
+}
+
+// One-shot Gemini call. Same return shape as callKimiOnce so the
+// caller can drop one in for the other. JSON-mode is opt-in via the
+// `responseJson` flag (sets responseMimeType=application/json) — used
+// by extractStructuredOutput to keep the strict-JSON guarantee that
+// Kimi's response_format gives us.
+async function callGeminiOnce({ system, user, model, maxTokens, temperature, timeoutMs, responseJson }) {
+  if (!GEMINI_API_KEY) {
+    return { ok: false, error: 'GEMINI_API_KEY not set' };
+  }
+  const start = Date.now();
+  const m = model || GEMINI_DRAFT_MODEL;
+  try {
+    const { data } = await axios.post(
+      `${GEMINI_BASE_URL}/models/${encodeURIComponent(m)}:generateContent`,
+      {
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.4,
+          ...(responseJson ? { responseMimeType: 'application/json' } : {}),
+        },
+      },
+      {
+        headers: { 'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json' },
+        timeout: timeoutMs,
+      },
+    );
+    const candidate = data?.candidates?.[0];
+    const text = candidate?.content?.parts?.map((p) => p.text ?? '').join('') || '';
+    const finishReason = candidate?.finishReason || 'unknown';
+    const usage = data?.usageMetadata || {};
+    if (typeof text !== 'string' || text.length === 0) {
+      return {
+        ok: false,
+        error: `empty response (finish_reason=${finishReason})`,
+        finishReason,
+        latencyMs: Date.now() - start,
+        inputTokens: usage.promptTokenCount ?? null,
+        outputTokens: usage.candidatesTokenCount ?? null,
+      };
+    }
+    return {
+      ok: true,
+      text,
+      finishReason,
+      inputTokens: usage.promptTokenCount ?? null,
+      outputTokens: usage.candidatesTokenCount ?? null,
+      model: m,
+      latencyMs: Date.now() - start,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.response?.data?.error?.message || e.message,
+      status: e.response?.status,
+      latencyMs: Date.now() - start,
+    };
+  }
+}
+
 // One-shot Kimi call. Returns { ok, text, inputTokens, outputTokens,
 // model, latencyMs } on success or { ok:false, error, ... } on failure.
-async function callKimiOnce({ system, user, model, maxTokens, temperature, timeoutMs }) {
+async function callKimiOnce({ system, user, model, maxTokens, temperature, timeoutMs, responseJson }) {
   if (!process.env.KIMI_API_KEY) {
     return { ok: false, error: 'KIMI_API_KEY not set' };
   }
@@ -97,6 +194,7 @@ async function callKimiOnce({ system, user, model, maxTokens, temperature, timeo
         ],
         temperature,
         max_tokens: maxTokens,
+        ...(responseJson ? { response_format: { type: 'json_object' } } : {}),
       },
       {
         headers: {
@@ -149,11 +247,37 @@ async function callKimiOnce({ system, user, model, maxTokens, temperature, timeo
 //     change on a fresh call with the same prompt.
 async function callWithRetry(opts) {
   let lastError = null;
+  let geminiTried = false;
   const maxRetries = Number.isFinite(Number(opts.maxRetries))
     ? Math.max(0, Number(opts.maxRetries))
     : MAX_RETRIES;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const result = await callKimiOnce(opts);
+    // Gemini primary, Kimi fallback (per Ishant 2026-05-23 decision).
+    // Only try Gemini on the FIRST attempt of this generation — if it
+    // failed once we don't waste a second call on it; the rest of the
+    // retry budget goes to Kimi. Callers that explicitly pin a Kimi
+    // model (e.g. moonshot-v1-128k for long-context jobs) bypass the
+    // Gemini path so the model pin is respected.
+    const wantsExplicitKimi = typeof opts.model === 'string' && (opts.model.startsWith('kimi') || opts.model.startsWith('moonshot'));
+    let result;
+    if (!geminiTried && !wantsExplicitKimi && GEMINI_API_KEY) {
+      geminiTried = true;
+      result = await callGeminiOnce({
+        system: opts.system,
+        user: opts.user,
+        model: GEMINI_DRAFT_MODEL,
+        maxTokens: opts.maxTokens,
+        temperature: opts.temperature,
+        timeoutMs: opts.timeoutMs,
+        responseJson: opts.responseJson,
+      });
+      if (!result.ok) {
+        console.warn(`[ai/draft] gemini failed (${result.error || 'unknown'}); falling back to kimi`);
+        result = await callKimiOnce(opts);
+      }
+    } else {
+      result = await callKimiOnce(opts);
+    }
     if (result.ok) {
       if (attempt > 0) {
         console.log(`[ai/kimi-draft] succeeded on retry ${attempt} (latency=${result.latencyMs}ms)`);
@@ -276,76 +400,110 @@ async function classifyMessageWithKimi(text, meter) {
 // log/inspect what the model actually returned.
 const EXTRACT_MODEL = process.env.KIMI_EXTRACT_MODEL || 'moonshot-v1-8k';
 const EXTRACT_MAX_TOKENS = Number(process.env.KIMI_EXTRACT_MAX_TOKENS) || 800;
-const EXTRACT_TIMEOUT_MS = Number(process.env.KIMI_EXTRACT_TIMEOUT_MS) || 20_000;
+// Bumped 20s → 90s on 2026-05-23 (Gemini path typically <5s, Kimi
+// fallback ~10-20s; 90s headroom covers tail-latency tasks). Coordinated
+// with nginx proxy_read_timeout bump.
+const EXTRACT_TIMEOUT_MS = Number(process.env.KIMI_EXTRACT_TIMEOUT_MS) || 90_000;
+const GEMINI_EXTRACT_MODEL = process.env.GEMINI_EXTRACT_MODEL || 'gemini-3.5-flash';
 
+// Strict-JSON extraction with Gemini primary / Kimi fallback. Gemini's
+// responseMimeType=application/json mirrors Kimi's response_format
+// = {type: 'json_object'}. On any Gemini failure (no key, parse error,
+// upstream miss) we fall through to the existing Kimi call — exactly
+// the same contract as before, just faster on the happy path.
 async function extractStructuredOutput({ system, user, model, maxTokens, timeoutMs, meter }) {
-  if (!process.env.KIMI_API_KEY) {
-    return { ok: false, error: 'KIMI_API_KEY not set' };
-  }
   const start = Date.now();
-  const m = model || EXTRACT_MODEL;
+  const km = model || EXTRACT_MODEL;
+  const gm = GEMINI_EXTRACT_MODEL;
+  const tokenCap = maxTokens || EXTRACT_MAX_TOKENS;
+  const callTimeout = timeoutMs || EXTRACT_TIMEOUT_MS;
   let result;
-  try {
-    const { data } = await axios.post(
-      `${KIMI_BASE_URL}/chat/completions`,
-      {
-        model: m,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        temperature: 0.0,
-        max_tokens: maxTokens || EXTRACT_MAX_TOKENS,
-        response_format: { type: 'json_object' },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: timeoutMs || EXTRACT_TIMEOUT_MS,
-      },
-    );
-    const raw = data?.choices?.[0]?.message?.content;
-    const promptTokens = data?.usage?.prompt_tokens ?? null;
-    const completionTokens = data?.usage?.completion_tokens ?? null;
-    const latencyMs = Date.now() - start;
-    if (typeof raw !== 'string') {
-      result = { ok: false, error: 'no response text', latencyMs, _meterTokens: { promptTokens, completionTokens } };
-    } else {
-      // Most models honour response_format and emit clean JSON, but a few
-      // wrap it in code fences. Strip a single ```json fence if present.
-      const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
-      try {
+  let usedProvider = 'gemini';
+  let usedModel = gm;
+
+  // Caller may pin a Kimi model (kimi-* / moonshot-*) when they want
+  // Kimi specifically (long-context jobs etc.). Honour that bypass.
+  const wantsExplicitKimi = typeof model === 'string' && (model.startsWith('kimi') || model.startsWith('moonshot'));
+
+  if (!wantsExplicitKimi && GEMINI_API_KEY) {
+    const geminiOnce = await callGeminiOnce({
+      system,
+      user,
+      model: gm,
+      maxTokens: tokenCap,
+      temperature: 0.0,
+      timeoutMs: callTimeout,
+      responseJson: true,
+    });
+    if (geminiOnce.ok && typeof geminiOnce.text === 'string') {
+      const parsed = parseJsonish(geminiOnce.text);
+      if (parsed) {
         result = {
           ok: true,
-          parsed: JSON.parse(cleaned),
-          raw,
-          inputTokens: promptTokens,
-          outputTokens: completionTokens,
-          model: m,
-          latencyMs,
+          parsed,
+          raw: geminiOnce.text,
+          inputTokens: geminiOnce.inputTokens,
+          outputTokens: geminiOnce.outputTokens,
+          model: gm,
+          latencyMs: geminiOnce.latencyMs,
         };
-      } catch (parseErr) {
-        // Fallback: try to pull the first {...} block out of the raw text.
-        const match = cleaned.match(/\{[\s\S]*\}/);
-        let recovered = null;
-        if (match) {
-          try { recovered = JSON.parse(match[0]); } catch { /* fall through */ }
-        }
-        result = recovered != null
-          ? { ok: true, parsed: recovered, raw, inputTokens: promptTokens, outputTokens: completionTokens, model: m, latencyMs }
-          : { ok: false, error: `JSON parse failed: ${parseErr.message}`, raw, latencyMs, _meterTokens: { promptTokens, completionTokens } };
+      } else {
+        console.warn(`[ai/extract] gemini returned non-JSON; falling back to kimi`);
       }
+    } else if (!geminiOnce.ok) {
+      console.warn(`[ai/extract] gemini failed (${geminiOnce.error || 'unknown'}); falling back to kimi`);
     }
-  } catch (e) {
-    result = {
-      ok: false,
-      error: e.response?.data?.error?.message || e.message,
-      status: e.response?.status,
-      latencyMs: Date.now() - start,
-    };
   }
+
+  if (!result) {
+    if (!process.env.KIMI_API_KEY) {
+      return { ok: false, error: 'KIMI_API_KEY not set (and gemini path unavailable)' };
+    }
+    usedProvider = 'kimi';
+    usedModel = km;
+    try {
+      const { data } = await axios.post(
+        `${KIMI_BASE_URL}/chat/completions`,
+        {
+          model: km,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          temperature: 0.0,
+          max_tokens: tokenCap,
+          response_format: { type: 'json_object' },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: callTimeout,
+        },
+      );
+      const raw = data?.choices?.[0]?.message?.content;
+      const promptTokens = data?.usage?.prompt_tokens ?? null;
+      const completionTokens = data?.usage?.completion_tokens ?? null;
+      const latencyMs = Date.now() - start;
+      if (typeof raw !== 'string') {
+        result = { ok: false, error: 'no response text', latencyMs, _meterTokens: { promptTokens, completionTokens } };
+      } else {
+        const parsed = parseJsonish(raw);
+        result = parsed != null
+          ? { ok: true, parsed, raw, inputTokens: promptTokens, outputTokens: completionTokens, model: km, latencyMs }
+          : { ok: false, error: 'JSON parse failed', raw, latencyMs, _meterTokens: { promptTokens, completionTokens } };
+      }
+    } catch (e) {
+      result = {
+        ok: false,
+        error: e.response?.data?.error?.message || e.message,
+        status: e.response?.status,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+  void usedProvider; void usedModel;
 
   // Single exit point so we log usage exactly once, even on parse-fail
   // recovery and API-error paths. Tokens come from data.usage when the

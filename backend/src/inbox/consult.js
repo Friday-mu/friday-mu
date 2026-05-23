@@ -26,13 +26,19 @@ const { safeConversationSummary } = require('./summary_quality');
 const { publishFadEvent } = require('../realtime');
 
 const router = express.Router();
-const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 90_000;
+// 2026-05-23 — timeouts bumped 90s → 8 min (primary) / 45s → 5 min
+// (fallback). Coordinated with nginx proxy_read_timeout bump (60s →
+// 600s). kimi_draft now tries Gemini 3.5 Flash first (typically <15s);
+// the long ceiling covers Kimi K2.6's reasoning step on full-thread
+// prompts when Gemini falls back. Without the nginx side, > 60s was
+// dead time (nginx 504 first).
+const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 480_000;
 const CONSULT_MAX_RETRIES = Number(process.env.KIMI_CONSULT_MAX_RETRIES) || 0;
 const CONSULT_MAX_TOKENS = Number(process.env.KIMI_CONSULT_MAX_TOKENS) || 3200;
 // Compact Consult retries still carry KB, reservation context, and session
 // history, so default to the long-context draft model unless ops overrides it.
 const CONSULT_FALLBACK_MODEL = process.env.KIMI_CONSULT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || DRAFT_MODEL;
-const CONSULT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_FALLBACK_TIMEOUT_MS) || 45_000;
+const CONSULT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_FALLBACK_TIMEOUT_MS) || 300_000;
 const CONSULT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_RETRIES) || 0;
 const CONSULT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_TOKENS) || 1800;
 const CONSULT_TRANSIENT_FAILURE_RE = /(timeout|timed out|ECONNABORTED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|rate limit|too many requests|overloaded|temporarily|unavailable|gateway|502|503|504)/i;

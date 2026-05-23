@@ -45,7 +45,11 @@ const GEMINI_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL || 'gemini-2.5-flash';
 // for the same Google AI Studio key; GEMINI_API_KEY is the cleaner
 // alias going forward.
 const API_KEY = process.env.GEMINI_API_KEY || process.env.NANOBANANA_API_KEY;
-const REQUEST_TIMEOUT_MS = 30_000;
+// 2026-05-23 — bumped 30s → 90s. Audio transcription is bounded by
+// audio length (frontend caps at 60s recording) but tail-latency on
+// the Gemini call can spike. Coordinated with nginx proxy_read_timeout
+// (60s → 600s).
+const REQUEST_TIMEOUT_MS = 90_000;
 
 // attachIdentity 401s on its own if the JWT is missing or invalid; by
 // the time we get here req.identity is populated.

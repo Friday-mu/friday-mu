@@ -14,8 +14,12 @@ const MAX_QUESTION_CHARS = 1200;
 const MAX_HISTORY_TURNS = 8;
 const ASK_FRIDAY_MODEL = process.env.FAD_ASK_MODEL || 'gemini-3.5-flash';
 const ASK_FRIDAY_MAX_TOKENS = Number(process.env.KIMI_FAD_ASK_MAX_TOKENS) || 4096;
-const ASK_FRIDAY_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_PROVIDER_TIMEOUT_MS) || 45_000;
-const ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_AUTO_PROVIDER_TIMEOUT_MS) || 25_000;
+// 2026-05-23 — bumped 45s → 8min (provider) / 25s → 90s (auto mode).
+// Coordinated with nginx proxy_read_timeout (60s → 600s). Auto mode
+// stays snappier since it's the interactive composer; provider mode
+// can run longer reasoning chains.
+const ASK_FRIDAY_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_PROVIDER_TIMEOUT_MS) || 480_000;
+const ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS = Number(process.env.FAD_ASK_AUTO_PROVIDER_TIMEOUT_MS) || 90_000;
 const ACTION_TYPES = new Set(['navigate', 'create_task', 'send_team_message', 'request_approval']);
 const ACTION_RISKS = new Set(['navigation', 'safe', 'approval']);
 const ACTION_MODULES = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
