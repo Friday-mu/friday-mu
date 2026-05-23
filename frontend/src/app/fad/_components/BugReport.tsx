@@ -652,6 +652,13 @@ function BugReportModal({
           transcript: nextMessages,
           module_label: currentModuleLabel ?? null,
           route_url: routeUrl,
+          // Send the screenshot + diagnostics so the backend can route to
+          // the Gemini vision path (if GEMINI_API_KEY is set on the server)
+          // and Friday can actually see what the user is reporting. Backend
+          // silently falls through to Kimi text-only if either is missing
+          // or the vision call fails, so this is safe to always include.
+          screenshot_data_url: screenshot,
+          diagnostics: buildDiagnostics(screenshot),
         }),
       }) as { reply: string };
       if (chatSeqRef.current !== chatSeq) return; // stale — user moved on

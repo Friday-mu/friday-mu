@@ -35,6 +35,22 @@ const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
 const KIMI_TIMEOUT_MS = 20_000;
 
+// Gemini multimodal — used for the chat clarifier when the frontend
+// attaches a viewport screenshot. Lets Friday actually see what the user
+// is reporting (broken layout, error overlays, the specific element they
+// mean) instead of asking blind text follow-ups. Falls through to the
+// Kimi text-only path below when no screenshot, no Gemini key, or any
+// vision error — never blocks the user.
+const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NANOBANANA_API_KEY;
+const GEMINI_FEEDBACK_VISION_MODEL = process.env.GEMINI_FEEDBACK_VISION_MODEL || process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash';
+const GEMINI_FEEDBACK_TIMEOUT_MS = Number(process.env.GEMINI_FEEDBACK_TIMEOUT_MS) || 30_000;
+// 1.5 MB raw base64 cap. The full feedback submission accepts up to 5 MB
+// (MAX_SCREENSHOT_BYTES below) for archival; the chat clarifier sees a
+// smaller window because we pay model latency on each turn. The final
+// submission still attaches the full-resolution screenshot.
+const MAX_CHAT_SCREENSHOT_BYTES = 1_500_000;
+
 const CHAT_SYSTEM_PROMPT = `You are Friday, the team's friendly triage assistant. The user is filing a {{type}} report (bug / feature request / suggestion). Your job is to gather enough context so a human can triage and act on it later — nothing more.
 
 Style:
@@ -74,6 +90,106 @@ function normalizeTranscript(raw) {
     .map((m) => ({ role: m.role, text: m.text.trim().slice(0, MAX_MESSAGE_LENGTH) }))
     .filter((m) => m.text.length > 0)
     .slice(-MAX_TRANSCRIPT_MESSAGES);
+}
+
+// Validate + clamp the chat-screenshot data URL the frontend sent. We
+// only accept image/* base64 of bounded size; anything else returns null
+// and we fall through to the text-only chat path. (The final feedback
+// submission has its own larger 5 MB ceiling — see MAX_SCREENSHOT_BYTES
+// further down.)
+function validateChatScreenshot(raw) {
+  if (typeof raw !== 'string') return null;
+  const m = raw.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/i);
+  if (!m) return null;
+  const mimeType = m[1].toLowerCase();
+  const base64 = m[2];
+  // base64 expands ~4/3 vs raw bytes; cap by base64 length to keep the
+  // inline_data payload bounded.
+  if (base64.length > Math.ceil(MAX_CHAT_SCREENSHOT_BYTES * 4 / 3)) return null;
+  return { mimeType, data: base64 };
+}
+
+function safeStringifyDiagnostics(obj, maxChars = 600) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
+  try {
+    return JSON.stringify(obj, (_k, v) => {
+      if (typeof v === 'string') return v.slice(0, 240);
+      if (Array.isArray(v)) return v.slice(0, 10);
+      return v;
+    }, 2).slice(0, maxChars);
+  } catch {
+    return '';
+  }
+}
+
+function buildVisionEvidence(type, moduleLabel, routeUrl, diagnostics) {
+  const focus =
+    type === 'bug'
+      ? 'Look at the screenshot for visual clues — broken layout, error overlays, unexpected state, which component is affected. Cite the specific element if you can see it.'
+      : type === 'feature'
+        ? 'Look at the screenshot to ground your follow-up — what part of this surface prompted the request, what nearby UI affordance is missing or insufficient.'
+        : 'Look at the screenshot — what specific element, copy, or layout choice may be the friction the user is reacting to.';
+  const diag = safeStringifyDiagnostics(diagnostics);
+  return [
+    `Feedback type: ${type}.`,
+    moduleLabel ? `Module: ${moduleLabel}.` : null,
+    routeUrl ? `Route: ${routeUrl}.` : null,
+    focus,
+    diag ? `Safe diagnostics:\n${diag}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+// Vision-aware chat reply. Returns null when the vision path isn't
+// available (no key, invalid screenshot, model error) so the caller can
+// fall through to generateChatReply() text-only. Never throws.
+async function generateChatReplyWithVision({ type, transcript, moduleLabel, routeUrl, screenshotParsed, diagnostics }) {
+  if (!GEMINI_API_KEY) return null;
+  if (!screenshotParsed) return null;
+  const system = CHAT_SYSTEM_PROMPT.replace('{{type}}', type);
+  const evidence = buildVisionEvidence(type, moduleLabel, routeUrl, diagnostics);
+
+  // Gemini multimodal: the screenshot rides as inline_data inside the
+  // first user turn alongside the evidence text. Subsequent turns are
+  // text-only — the model carries the visual context forward.
+  const contents = [
+    {
+      role: 'user',
+      parts: [
+        { text: evidence },
+        { inline_data: { mime_type: screenshotParsed.mimeType, data: screenshotParsed.data } },
+      ],
+    },
+    ...transcript.map((m) => ({
+      role: m.role === 'friday' ? 'model' : 'user',
+      parts: [{ text: m.text }],
+    })),
+  ];
+
+  try {
+    const { data } = await axios.post(
+      `${GEMINI_BASE_URL}/models/${encodeURIComponent(GEMINI_FEEDBACK_VISION_MODEL)}:generateContent`,
+      {
+        contents,
+        systemInstruction: { parts: [{ text: system }] },
+        generationConfig: { temperature: 0.5, maxOutputTokens: 800 },
+      },
+      {
+        headers: { 'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json' },
+        timeout: GEMINI_FEEDBACK_TIMEOUT_MS,
+      },
+    );
+    const raw = data?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim();
+    if (!raw) return null;
+    const cleaned = raw
+      .replace(/^(friday|assistant)\s*[:\-]\s*/i, '')
+      .slice(0, 800);
+    return { reply: cleaned, source: 'gemini-vision' };
+  } catch (err) {
+    console.warn('[feedback] gemini vision chat failed:', err.message);
+    return null;
+  }
 }
 
 async function generateChatReply({ type, transcript, moduleLabel, routeUrl }) {
@@ -131,7 +247,14 @@ async function generateChatReply({ type, transcript, moduleLabel, routeUrl }) {
 
 router.post('/chat', attachIdentity, async (req, res) => {
   try {
-    const { type, transcript, route_url: routeUrl, module_label: moduleLabel } = req.body || {};
+    const {
+      type,
+      transcript,
+      route_url: routeUrl,
+      module_label: moduleLabel,
+      screenshot_data_url: screenshotRaw,
+      diagnostics,
+    } = req.body || {};
     if (!TYPES.has(type)) {
       return res.status(400).json({ error: 'type must be bug, feature, or suggestion' });
     }
@@ -144,12 +267,26 @@ router.post('/chat', attachIdentity, async (req, res) => {
     if (normalized[normalized.length - 1].role !== 'user') {
       return res.status(400).json({ error: 'last transcript message must be from the user' });
     }
-    const result = await generateChatReply({
+    const baseArgs = {
       type,
       transcript: normalized,
       moduleLabel: typeof moduleLabel === 'string' ? moduleLabel.slice(0, 100) : null,
       routeUrl: typeof routeUrl === 'string' ? routeUrl.slice(0, 300) : null,
-    });
+    };
+    // Try the vision path first when the frontend attached a screenshot.
+    // generateChatReplyWithVision returns null on any failure (no key,
+    // bad payload, model error) so we fall through to the Kimi text-only
+    // path below — the user never blocks on the upgrade.
+    const screenshotParsed = validateChatScreenshot(screenshotRaw);
+    if (screenshotParsed) {
+      const visionResult = await generateChatReplyWithVision({
+        ...baseArgs,
+        screenshotParsed,
+        diagnostics,
+      });
+      if (visionResult) return res.json(visionResult);
+    }
+    const result = await generateChatReply(baseArgs);
     res.json(result);
   } catch (err) {
     console.error('[feedback] chat error:', err.message);
