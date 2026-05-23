@@ -5,12 +5,88 @@
 // /api/feedback (backed by migration 029). The file is still called
 // BugReport for backwards-compat with the existing FadApp import; the
 // public surface is broader now.
+//
+// 2026-05-23 — agentic upgrades ported from Friday-mu/friday-website
+// (catalog: agentic-feedback-fab @ commit 7d09887). Brings full-CSS-
+// viewport capture (pixelRatio: 1, was 0.5), capture/chat sequence
+// counters for stale-response protection, expandable screenshot
+// preview, rich diagnostics payload, body scroll lock + Esc-to-close,
+// portal-rendered modal, soft chat fallback, relaxed submit gate, and
+// hardened lifecycle. The screenshot-aware chat upgrade is deferred:
+// FAD's backend /api/feedback/chat doesn't accept screenshot input
+// yet — separate slice with paired backend deploy.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
 import { useDictation } from './useDictation';
 import { useDoubleTapModifier } from './useDoubleTapModifier';
+
+// Wraps a promise so it rejects after `ms` if the underlying capture
+// hangs. html-to-image / html2canvas occasionally stall behind a slow
+// font fetch or a misbehaving stylesheet; without a cap the FAB sits
+// in "capturing…" forever and the user assumes it's broken.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      window.setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    }),
+  ]);
+}
+
+interface FeedbackDiagnostics {
+  capturedAt: string;
+  viewport: { width: number; height: number; scrollX: number; scrollY: number; devicePixelRatio: number };
+  screen: { width: number; height: number; availableWidth: number; availableHeight: number };
+  browser: {
+    userAgent: string;
+    platform: string;
+    language: string;
+    languages: string[];
+    timezone: string;
+    online: boolean;
+    cookieEnabled: boolean;
+    colorScheme: 'dark' | 'light';
+  };
+  screenshot: { attached: boolean; bytesApprox: number };
+}
+
+// Snapshot of viewport + browser + screen state captured at submission
+// time. Server stores this in `description` so agentic debugging has
+// device + dimension context without needing to ask the user.
+function buildDiagnostics(screenshot: string | null): FeedbackDiagnostics {
+  return {
+    capturedAt: new Date().toISOString(),
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      scrollX: window.scrollX || window.pageXOffset || 0,
+      scrollY: window.scrollY || window.pageYOffset || 0,
+      devicePixelRatio: window.devicePixelRatio || 1,
+    },
+    screen: {
+      width: window.screen?.width ?? 0,
+      height: window.screen?.height ?? 0,
+      availableWidth: window.screen?.availWidth ?? 0,
+      availableHeight: window.screen?.availHeight ?? 0,
+    },
+    browser: {
+      userAgent: navigator.userAgent.slice(0, 240),
+      platform: navigator.platform || '',
+      language: navigator.language || '',
+      languages: Array.from(navigator.languages || []).slice(0, 6),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+      online: navigator.onLine,
+      cookieEnabled: navigator.cookieEnabled,
+      colorScheme: window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+    },
+    screenshot: {
+      attached: Boolean(screenshot),
+      bytesApprox: screenshot ? Math.round((screenshot.length * 3) / 4) : 0,
+    },
+  };
+}
 
 // Pick the platform-appropriate modifier symbol to surface in tooltips
 // and hints. Mac shows ⌘ (Cmd); everyone else shows "Ctrl". Detection is
@@ -132,22 +208,38 @@ async function captureWithHtmlToImage(el: HTMLElement, backgroundColor: string):
     captureModulePromise = import('html-to-image') as Promise<typeof import('html-to-image')>;
   }
   const { toJpeg } = await captureModulePromise;
-  return toJpeg(el, {
-    quality: 0.7,
-    pixelRatio: 0.5,
-    backgroundColor,
-    cacheBust: true,
-    // filter returns FALSE to drop a node. Skip the FAB so it doesn't
-    // appear in its own corner, and skip <script>/<style> children
-    // (no-op for capture, smaller serialized SVG).
-    filter: (node: HTMLElement) => {
-      if (!node.classList) return true;
-      if (node.classList.contains('bug-fab')) return false;
-      const tag = node.tagName;
-      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false;
-      return true;
-    },
-  });
+  // pixelRatio: 1 (was 0.5) — captures at full CSS viewport size so
+  // mobile + desktop screenshots are readable enough for an agentic
+  // debugger to spot UI state. Filesize trade is acceptable for the
+  // 5MB submit ceiling (backend MAX_SCREENSHOT_BYTES).
+  //
+  // skipFonts: true — html-to-image walks every stylesheet looking for
+  // @font-face rules, which throws CORS on cross-origin sheets. The
+  // captured render still uses the browser's font cache; we just skip
+  // the embed-into-SVG step.
+  return withTimeout(
+    toJpeg(el, {
+      quality: 0.7,
+      pixelRatio: 1,
+      backgroundColor,
+      cacheBust: true,
+      skipFonts: true,
+      // filter returns FALSE to drop a node. Skip the FAB so it doesn't
+      // appear in its own corner, and skip <script>/<style> children
+      // (no-op for capture, smaller serialized SVG).
+      filter: (node: HTMLElement) => {
+        if (!node.classList) return true;
+        if (node.classList.contains('bug-fab')) return false;
+        if (node.classList.contains('feedback-modal-backdrop')) return false;
+        const tag = node.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false;
+        if (tag === 'IFRAME') return false;
+        return true;
+      },
+    }),
+    7_500,
+    'html-to-image',
+  );
 }
 
 async function captureWithHtml2canvas(el: HTMLElement, backgroundColor: string): Promise<string> {
@@ -155,13 +247,23 @@ async function captureWithHtml2canvas(el: HTMLElement, backgroundColor: string):
     html2canvasModulePromise = import('html2canvas') as Promise<typeof import('html2canvas')>;
   }
   const mod = await html2canvasModulePromise;
-  const canvas = await mod.default(el, {
-    backgroundColor,
-    scale: 0.5,
-    logging: false,
-    useCORS: true,
-    ignoreElements: (node) => node.classList?.contains('bug-fab') ?? false,
-  });
+  // scale: 1 (was 0.5) — match html-to-image's upgraded pixelRatio so
+  // fallback captures are equally readable.
+  const canvas = await withTimeout(
+    mod.default(el, {
+      backgroundColor,
+      scale: 1,
+      logging: false,
+      useCORS: true,
+      ignoreElements: (node) =>
+        Boolean(
+          node.classList?.contains('bug-fab') ||
+            node.classList?.contains('feedback-modal-backdrop'),
+        ),
+    }),
+    8_500,
+    'html2canvas',
+  );
   return canvas.toDataURL('image/jpeg', 0.7);
 }
 
@@ -196,6 +298,10 @@ export function BugReportFab({ currentModuleLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
+  // True while the screenshot capture is in flight but the modal is
+  // already open. Lets the modal show a "Capturing screenshot…"
+  // placeholder instead of jumping straight to the unavailable state.
+  const [screenshotPending, setScreenshotPending] = useState(false);
   // Set when the modal is opened via the ⌘⌘ / Ctrl-Ctrl shortcut so the
   // child modal knows to auto-start dictation as soon as it mounts.
   const [shouldAutoStartDictation, setShouldAutoStartDictation] = useState(false);
@@ -204,6 +310,12 @@ export function BugReportFab({ currentModuleLabel }: Props) {
   // outside (the dictation hook lives in the modal, not here, so we
   // signal via a counter rather than calling toggle directly).
   const [dictationToggleSeq, setDictationToggleSeq] = useState(0);
+  // Incremented every time a new capture starts (or the modal closes).
+  // The async capture promise checks this counter before applying its
+  // result — if the user closed + reopened before the screenshot landed,
+  // the stale promise drops its result instead of poisoning the new
+  // session. Matches the website's captureSeqRef pattern.
+  const captureSeqRef = useRef(0);
 
   // Kick off the html2canvas dynamic import in the background as soon as
   // the FAB mounts. By the time the user clicks, the module is parsed
@@ -215,16 +327,50 @@ export function BugReportFab({ currentModuleLabel }: Props) {
 
   const handleClick = useCallback(async () => {
     if (capturing || open) return;
+    const captureSeq = captureSeqRef.current + 1;
+    captureSeqRef.current = captureSeq;
     setCapturing(true);
-    const shot = await captureViewport();
-    setScreenshot(shot);
-    setCapturing(false);
+    setScreenshot(null);
+    setScreenshotPending(true);
+    // Open the modal immediately so the user sees something — the
+    // capture lands into the modal when ready. Old behaviour blocked
+    // the modal until capture finished, which felt sluggish on slow
+    // captures.
     setOpen(true);
+
+    void captureViewport()
+      .then((shot) => {
+        if (captureSeqRef.current !== captureSeq) return;
+        setScreenshot(shot);
+      })
+      .catch((err) => {
+        console.warn('[feedback] capture failed:', err);
+      })
+      .finally(() => {
+        if (captureSeqRef.current !== captureSeq) return;
+        setScreenshotPending(false);
+        setCapturing(false);
+      });
+
+    // Hard failsafe: even if the capture promise stalls below the
+    // internal timeout (shouldn't happen with withTimeout but defence
+    // in depth), release the capturing state after 15s so the FAB
+    // doesn't sit stuck.
+    window.setTimeout(() => {
+      if (captureSeqRef.current !== captureSeq) return;
+      setScreenshotPending(false);
+      setCapturing(false);
+    }, 15_000);
   }, [capturing, open]);
 
   const handleClose = useCallback(() => {
+    // Bump the capture seq so any in-flight screenshot from the
+    // closing session can't land in the next open.
+    captureSeqRef.current += 1;
     setOpen(false);
     setScreenshot(null);
+    setScreenshotPending(false);
+    setCapturing(false);
     // Reset shortcut-driven flags so the next plain-click open doesn't
     // inherit a stale auto-start signal from the previous session.
     setShouldAutoStartDictation(false);
@@ -271,6 +417,7 @@ export function BugReportFab({ currentModuleLabel }: Props) {
         <BugReportModal
           currentModuleLabel={currentModuleLabel}
           initialScreenshot={screenshot}
+          screenshotPending={screenshotPending}
           onClose={handleClose}
           autoStartDictation={shouldAutoStartDictation}
           dictationToggleSeq={dictationToggleSeq}
@@ -334,19 +481,24 @@ const TYPE_META: Record<FeedbackType, {
   },
 };
 
-// Cap to avoid runaway conversations. Friend is told via prompt to wrap
+// Cap to avoid runaway conversations. Friday is told via prompt to wrap
 // up by turn 3; this is a hard ceiling so cost / payload stays bounded.
-const MAX_TURNS_USER = 6;
+// Bumped 6 → 8 to give users a bit more room to add context after the
+// AI follow-up (matches website's FeedbackModal cap).
+const MAX_TURNS_USER = 8;
 
 function BugReportModal({
   currentModuleLabel,
   initialScreenshot,
+  screenshotPending = false,
   onClose,
   autoStartDictation = false,
   dictationToggleSeq = 0,
 }: {
   currentModuleLabel?: string;
   initialScreenshot: string | null;
+  /** True while the upstream capture is still in flight. Shows a pending placeholder until the screenshot lands or capture fails. */
+  screenshotPending?: boolean;
   onClose: () => void;
   /** True when the modal was opened via the ⌘⌘ shortcut — start dictation on mount. */
   autoStartDictation?: boolean;
@@ -358,6 +510,10 @@ function BugReportModal({
   // mounts (so the modal itself isn't in the capture). The modal just
   // displays it.
   const screenshot = initialScreenshot;
+  // Click-to-expand the screenshot thumbnail. Default collapsed so the
+  // modal stays compact; user can tap to see the full capture before
+  // submitting. Matches the website's screenshot preview UX.
+  const [screenshotExpanded, setScreenshotExpanded] = useState(false);
   // The chat transcript. First message is always from the user (their
   // initial description); from there Friday replies, user can reply
   // back, etc. Posted in full to /api/feedback/chat on each turn.
@@ -370,6 +526,12 @@ function BugReportModal({
   const [submitted, setSubmitted] = useState(false);
 
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  // Bumped on every chat send + on type switch + on close. The async
+  // chat fetch checks this counter before applying its reply — if the
+  // user switched type or closed the modal before the reply landed, we
+  // drop the stale response instead of injecting it into the new
+  // transcript. Same pattern as captureSeqRef on the FAB.
+  const chatSeqRef = useRef(0);
   // Auto-scroll the chat to the bottom on new messages / thinking state.
   useEffect(() => {
     const el = transcriptRef.current;
@@ -419,13 +581,37 @@ function BugReportModal({
     dictation.toggle();
   }, [dictationToggleSeq, dictation]);
 
+  // Esc-to-close + body scroll lock while the modal is mounted. Lock
+  // is restored on unmount even if a parent state path forgets to call
+  // onClose. Disabled during submitting so the user can't accidentally
+  // dismiss while the POST is in flight. Stops any in-flight dictation
+  // first so a late transcript can't poison the next modal session.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || submitting) return;
+      if (dictation.state === 'recording' || dictation.state === 'transcribing') {
+        dictation.toggle();
+      }
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [submitting, onClose, dictation]);
+
   const trimmedInput = input.trim();
   const userMsgCount = messages.filter((m) => m.role === 'user').length;
-  const fridayMsgCount = messages.filter((m) => m.role === 'friday').length;
-  // Submit is unlocked once the user has sent at least 1 message AND
-  // Friday has replied at least once. After that, submit is always
-  // available — the user can keep chatting OR submit immediately.
-  const hasMinimumExchange = userMsgCount >= 1 && fridayMsgCount >= 1;
+  // 2026-05-23 — relaxed from "1 user + 1 Friday reply required" to
+  // "1 user message is enough". Testers got stuck waiting for Friday
+  // to reply before they could submit; the AI follow-up still runs in
+  // parallel and they're welcome to answer it for richer context, but
+  // it's no longer a hard gate. Mirrors website's FEEDBACK-2026-05-17
+  // #4 relaxation.
+  const hasMinimumExchange = userMsgCount >= 1;
   const canSubmit = hasMinimumExchange && !submitting;
   // Lock further user messages once we hit the cap. They can still
   // submit at any point.
@@ -441,6 +627,12 @@ function BugReportModal({
     }
     const userMsg: ChatMessage = { role: 'user', text: trimmedInput };
     const nextMessages = [...messages, userMsg];
+    // Bump chat seq before the request so a delayed response from the
+    // previous turn (or a previous type) can't land on top of this
+    // one. We check chatSeqRef.current === chatSeq before applying the
+    // reply.
+    const chatSeq = chatSeqRef.current + 1;
+    chatSeqRef.current = chatSeq;
     setMessages(nextMessages);
     setInput('');
     setThinking(true);
@@ -459,6 +651,7 @@ function BugReportModal({
           route_url: routeUrl,
         }),
       }) as { reply: string };
+      if (chatSeqRef.current !== chatSeq) return; // stale — user moved on
       const reply = (data?.reply || '').trim();
       if (reply.length > 0) {
         setMessages((prev) => [...prev, { role: 'friday', text: reply }]);
@@ -466,11 +659,22 @@ function BugReportModal({
         setChatError('Friday went quiet. You can keep typing or just submit.');
       }
     } catch (err) {
-      setChatError(err instanceof Error
-        ? err.message
-        : 'Friday had trouble responding — you can keep typing or just submit.');
+      if (chatSeqRef.current !== chatSeq) return; // stale error too
+      // Soft fallback: render the failure as a Friday assistant turn
+      // instead of a red error chip. The user can still submit — the
+      // transcript captures what was discussed and the fallback turn
+      // makes it clear the AI was unreachable rather than ignoring
+      // them. Mirrors the website's soft-fallback UX.
+      console.warn('[feedback] chat failed:', err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'friday',
+          text: "I'm not able to fetch a follow-up right now. Add anything else you want the team to know, then hit submit.",
+        },
+      ]);
     } finally {
-      setThinking(false);
+      if (chatSeqRef.current === chatSeq) setThinking(false);
     }
   };
 
@@ -485,30 +689,48 @@ function BugReportModal({
 
   // Switching feedback type mid-conversation resets the chat — the
   // structure of useful questions differs across bug / feature /
-  // suggestion, so reusing a transcript would confuse Kimi.
+  // suggestion, so reusing a transcript would confuse Kimi. Bump
+  // chatSeqRef so any in-flight reply from the previous type is
+  // dropped instead of landing in the fresh transcript.
   const switchType = (t: FeedbackType) => {
     if (t === type) return;
     if (dictation.state === 'recording' || dictation.state === 'transcribing') {
       dictation.toggle();
     }
+    chatSeqRef.current += 1;
     setType(t);
     setMessages([]);
     setInput('');
     setChatError(null);
+    setThinking(false);
   };
 
   const submit = async () => {
     if (!canSubmit) return;
+    // Stop any in-flight dictation + drop any pending chat reply so a
+    // late landing doesn't race the submit confirmation.
+    if (dictation.state === 'recording' || dictation.state === 'transcribing') {
+      dictation.toggle();
+    }
+    chatSeqRef.current += 1;
+    setThinking(false);
     setSubmitting(true);
     setSubmitError(null);
     try {
       const firstUserMsg = messages.find((m) => m.role === 'user')?.text ?? '';
       const title = deriveTitle(firstUserMsg, currentModuleLabel);
-      // Serialise the chat as the persisted description. Each turn is
-      // labelled so the inbox view stays scannable.
-      const description = messages
-        .map((m) => (m.role === 'user' ? `**You:** ${m.text}` : `**Friday:** ${m.text}`))
-        .join('\n\n');
+      const diagnostics = buildDiagnostics(screenshot);
+      // Serialise the chat plus diagnostics as the persisted
+      // description. Each turn is labelled so the inbox view stays
+      // scannable; diagnostics live in a fenced block at the bottom
+      // so an agentic debugger can lift viewport / browser / timezone
+      // context without parsing the prose.
+      const description = renderFeedbackReport({
+        type,
+        moduleLabel: currentModuleLabel ?? null,
+        messages,
+        diagnostics,
+      });
       const payload: Record<string, unknown> = {
         type,
         title,
@@ -537,7 +759,7 @@ function BugReportModal({
 
   if (submitted) {
     return (
-      <div className="fad-modal-overlay" style={{ zIndex: 10000 }} onClick={onClose}>
+      <div className="fad-modal-overlay feedback-modal-backdrop" style={{ zIndex: 10000 }} onClick={onClose}>
         <div className="fad-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
           <div className="fad-modal-body" style={{ textAlign: 'center', padding: 40 }}>
             <div
@@ -567,7 +789,7 @@ function BugReportModal({
   }
 
   return (
-    <div className="fad-modal-overlay" style={{ zIndex: 10000 }} onClick={onClose}>
+    <div className="fad-modal-overlay feedback-modal-backdrop" style={{ zIndex: 10000 }} onClick={onClose}>
       <div className="fad-modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
         <div className="fad-modal-head">
           <IconTool size={16} />
@@ -599,8 +821,54 @@ function BugReportModal({
             ))}
           </div>
 
-          <div className="bug-screenshot-frame">
-            {!screenshot && (
+          {/* Screenshot preview — collapsed thumb until clicked, full
+              when expanded. The user can SEE what they're sending
+              instead of trusting an "attached" label. Pending state
+              shows while the upstream capture is still in flight so
+              there's no flash to the "unavailable" copy before the
+              capture lands. */}
+          <div className={'bug-screenshot-frame' + (screenshotExpanded ? ' is-expanded' : '')}>
+            {screenshot ? (
+              <button
+                type="button"
+                onClick={() => setScreenshotExpanded((v) => !v)}
+                aria-label={screenshotExpanded ? 'Collapse screenshot preview' : 'Expand screenshot preview'}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  padding: 0,
+                  border: 0,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                }}
+              >
+                <span className="bug-screenshot-meta">{currentModuleLabel || 'current view'}</span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={screenshot}
+                  alt="Page screenshot"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    maxHeight: screenshotExpanded ? '70vh' : 200,
+                    objectFit: screenshotExpanded ? 'contain' : 'cover',
+                    objectPosition: 'top',
+                  }}
+                />
+              </button>
+            ) : screenshotPending ? (
+              <div
+                style={{
+                  height: 200,
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 12,
+                  color: 'var(--color-text-tertiary)',
+                }}
+              >
+                Capturing screenshot…
+              </div>
+            ) : (
               <div
                 style={{
                   height: 200,
@@ -612,13 +880,6 @@ function BugReportModal({
               >
                 Screenshot unavailable · proceed without
               </div>
-            )}
-            {screenshot && (
-              <>
-                <span className="bug-screenshot-meta">{currentModuleLabel || 'current view'}</span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={screenshot} alt="Page screenshot" />
-              </>
             )}
           </div>
 
@@ -836,6 +1097,45 @@ function deriveTitle(description: string, scope?: string): string {
   const truncated = firstSegment.length > 80 ? firstSegment.slice(0, 77) + '…' : firstSegment;
   const safe = truncated.length >= 4 ? truncated : 'Untitled report';
   return scope ? `[${scope}] ${safe}` : safe;
+}
+
+// Render the full feedback packet for the inbox. Markdown body so the
+// existing inbox renderer (Slack webhook + email HTML) keeps working;
+// diagnostics go into a fenced JSON block at the end so an agentic
+// debugger or human triager can lift viewport / browser / timezone
+// context without scraping prose. Mirrors the website's
+// renderFeedbackReport but kept compatible with FAD's backend that
+// expects plain markdown in `description`.
+function renderFeedbackReport(args: {
+  type: FeedbackType;
+  moduleLabel: string | null;
+  messages: ChatMessage[];
+  diagnostics: FeedbackDiagnostics;
+}): string {
+  const transcript = args.messages.length === 0
+    ? '(no messages)'
+    : args.messages
+        .map((m) => (m.role === 'user' ? `**You:** ${m.text}` : `**Friday:** ${m.text}`))
+        .join('\n\n');
+  const d = args.diagnostics;
+  const diagLines = [
+    `- Captured: ${d.capturedAt}`,
+    `- Viewport: ${d.viewport.width}×${d.viewport.height} (scroll ${d.viewport.scrollX},${d.viewport.scrollY}, DPR ${d.viewport.devicePixelRatio})`,
+    `- Screen: ${d.screen.width}×${d.screen.height} (available ${d.screen.availableWidth}×${d.screen.availableHeight})`,
+    `- Browser: ${d.browser.platform || '(unknown)'} · ${d.browser.language || '(no lang)'} · ${d.browser.timezone || '(no tz)'} · ${d.browser.online ? 'online' : 'offline'} · ${d.browser.colorScheme} mode`,
+    `- User agent: ${d.browser.userAgent}`,
+    `- Screenshot: ${d.screenshot.attached ? `attached (~${Math.round(d.screenshot.bytesApprox / 1024)} KB)` : 'not attached'}`,
+  ].join('\n');
+  return [
+    `**Type:** ${args.type}`,
+    args.moduleLabel ? `**Module:** ${args.moduleLabel}` : null,
+    '',
+    '**Transcript**',
+    transcript,
+    '',
+    '**Safe diagnostics**',
+    diagLines,
+  ].filter((v) => v !== null).join('\n');
 }
 
 function ChatBubble({ role, text }: { role: 'user' | 'friday'; text: string }) {
