@@ -82,6 +82,7 @@ import {
 } from '../../_data/breezeway';
 import { useCurrentUserId } from '../usePermissions';
 import { fireToast } from '../Toaster';
+import { CaptureExpenseDrawer } from './operations/CaptureExpenseDrawer';
 
 // ─────────────────────────────────── SHARED CONTEXT ───────────────────────────────────
 
@@ -206,7 +207,19 @@ export function FinanceModule({ subPage, role, onRoleChange, onAskFriday }: Prop
         )}
       </div>
 
-      {captureOpen && <CaptureDrawer mode={captureMode} onClose={() => setCaptureOpen(false)} />}
+      {/* Path B: admin-direct expense capture, no task context. The drawer
+       *  shows a property picker (incl. OFFICE meta) and posts to the real
+       *  /api/expenses with entry_mode=path_b. The old in-file CaptureDrawer
+       *  mock below is retained for the Path A toggle preview only — wire-up
+       *  for switching modes mid-flow lives in slice 4+ if we keep that UX. */}
+      {captureOpen && (
+        <CaptureExpenseDrawer
+          open={captureOpen}
+          task={null}
+          onClose={() => setCaptureOpen(false)}
+          onCreated={() => { fireToast('Expense captured.'); }}
+        />
+      )}
       {periodCloseOpen && <PeriodCloseWizard onClose={() => setPeriodCloseOpen(false)} />}
       {confirm && <ConfirmModal action={confirm} onClose={() => setConfirm(null)} />}
       {bankUpload.open && <BankUploadDrawer accountId={bankUpload.accountId} payoutPlatform={bankUpload.payoutPlatform} onClose={() => setBankUpload({ open: false })} />}

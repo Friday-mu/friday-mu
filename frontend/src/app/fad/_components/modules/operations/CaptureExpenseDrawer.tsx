@@ -26,7 +26,11 @@ import { IconClose, IconPlus, IconSparkle } from '../../icons';
 
 interface Props {
   open: boolean;
-  task: Task | null;
+  /** Path A: caller passes the task — property is locked from task.
+   *  Path B: caller passes `null` (or omits) — drawer shows a property
+   *  picker (TASK_PROPERTIES + 'OFFICE' meta) and the operator chooses.
+   *  Both modes hit POST /api/expenses with the right `entry_mode`. */
+  task?: Task | null;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -76,6 +80,9 @@ function pickCategoryFromHint(hint: string, categories: ExpenseCategory[]): stri
 }
 
 export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) {
+  // Mode derived from the presence of a task. Path A locks property from
+  // the task; Path B exposes a property picker (incl. an OFFICE meta).
+  const mode: 'path_a' | 'path_b' = task ? 'path_a' : 'path_b';
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
   const [vendorName, setVendorName] = useState('');
@@ -93,17 +100,23 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
   const [ocrNotes, setOcrNotes] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Path B: operator picks a property (or 'OFFICE' meta for non-property spend).
+  const [pickedPropertyCode, setPickedPropertyCode] = useState<string>('');
 
-  // Task-derived context — operator can't override property in Path A.
-  const propertyCode = task?.propertyCode || '';
+  // Property context. Path A pulls from task (locked). Path B uses
+  // operator's pick; 'OFFICE' is a meta code for non-property spend
+  // (admin / store / overhead) that backend validates via asPropertyCode.
+  const propertyCode = mode === 'path_a' ? (task?.propertyCode || '') : pickedPropertyCode;
   const propertyMeta = useMemo(
     () => TASK_PROPERTIES.find((p) => p.code === propertyCode),
     [propertyCode],
   );
 
-  // Reset on open + load categories.
+  // Reset on open + load categories. Fires in both modes — Path A keys
+  // on task.id (re-fires per task), Path B keys on open (re-fires per
+  // drawer open).
   useEffect(() => {
-    if (!open || !task) return;
+    if (!open) return;
     setVendorName('');
     setAmount('');
     setCurrency('MUR');
@@ -117,8 +130,9 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
     setOcrConfidence(null);
     setOcrNotes(null);
     setError(null);
+    setPickedPropertyCode('');
     let cancelled = false;
-    fetchExpenseCategories('path_a')
+    fetchExpenseCategories(mode)
       .then((res) => {
         if (cancelled) return;
         setCategories(res.categories);
@@ -133,7 +147,7 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
       });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, task?.id]);
+  }, [open, task?.id, mode]);
 
   // When operator picks a category, reset bill-to to its default unless
   // they've manually overridden it (we'd need a flag to track that —
@@ -204,7 +218,9 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
 
   const validation = useMemo(() => {
     const issues: string[] = [];
-    if (!task) issues.push('Open from a task.');
+    if (mode === 'path_b' && !pickedPropertyCode) {
+      issues.push('Pick a property (or Office / Admin).');
+    }
     if (!categoryCode) issues.push('Pick a category.');
     if (!amount.trim() || !(Number(amount) > 0)) issues.push('Enter the amount.');
     if (!description.trim()) issues.push('Enter a description.');
@@ -213,10 +229,10 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
     }
     if (labourMode && !(Number(labourHours) > 0)) issues.push('Enter the labour hours.');
     return issues;
-  }, [amount, categoryCode, description, labourHours, labourMode, pendingReceipts.length, task, vendorName]);
+  }, [amount, categoryCode, description, labourHours, labourMode, mode, pendingReceipts.length, pickedPropertyCode, vendorName]);
 
   const submit = async () => {
-    if (!task || validation.length > 0) {
+    if (validation.length > 0) {
       setError(validation.join(' '));
       return;
     }
@@ -224,7 +240,9 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
     setError(null);
     try {
       await createExpense({
-        task_id: task.id,
+        entry_mode: mode,
+        ...(mode === 'path_a' && task ? { task_id: task.id } : {}),
+        ...(mode === 'path_b' ? { property_code: pickedPropertyCode } : {}),
         vendor_name: vendorName.trim() || undefined,
         amount: Number(amount),
         currency,
@@ -246,23 +264,47 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
     }
   };
 
-  if (!open || !task) return null;
+  if (!open) return null;
 
   return (
     <>
       <div className="fad-drawer-overlay open" onClick={onClose} />
       <aside className="fad-drawer open fin-capture-drawer" style={{ maxWidth: 560 }}>
         <div className="fad-drawer-header">
-          <div className="fad-drawer-title">Capture expense</div>
+          <div className="fad-drawer-title">
+            {mode === 'path_a' ? 'Capture expense' : 'Capture expense · Admin direct'}
+          </div>
           <button className="fad-util-btn" onClick={onClose} title="Close" style={{ marginLeft: 'auto' }}>
             <IconClose />
           </button>
         </div>
         <div className="fad-drawer-body ops-create-body">
-          <div className="ops-form-alert neutral">
-            Linked to task: <strong>{task.title}</strong>
-            {propertyMeta && <> · <span className="mono">{propertyMeta.code}</span> · {propertyMeta.name}</>}
-          </div>
+          {mode === 'path_a' && task ? (
+            <div className="ops-form-alert neutral">
+              Linked to task: <strong>{task.title}</strong>
+              {propertyMeta && <> · <span className="mono">{propertyMeta.code}</span> · {propertyMeta.name}</>}
+            </div>
+          ) : (
+            <section className="ops-form-section">
+              <div className="ops-form-section-title">Property</div>
+              <label className="ops-form-field">
+                <span>Property</span>
+                <select
+                  value={pickedPropertyCode}
+                  onChange={(e) => setPickedPropertyCode(e.target.value)}
+                >
+                  <option value="">— pick a property —</option>
+                  <option value="OFFICE">Office / Store / Admin (no property)</option>
+                  {/* TASK_PROPERTIES already contains an OFFICE meta entry —
+                      filter it out here since we surface it above with a
+                      clearer label. */}
+                  {TASK_PROPERTIES.filter((p) => p.code !== 'OFFICE').map((p) => (
+                    <option key={p.code} value={p.code}>{p.code} · {p.name}</option>
+                  ))}
+                </select>
+              </label>
+            </section>
+          )}
 
           {categoriesError && <div className="ops-form-alert failed">{categoriesError}</div>}
 

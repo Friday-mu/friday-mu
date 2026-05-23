@@ -35,7 +35,15 @@ export interface ReceiptUploadInput {
 }
 
 export interface CreateExpenseInput {
-  task_id: string;
+  /** Defaults to 'path_a' server-side. Pass 'path_b' for admin-direct
+   *  entry without a task; in that case task_id may be omitted and
+   *  property_code is required. */
+  entry_mode?: 'path_a' | 'path_b';
+  /** Required for path_a; omit for path_b. */
+  task_id?: string;
+  /** Required for path_b; ignored for path_a (task wins). Can be a
+   *  property code like 'VV-47' or the meta code 'OFFICE'. */
+  property_code?: string;
   vendor_name?: string;
   vendor_id?: string;
   amount: number;
