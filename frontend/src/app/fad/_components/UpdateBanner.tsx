@@ -117,10 +117,12 @@ export function UpdateBanner() {
     };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
+    const interval = window.setInterval(check, 5 * 60_000);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(interval);
     };
   }, []);
 

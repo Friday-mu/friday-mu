@@ -267,12 +267,18 @@ export function CalendarModule() {
     sort: 'dueDate',
     limit: 500,
   }), [days]);
+  const reservationWindowFilter = useMemo(() => ({
+    from: days[0]?.isoDate,
+    to: days[days.length - 1]?.isoDate,
+    dateMode: 'overlap' as const,
+    limit: 500,
+  }), [days]);
   const {
     reservations: liveReservations,
     loading: reservationsLoading,
     error: reservationsError,
     refetch: refetchReservations,
-  } = useLiveReservations();
+  } = useLiveReservations(reservationWindowFilter);
   const {
     tasks: liveTasks,
     loading: tasksLoading,

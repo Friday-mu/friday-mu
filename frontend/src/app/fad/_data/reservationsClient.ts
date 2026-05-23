@@ -194,13 +194,33 @@ export function transformReservation(r: RawReservation): Reservation {
   } as Reservation;
 }
 
-export async function loadReservations(): Promise<Reservation[]> {
+export interface LoadReservationsInput {
+  from?: string;
+  to?: string;
+  dateMode?: 'check_in' | 'overlap';
+  upcoming?: boolean;
+  limit?: number;
+}
+
+function reservationsQuery(input: LoadReservationsInput = {}): string {
+  const qs = new URLSearchParams();
+  qs.set('limit', String(input.limit || 500));
+  if (input.from) qs.set('from', input.from);
+  if (input.to) qs.set('to', input.to);
+  if (input.dateMode === 'overlap') qs.set('date_mode', 'overlap');
+  if (input.upcoming) qs.set('upcoming', 'true');
+  return qs.toString();
+}
+
+export async function loadReservations(input: LoadReservationsInput = {}): Promise<Reservation[]> {
   // Backend returns { reservations: [...] } (see backend/src/reservations/index.js
   // shapeReservation). Earlier wiring read `data.results` and silently fell back
   // to the empty array. Consumers now stay live-only by default instead of
   // falling back to the RESERVATIONS fixture.
-  const data = await apiFetch('/api/reservations?limit=500') as { reservations?: RawReservation[] };
-  return dedupeRawReservations(data?.reservations || []).map(transformReservation);
+  const data = await apiFetch(`/api/reservations?${reservationsQuery(input)}`) as { reservations?: RawReservation[] };
+  return dedupeRawReservations(data?.reservations || [])
+    .map(transformReservation)
+    .filter((reservation) => reservation.checkIn && reservation.checkOut);
 }
 
 export interface UseLiveReservationsResult {
@@ -210,18 +230,20 @@ export interface UseLiveReservationsResult {
   refetch: () => void;
 }
 
-export function useLiveReservations(): UseLiveReservationsResult {
+export function useLiveReservations(input: LoadReservationsInput = {}): UseLiveReservationsResult {
   const [reservations, setReservations] = useState<Reservation[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const queryKey = reservationsQuery(input);
   const refetch = useCallback(() => {
     setLoading(true);
     setError(null);
-    loadReservations()
+    setReservations(null);
+    loadReservations(input)
       .then(setReservations)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load reservations'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [queryKey]);
   useEffect(() => { refetch(); }, [refetch]);
   return { reservations, loading, error, refetch };
 }

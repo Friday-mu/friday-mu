@@ -20,6 +20,7 @@ import {
 import { notificationRead, useLiveNotifications } from '../../_data/notificationsClient';
 import { useTenantUsers } from '../../_data/useTenantUsers';
 import { fireToast } from '../Toaster';
+import { usePushNotifications } from '../../../../components/usePushNotifications';
 
 type ReadFilter = 'all' | 'unread' | 'read';
 type SortMode = 'ai' | 'recent';
@@ -52,6 +53,10 @@ export function NotificationsModule() {
     markUnread: markLiveUnread,
     markAllRead: markLiveAllRead,
   } = useLiveNotifications();
+  const {
+    permission: pushPermission,
+    requestPermission: requestPushPermission,
+  } = usePushNotifications();
 
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
   const [notificationTab, setNotificationTab] = useState<NotificationTab>('inbox');
@@ -159,6 +164,15 @@ export function NotificationsModule() {
       fireToast(e instanceof Error ? `Read state failed: ${e.message}` : 'Read state failed');
     });
   };
+  const handleEnablePush = () => {
+    void requestPushPermission()
+      .then((ok) => {
+        fireToast(ok ? 'Browser notifications enabled' : 'Browser notifications not enabled');
+      })
+      .catch((e) => {
+        fireToast(e instanceof Error ? `Push setup failed: ${e.message}` : 'Push setup failed');
+      });
+  };
   const clearFilters = () => {
     setModuleFilter(new Set());
     setSeverityFilter(new Set());
@@ -184,6 +198,16 @@ export function NotificationsModule() {
             <button className="btn ghost sm notif-mobile-filter-btn notif-header-action" onClick={() => setFiltersOpenMobile(true)}>
               ☰ Filters
             </button>
+            {pushPermission === 'default' && (
+              <button className="btn ghost sm notif-header-action" onClick={handleEnablePush}>
+                Enable push
+              </button>
+            )}
+            {pushPermission === 'denied' && (
+              <button className="btn ghost sm notif-header-action" disabled title="Browser notifications are blocked">
+                Push blocked
+              </button>
+            )}
             <button className="btn ghost sm notif-header-action" onClick={() => setSortMode(sortMode === 'ai' ? 'recent' : 'ai')} title="Toggle ranking">
               {sortMode === 'ai' ? '✨ AI priority' : 'Chronological'}
             </button>
