@@ -1889,9 +1889,13 @@ html.fad-dark .fad-palette-overlay { background: rgba(0,0,0,0.6); }
   display: grid;
   place-items: center;
   cursor: pointer;
-  /* Sit above all modals, drawers, lightboxes, dropdowns.
-     The FAB itself is unmounted while our own feedback modal is open. */
-  z-index: 10000;
+  /* Sit above ALL floating UI in FAD — drawers, modals, lightboxes,
+     dropdowns, even the UpdateBanner (12000). The FAB is portalled to
+     document.body in BugReport.tsx so it escapes any module-level
+     stacking context, and this z-index puts it unambiguously on top.
+     The FAB itself is unmounted while our own feedback modal is open
+     (the modal still sits at z-index:10000). */
+  z-index: 100000;
   box-shadow: 0 4px 12px rgba(15, 24, 54, 0.12);
   transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }

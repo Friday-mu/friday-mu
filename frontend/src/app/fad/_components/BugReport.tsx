@@ -17,6 +17,7 @@
 // yet — separate slice with paired backend deploy.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '../../../components/types';
 import { IconAI, IconCheck, IconClose, IconTool } from './icons';
 import { useDictation } from './useDictation';
@@ -396,11 +397,22 @@ export function BugReportFab({ currentModuleLabel }: Props) {
 
   const modSym = getModifierSymbol();
 
-  return (
+  // Render via portal to document.body so the FAB escapes any module-
+  // level stacking context (transform, filter, position+z, isolation
+  // ancestors). Without this, certain side panels and overlays were
+  // landing visually above the FAB even though the FAB has the higher
+  // z-index, because their ancestor stacking context outranked the
+  // FAB's. Portalling means the FAB sits as a direct child of <body>
+  // and competes for stacking only against other body-level positioned
+  // elements — combined with z-index:100000 (fad.css) it is now
+  // unambiguously on top of every FAD surface. Skips render server-
+  // side / during the brief pre-mount window.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <>
       {/* Hide the FAB while our own modal is open. The FAB sits at
-          z-index 110 (above every other dialog so the team can report
-          bugs that occur inside modals); if we left it mounted while
+          z-index 100000 (above every other dialog so the team can
+          report bugs from any surface); if we left it mounted while
           our own bug-report dialog is open it would float on top of
           itself, which looks awful. Unmounting is cleaner than
           visibility:hidden since the dialog is the focus anyway. */}
@@ -426,7 +438,8 @@ export function BugReportFab({ currentModuleLabel }: Props) {
           dictationToggleSeq={dictationToggleSeq}
         />
       )}
-    </>
+    </>,
+    document.body,
   );
 }
 
