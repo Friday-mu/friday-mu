@@ -8874,6 +8874,152 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   height: 12px;
 }
 
+/* ───────────────── Ask Friday review (KB candidates queue) ─────────────────
+ * Slice 2 of Ask Friday Core operationalization. Staff queue for approving /
+ * rejecting / needs-info-ing KB candidates that the Core analyzer proposes.
+ * Director-only V1 (gated by MODULE_RESOURCE['ask-friday-review']). */
+.afr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.afr-card:hover { border-color: var(--color-border-secondary); }
+.afr-card.active {
+  border-color: var(--color-brand-accent);
+  background: var(--color-brand-accent-soft);
+}
+.afr-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.afr-target {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  letter-spacing: -0.01em;
+}
+.afr-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.afr-type {
+  padding: 2px 8px;
+  font-size: 10px;
+  background: var(--color-background-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.afr-tier {
+  padding: 2px 8px;
+  font-size: 10px;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid;
+  letter-spacing: 0.02em;
+}
+.afr-tier-green  { color: var(--color-text-success); border-color: rgba(92, 179, 124, 0.4);  background: var(--color-bg-success); }
+.afr-tier-amber  { color: var(--color-text-warning); border-color: rgba(212, 164, 85, 0.4);  background: var(--color-bg-warning); }
+.afr-tier-red    { color: var(--color-text-danger);  border-color: rgba(224, 106, 92, 0.4);  background: var(--color-bg-danger); }
+.afr-tier-neutral { color: var(--color-text-tertiary); border-color: var(--color-border-tertiary); background: transparent; }
+.afr-status {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+.afr-status-pending     { color: var(--color-text-info);     background: var(--color-bg-info); }
+.afr-status-needs_info  { color: var(--color-text-warning);  background: var(--color-bg-warning); }
+.afr-status-approved    { color: var(--color-text-success);  background: var(--color-bg-success); }
+.afr-status-rejected    { color: var(--color-text-danger);   background: var(--color-bg-danger); }
+.afr-status-expired     { color: var(--color-text-tertiary); background: var(--color-background-tertiary); }
+.afr-card-summary {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  line-height: 1.45;
+}
+.afr-card-meta {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.45;
+}
+.afr-detail {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100dvh - 200px);
+}
+.afr-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.afr-detail-title { font-size: 13px; font-weight: 500; }
+.afr-detail-body { padding: 14px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.afr-detail-section { margin-bottom: 14px; }
+.afr-detail-section h5 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+.afr-detail-section p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--color-text-primary); }
+.afr-json {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono-fad);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.afr-events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.afr-events li { padding: 2px 0; color: var(--color-text-secondary); }
+.afr-detail-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  /* Stack list + detail on tablet — detail flows below the active row. */
+  .afr-split { flex-direction: column; }
+  .afr-detail { width: 100% !important; flex: 1 1 auto !important; position: static; max-height: none; }
+}
+
 /* Approval-tier live preview chip — shown in CaptureExpenseDrawer below
  * the Amount input. Color encodes routine (green) / medium (amber) /
  * major (red) per locked design Notion 34e43ca8849281fa8085f120b211c689.

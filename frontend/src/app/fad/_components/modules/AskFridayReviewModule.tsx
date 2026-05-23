@@ -1,0 +1,292 @@
+'use client';
+
+// Ask Friday Review — staff queue for approving / rejecting KB candidates
+// proposed by the Core analyzer. Backend at /api/ask-friday/core/kb-candidates
+// (list + PATCH for status transitions).
+//
+// V1 audience: director only (gated via MODULE_RESOURCE['ask-friday-review']
+// → 'admin_analytics' resource). Per the Ask Friday Core handover, "Ishant
+// is the V1 reviewer." Widen to ops_manager when the queue workflow stabilises.
+//
+// Slice 2 of Ask Friday Core operationalization. Slice 3 (context-pack
+// publishing) consumes the approved candidates.
+
+import { useMemo, useState } from 'react';
+import { ModuleHeader } from '../ModuleHeader';
+import {
+  reviewKbCandidate,
+  useKbCandidates,
+  type KbCandidate,
+  type KbCandidateReviewStatus,
+} from '../../_data/askFridayCoreClient';
+import { fireToast } from '../Toaster';
+import { IconAI, IconCheck, IconClose, IconClock, IconSparkle } from '../icons';
+
+interface Props {
+  subPage: string;
+  onChangeSubPage?: (sub: string) => void;
+}
+
+type TabKey = 'pending' | 'needs_info' | 'approved' | 'rejected' | 'all';
+
+const TABS: Array<{ id: TabKey; label: string; status: KbCandidateReviewStatus | 'all' }> = [
+  { id: 'pending',    label: 'Pending',    status: 'pending' },
+  { id: 'needs_info', label: 'Needs info', status: 'needs_info' },
+  { id: 'approved',   label: 'Approved',   status: 'approved' },
+  { id: 'rejected',   label: 'Rejected',   status: 'rejected' },
+  { id: 'all',        label: 'All',        status: 'all' },
+];
+
+function fmtRelative(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function riskColor(risk: string | null): string {
+  if (risk === 'high') return 'red';
+  if (risk === 'review') return 'amber';
+  if (risk === 'safe') return 'green';
+  return 'neutral';
+}
+
+function trustColor(trust: string | null): string {
+  if (trust === 'verified') return 'green';
+  if (trust === 'corroborated') return 'amber';
+  return 'neutral';
+}
+
+export function AskFridayReviewModule({ subPage }: Props) {
+  const [tab, setTab] = useState<TabKey>('pending');
+  const [selected, setSelected] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const statusFilter = TABS.find((t) => t.id === tab)?.status || 'pending';
+  const { candidates, loading, isRevalidating, error, refetch } = useKbCandidates({
+    status: statusFilter,
+    limit: 200,
+  });
+
+  const sortedCandidates = useMemo(() => {
+    if (!candidates) return null;
+    // Pending first, then by createdAt desc.
+    return [...candidates].sort((a, b) => {
+      if (a.reviewStatus !== b.reviewStatus) {
+        if (a.reviewStatus === 'pending') return -1;
+        if (b.reviewStatus === 'pending') return 1;
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [candidates]);
+
+  const counts = useMemo(() => {
+    const c: Record<KbCandidateReviewStatus, number> = {
+      pending: 0, needs_info: 0, approved: 0, rejected: 0, expired: 0,
+    };
+    (candidates || []).forEach((k) => { c[k.reviewStatus] = (c[k.reviewStatus] || 0) + 1; });
+    return c;
+  }, [candidates]);
+
+  const selectedCandidate = useMemo(
+    () => (selected ? sortedCandidates?.find((c) => c.candidateId === selected) : null) || null,
+    [selected, sortedCandidates],
+  );
+
+  const review = async (candidateId: string, next: KbCandidateReviewStatus, note?: string) => {
+    setBusyId(candidateId);
+    try {
+      await reviewKbCandidate(candidateId, { reviewStatus: next, reviewNote: note });
+      fireToast(
+        next === 'approved' ? 'Candidate approved.'
+        : next === 'rejected' ? 'Candidate rejected.'
+        : 'Candidate marked needs-info.',
+      );
+      refetch();
+      // Stay on the selected row even after status change so the operator
+      // can see the audit fields populate. The list filter will hide it
+      // from the current tab on the next render if status moved out.
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Review failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const headerActions = (
+    <>
+      <button className="btn ghost sm" onClick={refetch} disabled={isRevalidating} title="Reload from Core">
+        <IconClock size={12} /> {isRevalidating ? 'Refreshing…' : 'Refresh'}
+      </button>
+    </>
+  );
+
+  return (
+    <>
+      <ModuleHeader
+        title="Ask Friday review"
+        subtitle="Approve, reject, or send-back proposed KB updates. Director-only — V1 reviewer is Ishant."
+        actions={headerActions}
+      />
+      <div className="fad-module-body" style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="fad-tabs" role="tablist" aria-label="Review status filters">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              className={'fad-tab' + (tab === t.id ? ' active' : '')}
+              onClick={() => { setTab(t.id); setSelected(null); }}
+            >
+              {t.label}
+              {t.id !== 'all' && (
+                <span className="count">{counts[t.id as KbCandidateReviewStatus] || 0}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <div className="ops-form-alert failed" style={{ marginTop: 12 }}>
+            Failed to load: {error}
+          </div>
+        )}
+
+        <div className="afr-split" style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'flex-start' }}>
+          <div className="afr-list" style={{ flex: 1, minWidth: 0 }}>
+            {loading && !candidates && (
+              <div style={{ padding: 24, color: 'var(--color-text-tertiary)', fontSize: 13 }}>Loading candidates…</div>
+            )}
+            {!loading && sortedCandidates && sortedCandidates.length === 0 && (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+                <IconSparkle size={24} />
+                <div style={{ marginTop: 8 }}>No {tab === 'all' ? '' : tab} candidates.</div>
+                {tab === 'pending' && (
+                  <div style={{ marginTop: 4, fontSize: 11 }}>
+                    The Core analyzer hasn&apos;t produced any candidates yet, or all have been actioned.
+                  </div>
+                )}
+              </div>
+            )}
+            {sortedCandidates && sortedCandidates.map((c) => (
+              <button
+                key={c.candidateId}
+                type="button"
+                className={'afr-card' + (selected === c.candidateId ? ' active' : '')}
+                onClick={() => setSelected(c.candidateId)}
+              >
+                <div className="afr-card-row">
+                  <span className={'chip afr-type'}>{c.candidateType || 'fact'}</span>
+                  <span className="afr-target mono">{c.targetLayer || '—'}</span>
+                  <span className={`chip afr-tier afr-tier-${riskColor(c.riskClass)}`}>
+                    risk · {c.riskClass || '—'}
+                  </span>
+                  <span className={`chip afr-tier afr-tier-${trustColor(c.trustTier)}`}>
+                    trust · {c.trustTier || '—'}
+                  </span>
+                  <span className={`afr-status afr-status-${c.reviewStatus}`}>{c.reviewStatus}</span>
+                  <span className="afr-time">{fmtRelative(c.createdAt)}</span>
+                </div>
+                <div className="afr-card-summary">{c.evidenceSummary || <em style={{ opacity: 0.6 }}>(no summary)</em>}</div>
+                {c.reviewer && (
+                  <div className="afr-card-meta">
+                    Reviewed by {c.reviewer} {c.reviewedAt ? `· ${fmtRelative(c.reviewedAt)}` : ''}
+                    {c.reviewNote ? ` — “${c.reviewNote}”` : ''}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {selectedCandidate && (
+            <aside className="afr-detail" style={{ width: 380, flex: '0 0 380px' }}>
+              <div className="afr-detail-head">
+                <div className="afr-detail-title">{selectedCandidate.candidateType || 'candidate'} · <span className="mono">{selectedCandidate.targetLayer}</span></div>
+                <button className="btn ghost sm" onClick={() => setSelected(null)} aria-label="Close" title="Close" style={{ marginLeft: 'auto' }}>
+                  <IconClose size={12} />
+                </button>
+              </div>
+              <div className="afr-detail-body">
+                <div className="afr-detail-section">
+                  <h5>Evidence</h5>
+                  <p>{selectedCandidate.evidenceSummary || <em style={{ opacity: 0.6 }}>(no summary)</em>}</p>
+                </div>
+                <div className="afr-detail-section">
+                  <h5>Proposed change</h5>
+                  <pre className="afr-json">{JSON.stringify(selectedCandidate.proposedChange, null, 2)}</pre>
+                </div>
+                {selectedCandidate.sourceEventIds.length > 0 && (
+                  <div className="afr-detail-section">
+                    <h5>Source events ({selectedCandidate.sourceEventIds.length})</h5>
+                    <ul className="afr-events">
+                      {selectedCandidate.sourceEventIds.slice(0, 10).map((id) => (
+                        <li key={id} className="mono" style={{ fontSize: 11 }}>{id}</li>
+                      ))}
+                      {selectedCandidate.sourceEventIds.length > 10 && (
+                        <li style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                          + {selectedCandidate.sourceEventIds.length - 10} more
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+                {selectedCandidate.reviewer && (
+                  <div className="afr-detail-section">
+                    <h5>Review history</h5>
+                    <div style={{ fontSize: 12 }}>
+                      <strong>Status:</strong> {selectedCandidate.reviewStatus}<br />
+                      <strong>Reviewer:</strong> {selectedCandidate.reviewer}<br />
+                      <strong>When:</strong> {fmtRelative(selectedCandidate.reviewedAt)}
+                      {selectedCandidate.reviewNote && (
+                        <>
+                          <br />
+                          <strong>Note:</strong> {selectedCandidate.reviewNote}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {selectedCandidate.reviewStatus !== 'approved' && selectedCandidate.reviewStatus !== 'rejected' && (
+                <div className="afr-detail-actions">
+                  <button
+                    className="btn primary sm"
+                    disabled={busyId === selectedCandidate.candidateId}
+                    onClick={() => review(selectedCandidate.candidateId, 'approved')}
+                  >
+                    <IconCheck size={12} /> Approve
+                  </button>
+                  <button
+                    className="btn ghost sm"
+                    disabled={busyId === selectedCandidate.candidateId}
+                    onClick={() => {
+                      const note = window.prompt('What info do you need from the analyzer? (sent back as needs_info)') || '';
+                      if (note.trim()) review(selectedCandidate.candidateId, 'needs_info', note.trim());
+                    }}
+                  >
+                    <IconClock size={12} /> Needs info
+                  </button>
+                  <button
+                    className="btn danger sm"
+                    disabled={busyId === selectedCandidate.candidateId}
+                    onClick={() => {
+                      const note = window.prompt('Why reject? (optional, audited)') || '';
+                      review(selectedCandidate.candidateId, 'rejected', note.trim() || undefined);
+                    }}
+                  >
+                    <IconClose size={12} /> Reject
+                  </button>
+                </div>
+              )}
+            </aside>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

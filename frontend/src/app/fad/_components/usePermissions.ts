@@ -308,6 +308,10 @@ export const MODULE_RESOURCE: Record<string, Resource[]> = {
   'tenant-settings': ['tenant_settings'],
   billing: ['billing'],
   'admin-analytics': ['admin_analytics'],
+  // Ask Friday review queue gates on admin_analytics — director-only by
+  // default. Per the Ask Friday Core handover, "Ishant is the V1 reviewer";
+  // widen to ops_manager when queue workflow stabilises.
+  'ask-friday-review': ['admin_analytics'],
   training: ['owners'],
   settings: ['settings'],
   hr: ['hr_staff', 'hr_time_off', 'hr_stats'],

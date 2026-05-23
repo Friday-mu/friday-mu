@@ -38,6 +38,7 @@ import { DesignModule } from './modules/DesignModule';
 import { TenantSettingsModule } from './modules/TenantSettingsModule';
 import { BillingModule } from './modules/BillingModule';
 import { AdminAnalyticsModule } from './modules/AdminAnalyticsModule';
+import { AskFridayReviewModule } from './modules/AskFridayReviewModule';
 import { MODULE_RESOURCE, PermissionsProvider, canSeeModule, useCurrentRole } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
@@ -460,6 +461,8 @@ function renderModuleInner(
       return <BillingModule />;
     case 'admin-analytics':
       return <AdminAnalyticsModule />;
+    case 'ask-friday-review':
+      return <AskFridayReviewModule subPage={subPage || 'pending'} onChangeSubPage={ctx.setSubPage} />;
     case 'syndic':
     case 'agency':
       return <TeaseModule mod={mod} />;
