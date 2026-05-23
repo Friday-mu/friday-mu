@@ -121,9 +121,11 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Reviewer + audit fields; no auto-publish.
 - This is strategic, not day-to-day-blocking. But it unblocks every future Slice 3+.
 
-### T2.8 — Touch target follow-up on Ops + Inbox internals
-- Effort: S-M · Blocks: continued PWA usability complaints · Status: open
-- PWA pass today covered shell + sidebar. Card-internal buttons (filter chips, action icons) likely still <44px.
+### T2.8 — Touch target follow-up on Ops + Inbox internals ✓ shipped 2026-05-23
+- Mobile audit on 375×812:
+  - Ops: 12 small targets → 1 (avatar only). Fixed: 8x `.ops-status-chip` (28px→38px), 3x `.fad-tab` sub-pages (26px→40px) + min-height: 40px on `.fad-tab` mobile.
+  - Inbox: 3 small targets → 1 (avatar only). Fixed: `.inbox-chip` (24px→38px), `.inbox-collapse-btn` (28x28→40x40).
+- Net: 15 → 2 in two modules.
 
 ---
 
@@ -240,7 +242,8 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-23 (today, this session)
-- **T2.1 — Inbox reservation context drawer for narrow viewports** (this commit) — added slide-in drawer triggered by a new "Reservation" button in thread header, since CSS hid the inline panel below 1180px. Restores reservation context for tablet + mobile + small-laptop operators.
+- **T2.8 — Touch targets in Ops + Inbox** (this commit) — `.fad-tab` 26→40px, `.ops-status-chip` 28→38px, `.inbox-chip` 24→38px, `.inbox-collapse-btn` 28×28→40×40. Net 15 small targets → 2.
+- **T2.1 — Inbox reservation context drawer for narrow viewports** (`a06528c`) — added slide-in drawer triggered by a new "Reservation" button in thread header, since CSS hid the inline panel below 1180px. Restores reservation context for tablet + mobile + small-laptop operators.
 - **T1.3 partial — Calendar font consistency** (`0dbf21a`) — month-day 11→13px + investigation notes
 - **T1.6 — Stale deploy docs cleanup** (`e41343a`) — rewrote `docs/deploy.md`, deleted dead `deploy.sh` + `deploy-production.sh`, fixed `CLAUDE.md` paths
 - **T1.2 audit — Guesty bookings DO NOT auto-create Ops tasks** (`5872dda`) — promoted to new T3.6 scope item

@@ -2267,7 +2267,11 @@ html.fad-dark .fad-feedback-tab.is-active {
     padding: 3px;
   }
   .fad-tabs::-webkit-scrollbar { display: none; }
-  .fad-tab { flex-shrink: 0; padding: 6px 10px; font-size: 12px; }
+  /* Apple HIG 44pt — was 26px effective height. Bump padding so the
+   * tab hit-box is closer to 40px without growing the visual chip
+   * out of proportion. Operators tap these constantly to switch sub-
+   * pages so under-44 was a real pain. */
+  .fad-tab { flex-shrink: 0; padding: 10px 12px; font-size: 12px; min-height: 40px; }
   .fad-tab .count { min-width: 16px; height: 14px; font-size: 9px; }
 
   .fad-module-body { padding: 16px; }
@@ -2299,7 +2303,21 @@ html.fad-dark .fad-feedback-tab.is-active {
   }
   .inbox-chips-row::-webkit-scrollbar { display: none; }
   .inbox-chips-row > span:last-child { display: none; }
-  .inbox-chip { height: 24px; padding: 0 8px; font-size: 11px; }
+  /* Apple HIG 44pt — was 24px, far too small for the 1st filter row
+   * field staff hit constantly. Bump to a comfortable 38px. */
+  .inbox-chip {
+    min-height: 38px;
+    min-width: 44px;
+    padding: 0 12px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  /* Inbox list↔thread toggle (chevron in a circle). Was 28x28; bump
+   * to 40x40 on mobile so the collapse/expand affordance is reliably
+   * hittable on the tight chip row. */
+  .inbox-collapse-btn { width: 40px; height: 40px; }
   .inbox-split { flex-direction: column; }
   .inbox-list { width: 100%; flex: 1; max-height: none; }
   .inbox-thread { min-height: 60vh; border-right: 0; display: none; }
@@ -6534,6 +6552,20 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   border-color: var(--color-brand-accent);
   color: var(--color-brand-accent);
   background: var(--color-brand-accent-soft);
+}
+
+/* Mobile: Ops status filter chips (Open / Reported / Scheduled / Ready
+ * / Active / Blocked / Done / All) were 28px tall on the My Tasks +
+ * All Tasks views. Field staff tap these every shift to filter — bump
+ * to 38px so they're reliably hittable without growing the chip
+ * visually too much. */
+@media (max-width: 640px) {
+  .ops-status-chip {
+    min-height: 38px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  .ops-status-chip strong { font-size: 12px; }
 }
 
 .ops-manager-workbench {
