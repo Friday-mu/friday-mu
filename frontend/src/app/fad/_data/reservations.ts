@@ -611,135 +611,15 @@ export function activityForReservation(reservationId: string): ReservationActivi
   );
 }
 
-/* ───── Inquiries (pre-reservation; converted ones link to a Reservation) ───── */
-
-export type InquiryStatus = 'pending_quote' | 'quote_sent' | 'guest_reviewing' | 'converted' | 'abandoned';
-
-export interface Inquiry {
-  id: string;
-  guestName: string;
-  guestEmail?: string;
-  guestPhone?: string;
-  /** Inbound channel — 'email' for direct email, 'whatsapp' for guest message, etc. */
-  source: 'email' | 'whatsapp' | 'website' | 'phone' | 'referral';
-  /** Multi-property quote candidates (ordered by Mathias's preference). */
-  propertyCodes: string[];
-  /** Window of interest. */
-  checkIn: string;
-  checkOut: string;
-  partySize: { adults: number; children: number; infants?: number };
-  status: InquiryStatus;
-  /** friday.mu link generated from Guesty quote builder (Phase 2 wires real generation). */
-  quoteLink?: string;
-  /** Total quote value if quote sent (gross). */
-  quoteAmount?: number;
-  currency: 'MUR' | 'EUR' | 'USD';
-  /** When converted, links to the created reservation. */
-  convertedToReservationId?: string;
-  notes?: string;
-  /** Reason flagged abandoned — abandoned status only. */
-  abandonReason?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// @demo:data — Tag: PROD-DATA-41 — see frontend/DEMO_CRUFT.md
-export const INQUIRIES: Inquiry[] = [
-  {
-    id: 'inq-elena-jul',
-    guestName: 'Elena Rossi',
-    guestEmail: 'elena.rossi@gmail.com',
-    source: 'website',
-    propertyCodes: ['BBH', 'VAZ', 'PT-3'],
-    checkIn: '2026-07-12T14:00:00',
-    checkOut: '2026-07-19T11:00:00',
-    partySize: { adults: 2, children: 2 },
-    status: 'quote_sent',
-    quoteLink: 'https://friday.mu/q/elena-jul12-87a3',
-    quoteAmount: 4200,
-    currency: 'EUR',
-    notes: 'Family of 4 · prefers villa with pool · second visit (stayed VAZ Jul 2025)',
-    createdAt: '2026-04-22T09:14:00',
-    updatedAt: '2026-04-23T11:30:00',
-  },
-  {
-    id: 'inq-thompson-aug',
-    guestName: 'James Thompson',
-    guestEmail: 'jt@thompsongroup.co.uk',
-    guestPhone: '+44 7700 900123',
-    source: 'email',
-    propertyCodes: ['NIT', 'OCT'],
-    checkIn: '2026-08-08T14:00:00',
-    checkOut: '2026-08-22T11:00:00',
-    partySize: { adults: 4, children: 2 },
-    status: 'guest_reviewing',
-    quoteLink: 'https://friday.mu/q/thompson-aug-c421',
-    quoteAmount: 9800,
-    currency: 'EUR',
-    notes: '14-night extended stay · larger villa preference · awaiting response 4 days',
-    createdAt: '2026-04-19T16:42:00',
-    updatedAt: '2026-04-24T10:00:00',
-  },
-  {
-    id: 'inq-mendez-may',
-    guestName: 'Sofía Mendez',
-    guestPhone: '+34 600 123 456',
-    source: 'whatsapp',
-    propertyCodes: ['SBN', 'COR'],
-    checkIn: '2026-05-22T14:00:00',
-    checkOut: '2026-05-28T11:00:00',
-    partySize: { adults: 2, children: 0 },
-    status: 'pending_quote',
-    currency: 'EUR',
-    notes: 'WhatsApp inquiry today · Mathias to send quote · honeymoon, prefers privacy',
-    createdAt: '2026-04-27T08:30:00',
-    updatedAt: '2026-04-27T08:30:00',
-  },
-  {
-    id: 'inq-yamamoto-converted',
-    guestName: 'Wei Chen',
-    guestEmail: 'wchen@booking-internal',
-    source: 'email',
-    propertyCodes: ['KS-5'],
-    checkIn: '2026-05-02T14:00:00',
-    checkOut: '2026-05-07T11:00:00',
-    partySize: { adults: 2, children: 0 },
-    status: 'converted',
-    quoteLink: 'https://friday.mu/q/chen-may-9f28',
-    quoteAmount: 1475,
-    currency: 'EUR',
-    convertedToReservationId: 'rsv-ks5-in-may2',
-    notes: 'Converted via friday.mu link · 36h response time',
-    createdAt: '2026-04-13T14:00:00',
-    updatedAt: '2026-04-15T10:14:00',
-  },
-  {
-    id: 'inq-okafor-abandoned',
-    guestName: 'Adaeze Okafor',
-    guestEmail: 'adaeze.o@example.com',
-    source: 'website',
-    propertyCodes: ['VAZ'],
-    checkIn: '2026-06-10T14:00:00',
-    checkOut: '2026-06-17T11:00:00',
-    partySize: { adults: 2, children: 0 },
-    status: 'abandoned',
-    quoteLink: 'https://friday.mu/q/okafor-jun-2e15',
-    quoteAmount: 2940,
-    currency: 'EUR',
-    notes: 'Quote sent · no response 35 days · candidate for Leads/CRM-lite re-engagement when that ships',
-    abandonReason: 'No response 30+ days',
-    createdAt: '2026-03-23T11:20:00',
-    updatedAt: '2026-04-22T00:00:00',
-  },
-];
-
-export const INQUIRY_STATUS_LABEL: Record<InquiryStatus, string> = {
-  pending_quote: 'Pending quote',
-  quote_sent: 'Quote sent',
-  guest_reviewing: 'Guest reviewing',
-  converted: 'Converted',
-  abandoned: 'Abandoned',
-};
+// Removed 2026-05-24: the legacy Inquiry / InquiryStatus / INQUIRIES /
+// INQUIRY_STATUS_LABEL exports were unused. The Mathias quote-builder
+// workflow per v0.2 §9 is now backed by /api/reservations/inquiries
+// (mig 078) with typed wrappers in `reservationsClient.ts`
+// (`InquiryRecord`, `loadInquiries`, `createInquiry`, `patchInquiry`,
+// `convertInquiry`). The current `InquiriesPage` reads
+// `useWebsiteInquiryThreads()` from `websiteInboxClient.ts` — a
+// separate concept (website-side inbox inquiries vs Mathias's quote
+// records). Both shapes coexist; the unused legacy fixture was dead.
 
 /* ───── Guest profiles (Phase 1: per-guest-name lookup; Phase 2 normalises into Guests module) ───── */
 
