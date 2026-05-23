@@ -18,6 +18,7 @@ import {
   initialRequirementState,
   requirementsForTemplate,
 } from '../../../_data/taskRequirements';
+import { useHydratePropertiesFromGuesty } from '../../../_data/propertiesClient';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconPlus, IconSparkle } from '../../icons';
@@ -182,6 +183,19 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
   const isManagerMode = resolvedMode === 'manager_schedule';
   const isAssignedIssue = resolvedMode === 'assigned_issue';
   const canSchedule = role !== 'field' && can('tasks', 'write');
+
+  // Bug fix (2026-05-23, Franny 11:00) — "When creating a new task, we
+  // don't have the option to select which properties; only the
+  // store/office/admin option shows up." Diagnosis: TASK_PROPERTIES
+  // = TASK_PROPERTIES_SHIM = [...PROPERTIES.map(...), OFFICE_META].
+  // PROPERTIES is hydrated from /api/properties (Guesty listings) but
+  // only inside PropertiesModule. Operators creating tasks from the
+  // Operations module never triggered the hydration, so PROPERTIES
+  // stayed empty and only OFFICE_META remained visible. Triggering
+  // hydration here ensures the property picker is populated on first
+  // open. The hook is idempotent (caches hydrated state in its own
+  // useState), so multiple consumers don't double-fetch.
+  useHydratePropertiesFromGuesty();
 
   const [nl, setNl] = useState('');
   const [title, setTitle] = useState('');
