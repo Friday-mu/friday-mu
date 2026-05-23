@@ -25,7 +25,6 @@ const { loadTenantConfig } = require('./adapters');
 const {
   enforceQuota,
   recordUsage,
-  parseKimiUsage,
   QuotaExceededError,
 } = require('../tenants/ai_usage');
 
@@ -137,13 +136,34 @@ async function callKimi(systemPrompt, userContent) {
     feature: 'design_rough_budget',
   });
   if (!result.ok) {
-    return { ok: false, error: result.error || 'completion failed', durationMs: result.latencyMs };
+    return {
+      ok: false,
+      error: result.error || 'completion failed',
+      durationMs: result.latencyMs,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
   const parsed = result.parsed || parseModelJson(result.text);
   if (!parsed) {
-    return { ok: false, error: `${result.provider} returned unparseable JSON`, durationMs: result.latencyMs, raw: result.text };
+    return {
+      ok: false,
+      error: `${result.provider} returned unparseable JSON`,
+      durationMs: result.latencyMs,
+      raw: result.text,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
-  return { ok: true, parsed, durationMs: result.latencyMs };
+  return {
+    ok: true,
+    parsed,
+    durationMs: result.latencyMs,
+    provider: result.provider || null,
+    model: result.model || null,
+    promptTokens: result.inputTokens ?? null,
+    completionTokens: result.outputTokens ?? null,
+  };
 }
 
 // Template fallback — runs when KIMI_API_KEY is unset or Kimi fails.
@@ -297,17 +317,22 @@ router.post('/rough-budget-estimate', requireDesignPerm('design:write'), async (
         const mid = Number.isFinite(parsed.midMinor) ? Math.round(parsed.midMinor) : lineSum;
         const low = Number.isFinite(parsed.lowMinor) ? Math.round(parsed.lowMinor) : Math.round(mid * 0.85);
         const high = Number.isFinite(parsed.highMinor) ? Math.round(parsed.highMinor) : Math.round(mid * 1.2);
-        // Log usage on success.
-        const usage = parseKimiUsage(result.data);
+        // Log usage on success — provider/model/tokens from the
+        // runTextCompletion result.
+        const promptTokens = result.promptTokens;
+        const completionTokens = result.completionTokens;
+        const totalTokens = (promptTokens != null && completionTokens != null)
+          ? promptTokens + completionTokens
+          : null;
         recordUsage({
           tenantId: req.tenantId,
           userId: req.identity?.userId,
           feature: 'ai_rough_budget',
-          provider: 'kimi',
-          model: KIMI_MODEL,
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
+          provider: result.provider || 'unknown',
+          model: result.model || null,
+          promptTokens,
+          completionTokens,
+          totalTokens,
           durationMs: result.durationMs,
           success: true,
           requestContext: { project_id, target_tier: target_tier || null, classification: classification || null },
@@ -319,8 +344,8 @@ router.post('/rough-budget-estimate', requireDesignPerm('design:write'), async (
           highMinor: high,
           contingencyPct: Number.isFinite(parsed.contingencyPct) ? parsed.contingencyPct : 10,
           narrative: typeof parsed.narrative === 'string' ? parsed.narrative : '',
-          source: 'kimi',
-          model: KIMI_MODEL,
+          source: result.provider || 'unknown',
+          model: result.model || null,
           durationMs: Date.now() - start,
         });
       }
@@ -331,21 +356,21 @@ router.post('/rough-budget-estimate', requireDesignPerm('design:write'), async (
       await sleep(delay);
     }
 
-    // Kimi unrecoverable — fallback. Still log the failed call so
-    // the cap reflects what we actually spent retrying.
+    // Both providers exhausted — fall back to the template. Log the
+    // failed call so the cap reflects what we spent retrying.
     recordUsage({
       tenantId: req.tenantId,
       userId: req.identity?.userId,
       feature: 'ai_rough_budget',
-      provider: 'kimi',
-      model: KIMI_MODEL,
+      provider: lastErr?.provider || 'unknown',
+      model: lastErr?.model || null,
       durationMs: Date.now() - start,
       success: false,
       errorCode: String(lastErr?.err?.response?.status || lastErr?.error || 'unknown_error').slice(0, 64),
       requestContext: { project_id, target_tier: target_tier || null, classification: classification || null },
     }).catch(() => {});
 
-    console.warn('[ai/rough-budget] Kimi unavailable, using template fallback:', lastErr?.error);
+    console.warn('[ai/rough-budget] both providers unavailable, using template fallback:', lastErr?.error);
     const fb = fallbackBudget({ brief, catalogSample: catalog_sample, styleGuide: style_guide, tier: target_tier, classification });
     return res.json({
       ...fb,

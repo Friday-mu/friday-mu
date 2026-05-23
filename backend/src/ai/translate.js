@@ -171,7 +171,13 @@ async function callKimi(text) {
     feature: 'inbox_translate',
   });
   if (!result.ok) {
-    return { ok: false, error: result.error || 'completion failed', latencyMs: result.latencyMs };
+    return {
+      ok: false,
+      error: result.error || 'completion failed',
+      latencyMs: result.latencyMs,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
   // gemini_first does its own JSON parsing into result.parsed; we still
   // need translate.js's narrower parseModelJson() to apply language-
@@ -182,9 +188,22 @@ async function callKimi(text) {
     ? parseModelJsonObject(result.parsed)
     : parseModelJson(result.text);
   if (!parsed) {
-    return { ok: false, error: `${result.provider} returned unparseable JSON`, latencyMs: result.latencyMs, raw: result.text };
+    return {
+      ok: false,
+      error: `${result.provider} returned unparseable JSON`,
+      latencyMs: result.latencyMs,
+      raw: result.text,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
-  return { ok: true, parsed, latencyMs: result.latencyMs, model: result.model };
+  return {
+    ok: true,
+    parsed,
+    latencyMs: result.latencyMs,
+    provider: result.provider || null,
+    model: result.model || null,
+  };
 }
 
 // Same lang/translation extraction logic as parseModelJson(raw), but
@@ -246,7 +265,8 @@ async function translateText(text, opts = {}) {
       original: trimmed,
       sourceLang: null,
       cached: false,
-      model: KIMI_MODEL,
+      model: kimi.model || null,
+      provider: kimi.provider || null,
       latencyMs: kimi.latencyMs ?? null,
       error: kimi.error,
     };
@@ -268,7 +288,8 @@ async function translateText(text, opts = {}) {
     original: trimmed,
     sourceLang: detectedLang,
     cached: false,
-    model: KIMI_MODEL,
+    model: kimi.model || null,
+    provider: kimi.provider || null,
     latencyMs: kimi.latencyMs,
   };
 

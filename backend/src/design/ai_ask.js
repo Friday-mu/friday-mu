@@ -22,7 +22,6 @@ const { loadTenantConfig } = require('./adapters');
 const {
   enforceQuota,
   recordUsage,
-  parseKimiUsage,
   QuotaExceededError,
 } = require('../tenants/ai_usage');
 
@@ -97,13 +96,34 @@ async function callKimi(systemPrompt, userContent) {
     feature: 'design_ai_ask',
   });
   if (!result.ok) {
-    return { ok: false, error: result.error || 'completion failed', durationMs: result.latencyMs };
+    return {
+      ok: false,
+      error: result.error || 'completion failed',
+      durationMs: result.latencyMs,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
   const parsed = result.parsed || parseModelJson(result.text);
   if (!parsed) {
-    return { ok: false, error: `${result.provider} returned unparseable JSON`, durationMs: result.latencyMs, raw: result.text };
+    return {
+      ok: false,
+      error: `${result.provider} returned unparseable JSON`,
+      durationMs: result.latencyMs,
+      raw: result.text,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
-  return { ok: true, parsed, durationMs: result.latencyMs };
+  return {
+    ok: true,
+    parsed,
+    durationMs: result.latencyMs,
+    provider: result.provider || null,
+    model: result.model || null,
+    promptTokens: result.inputTokens ?? null,
+    completionTokens: result.outputTokens ?? null,
+  };
 }
 
 // Load a focused project-context blob. Trims older activity rows to keep
@@ -285,17 +305,23 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
                 label: typeof c.label === 'string' ? c.label : c.refId,
               }))
           : [];
-        // Log usage on success — tokens come from Kimi's `usage` block.
-        const usage = parseKimiUsage(result.data);
+        // Log usage on success — provider/model/tokens come from the
+        // runTextCompletion result (could be Gemini-primary or Kimi-
+        // fallback; the wrapper exposes which one actually answered).
+        const promptTokens = result.promptTokens;
+        const completionTokens = result.completionTokens;
+        const totalTokens = (promptTokens != null && completionTokens != null)
+          ? promptTokens + completionTokens
+          : null;
         recordUsage({
           tenantId: req.tenantId,
           userId: req.identity?.userId,
           feature: 'ai_ask',
-          provider: 'kimi',
-          model: KIMI_MODEL,
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
+          provider: result.provider || 'unknown',
+          model: result.model || null,
+          promptTokens,
+          completionTokens,
+          totalTokens,
           durationMs: result.durationMs,
           success: true,
           requestContext: { project_id: project_id || null },
@@ -303,8 +329,8 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
         return res.json({
           answer,
           citations,
-          source: 'kimi',
-          model: KIMI_MODEL,
+          source: result.provider || 'unknown',
+          model: result.model || null,
           durationMs: Date.now() - start,
         });
       }
@@ -316,13 +342,14 @@ router.post('/ask', requireDesignPerm('design:read'), async (req, res) => {
     }
 
     // Failure path — record so the cap reflects reality even when the
-    // call didn't produce useful output.
+    // call didn't produce useful output. Provider/model come from the
+    // last attempt's runTextCompletion result when available.
     recordUsage({
       tenantId: req.tenantId,
       userId: req.identity?.userId,
       feature: 'ai_ask',
-      provider: 'kimi',
-      model: KIMI_MODEL,
+      provider: lastErr?.provider || 'unknown',
+      model: lastErr?.model || null,
       durationMs: Date.now() - start,
       success: false,
       errorCode: String(lastErr?.err?.response?.status || lastErr?.error || 'unknown_error').slice(0, 64),

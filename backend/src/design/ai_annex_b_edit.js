@@ -31,7 +31,6 @@ const { loadTenantConfig } = require('./adapters');
 const {
   enforceQuota,
   recordUsage,
-  parseKimiUsage,
   QuotaExceededError,
 } = require('../tenants/ai_usage');
 
@@ -123,13 +122,33 @@ async function callKimi(systemPrompt, userContent) {
     feature: 'design_annex_b_edit',
   });
   if (!result.ok) {
-    return { ok: false, error: result.error || 'completion failed', durationMs: result.latencyMs };
+    return {
+      ok: false,
+      error: result.error || 'completion failed',
+      durationMs: result.latencyMs,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
   const parsed = result.parsed || parseModelJson(result.text);
   if (!parsed) {
-    return { ok: false, error: `${result.provider} returned unparseable JSON`, durationMs: result.latencyMs };
+    return {
+      ok: false,
+      error: `${result.provider} returned unparseable JSON`,
+      durationMs: result.latencyMs,
+      provider: result.provider || null,
+      model: result.model || null,
+    };
   }
-  return { ok: true, parsed, durationMs: result.latencyMs };
+  return {
+    ok: true,
+    parsed,
+    durationMs: result.latencyMs,
+    provider: result.provider || null,
+    model: result.model || null,
+    promptTokens: result.inputTokens ?? null,
+    completionTokens: result.outputTokens ?? null,
+  };
 }
 
 // Strip any keys outside ALLOWED_FIELDS + coerce types. The model
@@ -222,17 +241,23 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
         const proposed = shapeProposed(parsed.proposed);
         const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
         const confidence = ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'medium';
-        // Log usage on success.
-        const usage = parseKimiUsage(result.data);
+        // Log usage on success — provider/model/tokens from the
+        // runTextCompletion result (Gemini-primary / Kimi-fallback;
+        // the wrapper exposes which one answered).
+        const promptTokens = result.promptTokens;
+        const completionTokens = result.completionTokens;
+        const totalTokens = (promptTokens != null && completionTokens != null)
+          ? promptTokens + completionTokens
+          : null;
         recordUsage({
           tenantId: req.tenantId,
           userId: req.identity?.userId,
           feature: 'ai_annex_b_edit',
-          provider: 'kimi',
-          model: KIMI_MODEL,
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
+          provider: result.provider || 'unknown',
+          model: result.model || null,
+          promptTokens,
+          completionTokens,
+          totalTokens,
           durationMs: result.durationMs,
           success: true,
           requestContext: { project_id, confidence },
@@ -241,7 +266,8 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
           proposed,
           reasoning,
           confidence,
-          source: 'kimi',
+          source: result.provider || 'unknown',
+          model: result.model || null,
           durationMs: Date.now() - start,
         });
       }
@@ -255,8 +281,8 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
       tenantId: req.tenantId,
       userId: req.identity?.userId,
       feature: 'ai_annex_b_edit',
-      provider: 'kimi',
-      model: KIMI_MODEL,
+      provider: lastErr?.provider || 'unknown',
+      model: lastErr?.model || null,
       durationMs: Date.now() - start,
       success: false,
       errorCode: String(lastErr?.err?.response?.status || lastErr?.error || 'unknown_error').slice(0, 64),
@@ -264,8 +290,8 @@ router.post('/annex-b-edit', requireDesignPerm('design:write'), async (req, res)
     }).catch(() => {});
 
     return res.status(502).json({
-      error: lastErr?.error || 'Kimi call failed',
-      source: 'kimi-error',
+      error: lastErr?.error || 'completion failed',
+      source: lastErr?.provider ? `${lastErr.provider}-error` : 'unknown-error',
       durationMs: Date.now() - start,
     });
   } catch (e) {
