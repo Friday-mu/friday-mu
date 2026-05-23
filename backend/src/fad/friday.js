@@ -14,6 +14,41 @@ const MAX_QUESTION_CHARS = 1200;
 const MAX_HISTORY_TURNS = 8;
 const ASK_FRIDAY_MODEL = process.env.FAD_ASK_MODEL || 'gemini-3.5-flash';
 const ASK_FRIDAY_MAX_TOKENS = Number(process.env.KIMI_FAD_ASK_MAX_TOKENS) || 4096;
+const FOCUS_THREAD_MESSAGE_LIMIT = 40;
+const FOCUS_OTHER_THREAD_LIMIT = 3;
+const WEBSITE_CONVERSATION_PREFIX = 'web-';
+const WEBSITE_DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function parseInboxFocusThreadId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (raw.startsWith(WEBSITE_CONVERSATION_PREFIX)) {
+    const threadId = raw.slice(WEBSITE_CONVERSATION_PREFIX.length);
+    return isUuid(threadId) ? { kind: 'website', id: threadId, raw } : null;
+  }
+  return isUuid(raw) ? { kind: 'guesty', id: raw, raw } : null;
+}
+
+function sanitizeFocus(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const module = cleanString(raw.module, 40).toLowerCase();
+  const threadId = cleanString(raw.threadId || raw.thread_id, 80);
+  const focusMessageId = cleanString(raw.focusMessageId || raw.focus_message_id || raw.messageId, 80);
+  const teamTarget = cleanString(raw.teamTarget || raw.team, 120);
+  const pageUrl = cleanString(raw.pageUrl || raw.page_url, 600);
+  if (!module && !threadId && !focusMessageId && !teamTarget && !pageUrl) return null;
+  return {
+    module: module || null,
+    threadId: threadId || null,
+    focusMessageId: focusMessageId || null,
+    teamTarget: teamTarget || null,
+    pageUrl: pageUrl || null,
+  };
+}
 // 2026-05-23 — bumped 45s → 8min (provider) / 25s → 90s (auto mode).
 // Coordinated with nginx proxy_read_timeout (60s → 600s). Auto mode
 // stays snappier since it's the interactive composer; provider mode
@@ -68,6 +103,7 @@ const SECTION_SOURCE_KIND = {
   inbox: 'fad_db',
   guest_inbox: 'fad_db',
   website_ai_handoffs: 'fad_db',
+  focused_inbox_thread: 'fad_db',
   operations: 'fad_db',
   hr: 'fad_db',
   reviews: 'guesty_api',
@@ -580,7 +616,148 @@ function shapeReview(row, listingIndex = null) {
   };
 }
 
-async function loadInboxContext(tenantId) {
+// Load a single guest conversation (Guesty-side `conversations` table)
+// with its recent messages. Used when the operator opens Ask Friday
+// while viewing a specific thread — the model gets the actual thread
+// instead of a recent-8 slice that may not even include it.
+async function loadFocusedGuestyThread(tenantId, conversationId) {
+  const [convRes, msgRes, draftRes] = await Promise.all([
+    query(
+      `SELECT id, guest_name, property_name, status, communication_channel,
+              last_message_at, updated_at, guest_phone, guesty_id
+         FROM conversations
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, conversationId],
+    ),
+    query(
+      `SELECT * FROM (
+         SELECT id, direction, body, created_at, sender_name, communication_channel
+           FROM messages
+          WHERE conversation_id = $1
+          ORDER BY created_at DESC, id::text DESC
+          LIMIT $2
+       ) recent
+       ORDER BY created_at ASC, id::text ASC`,
+      [conversationId, FOCUS_THREAD_MESSAGE_LIMIT],
+    ),
+    query(
+      `SELECT id, state, body, created_at, confidence
+         FROM drafts
+        WHERE conversation_id = $1
+        ORDER BY created_at DESC
+        LIMIT 3`,
+      [conversationId],
+    ),
+  ]);
+  const conv = convRes.rows[0] || null;
+  if (!conv) return null;
+  return {
+    kind: 'guesty_conversation',
+    id: conv.id,
+    guest: conv.guest_name,
+    property: conv.property_name,
+    status: conv.status,
+    channel: conv.communication_channel,
+    lastMessageAt: conv.last_message_at || conv.updated_at,
+    messages: msgRes.rows.map((m) => ({
+      id: m.id,
+      direction: m.direction,
+      sender: m.sender_name,
+      channel: m.communication_channel,
+      at: m.created_at,
+      excerpt: cleanString(m.body, 600),
+    })),
+    drafts: draftRes.rows.map((d) => ({
+      id: d.id,
+      state: d.state,
+      confidence: d.confidence,
+      createdAt: d.created_at,
+      excerpt: cleanString(d.body, 400),
+    })),
+  };
+}
+
+// Load a single website AI handoff thread (FR-only — `inbox_threads`
+// table) with its recent events. Mirrors loadFocusedGuestyThread but
+// for the website path.
+async function loadFocusedWebsiteThread(tenantId, threadId) {
+  if (tenantId !== FR_TENANT_ID) return null;
+  const [threadRes, eventRes] = await Promise.all([
+    query(
+      `SELECT id, guest_email, guest_name, guest_phone, status, last_event_type,
+              last_event_at, guesty_reservation_id, guesty_listing_id,
+              guesty_reservation_status, paid_at
+         FROM inbox_threads
+        WHERE id = $1`,
+      [threadId],
+    ),
+    query(
+      `SELECT * FROM (
+         SELECT id, event_type, source, payload, created_at
+           FROM inbox_events
+          WHERE thread_id = $1
+            AND event_type NOT IN ${WEBSITE_DRAFT_EVENT_TYPES_SQL}
+          ORDER BY created_at DESC, id::text DESC
+          LIMIT $2
+       ) recent
+       ORDER BY created_at ASC, id::text ASC`,
+      [threadId, FOCUS_THREAD_MESSAGE_LIMIT],
+    ),
+  ]);
+  const thread = threadRes.rows[0] || null;
+  if (!thread) return null;
+  // Find the most recent ai_handoff event so the operator's "explain this
+  // handoff" question lands on the actual handoff payload — that was
+  // Franny's reported failure mode.
+  const latestHandoff = [...eventRes.rows]
+    .reverse()
+    .find((e) => e.event_type === 'website.ai_handoff');
+  return {
+    kind: 'website_ai_handoff_thread',
+    id: thread.id,
+    rawId: `${WEBSITE_CONVERSATION_PREFIX}${thread.id}`,
+    guest: thread.guest_name || thread.guest_email,
+    status: thread.status,
+    lastEvent: thread.last_event_type,
+    lastEventAt: thread.last_event_at,
+    reservationId: thread.guesty_reservation_id,
+    listingId: thread.guesty_listing_id,
+    reservationStatus: thread.guesty_reservation_status,
+    paidAt: thread.paid_at,
+    latestAiHandoff: latestHandoff ? {
+      at: latestHandoff.created_at,
+      confidence: latestHandoff.payload?.confidence || null,
+      escalationReason: cleanString(latestHandoff.payload?.escalationReason, 240),
+      recommendedNextAction: cleanString(latestHandoff.payload?.recommendedNextAction, 240),
+      summary: cleanString(latestHandoff.payload?.summary, 600),
+    } : null,
+    events: eventRes.rows.map((e) => ({
+      id: e.id,
+      type: e.event_type,
+      source: e.source,
+      at: e.created_at,
+      excerpt: cleanString(
+        e.payload?.text || e.payload?.body || e.payload?.message || e.payload?.summary || '',
+        600,
+      ),
+    })),
+  };
+}
+
+async function loadInboxContext(tenantId, focus = null) {
+  // When the operator opens Ask Friday while looking at a specific
+  // thread, pin that thread as the focus and bring fewer "other recent"
+  // entries for situational awareness. The prompt routes the model's
+  // attention to focus.thread first.
+  const focusInfo = parseInboxFocusThreadId(focus?.threadId);
+  let focused = null;
+  if (focusInfo) {
+    focused = focusInfo.kind === 'website'
+      ? await loadFocusedWebsiteThread(tenantId, focusInfo.id)
+      : await loadFocusedGuestyThread(tenantId, focusInfo.id);
+  }
+  const recentLimit = focused ? FOCUS_OTHER_THREAD_LIMIT : 8;
+
   const native = await safeSection('guest_inbox', async () => {
     const { rows } = await query(
       `SELECT c.id, c.guest_name, c.property_name, c.status, c.communication_channel,
@@ -592,8 +769,8 @@ async function loadInboxContext(tenantId) {
          FROM conversations c
         WHERE c.tenant_id = $1
         ORDER BY COALESCE(c.last_message_at, c.updated_at, c.created_at) DESC
-        LIMIT 8`,
-      [tenantId],
+        LIMIT $2`,
+      [tenantId, recentLimit],
     );
     return rows.map((r) => ({
       id: r.id,
@@ -637,7 +814,8 @@ async function loadInboxContext(tenantId) {
          ) latest_takeover ON TRUE
         WHERE t.status <> 'closed'
         ORDER BY t.last_event_at DESC
-        LIMIT 8`,
+        LIMIT $1`,
+      [recentLimit],
     );
     return rows.map((r) => ({
       id: r.id,
@@ -658,7 +836,16 @@ async function loadInboxContext(tenantId) {
     }));
   }) : { name: 'website_ai_handoffs', ok: true, data: [] };
 
-  return { sections: [native, website] };
+  const sections = [native, website];
+  if (focused) {
+    sections.unshift({
+      name: 'focused_inbox_thread',
+      ok: true,
+      source: sectionSource('focused_inbox_thread'),
+      data: focused,
+    });
+  }
+  return { sections, focusedThreadKind: focused?.kind || null };
 }
 
 async function loadOperationsContext(tenantId) {
@@ -784,12 +971,18 @@ async function loadPropertiesContext(tenantId) {
   return rows;
 }
 
-async function loadFridayContext({ tenantId, question, scope }) {
+async function loadFridayContext({ tenantId, question, scope, focus }) {
   const requested = ASK_FRIDAY_CONTEXT_MODULES
     .filter((module) => shouldLoad({ question, scope }, module));
-  const effective = requested.length > 0 ? requested : ['inbox', 'operations', 'reservations', 'properties'];
+  // If the operator is focused on a specific inbox thread, force-include
+  // 'inbox' so the focused-thread bundle ships even when the question text
+  // doesn't otherwise trip the inbox heuristic ("explain this handoff" did
+  // not, which is how Franny's bug manifested).
+  const focusForcedInbox = focus?.threadId && parseInboxFocusThreadId(focus.threadId);
+  let effective = requested.length > 0 ? requested : ['inbox', 'operations', 'reservations', 'properties'];
+  if (focusForcedInbox && !effective.includes('inbox')) effective = ['inbox', ...effective];
   const loaders = {
-    inbox: () => loadInboxContext(tenantId),
+    inbox: () => loadInboxContext(tenantId, focus),
     operations: () => loadOperationsContext(tenantId),
     hr: () => loadHrContext(tenantId),
     reviews: () => loadReviewsContext(tenantId),
@@ -801,6 +994,7 @@ async function loadFridayContext({ tenantId, question, scope }) {
   return {
     tenantId,
     requestedModules: effective,
+    focus: focus || null,
     checkedAt: new Date().toISOString(),
     dataTruth: contextDataTruth(),
     sections,
@@ -828,6 +1022,8 @@ Rules:
 - Use only the supplied context. If a source is unavailable or missing, say that plainly.
 - Treat context.dataTruth as binding. Never infer from, cite, summarize, or act on demo/fixture module data. If a module is excluded because it is not live-wired yet, say that plainly.
 - Keep ownership boundaries clear: Inbox owns guest communication context; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
+- **Focus rule:** if a section named "focused_inbox_thread" is present under context.sections[*].data.sections (or anywhere in the inbox subtree), the operator is asking about THAT specific thread. Anchor your answer on its messages / events / latestAiHandoff. The other inbox entries are background context only — do not summarize or mix them in unless the question explicitly asks for a cross-thread comparison.
+- For "explain this AI handoff" / "what's going on with this guest" / "summarise this conversation" style questions, use only the focused thread's events and latestAiHandoff payload; do not pull in unrelated threads.
 - Prefer concise operational answers: answer first, then the evidence or next check.
 - Do not use markdown tables. Use compact bullets so the FAD panel stays readable on desktop and mobile.
 - If confidence is low, ask one targeted clarification instead of inventing.
@@ -858,10 +1054,11 @@ Return JSON only:
 }`;
 }
 
-function buildUserPrompt({ question, scope, context }) {
+function buildUserPrompt({ question, scope, context, focus }) {
   return JSON.stringify({
     question: cleanString(question, MAX_QUESTION_CHARS),
     scope: cleanString(scope || 'All of FAD', 120),
+    operatorFocus: focus || null,
     mauritiusCalendar: {
       today: todayInMauritius(),
       tomorrow: addDays(todayInMauritius(), 1),
@@ -959,7 +1156,8 @@ router.post('/ask', attachIdentity, async (req, res) => {
     if (question.length < 2) return res.status(400).json({ error: 'question is required' });
     const scope = cleanString(req.body?.scope || 'All of FAD', 120);
     const history = sanitizeHistory(req.body?.history);
-    const context = await loadFridayContext({ tenantId: req.tenantId, question, scope });
+    const focus = sanitizeFocus(req.body?.focus);
+    const context = await loadFridayContext({ tenantId: req.tenantId, question, scope, focus });
     const model = req.body?.model || ASK_FRIDAY_MODEL;
     const timeoutMs = String(model).toLowerCase() === 'auto'
       ? ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS
@@ -968,7 +1166,7 @@ router.post('/ask', attachIdentity, async (req, res) => {
       system: buildSystemPrompt(),
       messages: [
         ...history,
-        { role: 'user', content: buildUserPrompt({ question, scope, context }) },
+        { role: 'user', content: buildUserPrompt({ question, scope, context, focus }) },
       ],
       model,
       maxTokens: ASK_FRIDAY_MAX_TOKENS,
@@ -992,6 +1190,7 @@ router.post('/ask', attachIdentity, async (req, res) => {
       contextSummary: {
         requestedModules: context.requestedModules,
         dataTruth: context.dataTruth,
+        focus: context.focus || null,
         sourceStatus: context.sections.map((s) => ({
           name: s.name,
           ok: s.ok,
@@ -1026,6 +1225,8 @@ module.exports = {
     shouldLoad,
     shapeReview,
     buildListingIndex,
+    sanitizeFocus,
+    parseInboxFocusThreadId,
     ASK_FRIDAY_MODEL,
     ASK_FRIDAY_MAX_TOKENS,
     ASK_FRIDAY_PROVIDER_TIMEOUT_MS,

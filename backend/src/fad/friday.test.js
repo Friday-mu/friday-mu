@@ -48,6 +48,53 @@ describe('FAD Ask Friday helpers', () => {
     expect(prompt).toContain('demo/fixture');
     expect(prompt).toContain('Do not use markdown tables');
     expect(prompt).toContain('Return JSON only');
+    // Focus rule — when the operator is anchored to a specific thread,
+    // the model must answer on THAT thread not the recent slice.
+    expect(prompt).toContain('focused_inbox_thread');
+    expect(prompt).toContain('background context');
+  });
+
+  test('parses inbox focus thread ids — UUID conversation vs website handoff prefix', () => {
+    const uuid = '8b8914d9-66cd-4bcc-ab3e-1266fae27c69';
+    expect(_test.parseInboxFocusThreadId(uuid)).toEqual({ kind: 'guesty', id: uuid, raw: uuid });
+    expect(_test.parseInboxFocusThreadId(`web-${uuid}`)).toEqual({ kind: 'website', id: uuid, raw: `web-${uuid}` });
+    expect(_test.parseInboxFocusThreadId('not-a-uuid')).toBeNull();
+    expect(_test.parseInboxFocusThreadId('')).toBeNull();
+    expect(_test.parseInboxFocusThreadId(null)).toBeNull();
+  });
+
+  test('sanitizes operator focus payload — drops empty + caps lengths', () => {
+    expect(_test.sanitizeFocus(null)).toBeNull();
+    expect(_test.sanitizeFocus({})).toBeNull();
+    expect(_test.sanitizeFocus({
+      module: 'inbox',
+      threadId: 'web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+      teamTarget: 'channel:6c4c13d0-d780-4b1c-b2de-4051a9bdd555',
+      pageUrl: '/fad?m=inbox&thread=web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+    })).toEqual({
+      module: 'inbox',
+      threadId: 'web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+      focusMessageId: null,
+      teamTarget: 'channel:6c4c13d0-d780-4b1c-b2de-4051a9bdd555',
+      pageUrl: '/fad?m=inbox&thread=web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+    });
+  });
+
+  test('surfaces operatorFocus in the model prompt body', () => {
+    const focus = {
+      module: 'inbox',
+      threadId: 'web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+      teamTarget: null,
+      focusMessageId: null,
+      pageUrl: null,
+    };
+    const payload = JSON.parse(_test.buildUserPrompt({
+      question: 'Explain this AI handoff',
+      scope: 'Inbox',
+      focus,
+      context: { requestedModules: ['inbox'], sections: [] },
+    }));
+    expect(payload.operatorFocus).toEqual(focus);
   });
 
   test('supplies Mauritius calendar dates to the model prompt', () => {
