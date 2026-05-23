@@ -1,7 +1,9 @@
 # Field-staff map + usage telemetry — scoping pack v0.1 (DRAFT)
 
-> Status: DRAFT for Ishant review. Promote to Notion (FAD Scoping zone) when ready to lock.
+> Status: DRAFT for Ishant review.
 > Authored: 2026-05-24 (Ishant + Claude).
+> Canonical on Notion: [`36943ca884928170897edda4660ee133`](https://www.notion.so/36943ca884928170897edda4660ee133) (FAD Scoping zone).
+> This file is the runtime mirror — sync on edit.
 > Tracked as: **T4.37** in [`docs/FAD_BACKLOG.md`](../FAD_BACKLOG.md).
 
 ## 1. Framing

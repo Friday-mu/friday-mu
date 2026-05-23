@@ -1,7 +1,9 @@
 # Guest portal chat — scoping pack v0.1 (DRAFT)
 
-> Status: DRAFT for Ishant review. Promote to Notion (FAD Scoping zone) when ready to lock.
+> Status: DRAFT for Ishant review.
 > Authored: 2026-05-24 (Ishant + Claude).
+> Canonical on Notion: [`36943ca8849281939417fad24d881f94`](https://www.notion.so/36943ca8849281939417fad24d881f94) (FAD Scoping zone).
+> This file is the runtime mirror — sync on edit.
 > Tracked as: **T4.36** in [`docs/FAD_BACKLOG.md`](../FAD_BACKLOG.md).
 
 ## 1. Framing
