@@ -23,6 +23,7 @@ This document records exactly what shipped, what was verified, what remains, and
 - Integrated worktree used by Codex: `/Users/judith/.codex/worktrees/fad-essential-systems-20260523-62c1542`
 - PR #4 merged at: `2026-05-23T07:00:50Z`
 - Production deploy completed after merge.
+- This handover itself was pushed after deploy as a docs-only follow-up. If `origin/fad-rebuild` is newer than `1fec8633a36ea1c282441924e0c63c5da1fa0371` only by handover/docs commits, live production is still expected to report `1fec863` until the next coordinated deploy. Do not deploy solely to update handover docs.
 
 Live deployment evidence after deploy:
 
@@ -486,6 +487,7 @@ Current live evidence should be:
 - Backend version 1fec863, commit 1fec8633a36ea1c282441924e0c63c5da1fa0371
 - PM2 process fad-backend online
 - Ask Friday Core migration 074_ask_friday_core.sql applied
+- origin/fad-rebuild may be newer by docs-only handover commits. Treat that as expected branch/live skew unless code changed after 1fec863.
 
 Coordination:
 - PR #4 is merged and deployed.
