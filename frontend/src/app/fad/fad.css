@@ -8801,6 +8801,48 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   height: 12px;
 }
 
+/* Approval-tier live preview chip — shown in CaptureExpenseDrawer below
+ * the Amount input. Color encodes routine (green) / medium (amber) /
+ * major (red) per locked design Notion 34e43ca8849281fa8085f120b211c689.
+ * Muted variant shows for non-MUR currencies until conversion ships. */
+.ops-tier-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.ops-tier-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex: 0 0 8px;
+}
+.ops-tier-label { font-weight: 500; color: var(--color-text-primary); }
+.ops-tier-hint { color: var(--color-text-secondary); }
+.ops-tier-preview.tier-green {
+  background: var(--color-bg-success);
+  border-color: rgba(92, 179, 124, 0.35);
+}
+.ops-tier-preview.tier-green .ops-tier-dot { background: #5cb37c; }
+.ops-tier-preview.tier-amber {
+  background: var(--color-bg-warning);
+  border-color: rgba(212, 164, 85, 0.35);
+}
+.ops-tier-preview.tier-amber .ops-tier-dot { background: #d4a455; }
+.ops-tier-preview.tier-red {
+  background: var(--color-bg-danger);
+  border-color: rgba(224, 106, 92, 0.35);
+}
+.ops-tier-preview.tier-red .ops-tier-dot { background: #e06a5c; }
+.ops-tier-preview.is-muted .ops-tier-dot { background: var(--color-text-tertiary); opacity: 0.5; }
+.ops-tier-preview.is-muted .ops-tier-label { color: var(--color-text-secondary); font-weight: 400; }
+
 /* Expense row on TaskDetail. */
 .ops-expense-row {
   display: flex;

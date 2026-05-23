@@ -34,6 +34,29 @@ interface Props {
 type Currency = 'MUR' | 'EUR' | 'USD';
 const CURRENCIES: Currency[] = ['MUR', 'EUR', 'USD'];
 
+// Approval-tier thresholds (MUR-denominated, minor units = cents).
+// Matches the existing breezeway.ts FINANCE_THRESHOLD_MINOR (500_000 = Rs 5k)
+// and the locked design Notion 34e43ca8849281fa8085f120b211c689.
+//   ≤ Rs 5,000   → routine        green — auto-approved on submit
+//   ≤ Rs 100,000 → medium         amber — owner approval, 24h auto
+//   > Rs 100,000 → major          red   — owner pre-approval required
+const TIER_ROUTINE_MAX_MINOR = 500_000;
+const TIER_MEDIUM_MAX_MINOR = 10_000_000;
+
+type ApprovalTier = 'routine' | 'medium' | 'major';
+
+function approvalTierFor(amountMinor: number): ApprovalTier {
+  if (amountMinor <= TIER_ROUTINE_MAX_MINOR) return 'routine';
+  if (amountMinor <= TIER_MEDIUM_MAX_MINOR) return 'medium';
+  return 'major';
+}
+
+function tierMeta(tier: ApprovalTier): { color: 'green' | 'amber' | 'red'; label: string; hint: string } {
+  if (tier === 'routine') return { color: 'green', label: 'Auto-approved', hint: 'Posts immediately on submit.' };
+  if (tier === 'medium') return { color: 'amber', label: 'Owner approval', hint: '24h auto-approve window after submit.' };
+  return { color: 'red', label: 'Owner pre-approval required', hint: 'No auto-approve — owner must approve first.' };
+}
+
 // Pretty-print a category_hint from the LLM by best-effort matching it
 // to a known FR code. Falls back to the first category if nothing
 // matches; the operator can re-pick.
@@ -309,6 +332,31 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
                 </select>
               </label>
             </div>
+            {/* Live approval-tier preview. Only shown for MUR right now —
+                EUR/USD need a conversion step which lives in a later slice.
+                Per locked design Notion 34e43ca8849281fa8085f120b211c689:
+                operator should see the policy implication before submitting. */}
+            {(() => {
+              const amt = Number(amount);
+              if (!Number.isFinite(amt) || amt <= 0) return null;
+              if (currency !== 'MUR') {
+                return (
+                  <div className="ops-tier-preview is-muted">
+                    <span className="ops-tier-dot is-muted" />
+                    <span className="ops-tier-label">Tier set on submit (auto-converts to MUR).</span>
+                  </div>
+                );
+              }
+              const tier = approvalTierFor(Math.round(amt * 100));
+              const meta = tierMeta(tier);
+              return (
+                <div className={`ops-tier-preview tier-${meta.color}`}>
+                  <span className={`ops-tier-dot tier-${meta.color}`} />
+                  <span className="ops-tier-label">{meta.label}</span>
+                  <span className="ops-tier-hint">{meta.hint}</span>
+                </div>
+              );
+            })()}
           </section>
 
           <section className="ops-form-section">
