@@ -270,12 +270,15 @@ FAD staff routes:
 - `POST /action-requests`
 - `PATCH /action-requests/:actionId`
 - `POST /identity-links`
+- `POST /analyzer/run`
 - `GET /eval-cases`
 - `POST /eval-cases`
 
 ## Eval Plan
 
 Start with lightweight JSON eval cases in FAD Postgres, then add runner/tooling.
+
+The current backend includes a manual analyzer endpoint, `POST /api/ask-friday/core/analyzer/run`, which inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
 
 Initial suites:
 
@@ -325,7 +328,7 @@ FAD backend/core session:
 
 - Own migrations, contracts, public API routes, review queue routes, eval tables, identity/consent tables.
 - Avoid active FAB UI files until the polish branch is merged or parked.
-- Later: analyzer worker, review UI, eval runner, context-pack publisher.
+- Current branch includes a manual analyzer route. Later: scheduled analyzer workflow, review UI, eval runner, context-pack publisher.
 
 Website session:
 

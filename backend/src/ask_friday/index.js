@@ -15,6 +15,7 @@ const {
   cleanString,
   safeJson,
 } = require('./contracts');
+const { runAnalyzer } = require('./analyzer');
 
 const router = express.Router();
 
@@ -692,6 +693,22 @@ router.post(
   requireScope('ask-friday:identity:write'),
   (req, res) => upsertIdentityLink(req, res, { sourceSystem: 'friday-website' }),
 );
+
+router.post('/analyzer/run', attachIdentity, async (req, res) => {
+  try {
+    const result = await runAnalyzer({
+      tenantId: req.tenantId,
+      surfaceId: req.body?.surfaceId || req.body?.surface_id,
+      sinceHours: req.body?.sinceHours || req.body?.since_hours,
+      minClusterSize: req.body?.minClusterSize || req.body?.min_cluster_size,
+      limit: req.body?.limit,
+      dryRun: req.body?.dryRun !== false && req.body?.dry_run !== false,
+    });
+    res.json(result);
+  } catch (error) {
+    return respondError(res, error, 'analyzer_run_failed');
+  }
+});
 
 router.patch('/action-requests/:actionId', attachIdentity, async (req, res) => {
   try {

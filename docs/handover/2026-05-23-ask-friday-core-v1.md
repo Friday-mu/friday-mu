@@ -13,10 +13,12 @@ Added a FAD-owned Ask Friday Core V1 scaffold:
 
 - Migration: `backend/migrations/074_ask_friday_core.sql`
 - Contract normalizers: `backend/src/ask_friday/contracts.js`
+- Manual analyzer: `backend/src/ask_friday/analyzer.js`
 - Core router: `backend/src/ask_friday/index.js`
 - Server mount: `backend/server.js` at `/api/ask-friday/core`
 - Tests:
   - `backend/src/ask_friday/contracts.test.js`
+  - `backend/src/ask_friday/analyzer.test.js`
   - `backend/src/ask_friday/index.test.js`
 - Architecture note: `docs/architecture/ask-friday-core-v1-2026-05-23.md`
 
@@ -60,6 +62,7 @@ FAD staff routes:
 - `POST /action-requests`
 - `PATCH /action-requests/:actionId`
 - `POST /identity-links`
+- `POST /analyzer/run`
 - `GET /eval-cases`
 - `POST /eval-cases`
 
@@ -73,7 +76,7 @@ npm ci
 npm test -- ask_friday
 ```
 
-Result: 2 suites passed, 12 tests passed.
+Result after analyzer slice: 3 suites passed, 15 tests passed.
 
 Note: `npm ci` reported existing dependency audit issues from the repo lockfile: 12 vulnerabilities, 9 moderate and 3 high. This branch did not change dependencies.
 
@@ -99,7 +102,7 @@ No new public/product surface should use the earlier mistaken label. FridayOS re
 
 ## Parked
 
-- Learning analyzer worker that clusters events into KB/eval candidates.
+- Scheduled/background learning analyzer worker.
 - Review queue UI.
 - Context-pack publisher UI/process.
 - Eval runner.
@@ -111,9 +114,8 @@ No new public/product surface should use the earlier mistaken label. FridayOS re
 ## Next Safe Slices
 
 1. FAD backend analyzer worker:
-   - Scan redacted learning events.
-   - Cluster repeated gaps/failures.
-   - Draft `kb_candidate` and `eval_case` rows.
+   - Convert the manual `/analyzer/run` path into a scheduled or explicit staff-triggered workflow.
+   - Keep dry-run as default until review queue is active.
    - Do not auto-publish.
 
 2. FAD review queue:
@@ -146,7 +148,7 @@ No new public/product surface should use the earlier mistaken label. FridayOS re
 ```plain text
 Ask Friday Core V1 backend scaffold is on FAD branch codex/ask-friday-core-v1-20260523.
 
-It adds migration 074, contract normalizers, /api/ask-friday/core routes, tests, and docs. It does not touch Website or active FAD FAB UI files. Focused tests pass: npm test -- ask_friday, 2 suites / 12 tests.
+It adds migration 074, contract normalizers, a manual analyzer, /api/ask-friday/core routes, tests, and docs. It does not touch Website or active FAD FAB UI files. Focused tests pass: npm test -- ask_friday, 3 suites / 15 tests.
 
 Public routes are API-client scoped:
 - ask-friday:events:write
@@ -156,5 +158,5 @@ Public routes are API-client scoped:
 
 Staff routes are standard FAD JWT auth.
 
-Next safe slice: analyzer worker or review queue. Do not implement auto-publish. Do not expose private staff/owner/guest/payment/secret data. User-facing name is Ask Friday.
+Next safe slice: review queue or scheduled analyzer workflow. Do not implement auto-publish. Do not expose private staff/owner/guest/payment/secret data. User-facing name is Ask Friday.
 ```
