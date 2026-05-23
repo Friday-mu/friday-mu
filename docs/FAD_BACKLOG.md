@@ -240,6 +240,11 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-23 (today, this session)
+- **T1.3 partial — Calendar font consistency** (`0dbf21a`) — month-day 11→13px + investigation notes
+- **T1.6 — Stale deploy docs cleanup** (`e41343a`) — rewrote `docs/deploy.md`, deleted dead `deploy.sh` + `deploy-production.sh`, fixed `CLAUDE.md` paths
+- **T1.2 audit — Guesty bookings DO NOT auto-create Ops tasks** (`5872dda`) — promoted to new T3.6 scope item
+- **T1.4 — Dead CaptureDrawer mock removed** (`ef0fd30`) — 346 lines of dead code
+- **FAD_BACKLOG.md created** (`4d9f654`) — call-on-demand pending-tasks doc
 - **Slice 3c — DO Spaces opt-in receipt storage** (`e9db5df`) — backend only, env-var-gated
 - **Slice 3b — Path B admin-direct drawer** (`520d314`) — refactor + Finance wire-up
 - **Slice 3a — Approval-tier live preview** (`d2e1b17`) — color-coded chip in Capture drawer
