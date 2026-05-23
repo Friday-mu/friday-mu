@@ -237,6 +237,10 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - **T4.33 — WhatsApp burner bridge** — parked; blocked on QR/pairing
 - **T4.34 — Optimistic update layer** — mutations still wait round-trip; today's SWR fix only covered reads
 
+### New initiatives (v0.1 scope drafts ready, await Ishant decisions)
+- **T4.36 — Guest portal chat** (effort: 2-3 weeks once scope locks) — replace WhatsApp dependency for direct-booking + on-property guest messaging with a chat surface inside the guest portal. AI-augmented with full reservation + Property Cards context. Honest framing: complement to WhatsApp, not replacement (discovery friction kills pure-portal strategies). **Scope draft**: [`docs/scoping/2026-05-24-guest-portal-chat-v0.1.md`](scoping/2026-05-24-guest-portal-chat-v0.1.md) with 15 open questions (channels, identity, notification, AI surfaces, OTA scope, auth, integration, etc.). Cross-cuts: Friday Website (separate session per AGENTS.md), Guests module v0.2, Inbox channel taxonomy.
+- **T4.37 — Field-staff map + opt-in telemetry** (effort: 1-2 weeks) — TWO parts. **Part A (build)**: live Ops map showing where field staff are during shifts. Solves "where's Bryan?", "fastest cleaner to LB-2?", "Ravi at airport yet?" Builds on existing `analytics_events` (mig 068) + VAPID push + PWA infra. **Part B (defer)**: generic FAD usage analytics — needs a real question first; current `analytics_events` substrate enough for targeted queries. **Scope draft**: [`docs/scoping/2026-05-24-field-staff-map-v0.1.md`](scoping/2026-05-24-field-staff-map-v0.1.md) with 12 open questions (opt-in model, accuracy/PWA-install requirement, update frequency, storage, retention, display, scope, privacy).
+
 ---
 
 ## Strategic constraints (locked, not re-litigable)
