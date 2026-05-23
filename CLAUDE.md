@@ -35,7 +35,7 @@ Friday Admin Dashboard (FAD) is the operations cockpit for Friday Retreats — a
 ## Tech stack
 
 - **Frontend:** Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS
-- **Export:** `output: 'export'` — static HTML, no SSR. Deployed to `/var/www/friday-dashboard/`
+- **Export:** `output: 'export'` — static HTML, no SSR. Deployed to `/var/www/fad/` (canonical since 2026-05-18).
 - **Backend:** Node.js + Express (lightweight, API proxy + static file server)
 - **DB:** PostgreSQL 15 (shared with GMS backend)
 - **External:** Guesty API, Slack webhooks, Breezeway API
@@ -80,7 +80,7 @@ Or clone once for fast local read: `git clone git@github.com:Friday-mu/feature-c
 
 **API calls:** Frontend calls backend API or GMS backend directly via `NEXT_PUBLIC_API_URL`. Backend proxy pattern in `backend/server.js`.
 
-**Static export:** `npm run build` in frontend generates `out/` folder. This is copied to `/var/www/friday-dashboard/` on deploy. No server-side rendering — everything must work as static HTML.
+**Static export:** `npm run build` in frontend generates `out/` folder. This is copied to `/var/www/fad/` on deploy via `rsync`. No server-side rendering — everything must work as static HTML.
 
 ## Key facts (always relevant)
 
@@ -179,13 +179,13 @@ Canonical deploy lives in `~/.openclaw/workspace/AGENTS.md` Deploy Rules section
 cd frontend && npm run build
 # OR push to fad-rebuild → Vercel preview deploy fires automatically
 
-# VPS deploy (manual, for production)
-# Copy frontend/out/ to VPS /var/www/friday-dashboard/
+# VPS deploy (manual, for production) — see docs/deploy.md for the full sequence
+# Canonical: rsync frontend/out/ → /var/www/fad/ ; rsync backend/ → /var/www/fad-backend/
 # Verify chunk hashes changed (stale JS from browser cache is a real failure mode)
 
 # Backend (if changed)
 cd backend && npm run build
-# Deploy backend artifacts per AGENTS.md
+# Then rsync backend + pm2 restart fad-backend — see docs/deploy.md
 ```
 
 Vercel handles preview deploys automatically on push to `fad-rebuild`. VPS production deploy is manual at sprint close.

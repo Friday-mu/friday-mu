@@ -52,15 +52,20 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 ### T1.4 — Old CaptureDrawer mock removal ✓ shipped 2026-05-23
 - Removed in commit (this batch). 338 lines deleted: `CaptureDrawer` + `ReceiptExtraction` + `CaptureProps` interface + orphaned `captureMode` state + orphaned `ApprovalTier` import.
 
-### T1.5 — Update banner stale-asset detection verification
-- Effort: XS · Blocks: confidence that PR #4's 5-min `/version.json` poll actually fires · Status: open
-- Spin up frontend, leave tab open, deploy a new SHA, confirm banner shows within ~5 min.
-- Or just inspect the polling code path + console-log to verify.
+### T1.5 — Update banner stale-asset detection verification ✓ verified 2026-05-23
+- Code review of `UpdateBanner.tsx` confirms polling is correctly wired:
+  - `setInterval(check, 5*60_000)` — 5-min cadence ✓
+  - Plus `focus` + `visibilitychange` triggers when tab activates ✓
+  - 60s throttle prevents duplicate checks
+  - Cache-busted `/version.json?t=<ts>` fetch
+  - Compares to in-memory `knownVersionRef`; sets `updateAvailable=true` on mismatch
+- No bugs. Live functional smoke deferred — would require leaving a tab open + waiting through a real deploy.
 
-### T1.6 — Stale deploy docs cleanup
-- Effort: S · Blocks: confused future agents · Status: open
-- `docs/deploy.md`, `CLAUDE.md`, `deploy.sh`, `deploy-production.sh` still reference `/var/www/friday-dashboard` (canonical is `/var/www/fad`).
-- Sweep + delete the obsolete scripts.
+### T1.6 — Stale deploy docs cleanup ✓ shipped 2026-05-23
+- Rewrote `docs/deploy.md` with canonical rsync flow (frontend → `/var/www/fad/`, backend → `/var/www/fad-backend/`, pm2 restart `fad-backend`, version stamp, backup, migration one-liner, authed smoke).
+- Fixed 3 stale `/var/www/friday-dashboard` references in `CLAUDE.md`.
+- Replaced the dead `./deploy.sh production` line in `README.md` with a pointer to docs/deploy.md.
+- Deleted `deploy.sh` + `deploy-production.sh` (both referenced Docker setup that no longer exists).
 
 ### T1.7 — Floor-plan studio testing
 - Effort: S-M · Blocks: knowing if Design SaaS W2-W5 work actually works · Status: open
