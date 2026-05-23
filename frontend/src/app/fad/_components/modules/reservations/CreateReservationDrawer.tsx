@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import {
+  RESERVATIONS,
+  RESERVATION_BY_ID,
   CHANNEL_LABEL,
   CLEANING_ARRANGEMENT_LABEL,
   SPECIAL_REQUEST_LABEL,
@@ -12,6 +14,7 @@ import {
   type SpecialRequestCategory,
 } from '../../../_data/reservations';
 import { createReservation } from '../../../_data/reservationsClient';
+import { bumpFixtureRev } from '../../../_data/fixtureRev';
 import { TASK_PROPERTIES } from '../../../_data/tasks';
 import { fireToast } from '../../Toaster';
 import { IconClose } from '../../icons';
@@ -101,77 +104,92 @@ export function CreateReservationDrawer({ open, onClose, onCreated }: Props) {
     setStep('confirm');
   };
 
-  const [submitting, setSubmitting] = useState(false);
-
-  const confirmCreate = async () => {
-    if (submitting) return;
-    setSubmitting(true);
+  // Optimistic create: splice the reservation into RESERVATIONS locally,
+  // close drawer + toast immediately, fire createReservation in the
+  // background. On error, pop the optimistic row + restore the draft so
+  // the user can retry.
+  const confirmCreate = () => {
     const confirmationCode = draft.confirmationCode || generateCode(draft.channel);
-    try {
-      const created = await createReservation({
-        step: 'confirm',
-        status: 'confirmed',
-        channel: draft.channel,
-        sourceKind: draft.channel === 'owner' ? 'manual' : (draft.extensionOf ? 'bdc_extension' : 'manual'),
-        confirmationCode,
-        cleaningArrangement: isOwnerStay ? draft.cleaningArrangement : undefined,
-        specialRequests: (draft.specialRequestCategories.length > 0 || draft.specialRequestNotes)
-          ? { categories: draft.specialRequestCategories, notes: draft.specialRequestNotes }
-          : undefined,
-        internalNotes: draft.notes || undefined,
-        extensionOfReservationId: draft.extensionOf || undefined,
-      });
-      // Build a Reservation-shaped object for the parent's onCreated callback.
-      // The backend overlay row is the source of truth now; this is just so the
-      // detail drawer can render immediately without round-tripping the list.
-      const newRsv: Reservation = {
-        id: created.id,
-        confirmationCode: created.confirmation_code || confirmationCode,
-        propertyCode: draft.propertyCode,
-        guestName: draft.guestName.trim(),
-        checkIn: draft.checkIn.includes(':') ? `${draft.checkIn}:00` : draft.checkIn,
-        checkOut: draft.checkOut.includes(':') ? `${draft.checkOut}:00` : draft.checkOut,
-        nights: computedNights,
-        channel: draft.channel,
-        partySize: {
-          adults: draft.adults,
-          children: draft.children,
-          ...(draft.infants > 0 ? { infants: draft.infants } : {}),
-        },
-        status: 'confirmed',
-        totalAmount: isOwnerStay ? 0 : draft.totalAmount,
-        currency: draft.currency,
-        touristTax: isOwnerStay ? 0 : draft.touristTax,
-        payoutStatus: isOwnerStay ? 'captured' : 'pending',
-        balanceDue: isOwnerStay ? 0 : draft.totalAmount,
-        ...(isOwnerStay ? { cleaningArrangement: draft.cleaningArrangement } : {}),
-        ...(draft.specialRequestCategories.length > 0 || draft.specialRequestNotes
-          ? {
-              specialRequests: {
-                categories: draft.specialRequestCategories,
-                notes: draft.specialRequestNotes,
-              },
-            }
-          : {}),
-        ...(draft.notes ? { notes: draft.notes } : {}),
-        ...(draft.extensionOf ? { extensionOf: draft.extensionOf } : {}),
-        createdAt: created.synced_at || new Date().toISOString(),
-      };
-      onCreated(newRsv);
-      fireToast(
-        isOwnerStay
-          ? `Owner stay confirmed · ${newRsv.confirmationCode} · ${newRsv.propertyCode}`
-          : `Reservation confirmed · ${newRsv.confirmationCode} · owner notification queued (Phase 2 fires real comms)`,
-      );
-      setDraft(DEFAULT_DRAFT);
-      setStep('draft');
-      onClose();
-    } catch (e) {
+    const optimisticId = generateId(draft.channel);
+    const optimisticRsv: Reservation = {
+      id: optimisticId,
+      confirmationCode,
+      propertyCode: draft.propertyCode,
+      guestName: draft.guestName.trim(),
+      checkIn: draft.checkIn.includes(':') ? `${draft.checkIn}:00` : draft.checkIn,
+      checkOut: draft.checkOut.includes(':') ? `${draft.checkOut}:00` : draft.checkOut,
+      nights: computedNights,
+      channel: draft.channel,
+      partySize: {
+        adults: draft.adults,
+        children: draft.children,
+        ...(draft.infants > 0 ? { infants: draft.infants } : {}),
+      },
+      status: 'confirmed',
+      totalAmount: isOwnerStay ? 0 : draft.totalAmount,
+      currency: draft.currency,
+      touristTax: isOwnerStay ? 0 : draft.touristTax,
+      payoutStatus: isOwnerStay ? 'captured' : 'pending',
+      balanceDue: isOwnerStay ? 0 : draft.totalAmount,
+      ...(isOwnerStay ? { cleaningArrangement: draft.cleaningArrangement } : {}),
+      ...(draft.specialRequestCategories.length > 0 || draft.specialRequestNotes
+        ? {
+            specialRequests: {
+              categories: draft.specialRequestCategories,
+              notes: draft.specialRequestNotes,
+            },
+          }
+        : {}),
+      ...(draft.notes ? { notes: draft.notes } : {}),
+      ...(draft.extensionOf ? { extensionOf: draft.extensionOf } : {}),
+      createdAt: new Date().toISOString(),
+    };
+
+    // Splice into local state — list updates immediately.
+    RESERVATIONS.push(optimisticRsv);
+    RESERVATION_BY_ID[optimisticRsv.id] = optimisticRsv;
+    bumpFixtureRev();
+
+    // Close drawer + toast + onCreated immediately.
+    const savedDraft = draft;
+    onCreated(optimisticRsv);
+    fireToast(
+      isOwnerStay
+        ? `Owner stay confirmed · ${optimisticRsv.confirmationCode} · ${optimisticRsv.propertyCode}`
+        : `Reservation confirmed · ${optimisticRsv.confirmationCode} · owner notification queued (Phase 2 fires real comms)`,
+    );
+    setDraft(DEFAULT_DRAFT);
+    setStep('draft');
+    onClose();
+
+    // Background: real API call. On success we keep the optimistic
+    // local row (it carries the user-typed fields the backend doesn't
+    // yet model — propertyCode, guestName, dates as ISO strings); the
+    // useLiveReservations hook's next refetch will merge in the
+    // canonical overlay state.
+    createReservation({
+      step: 'confirm',
+      status: 'confirmed',
+      channel: draft.channel,
+      sourceKind: draft.channel === 'owner' ? 'manual' : (draft.extensionOf ? 'bdc_extension' : 'manual'),
+      confirmationCode,
+      cleaningArrangement: isOwnerStay ? draft.cleaningArrangement : undefined,
+      specialRequests: (draft.specialRequestCategories.length > 0 || draft.specialRequestNotes)
+        ? { categories: draft.specialRequestCategories, notes: draft.specialRequestNotes }
+        : undefined,
+      internalNotes: draft.notes || undefined,
+      extensionOfReservationId: draft.extensionOf || undefined,
+    }).catch((e) => {
+      // Roll back the optimistic row + restore the draft so the user
+      // can fix + retry.
+      const idx = RESERVATIONS.findIndex((r) => r.id === optimisticId);
+      if (idx >= 0) RESERVATIONS.splice(idx, 1);
+      delete RESERVATION_BY_ID[optimisticId];
+      bumpFixtureRev();
       const msg = e instanceof Error ? e.message : 'Failed to create reservation';
-      fireToast(`Create failed · ${msg}`);
-    } finally {
-      setSubmitting(false);
-    }
+      fireToast(`Create failed · ${msg} · reservation removed`);
+      setDraft(savedDraft);
+    });
   };
 
   const handleClose = () => {
@@ -244,14 +262,9 @@ export function CreateReservationDrawer({ open, onClose, onCreated }: Props) {
           )}
           {step === 'confirm' && (
             <>
-              <button className="btn ghost sm" onClick={() => setStep('draft')} disabled={submitting}>← Back to draft</button>
-              <button
-                className="btn primary sm"
-                onClick={confirmCreate}
-                disabled={submitting}
-                style={submitting ? { opacity: 0.6, cursor: 'wait' } : undefined}
-              >
-                {submitting ? 'Confirming…' : 'Confirm reservation'}
+              <button className="btn ghost sm" onClick={() => setStep('draft')}>← Back to draft</button>
+              <button className="btn primary sm" onClick={confirmCreate}>
+                Confirm reservation
               </button>
             </>
           )}

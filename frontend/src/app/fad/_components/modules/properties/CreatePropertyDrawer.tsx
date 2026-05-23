@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import {
+  PROPERTIES,
   PROPERTY_BY_CODE,
   ONBOARDING_REQUIRED,
+  rebuildDerivedPropertyMaps,
   type Property,
   type ListingType,
   type PropertyZone,
@@ -11,6 +13,7 @@ import {
   type ChecklistItemStatus,
 } from '../../../_data/properties';
 import { createProperty, hydratePropertiesFromGuesty } from '../../../_data/propertiesClient';
+import { bumpFixtureRev } from '../../../_data/fixtureRev';
 import { COHORT_LABEL, type Cohort } from '../../../_data/reviews';
 import { FIN_OWNERS } from '../../../_data/finance';
 import { fireToast } from '../../Toaster';
@@ -77,10 +80,12 @@ export function CreatePropertyDrawer({ open, onClose, onCreated }: Props) {
     setStep('confirm');
   };
 
-  const [submitting, setSubmitting] = useState(false);
-
-  const confirmCreate = async () => {
-    if (submitting) return;
+  // Optimistic create: build the Property locally, splice into PROPERTIES,
+  // close the drawer + toast immediately, then fire the API call in the
+  // background. On success, hydrate replaces the optimistic row with the
+  // canonical backend version. On failure, we pop the optimistic row +
+  // restore the drawer state so the user can retry.
+  const confirmCreate = () => {
     const ownerName = FIN_OWNERS.find((o) => o.id === draft.primaryOwnerId)?.name ?? draft.primaryOwnerId;
     const region = draft.region;
     const zone = regionToZone(region);
@@ -91,43 +96,88 @@ export function CreatePropertyDrawer({ open, onClose, onCreated }: Props) {
       {} as Record<string, ChecklistItemStatus>,
     );
 
-    setSubmitting(true);
-    try {
-      const property: Property = await createProperty({
-        code: draft.code.trim(),
-        name: draft.name.trim(),
-        buildingName: draft.buildingName.trim() || undefined,
-        address: draft.address.trim(),
-        region,
-        area: `${COHORT_LABEL[region]} · ${zone === 'north' ? 'North' : 'West'}`,
-        zone,
-        tier,
-        lifecycleStatus: 'onboarding',
-        onboardingChecklist: checklist,
-        listingType: draft.listingType,
-        bedrooms: draft.bedrooms,
-        bathrooms: draft.bathrooms || undefined,
-        maxOccupancy: draft.maxOccupancy,
-        sqm: draft.sqm,
-        primaryOwnerId: draft.primaryOwnerId,
-        baseRateMUR: draft.baseRateMUR,
-        tags: ['Onboarding'],
+    const trimmedCode = draft.code.trim();
+    const trimmedName = draft.name.trim();
+    const optimisticId = `optimistic-${trimmedCode.toLowerCase()}-${Date.now()}`;
+    const input = {
+      code: trimmedCode,
+      name: trimmedName,
+      buildingName: draft.buildingName.trim() || undefined,
+      address: draft.address.trim(),
+      region,
+      area: `${COHORT_LABEL[region]} · ${zone === 'north' ? 'North' : 'West'}`,
+      zone,
+      tier,
+      lifecycleStatus: 'onboarding' as const,
+      onboardingChecklist: checklist,
+      listingType: draft.listingType,
+      bedrooms: draft.bedrooms,
+      bathrooms: draft.bathrooms || undefined,
+      maxOccupancy: draft.maxOccupancy,
+      sqm: draft.sqm,
+      primaryOwnerId: draft.primaryOwnerId,
+      baseRateMUR: draft.baseRateMUR,
+      tags: ['Onboarding'],
+    };
+    const optimisticProperty: Property = {
+      id: optimisticId,
+      code: trimmedCode,
+      name: trimmedName,
+      buildingName: input.buildingName,
+      address: input.address,
+      region,
+      area: input.area,
+      zone,
+      tier,
+      lifecycleStatus: 'onboarding',
+      onboardingChecklist: checklist,
+      listingType: draft.listingType,
+      bedrooms: draft.bedrooms,
+      bathrooms: draft.bathrooms || undefined,
+      maxOccupancy: draft.maxOccupancy,
+      sqm: draft.sqm,
+      primaryOwnerId: draft.primaryOwnerId,
+      listings: [],
+      baseRateMUR: draft.baseRateMUR,
+      photoIds: [],
+      tags: ['Onboarding'],
+      occupancyYTD: 0,
+      occupancy90d: 0,
+      adr: 0,
+      rating: 0,
+      ratingCount: 0,
+      lastActivityAt: new Date().toISOString().slice(0, 10),
+    };
+
+    // Splice into local state — list updates immediately.
+    PROPERTIES.push(optimisticProperty);
+    rebuildDerivedPropertyMaps();
+    bumpFixtureRev();
+
+    // Close drawer + toast immediately.
+    const savedDraft = draft;
+    setDraft(DEFAULT_DRAFT);
+    setStep('draft');
+    onClose();
+    fireToast(
+      `Property created · ${trimmedCode} · ${trimmedName} · onboarding (0 / ${ONBOARDING_REQUIRED.length}) · primary owner ${ownerName}`,
+    );
+    onCreated(optimisticProperty);
+
+    // Background: real API call + reconcile.
+    createProperty(input)
+      .then(() => hydratePropertiesFromGuesty())
+      .catch((e) => {
+        // Roll back: remove the optimistic row + restore the draft so the
+        // user can fix + retry.
+        const idx = PROPERTIES.findIndex((p) => p.id === optimisticId);
+        if (idx >= 0) PROPERTIES.splice(idx, 1);
+        rebuildDerivedPropertyMaps();
+        bumpFixtureRev();
+        const msg = e instanceof Error ? e.message : 'Failed to create property';
+        fireToast(`Create failed · ${msg} · property removed`);
+        setDraft(savedDraft);
       });
-      // Refetch so PROPERTIES + derived maps reflect the new row.
-      await hydratePropertiesFromGuesty();
-      fireToast(
-        `Property created · ${property.code} · ${property.name} · onboarding (0 / ${ONBOARDING_REQUIRED.length}) · primary owner ${ownerName}`,
-      );
-      onCreated(property);
-      setDraft(DEFAULT_DRAFT);
-      setStep('draft');
-      onClose();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to create property';
-      fireToast(`Create failed · ${msg}`);
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const handleClose = () => {
@@ -181,14 +231,9 @@ export function CreatePropertyDrawer({ open, onClose, onCreated }: Props) {
             </>
           ) : (
             <>
-              <button className="btn ghost sm" onClick={() => setStep('draft')} disabled={submitting}>← Back</button>
-              <button
-                className="btn primary sm"
-                onClick={confirmCreate}
-                disabled={submitting}
-                style={submitting ? { opacity: 0.6, cursor: 'wait' } : undefined}
-              >
-                {submitting ? 'Creating…' : 'Create property'}
+              <button className="btn ghost sm" onClick={() => setStep('draft')}>← Back</button>
+              <button className="btn primary sm" onClick={confirmCreate}>
+                Create property
               </button>
             </>
           )}

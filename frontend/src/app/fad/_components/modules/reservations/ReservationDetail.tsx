@@ -327,22 +327,24 @@ function OverviewTab({
     bumpRev();
   };
 
-  const confirmCancel = async () => {
+  const confirmCancel = () => {
+    // Optimistic: flip the local status + close the panel + toast
+    // immediately. Background cancelReservation call reconciles with the
+    // FAD-side state flip; on error we revert.
     // Phase 1 per scoping §10: FAD-side state flip + activity log. Owner
     // notification already fired from Guesty earlier; Phase 2 wires the
     // write-through cancel + comms.
-    try {
-      await cancelReservation(r.id, 'Cancelled via FAD');
-      // Mutate the in-flight reservation object so the local view updates
-      // immediately while the next refetch swaps in the canonical row.
-      r.status = 'cancelled';
-      setPanel('none');
-      fireToast(`${r.confirmationCode} cancelled · Phase 1: FAD-side only, ops must push to Guesty manually`);
+    const originalStatus = r.status;
+    r.status = 'cancelled';
+    setPanel('none');
+    bumpRev();
+    fireToast(`${r.confirmationCode} cancelled · Phase 1: FAD-side only, ops must push to Guesty manually`);
+    cancelReservation(r.id, 'Cancelled via FAD').catch((e) => {
+      r.status = originalStatus;
       bumpRev();
-    } catch (e) {
       const msg = e instanceof Error ? e.message : 'cancel failed';
-      fireToast(`Cancel failed · ${msg}`);
-    }
+      fireToast(`Cancel failed · ${msg} · status restored`);
+    });
   };
 
   return (
