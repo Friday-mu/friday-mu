@@ -33,11 +33,13 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Tier preview chip in expense drawer fires on amount change
 - Sidebar nav items reachable (44px) on mobile
 
-### T1.2 — Booking automation audit (Guesty → Ops task)
-- Effort: S · Blocks: clear answer to a real ops question Ishant asked · Status: open
-- Backend trace: does a new Guesty reservation auto-create an Ops task?
-- Production data: pull last N reservations, check task table for matching `source='guesty'`
-- Document the live state; if missing, scope.
+### T1.2 — Booking automation audit (Guesty → Ops task) ✓ audited 2026-05-23
+- **Answer: NO.** Guesty bookings do not auto-create Ops tasks.
+- Webhook at `backend/src/reservations/webhook.js` upserts the reservation row + refreshes calendar cache. That's it. No PubSub, no DB trigger, no async hook.
+- Only auto-task creators in the system:
+  - `tasks/breezewayImport.js` — bulk Breezeway sync (not Guesty)
+  - `design/jobs/auto_tasks.js` — design-module scanner (blockers / overdue / payment blocked / budget variance / task overdue)
+- **Follow-up scope (new item, promoted to Tier 3): T3.6 — Booking-triggered task automation.** See below.
 
 ### T1.3 — Calendar cleanup (Ishant explicitly bumped)
 - Effort: M · Blocks: **calendar module unusable** · Status: open
@@ -135,6 +137,17 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Effort: L · Blocks: Ask Friday learning loop · Status: open
 - Friday Website surfaces emit redacted `learning_event` to FAD's `/api/ask-friday/core/learning-events`.
 - Must be done in a separate Friday Website session, not FAD.
+
+### T3.6 — Booking-triggered Ops task automation (NEW, promoted from T1.2 audit)
+- Effort: L · Blocks: cleaner-arrival readiness, departure-day flow, guest-arrival prep · Status: open, needs scoping
+- Per audit T1.2: Guesty reservations do not trigger task creation. Field team currently has to manually queue cleanings / arrivals / departures.
+- Scope decisions needed (Ishant call):
+  - Which event types create tasks? `reservation.confirmed` only? Or also `.updated`?
+  - Which task templates fire? Pre-arrival inspection? Cleaning? Welcome-message? Departure inspection? Reset?
+  - Timing: when before check-in? when after check-out?
+  - Assignment: round-robin field team? Property-zone routing?
+  - Avoid duplicates: idempotency via reservation_id + template_id
+- Possible implementation: extend `backend/src/reservations/webhook.js` post-upsert hook → call a new `taskAutomation.fromReservation(reservation, eventType)` that consults a tenant-level rules table.
 
 ### T3.5 — GEMINI_API_KEY rotation
 - Effort: XS · Blocks: security debt (key pasted in chat) · Status: **waiting-on-ishant**
