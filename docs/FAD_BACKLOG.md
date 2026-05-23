@@ -109,6 +109,18 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Effort: ? · Status: **needs-repro** (waiting on Mary's browser recording)
 - Can't act without repro. Ping when Mary supplies.
 
+### T2.9 — Recent Friday Consult bug reports (2026-05-23 batch)
+- Effort: M total · Status: 2 fixed in this session, 3 still need investigation.
+- Triaged from prod `feedback` table:
+
+| ID | Reporter | Time | Status | Notes |
+|---|---|---|---|---|
+| `77ff359b` | Ishant | 20:28Z | **Bug-modal buttons FIXED this session** (Ask Friday → Ops cross-link still pending) | Bare-text "Cancel / File bug" buttons — modal portals to body, CSS gated on `.fad-app` ancestor. Fixed by extending `.btn` rules to include `.fad-modal-overlay`/`.fad-drawer-overlay`/`.fad-drawer`/`.fad-palette` scopes. The `ask_friday_action_failed` cross-link for WCC4 maintenance task is the SECOND part of his report — Ask Friday tried to create an Ops task via cross-link but the action failed. **Still open** — Ask Friday Core action_request → Ops task wiring not done. Promotable to a focused slice when Ask Friday Core slices 5+ land. |
+| `de14cf58` | Franny | 12:57Z | **Investigation needed** | "Friday thinking takes 1-2 minutes" on guest inbox drafts. Gemini 3.5 Flash latency or Kimi fallback firing. Needs backend log dive + maybe a streaming/timeout tweak on the inbox draft path. |
+| `12728dbe` | Franny | 11:08Z | **Investigation needed** | When creating a task from Reported Issues, the AI draft message is copied verbatim into the title instead of being shortened. Smart drafter already constrains title to `<=72 chars` in the system prompt (`task_parser.js:198`) but `cleanString(raw.title, 180)` permits longer. Likely a different code path — Reported Issues → New task — that bypasses the smart drafter and uses the raw Friday Consult message directly. Needs grep for the "from reported issues" create flow. |
+| `77914bf2` | Franny | 11:00Z | **FIXED this session** | Path B drawer property dropdown only showed OFFICE because PROPERTIES wasn't hydrated. Fixed by calling `useHydratePropertiesFromGuesty()` inside `CaptureExpenseDrawer` + memoising on `propertiesRev`. |
+| `f6b7791b` | Franny | 10:52Z | **Already fixed** (live in `d6f283d5`) | "Report option not showing on tasks" — commit `b7c6f1b6` removed the `canEdit` gate on the Report-related-issue button. Fix landed ~30 min AFTER Franny's report. She needs a page refresh. |
+
 ### T2.5 — Missed auto-drafts investigation
 - Effort: M-L · Blocks: Franny / Mary trust in auto-draft system · Status: **parked-hard**
 - Open-ended root-cause hunt. Park until a specific repro lands.

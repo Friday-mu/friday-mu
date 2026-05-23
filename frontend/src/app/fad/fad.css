@@ -99,11 +99,22 @@ html.fad-dark {
  * interactive elements and the gray flash on press. Modern browsers
  * already handle the delay correctly with viewport meta, but this is
  * cheap defence-in-depth + visual polish. */
-.fad-app :where(button, a, [role="button"], [role="link"], [role="tab"], summary, label, input[type="submit"], input[type="button"], input[type="reset"]) {
+.fad-app :where(button, a, [role="button"], [role="link"], [role="tab"], summary, label, input[type="submit"], input[type="button"], input[type="reset"]),
+.fad-modal-overlay :where(button, a, [role="button"], [role="link"], input[type="submit"], input[type="button"]),
+.fad-drawer-overlay :where(button, a, [role="button"], [role="link"], input[type="submit"], input[type="button"]),
+.fad-drawer :where(button, a, [role="button"], [role="link"], input[type="submit"], input[type="button"]),
+.fad-palette :where(button, a, [role="button"], [role="link"], input[type="submit"], input[type="button"]) {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
-.fad-app :where(button) { font-family: inherit; font-size: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+/* Button reset for FAD-app-scoped + portalled overlay buttons. Without
+ * this rule, portalled modals (BugReport, etc.) inherit UA button styles
+ * since they escape the .fad-app wrapper via createPortal(document.body). */
+.fad-app :where(button),
+.fad-modal-overlay :where(button),
+.fad-drawer-overlay :where(button),
+.fad-drawer :where(button),
+.fad-palette :where(button) { font-family: inherit; font-size: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 .fad-app input, .fad-app textarea { font-family: inherit; font-size: inherit; color: inherit; }
 .fad-app a { color: inherit; text-decoration: none; }
 .fad-app ::selection { background: var(--color-brand-accent-soft); }
@@ -552,7 +563,18 @@ html.fad-dark .fad-dropdown { box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 .fad-module-body { padding: 24px 32px; flex: 1; }
 
 /* Buttons */
-.fad-app .btn {
+/* `.btn` styling for FAD. Note the dual scoping: `.fad-app .btn` covers
+ * everything inside the main app shell, but `.fad-modal-overlay .btn`
+ * and `.fad-drawer-overlay .btn` are needed too because those overlays
+ * are PORTALLED to document.body (e.g. BugReport.tsx uses createPortal),
+ * which escapes the .fad-app wrapper. Without the second set, buttons
+ * like Cancel / File bug in the bug-report modal render as bare text —
+ * the bug Ishant reported 2026-05-23 in feedback row 77ff359b. */
+.fad-app .btn,
+.fad-modal-overlay .btn,
+.fad-drawer-overlay .btn,
+.fad-drawer .btn,
+.fad-palette .btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 14px;
   font-size: 13px;
@@ -563,17 +585,45 @@ html.fad-dark .fad-dropdown { box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
   cursor: pointer;
   transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
-.fad-app .btn:hover { background: var(--color-background-secondary); }
-.fad-app .btn.primary {
+.fad-app .btn:hover,
+.fad-modal-overlay .btn:hover,
+.fad-drawer-overlay .btn:hover,
+.fad-drawer .btn:hover,
+.fad-palette .btn:hover { background: var(--color-background-secondary); }
+.fad-app .btn.primary,
+.fad-modal-overlay .btn.primary,
+.fad-drawer-overlay .btn.primary,
+.fad-drawer .btn.primary,
+.fad-palette .btn.primary {
   background: var(--color-brand-accent);
   border-color: var(--color-brand-accent);
   color: #fff;
 }
-html.fad-dark .fad-app .btn.primary { color: #0b0d14; }
-.fad-app .btn.primary:hover { opacity: 0.92; }
-.fad-app .btn.ghost { border-color: transparent; background: transparent; color: var(--color-text-secondary); }
-.fad-app .btn.ghost:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
-.fad-app .btn.sm { padding: 4px 10px; font-size: 12px; }
+html.fad-dark .fad-app .btn.primary,
+html.fad-dark .fad-modal-overlay .btn.primary,
+html.fad-dark .fad-drawer-overlay .btn.primary,
+html.fad-dark .fad-drawer .btn.primary,
+html.fad-dark .fad-palette .btn.primary { color: #0b0d14; }
+.fad-app .btn.primary:hover,
+.fad-modal-overlay .btn.primary:hover,
+.fad-drawer-overlay .btn.primary:hover,
+.fad-drawer .btn.primary:hover,
+.fad-palette .btn.primary:hover { opacity: 0.92; }
+.fad-app .btn.ghost,
+.fad-modal-overlay .btn.ghost,
+.fad-drawer-overlay .btn.ghost,
+.fad-drawer .btn.ghost,
+.fad-palette .btn.ghost { border-color: transparent; background: transparent; color: var(--color-text-secondary); }
+.fad-app .btn.ghost:hover,
+.fad-modal-overlay .btn.ghost:hover,
+.fad-drawer-overlay .btn.ghost:hover,
+.fad-drawer .btn.ghost:hover,
+.fad-palette .btn.ghost:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+.fad-app .btn.sm,
+.fad-modal-overlay .btn.sm,
+.fad-drawer-overlay .btn.sm,
+.fad-drawer .btn.sm,
+.fad-palette .btn.sm { padding: 4px 10px; font-size: 12px; }
 
 /* Chips */
 .fad-app .chip {
@@ -2164,7 +2214,28 @@ html.fad-dark .fad-feedback-tab.is-active {
   background: var(--color-background-tertiary);
   opacity: 0.7;
 }
-.fad-app .btn.primary.sm { padding: 5px 12px; font-size: 12px; }
+.fad-app .btn.primary.sm,
+.fad-modal-overlay .btn.primary.sm,
+.fad-drawer-overlay .btn.primary.sm,
+.fad-drawer .btn.primary.sm,
+.fad-palette .btn.primary.sm { padding: 5px 12px; font-size: 12px; }
+
+/* Danger button (e.g. Reject in Ask Friday review). Uses --color-text-danger
+ * as the background; white text. Same portal-aware scoping. */
+.fad-app .btn.danger,
+.fad-modal-overlay .btn.danger,
+.fad-drawer-overlay .btn.danger,
+.fad-drawer .btn.danger,
+.fad-palette .btn.danger {
+  background: var(--color-text-danger);
+  border-color: var(--color-text-danger);
+  color: #fff;
+}
+.fad-app .btn.danger:hover,
+.fad-modal-overlay .btn.danger:hover,
+.fad-drawer-overlay .btn.danger:hover,
+.fad-drawer .btn.danger:hover,
+.fad-palette .btn.danger:hover { opacity: 0.92; }
 
 @media (prefers-reduced-motion: reduce) {
   .fad-app *, .fad-drawer, .fad-palette { transition-duration: 0 !important; animation-duration: 0 !important; }

@@ -21,6 +21,7 @@ import {
   type ParseReceiptResponse,
   type ReceiptUploadInput,
 } from '../../../_data/expensesClient';
+import { useHydratePropertiesFromGuesty } from '../../../_data/propertiesClient';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconPlus, IconSparkle } from '../../icons';
 
@@ -102,6 +103,24 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
   const [error, setError] = useState<string | null>(null);
   // Path B: operator picks a property (or 'OFFICE' meta for non-property spend).
   const [pickedPropertyCode, setPickedPropertyCode] = useState<string>('');
+  // Path B needs PROPERTIES populated (TASK_PROPERTIES is a derived shim of
+  // PROPERTIES + OFFICE meta). If the operator opens "Capture expense" from
+  // Finance without visiting Properties first, PROPERTIES is empty and the
+  // dropdown only shows OFFICE — Franny reported this 2026-05-23 (feedback
+  // 77914bf2). Hydrating here ensures the property list is populated
+  // regardless of entry point. `rev` increments on successful hydrate so we
+  // include it in dependency arrays / useMemo keys downstream that read
+  // the TASK_PROPERTIES array (PROPERTIES is mutated in place, so without
+  // `rev` consumers wouldn't re-render after the API replaces the array).
+  const { rev: propertiesRev } = useHydratePropertiesFromGuesty();
+  // Memoised list of pickable properties for Path B (excludes the OFFICE
+  // meta — surfaced above with a clearer label). Re-derives when the
+  // Guesty hydrate completes (propertiesRev increments).
+  const availableProperties = useMemo(
+    () => TASK_PROPERTIES.filter((p) => p.code !== 'OFFICE'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [propertiesRev],
+  );
 
   // Property context. Path A pulls from task (locked). Path B uses
   // operator's pick; 'OFFICE' is a meta code for non-property spend
@@ -295,10 +314,7 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
                 >
                   <option value="">— pick a property —</option>
                   <option value="OFFICE">Office / Store / Admin (no property)</option>
-                  {/* TASK_PROPERTIES already contains an OFFICE meta entry —
-                      filter it out here since we surface it above with a
-                      clearer label. */}
-                  {TASK_PROPERTIES.filter((p) => p.code !== 'OFFICE').map((p) => (
+                  {availableProperties.map((p) => (
                     <option key={p.code} value={p.code}>{p.code} · {p.name}</option>
                   ))}
                 </select>
