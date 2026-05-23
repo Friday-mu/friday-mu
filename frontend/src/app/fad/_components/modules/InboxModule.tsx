@@ -802,7 +802,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
             setEntityFilter('all');
             setTriageFilter(triageFilter === 'review' ? 'all' : 'review');
           }}
-          title="Show threads with a Friday draft ready for operator approval"
+          title="Show threads with a Friday AI draft awaiting your approval before send"
           aria-pressed={triageFilter === 'review'}
           style={{
             display: 'inline-flex',
@@ -811,8 +811,12 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
             marginLeft: 6,
           }}
         >
-          <IconClock size={11} />
-          Reply
+          <IconSparkle size={11} />
+          {/* Renamed from "Reply" 2026-05-23: the chip filters threads where
+              an AI draft is awaiting operator approval (latestDraftState ∈
+              {draft_ready, under_review}) — not threads where the guest is
+              awaiting our reply, which was the confusing read. */}
+          AI draft
           <span className="mono" style={{ fontSize: 10, marginLeft: 2, opacity: 0.8 }}>
             {reviewCount}
           </span>
@@ -1008,8 +1012,8 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                         fontWeight: 600,
                       }}
                     >
-                      <IconClock size={10} stroke={2} />
-                      Reply
+                      <IconSparkle size={10} stroke={2} />
+                      AI draft
                     </span>
                   )}
                   {t.latestDraftState === 'friday_drafting' && (

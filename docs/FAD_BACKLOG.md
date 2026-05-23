@@ -92,9 +92,11 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Fix: added a slide-in **"Reservation context" drawer** for narrow viewports (≤1180px). Same `ReservationRightPanel` content. Triggered by a new "Reservation" button in the thread header (only visible when narrow). Desktop ≥1180 keeps the existing inline sidebar.
 - Drawer uses the standard `.fad-drawer` slide-in — full-width on mobile (via the 2026-05-23 PWA fix), capped at 420px on tablet. Safe-area-inset-bottom respected.
 
-### T2.2 — Inbox: awaiting-reply behavior + placement
-- Effort: S-M · Blocks: triage flow · Status: open
-- Behavior and placement of the "awaiting reply" indicator.
+### T2.2 — Inbox: awaiting-reply behavior + placement — partial, name-clarified
+- Effort: S · Status: partial-shipped
+- Investigation: the "Reply" chip + thread-row badge previously labelled "Reply" actually filter on `latestDraftState ∈ {draft_ready, under_review}` — i.e. AI drafts awaiting operator approval, NOT threads where the guest is awaiting our reply. Confusing read.
+- Shipped: renamed both surfaces "Reply" → "AI draft" + switched IconClock → IconSparkle to match the AI semantics. Tooltip clarified ("Friday AI draft awaiting your approval before send"). The chip badge in thread rows likewise switched.
+- ✗ Still open (parked-hard until backend support): a true "guest awaiting our reply" filter would need backend to expose `last_message_direction` on the list response (or a derived `awaiting_response_from` flag). Today's list-only data doesn't include message direction. Promotable to Tier 3 when backend slices land.
 
 ### T2.3 — Push notifications + VAPID env check
 - Effort: M · Blocks: field staff getting real-time task pings · Status: open
@@ -242,7 +244,8 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-23 (today, this session)
-- **T2.8 — Touch targets in Ops + Inbox** (this commit) — `.fad-tab` 26→40px, `.ops-status-chip` 28→38px, `.inbox-chip` 24→38px, `.inbox-collapse-btn` 28×28→40×40. Net 15 small targets → 2.
+- **T2.2 — Inbox "Reply" → "AI draft"** (this commit) — chip + thread-row badge renamed + IconClock→IconSparkle. The "Reply" label misled operators into thinking it surfaced threads where guests were awaiting our reply. Real "guest awaiting" filter parked for a backend slice.
+- **T2.8 — Touch targets in Ops + Inbox** (`e5e3c6b`) — `.fad-tab` 26→40px, `.ops-status-chip` 28→38px, `.inbox-chip` 24→38px, `.inbox-collapse-btn` 28×28→40×40. Net 15 small targets → 2.
 - **T2.1 — Inbox reservation context drawer for narrow viewports** (`a06528c`) — added slide-in drawer triggered by a new "Reservation" button in thread header, since CSS hid the inline panel below 1180px. Restores reservation context for tablet + mobile + small-laptop operators.
 - **T1.3 partial — Calendar font consistency** (`0dbf21a`) — month-day 11→13px + investigation notes
 - **T1.6 — Stale deploy docs cleanup** (`e41343a`) — rewrote `docs/deploy.md`, deleted dead `deploy.sh` + `deploy-production.sh`, fixed `CLAUDE.md` paths
