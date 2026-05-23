@@ -34,6 +34,8 @@ import { fireToast } from '../../Toaster';
 import { IconClose, IconExpand, IconPlus, IconSparkle } from '../../icons';
 import { AddCostDrawer } from './AddCostDrawer';
 import { AddSupplyDrawer } from './AddSupplyDrawer';
+import { CaptureExpenseDrawer } from './CaptureExpenseDrawer';
+import { fetchExpensesForTask, type ExpenseRow } from '../../../_data/expensesClient';
 import { useAITelemetry, type AISurface } from '../../ai/useAITelemetry';
 import { AIConfidenceChip } from '../../ai/AIComponents';
 import { RISK_FLAG_EXPLANATIONS, pickFromPool } from '../../../_data/aiFixtures';
@@ -192,6 +194,24 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   const [addCostOpen, setAddCostOpen] = useState(false);
   const [addSupplyOpen, setAddSupplyOpen] = useState(false);
   const [supplyPrefill, setSupplyPrefill] = useState<SupplyPrefill | null>(null);
+  const [captureExpenseOpen, setCaptureExpenseOpen] = useState(false);
+  const [taskExpenses, setTaskExpenses] = useState<ExpenseRow[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
+  const [expensesRev, setExpensesRev] = useState(0);
+
+  // Pull live expenses linked to this task. Slice 2 of the expense
+  // capture work. Refreshes when an expense is created via the drawer
+  // (expensesRev bump) or when the task id changes.
+  useEffect(() => {
+    if (!task?.id) return;
+    let cancelled = false;
+    setExpensesLoading(true);
+    fetchExpensesForTask(task.id)
+      .then((res) => { if (!cancelled) setTaskExpenses(res.expenses); })
+      .catch(() => { if (!cancelled) setTaskExpenses([]); })
+      .finally(() => { if (!cancelled) setExpensesLoading(false); });
+    return () => { cancelled = true; };
+  }, [task?.id, expensesRev]);
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [queuedStatus, setQueuedStatus] = useState<Task['status'] | null>(null);
@@ -451,6 +471,9 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           onToggleRequirement={toggleRequirement}
           onToggleWaiver={toggleWaiver}
           onReportIssue={onReportIssue}
+          onCaptureExpense={() => setCaptureExpenseOpen(true)}
+          expenses={taskExpenses}
+          expensesLoading={expensesLoading}
         />
         <Comments
           task={task}
@@ -492,7 +515,73 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           onBumpRev();
         }}
       />
+      <CaptureExpenseDrawer
+        open={captureExpenseOpen}
+        task={task}
+        onClose={() => setCaptureExpenseOpen(false)}
+        onCreated={() => setExpensesRev((r) => r + 1)}
+      />
     </div>
+  );
+}
+
+// 2026-05-23 (Ishant): expense capture Path A. Renders existing
+// expenses linked to this task + a "Capture expense" button that opens
+// the CaptureExpenseDrawer (which posts to /api/expenses). Locked
+// design Notion 34e43ca8849281fa8085f120b211c689.
+function ExpensesSection({
+  expenses,
+  loading,
+  canCapture,
+  onCapture,
+}: {
+  expenses: ExpenseRow[];
+  loading: boolean;
+  canCapture: boolean;
+  onCapture: () => void;
+}) {
+  const total = expenses.length;
+  return (
+    <CollapsibleSection
+      title={total > 0 ? `Expenses · ${total}` : 'Expenses'}
+      defaultOpen={total > 0}
+    >
+      {canCapture && (
+        <button type="button" className="btn ghost sm" onClick={onCapture} style={{ marginBottom: 8 }}>
+          <IconPlus size={12} /> Capture expense
+        </button>
+      )}
+      {loading && total === 0 && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Loading…</div>
+      )}
+      {!loading && total === 0 && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          No expenses captured for this task yet.
+        </div>
+      )}
+      {expenses.map((e) => (
+        <div key={e.id} className="ops-expense-row">
+          <div className="ops-expense-line">
+            <span className="ops-expense-vendor">
+              {e.vendor_canonical_name || e.vendor_name_freetext || (e.labour_hours_numeric != null ? 'Internal labour' : '—')}
+            </span>
+            <span className="ops-expense-amount">
+              {(e.amount_minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} {e.currency}
+            </span>
+          </div>
+          <div className="ops-expense-meta">
+            <span className="mono">{e.category_code}</span>
+            {e.category_name && <> · {e.category_name}</>}
+            <> · {e.status}</>
+            {e.receipt_count > 0 && <> · {e.receipt_count} receipt{e.receipt_count > 1 ? 's' : ''}</>}
+            {e.capturer_name && <> · by {e.capturer_name}</>}
+          </div>
+          {e.description && (
+            <div className="ops-expense-desc">{e.description}</div>
+          )}
+        </div>
+      ))}
+    </CollapsibleSection>
   );
 }
 
@@ -618,6 +707,9 @@ function Body({
   onToggleRequirement,
   onToggleWaiver,
   onReportIssue,
+  onCaptureExpense,
+  expenses,
+  expensesLoading,
 }: {
   task: Task;
   role: NonNullable<ReturnType<typeof usePermissions>['role']>;
@@ -650,6 +742,9 @@ function Body({
   onToggleRequirement: (requirementId: string) => void;
   onToggleWaiver: (requirementId: string) => void;
   onReportIssue?: (task: Task) => void;
+  onCaptureExpense: () => void;
+  expenses: ExpenseRow[];
+  expensesLoading: boolean;
 }) {
   const assignees = taskAssigneePeople(task);
   const canViewSensitiveContext = canManageTasks || task.assigneeIds.includes(currentUserId);
@@ -776,6 +871,13 @@ function Body({
       <CostLines task={task} canEdit={canEdit} canSeeFinance={canSeeFinance} onAddCost={onAddCost} />
 
       <SupplyLines task={task} canEdit={canEdit} onAddSupply={onAddSupply} />
+
+      <ExpensesSection
+        expenses={expenses}
+        loading={expensesLoading}
+        canCapture={canEdit}
+        onCapture={onCaptureExpense}
+      />
 
       <CollapsibleSection title={`Activity · ${task.activityLog.length}`}>
         <ActivityLog entries={task.activityLog} />

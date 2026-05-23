@@ -8625,6 +8625,79 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   height: 12px;
 }
 
+/* Capture expense drawer — receipt chip list shown after upload. */
+.ops-receipt-list {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ops-receipt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 8px;
+  border-radius: 6px;
+  background: var(--color-background-tertiary, rgba(0, 0, 0, 0.04));
+  font-size: 12px;
+}
+.ops-receipt-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+}
+.ops-receipt-chip button:hover {
+  color: var(--color-text-primary);
+}
+.ops-receipt-chip svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Expense row on TaskDetail. */
+.ops-expense-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 0.5px solid var(--color-border-tertiary);
+}
+.ops-expense-row:first-of-type {
+  border-top: none;
+}
+.ops-expense-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+.ops-expense-vendor {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.ops-expense-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.ops-expense-meta {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.ops-expense-desc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
 .ops-assign-self {
   align-self: flex-start;
   min-height: 34px;
