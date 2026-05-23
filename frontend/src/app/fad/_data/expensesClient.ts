@@ -99,6 +99,41 @@ export function createExpense(input: CreateExpenseInput): Promise<ExpenseRow> {
   }) as Promise<ExpenseRow>;
 }
 
+// ───────────────── Receipt list + content (slice 3d, T4.22) ─────────────────
+
+export interface ReceiptMeta {
+  id: string;
+  expense_id: string;
+  storage_kind: 'inline_base64' | 'do_spaces';
+  file_name: string | null;
+  content_type: string | null;
+  byte_size: number | null;
+  sha256_hash: string;
+  uploaded_at: string;
+  ocr_extracted: ParseReceiptResponse['extracted'] | null;
+}
+
+export type ReceiptContent =
+  | { kind: 'signed_url'; url: string; ttl_sec: number; file_name: string | null; content_type: string | null; byte_size: number | null }
+  | { kind: 'inline_base64'; base64: string; file_name: string | null; content_type: string | null; byte_size: number | null };
+
+export function fetchReceiptsForExpense(expenseId: string): Promise<{ receipts: ReceiptMeta[] }> {
+  return apiFetch(`/api/expenses/${encodeURIComponent(expenseId)}/receipts`) as Promise<{ receipts: ReceiptMeta[] }>;
+}
+
+export function fetchReceiptContent(receiptId: string): Promise<ReceiptContent> {
+  return apiFetch(`/api/expenses/receipts/${encodeURIComponent(receiptId)}/content`) as Promise<ReceiptContent>;
+}
+
+/** Materialize the receipt content into a URL the browser can render
+ *  (img src, link href, etc.). Returns a data: URL for inline rows and
+ *  the signed URL directly for DO Spaces rows. */
+export function receiptDisplayUrl(content: ReceiptContent): string {
+  if (content.kind === 'signed_url') return content.url;
+  const type = content.content_type || 'application/octet-stream';
+  return `data:${type};base64,${content.base64}`;
+}
+
 export function parseReceipt(input: {
   image_base64: string;
   content_type: string;

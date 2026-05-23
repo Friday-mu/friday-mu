@@ -9179,6 +9179,42 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-tier-preview.is-muted .ops-tier-dot { background: var(--color-text-tertiary); opacity: 0.5; }
 .ops-tier-preview.is-muted .ops-tier-label { color: var(--color-text-secondary); font-weight: 400; }
 
+/* Receipt link inside an expense row (T4.22 — opens the receipts modal). */
+.ops-expense-receipt-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--color-brand-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ops-expense-receipt-link:hover { opacity: 0.8; }
+
+/* Receipts modal rows */
+.ops-receipt-modal-row {
+  padding: 12px 0;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.ops-receipt-modal-row:last-child { border-bottom: 0; }
+.ops-receipt-modal-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.ops-receipt-modal-img {
+  max-width: 100%;
+  max-height: 60vh;
+  display: block;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--color-border-tertiary);
+  background: var(--color-background-tertiary);
+}
+
 /* Expense row on TaskDetail. */
 .ops-expense-row {
   display: flex;

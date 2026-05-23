@@ -35,7 +35,7 @@ import { IconClose, IconExpand, IconPlus, IconSparkle } from '../../icons';
 import { AddCostDrawer } from './AddCostDrawer';
 import { AddSupplyDrawer } from './AddSupplyDrawer';
 import { CaptureExpenseDrawer } from './CaptureExpenseDrawer';
-import { fetchExpensesForTask, type ExpenseRow } from '../../../_data/expensesClient';
+import { fetchExpensesForTask, fetchReceiptsForExpense, fetchReceiptContent, receiptDisplayUrl, type ExpenseRow, type ReceiptMeta } from '../../../_data/expensesClient';
 import { useAITelemetry, type AISurface } from '../../ai/useAITelemetry';
 import { AIConfidenceChip } from '../../ai/AIComponents';
 import { RISK_FLAG_EXPLANATIONS, pickFromPool } from '../../../_data/aiFixtures';
@@ -572,28 +572,147 @@ function ExpensesSection({
         </div>
       )}
       {expenses.map((e) => (
-        <div key={e.id} className="ops-expense-row">
-          <div className="ops-expense-line">
-            <span className="ops-expense-vendor">
-              {e.vendor_canonical_name || e.vendor_name_freetext || (e.labour_hours_numeric != null ? 'Internal labour' : '—')}
-            </span>
-            <span className="ops-expense-amount">
-              {(e.amount_minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} {e.currency}
-            </span>
-          </div>
-          <div className="ops-expense-meta">
-            <span className="mono">{e.category_code}</span>
-            {e.category_name && <> · {e.category_name}</>}
-            <> · {e.status}</>
-            {e.receipt_count > 0 && <> · {e.receipt_count} receipt{e.receipt_count > 1 ? 's' : ''}</>}
-            {e.capturer_name && <> · by {e.capturer_name}</>}
-          </div>
-          {e.description && (
-            <div className="ops-expense-desc">{e.description}</div>
-          )}
-        </div>
+        <ExpenseRowItem key={e.id} expense={e} />
       ))}
     </CollapsibleSection>
+  );
+}
+
+function ExpenseRowItem({ expense: e }: { expense: ExpenseRow }) {
+  const [receiptsOpen, setReceiptsOpen] = useState(false);
+  return (
+    <>
+      <div className="ops-expense-row">
+        <div className="ops-expense-line">
+          <span className="ops-expense-vendor">
+            {e.vendor_canonical_name || e.vendor_name_freetext || (e.labour_hours_numeric != null ? 'Internal labour' : '—')}
+          </span>
+          <span className="ops-expense-amount">
+            {(e.amount_minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} {e.currency}
+          </span>
+        </div>
+        <div className="ops-expense-meta">
+          <span className="mono">{e.category_code}</span>
+          {e.category_name && <> · {e.category_name}</>}
+          <> · {e.status}</>
+          {e.receipt_count > 0 && (
+            <>
+              {' · '}
+              <button
+                type="button"
+                className="ops-expense-receipt-link"
+                onClick={() => setReceiptsOpen(true)}
+                aria-label={`View ${e.receipt_count} receipt${e.receipt_count > 1 ? 's' : ''}`}
+              >
+                📎 {e.receipt_count} receipt{e.receipt_count > 1 ? 's' : ''}
+              </button>
+            </>
+          )}
+          {e.capturer_name && <> · by {e.capturer_name}</>}
+        </div>
+        {e.description && (
+          <div className="ops-expense-desc">{e.description}</div>
+        )}
+      </div>
+      {receiptsOpen && (
+        <ReceiptsModal expenseId={e.id} onClose={() => setReceiptsOpen(false)} />
+      )}
+    </>
+  );
+}
+
+function ReceiptsModal({ expenseId, onClose }: { expenseId: string; onClose: () => void }) {
+  const [receipts, setReceipts] = useState<ReceiptMeta[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [contentByReceiptId, setContentByReceiptId] = useState<Record<string, { url: string; loading: boolean; error?: string }>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchReceiptsForExpense(expenseId)
+      .then((res) => { if (!cancelled) setReceipts(res.receipts); })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load receipts'); });
+    return () => { cancelled = true; };
+  }, [expenseId]);
+
+  // Lazy-load content per receipt on first render.
+  useEffect(() => {
+    if (!receipts) return;
+    let cancelled = false;
+    (async () => {
+      for (const r of receipts) {
+        if (contentByReceiptId[r.id]) continue;
+        setContentByReceiptId((prev) => ({ ...prev, [r.id]: { url: '', loading: true } }));
+        try {
+          const content = await fetchReceiptContent(r.id);
+          if (cancelled) return;
+          setContentByReceiptId((prev) => ({
+            ...prev,
+            [r.id]: { url: receiptDisplayUrl(content), loading: false },
+          }));
+        } catch (e) {
+          if (cancelled) return;
+          setContentByReceiptId((prev) => ({
+            ...prev,
+            [r.id]: { url: '', loading: false, error: e instanceof Error ? e.message : 'Load failed' },
+          }));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receipts]);
+
+  return (
+    <div className="fad-modal-overlay" style={{ zIndex: 10000 }} onClick={onClose}>
+      <div className="fad-modal" onClick={(e) => e.stopPropagation()} style={{ width: 640 }}>
+        <div className="fad-modal-head">
+          <div className="fad-modal-title">Receipts</div>
+          <button className="btn ghost sm" onClick={onClose} style={{ marginLeft: 'auto' }} aria-label="Close">×</button>
+        </div>
+        <div className="fad-modal-body">
+          {error && <div className="ops-form-alert failed">{error}</div>}
+          {!receipts && !error && (
+            <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Loading…</div>
+          )}
+          {receipts && receipts.length === 0 && (
+            <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>No receipts attached.</div>
+          )}
+          {receipts && receipts.map((r) => {
+            const c = contentByReceiptId[r.id];
+            const isImage = (r.content_type || '').toLowerCase().startsWith('image/');
+            const isPdf = (r.content_type || '').toLowerCase() === 'application/pdf';
+            return (
+              <div key={r.id} className="ops-receipt-modal-row">
+                <div className="ops-receipt-modal-meta">
+                  <strong>{r.file_name || 'receipt'}</strong>
+                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
+                    {r.byte_size ? `${Math.round((r.byte_size || 0) / 1024)} KB` : ''}
+                    {' · '}{new Date(r.uploaded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    {' · '}<span className="mono">{r.storage_kind}</span>
+                  </span>
+                </div>
+                {c?.loading && <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Loading content…</div>}
+                {c?.error && <div className="ops-form-alert failed" style={{ fontSize: 12 }}>{c.error}</div>}
+                {c?.url && isImage && (
+                  <img
+                    src={c.url}
+                    alt={r.file_name || 'receipt'}
+                    className="ops-receipt-modal-img"
+                    onError={() => setContentByReceiptId((prev) => ({ ...prev, [r.id]: { ...prev[r.id], error: 'image failed to render' } }))}
+                  />
+                )}
+                {c?.url && isPdf && (
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="btn ghost sm">Open PDF</a>
+                )}
+                {c?.url && !isImage && !isPdf && (
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="btn ghost sm">Open file</a>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 

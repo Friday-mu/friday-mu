@@ -23,7 +23,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
-const { isSpacesConfigured, uploadReceipt, isAllowedReceiptContentType } = require('../storage/spaces');
+const { isSpacesConfigured, uploadReceipt, isAllowedReceiptContentType, getSignedReceiptUrl } = require('../storage/spaces');
 
 const router = express.Router();
 
@@ -326,6 +326,88 @@ router.post('/', attachIdentity, async (req, res) => {
     res.status(500).json({ error: e.message });
   } finally {
     client.release();
+  }
+});
+
+// ─── Receipt list ────────────────────────────────────────────────────
+// GET /api/expenses/:expenseId/receipts — list metadata for receipts
+// attached to an expense. Used by TaskDetail's expense rows to render
+// thumbnails after the capture flow lands (T4.22 / Slice 3d). No
+// content bytes / signed URLs here — those come from the next route.
+router.get('/:expenseId/receipts', attachIdentity, async (req, res) => {
+  try {
+    const expenseId = asUuid(req.params.expenseId);
+    if (!expenseId) return res.status(400).json({ error: 'expenseId must be a UUID' });
+    const { rows } = await query(
+      `SELECT r.id, r.expense_id, r.storage_kind, r.file_name, r.content_type,
+              r.byte_size, r.sha256_hash, r.uploaded_at, r.ocr_extracted
+         FROM expense_receipts r
+         JOIN expenses e ON e.id = r.expense_id
+        WHERE e.tenant_id = $1 AND r.expense_id = $2
+        ORDER BY r.uploaded_at ASC`,
+      [req.tenantId, expenseId],
+    );
+    res.json({ receipts: rows });
+  } catch (e) {
+    console.error('[finance/expenses] receipts list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Receipt content ─────────────────────────────────────────────────
+// GET /api/expenses/receipts/:receiptId/content — return how to fetch
+// the receipt bytes. For DO Spaces rows we return a short-lived signed
+// URL (default 5min TTL — long enough for slow image renders, short
+// enough that a leaked URL is low-risk). For inline_base64 rows we
+// return the base64 data so the FE can render directly. Tenant-gated
+// via the JOIN — operators can only fetch their own tenant's receipts.
+router.get('/receipts/:receiptId/content', attachIdentity, async (req, res) => {
+  try {
+    const receiptId = asUuid(req.params.receiptId);
+    if (!receiptId) return res.status(400).json({ error: 'receiptId must be a UUID' });
+    const { rows } = await query(
+      `SELECT r.id, r.storage_kind, r.storage_ref, r.inline_base64,
+              r.file_name, r.content_type, r.byte_size
+         FROM expense_receipts r
+         JOIN expenses e ON e.id = r.expense_id
+        WHERE e.tenant_id = $1 AND r.id = $2`,
+      [req.tenantId, receiptId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'receipt not found' });
+    const r = rows[0];
+    if (r.storage_kind === 'do_spaces') {
+      if (!isSpacesConfigured()) {
+        return res.status(502).json({ error: 'storage backend not configured' });
+      }
+      try {
+        const { url, ttlSec } = await getSignedReceiptUrl({ key: r.storage_ref, ttlSec: 300 });
+        return res.json({
+          kind: 'signed_url',
+          url,
+          ttl_sec: ttlSec,
+          file_name: r.file_name,
+          content_type: r.content_type,
+          byte_size: r.byte_size,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[finance/expenses] signed URL failed:', err?.message || err);
+        return res.status(502).json({ error: 'failed to sign URL' });
+      }
+    }
+    // Inline base64 — return the bytes encoded for the frontend to render
+    // as a data URL. Stays under MAX_RECEIPT_BYTES (12MB) per the upload
+    // path's guard so the response size is bounded.
+    return res.json({
+      kind: 'inline_base64',
+      base64: r.inline_base64,
+      file_name: r.file_name,
+      content_type: r.content_type,
+      byte_size: r.byte_size,
+    });
+  } catch (e) {
+    console.error('[finance/expenses] receipt content error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 

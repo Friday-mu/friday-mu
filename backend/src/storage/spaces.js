@@ -121,11 +121,58 @@ function isAllowedReceiptContentType(contentType) {
   );
 }
 
+/**
+ * Generate a short-lived signed URL for a private object key. Used by the
+ * receipt-content route so the FE can render the image without the
+ * backend proxying bytes. TTL defaults to 5 minutes — short enough that
+ * a leaked URL is low-risk, long enough that a slow client / image
+ * render still works.
+ *
+ * @returns {Promise<{ url: string; ttlSec: number }>}
+ */
+async function getSignedReceiptUrl({ key, ttlSec }) {
+  if (!isSpacesConfigured()) {
+    throw new Error('DO Spaces is not configured — getSignedReceiptUrl should not have been called');
+  }
+  if (!key || typeof key !== 'string') {
+    throw new Error('key is required');
+  }
+  // eslint-disable-next-line global-require
+  const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+  // eslint-disable-next-line global-require
+  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+  const client = new S3Client({
+    endpoint: process.env.DO_SPACES_ENDPOINT,
+    region: process.env.DO_SPACES_REGION,
+    credentials: {
+      accessKeyId: process.env.DO_SPACES_KEY,
+      secretAccessKey: process.env.DO_SPACES_SECRET,
+    },
+    forcePathStyle: false,
+  });
+
+  const expiresIn = Number.isFinite(Number(ttlSec)) && Number(ttlSec) > 0
+    ? Math.min(Number(ttlSec), 3600)
+    : 300;
+
+  const url = await getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: key,
+    }),
+    { expiresIn },
+  );
+  return { url, ttlSec: expiresIn };
+}
+
 module.exports = {
   isSpacesConfigured,
   uploadReceipt,
   buildReceiptKey,
   isAllowedReceiptContentType,
+  getSignedReceiptUrl,
   // Re-exports for unit tests
   _crypto: crypto, // hash work lives in expenses.js for now; expose for tests
 };
