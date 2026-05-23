@@ -195,9 +195,15 @@ function resolveBackgroundColor(el: HTMLElement): string {
 }
 
 async function settlePaint(el: HTMLElement): Promise<void> {
-  if (document.fonts?.ready) {
-    await document.fonts.ready;
-  }
+  // Race document.fonts.ready against a 1.5 s ceiling. The promise can
+  // hang indefinitely behind a slow / dead font CDN (Google Fonts,
+  // Next.js font optimization races) — without the race the FAB sits
+  // stuck on "Capturing screenshot…" forever. Ported from the
+  // website's captureViewport pattern.
+  await Promise.race([
+    document.fonts?.ready ?? Promise.resolve(),
+    new Promise<void>((r) => window.setTimeout(r, 1500)),
+  ]).catch(() => {});
   await waitForImages(el, 1500);
   await nextFrame();
   await nextFrame();
@@ -331,34 +337,31 @@ export function BugReportFab({ currentModuleLabel }: Props) {
     captureSeqRef.current = captureSeq;
     setCapturing(true);
     setScreenshot(null);
-    setScreenshotPending(true);
-    // Open the modal immediately so the user sees something — the
-    // capture lands into the modal when ready. Old behaviour blocked
-    // the modal until capture finished, which felt sluggish on slow
-    // captures.
+    // Capture BEFORE the modal opens. FAD's capture targets `.fad-app`
+    // (not document.body like the website pattern does), and the modal
+    // is rendered inside `.fad-app`. Opening first would put the
+    // position-fixed overlay inside the captured tree and html-to-image
+    // hangs trying to walk it. Capture first, then open with the shot
+    // already in hand. (Website can open-then-capture because it
+    // targets body and the modal is excluded via the filter — different
+    // tree, different trade-off.)
+    let shot: string | null = null;
+    try {
+      shot = await captureViewport();
+    } catch (err) {
+      console.warn('[feedback] capture failed:', err);
+    }
+    if (captureSeqRef.current !== captureSeq) return; // user moved on
+    setScreenshot(shot);
+    setCapturing(false);
     setOpen(true);
 
-    void captureViewport()
-      .then((shot) => {
-        if (captureSeqRef.current !== captureSeq) return;
-        setScreenshot(shot);
-      })
-      .catch((err) => {
-        console.warn('[feedback] capture failed:', err);
-      })
-      .finally(() => {
-        if (captureSeqRef.current !== captureSeq) return;
-        setScreenshotPending(false);
-        setCapturing(false);
-      });
-
-    // Hard failsafe: even if the capture promise stalls below the
-    // internal timeout (shouldn't happen with withTimeout but defence
-    // in depth), release the capturing state after 15s so the FAB
-    // doesn't sit stuck.
+    // Hard failsafe: if something stalls below the internal timeouts
+    // (shouldn't happen with withTimeout in each capture path, but
+    // defence in depth), release the capturing state after 15s so the
+    // FAB doesn't sit stuck if the user re-triggers.
     window.setTimeout(() => {
       if (captureSeqRef.current !== captureSeq) return;
-      setScreenshotPending(false);
       setCapturing(false);
     }, 15_000);
   }, [capturing, open]);
