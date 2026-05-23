@@ -40,8 +40,12 @@ const {
 // if a future run prefers gemini-3-pro or similar.
 const GEMINI_BASE_URL = process.env.NANOBANANA_BASE_URL
   || 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_MODEL = process.env.FLOOR_PLAN_AI_MODEL || 'gemini-2.5-flash';
-const TIMEOUT_MS = 35_000;
+// 2026-05-23 — default bumped 2.5 → 3.5 per Ishant's "Gemini 3.5 Flash
+// everywhere" decision. Text reasoning over floor-plan data.
+const GEMINI_MODEL = process.env.FLOOR_PLAN_AI_MODEL || 'gemini-3.5-flash';
+// 2026-05-23 — bumped 35s → 8 min to match the broader AI timeout
+// policy (nginx /api/ ceiling is 1800s).
+const TIMEOUT_MS = 480_000;
 
 const FALLBACK_REPLY = "Friday couldn't reach the model. Try again in a moment.";
 const UNCLEAR_REPLY = "I'm not sure what to change. Could you clarify?";

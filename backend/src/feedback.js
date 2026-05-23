@@ -46,7 +46,10 @@ const KIMI_TIMEOUT_MS = 90_000;
 // vision error — never blocks the user.
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NANOBANANA_API_KEY;
-const GEMINI_FEEDBACK_VISION_MODEL = process.env.GEMINI_FEEDBACK_VISION_MODEL || process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash';
+// 2026-05-23 — default bumped 2.5 → 3.5 per Ishant's "Gemini 3.5 Flash
+// everywhere" decision. 3.5-flash supports vision (image input), so the
+// screenshot-aware chat clarifier still works.
+const GEMINI_FEEDBACK_VISION_MODEL = process.env.GEMINI_FEEDBACK_VISION_MODEL || process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
 const GEMINI_FEEDBACK_TIMEOUT_MS = Number(process.env.GEMINI_FEEDBACK_TIMEOUT_MS) || 90_000;
 // 1.5 MB raw base64 cap. The full feedback submission accepts up to 5 MB
 // (MAX_SCREENSHOT_BYTES below) for archival; the chat clarifier sees a

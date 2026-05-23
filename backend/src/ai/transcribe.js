@@ -40,7 +40,9 @@ const upload = multer({
 
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL
   || 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL || 'gemini-2.5-flash';
+// 2026-05-23 — default bumped 2.5 → 3.5 per Ishant's "Gemini 3.5 Flash
+// everywhere" decision. 3.5-flash supports audio input.
+const GEMINI_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL || 'gemini-3.5-flash';
 // Either env var works. NANOBANANA_API_KEY is the historical FAD name
 // for the same Google AI Studio key; GEMINI_API_KEY is the cleaner
 // alias going forward.
