@@ -166,7 +166,14 @@ async function callGeminiGenerateContent({ prompt, size, inlineImages }) {
       'x-goog-api-key': process.env.NANOBANANA_API_KEY,
       'Content-Type': 'application/json',
     },
-    timeout: 60_000,
+    // 2026-05-23 — Nanobanana image gen: bumped 60s → 25 min per Ishant
+    // ('15-20+ min, images take more time and can be very complex').
+    // Coordinated with nginx proxy_read_timeout bump (600s → 1800s).
+    // Complex floor-plan renders and multi-panel moodboards can push
+    // past 60s; the long ceiling makes the request actually complete
+    // server-side rather than nginx-504'ing while the model is still
+    // working.
+    timeout: 1_500_000,
   });
   const respParts = data?.candidates?.[0]?.content?.parts || [];
   const imgPart = respParts.find((p) => p?.inlineData?.data);
@@ -202,7 +209,14 @@ async function callImagenPredict({ prompt, size }) {
       'x-goog-api-key': process.env.NANOBANANA_API_KEY,
       'Content-Type': 'application/json',
     },
-    timeout: 60_000,
+    // 2026-05-23 — Nanobanana image gen: bumped 60s → 25 min per Ishant
+    // ('15-20+ min, images take more time and can be very complex').
+    // Coordinated with nginx proxy_read_timeout bump (600s → 1800s).
+    // Complex floor-plan renders and multi-panel moodboards can push
+    // past 60s; the long ceiling makes the request actually complete
+    // server-side rather than nginx-504'ing while the model is still
+    // working.
+    timeout: 1_500_000,
   });
   const pred = data?.predictions?.[0];
   const b64 = pred?.bytesBase64Encoded;
