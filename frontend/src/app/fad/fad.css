@@ -3435,7 +3435,10 @@ html.fad-dark .cal-popover { box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
 .cal-month-cell:nth-child(7n) { border-right: 0; }
 .cal-month-cell.other { opacity: 0.35; }
 .cal-month-cell.today .cal-month-day { color: var(--color-brand-accent); font-weight: 500; }
-.cal-month-day { font-family: var(--font-mono-fad); font-size: 11px; color: var(--color-text-primary); }
+/* Month-view day number. 13px matches the Week-view `.cal-head-cell .day`
+ * — without this they read at 11px which feels cramped + clipped-looking
+ * against dense grid lines, even though nothing is technically clipped. */
+.cal-month-day { font-family: var(--font-mono-fad); font-size: 13px; color: var(--color-text-primary); line-height: 1.25; }
 .cal-month-ev {
   font-size: 10px;
   padding: 2px 5px;
@@ -6011,7 +6014,7 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   .cal-stay-prop { font-size: 9px; }
   .cal-allday-pill { font-size: 10px; padding: 2px 5px; }
   .cal-allday-label { padding: 4px 6px; font-size: 9px; }
-  .cal-month-day { font-size: 10px; }
+  .cal-month-day { font-size: 12px; }
   .cal-month-cell { min-height: 60px; padding: 4px 5px; gap: 2px; }
   .cal-month-stay { height: 13px; font-size: 8px; padding: 0 4px; }
   .cal-month-ev { font-size: 9px; padding: 1px 4px; }

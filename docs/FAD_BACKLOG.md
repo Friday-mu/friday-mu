@@ -41,13 +41,19 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - `design/jobs/auto_tasks.js` — design-module scanner (blockers / overdue / payment blocked / budget variance / task overdue)
 - **Follow-up scope (new item, promoted to Tier 3): T3.6 — Booking-triggered task automation.** See below.
 
-### T1.3 — Calendar cleanup (Ishant explicitly bumped)
-- Effort: M · Blocks: **calendar module unusable** · Status: open
-- Duplicate reservations — dedup logic missing or broken
-- Bad/clipped date-line UI
-- Cross-links to Operations, Reservations, Properties, Inbox
-- Recover prior Calendar work if regressed
-- *Note*: per `ops-convergence-handover.md`, Calendar was parked for a future slice. That slice is now.
+### T1.3 — Calendar cleanup (Ishant explicitly bumped) — partial, needs prod pairing
+- Effort: M · Status: **partial-shipped; rest blocked on prod data**
+- ✓ Local investigation findings:
+  - Layout / CSS render correctly in Agenda / Day / Week / Month views with mocked empty data.
+  - `dedupeRawReservations()` in `reservationsClient.ts` is sound (semantic stay-identity → confirmation-code → guesty_id fallback, completeness-scored on collision).
+  - Cross-links ARE wired: clicking a stay navigates to `?m=reservations&sub=overview&rsv=<id>` (CalendarModule.tsx:1255, 1771).
+  - The "calendar unusable" feel is mostly **no backend data** (every cell says "Nothing scheduled") + minor density issues.
+- ✓ Micro-improvement shipped: month-view day numbers bumped from 11px → 13px (mobile 10→12) to match Week-view consistency and reduce the cramped "clipped-looking" effect against dark grid lines.
+- ✗ **Still need prod pairing to reproduce**:
+  - "Duplicate reservations" — only repros with real Guesty data feeding dedup edge cases.
+  - User-visible "bad/clipped date-line" — no clipping found in local repro; if Ishant has a specific screenshot/repro this should be quick.
+  - "Recover prior Calendar work if regressed" — requires git history vs current-behavior diff with Ishant in the loop.
+- **Recommendation**: when next paired on prod, open the Calendar with real data and screenshot the actual visible bugs. 10-minute pair → 30-min fix.
 
 ### T1.4 — Old CaptureDrawer mock removal ✓ shipped 2026-05-23
 - Removed in commit (this batch). 338 lines deleted: `CaptureDrawer` + `ReceiptExtraction` + `CaptureProps` interface + orphaned `captureMode` state + orphaned `ApprovalTier` import.
