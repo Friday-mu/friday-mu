@@ -228,6 +228,7 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - **T4.29 — Guest-level preferred-language memory**
 
 ### Audits (deferred per Ishant)
+- **T4.35 — AI telemetry mislabel cleanup** (S) — `backend/src/design/ai_{rough_budget,ask,annex_b_edit}.js` and `backend/src/ai/translate.js` log every successful completion as `provider: 'kimi'` / `model: KIMI_MODEL` in their `recordUsage`/`logUsage` calls — but they actually route through `runTextCompletion` which is Gemini-first. So Gemini usage is invisible in `ai_usage` rows and Kimi looks busier than it is. Pure telemetry; routing is correct. Fix: use `result.provider` + `result.model` from the runTextCompletion return.
 - **T4.30 — Speed audit** — Lighthouse + Chrome perf trace, half-day
 - **T4.31 — Security audit** — env / auth / RLS / deps / secret scan, half-day
 
