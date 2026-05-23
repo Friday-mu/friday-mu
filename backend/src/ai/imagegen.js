@@ -29,7 +29,11 @@ const NANOBANANA_BASE_URL = process.env.NANOBANANA_BASE_URL
 // both surfaces via the model-name detector below: anything starting
 // with "imagen" goes Vertex/predict, anything else goes Gemini/
 // generateContent. Default is the current Nanobanana SKU.
-const NANOBANANA_MODEL = process.env.NANOBANANA_MODEL || 'gemini-2.5-flash-image-preview';
+// 2026-05-23 — default bumped to gemini-3-pro-image-preview (canonical
+// "Nanobanana Pro" alias per Google's models list). Older default was
+// gemini-2.5-flash-image-preview; prod env overrides via NANOBANANA_MODEL.
+// For faster, less complex jobs: gemini-3.1-flash-image-preview.
+const NANOBANANA_MODEL = process.env.NANOBANANA_MODEL || 'gemini-3-pro-image-preview';
 const USES_PREDICT_API = /^imagen/i.test(NANOBANANA_MODEL);
 const MAX_RETRIES = 3;
 const STUB_IMAGE_URL = 'https://via.placeholder.com/1024x768.png?text=Nanobanana+stub+(no+API+key+set)';

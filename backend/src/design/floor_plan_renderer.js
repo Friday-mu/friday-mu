@@ -35,7 +35,10 @@ const {
   QuotaExceededError,
 } = require('../tenants/ai_usage');
 
-const NANOBANANA_MODEL_NAME = process.env.NANOBANANA_MODEL || 'gemini-2.5-flash-image-preview';
+// 2026-05-23 — default bumped to gemini-3-pro-image-preview (canonical
+// "Nanobanana Pro" per Google's models list). Prod env overrides via
+// NANOBANANA_MODEL.
+const NANOBANANA_MODEL_NAME = process.env.NANOBANANA_MODEL || 'gemini-3-pro-image-preview';
 
 // ─────────────────────────── constants ──────────────────────────────
 

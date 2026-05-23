@@ -46,7 +46,10 @@ function _send402(res, err) {
 // Model name used by imagegen — same env var hierarchy as
 // imagegen.js itself; we duplicate the default to avoid a circular
 // require if the value isn't exported. Keep in sync.
-const NANOBANANA_MODEL_NAME = process.env.NANOBANANA_MODEL || 'gemini-2.5-flash-image-preview';
+// 2026-05-23 — default bumped to gemini-3-pro-image-preview (canonical
+// "Nanobanana Pro" per Google's models list). Prod env overrides via
+// NANOBANANA_MODEL.
+const NANOBANANA_MODEL_NAME = process.env.NANOBANANA_MODEL || 'gemini-3-pro-image-preview';
 
 const router = express.Router();
 
