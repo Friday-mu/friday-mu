@@ -14,10 +14,12 @@ const fs = require('fs');
 const path = require('path');
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-// moonshot-v1-8k is the broadly-available Moonshot model. Newer K2/K2.6
-// previews require a different plan tier — override via KIMI_MODEL env var
-// when those become available on this account.
-const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+// 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant
+// ("Kimi fallbacks should all be on 2.6, not V1"). The earlier comment
+// about K2.6 requiring a different plan tier is no longer accurate —
+// the prod KIMI_API_KEY has access. Override via KIMI_MODEL env var
+// if a different Moonshot model is preferred.
+const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 
 const SYSTEM_PROMPT = `You are a language detection and translation assistant. Detect the language of the user's text and translate it to English if it is not already English. Support ALL languages: Chinese (Simplified zh, Traditional zh-TW), Japanese (ja), Korean (ko), Thai (th), Vietnamese (vi), Hindi (hi), Bahasa Indonesia (id), Bahasa Malay (ms), Russian (ru), Ukrainian (uk), Arabic (ar), Hebrew (he), French (fr), German (de), Spanish (es), Italian (it), Portuguese (pt), Dutch (nl), Danish (da), Swedish (sv), Norwegian (no), Finnish (fi), Polish (pl), Czech (cs), Turkish (tr), Greek (el), Romanian (ro), Hungarian (hu), Bulgarian (bg), and any other. Use ISO 639-1 codes. Preserve tone, emoji, and punctuation. Respond with ONLY valid JSON, no other text:
 { "language": "xx", "translation": "<english translation>" }

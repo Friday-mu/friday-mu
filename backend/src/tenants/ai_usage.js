@@ -48,6 +48,14 @@ const RATE_TABLE = {
   'gemini-2.5-flash':              { kind: 'text',  inputUsdPerM:  0.075, outputUsdPerM: 0.30 },
   'gemini-2.5-flash-lite':         { kind: 'text',  inputUsdPerM:  0.04,  outputUsdPerM: 0.15 },
   'gemini-2.5-pro':                { kind: 'text',  inputUsdPerM:  1.25,  outputUsdPerM: 5.0 },
+  // 2026-05-23 — Gemini 3.x family added (now the standard text model
+  // across FAD per Ishant's "Gemini 3.5 Flash everywhere" decision).
+  // Approximate parity with 2.5-flash pricing pending Google's
+  // confirmed public rate card; revise once published.
+  'gemini-3.5-flash':              { kind: 'text',  inputUsdPerM:  0.075, outputUsdPerM: 0.30 },
+  'gemini-3.1-flash-lite':         { kind: 'text',  inputUsdPerM:  0.04,  outputUsdPerM: 0.15 },
+  'gemini-3.1-pro-preview':        { kind: 'text',  inputUsdPerM:  1.25,  outputUsdPerM: 5.0 },
+  'gemini-3-pro-preview':          { kind: 'text',  inputUsdPerM:  1.25,  outputUsdPerM: 5.0 },
   // Nanobanana — flat per image. The Gemini image preview tokens are
   // ~$30/M (1290 tokens ≈ $0.039 per 1024px), but v1 we just charge
   // a clean 5¢ per generation to avoid token-parsing the inlineData
@@ -58,6 +66,14 @@ const RATE_TABLE = {
   // response.modelVersion). Keeping both keys avoids a "unknown model"
   // warning + zero-cost capture.
   'gemini-2.5-flash-image':        { kind: 'image', flatUsdPerImage: 0.05 },
+  // 2026-05-23 — Nanobanana Pro = Gemini 3 Pro Image Preview, now the
+  // default image-gen model for both Design surfaces (moodboards/packs
+  // and floor-plan rendering). Pro tier — bumped to 10¢ flat per
+  // generation to reflect the higher quality / cost vs 2.5-flash-image.
+  // The 3.1-flash-image variant retains the 5¢ rate for faster jobs.
+  'gemini-3-pro-image-preview':    { kind: 'image', flatUsdPerImage: 0.10 },
+  'nano-banana-pro-preview':       { kind: 'image', flatUsdPerImage: 0.10 },
+  'gemini-3.1-flash-image-preview':{ kind: 'image', flatUsdPerImage: 0.05 },
   'imagen-3.0-generate-002':       { kind: 'image', flatUsdPerImage: 0.04 },
   // Moonshot / Kimi text models — pricing per Moonshot pricing page.
   'moonshot-v1-8k':                { kind: 'text',  inputUsdPerM:  1.40,  outputUsdPerM: 1.40 },

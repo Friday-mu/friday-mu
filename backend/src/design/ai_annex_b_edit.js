@@ -38,9 +38,13 @@ const {
 const router = express.Router();
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+// 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant
+// ("Kimi fallbacks should all be on 2.6, not V1").
+const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 const MAX_RETRIES = 2;
-const TIMEOUT_MS = 30_000;
+// 2026-05-23 — bumped 30s → 8 min to match the broader AI timeout
+// policy (nginx /api/ ceiling is 1800s).
+const TIMEOUT_MS = 480_000;
 
 // Fields the AI is allowed to propose changes to. Anything outside
 // this set is stripped from the response before it returns to the

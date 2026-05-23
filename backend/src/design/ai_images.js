@@ -470,7 +470,7 @@ router.post('/generate-from-project', requireDesignPerm('design:write'), async (
         userId: req.identity?.userId,
         feature: 'moodboard_prompt',
         provider: 'kimi',
-        model: process.env.KIMI_MODEL || 'moonshot-v1-8k',
+        model: process.env.KIMI_MODEL || 'kimi-k2.6',
         success: true,
         requestContext: { project_id: projectId, kind },
       }).catch(() => {});
@@ -1074,7 +1074,7 @@ router.post('/generate-furnished-floor-plan', requireDesignPerm('design:write'),
         userId: req.identity?.userId,
         feature: 'furnished_plan_prompt',
         provider: 'kimi',
-        model: process.env.KIMI_MODEL || 'moonshot-v1-8k',
+        model: process.env.KIMI_MODEL || 'kimi-k2.6',
         success: true,
         requestContext: { project_id: projectId, moodboard_id: moodboardRow.id },
       }).catch(() => {});

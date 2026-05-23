@@ -29,7 +29,8 @@ const fs = require('fs');
 const path = require('path');
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+// 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant.
+const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 const MAX_RETRIES = 3;
 
 const SYSTEM_PROMPT = `You write image-generation prompts for interior moodboards. Given a design project's context (property metadata, owner preferences, site-visit notes, goals), synthesize a single 60-100 word vivid scene description suitable for a photorealistic image-generation model (Nanobanana / Gemini 2.5 Flash Image).

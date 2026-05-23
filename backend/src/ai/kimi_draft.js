@@ -24,7 +24,8 @@ const { recordUsage } = require('../tenants/ai_usage');
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
 const DRAFT_MODEL = process.env.KIMI_DRAFT_MODEL || 'kimi-k2.6';
-const CLASSIFY_MODEL = process.env.KIMI_CLASSIFY_MODEL || 'moonshot-v1-8k';
+// 2026-05-23 — bumped moonshot-v1-8k → kimi-k2.6 per Ishant.
+const CLASSIFY_MODEL = process.env.KIMI_CLASSIFY_MODEL || 'kimi-k2.6';
 
 // Gemini primary path — added 2026-05-23 per Ishant's "Gemini 3.5 Flash
 // everywhere, Kimi backup everywhere" decision. callWithRetry below
@@ -398,7 +399,8 @@ async function classifyMessageWithKimi(text, meter) {
 // Returns { ok, parsed, raw, inputTokens, outputTokens, model, latencyMs, error? }.
 // On parse failure, returns { ok: false, error, raw } so the caller can
 // log/inspect what the model actually returned.
-const EXTRACT_MODEL = process.env.KIMI_EXTRACT_MODEL || 'moonshot-v1-8k';
+// 2026-05-23 — bumped moonshot-v1-8k → kimi-k2.6 per Ishant.
+const EXTRACT_MODEL = process.env.KIMI_EXTRACT_MODEL || 'kimi-k2.6';
 const EXTRACT_MAX_TOKENS = Number(process.env.KIMI_EXTRACT_MAX_TOKENS) || 800;
 // Bumped 20s → 90s on 2026-05-23 (Gemini path typically <5s, Kimi
 // fallback ~10-20s; 90s headroom covers tail-latency tasks). Coordinated

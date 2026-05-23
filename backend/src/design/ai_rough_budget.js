@@ -32,9 +32,15 @@ const {
 const router = express.Router();
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+// 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant
+// ("Kimi fallbacks should all be on 2.6, not V1"). Used as the
+// Kimi-fallback model when the Gemini-primary migration lands; until
+// then this is the direct call model.
+const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 const MAX_RETRIES = 2;
-const TIMEOUT_MS = 35_000;
+// 2026-05-23 — bumped 35s → 8 min to match the broader AI timeout
+// policy (nginx /api/ ceiling is 1800s).
+const TIMEOUT_MS = 480_000;
 
 // Build the rough-budget system prompt with per-tenant overrides (mig 035).
 //

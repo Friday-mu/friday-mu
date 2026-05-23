@@ -32,7 +32,10 @@ const router = express.Router();
 // in-flight transcript; only the final submission lands in `feedback`.
 
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+// 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant
+// ("Kimi fallbacks should all be on 2.6, not V1"). This is the
+// Kimi-fallback path when Gemini vision/chat fails.
+const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
 // 2026-05-23 — bumped 20s → 90s. Interactive feedback chat clarifier;
 // 90s is generous for a single-turn follow-up question. Coordinated
 // with nginx proxy_read_timeout (60s → 600s).

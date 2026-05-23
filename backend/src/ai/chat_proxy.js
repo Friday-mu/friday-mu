@@ -47,7 +47,9 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 const KIMI_CHAT_MODEL = process.env.KIMI_CHAT_MODEL || 'kimi-k2.6';
 const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
-const ANTHROPIC_CHAT_MODEL = process.env.ANTHROPIC_CHAT_MODEL || 'claude-sonnet-4-5';
+// 2026-05-23 — bumped 4-5 → 4-6 per Ishant. Anthropic is the 3rd
+// fallback after Gemini primary + Kimi 2.6.
+const ANTHROPIC_CHAT_MODEL = process.env.ANTHROPIC_CHAT_MODEL || 'claude-sonnet-4-6';
 
 // 2026-05-23 — all bumped to 8 min default. Coordinated with nginx
 // proxy_read_timeout bump (60s → 600s). Callers that need a tighter

@@ -274,7 +274,8 @@ async function sendViaGuesty(guestyConversationId, body, channel) {
 async function translateOutbound(text, targetLang) {
   if (!process.env.KIMI_API_KEY) return null;
   const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-  const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
+  // 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant.
+  const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
   const system = `Translate the following message FROM English TO ${targetLang}. Preserve tone, warmth, line breaks, emoji and punctuation. Output ONLY the translation, no commentary, no labels.`;
   const { data } = await axios.post(
     `${KIMI_BASE_URL}/chat/completions`,
