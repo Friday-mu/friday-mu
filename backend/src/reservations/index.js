@@ -180,14 +180,14 @@ async function resolveReservationId(tenantId, idOrGuestyId) {
   const isUuid = UUID_RE.test(idOrGuestyId);
   if (isUuid) {
     const { rows } = await query(
-      'SELECT id, guesty_id FROM reservations WHERE tenant_id = $1 AND id = $2 LIMIT 1',
+      'SELECT id, guesty_id FROM fad_reservations WHERE tenant_id = $1 AND id = $2 LIMIT 1',
       [tenantId, idOrGuestyId],
     );
     if (rows.length > 0) return { reservationId: rows[0].id, guestyId: rows[0].guesty_id };
     return null;
   }
   const existing = await query(
-    'SELECT id, guesty_id FROM reservations WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
+    'SELECT id, guesty_id FROM fad_reservations WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
     [tenantId, idOrGuestyId],
   );
   if (existing.rows.length > 0) {
@@ -203,7 +203,7 @@ async function resolveReservationId(tenantId, idOrGuestyId) {
   if (cache.rows.length === 0) return null;
   const g = cache.rows[0];
   const insert = await query(
-    `INSERT INTO reservations
+    `INSERT INTO fad_reservations
        (tenant_id, guesty_id, confirmation_code, status, channel, source_kind)
      VALUES ($1, $2, $3, $4, $5, 'guesty_pull')
      ON CONFLICT (tenant_id, guesty_id) DO NOTHING
@@ -212,7 +212,7 @@ async function resolveReservationId(tenantId, idOrGuestyId) {
   );
   if (insert.rows.length === 0) {
     const again = await query(
-      'SELECT id, guesty_id FROM reservations WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
+      'SELECT id, guesty_id FROM fad_reservations WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
       [tenantId, idOrGuestyId],
     );
     return again.rows.length > 0
@@ -289,7 +289,7 @@ router.get('/', attachIdentity, async (req, res) => {
            FROM guesty_reservations r
           LEFT JOIN guesty_listings l
             ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
-          LEFT JOIN reservations o
+          LEFT JOIN fad_reservations o
             ON o.tenant_id = r.tenant_id AND o.guesty_id = r.guesty_id
           WHERE ${filters.join(' AND ')}
        )
@@ -305,7 +305,7 @@ router.get('/', attachIdentity, async (req, res) => {
        FROM ranked r
        LEFT JOIN guesty_listings l
          ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
-       LEFT JOIN reservations o
+       LEFT JOIN fad_reservations o
          ON o.tenant_id = r.tenant_id AND o.guesty_id = r.guesty_id
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS nights_cached,
@@ -350,7 +350,7 @@ router.get('/inquiries', attachIdentity, async (req, res) => {
       params.push(req.query.status);
     }
     const { rows } = await query(
-      `SELECT * FROM inquiries WHERE ${filters.join(' AND ')}
+      `SELECT * FROM fad_inquiries WHERE ${filters.join(' AND ')}
         ORDER BY created_at DESC LIMIT 200`,
       params,
     );
@@ -366,7 +366,7 @@ router.post('/inquiries', attachIdentity, async (req, res) => {
   if (!b.guestName) return res.status(400).json({ error: 'guestName required' });
   try {
     const { rows } = await query(
-      `INSERT INTO inquiries (
+      `INSERT INTO fad_inquiries (
          tenant_id, guest_name, guest_email, guest_phone, source,
          property_codes, check_in, check_out,
          party_adults, party_children, party_infants,
@@ -411,7 +411,7 @@ router.patch('/inquiries/:id', attachIdentity, async (req, res) => {
   if (sets.length === 0) return res.status(400).json({ error: 'no fields to update' });
   try {
     const { rows } = await query(
-      `UPDATE inquiries SET ${sets.join(', ')}
+      `UPDATE fad_inquiries SET ${sets.join(', ')}
         WHERE tenant_id = $1 AND id = $2 RETURNING *`,
       params,
     );
@@ -429,7 +429,7 @@ router.post('/inquiries/:id/convert', attachIdentity, async (req, res) => {
   }
   try {
     const { rows: inquiries } = await query(
-      'SELECT * FROM inquiries WHERE tenant_id = $1 AND id = $2 LIMIT 1',
+      'SELECT * FROM fad_inquiries WHERE tenant_id = $1 AND id = $2 LIMIT 1',
       [req.tenantId, req.params.id],
     );
     if (inquiries.length === 0) return res.status(404).json({ error: 'Inquiry not found' });
@@ -440,7 +440,7 @@ router.post('/inquiries/:id/convert', attachIdentity, async (req, res) => {
     // Create the reservation in draft state (Phase 1: FAD-side only;
     // Phase 2: write-through to Guesty).
     const insert = await query(
-      `INSERT INTO reservations (
+      `INSERT INTO fad_reservations (
          tenant_id, status, channel, source_kind, confirmation_code, created_by_user_id
        ) VALUES ($1, 'draft', 'direct', 'inquiry_conversion', $2, $3)
        RETURNING id`,
@@ -452,7 +452,7 @@ router.post('/inquiries/:id/convert', attachIdentity, async (req, res) => {
     );
     const reservationId = insert.rows[0].id;
     await query(
-      `UPDATE inquiries SET status = 'converted', converted_to_reservation_id = $1
+      `UPDATE fad_inquiries SET status = 'converted', converted_to_reservation_id = $1
         WHERE tenant_id = $2 AND id = $3`,
       [reservationId, req.tenantId, req.params.id],
     );
@@ -509,7 +509,7 @@ router.post('/', attachIdentity, async (req, res) => {
   const confirmStep = b.step === 'confirm';
   try {
     const { rows } = await query(
-      `INSERT INTO reservations (
+      `INSERT INTO fad_reservations (
          tenant_id, status, channel, source_kind, confirmation_code,
          property_id, cleaning_arrangement,
          special_requests_categories, special_requests_notes, internal_notes,
@@ -577,7 +577,7 @@ router.get('/:id', attachIdentity, async (req, res) => {
        FROM guesty_reservations r
        LEFT JOIN guesty_listings l
          ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
-       LEFT JOIN reservations o
+       LEFT JOIN fad_reservations o
          ON o.tenant_id = r.tenant_id AND o.guesty_id = r.guesty_id
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS nights_cached,
@@ -634,7 +634,7 @@ router.get('/:id', attachIdentity, async (req, res) => {
                 NULL::bigint AS calendar_total_minor, NULL::bigint AS calendar_min_price_minor,
                 NULL::bigint AS calendar_max_price_minor, NULL::text AS calendar_currency_code,
                 NULL::timestamptz AS calendar_synced_at
-           FROM reservations o
+           FROM fad_reservations o
           WHERE o.tenant_id = $1 AND (${isUuid ? 'o.id = $2' : 'o.guesty_id = $2'})
           LIMIT 1`,
         [req.tenantId, req.params.id],
@@ -709,7 +709,7 @@ router.patch('/:id', attachIdentity, async (req, res) => {
     }
     if (sets.length === 0) return res.status(400).json({ error: 'no fields to update' });
     const { rows } = await query(
-      `UPDATE reservations SET ${sets.join(', ')}
+      `UPDATE fad_reservations SET ${sets.join(', ')}
         WHERE tenant_id = $1 AND id = $2 RETURNING *`,
       params,
     );
@@ -762,7 +762,7 @@ router.post('/:id/cancel', attachIdentity, async (req, res) => {
     if (!resolved) return res.status(404).json({ error: 'Reservation not found' });
     const b = req.body || {};
     const { rows } = await query(
-      `UPDATE reservations
+      `UPDATE fad_reservations
           SET status = 'cancelled',
               cancelled_at = NOW(),
               cancelled_by_user_id = $3,

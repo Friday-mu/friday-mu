@@ -131,7 +131,7 @@ async function resolvePropertyId(tenantId, idOrGuestyId) {
   const isUuid = UUID_RE.test(idOrGuestyId);
   if (isUuid) {
     const { rows } = await query(
-      'SELECT id, guesty_id FROM properties WHERE tenant_id = $1 AND id = $2 LIMIT 1',
+      'SELECT id, guesty_id FROM fad_properties WHERE tenant_id = $1 AND id = $2 LIMIT 1',
       [tenantId, idOrGuestyId],
     );
     if (rows.length > 0) return { propertyId: rows[0].id, guestyId: rows[0].guesty_id };
@@ -139,7 +139,7 @@ async function resolvePropertyId(tenantId, idOrGuestyId) {
   }
   // Treat as Guesty `_id`. Look up overlay first.
   const existing = await query(
-    'SELECT id, guesty_id FROM properties WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
+    'SELECT id, guesty_id FROM fad_properties WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
     [tenantId, idOrGuestyId],
   );
   if (existing.rows.length > 0) {
@@ -157,7 +157,7 @@ async function resolvePropertyId(tenantId, idOrGuestyId) {
   const g = cache.rows[0];
   const code = (g.nickname || '').trim() || g.guesty_id.slice(-8);
   const insert = await query(
-    `INSERT INTO properties
+    `INSERT INTO fad_properties
        (tenant_id, guesty_id, code, name, address, region, listing_type,
         bedrooms, bathrooms, max_occupancy, lifecycle_status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -184,7 +184,7 @@ async function resolvePropertyId(tenantId, idOrGuestyId) {
   if (insert.rows.length === 0) {
     // Race — another caller materialised first. Re-read.
     const again = await query(
-      'SELECT id, guesty_id FROM properties WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
+      'SELECT id, guesty_id FROM fad_properties WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
       [tenantId, idOrGuestyId],
     );
     return again.rows.length > 0
@@ -233,7 +233,7 @@ router.get('/', attachIdentity, async (req, res) => {
          cal.max_price_minor_30d,
          cal.calendar_synced_at
        FROM guesty_listings gl
-       LEFT JOIN properties p
+       LEFT JOIN fad_properties p
          ON p.tenant_id = gl.tenant_id AND p.guesty_id = gl.guesty_id
        LEFT JOIN LATERAL (
          SELECT COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_30d,
@@ -254,7 +254,7 @@ router.get('/', attachIdentity, async (req, res) => {
               NULL::bigint AS min_price_minor_30d,
               NULL::bigint AS max_price_minor_30d,
               NULL::timestamptz AS calendar_synced_at
-         FROM properties p
+         FROM fad_properties p
         WHERE p.tenant_id = $1 AND p.guesty_id IS NULL
           ${typeof req.query.lifecycle === 'string'
             ? `AND p.lifecycle_status = $${params.length}` /* re-uses lifecycle param already pushed */
@@ -286,7 +286,7 @@ router.get('/:id', attachIdentity, async (req, res) => {
          cal.min_price_minor_30d,
          cal.max_price_minor_30d,
          cal.calendar_synced_at
-       FROM properties p
+       FROM fad_properties p
        LEFT JOIN guesty_listings gl
          ON gl.tenant_id = p.tenant_id AND gl.guesty_id = p.guesty_id
        LEFT JOIN LATERAL (
@@ -323,7 +323,7 @@ router.get('/:id', attachIdentity, async (req, res) => {
        ) cal ON TRUE
        WHERE gl.tenant_id = $1 AND gl.guesty_id = $2
          AND NOT EXISTS (
-           SELECT 1 FROM properties p2
+           SELECT 1 FROM fad_properties p2
             WHERE p2.tenant_id = gl.tenant_id AND p2.guesty_id = gl.guesty_id
          )
        LIMIT 1`,
@@ -358,7 +358,7 @@ router.post('/', attachIdentity, async (req, res) => {
   }
   try {
     const insert = await query(
-      `INSERT INTO properties (
+      `INSERT INTO fad_properties (
          tenant_id, code, name, building_name, address, region, area, zone, tier,
          geo_lat, geo_lng, listing_type, bedrooms, bathrooms, max_occupancy, sqm,
          description, lifecycle_status, onboarding_checklist, live_since,
@@ -439,7 +439,7 @@ router.post('/', attachIdentity, async (req, res) => {
       `SELECT row_to_json(gl) AS guesty, row_to_json(p) AS overlay,
               NULL::bigint AS blocked_30d, NULL::bigint AS min_price_minor_30d,
               NULL::bigint AS max_price_minor_30d, NULL::timestamptz AS calendar_synced_at
-         FROM properties p
+         FROM fad_properties p
          LEFT JOIN guesty_listings gl
            ON gl.tenant_id = p.tenant_id AND gl.guesty_id = p.guesty_id
         WHERE p.id = $1`,
@@ -687,7 +687,7 @@ router.post('/:id/photos', attachIdentity, async (req, res) => {
         [req.tenantId, resolved.propertyId, rows[0].id],
       );
       await query(
-        'UPDATE properties SET hero_photo_id = $1 WHERE id = $2',
+        'UPDATE fad_properties SET hero_photo_id = $1 WHERE id = $2',
         [rows[0].id, resolved.propertyId],
       );
     }
@@ -771,7 +771,7 @@ router.post('/:id/onboarding-artifacts', attachIdentity, async (req, res) => {
     if (rows[0].status === 'complete') {
       // Mirror to onboarding_checklist on the property
       await query(
-        `UPDATE properties
+        `UPDATE fad_properties
             SET onboarding_checklist = jsonb_set(
               onboarding_checklist,
               ARRAY[$1::text],
