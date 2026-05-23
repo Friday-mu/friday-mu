@@ -2437,6 +2437,37 @@ html.fad-dark .fad-feedback-tab.is-active {
   .fad-brand-logo { width: 26px; height: 26px; object-fit: contain; }
 }
 
+/* Mobile touch-target bumps — Apple HIG aims for 44pt. On desktop the
+ * sidebar's "manage" tier (HR / Settings / Notifications / etc.) is
+ * intentionally compact at 28px, but on touch that's unreachable. The
+ * three nav-item selectors below override BOTH the default rule AND the
+ * tier-specific compact rules so every sidebar entry gets a 44px hit
+ * height on phones. Visual styling (font-size / color) of the demoted
+ * tier is preserved. */
+@media (max-width: 640px) {
+  .fad-nav-item,
+  .fad-sidebar-group-today .fad-nav-item,
+  .fad-sidebar-group-manage .fad-nav-item {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+  .fad-sidebar-group-today .fad-nav-item { font-size: 14px; }
+  .fad-sidebar-group-manage .fad-nav-item { font-size: 13px; }
+  .fad-nav-item.active::before { top: 10px; bottom: 10px; }
+  /* Drawer header buttons (Fullscreen / Close X / similar) sit inside
+   * `.fad-drawer-header` and were defaulting to 32×32 — too small on
+   * touch. The header's safe-area-aware height has room for 40×40. */
+  .fad-drawer-header .fad-util-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+  .fad-avatar { width: 34px; height: 34px; font-size: 12px; }
+  /* Group label spacing in the sidebar — more breathing room between
+   * tappable items. */
+  .fad-sidebar-group { margin-top: 18px; }
+}
+
 /* ───────────────────── ASK FRIDAY v2 ───────────────────── */
 .friday-body {
   padding: 16px 16px 8px;
