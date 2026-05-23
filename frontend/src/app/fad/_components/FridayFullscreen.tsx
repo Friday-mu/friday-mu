@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { FRIDAY_PROMPTS_HOME } from '../_data/fridayPrompts';
-import { useFridayChat, FridayMessage } from './FridayDrawer';
-import { IconArrow, IconChevron, IconSend, IconSparkle } from './icons';
+import { useFridayChat, FridayMessage, FridayComposer } from './FridayDrawer';
+import { IconArrow, IconChevron, IconSparkle } from './icons';
 
 interface Props {
   onNavigate: (mod: string) => void;
@@ -11,7 +11,7 @@ interface Props {
 }
 
 export function FridayFullscreen({ onNavigate, onExit }: Props) {
-  const { msgs, submit, executeAction } = useFridayChat('All of FAD');
+  const { msgs, submit, executeAction, stop, isThinking, queuedPrompt } = useFridayChat('All of FAD');
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -82,15 +82,16 @@ export function FridayFullscreen({ onNavigate, onExit }: Props) {
       </div>
       <div className="friday-fs-input">
         <form onSubmit={onSubmit}>
-          <input
-            placeholder="Ask Friday…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+          <FridayComposer
+            input={input}
+            setInput={setInput}
+            onSubmit={() => onSubmit()}
+            isThinking={isThinking}
+            queuedPrompt={queuedPrompt}
+            onStop={stop}
+            scope="all of FAD"
             autoFocus
           />
-          <button type="submit" className="btn primary">
-            <IconSend size={14} /> Send
-          </button>
         </form>
       </div>
     </div>

@@ -47,6 +47,8 @@ export const IconMoon = (p: IconProps) => <Icon {...p}><path d="M13 9a5 5 0 1 1-
 export const IconSidebar = (p: IconProps) => <Icon {...p}><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10"/></Icon>;
 export const IconArrow = (p: IconProps) => <Icon {...p}><path d="M3 8h10M9 4l4 4-4 4"/></Icon>;
 export const IconSend = (p: IconProps) => <Icon {...p}><path d="M14 2L2 7l5 2 2 5 5-12z"/></Icon>;
+export const IconMic = (p: IconProps) => <Icon {...p}><rect x="5" y="2" width="6" height="8" rx="3"/><path d="M3 8a5 5 0 0 0 10 0M8 13v2M5.5 15h5"/></Icon>;
+export const IconStop = (p: IconProps) => <Icon {...p}><rect x="4" y="4" width="8" height="8" rx="1.5"/></Icon>;
 export const IconPaperclip = (p: IconProps) => <Icon {...p}><path d="M12 7l-5 5a2.5 2.5 0 0 1-3.5-3.5l6-6a1.5 1.5 0 0 1 2 2l-5.5 5.5"/></Icon>;
 export const IconAI = (p: IconProps) => <Icon {...p}><path d="M8 2l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"/><circle cx="12.5" cy="11.5" r="1.2"/></Icon>;
 export const IconCheck = (p: IconProps) => <Icon {...p}><path d="M3 8.5L6 11.5 13 4.5"/></Icon>;
@@ -74,7 +76,7 @@ export const ICON_MAP: Record<string, (p: IconProps) => ReactElement> = {
   IconIntel, IconSyndic, IconInterior, IconAgency, IconSettings,
   IconBell, IconHelp, IconSparkle, IconSearch, IconChevron, IconClose,
   IconExpand, IconSun, IconMoon, IconSidebar, IconArrow, IconSend,
-  IconPaperclip, IconAI, IconCheck, IconPlus, IconFilter, IconUsers,
+  IconMic, IconStop, IconPaperclip, IconAI, IconCheck, IconPlus, IconFilter, IconUsers,
   IconMail, IconChat, IconChart, IconLock, IconSpark, IconBed, IconTool,
   IconPin, IconBook, IconRoad, IconRefresh, IconDownload,
   IconClock, IconGlobe,
