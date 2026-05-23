@@ -74,7 +74,14 @@ html.fad-dark {
 }
 
 .fad-app {
+  /* 100dvh tracks the actual rendered viewport on iOS Safari + standalone
+   * PWA — handles URL-bar collapse without the white-space flash that
+   * 100vh causes. Fallback to 100vh for browsers without dvh support. */
   height: 100vh;
+  height: 100dvh;
+  /* iOS PWA notch: keep the header below the safe-area-inset-top. The
+   * inset is 0 on non-notched devices, so this is a no-op there. */
+  padding-top: env(safe-area-inset-top, 0px);
   display: flex;
   flex-direction: column;
   font-family: var(--font-sans-fad);
@@ -88,6 +95,14 @@ html.fad-dark {
 }
 
 .fad-app * { box-sizing: border-box; }
+/* Snappier taps on touch devices: remove the 300ms tap delay on
+ * interactive elements and the gray flash on press. Modern browsers
+ * already handle the delay correctly with viewport meta, but this is
+ * cheap defence-in-depth + visual polish. */
+.fad-app :where(button, a, [role="button"], [role="link"], [role="tab"], summary, label, input[type="submit"], input[type="button"], input[type="reset"]) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
 .fad-app :where(button) { font-family: inherit; font-size: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 .fad-app input, .fad-app textarea { font-family: inherit; font-size: inherit; color: inherit; }
 .fad-app a { color: inherit; text-decoration: none; }
@@ -1652,8 +1667,11 @@ html.fad-dark .fad-drawer-overlay { background: rgba(0,0,0,0.4); }
 }
 .fad-drawer.open { transform: translateX(0); }
 .fad-drawer-header {
-  height: 48px;
-  padding: 0 16px;
+  /* Pad the top past the iOS notch so the close (×) and title aren't
+   * clipped on notched iPhones in PWA mode. Inset is 0 on non-notched
+   * devices so this is a no-op there. */
+  height: calc(48px + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 16px 0;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
   flex: 0 0 auto;
@@ -2400,8 +2418,16 @@ html.fad-dark .fad-feedback-tab.is-active {
   /* Hide send split desc on very narrow */
   .send-split-menu { min-width: calc(100vw - 48px); right: -24px; }
 
-  /* Bug FAB slight move */
-  .bug-fab { bottom: 16px; right: 16px; width: 40px; height: 40px; }
+  /* Bug FAB on mobile: stay at 44x44 touch target (Apple HIG minimum).
+   * Pad the bottom past the iOS home indicator so it isn't gestured-
+   * away. The default position is bottom-left, kept here so right-side
+   * Send buttons (TeamInbox compose, AI consult) don't collide. */
+  .bug-fab {
+    bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 8px));
+    left: 16px;
+    width: 44px;
+    height: 44px;
+  }
 }
 
 /* Small phones */
@@ -2829,7 +2855,7 @@ html.fad-dark .friday-composer-box { box-shadow: 0 8px 24px rgba(0,0,0,0.32); }
   gap: 16px;
   min-height: 0;
 }
-.reviews-list { max-height: calc(100vh - 320px); overflow-y: auto; padding: 0; }
+.reviews-list { max-height: calc(100dvh - 320px); overflow-y: auto; padding: 0; overscroll-behavior: contain; }
 .review-row {
   padding: 14px 16px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
