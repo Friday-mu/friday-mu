@@ -10,8 +10,10 @@ import { timeOffStatusTone, toneStyle } from '../../palette';
 import {
   useTimeOffRequests,
   apiRequestToFixtureShape,
+  cancelTimeOffRequest,
   type AdaptedTimeOff,
 } from '../../../_data/hrClient';
+import { fireToast } from '../../Toaster';
 
 type StatusFilter = TimeOffRequest['status'] | 'all';
 
@@ -197,6 +199,7 @@ export function TimeOffPage() {
           <TimeOffDetail
             req={selected}
             canApprove={canApprove}
+            currentUserId={currentUserId}
             onAfterDecide={bumpRev}
           />
         ) : (
@@ -225,10 +228,12 @@ export function TimeOffPage() {
 function TimeOffDetail({
   req,
   canApprove,
+  currentUserId,
   onAfterDecide,
 }: {
   req: TimeOffRequest;
   canApprove: boolean;
+  currentUserId: string;
   onAfterDecide: () => void;
 }) {
   const adapted = req as AdaptedTimeOff;
@@ -247,6 +252,29 @@ function TimeOffDetail({
   const days = daysBetween(req.startDate, req.endDate);
   const [open, setOpen] = useState<'approve' | 'decline' | null>(null);
   const [note, setNote] = useState('');
+  const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  // Requester can cancel their own pending request; managers can also
+  // cancel approved/pending on behalf of staff (e.g. corrections). Backend
+  // owns the actual authorization; client just hides the button when it
+  // wouldn't make sense.
+  const isRequester = req.userId === currentUserId;
+  const canCancel =
+    (req.status === 'pending' && (isRequester || canApprove)) ||
+    (req.status === 'approved' && canApprove);
+
+  const doCancel = async () => {
+    setCancelBusy(true);
+    try {
+      await cancelTimeOffRequest(req.id);
+      fireToast('Time-off request cancelled');
+      setCancelConfirm(false);
+      onAfterDecide();
+    } catch (e) {
+      fireToast(`Cancel failed · ${e instanceof Error ? e.message : 'unknown error'}`);
+      setCancelBusy(false);
+    }
+  };
 
   return (
     <div>
@@ -317,10 +345,62 @@ function TimeOffDetail({
         </div>
       )}
 
-      {req.status === 'pending' && canApprove && open === null && (
+      {req.status === 'pending' && canApprove && open === null && !cancelConfirm && (
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn primary" onClick={() => setOpen('approve')}>Approve</button>
           <button className="btn ghost" onClick={() => setOpen('decline')}>Decline</button>
+          <button
+            className="btn ghost"
+            onClick={() => setCancelConfirm(true)}
+            style={{ marginLeft: 'auto', color: 'var(--color-text-danger)' }}
+          >
+            Cancel request
+          </button>
+        </div>
+      )}
+
+      {canCancel && !canApprove && !cancelConfirm && (
+        <div style={{ display: 'flex' }}>
+          <button
+            className="btn ghost"
+            onClick={() => setCancelConfirm(true)}
+            style={{ color: 'var(--color-text-danger)' }}
+          >
+            Cancel my request
+          </button>
+        </div>
+      )}
+
+      {cancelConfirm && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 14,
+            background: 'var(--color-bg-danger)',
+            borderRadius: 8,
+            fontSize: 13,
+          }}
+        >
+          <div style={{ marginBottom: 10 }}>
+            Cancel this time-off request? It will be marked <strong>cancelled</strong> and removed from rosters.
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button
+              className="btn ghost sm"
+              onClick={() => setCancelConfirm(false)}
+              disabled={cancelBusy}
+            >
+              Keep request
+            </button>
+            <button
+              className="btn primary sm"
+              onClick={doCancel}
+              disabled={cancelBusy}
+              style={{ background: 'var(--color-text-danger)', borderColor: 'var(--color-text-danger)' }}
+            >
+              {cancelBusy ? 'Cancelling…' : 'Cancel request'}
+            </button>
+          </div>
         </div>
       )}
 
