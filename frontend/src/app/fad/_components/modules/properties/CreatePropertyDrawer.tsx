@@ -2,17 +2,15 @@
 
 import { useMemo, useState } from 'react';
 import {
-  PROPERTIES,
   PROPERTY_BY_CODE,
-  PROPERTY_BY_ID,
   ONBOARDING_REQUIRED,
   type Property,
-  type LifecycleStatus,
   type ListingType,
   type PropertyZone,
   type PropertyTier,
   type ChecklistItemStatus,
 } from '../../../_data/properties';
+import { createProperty, hydratePropertiesFromGuesty } from '../../../_data/propertiesClient';
 import { COHORT_LABEL, type Cohort } from '../../../_data/reviews';
 import { FIN_OWNERS } from '../../../_data/finance';
 import { fireToast } from '../../Toaster';
@@ -79,60 +77,57 @@ export function CreatePropertyDrawer({ open, onClose, onCreated }: Props) {
     setStep('confirm');
   };
 
-  const confirmCreate = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const confirmCreate = async () => {
+    if (submitting) return;
     const ownerName = FIN_OWNERS.find((o) => o.id === draft.primaryOwnerId)?.name ?? draft.primaryOwnerId;
-    const id = `p-${draft.code.toLowerCase().replace(/-/g, '')}`;
     const region = draft.region;
     const zone = regionToZone(region);
     const tier = tierFromOccupancy(draft.maxOccupancy);
 
-    // All required artifacts start at not_started for an onboarding property.
     const checklist = ONBOARDING_REQUIRED.reduce(
       (acc, k) => ({ ...acc, [k]: 'not_started' as ChecklistItemStatus }),
-      {},
+      {} as Record<string, ChecklistItemStatus>,
     );
 
-    const property: Property = {
-      id,
-      code: draft.code.trim(),
-      name: draft.name.trim(),
-      buildingName: draft.buildingName.trim() || undefined,
-      address: draft.address.trim(),
-      region,
-      area: `${COHORT_LABEL[region]} · ${zone === 'north' ? 'North' : 'West'}`,
-      zone,
-      tier,
-      lifecycleStatus: 'onboarding' as LifecycleStatus,
-      onboardingChecklist: checklist,
-      listingType: draft.listingType,
-      bedrooms: draft.bedrooms,
-      bathrooms: draft.bathrooms || undefined,
-      maxOccupancy: draft.maxOccupancy,
-      sqm: draft.sqm,
-      primaryOwnerId: draft.primaryOwnerId,
-      listings: [],
-      baseRateMUR: draft.baseRateMUR,
-      photoIds: [],
-      tags: ['Onboarding'],
-      occupancyYTD: 0, occupancy90d: 0, adr: 0, rating: 0, ratingCount: 0,
-      lastActivityAt: new Date().toISOString().slice(0, 10),
-    };
-
-    // @demo:logic — Tag: PROD-LOGIC-1 — see frontend/DEMO_CRUFT.md
-    // Replace with: POST /api/properties. Backend returns the created
-    // entity; frontend appends to its cache or refetches.
-    PROPERTIES.push(property);
-    PROPERTY_BY_CODE[property.code] = property;
-    PROPERTY_BY_ID[property.id] = property;
-
-    fireToast(
-      `Property created · ${property.code} · ${property.name} · onboarding (0 / ${ONBOARDING_REQUIRED.length}) · primary owner ${ownerName}`,
-    );
-
-    onCreated(property);
-    setDraft(DEFAULT_DRAFT);
-    setStep('draft');
-    onClose();
+    setSubmitting(true);
+    try {
+      const property: Property = await createProperty({
+        code: draft.code.trim(),
+        name: draft.name.trim(),
+        buildingName: draft.buildingName.trim() || undefined,
+        address: draft.address.trim(),
+        region,
+        area: `${COHORT_LABEL[region]} · ${zone === 'north' ? 'North' : 'West'}`,
+        zone,
+        tier,
+        lifecycleStatus: 'onboarding',
+        onboardingChecklist: checklist,
+        listingType: draft.listingType,
+        bedrooms: draft.bedrooms,
+        bathrooms: draft.bathrooms || undefined,
+        maxOccupancy: draft.maxOccupancy,
+        sqm: draft.sqm,
+        primaryOwnerId: draft.primaryOwnerId,
+        baseRateMUR: draft.baseRateMUR,
+        tags: ['Onboarding'],
+      });
+      // Refetch so PROPERTIES + derived maps reflect the new row.
+      await hydratePropertiesFromGuesty();
+      fireToast(
+        `Property created · ${property.code} · ${property.name} · onboarding (0 / ${ONBOARDING_REQUIRED.length}) · primary owner ${ownerName}`,
+      );
+      onCreated(property);
+      setDraft(DEFAULT_DRAFT);
+      setStep('draft');
+      onClose();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to create property';
+      fireToast(`Create failed · ${msg}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleClose = () => {
@@ -186,9 +181,14 @@ export function CreatePropertyDrawer({ open, onClose, onCreated }: Props) {
             </>
           ) : (
             <>
-              <button className="btn ghost sm" onClick={() => setStep('draft')}>← Back</button>
-              <button className="btn primary sm" onClick={confirmCreate}>
-                Create property
+              <button className="btn ghost sm" onClick={() => setStep('draft')} disabled={submitting}>← Back</button>
+              <button
+                className="btn primary sm"
+                onClick={confirmCreate}
+                disabled={submitting}
+                style={submitting ? { opacity: 0.6, cursor: 'wait' } : undefined}
+              >
+                {submitting ? 'Creating…' : 'Create property'}
               </button>
             </>
           )}

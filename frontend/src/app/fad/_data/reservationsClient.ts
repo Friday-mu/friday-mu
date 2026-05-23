@@ -7,13 +7,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../../../components/types';
-import type { Reservation, ReservationStatus, ReservationChannel } from './reservations';
+import type {
+  Reservation,
+  ReservationStatus,
+  ReservationChannel,
+  CleaningArrangement,
+  SpecialRequestCategory,
+} from './reservations';
 
 interface RawReservation {
   id: string;
+  overlay_id?: string | null;
   guesty_id?: string | null;
   listing_guesty_id?: string | null;
   listing_nickname?: string | null;
+  property_id?: string | null;
   confirmation_code?: string | null;
   status?: string | null;
   source?: string | null;
@@ -38,6 +46,27 @@ interface RawReservation {
   outstanding_balance?: number | null;
   payment_status?: string | null;
   currency_code?: string | null;
+  // FAD-native overlay fields (mig 078 + extended /api/reservations route)
+  cleaning_arrangement?: string | null;
+  special_requests?: {
+    categories?: string[] | null;
+    notes?: string | null;
+  };
+  internal_notes?: string | null;
+  access_info_sent_at?: string | null;
+  driver_assignee_user_id?: string | null;
+  review_requested_at?: string | null;
+  actual_arrival?: string | null;
+  actual_departure?: string | null;
+  refund?: {
+    amount_minor?: number | null;
+    currency?: string | null;
+    reason?: string | null;
+  } | null;
+  extension_of_reservation_id?: string | null;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
+  source_kind?: string | null;
   calendar_pricing?: {
     nights_cached?: number | null;
     blocked_nights?: number | null;
@@ -48,6 +77,20 @@ interface RawReservation {
     synced_at?: string | null;
   };
   synced_at?: string | null;
+}
+
+const KNOWN_SPECIAL_REQUEST_CATEGORIES: ReadonlyArray<SpecialRequestCategory> =
+  ['crib', 'high_chair', 'late_checkout', 'dietary', 'mobility', 'transport', 'other'];
+
+function coerceSpecialRequestCategories(raw: string[] | null | undefined): SpecialRequestCategory[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((v): v is SpecialRequestCategory =>
+    (KNOWN_SPECIAL_REQUEST_CATEGORIES as ReadonlyArray<string>).includes(v));
+}
+
+function coerceCleaningArrangement(raw: string | null | undefined): CleaningArrangement | undefined {
+  if (raw === 'friday_cleans' || raw === 'owner_cleans') return raw;
+  return undefined;
 }
 
 function compactIdentityPart(value: string | null | undefined): string {
@@ -185,12 +228,23 @@ export function transformReservation(r: RawReservation): Reservation {
     touristTax: 0,
     balanceDue,
     payoutStatus: balanceDue > 0 ? 'pending' : 'captured',
-    currency: r.currency_code || 'EUR',
-    // Optional / fixture-only fields — set defaults so the existing UI
-    // doesn't blow up when they're missing on live rows.
-    specialRequests: { categories: [], notes: '' },
-    notes: '',
-    cleaningArrangement: undefined,
+    currency: (r.currency_code || 'EUR') as Reservation['currency'],
+    // FAD-native overlay fields (mig 078). Populated from the merged
+    // backend response; falls back to the previous defaults when overlay
+    // is absent so existing UI keeps rendering.
+    specialRequests: {
+      categories: coerceSpecialRequestCategories(r.special_requests?.categories),
+      notes: r.special_requests?.notes || '',
+    },
+    notes: r.internal_notes || '',
+    cleaningArrangement: coerceCleaningArrangement(r.cleaning_arrangement),
+    accessInfoSentAt: r.access_info_sent_at || undefined,
+    driverAssigneeId: r.driver_assignee_user_id || undefined,
+    reviewRequestedAt: r.review_requested_at || undefined,
+    actualArrival: r.actual_arrival || undefined,
+    actualDeparture: r.actual_departure || undefined,
+    refundAmount: r.refund?.amount_minor != null ? r.refund.amount_minor / 100 : undefined,
+    extensionOf: r.extension_of_reservation_id || undefined,
   } as Reservation;
 }
 
@@ -323,4 +377,183 @@ export async function fetchScheduleReservations(input: FetchScheduleReservations
   return dedupeRawReservations(data?.reservations || [])
     .map(transformScheduleReservation)
     .filter((reservation) => reservation.checkInDate && reservation.checkOutDate);
+}
+
+// ───────────────── Write helpers ─────────────────
+
+export interface CreateReservationInput {
+  step?: 'draft' | 'confirm';
+  status?: ReservationStatus;
+  channel?: ReservationChannel;
+  sourceKind?: 'manual' | 'bdc_extension' | 'inquiry_conversion';
+  confirmationCode?: string;
+  propertyId?: string;
+  cleaningArrangement?: CleaningArrangement;
+  specialRequests?: { categories: SpecialRequestCategory[]; notes: string };
+  internalNotes?: string;
+  driverAssigneeUserId?: string;
+  actualArrival?: string;
+  actualDeparture?: string;
+  extensionOfReservationId?: string;
+}
+
+export async function createReservation(input: CreateReservationInput): Promise<RawReservation> {
+  return await apiFetch('/api/reservations', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }) as RawReservation;
+}
+
+export async function cancelReservation(idOrGuestyId: string, reason?: string): Promise<{ ok: true; reservation: RawReservation }> {
+  return await apiFetch(`/api/reservations/${encodeURIComponent(idOrGuestyId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason || null }),
+  }) as { ok: true; reservation: RawReservation };
+}
+
+export interface PatchReservationInput {
+  cleaningArrangement?: CleaningArrangement | null;
+  specialRequests?: { categories?: SpecialRequestCategory[]; notes?: string };
+  internalNotes?: string;
+  driverAssigneeUserId?: string | null;
+  accessInfoSentAt?: string | null;
+  actualArrival?: string | null;
+  actualDeparture?: string | null;
+  reviewRequestedAt?: string | null;
+  status?: ReservationStatus;
+  propertyId?: string | null;
+}
+
+export async function patchReservation(idOrGuestyId: string, patch: PatchReservationInput): Promise<RawReservation> {
+  return await apiFetch(`/api/reservations/${encodeURIComponent(idOrGuestyId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }) as RawReservation;
+}
+
+// ───────────────── Activity log ─────────────────
+
+export interface ReservationActivityRecord {
+  id: string;
+  kind: string;
+  actor_id: string | null;
+  detail: string;
+  metadata: Record<string, unknown>;
+  ts: string;
+}
+
+export async function loadReservationActivity(idOrGuestyId: string, limit = 100): Promise<ReservationActivityRecord[]> {
+  const res = await apiFetch(`/api/reservations/${encodeURIComponent(idOrGuestyId)}/activity?limit=${limit}`) as { activity?: ReservationActivityRecord[] };
+  return res.activity || [];
+}
+
+// ───────────────── Inquiries (Mathias quote workflow per v0.2 §9) ─────────────────
+
+export interface InquiryRecord {
+  id: string;
+  guest_name: string;
+  guest_email: string | null;
+  guest_phone: string | null;
+  source: 'email' | 'whatsapp' | 'website' | 'phone' | 'referral';
+  property_codes: string[];
+  check_in: string | null;
+  check_out: string | null;
+  party_adults: number;
+  party_children: number;
+  party_infants: number;
+  status: 'pending_quote' | 'quote_sent' | 'guest_reviewing' | 'converted' | 'abandoned';
+  quote_link: string | null;
+  quote_amount_minor: number | null;
+  currency: string;
+  converted_to_reservation_id: string | null;
+  abandon_reason: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function loadInquiries(status?: string): Promise<InquiryRecord[]> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  const res = await apiFetch(`/api/reservations/inquiries${qs}`) as { inquiries?: InquiryRecord[] };
+  return res.inquiries || [];
+}
+
+export interface CreateInquiryInput {
+  guestName: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  source?: InquiryRecord['source'];
+  propertyCodes?: string[];
+  checkIn?: string;
+  checkOut?: string;
+  partySize?: { adults?: number; children?: number; infants?: number };
+  status?: InquiryRecord['status'];
+  quoteLink?: string;
+  quoteAmount?: number;
+  currency?: string;
+  notes?: string;
+}
+
+export async function createInquiry(input: CreateInquiryInput): Promise<InquiryRecord> {
+  return await apiFetch('/api/reservations/inquiries', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }) as InquiryRecord;
+}
+
+export async function patchInquiry(id: string, patch: Partial<{
+  status: InquiryRecord['status'];
+  quoteLink: string;
+  quoteAmount: number;
+  notes: string;
+  abandonReason: string;
+}>): Promise<InquiryRecord> {
+  return await apiFetch(`/api/reservations/inquiries/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }) as InquiryRecord;
+}
+
+export async function convertInquiry(id: string): Promise<{ ok: true; reservationId: string; inquiry: InquiryRecord }> {
+  return await apiFetch(`/api/reservations/inquiries/${encodeURIComponent(id)}/convert`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }) as { ok: true; reservationId: string; inquiry: InquiryRecord };
+}
+
+// ───────────────── Channel-aware resolution URLs ─────────────────
+//
+// Replaces the hardcoded Airbnb URL in ReservationDetail (PROD-CONFIG-8).
+// Each channel has its own host-side dashboard URL; we deep-link to the
+// reservation list and let the operator pick (per-reservation deep-link
+// is Phase 3 once we capture channel-side IDs).
+
+export function resolutionCenterUrl(channel: ReservationChannel): string | null {
+  switch (channel) {
+    case 'airbnb':
+      return 'https://www.airbnb.com/hosting/reservations';
+    case 'booking':
+      return 'https://admin.booking.com/hotel/hoteladmin/extranet_ng/manage/reservations.html';
+    case 'vrbo':
+      return 'https://www.vrbo.com/dashboard/reservations';
+    case 'direct':
+    case 'email':
+    case 'owner':
+      return null; // Direct channels handled in-FAD; no external dashboard
+  }
+}
+
+export function resolutionCenterLabel(channel: ReservationChannel): string {
+  switch (channel) {
+    case 'airbnb':
+      return 'Open Airbnb resolution center';
+    case 'booking':
+      return 'Open Booking.com extranet';
+    case 'vrbo':
+      return 'Open VRBO dashboard';
+    case 'direct':
+    case 'email':
+    case 'owner':
+      return 'No external channel';
+  }
 }

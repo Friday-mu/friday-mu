@@ -28,7 +28,12 @@ import {
   type FolioLine,
   type FolioLineKind,
 } from '../../../_data/reservations';
-import { useLiveReservations } from '../../../_data/reservationsClient';
+import {
+  useLiveReservations,
+  cancelReservation,
+  resolutionCenterUrl,
+  resolutionCenterLabel,
+} from '../../../_data/reservationsClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
 import { INBOX_THREADS } from '../../../_data/fixtures';
 import { TASKS, TASK_USER_BY_ID, TASK_USERS, type Task } from '../../../_data/tasks';
@@ -269,11 +274,15 @@ function OverviewTab({
   };
 
   const handleAirbnbResolution = () => {
-    // Phase 1: open Airbnb host dashboard reservations page in a new tab.
-    // Phase 3: deep-link to the specific resolution thread once we have channel-side IDs.
-    // @demo:config — Airbnb URL hardcoded; won't work for other channels. Replace with
-    // GET /api/integrations/channels/:channelId/resolution-url. Tag: PROD-CONFIG-8.
-    window.open('https://www.airbnb.com/hosting/reservations', '_blank', 'noopener');
+    // Channel-aware deep link. Per-reservation deep-links land in Phase 3
+    // once we capture channel-side IDs; for now we deep-link to the host
+    // dashboard reservations list for the matching channel.
+    const url = resolutionCenterUrl(r.channel);
+    if (!url) {
+      fireToast(`No external dashboard for channel · ${r.channel}`);
+      return;
+    }
+    window.open(url, '_blank', 'noopener');
   };
 
   const insertMention = (userId: string) => {
@@ -318,15 +327,22 @@ function OverviewTab({
     bumpRev();
   };
 
-  const confirmCancel = () => {
-    // @demo:logic — Tag: PROD-LOGIC-3 — see frontend/DEMO_CRUFT.md
-    // Replace with: POST /api/reservations/:id/cancel (Guesty cancel +
-    // owner notification, per the Phase 2 comment below).
-    // Phase 1: mutate fixture status to cancelled. Phase 2 wires Guesty cancel API + owner notification.
-    r.status = 'cancelled';
-    setPanel('none');
-    fireToast(`${r.confirmationCode} cancelled · owner notification queued (Phase 2 fires real comms)`);
-    bumpRev();
+  const confirmCancel = async () => {
+    // Phase 1 per scoping §10: FAD-side state flip + activity log. Owner
+    // notification already fired from Guesty earlier; Phase 2 wires the
+    // write-through cancel + comms.
+    try {
+      await cancelReservation(r.id, 'Cancelled via FAD');
+      // Mutate the in-flight reservation object so the local view updates
+      // immediately while the next refetch swaps in the canonical row.
+      r.status = 'cancelled';
+      setPanel('none');
+      fireToast(`${r.confirmationCode} cancelled · Phase 1: FAD-side only, ops must push to Guesty manually`);
+      bumpRev();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'cancel failed';
+      fireToast(`Cancel failed · ${msg}`);
+    }
   };
 
   return (
