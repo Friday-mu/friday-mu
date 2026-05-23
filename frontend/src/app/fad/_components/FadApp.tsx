@@ -128,6 +128,19 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       } else {
         setSubPage(null);
       }
+    } else if (role === 'field') {
+      // Field-staff default landing: Operations → My tasks. Field workflow
+      // is task-execution, not exploration, so save a tap and land them
+      // directly on their queue. Ask Friday remains one tap away via the
+      // sidebar entry; directors / managers still get Ask Friday fullscreen
+      // as their default. Only applies when there's no explicit ?m= URL
+      // param — bookmarked / shared links still resolve normally.
+      const opsMod = MODULES.find((m) => m.id === 'operations');
+      if (opsMod && canSeeModule(role, opsMod.id)) {
+        setActive('operations');
+        setSubPage('my');
+        setFridayFs(false);
+      }
     }
     setCollapsed(localStorage.getItem('fad:collapsed') === '1');
     const savedTheme = localStorage.getItem('fad:theme') as Theme | null;
