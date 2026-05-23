@@ -98,12 +98,12 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Shipped: renamed both surfaces "Reply" → "AI draft" + switched IconClock → IconSparkle to match the AI semantics. Tooltip clarified ("Friday AI draft awaiting your approval before send"). The chip badge in thread rows likewise switched.
 - ✗ Still open (parked-hard until backend support): a true "guest awaiting our reply" filter would need backend to expose `last_message_direction` on the list response (or a derived `awaiting_response_from` flag). Today's list-only data doesn't include message direction. Promotable to Tier 3 when backend slices land.
 
-### T2.3 — Push notifications + VAPID env check
-- Effort: M · Blocks: field staff getting real-time task pings · Status: open
-- Verify VAPID public/private in prod env
-- Browser permission flow + service worker registration
-- In-app feed wiring
-- Email fallback / backoff verified
+### T2.3 — Push notifications + VAPID env check ✓ shipped 2026-05-23
+- Discovery: prod .env had `VAPID_PRIVATE_KEY` only — `VAPID_PUBLIC_KEY` was missing. Backend `setVapidDetails()` was silently failing → no pushes ever fired despite 4 stale subscriptions from April.
+- Fix: derived the public key from the existing private (P-256 ECDH via Node crypto), wrote it + `VAPID_SUBJECT=mailto:ops@friday.mu` to `/var/www/fad-backend/.env`, `pm2 restart fad-backend --update-env`. `/api/push/vapid-key` now returns the correct public key.
+- Frontend was already wired: `frontend/public/sw.js`, registered in `layout.tsx:52`, `usePushNotifications.ts` fetches the VAPID key + subscribes via pushManager.
+- Backend send path verified: `sendPushToUsers()` exists, handles 404/410 auto-cleanup of stale subs.
+- 4 April subscriptions will silently 410 on next send (they couldn't authenticate without a matching VAPID public anyway); operators just need to re-trigger Push opt-in.
 
 ### T2.4 — Bug #5 Mary inbox fluctuation (`434b9435`)
 - Effort: ? · Status: **needs-repro** (waiting on Mary's browser recording)
@@ -117,11 +117,11 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Effort: L · Blocks: outbound message quality · Status: **parked-hard**
 - Open-ended. Needs scoping doc + concrete failure cases first.
 
-### T2.7 — Ask Friday Core Slice 2: KB review queue UI
-- Effort: L · Blocks: **entire learning loop** (no events → canonical knowledge yet) · Status: open
-- Staff list / filter `ask_friday_kb_candidates`; approve / reject / needs-info.
-- Reviewer + audit fields; no auto-publish.
-- This is strategic, not day-to-day-blocking. But it unblocks every future Slice 3+.
+### T2.7 — Ask Friday Core Slice 2: KB review queue UI ✓ shipped 2026-05-23 (`3f754a6`)
+- New "Ask Friday review" module under the System sidebar group. Director-only via `MODULE_RESOURCE['ask-friday-review']`.
+- List/detail split layout: tabs (Pending / Needs info / Approved / Rejected / All), color-coded risk + trust chips, evidence summary card, click → detail pane with proposed-change JSON + source event IDs + Approve / Needs info / Reject actions.
+- Backend routes were already in place at /api/ask-friday/core/kb-candidates — frontend-only commit + new typed client in `_data/askFridayCoreClient.ts`.
+- Followup: scheduled analyzer worker (T4.1) is what *produces* candidates; without it the queue stays empty in normal operation. Manual `POST /analyzer/run` is the workaround.
 
 ### T2.8 — Touch target follow-up on Ops + Inbox internals ✓ shipped 2026-05-23
 - Mobile audit on 375×812:
@@ -133,10 +133,11 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 
 ## Tier 3 — Blocking other things (dependency)
 
-### T3.1 — Ask Friday Core Slice 3: Context pack publishing flow
-- Effort: M · Blocks: Slice 5 (FAD consuming Core) + Slice 6 (Website consuming Core) · Status: open
-- DB has 0 published packs.
-- Seed/create first draft pack for `fad_consult`; publish via staff action; record version + approver.
+### T3.1 — Ask Friday Core Slice 3: Context pack publishing flow ✓ shipped 2026-05-23 (`d6f283d`)
+- "Context packs" sub-section added to the Ask Friday review module. Mode toggle "KB candidates ↔ Context packs", URL-backed via subPage.
+- New backend route `GET /api/ask-friday/core/context-packs` (staff list, filterable by status + surfaceId). Pre-existing `POST /context-packs` + `POST /context-packs/publish` reused — no change.
+- UI grouped by surfaceId, version-desc, status pills (draft / approved / published / retired). "New draft" prompts for surface + version, creates an empty draft. "Publish" warns first then atomically flips to published + auto-approves referenced KB candidates (via the existing publisher.js code path).
+- DB still has 0 packs — first concrete pack content remains a product call (open question per the Core handover: manual-first vs. KB-candidate-driven). UI is ready for Ishant to author once the first pack content is decided.
 
 ### T3.2 — Multi-tenant safety sweep
 - Effort: L · Blocks: rolling FAD out to non-FR tenants · Status: open
@@ -244,7 +245,11 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-23 (today, this session)
-- **T2.2 — Inbox "Reply" → "AI draft"** (this commit) — chip + thread-row badge renamed + IconClock→IconSparkle. The "Reply" label misled operators into thinking it surfaced threads where guests were awaiting our reply. Real "guest awaiting" filter parked for a backend slice.
+- **T2.3 — Push notifications + VAPID** (env config only, no commit) — derived public key from existing private, wrote VAPID_PUBLIC_KEY + VAPID_SUBJECT to prod .env, pm2 restart. `/api/push/vapid-key` now returns the public key; full subscribe → send loop is functional. 4 April subs will silently 410 on next send.
+- **T3.1 — Context pack admin UI** (`d6f283d`) — Slice 3 of Ask Friday Core operationalization. New `GET /context-packs` list route + "Context packs" tab in the Ask Friday review module with grouped list + New Draft + Publish actions.
+- **T2.7 — KB candidate review queue** (`3f754a6`) — Slice 2 of Ask Friday Core. New "Ask Friday review" module, director-only, with full Approve / Needs info / Reject workflow.
+- **Prod deploy at `d352f63d`** — frontend + backend, all the T1.2 / T1.3 partial / T1.4 / T1.5 / T1.6 / T2.1 / T2.2 / T2.8 + slice 3a/3b/3c work landed live.
+- **T2.2 — Inbox "Reply" → "AI draft"** (`d352f63`) — chip + thread-row badge renamed + IconClock→IconSparkle. The "Reply" label misled operators into thinking it surfaced threads where guests were awaiting our reply. Real "guest awaiting" filter parked for a backend slice.
 - **T2.8 — Touch targets in Ops + Inbox** (`e5e3c6b`) — `.fad-tab` 26→40px, `.ops-status-chip` 28→38px, `.inbox-chip` 24→38px, `.inbox-collapse-btn` 28×28→40×40. Net 15 small targets → 2.
 - **T2.1 — Inbox reservation context drawer for narrow viewports** (`a06528c`) — added slide-in drawer triggered by a new "Reservation" button in thread header, since CSS hid the inline panel below 1180px. Restores reservation context for tablet + mobile + small-laptop operators.
 - **T1.3 partial — Calendar font consistency** (`0dbf21a`) — month-day 11→13px + investigation notes
