@@ -14,6 +14,18 @@ const TOKEN_TTL_HOURS = 1;
 const RESET_URL_BASE =
   process.env.PASSWORD_RESET_URL_BASE || 'https://admin.friday.mu/reset-password';
 
+// Derive FAD role when migration 075's `fad_role` is null (existing test
+// rows pre-migration, or any new login created via routes that bypass
+// the migration mapping). Keeps logins working without surprise nulls.
+const FAD_ROLE_FROM_COARSE = {
+  admin: 'director',
+  agent: 'field',
+};
+function resolveFadRole(user) {
+  if (user.fad_role) return user.fad_role;
+  return FAD_ROLE_FROM_COARSE[user.role] || 'field';
+}
+
 function signUserToken(user) {
   const username = user.email || user.username;
   return jwt.sign(
@@ -21,6 +33,7 @@ function signUserToken(user) {
       user_id: user.id,
       username,
       role: user.role,
+      fad_role: resolveFadRole(user),
       display_name: user.display_name || username,
       tenant_id: user.tenant_id || DEFAULT_TENANT_ID,
     },
@@ -37,6 +50,7 @@ function shapeUser(user, token = null) {
     email: user.email,
     display_name: user.display_name || user.email || user.username,
     role: user.role,
+    fad_role: resolveFadRole(user),
     tenant_id: user.tenant_id || DEFAULT_TENANT_ID,
     must_change_password: !!user.must_change_password,
   };
@@ -57,7 +71,7 @@ function authPayload(req) {
 async function loadActiveUserById(userId) {
   if (!userId) return null;
   const { rows } = await query(
-    `SELECT id, username, email, password_hash, role, display_name,
+    `SELECT id, username, email, password_hash, role, fad_role, display_name,
             tenant_id, is_active, must_change_password
        FROM users
       WHERE id = $1
@@ -196,3 +210,6 @@ router.post('/logout', (req, res) => {
 });
 
 module.exports = router;
+module.exports.signUserToken = signUserToken;
+module.exports.shapeUser = shapeUser;
+module.exports.resolveFadRole = resolveFadRole;

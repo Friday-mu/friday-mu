@@ -23,6 +23,7 @@ jest.mock('../tenants/email', () => ({
 const { query } = require('../database/client');
 const { sendEmail } = require('../tenants/email');
 const router = require('./session');
+const { resolveFadRole, signUserToken, shapeUser } = require('./session');
 
 function app() {
   const a = express();
@@ -88,6 +89,31 @@ describe('FAD-native session auth', () => {
     expect(res.status).toBe(200);
     expect(res.body.display_name).toBe('Judith Updated');
     expect(res.body.email).toBe('judith@friday.mu');
+  });
+
+  test('JWT carries the FAD-specific fad_role claim (drives PermissionsProvider)', async () => {
+    query.mockResolvedValueOnce({ rows: [user({ fad_role: 'field' })] });
+    const res = await request(app())
+      .post('/api/auth/login')
+      .send({ username: 'bryan@friday.mu', password: 'Friday2026!' });
+    expect(res.status).toBe(200);
+    const payload = jwt.verify(res.body.token, 'test-secret');
+    expect(payload.fad_role).toBe('field');
+    expect(res.body.fad_role).toBe('field');
+  });
+
+  test('fad_role falls back to coarse-role mapping when migration column is null', () => {
+    expect(resolveFadRole({ role: 'admin', fad_role: null })).toBe('director');
+    expect(resolveFadRole({ role: 'agent', fad_role: null })).toBe('field');
+    expect(resolveFadRole({ role: 'agent', fad_role: 'ops_manager' })).toBe('ops_manager');
+    // Unknown coarse role with no fad_role → safe minimum (field).
+    expect(resolveFadRole({ role: 'unknown', fad_role: null })).toBe('field');
+  });
+
+  test('signUserToken and shapeUser both surface fad_role consistently', () => {
+    const token = signUserToken(user({ fad_role: 'ops_manager' }));
+    expect(jwt.verify(token, 'test-secret').fad_role).toBe('ops_manager');
+    expect(shapeUser(user({ fad_role: 'commercial_marketing' })).fad_role).toBe('commercial_marketing');
   });
 
   test('account password reset request emails the authenticated user only', async () => {

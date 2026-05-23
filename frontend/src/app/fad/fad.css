@@ -8574,6 +8574,57 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   font-weight: 600;
 }
 
+/* Selected assignees pill row — shown below the assignee dropdown.
+   Each pill renders an avatar dot + name + close button. */
+.ops-assignee-pill-row {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ops-assignee-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 3px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 999px;
+  background: var(--color-brand-accent-soft);
+  color: var(--color-brand-accent);
+  font-size: 12px;
+}
+.ops-assignee-pill-dot {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+}
+.ops-assignee-pill-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-brand-accent);
+  cursor: pointer;
+  padding: 0;
+}
+.ops-assignee-pill-remove:hover {
+  background: var(--color-background-tertiary, rgba(0,0,0,0.06));
+}
+.ops-assignee-pill-remove svg {
+  width: 12px;
+  height: 12px;
+}
+
 .ops-assign-self {
   align-self: flex-start;
   min-height: 34px;

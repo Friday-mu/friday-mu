@@ -1,6 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+
+// 2026-05-23 (Ishant): Requirements checklist + the "missing completion
+// requirement" blocker are stripped from the Task Detail view because
+// they were cluttering the surface for a feature operators didn't ask
+// for. The logic (requirementsForTask, missingRequiredRequirements,
+// persistence) is left in place so we can re-enable later. To turn it
+// back on flip this constant to true and rebuild.
+const SHOW_TASK_REQUIREMENTS = false;
 import {
   TASK_USERS,
   TASK_USER_BY_ID,
@@ -303,7 +311,11 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
 
   const setStatus = async (status: Task['status']) => {
     setCloseArmed(false);
-    if (status === 'completed' && missingCompletionRequirements.length > 0) {
+    // 2026-05-23 — requirements UI is hidden (see SHOW_TASK_REQUIREMENTS).
+    // The completion-blocker gate is also gated on the same flag so the
+    // operator can complete a task without the now-invisible checklist
+    // tripping a vague "Complete blocked" error.
+    if (SHOW_TASK_REQUIREMENTS && status === 'completed' && missingCompletionRequirements.length > 0) {
       const missing = missingCompletionRequirements.map((req) => req.label).join(', ');
       setSyncState('failed');
       setSyncError(`Complete blocked: ${missing}.`);
@@ -660,7 +672,7 @@ function Body({
         onSetStatus={onSetStatus}
       />
 
-      {requirements.length > 0 && (
+      {SHOW_TASK_REQUIREMENTS && requirements.length > 0 && (
         <RequirementsPanel
           requirements={requirements}
           requirementState={requirementState}

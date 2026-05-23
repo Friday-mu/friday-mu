@@ -31,9 +31,12 @@ interface PermissionsContextValue {
 const PermissionsContext = createContext<PermissionsContextValue | null>(null);
 
 // @demo:auth + @demo:state — Tag: PROD-AUTH-4 / PROD-STATE-1 — see frontend/DEMO_CRUFT.md
-// Replace with: auth-context provider that reads role + user from JWT (or
-// GET /api/auth/me). Delete dev-role storage entirely. Backend MUST also
-// enforce permission on API endpoints — client checks are not authoritative.
+// 2026-05-23: realRole + active role now seed from the JWT's fad_role
+// claim (backend session.js + migration 075). dev-role storage remains
+// only as the View-as override for directors. Outstanding work:
+//   - Backend MUST also enforce permission on API endpoints — client
+//     checks are not authoritative.
+//   - Replace TASK_USERS fixture lookup with /api/auth/me user metadata.
 const STORAGE_KEY = 'fad:dev-role';
 const STORAGE_USER_KEY = 'fad:dev-user';
 const STORAGE_REAL_ROLE_KEY = 'fad:real-role';
@@ -55,22 +58,59 @@ function pickUserForRole(role: Role): string {
   return user?.id ?? DEFAULT_USER_ID;
 }
 
-function decodeJwtUserId(token: string | null): string | null {
+function decodeJwtPayload(token: string | null): Record<string, unknown> | null {
   if (!token || typeof window === 'undefined' || typeof window.atob !== 'function') return null;
   try {
     const payloadPart = token.split('.')[1] || '';
     const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    const payload = JSON.parse(window.atob(padded));
-    return typeof payload?.user_id === 'string' ? payload.user_id : null;
+    return JSON.parse(window.atob(padded));
   } catch {
     return null;
   }
 }
 
-function readJwtUserId(): string | null {
+function decodeJwtUserId(token: string | null): string | null {
+  const payload = decodeJwtPayload(token);
+  return typeof payload?.user_id === 'string' ? payload.user_id as string : null;
+}
+
+function decodeJwtEmail(token: string | null): string | null {
+  const payload = decodeJwtPayload(token);
+  const username = payload?.username;
+  return typeof username === 'string' ? username.toLowerCase() : null;
+}
+
+function decodeJwtFadRole(token: string | null): Role | null {
+  const payload = decodeJwtPayload(token);
+  const candidate = payload?.fad_role;
+  if (typeof candidate !== 'string') return null;
+  return candidate in PERMISSIONS ? (candidate as Role) : null;
+}
+
+// JWT user_id is the DB UUID (e.g. f2d3426c-…). TASK_USERS fixture is
+// keyed by 'u-<name>'. To make `currentUser` lookups + the assignee
+// dropdown find the right person, resolve via email match. Falls back
+// to the raw JWT user_id when no fixture row matches (e.g. acme test
+// account) so callers still get *something* identifying.
+function resolveTaskUserIdFromJwt(): string | null {
   if (typeof window === 'undefined') return null;
-  return decodeJwtUserId(localStorage.getItem('gms_token'));
+  const token = localStorage.getItem('gms_token');
+  const email = decodeJwtEmail(token);
+  if (email) {
+    const match = TASK_USERS.find((u) => u.email?.toLowerCase() === email);
+    if (match) return match.id;
+  }
+  return decodeJwtUserId(token);
+}
+
+function readJwtUserId(): string | null {
+  return resolveTaskUserIdFromJwt();
+}
+
+function readJwtFadRole(): Role | null {
+  if (typeof window === 'undefined') return null;
+  return decodeJwtFadRole(localStorage.getItem('gms_token'));
 }
 
 interface ProviderProps {
@@ -88,23 +128,29 @@ export function PermissionsProvider({ children, initialRole }: ProviderProps) {
   useEffect(() => {
     try {
       const jwtUserId = readJwtUserId();
+      // 2026-05-23 — JWT now carries fad_role (migration 075 + backend
+      // session.js change). This is the authoritative source for the
+      // operator's "real" role; localStorage is only consulted when the
+      // JWT is missing one (older tokens minted before the migration).
+      // Fixes Bryan-sees-the-whole-app, reported by Ishant 2026-05-23.
+      const jwtRole = readJwtFadRole();
       const stored = localStorage.getItem(STORAGE_KEY) as Role | null;
       const storedUser = localStorage.getItem(STORAGE_USER_KEY);
       const storedReal = localStorage.getItem(STORAGE_REAL_ROLE_KEY) as Role | null;
-      if (storedReal && storedReal in PERMISSIONS) {
-        setRealRole(storedReal);
-      } else {
-        // First load: snapshot the initial role as the "real" role.
-        const real = initialRole ?? DEFAULT_ROLE;
-        setRealRole(real);
-        localStorage.setItem(STORAGE_REAL_ROLE_KEY, real);
-      }
-      if (stored && stored in PERMISSIONS) {
-        setRoleState(stored);
-        setCurrentUserId(jwtUserId ?? storedUser ?? pickUserForRole(stored));
-      } else {
-        setCurrentUserId(jwtUserId ?? pickUserForRole(initialRole ?? DEFAULT_ROLE));
-      }
+      // realRole priority: JWT > stored > initial > default. JWT wins so
+      // the role survives a localStorage wipe and so View-as gating is
+      // grounded in the actual login identity, not stale cache.
+      const real = jwtRole ?? (storedReal && storedReal in PERMISSIONS ? storedReal : (initialRole ?? DEFAULT_ROLE));
+      setRealRole(real);
+      localStorage.setItem(STORAGE_REAL_ROLE_KEY, real);
+      // role (the active acting-as) priority: stored override > JWT real >
+      // initial > default. The override lets a Director View-as a Field
+      // staff; non-Directors get their actual role enforced.
+      const activeRole = (stored && stored in PERMISSIONS && (real === 'director' || real === stored))
+        ? stored
+        : real;
+      setRoleState(activeRole);
+      setCurrentUserId(jwtUserId ?? storedUser ?? pickUserForRole(activeRole));
     } catch {
       // localStorage unavailable; keep defaults
     }

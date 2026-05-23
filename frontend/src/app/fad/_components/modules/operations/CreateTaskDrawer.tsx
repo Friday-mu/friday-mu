@@ -878,45 +878,65 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
 
               <section className="ops-form-section">
                 <div className="ops-form-section-title">Assignees</div>
-                {canSchedule && currentUser && (
-                  <button
-                    type="button"
-                    className="btn ghost sm ops-assign-self"
-                    onClick={() => {
-                      if (!assigneeIds.includes(currentUserId)) setAssigneeIds((ids) => [currentUserId, ...ids]);
+                {/* 2026-05-23 (Ishant): the chip grid was overwhelming
+                    when you opened the drawer for the first time. A
+                    dropdown is the conventional Ops UI and matches
+                    Breezeway. Department headers stay so the operator
+                    can find the right person by skill. */}
+                <Field label="Assign to">
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (id && !assigneeIds.includes(id)) {
+                        setAssigneeIds((prev) => [...prev, id]);
+                      }
                     }}
                   >
-                    Assign to me
-                  </button>
+                    <option value="">Pick someone…</option>
+                    {canSchedule && currentUser && !assigneeIds.includes(currentUserId) && (
+                      <option value={currentUserId}>Assign to me ({currentUser.name})</option>
+                    )}
+                    {assigneeGroups.map((group) => (
+                      <optgroup key={group.dept} label={group.dept}>
+                        {group.users
+                          .filter((u) => !assigneeIds.includes(u.id))
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </Field>
+                {assigneeIds.length > 0 && (
+                  <div className="ops-assignee-pill-row">
+                    {assigneeIds.map((id) => {
+                      const u = TASK_USER_BY_ID[id];
+                      if (!u) return null;
+                      return (
+                        <span key={id} className="ops-assignee-pill">
+                          <span className="ops-assignee-pill-dot" style={{ background: u.avatarColor }}>
+                            {u.initials}
+                          </span>
+                          <span>{u.name}</span>
+                          <button
+                            type="button"
+                            className="ops-assignee-pill-remove"
+                            title={`Remove ${u.name}`}
+                            onClick={() => toggleAssignee(id)}
+                          >
+                            <IconClose />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
                 )}
-                <div className="ops-assignee-groups">
-                  {assigneeGroups.map((group) => (
-                    <div className="ops-assignee-group" key={group.dept}>
-                      <div>{group.dept}</div>
-                      <div>
-                        {group.users.map((user) => {
-                          const selected = assigneeIds.includes(user.id);
-                          return (
-                            <button
-                              key={`${group.dept}-${user.id}`}
-                              type="button"
-                              className={'ops-assignee-chip' + (selected ? ' active' : '')}
-                              onClick={() => toggleAssignee(user.id)}
-                            >
-                              <span style={{ background: user.avatarColor }}>{user.initials}</span>
-                              {user.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
                 <Field label="Requester">
                   <select value={requesterId} onChange={(e) => setRequesterId(e.target.value)}>
                     {candidateAssignees.map((user) => (
                       <option key={user.id} value={user.id}>
-                        {user.name}
+                        {user.name}{user.id === currentUserId ? ' (you)' : ''}
                       </option>
                     ))}
                   </select>
