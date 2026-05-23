@@ -1634,6 +1634,10 @@ html.fad-dark .fad-drawer-overlay { background: rgba(0,0,0,0.4); }
   position: fixed;
   top: 0; right: 0; bottom: 0;
   width: 420px;
+  /* Mobile-safe: drawer can't be wider than the viewport. iOS PWA: use
+   * 100dvw so it tracks the actual rendered width (no URL-bar gap). */
+  max-width: 100vw;
+  max-width: 100dvw;
   background: var(--color-background-primary);
   border-left: 0.5px solid var(--color-border-secondary);
   z-index: 50;
@@ -1642,15 +1646,29 @@ html.fad-dark .fad-drawer-overlay { background: rgba(0,0,0,0.4); }
   display: flex; flex-direction: column;
   box-shadow: -8px 0 24px rgba(15, 24, 54, 0.06);
 }
+@media (max-width: 640px) {
+  /* Full-screen drawer on phones — no awkward 420px clip on a 375px screen. */
+  .fad-drawer { width: 100vw; width: 100dvw; }
+}
 .fad-drawer.open { transform: translateX(0); }
 .fad-drawer-header {
   height: 48px;
   padding: 0 16px;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
+  flex: 0 0 auto;
 }
 .fad-drawer-title { font-size: 13px; font-weight: 500; white-space: nowrap; }
-.fad-drawer-body { flex: 1; overflow-y: auto; padding: 16px; }
+.fad-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  /* Pad past iOS home indicator so the last action isn't gestured-away. */
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  min-height: 0;
+}
 .fad-drawer-msg { padding: 10px 12px; border-radius: var(--radius-md); font-size: 13px; line-height: 1.5; margin-bottom: 10px; }
 .fad-drawer-msg.user { background: var(--color-brand-accent-soft); color: var(--color-text-primary); margin-left: 24px; }
 .fad-drawer-msg.ai { background: var(--color-background-secondary); color: var(--color-text-primary); margin-right: 24px; }
@@ -3378,36 +3396,69 @@ html.fad-dark .cal-popover { box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
 .cal-month-ev.meeting { background: var(--color-background-secondary); color: var(--color-text-primary); border-color: var(--color-text-tertiary); }
 .cal-month-ev.task { background: var(--color-bg-info); color: var(--color-text-info); border-color: var(--color-text-info); }
 
-/* Modal */
+/* Modal
+ * Mobile/PWA scroll-trap fix: the modal is a flex column with a capped
+ * height (100dvh, dynamic viewport — handles iOS Safari URL bar collapse
+ * and standalone PWA mode). The head + foot stay fixed; the body scrolls
+ * independently. Without this, long content (e.g. bug-report screenshot +
+ * chat) pushes the submit button below the viewport with no way to reach
+ * it. */
 .fad-modal-overlay {
   position: fixed; inset: 0;
   background: rgba(15, 24, 54, 0.32);
   z-index: 80;
   display: flex; justify-content: center; align-items: flex-start;
-  padding-top: 100px;
+  padding: 100px 16px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 640px) {
+  .fad-modal-overlay {
+    padding: 16px;
+    align-items: center; /* center on mobile — no 100px wasted at top */
+  }
 }
 html.fad-dark .fad-modal-overlay { background: rgba(0,0,0,0.6); }
 .fad-modal {
   width: 520px;
   max-width: calc(100% - 32px);
+  max-height: calc(100dvh - 132px); /* 100px overlay top + 32px slack */
   background: var(--color-background-primary);
   border: 0.5px solid var(--color-border-secondary);
   border-radius: var(--radius-lg);
   box-shadow: 0 24px 48px rgba(15,24,54,0.22);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 640px) {
+  .fad-modal {
+    max-height: calc(100dvh - 32px); /* match mobile overlay padding */
+  }
 }
 .fad-modal-head {
   padding: 14px 18px;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
+  flex: 0 0 auto;
 }
 .fad-modal-title { font-size: 15px; font-weight: 500; }
-.fad-modal-body { padding: 18px; }
+.fad-modal-body {
+  padding: 18px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0; /* allow flex child to shrink so overflow-y works */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 .fad-modal-foot {
   padding: 12px 18px;
+  /* iOS PWA safe-area: don't hide buttons behind the home indicator. */
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
   display: flex; gap: 8px; justify-content: flex-end;
   border-top: 0.5px solid var(--color-border-tertiary);
   background: var(--color-background-tertiary);
+  flex: 0 0 auto;
 }
 .fad-field { margin-bottom: 12px; }
 .fad-field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-tertiary); margin-bottom: 6px; }
