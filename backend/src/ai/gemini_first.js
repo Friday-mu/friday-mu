@@ -121,6 +121,15 @@ async function callKimi({ system, user, model, maxTokens, temperature, timeoutMs
     return { ok: false, error: 'KIMI_API_KEY not set', provider: 'kimi' };
   }
   const m = model || KIMI_MODEL;
+  // K2.6 rejects any temperature ≠ 1 with HTTP 400 ("invalid temperature:
+  // only 1 is allowed for this model"). Same constraint applies to a
+  // small handful of newer Moonshot models. If we're calling K2.6 — the
+  // default — clamp the temperature regardless of what the caller passed
+  // so the Kimi fallback path doesn't silently 400 out. Older Moonshot
+  // models (v1-8k / v1-32k / v1-128k) still accept arbitrary temperatures.
+  const isStrictTemp1Model = typeof m === 'string' && m.startsWith('kimi-k');
+  const tempInput = Number.isFinite(Number(temperature)) ? Number(temperature) : 0.4;
+  const effectiveTemp = isStrictTemp1Model ? 1 : tempInput;
   const start = Date.now();
   try {
     const { data } = await axios.post(
@@ -131,7 +140,7 @@ async function callKimi({ system, user, model, maxTokens, temperature, timeoutMs
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
-        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.4,
+        temperature: effectiveTemp,
         max_tokens: maxTokens,
         ...(responseJson ? { response_format: { type: 'json_object' } } : {}),
       },

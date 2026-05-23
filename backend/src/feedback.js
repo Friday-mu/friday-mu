@@ -202,54 +202,49 @@ async function generateChatReplyWithVision({ type, transcript, moduleLabel, rout
 }
 
 async function generateChatReply({ type, transcript, moduleLabel, routeUrl }) {
-  if (!process.env.KIMI_API_KEY) {
-    return { reply: FALLBACK_REPLIES[type] || FALLBACK_REPLIES.bug, source: 'fallback' };
-  }
+  // 2026-05-23: rewired through gemini_first.runTextCompletion so the
+  // Friday-Consult chat inside the bug-report modal follows the same
+  // AI hierarchy as the rest of FAD (Gemini 3.5 Flash primary / Kimi 2.6
+  // fallback / Sonnet 4.6 third). Previously this called Kimi K2.6
+  // directly with temperature:0.5 — which K2.6 rejects with HTTP 400
+  // (only temperature:1 is accepted) — so every chat reply silently
+  // fell to the canned fallback. Also: no Gemini was ever tried, contra
+  // Ishant's stated hierarchy.
+  // eslint-disable-next-line global-require
+  const { runTextCompletion } = require('./ai/gemini_first');
   const system = CHAT_SYSTEM_PROMPT.replace('{{type}}', type);
-  // Inject the page context as a system-level pre-pend so Kimi can use
-  // it but it doesn't appear as part of the user's message.
   const contextHeader = [
     moduleLabel ? `[user is on the "${moduleLabel}" module]` : null,
     routeUrl ? `[page URL: ${routeUrl}]` : null,
   ].filter(Boolean).join(' ');
-  const kimiMessages = [
-    { role: 'system', content: system },
-    ...(contextHeader ? [{ role: 'system', content: contextHeader }] : []),
-    ...transcript.map((m) => ({
-      role: m.role === 'friday' ? 'assistant' : 'user',
-      content: m.text,
-    })),
-  ];
+  // gemini_first takes one system + one user blob. Fold the page context
+  // into the system prompt; fold the transcript into a tagged user blob.
+  const sysWithContext = contextHeader ? `${system}\n\n${contextHeader}` : system;
+  const userBlob = transcript.map((m) => {
+    const role = m.role === 'friday' ? 'Friday' : 'You';
+    return `${role}: ${m.text}`;
+  }).join('\n');
   try {
-    const { data } = await axios.post(
-      `${KIMI_BASE_URL}/chat/completions`,
-      {
-        model: KIMI_MODEL,
-        messages: kimiMessages,
-        temperature: 0.5,
-        // No response_format here — we want plain text, not JSON.
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: KIMI_TIMEOUT_MS,
-      },
-    );
-    const raw = data?.choices?.[0]?.message?.content;
-    if (typeof raw !== 'string' || raw.trim().length === 0) {
-      return { reply: FALLBACK_REPLIES[type] || FALLBACK_REPLIES.bug, source: 'kimi-empty' };
+    const result = await runTextCompletion({
+      system: sysWithContext,
+      user: userBlob,
+      maxTokens: 800,
+      temperature: 0.5,
+      timeoutMs: 30_000,
+      feature: 'feedback_chat',
+    });
+    if (!result.ok || typeof result.text !== 'string' || result.text.trim().length === 0) {
+      return { reply: FALLBACK_REPLIES[type] || FALLBACK_REPLIES.bug, source: 'fallback-after-error' };
     }
-    // Strip any stray "Friday:" prefix the model might emit despite the
-    // system prompt; clamp to a sane length.
-    const cleaned = raw
+    // Strip any stray "Friday:" / "Assistant:" prefix the model emits
+    // and clamp to a sane length.
+    const cleaned = result.text
       .trim()
       .replace(/^(friday|assistant)\s*[:\-]\s*/i, '')
       .slice(0, 800);
-    return { reply: cleaned, source: 'kimi' };
+    return { reply: cleaned, source: result.provider || 'auto' };
   } catch (err) {
-    console.warn('[feedback] kimi chat failed:', err.message);
+    console.warn('[feedback] chat reply failed:', err.message);
     return { reply: FALLBACK_REPLIES[type] || FALLBACK_REPLIES.bug, source: 'fallback-after-error' };
   }
 }

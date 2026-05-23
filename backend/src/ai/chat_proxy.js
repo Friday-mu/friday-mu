@@ -110,7 +110,17 @@ function resolveAnthropicModel(model) {
 }
 
 function providerOrder(provider, { stream = false } = {}) {
-  if (provider === 'auto') return ['kimi', 'anthropic'];
+  if (provider === 'auto') {
+    // 2026-05-23 fix: was ['kimi', 'anthropic'] which skipped Gemini
+    // entirely. Per Ishant's stated AI hierarchy (Gemini 3.5 Flash
+    // primary / Kimi 2.6 fallback / Claude Sonnet 4.6 third), default-
+    // routed callers (public/chat with no model arg, Ask Friday autocall)
+    // must try Gemini first. Streaming chains drop Gemini because the
+    // chat_proxy doesn't yet have a Gemini stream impl — it falls
+    // straight to Kimi-stream for SSE responses; restore Gemini-stream
+    // routing in a follow-up when the SSE adapter lands.
+    return stream ? ['kimi', 'anthropic'] : ['gemini', 'kimi', 'anthropic'];
+  }
   if (provider === 'gemini') return stream ? ['kimi'] : ['gemini', 'kimi'];
   return [provider];
 }
