@@ -189,7 +189,7 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 > Re-read `docs/handover/2026-05-23-fad-essential-systems-claude-code-handover.md` + Notion scoping pages before picking from here.
 
 ### Ask Friday Core remaining slices
-- **T4.1 — Slice 4**: Scheduled analyzer worker (effort: M)
+- **T4.1 — Slice 4**: Scheduled analyzer worker ✓ shipped 2026-05-23 (`69e2caca`) — `backend/src/ask_friday/scheduler.js` runs every 30 min, looks back 24h, idempotent via candidate UPSERT. First-tick delay 90s after boot. Env-overridable; disable with `ASK_FRIDAY_ANALYZER_DISABLED=1`.
 - **T4.2 — Slice 5**: FAD frontend reads Core as policy source (effort: M-L)
 - **T4.3 — Slice 7**: Model-backed eval grading (effort: M)
 - **T4.4 — Slice 8**: Public MCP V1 design + later implementation (effort: XL — design first)
@@ -217,7 +217,7 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 
 ### Slice 3d expense polish
 - **T4.22 — Vendor autocomplete from `vendors` table** (depends: Mary CSV — parked) (effort: S)
-- **T4.23 — Signed-URL display flow** — `GET /api/expenses/receipts/:id` so receipts can be re-viewed (effort: M)
+- **T4.23 — Signed-URL display flow** ✓ shipped 2026-05-23 (`fab440ed`) — `GET /api/expenses/:expenseId/receipts` + `GET /api/expenses/receipts/:id/content` (signed URL for DO Spaces / inline base64 fallback). TaskDetail expense rows now show clickable receipt count → opens a modal with thumbnails (images) + Open-in-tab links (PDFs / others). Added `@aws-sdk/s3-request-presigner` dep.
 - **T4.24 — Path B drawer mode toggle** in header (operator switches A↔B mid-flow) (effort: S)
 - **T4.25 — Live FX conversion** for EUR/USD tier preview (effort: S — but needs live FX feed plumbed to drawer)
 
@@ -257,6 +257,8 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-23 (today, this session)
+- **T4.22 — Receipt display flow** (`fab440ed`) — backend list + signed-URL/inline content routes + frontend modal. Closes the expense capture loop.
+- **T4.1 — Analyzer scheduler** (`69e2caca`) — Slice 4 of Ask Friday Core. KB candidates auto-flow into the review queue every 30 min.
 - **T2.9 — All 5 most-recent Friday Consult bug reports fixed + live** (`a86fd59c` `17207c64` `41a4f1f3`) — modal buttons + Path B drawer + MCP status drift + AI title cap + Kimi temperature + Gemini-first routing restoration. Backend deployed 4 times. 4 bugs fully closed; 1 (Ishant action_failed) needed both a frontend + backend fix.
 - **T2.3 — Push notifications + VAPID** (env config only, no commit) — derived public key from existing private, wrote VAPID_PUBLIC_KEY + VAPID_SUBJECT to prod .env, pm2 restart. `/api/push/vapid-key` now returns the public key; full subscribe → send loop is functional. 4 April subs will silently 410 on next send.
 - **T3.1 — Context pack admin UI** (`d6f283d`) — Slice 3 of Ask Friday Core operationalization. New `GET /context-packs` list route + "Context packs" tab in the Ask Friday review module with grouped list + New Draft + Publish actions.
