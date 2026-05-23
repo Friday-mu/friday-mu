@@ -29,6 +29,14 @@ async function query(text, params) {
   return _pool.query(text, params);
 }
 
+// Acquire a single connection for transactional work (BEGIN/COMMIT/
+// ROLLBACK across multiple statements). Caller MUST call client.release()
+// in a finally block to return the connection to the pool. Use the
+// top-level `query()` for any read or single-statement write.
+async function getClient() {
+  return _pool.connect();
+}
+
 async function close() {
   await _pool.end();
 }
@@ -36,5 +44,6 @@ async function close() {
 module.exports = {
   pool: _pool,
   query,
+  getClient,
   close,
 };
