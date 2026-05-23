@@ -298,6 +298,39 @@ router.post('/surfaces', attachIdentity, async (req, res) => {
   }
 });
 
+// Staff-only list of context packs across all surfaces / statuses.
+// Used by the Ask Friday review admin module. Public consumers should
+// hit GET /context-packs/:surfaceId which is scope-protected and only
+// returns the latest *published* pack for a given surface.
+router.get('/context-packs', attachIdentity, async (req, res) => {
+  try {
+    const status = cleanString(req.query.status, 40);
+    const surfaceId = cleanString(req.query.surfaceId || req.query.surface_id, 120);
+    const limit = parseLimit(req.query.limit);
+    const params = [req.tenantId];
+    const filters = ['tenant_id = $1'];
+    if (status && status !== 'all') {
+      params.push(status);
+      filters.push(`status = $${params.length}`);
+    }
+    if (surfaceId) {
+      params.push(surfaceId);
+      filters.push(`surface_id = $${params.length}`);
+    }
+    const { rows } = await query(
+      `SELECT *
+         FROM ask_friday_context_packs
+        WHERE ${filters.join(' AND ')}
+        ORDER BY surface_id ASC, version DESC
+        LIMIT ${limit}`,
+      params,
+    );
+    res.json({ contextPacks: rows.map(shapeContextPack) });
+  } catch (error) {
+    return respondError(res, error, 'context_packs_list_failed');
+  }
+});
+
 router.get(
   '/context-packs/:surfaceId',
   attachApiClient,

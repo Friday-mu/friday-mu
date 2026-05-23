@@ -1,32 +1,39 @@
 'use client';
 
 // Ask Friday Review — staff queue for approving / rejecting KB candidates
-// proposed by the Core analyzer. Backend at /api/ask-friday/core/kb-candidates
-// (list + PATCH for status transitions).
+// proposed by the Core analyzer AND for browsing / drafting / publishing
+// context packs that surfaces consume. Backend at /api/ask-friday/core/*.
+//
+// Two sub-pages, toggleable via the segmented control at the top:
+//  - candidates : KB candidate review queue (T2.7 / Core Slice 2)
+//  - packs      : Context-pack admin (T3.1 / Core Slice 3)
 //
 // V1 audience: director only (gated via MODULE_RESOURCE['ask-friday-review']
 // → 'admin_analytics' resource). Per the Ask Friday Core handover, "Ishant
 // is the V1 reviewer." Widen to ops_manager when the queue workflow stabilises.
-//
-// Slice 2 of Ask Friday Core operationalization. Slice 3 (context-pack
-// publishing) consumes the approved candidates.
 
 import { useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import {
+  publishContextPack,
   reviewKbCandidate,
+  upsertContextPack,
+  useContextPacks,
   useKbCandidates,
+  type ContextPack,
+  type ContextPackStatus,
   type KbCandidate,
   type KbCandidateReviewStatus,
 } from '../../_data/askFridayCoreClient';
 import { fireToast } from '../Toaster';
-import { IconAI, IconCheck, IconClose, IconClock, IconSparkle } from '../icons';
+import { IconAI, IconCheck, IconClose, IconClock, IconPlus, IconSparkle } from '../icons';
 
 interface Props {
   subPage: string;
   onChangeSubPage?: (sub: string) => void;
 }
 
+type ModeKey = 'candidates' | 'packs';
 type TabKey = 'pending' | 'needs_info' | 'approved' | 'rejected' | 'all';
 
 const TABS: Array<{ id: TabKey; label: string; status: KbCandidateReviewStatus | 'all' }> = [
@@ -62,7 +69,9 @@ function trustColor(trust: string | null): string {
   return 'neutral';
 }
 
-export function AskFridayReviewModule({ subPage }: Props) {
+export function AskFridayReviewModule({ subPage, onChangeSubPage }: Props) {
+  const mode: ModeKey = subPage === 'packs' ? 'packs' : 'candidates';
+  const setMode = (next: ModeKey) => onChangeSubPage?.(next);
   const [tab, setTab] = useState<TabKey>('pending');
   const [selected, setSelected] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -130,11 +139,40 @@ export function AskFridayReviewModule({ subPage }: Props) {
     <>
       <ModuleHeader
         title="Ask Friday review"
-        subtitle="Approve, reject, or send-back proposed KB updates. Director-only — V1 reviewer is Ishant."
+        subtitle={
+          mode === 'candidates'
+            ? 'Approve, reject, or send-back KB candidates. V1 reviewer is Ishant.'
+            : 'Draft + publish context packs each surface reads from. Approved candidates auto-flip on publish.'
+        }
         actions={headerActions}
       />
       <div className="fad-module-body" style={{ flex: 1, overflowY: 'auto' }}>
-        <div className="fad-tabs" role="tablist" aria-label="Review status filters">
+        {/* Mode toggle — Candidates ↔ Packs. URL-backed via subPage so the
+            view deep-links. Default mode is 'candidates'. */}
+        <div className="fad-tabs" role="tablist" aria-label="Section">
+          <button
+            role="tab"
+            aria-selected={mode === 'candidates'}
+            className={'fad-tab' + (mode === 'candidates' ? ' active' : '')}
+            onClick={() => setMode('candidates')}
+          >
+            KB candidates
+          </button>
+          <button
+            role="tab"
+            aria-selected={mode === 'packs'}
+            className={'fad-tab' + (mode === 'packs' ? ' active' : '')}
+            onClick={() => setMode('packs')}
+          >
+            Context packs
+          </button>
+        </div>
+
+        {mode === 'packs' ? (
+          <ContextPacksPanel />
+        ) : (
+        <>
+        <div className="fad-tabs" role="tablist" aria-label="Review status filters" style={{ marginTop: 8 }}>
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -286,6 +324,163 @@ export function AskFridayReviewModule({ subPage }: Props) {
             </aside>
           )}
         </div>
+        </>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ───────────────────────────── Context Packs panel ─────────────────────────────
+
+function ContextPacksPanel() {
+  const [filter, setFilter] = useState<ContextPackStatus | 'all'>('all');
+  const { packs, loading, error, refetch } = useContextPacks({ status: filter, limit: 200 });
+  const [busy, setBusy] = useState(false);
+
+  const grouped = useMemo(() => {
+    if (!packs) return null;
+    const map = new Map<string, ContextPack[]>();
+    for (const p of packs) {
+      const list = map.get(p.surfaceId) || [];
+      list.push(p);
+      map.set(p.surfaceId, list);
+    }
+    // versions desc within surface
+    for (const list of map.values()) list.sort((a, b) => b.version - a.version);
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [packs]);
+
+  const createDraft = async () => {
+    const surfaceId = window.prompt('Surface id (e.g. fad_consult, website_guest_hero):')?.trim();
+    if (!surfaceId) return;
+    const versionStr = window.prompt(`Version number for ${surfaceId}? (integer, e.g. 1):`, '1')?.trim();
+    const version = Number(versionStr);
+    if (!Number.isFinite(version) || version < 1) {
+      fireToast('Version must be a positive integer.');
+      return;
+    }
+    const packId = `${surfaceId}-v${version}`;
+    setBusy(true);
+    try {
+      await upsertContextPack({
+        packId,
+        surfaceId,
+        version,
+        status: 'draft',
+        knowledgeScopes: [],
+        behaviorRules: [],
+        toolPolicy: {},
+        memoryPolicy: {},
+        sourceSnapshotRefs: [],
+        packPayload: {},
+      });
+      fireToast(`Draft created: ${packId}`);
+      refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Failed to create draft');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const publish = async (pack: ContextPack) => {
+    const confirm = window.confirm(
+      `Publish ${pack.packId} (v${pack.version}) for surface "${pack.surfaceId}"?\n\nThis becomes the live context surfaces read from. Drafts at lower versions stay drafts.`,
+    );
+    if (!confirm) return;
+    setBusy(true);
+    try {
+      const res = await publishContextPack({
+        packId: pack.packId,
+        surfaceId: pack.surfaceId,
+        version: pack.version,
+        knowledgeScopes: pack.knowledgeScopes,
+        behaviorRules: pack.behaviorRules,
+        toolPolicy: pack.toolPolicy,
+        memoryPolicy: pack.memoryPolicy,
+        sourceSnapshotRefs: pack.sourceSnapshotRefs,
+        packPayload: pack.packPayload,
+      });
+      fireToast(`Published v${res.pack.version}${res.approvedCount ? ` · ${res.approvedCount} candidate(s) approved` : ''}`);
+      refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Publish failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fmtRel = (iso: string | null) => iso ? fmtRelative(iso) : '—';
+
+  return (
+    <>
+      <div className="fad-tabs" role="tablist" aria-label="Context pack status" style={{ marginTop: 8 }}>
+        {(['all', 'draft', 'approved', 'published', 'retired'] as const).map((s) => (
+          <button
+            key={s}
+            role="tab"
+            aria-selected={filter === s}
+            className={'fad-tab' + (filter === s ? ' active' : '')}
+            onClick={() => setFilter(s)}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </button>
+        ))}
+        <button
+          className="btn primary sm"
+          style={{ marginLeft: 'auto' }}
+          onClick={createDraft}
+          disabled={busy}
+        >
+          <IconPlus size={12} /> New draft
+        </button>
+      </div>
+
+      {error && <div className="ops-form-alert failed" style={{ marginTop: 12 }}>Failed to load: {error}</div>}
+
+      <div style={{ marginTop: 16 }}>
+        {loading && !packs && (
+          <div style={{ padding: 24, color: 'var(--color-text-tertiary)', fontSize: 13 }}>Loading packs…</div>
+        )}
+        {!loading && grouped && grouped.length === 0 && (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+            <IconSparkle size={24} />
+            <div style={{ marginTop: 8 }}>No context packs yet for &quot;{filter}&quot;.</div>
+            <div style={{ marginTop: 4, fontSize: 11 }}>
+              Click <strong>New draft</strong> to create the first one for a surface — typically <code>fad_consult</code> as a v1 starting point.
+            </div>
+          </div>
+        )}
+        {grouped && grouped.map(([surfaceId, packsForSurface]) => (
+          <div key={surfaceId} style={{ marginBottom: 20 }}>
+            <h4 className="afr-pack-surface-head">
+              <IconAI size={12} />
+              <span className="mono">{surfaceId}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                {packsForSurface.length} pack{packsForSurface.length === 1 ? '' : 's'}
+              </span>
+            </h4>
+            {packsForSurface.map((p) => (
+              <div key={`${p.packId}-${p.version}`} className="afr-pack-row">
+                <div className="afr-pack-row-main">
+                  <span className="mono" style={{ fontSize: 12 }}>{p.packId}</span>
+                  <span className="afr-pack-version">v{p.version}</span>
+                  <span className={`afr-status afr-status-${p.status === 'draft' ? 'pending' : p.status === 'published' ? 'approved' : p.status === 'retired' ? 'expired' : 'needs_info'}`}>{p.status}</span>
+                </div>
+                <div className="afr-pack-row-meta">
+                  {p.publishedAt && <span>Published {fmtRel(p.publishedAt)}{p.approvedBy ? ` by ${p.approvedBy}` : ''}</span>}
+                  {!p.publishedAt && p.updatedAt && <span>Updated {fmtRel(p.updatedAt)}</span>}
+                </div>
+                {p.status === 'draft' && (
+                  <button className="btn primary sm" disabled={busy} onClick={() => publish(p)}>
+                    <IconCheck size={12} /> Publish
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </>
   );

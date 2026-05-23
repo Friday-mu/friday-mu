@@ -113,3 +113,121 @@ export async function reviewKbCandidate(candidateId: string, patch: KbReviewPatc
   if (!data.candidate) throw new Error('No candidate returned from review patch');
   return data.candidate;
 }
+
+// ───────────────────────────── Context Packs ─────────────────────────────
+
+export type ContextPackStatus = 'draft' | 'approved' | 'published' | 'retired';
+
+export interface ContextPack {
+  packId: string;
+  surfaceId: string;
+  version: number;
+  status: ContextPackStatus;
+  knowledgeScopes: string[];
+  behaviorRules: unknown[];
+  toolPolicy: Record<string, unknown>;
+  memoryPolicy: Record<string, unknown>;
+  sourceSnapshotRefs: unknown[];
+  packPayload: Record<string, unknown>;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  publishedAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface LoadContextPacksInput {
+  status?: ContextPackStatus | 'all';
+  surfaceId?: string;
+  limit?: number;
+}
+
+function buildContextPacksQuery(input: LoadContextPacksInput = {}): string {
+  const qs = new URLSearchParams();
+  if (input.status) qs.set('status', input.status);
+  if (input.surfaceId) qs.set('surfaceId', input.surfaceId);
+  if (input.limit) qs.set('limit', String(input.limit));
+  return qs.toString();
+}
+
+export async function loadContextPacks(input: LoadContextPacksInput = {}): Promise<ContextPack[]> {
+  const qs = buildContextPacksQuery(input);
+  const data = await apiFetch(`/api/ask-friday/core/context-packs${qs ? `?${qs}` : ''}`) as { contextPacks?: ContextPack[] };
+  return data.contextPacks || [];
+}
+
+export interface UseContextPacksResult {
+  packs: ContextPack[] | null;
+  loading: boolean;
+  isRevalidating: boolean;
+  error: string | null;
+  refetch: () => void;
+}
+
+export function useContextPacks(input: LoadContextPacksInput = {}): UseContextPacksResult {
+  const [packs, setPacks] = useState<ContextPack[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const queryKey = buildContextPacksQuery(input);
+
+  const refetch = useCallback(() => {
+    setIsRevalidating(true);
+    setError(null);
+    loadContextPacks(input)
+      .then(setPacks)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load context packs'))
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  return { packs, loading, isRevalidating, error, refetch };
+}
+
+export interface UpsertContextPackInput {
+  packId: string;
+  surfaceId: string;
+  version: number;
+  status: ContextPackStatus;
+  knowledgeScopes?: string[];
+  behaviorRules?: unknown[];
+  toolPolicy?: Record<string, unknown>;
+  memoryPolicy?: Record<string, unknown>;
+  sourceSnapshotRefs?: unknown[];
+  packPayload?: Record<string, unknown>;
+}
+
+export async function upsertContextPack(input: UpsertContextPackInput): Promise<ContextPack> {
+  const data = await apiFetch('/api/ask-friday/core/context-packs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }) as { contextPack?: ContextPack };
+  if (!data.contextPack) throw new Error('No context pack returned');
+  return data.contextPack;
+}
+
+export interface PublishContextPackInput {
+  packId: string;
+  surfaceId: string;
+  version: number;
+  /** Knowledge / source-snapshot data to include in the pack. */
+  knowledgeScopes?: string[];
+  behaviorRules?: unknown[];
+  toolPolicy?: Record<string, unknown>;
+  memoryPolicy?: Record<string, unknown>;
+  sourceSnapshotRefs?: unknown[];
+  packPayload?: Record<string, unknown>;
+  /** Approved-candidate IDs to auto-flip to 'approved' as part of publish. */
+  approvedCandidateIds?: string[];
+  approvedBy?: string;
+}
+
+export async function publishContextPack(input: PublishContextPackInput): Promise<{ pack: ContextPack; approvedCount: number }> {
+  const data = await apiFetch('/api/ask-friday/core/context-packs/publish', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }) as { contextPack?: ContextPack; approvedCandidates?: KbCandidate[] };
+  if (!data.contextPack) throw new Error('No context pack returned from publish');
+  return { pack: data.contextPack, approvedCount: (data.approvedCandidates || []).length };
+}
