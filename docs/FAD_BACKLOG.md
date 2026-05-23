@@ -228,7 +228,7 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - **T4.29 — Guest-level preferred-language memory**
 
 ### Audits (deferred per Ishant)
-- **T4.35 — AI telemetry mislabel cleanup** (S) — `backend/src/design/ai_{rough_budget,ask,annex_b_edit}.js` and `backend/src/ai/translate.js` log every successful completion as `provider: 'kimi'` / `model: KIMI_MODEL` in their `recordUsage`/`logUsage` calls — but they actually route through `runTextCompletion` which is Gemini-first. So Gemini usage is invisible in `ai_usage` rows and Kimi looks busier than it is. Pure telemetry; routing is correct. Fix: use `result.provider` + `result.model` from the runTextCompletion return.
+- ~~**T4.35 — AI telemetry mislabel cleanup**~~ ✓ **shipped 2026-05-24 (`87b608c8`)** — local `callKimi` wrappers in `backend/src/design/ai_{rough_budget,ask,annex_b_edit}.js` + `backend/src/ai/translate.js` now expose `provider`, `model`, `promptTokens`, `completionTokens` from `runTextCompletion`. `recordUsage()` + JSON response shapes use the real values. Bonus fix: prompt/completion tokens are now populated correctly in the 3 design endpoints (`parseKimiUsage(result.data)` was reading an undefined field, so tokens were always null). Cost reports finally reflect Gemini-primary routing accurately.
 - **T4.30 — Speed audit** — Lighthouse + Chrome perf trace, half-day
 - **T4.31 — Security audit** — env / auth / RLS / deps / secret scan, half-day
 
@@ -262,6 +262,8 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-24 (today, this session)
+- **T4.35 — AI telemetry mislabel fixed** (`87b608c8`) — design/ai_{rough_budget,ask,annex_b_edit} + ai/translate now report the real provider+model+tokens from `runTextCompletion`. Cost reports finally reflect Gemini-primary routing. Bonus: token counts in 3 design endpoints were always null due to `parseKimiUsage(result.data)` reading an undefined field — now populated. Backend re-deployed; pm2 restart 256.
+- **T4.36 + T4.37 scope docs landed** (`e23ba92c`) — guest portal chat + field-staff map v0.1 drafts at `docs/scoping/2026-05-24-*.md`, both linked from backlog Tier 4. Await Ishant decisions on the 15 + 12 open questions.
 - **Properties + Reservations W1 backbone shipped + DEPLOYED** — full FAD-native overlay layer per v0.2 LOCKED scopes. Live at frontend+backend `a5038a83` (with a follow-up table-rename commit). Migrations applied to prod DB via SSH + boot-time runner (idempotent).
   - **Naming note**: parent + child tables prefixed `fad_*` (e.g. `fad_properties`, `fad_property_owners`, `fad_reservations`, `fad_inquiries`) because legacy `properties` + `reservations` tables exist with pre-rebuild schemas (12 + 28 columns respectively) — not safe to clobber via CREATE TABLE IF NOT EXISTS. Phase-3 displacement will reconcile.
   - `mig 077_properties_fad_native.sql` — `properties` (FAD overlay joined to guesty_listings via guesty_id), `property_owners` (N:M with %), `property_cards` (AI-knowledge surface replacing Breezeway FAQs per §8), `property_photos` (schema), `property_onboarding_artifacts` (schema), `property_activity_log`. Multi-tenant from day one. Lifecycle/onboarding-checklist/multi-unit/contract/tags/amenities all surfaced.
