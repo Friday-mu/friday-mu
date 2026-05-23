@@ -151,7 +151,7 @@ const TOOL_DEFINITIONS = [
       title: { type: 'string', minLength: 1 },
       description: { type: 'string' },
       priority: { type: 'string', enum: ['lowest', 'low', 'medium', 'high', 'urgent'] },
-      status: { type: 'string', enum: ['todo', 'in_progress', 'paused', 'reported', 'awaiting_approval', 'completed', 'cancelled'] },
+      status: { type: 'string', enum: ['reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked', 'completed', 'closed', 'cancelled'] },
       assignee_user_ids: { type: 'array', items: { type: 'string' } },
       due_date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
       property_code: { type: 'string' },
@@ -741,7 +741,16 @@ async function toolTasksCreate(ctx, args) {
   const title = cleanString(args.title, 300);
   if (!title) throw new Error('title is required');
   const priority = ['lowest', 'low', 'medium', 'high', 'urgent'].includes(args.priority) ? args.priority : 'medium';
-  const status = ['todo', 'in_progress', 'paused', 'reported', 'awaiting_approval', 'completed', 'cancelled'].includes(args.status) ? args.status : 'todo';
+  // Allowed statuses are defined in migration 071_tasks_ops_lifecycle_reconcile.sql
+  // (the tasks_status_check constraint). Earlier whitelists included 'todo' and
+  // 'awaiting_approval' which were removed in that lifecycle reconcile —
+  // attempting to insert one of those now 400s the DB and surfaces as
+  // `ask_friday_action_failed` in the Ask Friday action card. Ishant reported
+  // this 2026-05-23 (feedback 77ff359b): create_task from Ask Friday for the
+  // WCC4 maintenance task threw a tasks_status_check violation. Default is
+  // now 'scheduled' (matches the column default in migration 071).
+  const ALLOWED_STATUSES = ['reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked', 'completed', 'closed', 'cancelled'];
+  const status = ALLOWED_STATUSES.includes(args.status) ? args.status : 'scheduled';
   const assignees = Array.isArray(args.assignee_user_ids) ? args.assignee_user_ids.filter((id) => uuidRe.test(String(id))) : [];
   const tags = Array.isArray(args.tags) ? args.tags.map((t) => cleanString(t, 80)).filter(Boolean) : ['mcp'];
   const { rows } = await query(
