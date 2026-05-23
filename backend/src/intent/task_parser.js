@@ -131,8 +131,22 @@ function shapeProposed(raw, reference) {
   const assigneeIds = new Set((reference?.assignees || []).map((u) => u.id));
 
   if (typeof raw.title === 'string') {
-    const t = cleanString(raw.title, 180);
-    if (t) out.title = t.charAt(0).toUpperCase() + t.slice(1);
+    // Hard cap at 72 chars to match the system-prompt directive. Gemini
+    // sometimes ignores the constraint and returns a 100+ char sentence;
+    // Franny reported this 2026-05-23 (feedback 12728dbe) — the AI draft
+    // was being copy-pasted verbatim into the task title. We truncate
+    // at the last word boundary before 72 so the title stays readable
+    // ("Refill linen at VV-47…" rather than "Refill linen at VV-47 next").
+    const cleaned = cleanString(raw.title, 180);
+    if (cleaned) {
+      let t = cleaned;
+      if (t.length > 72) {
+        const cut = t.slice(0, 72);
+        const lastSpace = cut.lastIndexOf(' ');
+        t = (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd() + '…';
+      }
+      out.title = t.charAt(0).toUpperCase() + t.slice(1);
+    }
   }
   if (typeof raw.description === 'string') {
     const d = cleanMultilineString(raw.description, 2000);

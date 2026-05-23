@@ -105,6 +105,31 @@ describe('intent/parse-task helpers', () => {
       });
     });
 
+    test('truncates an over-length title to <=72 chars at the last word boundary, adding ellipsis', () => {
+      // Gemini occasionally ignores the <=72 chars directive in the
+      // system prompt — Franny reported a verbatim 100+ char AI message
+      // ending up as a task title 2026-05-23 (feedback 12728dbe). The
+      // truncation is a backend guard so the UI never sees an over-long
+      // title regardless of model compliance.
+      const longRaw = 'when creating a new task from reported issues we are using the AI draft note to summarised what needs to be done';
+      const result = _test.shapeProposed({ title: longRaw }, reference);
+      expect(result.title).toBeDefined();
+      expect(result.title.length).toBeLessThanOrEqual(73); // 72 + the ellipsis
+      expect(result.title.endsWith('…')).toBe(true);
+      // Last word boundary should win — no broken word like "summari…"; the
+      // truncation cuts at the last space before char 72, so the final
+      // character before the ellipsis is the END of a word (a word char
+      // is fine; what we want to AVOID is the inverse, e.g. "summari…"
+      // where "summarised" got cut mid-stem).
+      expect(result.title).toMatch(/draft…$/);
+    });
+
+    test('passes through a short title unchanged (no ellipsis)', () => {
+      const result = _test.shapeProposed({ title: 'Refill linen at GBH-C8' }, reference);
+      expect(result.title).toBe('Refill linen at GBH-C8');
+      expect(result.title.endsWith('…')).toBe(false);
+    });
+
     test('drops property codes not in the reference list', () => {
       expect(_test.shapeProposed({ propertyCode: 'INVALID-1' }, reference)).toEqual({});
     });

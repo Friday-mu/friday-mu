@@ -372,7 +372,15 @@ async function classifyMessageWithKimi(text, meter) {
     user: trimmed,
     model: CLASSIFY_MODEL,
     maxTokens: 10,
-    temperature: 0.0,
+    // Kimi K2.6 rejects temperature ≠ 1 with HTTP 400 (matches the
+    // pattern at line 64-69). This call was failing silently 7+ times
+    // per day in prod (2026-05-23 logs: "[ai/kimi-draft] classifyMessage
+    // failed: invalid temperature: only 1 is allowed for this model"
+    // — Franny / Mary inbox draft latency tied indirectly to this
+    // because classification falls through to 'other' which the
+    // drafter handles differently downstream). Temperature 1 is the
+    // only accepted value for K2.6.
+    temperature: 1,
     timeoutMs: 15_000,
   });
   logUsage(meter, {
@@ -472,7 +480,11 @@ async function extractStructuredOutput({ system, user, model, maxTokens, timeout
             { role: 'system', content: system },
             { role: 'user', content: user },
           ],
-          temperature: 0.0,
+          // Kimi K2.6 only accepts temperature: 1 (see classifyMessageWithKimi
+          // comment + line 64-69 for the K2.6 constraint). When this path
+          // falls back from Gemini to Kimi for JSON extraction, the K2.6
+          // call would 400 on temperature 0.0 — silently failing extraction.
+          temperature: 1,
           max_tokens: tokenCap,
           response_format: { type: 'json_object' },
         },
