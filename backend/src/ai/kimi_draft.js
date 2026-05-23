@@ -252,6 +252,18 @@ async function callWithRetry(opts) {
   const maxRetries = Number.isFinite(Number(opts.maxRetries))
     ? Math.max(0, Number(opts.maxRetries))
     : MAX_RETRIES;
+  // Distinguish "caller explicitly pinned a Kimi/moonshot model" from
+  // "caller relied on the DRAFT_MODEL default." Previously the wrapping
+  // `generateDraftReply` filled in `model = model || DRAFT_MODEL` BEFORE
+  // calling here — which meant every default-routed inbox draft looked
+  // like an explicit Kimi pin and the Gemini-first path was permanently
+  // bypassed. Franny reported 1-2 min inbox draft latencies 2026-05-23
+  // (feedback de14cf58); the underlying cause was Kimi K2.6 doing 100%
+  // of guest-draft generation when Ishant's stated hierarchy is Gemini
+  // 3.5 Flash primary / Kimi 2.6 fallback. The explicit-pin flag is now
+  // tracked separately from the model param used for the Kimi call.
+  const explicitKimiPin = opts.explicitKimiPin === true;
+  const kimiModel = opts.model || DRAFT_MODEL;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Gemini primary, Kimi fallback (per Ishant 2026-05-23 decision).
     // Only try Gemini on the FIRST attempt of this generation — if it
@@ -259,9 +271,8 @@ async function callWithRetry(opts) {
     // retry budget goes to Kimi. Callers that explicitly pin a Kimi
     // model (e.g. moonshot-v1-128k for long-context jobs) bypass the
     // Gemini path so the model pin is respected.
-    const wantsExplicitKimi = typeof opts.model === 'string' && (opts.model.startsWith('kimi') || opts.model.startsWith('moonshot'));
     let result;
-    if (!geminiTried && !wantsExplicitKimi && GEMINI_API_KEY) {
+    if (!geminiTried && !explicitKimiPin && GEMINI_API_KEY) {
       geminiTried = true;
       result = await callGeminiOnce({
         system: opts.system,
@@ -274,10 +285,10 @@ async function callWithRetry(opts) {
       });
       if (!result.ok) {
         console.warn(`[ai/draft] gemini failed (${result.error || 'unknown'}); falling back to kimi`);
-        result = await callKimiOnce(opts);
+        result = await callKimiOnce({ ...opts, model: kimiModel });
       }
     } else {
-      result = await callKimiOnce(opts);
+      result = await callKimiOnce({ ...opts, model: kimiModel });
     }
     if (result.ok) {
       if (attempt > 0) {
@@ -330,10 +341,16 @@ async function callWithRetry(opts) {
 // values: 'inbox_draft', 'inbox_followup_draft'. tenantId defaults
 // to FR when omitted.
 async function generateDraftReply({ system, user, meter, timeoutMs, maxRetries, maxTokens, model, temperature }) {
+  // Caller-explicit Kimi pin only happens when `model` is passed AND starts
+  // with kimi/moonshot. Default routing (no model arg) goes Gemini-first per
+  // the 2026-05-23 AI hierarchy.
+  const explicitKimiPin = typeof model === 'string'
+    && (model.startsWith('kimi') || model.startsWith('moonshot'));
   const result = await callWithRetry({
     system,
     user,
-    model: model || DRAFT_MODEL,
+    model,                         // undefined → callWithRetry uses DRAFT_MODEL for Kimi
+    explicitKimiPin,
     maxTokens: maxTokens || DRAFT_MAX_TOKENS,
     temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : DRAFT_TEMPERATURE,
     timeoutMs: timeoutMs || DRAFT_TIMEOUT_MS,
