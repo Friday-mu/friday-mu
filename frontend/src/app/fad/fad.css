@@ -7593,6 +7593,38 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 
 .ops-planner-grid.user-day .ops-planner-cell {
   min-height: 58px;
+  position: relative;
+}
+
+/* 2026-05-23 (Ishant): live 15-min snap on the user_day planner.
+   Vertical tick + floating label render at the cursor's x-position so
+   the operator sees the exact drop time before releasing. */
+.ops-planner-cell.has-drag-preview {
+  background: var(--color-brand-accent-soft, rgba(80, 80, 255, 0.08));
+}
+.ops-planner-drop-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-brand-accent, #5e57d3);
+  pointer-events: none;
+  transform: translateX(-1px);
+}
+.ops-planner-drop-label {
+  position: absolute;
+  top: -22px;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--color-brand-accent, #5e57d3);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 2;
 }
 
 .ops-planner-cell:empty::after {

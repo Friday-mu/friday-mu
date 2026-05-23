@@ -1155,6 +1155,15 @@ function SchedulePage({
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [dragEnabled, setDragEnabled] = useState(false);
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  // 2026-05-23 (Ishant): smooth 15-min snap when dragging on user_day.
+  // Tracks which bucket the cursor is over + the precise time + the
+  // x-percentage so we can render a vertical tick at the drop point.
+  // Live updates on every onDragOver event.
+  const [dragPreview, setDragPreview] = useState<{
+    bucketId: ScheduleBucketId;
+    time: string;
+    leftPct: number;
+  } | null>(null);
   const [reservations, setReservations] = useState<ScheduleReservation[]>([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reservationsError, setReservationsError] = useState<string | null>(null);
@@ -1373,11 +1382,44 @@ function SchedulePage({
       patch.assigneeIds = target.rowId === UNASSIGNED_SCHEDULE_ID ? [] : [target.rowId];
       if (target.mode === 'user_day') {
         const bucket = SCHEDULE_TIME_BUCKETS.find((item) => item.id === target.bucketId);
-        patch.dueTime = bucket?.defaultTime || '';
+        // 2026-05-23 (Ishant): smooth 15-min snap. If the operator
+        // hovered to a specific time inside the bucket (dragPreview),
+        // use that. Otherwise fall back to the bucket's default time
+        // for the all_day / before_8 / after_20 edges where finer snap
+        // isn't useful.
+        const previewTime = dragPreview && dragPreview.bucketId === target.bucketId ? dragPreview.time : null;
+        patch.dueTime = previewTime || bucket?.defaultTime || '';
       }
     }
     if (task.status === 'reported') patch.status = 'scheduled';
     return patch;
+  };
+
+  // Compute a 15-min snap time from the cursor's x-position within a
+  // bucket cell. Returns null for the all_day bucket (no time) and the
+  // edge buckets (before_8 / after_20) where we keep the existing
+  // coarser snap.
+  const computeBucketDragPreview = (
+    bucket: ScheduleTimeBucket,
+    event: React.DragEvent<HTMLElement>,
+  ): { time: string; leftPct: number } | null => {
+    if (bucket.startHour == null || bucket.endHour == null) return null;
+    const totalMinutes = (bucket.endHour - bucket.startHour) * 60;
+    if (totalMinutes <= 0) return null;
+    const slotMinutes = bucket.id === 'before_8' || bucket.id === 'after_20' ? 60 : 15;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const rel = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
+    const slotIndex = Math.min(
+      Math.floor((totalMinutes - 1) / slotMinutes),
+      Math.floor(rel * (totalMinutes / slotMinutes)),
+    );
+    const offsetMinutes = slotIndex * slotMinutes;
+    const totalMin = bucket.startHour * 60 + offsetMinutes;
+    const hour = Math.floor(totalMin / 60) % 24;
+    const minute = totalMin % 60;
+    const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    const leftPct = ((slotIndex * slotMinutes) / totalMinutes) * 100;
+    return { time, leftPct };
   };
 
   const moveTask = (task: Task, target: PlannerDropTarget) => {
@@ -1392,17 +1434,34 @@ function SchedulePage({
       return;
     }
     setDragTaskId(task.id);
+    setDragPreview(null);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', task.id);
   };
+
+  // Global dragend listener so the preview tick clears even when the
+  // operator releases the card outside any drop zone.
+  useEffect(() => {
+    if (!dragTaskId) return;
+    const onEnd = () => {
+      setDragTaskId(null);
+      setDragPreview(null);
+    };
+    window.addEventListener('dragend', onEnd);
+    return () => window.removeEventListener('dragend', onEnd);
+  }, [dragTaskId]);
 
   const handleDrop = (event: React.DragEvent<HTMLElement>, target: PlannerDropTarget) => {
     event.preventDefault();
     const taskId = event.dataTransfer.getData('text/plain') || dragTaskId;
     setDragTaskId(null);
     const task = allKnownTasks.find((item) => item.id === taskId);
-    if (!task) return;
+    if (!task) {
+      setDragPreview(null);
+      return;
+    }
     moveTask(task, target);
+    setDragPreview(null);
   };
 
   const allowDrop = (event: React.DragEvent<HTMLElement>) => {
@@ -1544,19 +1603,46 @@ function SchedulePage({
                 </div>
                 {SCHEDULE_TIME_BUCKETS.map((bucket) => {
                   const cellTasks = row.tasks.filter((task) => timeBucketForTask(task) === bucket.id);
+                  const showPreview = !!dragTaskId
+                    && dragPreview?.bucketId === bucket.id;
                   return (
                     <div
-                      className="ops-planner-cell"
+                      className={'ops-planner-cell' + (showPreview ? ' has-drag-preview' : '')}
                       role="gridcell"
                       key={`${row.id}-${bucket.id}`}
-                      onDragOver={allowDrop}
-                      onDrop={(event) => handleDrop(event, {
-                        mode: 'user_day',
-                        rowType: 'staff',
-                        rowId: row.id,
-                        date: selectedDate,
-                        bucketId: bucket.id,
-                      })}
+                      onDragOver={(event) => {
+                        allowDrop(event);
+                        // 2026-05-23 (Ishant): live 15-min snap. Update
+                        // dragPreview with the cursor position so the
+                        // overlay tick + label render at the drop spot.
+                        if (!dragTaskId) return;
+                        const preview = computeBucketDragPreview(bucket, event);
+                        if (preview) {
+                          setDragPreview({
+                            bucketId: bucket.id,
+                            time: preview.time,
+                            leftPct: preview.leftPct,
+                          });
+                        } else {
+                          setDragPreview(null);
+                        }
+                      }}
+                      onDragLeave={(event) => {
+                        // Only clear if leaving the cell entirely (not
+                        // a child element).
+                        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+                        setDragPreview((prev) => prev?.bucketId === bucket.id ? null : prev);
+                      }}
+                      onDrop={(event) => {
+                        handleDrop(event, {
+                          mode: 'user_day',
+                          rowType: 'staff',
+                          rowId: row.id,
+                          date: selectedDate,
+                          bucketId: bucket.id,
+                        });
+                        setDragPreview(null);
+                      }}
                     >
                       {cellTasks.map((task) => (
                         <PlannerTaskCard
@@ -1570,6 +1656,21 @@ function SchedulePage({
                           onEdit={setEditingTaskId}
                         />
                       ))}
+                      {showPreview && dragPreview && (
+                        <>
+                          <div
+                            className="ops-planner-drop-tick"
+                            style={{ left: `${dragPreview.leftPct}%` }}
+                            aria-hidden
+                          />
+                          <div
+                            className="ops-planner-drop-label"
+                            style={{ left: `${dragPreview.leftPct}%` }}
+                          >
+                            Drop at {dragPreview.time}
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}
