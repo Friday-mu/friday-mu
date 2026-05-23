@@ -226,6 +226,7 @@ export async function loadReservations(input: LoadReservationsInput = {}): Promi
 export interface UseLiveReservationsResult {
   reservations: Reservation[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -233,19 +234,24 @@ export interface UseLiveReservationsResult {
 export function useLiveReservations(input: LoadReservationsInput = {}): UseLiveReservationsResult {
   const [reservations, setReservations] = useState<Reservation[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryKey = reservationsQuery(input);
+  // Stale-while-revalidate. We no longer blank the list on refetch — the
+  // operator keeps seeing the previous result-set while the new one loads.
+  // Filter-change refetches behave the same: old data on screen briefly,
+  // then new data swaps in silently.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
-    setReservations(null);
     loadReservations(input)
       .then(setReservations)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load reservations'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryKey]);
   useEffect(() => { refetch(); }, [refetch]);
-  return { reservations, loading, error, refetch };
+  return { reservations, loading, isRevalidating, error, refetch };
 }
 
 export interface ScheduleReservation {

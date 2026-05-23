@@ -200,16 +200,28 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   const [expensesRev, setExpensesRev] = useState(0);
 
   // Pull live expenses linked to this task. Slice 2 of the expense
-  // capture work. Refreshes when an expense is created via the drawer
-  // (expensesRev bump) or when the task id changes.
+  // capture work. Two effects to avoid flicker:
+  //   1. Task id change   → wipe + skeleton (operator switched tasks).
+  //   2. expensesRev bump → silent revalidate (a new expense was just
+  //      captured via the drawer; the previous list stays on screen
+  //      until the refetch returns so we don't blink the section).
   useEffect(() => {
-    if (!task?.id) return;
+    if (!task?.id) { setTaskExpenses([]); setExpensesLoading(false); return; }
     let cancelled = false;
     setExpensesLoading(true);
     fetchExpensesForTask(task.id)
       .then((res) => { if (!cancelled) setTaskExpenses(res.expenses); })
       .catch(() => { if (!cancelled) setTaskExpenses([]); })
       .finally(() => { if (!cancelled) setExpensesLoading(false); });
+    return () => { cancelled = true; };
+  }, [task?.id]);
+
+  useEffect(() => {
+    if (!task?.id || expensesRev === 0) return;  // skip the initial mount
+    let cancelled = false;
+    fetchExpensesForTask(task.id)
+      .then((res) => { if (!cancelled) setTaskExpenses(res.expenses); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [task?.id, expensesRev]);
   const [syncState, setSyncState] = useState<SyncState>('idle');

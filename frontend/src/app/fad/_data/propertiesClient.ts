@@ -179,17 +179,22 @@ export async function hydratePropertiesFromGuesty(): Promise<void> {
 export function useHydratePropertiesFromGuesty(): {
   hydrated: boolean;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
   rev: number;
 } {
   const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rev, setRev] = useState(0);
 
+  // Stale-while-revalidate. PROPERTIES is mutated in place via the loader, so
+  // a silent refetch swaps the data under the live PROPERTIES array without
+  // unmounting any consumer. Skeleton only shows on the very first mount.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     hydratePropertiesFromGuesty()
       .then(() => {
@@ -197,12 +202,12 @@ export function useHydratePropertiesFromGuesty(): {
         setRev((r) => r + 1);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => {
     refetch();
   }, [refetch]);
 
-  return { hydrated, loading, error, refetch, rev };
+  return { hydrated, loading, isRevalidating, error, refetch, rev };
 }

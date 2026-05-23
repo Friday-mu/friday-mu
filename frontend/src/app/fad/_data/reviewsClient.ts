@@ -183,6 +183,7 @@ export async function loadReviewsLive(): Promise<Review[]> {
 export interface UseLiveReviewsResult {
   reviews: Review[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -190,20 +191,22 @@ export interface UseLiveReviewsResult {
 export function useLiveReviews(): UseLiveReviewsResult {
   const [reviews, setReviews] = useState<Review[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-while-revalidate. Refetches keep the previous review list visible.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loadReviewsLive()
       .then((list) => setReviews(list))
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load reviews'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => {
     refetch();
   }, [refetch]);
 
-  return { reviews, loading, error, refetch };
+  return { reviews, loading, isRevalidating, error, refetch };
 }

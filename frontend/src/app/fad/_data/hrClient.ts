@@ -54,6 +54,7 @@ export async function loadStaff(status?: 'active' | 'archived'): Promise<Staff[]
 export interface UseStaffResult {
   staff: Staff[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -61,20 +62,22 @@ export interface UseStaffResult {
 export function useStaff(status?: 'active' | 'archived'): UseStaffResult {
   const [staff, setStaff] = useState<Staff[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-while-revalidate. Refetches keep the visible roster on screen.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loadStaff(status)
       .then(setStaff)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load staff'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, [status]);
 
   useEffect(() => { refetch(); }, [refetch]);
 
-  return { staff, loading, error, refetch };
+  return { staff, loading, isRevalidating, error, refetch };
 }
 
 // ─── Staff: mutations ───
@@ -122,6 +125,7 @@ export async function loadTimeOffRequests(opts: { status?: string; staff_id?: st
 export interface UseTimeOffResult {
   requests: TimeOffRequest[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -129,22 +133,23 @@ export interface UseTimeOffResult {
 export function useTimeOffRequests(opts: { status?: string; staff_id?: string } = {}): UseTimeOffResult {
   const [requests, setRequests] = useState<TimeOffRequest[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const optsKey = JSON.stringify(opts);
 
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loadTimeOffRequests(opts)
       .then(setRequests)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load time-off requests'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optsKey]);
 
   useEffect(() => { refetch(); }, [refetch]);
 
-  return { requests, loading, error, refetch };
+  return { requests, loading, isRevalidating, error, refetch };
 }
 
 // ─── Time-off: mutations ───

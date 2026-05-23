@@ -606,6 +606,8 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
 export interface UseLiveConversationsResult {
   threads: InboxThread[] | null;
   loading: boolean;
+  /** True while a background revalidation is in flight (data still visible). */
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -613,15 +615,19 @@ export interface UseLiveConversationsResult {
 export function useLiveConversations(): UseLiveConversationsResult {
   const [threads, setThreads] = useState<InboxThread[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-while-revalidate: refetch never blanks the visible data. Initial
+  // `useState(true)` for `loading` drives the first-mount skeleton; subsequent
+  // refetches (mount, SSE event, explicit) flip `isRevalidating` only.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loadConversations()
       .then(setThreads)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load inbox'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => {
@@ -651,12 +657,14 @@ export function useLiveConversations(): UseLiveConversationsResult {
     };
   }, [refetch]);
 
-  return { threads, loading, error, refetch };
+  return { threads, loading, isRevalidating, error, refetch };
 }
 
 export interface UseThreadDetailResult {
   thread: InboxThread | null;
   loading: boolean;
+  /** True while a background revalidation is in flight (data still visible). */
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -664,9 +672,14 @@ export interface UseThreadDetailResult {
 export function useThreadDetail(threadId: string | null): UseThreadDetailResult {
   const [thread, setThread] = useState<InboxThread | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshSeq, setRefreshSeq] = useState(0);
   const activeRequestRef = useRef(0);
+  // Track the threadId we most recently fetched so we can distinguish a
+  // thread switch (wipe + skeleton) from a same-thread refetch (silent
+  // revalidation, no blink).
+  const prevThreadIdRef = useRef<string | null>(null);
 
   const refetch = useCallback(() => {
     setRefreshSeq((seq) => seq + 1);
@@ -676,13 +689,24 @@ export function useThreadDetail(threadId: string | null): UseThreadDetailResult 
     if (!threadId) {
       setThread(null);
       setLoading(false);
+      setIsRevalidating(false);
       setError(null);
+      prevThreadIdRef.current = null;
       return;
     }
     const requestId = activeRequestRef.current + 1;
     activeRequestRef.current = requestId;
-    setThread(null);
-    setLoading(true);
+    const threadIdChanged = prevThreadIdRef.current !== threadId;
+    prevThreadIdRef.current = threadId;
+    if (threadIdChanged) {
+      // Different thread — wipe and show skeleton.
+      setThread(null);
+      setLoading(true);
+    } else {
+      // Same thread, just a refetch (SSE event, explicit refresh) — keep
+      // the visible thread on screen while the new payload loads.
+      setIsRevalidating(true);
+    }
     setError(null);
     loadThreadDetail(threadId)
       .then((nextThread) => {
@@ -697,6 +721,7 @@ export function useThreadDetail(threadId: string | null): UseThreadDetailResult 
       .finally(() => {
         if (activeRequestRef.current !== requestId) return;
         setLoading(false);
+        setIsRevalidating(false);
       });
   }, [threadId, refreshSeq]);
 
@@ -732,5 +757,5 @@ export function useThreadDetail(threadId: string | null): UseThreadDetailResult 
     };
   }, [threadId, refetch]);
 
-  return { thread, loading, error, refetch };
+  return { thread, loading, isRevalidating, error, refetch };
 }

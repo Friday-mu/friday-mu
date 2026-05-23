@@ -40,6 +40,7 @@ export async function testIntegration(name: 'guesty' | 'gms'): Promise<{ ok: boo
 export interface UseSystemStatusResult {
   status: SystemStatus | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -47,20 +48,23 @@ export interface UseSystemStatusResult {
 export function useSystemStatus(): UseSystemStatusResult {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-while-revalidate. Refetches keep the previous integration dots
+  // and metrics on screen while the new payload loads.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loadSystemStatus()
       .then((s) => setStatus(s))
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load system status'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => {
     refetch();
   }, [refetch]);
 
-  return { status, loading, error, refetch };
+  return { status, loading, isRevalidating, error, refetch };
 }

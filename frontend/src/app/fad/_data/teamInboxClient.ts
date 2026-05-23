@@ -519,32 +519,41 @@ export function useTeamPresence(): {
 export function useTeamMessages(target: { kind: 'channel' | 'dm'; id: string } | null): {
   messages: LiveTeamMessage[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
   send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; parentMessageId?: string; kind?: TeamMessageKind; attachmentIds?: string[] }) => Promise<LiveTeamMessage | null>;
 } {
   const [messages, setMessages] = useState<LiveTeamMessage[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Stable ref so the polling interval always reads the latest target
   // without re-creating the interval on every render.
   const targetRef = useRef(target);
   useEffect(() => { targetRef.current = target; }, [target]);
 
+  // Stale-while-revalidate. Polling ticks revalidate silently; only a
+  // target-change blanks the visible messages and shows a skeleton (handled
+  // in the effect below, not here).
   const refetch = useCallback(() => {
     const t = targetRef.current;
-    if (!t) { setMessages(null); setLoading(false); return; }
-    setLoading(true);
+    if (!t) { setMessages(null); setLoading(false); setIsRevalidating(false); return; }
+    setIsRevalidating(true);
     const loader = t.kind === 'channel'
       ? loadChannelMessages(t.id)
       : loadDmMessages(t.id);
     loader
       .then((data) => { setMessages(data); setError(null); })
       .catch((e: Error) => setError(e?.message || 'Failed to load messages'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => {
+    // Target changed (operator picked a different channel/DM) — wipe stale
+    // messages from the previous target and surface the skeleton.
+    if (target) { setMessages(null); setLoading(true); }
+    else { setMessages(null); setLoading(false); }
     refetch();
     if (!target) return;
     const id = setInterval(refetch, MESSAGES_POLL_MS);
@@ -569,7 +578,7 @@ export function useTeamMessages(target: { kind: 'channel' | 'dm'; id: string } |
     }
   }, []);
 
-  return { messages, loading, error, refetch, send };
+  return { messages, loading, isRevalidating, error, refetch, send };
 }
 
 /**
@@ -584,27 +593,34 @@ export function useTeamMessages(target: { kind: 'channel' | 'dm'; id: string } |
 export function useMessageReplies(target: { kind: 'channel' | 'dm'; parentId: string; targetId: string } | null): {
   replies: LiveTeamMessage[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
   send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind; attachmentIds?: string[] }) => Promise<LiveTeamMessage | null>;
 } {
   const [replies, setReplies] = useState<LiveTeamMessage[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const targetRef = useRef(target);
   useEffect(() => { targetRef.current = target; }, [target]);
 
+  // Stale-while-revalidate. Polling ticks revalidate silently; target switch
+  // is handled by the effect below.
   const refetch = useCallback(() => {
     const t = targetRef.current;
-    if (!t) { setReplies(null); setLoading(false); return; }
-    setLoading(true);
+    if (!t) { setReplies(null); setLoading(false); setIsRevalidating(false); return; }
+    setIsRevalidating(true);
     loadMessageReplies(t.kind, t.parentId)
       .then((data) => { setReplies(data); setError(null); })
       .catch((e: Error) => setError(e?.message || 'Failed to load replies'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => {
+    // Target changed — wipe stale replies from the previous parent.
+    if (target) { setReplies(null); setLoading(true); }
+    else { setReplies(null); setLoading(false); }
     refetch();
     if (!target) return;
     const id = setInterval(refetch, MESSAGES_POLL_MS);
@@ -628,7 +644,7 @@ export function useMessageReplies(target: { kind: 'channel' | 'dm'; parentId: st
     }
   }, []);
 
-  return { replies, loading, error, refetch, send };
+  return { replies, loading, isRevalidating, error, refetch, send };
 }
 
 /** Tenant user list, cached for the session — used by the @mention

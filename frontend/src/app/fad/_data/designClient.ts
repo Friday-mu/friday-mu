@@ -16,7 +16,7 @@
 // Owner portal endpoints are NOT covered here — they live in
 // portalClient.ts because they use magic-link auth, not the staff JWT.
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { apiFetch, API_BASE, getToken, clearToken } from '../../../components/types';
 import { bumpFixtureRev } from './fixtureRev';
 import {
@@ -1470,23 +1470,28 @@ export const loadFloorPlanRender = (versionId: string) =>
 // HOOKS — simple list/detail wrappers around the fetchers above
 // ════════════════════════════════════════════════════════════════════
 
-function useResource<T>(loader: () => Promise<T>, deps: unknown[]): { data: T | null; loading: boolean; error: string | null; refetch: () => void } {
+function useResource<T>(loader: () => Promise<T>, deps: unknown[]): { data: T | null; loading: boolean; isRevalidating: boolean; error: string | null; refetch: () => void } {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-while-revalidate: refetch keeps the previous payload visible. Only
+  // the very first fetch (when `loading` is still its initial `true`) drives
+  // a skeleton. Dep-change refetches keep old data visible too — operators
+  // see the previous result-set briefly, then the new one swaps in silently.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loader()
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   useEffect(() => { refetch(); }, [refetch]);
-  return { data, loading, error, refetch };
+  return { data, loading, isRevalidating, error, refetch };
 }
 
 export const useLiveDesignProjects = (filters: Parameters<typeof loadProjects>[0] = {}) =>
@@ -2297,47 +2302,59 @@ export async function hydrateDesignProject(projectId: string): Promise<void> {
  *  error, refetch, rev } where `rev` is a version counter that
  *  consumers can include in a useEffect/useMemo dep list to re-derive
  *  state after live data arrives. */
-export function useHydrateDesignTopLevel(): { hydrated: boolean; loading: boolean; error: string | null; refetch: () => void; rev: number } {
+export function useHydrateDesignTopLevel(): { hydrated: boolean; loading: boolean; isRevalidating: boolean; error: string | null; refetch: () => void; rev: number } {
   const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rev, setRev] = useState(0);
 
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     hydrateDesignTopLevel()
       .then(() => { setHydrated(true); setRev((r) => r + 1); })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => { refetch(); }, [refetch]);
 
-  return { hydrated, loading, error, refetch, rev };
+  return { hydrated, loading, isRevalidating, error, refetch, rev };
 }
 
 /** Hook: hydrate a single project's per-resource arrays. Returns
  *  { hydrated, error, refetch, rev } same as the top-level hook. */
-export function useHydrateDesignProject(projectId: string | null): { hydrated: boolean; loading: boolean; error: string | null; refetch: () => void; rev: number } {
+export function useHydrateDesignProject(projectId: string | null): { hydrated: boolean; loading: boolean; isRevalidating: boolean; error: string | null; refetch: () => void; rev: number } {
   const [hydratedFor, setHydratedFor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rev, setRev] = useState(0);
+  // Loading skeleton only shows when projectId changes (different project).
+  // Same-project refetches keep the visible data on screen.
+  const prevProjectIdRef = useRef<string | null>(null);
 
   const refetch = useCallback(() => {
-    if (!projectId) { setLoading(false); return; }
-    setLoading(true);
+    if (!projectId) { setLoading(false); setIsRevalidating(false); return; }
+    const projectChanged = prevProjectIdRef.current !== projectId;
+    prevProjectIdRef.current = projectId;
+    if (projectChanged && hydratedFor !== projectId) {
+      setLoading(true);
+    } else {
+      setIsRevalidating(true);
+    }
     setError(null);
     hydrateDesignProject(projectId)
       .then(() => { setHydratedFor(projectId); setRev((r) => r + 1); })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   useEffect(() => { refetch(); }, [refetch]);
 
-  return { hydrated: hydratedFor === projectId, loading, error, refetch, rev };
+  return { hydrated: hydratedFor === projectId, loading, isRevalidating, error, refetch, rev };
 }
 
 // useMemo import was added for completeness; current hooks do not

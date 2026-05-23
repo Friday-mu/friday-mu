@@ -165,6 +165,7 @@ export async function loadWebsiteInquiryThreads(): Promise<WebsiteInquiryThread[
 export interface UseWebsiteThreadsResult {
   threads: InboxThread[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -172,15 +173,17 @@ export interface UseWebsiteThreadsResult {
 export function useWebsiteThreads(): UseWebsiteThreadsResult {
   const [threads, setThreads] = useState<InboxThread[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-while-revalidate. SSE-triggered refetches don't blank the list.
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loadWebsiteThreads()
       .then(setThreads)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load website inbox'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => { refetch(); }, [refetch]);
@@ -206,12 +209,13 @@ export function useWebsiteThreads(): UseWebsiteThreadsResult {
     };
   }, [refetch]);
 
-  return { threads, loading, error, refetch };
+  return { threads, loading, isRevalidating, error, refetch };
 }
 
 export interface UseWebsiteInquiryThreadsResult {
   threads: WebsiteInquiryThread[] | null;
   loading: boolean;
+  isRevalidating: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -219,18 +223,19 @@ export interface UseWebsiteInquiryThreadsResult {
 export function useWebsiteInquiryThreads(): UseWebsiteInquiryThreadsResult {
   const [threads, setThreads] = useState<WebsiteInquiryThread[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(() => {
-    setLoading(true);
+    setIsRevalidating(true);
     setError(null);
     loadWebsiteInquiryThreads()
       .then(setThreads)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load website inquiries'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
   }, []);
 
   useEffect(() => { refetch(); }, [refetch]);
 
-  return { threads, loading, error, refetch };
+  return { threads, loading, isRevalidating, error, refetch };
 }
