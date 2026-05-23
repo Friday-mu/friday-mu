@@ -155,39 +155,49 @@ function parseModelJson(raw) {
 
 // ────────────────── model call ──────────────────
 
+// 2026-05-23 — migrated from direct Kimi axios to the shared Gemini-
+// primary / Kimi-fallback helper (ai/gemini_first.js). Function name
+// kept as callKimi() for callsite stability; behaviour is now
+// Gemini-3.5-flash-first with Kimi-2.6 fallback.
+const { runTextCompletion } = require('./gemini_first');
+
 async function callKimi(text) {
-  if (!process.env.KIMI_API_KEY) return { ok: false, error: 'KIMI_API_KEY not set' };
-  const start = Date.now();
-  try {
-    const { data } = await axios.post(
-      `${KIMI_BASE_URL}/chat/completions`,
-      {
-        model: KIMI_MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: text },
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        // 2026-05-23 — bumped 30s → 90s. Translation calls are
-        // typically <5s but Kimi tail-latency can spike. Coordinated
-        // with nginx proxy_read_timeout (60s → 600s).
-        timeout: 90_000,
-      },
-    );
-    const raw = data?.choices?.[0]?.message?.content;
-    const parsed = parseModelJson(raw);
-    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', latencyMs: Date.now() - start, raw };
-    return { ok: true, parsed, latencyMs: Date.now() - start, model: KIMI_MODEL };
-  } catch (e) {
-    return { ok: false, error: e.response?.data?.error?.message || e.message, latencyMs: Date.now() - start };
+  const result = await runTextCompletion({
+    system: SYSTEM_PROMPT,
+    user: text,
+    temperature: 0.2,
+    timeoutMs: 90_000,
+    responseJson: true,
+    feature: 'inbox_translate',
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error || 'completion failed', latencyMs: result.latencyMs };
   }
+  // gemini_first does its own JSON parsing into result.parsed; we still
+  // need translate.js's narrower parseModelJson() to apply language-
+  // code allow-listing on the resulting object. If gemini_first
+  // returned raw text (json mode declined), fall back to parsing the
+  // raw text the same way as before.
+  const parsed = result.parsed
+    ? parseModelJsonObject(result.parsed)
+    : parseModelJson(result.text);
+  if (!parsed) {
+    return { ok: false, error: `${result.provider} returned unparseable JSON`, latencyMs: result.latencyMs, raw: result.text };
+  }
+  return { ok: true, parsed, latencyMs: result.latencyMs, model: result.model };
+}
+
+// Same lang/translation extraction logic as parseModelJson(raw), but
+// operating on a pre-parsed object so we don't re-stringify.
+function parseModelJsonObject(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  const lang = typeof obj.language === 'string' ? obj.language.toLowerCase().trim() : null;
+  const translation = (typeof obj.translation === 'string' && obj.translation.trim().length > 0)
+    ? obj.translation.trim() : null;
+  return {
+    language: lang && !BLOCKED_LANG_CODES.includes(lang) ? lang : null,
+    translation,
+  };
 }
 
 // ────────────────── public API ──────────────────

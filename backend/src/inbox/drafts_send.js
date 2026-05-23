@@ -365,39 +365,22 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
 
 // Outbound translation — directional translate of a known-English body
 // to a target language. The existing translateText detects + translates
-// TO English; this is the inverse direction so we keep a thin Kimi call
-// here. Future refactor: fold the target-lang parameter into translate.js.
+// TO English; this is the inverse direction.
+// 2026-05-23 — migrated from direct Kimi axios to the shared
+// Gemini-primary / Kimi-2.6-fallback helper.
 async function translateOutbound(text, targetLang) {
-  const axios = require('axios');
-  const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-  // 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant.
-  const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
-  if (!process.env.KIMI_API_KEY) return null;
+  const { runTextCompletion } = require('../ai/gemini_first');
   const system = `Translate the following message FROM English TO ${targetLang}. Preserve tone, warmth, line breaks, emoji and punctuation. Output ONLY the translation, no commentary, no labels.`;
-  const { data } = await axios.post(
-    `${KIMI_BASE_URL}/chat/completions`,
-    {
-      model: KIMI_MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: text },
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      // 2026-05-23 — bumped 30s → 90s. Outbound translate is normally
-      // <5s but Kimi tail-latency can spike. Coordinated with nginx
-      // proxy_read_timeout (60s → 600s).
-      timeout: 90_000,
-    },
-  );
-  const out = data?.choices?.[0]?.message?.content;
-  return typeof out === 'string' && out.trim().length > 0 ? out.trim() : null;
+  const result = await runTextCompletion({
+    system,
+    user: text,
+    temperature: 0.3,
+    maxTokens: 2000,
+    timeoutMs: 90_000,
+    feature: 'inbox_outbound_translate',
+  });
+  if (!result.ok || !result.text) return null;
+  return result.text.trim().length > 0 ? result.text.trim() : null;
 }
 
 // POST /communication/conversations/{id}/send-message — same endpoint

@@ -109,35 +109,27 @@ function isRetryable(err) {
   return false;
 }
 
+// 2026-05-23 — migrated to shared Gemini-primary / Kimi-2.6-fallback
+// helper. Function name + return shape retained for callsite stability.
+const { runTextCompletion } = require('../ai/gemini_first');
+
 async function callKimi(systemPrompt, userContent) {
-  const start = Date.now();
-  try {
-    const { data } = await axios.post(
-      `${KIMI_BASE_URL}/chat/completions`,
-      {
-        model: KIMI_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent },
-        ],
-        temperature: 0.3,
-        response_format: { type: 'json_object' },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: TIMEOUT_MS,
-      },
-    );
-    const raw = data?.choices?.[0]?.message?.content;
-    const parsed = parseModelJson(raw);
-    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start, data };
-    return { ok: true, parsed, durationMs: Date.now() - start, data };
-  } catch (e) {
-    return { ok: false, error: e.response?.data?.error?.message || e.message, durationMs: Date.now() - start, err: e };
+  const result = await runTextCompletion({
+    system: systemPrompt,
+    user: userContent,
+    temperature: 0.3,
+    timeoutMs: TIMEOUT_MS,
+    responseJson: true,
+    feature: 'design_annex_b_edit',
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error || 'completion failed', durationMs: result.latencyMs };
   }
+  const parsed = result.parsed || parseModelJson(result.text);
+  if (!parsed) {
+    return { ok: false, error: `${result.provider} returned unparseable JSON`, durationMs: result.latencyMs };
+  }
+  return { ok: true, parsed, durationMs: result.latencyMs };
 }
 
 // Strip any keys outside ALLOWED_FIELDS + coerce types. The model

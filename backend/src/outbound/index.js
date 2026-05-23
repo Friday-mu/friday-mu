@@ -271,33 +271,22 @@ async function sendViaGuesty(guestyConversationId, body, channel) {
   return data;
 }
 
+// 2026-05-23 — migrated from direct Kimi axios to the shared
+// Gemini-primary / Kimi-2.6-fallback helper. Mirrors drafts_send.js's
+// translateOutbound — both should call the same helper.
 async function translateOutbound(text, targetLang) {
-  if (!process.env.KIMI_API_KEY) return null;
-  const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-  // 2026-05-23 — default bumped moonshot-v1-8k → kimi-k2.6 per Ishant.
-  const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k2.6';
+  const { runTextCompletion } = require('../ai/gemini_first');
   const system = `Translate the following message FROM English TO ${targetLang}. Preserve tone, warmth, line breaks, emoji and punctuation. Output ONLY the translation, no commentary, no labels.`;
-  const { data } = await axios.post(
-    `${KIMI_BASE_URL}/chat/completions`,
-    {
-      model: KIMI_MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: text },
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 30_000,
-    },
-  );
-  const out = data?.choices?.[0]?.message?.content;
-  return typeof out === 'string' && out.trim().length > 0 ? out.trim() : null;
+  const result = await runTextCompletion({
+    system,
+    user: text,
+    temperature: 0.3,
+    maxTokens: 2000,
+    timeoutMs: 90_000,
+    feature: 'outbound_translate',
+  });
+  if (!result.ok || !result.text) return null;
+  return result.text.trim().length > 0 ? result.text.trim() : null;
 }
 
 function extractGuestyMessageId(result) {

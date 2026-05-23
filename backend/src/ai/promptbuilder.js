@@ -272,38 +272,30 @@ function parseModelJson(raw) {
 
 // ────────────────── model call ──────────────────
 
+// 2026-05-23 — migrated to shared Gemini-primary / Kimi-2.6-fallback
+// helper. Function name retained; bumped timeout 30s → 90s.
+const { runTextCompletion } = require('./gemini_first');
+
 async function callKimi(contextSummary, systemPrompt = SYSTEM_PROMPT) {
-  const start = Date.now();
-  try {
-    const { data } = await axios.post(
-      `${KIMI_BASE_URL}/chat/completions`,
-      {
-        model: KIMI_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: contextSummary },
-        ],
-        // Slightly higher temperature than translate.js — we want the
-        // model to vary phrasing across regenerations rather than emit
-        // an identical sentence each time.
-        temperature: 0.6,
-        response_format: { type: 'json_object' },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 30_000,
-      },
-    );
-    const raw = data?.choices?.[0]?.message?.content;
-    const parsed = parseModelJson(raw);
-    if (!parsed) return { ok: false, error: 'Kimi returned unparseable JSON', durationMs: Date.now() - start, raw };
-    return { ok: true, parsed, durationMs: Date.now() - start };
-  } catch (e) {
-    return { ok: false, error: e.response?.data?.error?.message || e.message, durationMs: Date.now() - start, err: e };
+  const result = await runTextCompletion({
+    system: systemPrompt,
+    user: contextSummary,
+    // Slightly higher temperature than translate.js — we want the
+    // model to vary phrasing across regenerations rather than emit
+    // an identical sentence each time.
+    temperature: 0.6,
+    timeoutMs: 90_000,
+    responseJson: true,
+    feature: 'design_promptbuilder',
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error || 'completion failed', durationMs: result.latencyMs };
   }
+  const parsed = result.parsed || parseModelJson(result.text);
+  if (!parsed) {
+    return { ok: false, error: `${result.provider} returned unparseable JSON`, durationMs: result.latencyMs, raw: result.text };
+  }
+  return { ok: true, parsed, durationMs: result.latencyMs };
 }
 
 // ────────────────── deterministic fallback ──────────────────
