@@ -23,6 +23,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
+const { isSpacesConfigured, uploadReceipt, isAllowedReceiptContentType } = require('../storage/spaces');
 
 const router = express.Router();
 
@@ -226,6 +227,13 @@ router.post('/', attachIdentity, async (req, res) => {
     // per-expense via the unique index.
     const receipts = Array.isArray(body.receipts) ? body.receipts.slice(0, MAX_RECEIPTS_PER_EXPENSE) : [];
     const attachedReceipts = [];
+    // Slice 3c: if DO Spaces credentials are present in the env, upload
+    // each receipt blob to Spaces and store only the object key on the
+    // row (storage_kind='do_spaces'). Falls back to inline base64 when
+    // Spaces is not configured, so the code is safe to deploy ahead of
+    // credential provisioning. See backend/src/storage/spaces.js for the
+    // required env vars.
+    const useSpaces = isSpacesConfigured();
     for (const r of receipts) {
       const base64 = typeof r?.base64 === 'string' ? r.base64 : null;
       if (!base64) continue;
@@ -235,18 +243,50 @@ router.post('/', attachIdentity, async (req, res) => {
         return res.status(413).json({ error: `receipt exceeds ${MAX_RECEIPT_BYTES} bytes` });
       }
       const sha256 = crypto.createHash('sha256').update(base64).digest('hex');
+      const fileName = clean(r.file_name, 200) || null;
+      const contentType = clean(r.content_type, 100) || null;
+
+      let storageKind = 'inline_base64';
+      let storageRef = null;
+      let storedBase64 = base64;
+      if (useSpaces) {
+        // Defence-in-depth content-type guard. Frontend already constrains
+        // to image/PDF; rejecting unknown types here keeps the bucket clean.
+        if (!isAllowedReceiptContentType(contentType)) {
+          await client.query('ROLLBACK');
+          return res.status(415).json({ error: `unsupported receipt content type: ${contentType || 'unknown'}` });
+        }
+        try {
+          const { key } = await uploadReceipt({
+            tenantId: req.tenantId,
+            expenseId,
+            sha256Hash: sha256,
+            fileName,
+            contentType,
+            base64,
+          });
+          storageKind = 'do_spaces';
+          storageRef = key;
+          storedBase64 = null;
+        } catch (err) {
+          await client.query('ROLLBACK');
+          // Don't leak credential/SDK errors to the client; log + 502.
+          // eslint-disable-next-line no-console
+          console.error('[expenses] DO Spaces upload failed:', err?.message || err);
+          return res.status(502).json({ error: 'receipt upload failed (storage)' });
+        }
+      }
       try {
         const recRes = await client.query(
           `INSERT INTO expense_receipts (
-             expense_id, storage_kind, inline_base64, file_name, content_type,
+             expense_id, storage_kind, storage_ref, inline_base64, file_name, content_type,
              byte_size, sha256_hash, ocr_extracted
            )
-           VALUES ($1,'inline_base64',$2,$3,$4,$5,$6,$7)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            RETURNING id, file_name, byte_size, uploaded_at`,
           [
-            expenseId, base64,
-            clean(r.file_name, 200) || null,
-            clean(r.content_type, 100) || null,
+            expenseId, storageKind, storageRef, storedBase64,
+            fileName, contentType,
             byteSize, sha256,
             r.ocr_extracted ? JSON.stringify(r.ocr_extracted) : null,
           ],
