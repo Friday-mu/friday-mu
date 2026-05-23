@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   TASK_PROPERTIES,
   TASK_USERS,
@@ -19,6 +19,11 @@ import {
   requirementsForTemplate,
 } from '../../../_data/taskRequirements';
 import { useHydratePropertiesFromGuesty } from '../../../_data/propertiesClient';
+import {
+  parseTaskIntent,
+  type ParseTaskProposal,
+  type ParseTaskHistoryTurn,
+} from '../../../_data/intentClient';
 import { useCurrentUserId, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconClose, IconPlus, IconSparkle } from '../../icons';
@@ -198,6 +203,20 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
   useHydratePropertiesFromGuesty();
 
   const [nl, setNl] = useState('');
+  // Smart-mode chat state. Replaces the regex parseNl for the common
+  // case: operator types a free-text note, Friday returns a structured
+  // proposal + (optionally) a clarifying question. Each turn re-issues
+  // with the full transcript so refinements are cumulative.
+  // Per Ishant's NEW scope (2026-05-23): "you write a message, it
+  // creates the task, you can write again if it didn't create the
+  // right task… it must be able to have an interaction".
+  type SmartTurn =
+    | { role: 'user'; text: string }
+    | { role: 'assistant'; text: string; proposed?: ParseTaskProposal; confidence?: string };
+  const [smartTurns, setSmartTurns] = useState<SmartTurn[]>([]);
+  const [smartThinking, setSmartThinking] = useState(false);
+  const [smartError, setSmartError] = useState<string | null>(null);
+  const smartActiveRef = useRef<AbortController | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [propertyCode, setPropertyCode] = useState('');
@@ -223,6 +242,11 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     const firstDept = prefill?.department ?? sourceTask?.department ?? 'maintenance';
     const firstSubdept = prefill?.subdepartment ?? sourceTask?.subdepartment ?? SUBDEPT_BY_DEPT[firstDept][0];
     setNl('');
+    setSmartTurns([]);
+    setSmartThinking(false);
+    setSmartError(null);
+    smartActiveRef.current?.abort();
+    smartActiveRef.current = null;
     setTitle(prefill?.title ?? '');
     setDescription(prefill?.description ?? '');
     setPropertyCode(prefill?.propertyCode ?? sourceTask?.propertyCode ?? '');
@@ -266,6 +290,116 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     })).filter((group) => group.users.length > 0)
   ), [candidateAssignees]);
   const currentUser = TASK_USER_BY_ID[currentUserId];
+
+  // Apply a structured proposal to the form. Each field is independent
+  // — operator hand-edits between turns will survive unless the model
+  // proposes a new value for that specific field. tags merge (not
+  // replace) so a refinement turn ("also tag this owner-billable")
+  // doesn't drop earlier tags.
+  const applyProposal = (proposed: ParseTaskProposal) => {
+    if (proposed.title) setTitle(proposed.title);
+    if (proposed.description) setDescription(proposed.description);
+    if (proposed.propertyCode) {
+      setPropertyCode(proposed.propertyCode);
+      setPropertyQuery('');
+    }
+    if (proposed.department) {
+      setDepartment(proposed.department);
+      // If the model didn't also specify a subdept, fall back to the
+      // first valid one for the chosen department.
+      if (!proposed.subdepartment) {
+        setSubdepartment(SUBDEPT_BY_DEPT[proposed.department][0]);
+      }
+    }
+    if (proposed.subdepartment) {
+      setSubdepartment(proposed.subdepartment as Subdepartment);
+    }
+    if (proposed.priority) setPriority(proposed.priority);
+    if (proposed.assigneeIds && proposed.assigneeIds.length > 0) {
+      setAssigneeIds(proposed.assigneeIds);
+    }
+    if (proposed.dueDate) setDueDate(proposed.dueDate);
+    if (proposed.dueTime) setDueTime(proposed.dueTime);
+    if (typeof proposed.estimatedMinutes === 'number') {
+      setEstimatedMinutes(String(proposed.estimatedMinutes));
+    }
+    if (proposed.template) setTemplate(proposed.template);
+    if (proposed.category) setElement(proposed.category);
+    if (proposed.tags && proposed.tags.length > 0) {
+      setTagText((current) => mergeTags(current, proposed.tags!));
+    }
+  };
+
+  const sendSmartTurn = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || smartThinking) return;
+    setSmartError(null);
+
+    const userTurn: SmartTurn = { role: 'user', text: trimmed };
+    const baseHistory: ParseTaskHistoryTurn[] = smartTurns.map((turn) => ({
+      role: turn.role,
+      content: turn.text,
+    }));
+    setSmartTurns((prev) => [...prev, userTurn]);
+    setNl('');
+    setSmartThinking(true);
+
+    const controller = new AbortController();
+    smartActiveRef.current?.abort();
+    smartActiveRef.current = controller;
+
+    try {
+      // Reference data the model uses to resolve property codes +
+      // assignee names. We pass the FULL local directory (capped by the
+      // backend) so the model can match "Bryan", "Mary", "GBH-C8" etc.
+      // exactly. today is computed in Mauritius local time — used for
+      // relative dates ("tomorrow", "next week").
+      const reference = {
+        today: TODAY,
+        properties: TASK_PROPERTIES.map((p) => ({ code: p.code, name: p.name, zone: p.zone })),
+        assignees: TASK_USERS
+          .filter((u) => u.active && u.role !== 'external')
+          .map((u) => ({ id: u.id, name: u.name, role: u.role, skills: u.skills })),
+      };
+      const focus = prefill?.inboxThreadId
+        ? { module: 'inbox', threadId: prefill.inboxThreadId, reservationId: prefill.reservationId || null, propertyCode: prefill.propertyCode || null }
+        : prefill?.reservationId
+          ? { module: 'operations', reservationId: prefill.reservationId, propertyCode: prefill.propertyCode || null }
+          : null;
+      const response = await parseTaskIntent({
+        text: trimmed,
+        history: baseHistory,
+        reference,
+        focus,
+        signal: controller.signal,
+      });
+      if (smartActiveRef.current !== controller) return;
+      if (response.proposed && Object.keys(response.proposed).length > 0) {
+        applyProposal(response.proposed);
+      }
+      const assistantText = response.clarifyingQuestion
+        || (response.reasoning || 'Draft updated. Adjust any field manually or refine in chat.');
+      setSmartTurns((prev) => [...prev, {
+        role: 'assistant',
+        text: assistantText,
+        proposed: response.proposed,
+        confidence: response.confidence,
+      }]);
+    } catch (e) {
+      if ((e as { name?: string })?.name === 'AbortError') return;
+      const msg = e instanceof Error ? e.message : 'Smart drafter unreachable';
+      setSmartError(msg);
+      setSmartTurns((prev) => [...prev, {
+        role: 'assistant',
+        text: `Smart drafter is unavailable right now (${msg}). You can use Quick draft (below) or fill the form by hand.`,
+      }]);
+    } finally {
+      if (smartActiveRef.current === controller) {
+        smartActiveRef.current = null;
+        setSmartThinking(false);
+      }
+    }
+  };
 
   const parseNl = () => {
     if (!nl.trim()) return;
@@ -500,19 +634,74 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
           {isManagerMode && !prefill && (
             <section className="ops-form-section ops-quickfill-section">
               <div className="ops-form-section-title">
-                <IconSparkle size={12} /> Draft from note
+                <IconSparkle size={12} /> Draft with Friday
               </div>
+              {smartTurns.length > 0 && (
+                <div className="ops-smart-turns" role="log" aria-live="polite">
+                  {smartTurns.map((turn, i) => (
+                    <div
+                      key={i}
+                      className={'ops-smart-turn ' + (turn.role === 'user' ? 'user' : 'assistant')}
+                    >
+                      {turn.role === 'assistant' && (
+                        <span className="ops-smart-badge">
+                          <IconSparkle size={10} /> Friday
+                          {turn.confidence && (
+                            <em className={'ops-smart-conf ' + turn.confidence}>· {turn.confidence}</em>
+                          )}
+                        </span>
+                      )}
+                      <span className="ops-smart-text">{turn.text}</span>
+                    </div>
+                  ))}
+                  {smartThinking && (
+                    <div className="ops-smart-turn assistant pending">
+                      <span className="ops-smart-badge">
+                        <IconSparkle size={10} /> Friday
+                      </span>
+                      <span className="ops-smart-text">Drafting…</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <textarea
                 value={nl}
                 onChange={(e) => setNl(e.target.value)}
-                placeholder="Assign Bryan to check low water pressure at GBH-C8 tomorrow morning. Guest says shower drops after 2 minutes."
-                rows={3}
+                placeholder={smartTurns.length === 0
+                  ? 'Assign Bryan to check low water pressure at GBH-C8 tomorrow morning. Guest says shower drops after 2 minutes.'
+                  : 'Refine: change the property, swap the assignee, push the date out…'}
+                rows={smartTurns.length === 0 ? 3 : 2}
+                onKeyDown={(e) => {
+                  // Cmd/Ctrl+Enter sends — matches Ask Friday / FridayConsult.
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    if (nl.trim()) void sendSmartTurn(nl);
+                  }
+                }}
               />
               <div className="ops-quickfill-action">
-                <button className="btn secondary sm" type="button" onClick={parseNl} disabled={!nl.trim()}>
-                  Draft task
+                <button
+                  className="btn primary sm"
+                  type="button"
+                  onClick={() => void sendSmartTurn(nl)}
+                  disabled={!nl.trim() || smartThinking}
+                  title="Send to Friday (⌘+Enter)"
+                >
+                  {smartTurns.length === 0 ? 'Draft with Friday' : 'Refine'}
                 </button>
+                {smartTurns.length === 0 && (
+                  <button
+                    className="btn ghost sm"
+                    type="button"
+                    onClick={parseNl}
+                    disabled={!nl.trim()}
+                    title="Offline fallback — regex-based field population"
+                  >
+                    Quick draft (offline)
+                  </button>
+                )}
               </div>
+              {smartError && <div className="ops-form-alert failed">{smartError}</div>}
             </section>
           )}
 

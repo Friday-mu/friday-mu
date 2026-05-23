@@ -941,6 +941,8 @@ const fadFridayRoutes = require('./src/fad/friday');
 app.use('/api/friday', fadFridayRoutes.router);
 const askFridayCoreRoutes = require('./src/ask_friday');
 app.use('/api/ask-friday/core', askFridayCoreRoutes.router);
+const intentTaskParserRoutes = require('./src/intent/task_parser');
+app.use('/api/intent', intentTaskParserRoutes.router);
 
 // Defensive multitenant lockdown — applied to every route mounted
 // below this line. Non-FR tenants get 403 on any non-design / non-

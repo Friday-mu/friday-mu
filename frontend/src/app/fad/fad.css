@@ -8287,7 +8287,69 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-quickfill-action {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
 }
+
+/* Smart-mode chat for Friday task drafter. Matches FridayConsult /
+   BugReport FAB chat tone but lives inline in the drawer's first
+   section. */
+.ops-smart-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.ops-smart-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ops-smart-turn.user {
+  align-self: flex-end;
+  max-width: 88%;
+  background: var(--color-background-tertiary, rgba(0, 0, 0, 0.04));
+  padding: 6px 10px;
+  border-radius: 10px 10px 2px 10px;
+  color: var(--color-text-primary);
+}
+.ops-smart-turn.assistant {
+  align-self: flex-start;
+  max-width: 92%;
+  padding: 4px 2px;
+  color: var(--color-text-primary);
+}
+.ops-smart-turn.assistant.pending {
+  opacity: 0.75;
+  font-style: italic;
+}
+.ops-smart-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+}
+.ops-smart-conf {
+  font-style: normal;
+  font-weight: 500;
+  margin-left: 2px;
+}
+.ops-smart-conf.high { color: var(--color-text-success, #1a7f37); }
+.ops-smart-conf.medium { color: var(--color-text-secondary); }
+.ops-smart-conf.low { color: var(--color-text-warning, #c93400); }
+.ops-smart-text { white-space: pre-wrap; word-break: break-word; }
 
 .ops-form-section-title {
   display: flex;
