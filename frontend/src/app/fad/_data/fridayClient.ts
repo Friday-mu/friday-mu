@@ -43,9 +43,11 @@ export function askFriday(input: {
   question: string;
   scope: string;
   history?: AskFridayHistoryTurn[];
+  signal?: AbortSignal;
 }): Promise<AskFridayResponse> {
   return apiFetch('/api/friday/ask', {
     method: 'POST',
+    signal: input.signal,
     body: JSON.stringify({
       question: input.question,
       scope: input.scope,
