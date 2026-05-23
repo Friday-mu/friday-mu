@@ -12,7 +12,7 @@ Baseline for this note:
 
 The main global AI surface is **Ask Friday**.
 
-Avoid calling it "OS Friday" in product UI or handovers. Future module-specific assistants can be scoped internally as simple agent modes such as `Design Agent`, `Finance Agent`, `Syndic Agent`, or similar, but the global FAB/fullscreen product surface remains Ask Friday for now.
+Avoid alternate public product names in product UI or handovers. Future module-specific assistants can be scoped internally as simple agent modes such as `Design Agent`, `Finance Agent`, `Syndic Agent`, or similar, but the global FAB/fullscreen product surface remains Ask Friday for now.
 
 ## Current Ask Friday FAB Slice
 
