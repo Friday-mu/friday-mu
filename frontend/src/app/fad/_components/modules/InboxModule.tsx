@@ -76,6 +76,29 @@ function initialSelectedThreadId(): string {
   return params.get('thread') || params.get('t') || 't1';
 }
 
+// Bug #2 fix (2026-05-23) — notifications for team channels/DMs land
+// with `?team=channel:<id>` or `?team=dm:<id>` in the URL. Before this
+// patch, InboxModule only honoured `?thread=` and team notifications
+// dropped the user on the default guest thread. Now we parse the team
+// param on mount, switch the entity chip to 'team', and pass the
+// target down to TeamInbox so it selects that exact channel/DM instead
+// of defaulting to visibleChannels[0].
+type InitialTeamTarget = { kind: 'channel'; id: string } | { kind: 'dm'; id: string };
+function initialTeamTargetFromUrl(): InitialTeamTarget | null {
+  if (typeof window === 'undefined') return null;
+  const raw = new URLSearchParams(window.location.search).get('team');
+  if (!raw) return null;
+  if (raw.startsWith('channel:')) {
+    const id = raw.slice('channel:'.length).trim();
+    return id ? { kind: 'channel', id } : null;
+  }
+  if (raw.startsWith('dm:')) {
+    const id = raw.slice('dm:'.length).trim();
+    return id ? { kind: 'dm', id } : null;
+  }
+  return null;
+}
+
 function syncSelectedThreadUrl(threadId: string) {
   if (typeof window === 'undefined' || !threadId || threadId === 't1') return;
   const url = new URL(window.location.href);
@@ -127,7 +150,15 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   const canSeeTeam = useCanAccess('inbox_team', 'read');
 
   type EntityChip = 'all' | InboxEntity | 'team';
-  const [entityFilter, setEntityFilter] = useState<EntityChip>(() => (canSeeGuest ? 'all' : 'team'));
+  // If the URL has ?team=channel:<id> or ?team=dm:<id> (a team-notification
+  // landing URL), start on the team chip so TeamInbox can route the user
+  // to the correct channel/DM. Otherwise default to guest 'all' (or
+  // 'team' if guest is unavailable).
+  const initialTeamTarget = useState<InitialTeamTarget | null>(() => initialTeamTargetFromUrl())[0];
+  const [entityFilter, setEntityFilter] = useState<EntityChip>(() => {
+    if (initialTeamTarget) return 'team';
+    return canSeeGuest ? 'all' : 'team';
+  });
 
   // Auto-switch if current chip becomes inaccessible.
   useEffect(() => {
@@ -811,6 +842,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
           isMobile={isMobile}
           mobileThreadOpen={mobileThreadOpen}
           onMobileThreadOpenChange={setMobileThreadOpen}
+          initialTarget={initialTeamTarget}
         />
       </div>
     );

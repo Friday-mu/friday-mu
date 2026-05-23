@@ -61,16 +61,25 @@ async function downloadAttachment(attachment: TeamAttachment) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// Bug #2 fix (2026-05-23) — when a team-notification lands the user
+// at /fad?m=inbox&team=channel:<id> or &team=dm:<id>, InboxModule
+// parses it into this shape and passes it down so we can auto-select
+// the exact target instead of falling back to visibleChannels[0]. The
+// id is the channel/DM UUID from the backend.
+type InitialTeamTarget = { kind: 'channel'; id: string } | { kind: 'dm'; id: string };
+
 export function TeamInbox({
   mentionsOnly = false,
   isMobile = false,
   mobileThreadOpen = false,
   onMobileThreadOpenChange,
+  initialTarget = null,
 }: {
   mentionsOnly?: boolean;
   isMobile?: boolean;
   mobileThreadOpen?: boolean;
   onMobileThreadOpenChange?: (open: boolean) => void;
+  initialTarget?: InitialTeamTarget | null;
 }) {
   // role/permissions still wired but no longer used for channel filtering —
   // backend enforces channel visibility via membership table. Kept here
@@ -134,16 +143,46 @@ export function TeamInbox({
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const composeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  // Auto-select the first available channel once data lands. Switches
-  // to a different channel/DM are explicit user actions thereafter.
+  // Track whether we've consumed the URL-driven initial target so a
+  // subsequent live-data refresh (channels/DMs reloading) doesn't
+  // re-apply it after the operator has navigated to a different
+  // channel manually.
+  const initialTargetConsumedRef = useRef(false);
+  // Auto-select once data lands. If the URL handed us an initialTarget
+  // (team-notification landing), route to that exact channel/DM by id.
+  // Otherwise fall back to the first available channel/DM.
   useEffect(() => {
     if (selection !== null) return;
+    if (initialTarget && !initialTargetConsumedRef.current) {
+      if (initialTarget.kind === 'channel') {
+        const ch = visibleChannels.find((c) => c.id === initialTarget.id);
+        if (ch) {
+          initialTargetConsumedRef.current = true;
+          setSelection({ kind: 'channel', channelKey: ch.key });
+          return;
+        }
+        // initialTarget set but channels not loaded yet — wait for the
+        // next effect tick rather than falling through to default.
+        if (visibleChannels.length === 0) return;
+      } else {
+        const dm = visibleDms.find((d) => d.id === initialTarget.id);
+        if (dm) {
+          initialTargetConsumedRef.current = true;
+          setSelection({ kind: 'dm', dm });
+          return;
+        }
+        if (visibleDms.length === 0) return;
+      }
+      // initialTarget id didn't match any visible channel/DM (deleted,
+      // membership revoked, etc.) — give up on it and fall through.
+      initialTargetConsumedRef.current = true;
+    }
     if (visibleChannels[0]) {
       setSelection({ kind: 'channel', channelKey: visibleChannels[0].key });
     } else if (visibleDms[0]) {
       setSelection({ kind: 'dm', dm: visibleDms[0] });
     }
-  }, [visibleChannels, visibleDms, selection]);
+  }, [visibleChannels, visibleDms, selection, initialTarget]);
 
   const [draft, setDraft] = useState('');
   const [callOpen, setCallOpen] = useState(false);
