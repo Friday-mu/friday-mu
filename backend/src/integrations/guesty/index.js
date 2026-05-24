@@ -320,9 +320,13 @@ async function listListings({ limit = 100, maxPages = 20 } = {}) {
 // Reservation fields we explicitly ask Guesty to include. Without this,
 // the Open API returns a minimal shape that DOES NOT include `money` —
 // which is why total_amount_minor was NULL across 256/257 rows on prod
-// before this fix (2026-05-25). Once requested, the payload includes
-// money.totalPrice etc. and inferReservationFinancials populates the
-// total. Currency comes from money.currency in the same payload.
+// before this fix (2026-05-25).
+//
+// Guesty Open API uses a SPACE-separated `fields` string. Comma works
+// for the simple top-level keys but `money` won't come back unless we
+// list it (and its dotted sub-paths to be safe). Documented behaviour:
+// https://open-api-docs.guesty.com/reference/reservations-get-all
+// "fields" - space-separated list of fields to return.
 const RESERVATION_FIELDS = [
   '_id',
   'accountId',
@@ -341,7 +345,16 @@ const RESERVATION_FIELDS = [
   'confirmationCode',
   'creationInfo',
   'lastUpdatedAt',
+  // money object — request top-level + dotted paths so nested totals
+  // come through reliably. Guesty's field-projection sometimes drops
+  // nested keys unless they're explicit.
   'money',
+  'money.totalPrice',
+  'money.subTotalPrice',
+  'money.totalPaid',
+  'money.balanceDue',
+  'money.currency',
+  'money.fareAccommodation',
   'totalPrice',
   'currency',
   'currencyCode',
@@ -353,7 +366,7 @@ const RESERVATION_FIELDS = [
   'payments',
   'accounting',
   'cancellation',
-].join(',');
+].join(' ');
 
 async function listReservations({
   limit = 100,
