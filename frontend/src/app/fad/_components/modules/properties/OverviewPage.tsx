@@ -35,30 +35,39 @@ export function OverviewPage({ onOpen }: Props) {
 
   const ownerName = (id: string) => FIN_OWNERS.find((o) => o.id === id)?.name ?? id;
 
+  // "Truly urgent" alerts only — exclude paused-with-return-date (those are
+  // seasonal/planned pauses, not action items) and syndic flags (informational
+  // metadata). With 33 paused properties this filter keeps the list scannable
+  // instead of burying the rest of the page.
   const alerts: Alert[] = useMemo(() => {
     const out: Alert[] = [];
     PROPERTIES.forEach((p) => {
-      if (p.lifecycleStatus === 'paused') {
-        out.push({ kind: 'paused', propertyCode: p.code, label: p.name, detail: `${p.pausedReason ?? 'Paused'}${p.pauseReturnBy ? ` · return ${p.pauseReturnBy}` : ''}`, tone: 'warning' });
+      if (p.lifecycleStatus === 'paused' && !p.pauseReturnBy) {
+        out.push({ kind: 'paused', propertyCode: p.code, label: p.name, detail: p.pausedReason ?? 'Paused, no return date set', tone: 'warning' });
       }
       if (p.lifecycleStatus === 'onboarding') {
         const { pct } = checklistProgress(p);
-        out.push({ kind: 'onboarding', propertyCode: p.code, label: p.name, detail: `Onboarding · ${pct}% checklist complete`, tone: 'info' });
+        if (pct < 80) {
+          out.push({ kind: 'onboarding', propertyCode: p.code, label: p.name, detail: `Onboarding · ${pct}% checklist complete`, tone: 'info' });
+        }
       }
       if (p.lifecycleStatus === 'live' && p.photoIds.length === 0) {
         out.push({ kind: 'no_photos', propertyCode: p.code, label: p.name, detail: 'Live with no photos uploaded', tone: 'warning' });
-      }
-      if (p.isSyndicManaged) {
-        out.push({ kind: 'syndic', propertyCode: p.code, label: p.name, detail: 'Friday acts as syndicate · Grand Beehive', tone: 'neutral' });
       }
     });
     return out;
   }, [fixtureRev]);
 
+  // "Recently active" surfaces the live + onboarding portfolio (the working
+  // properties), sorted by most-recently-synced. Capped at 12 cards because
+  // anything more belongs on the All Properties tab. MV-1 was invisible from
+  // Overview before this change — it's live but didn't show because the 33
+  // paused alerts pushed it below the fold.
   const recentActivity = useMemo(() =>
     [...PROPERTIES]
+      .filter((p) => p.lifecycleStatus === 'live' || p.lifecycleStatus === 'onboarding')
       .sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1))
-      .slice(0, 6),
+      .slice(0, 12),
   [fixtureRev]);
 
   return (
@@ -71,10 +80,28 @@ export function OverviewPage({ onOpen }: Props) {
         <Kpi label="Off-boarded" value={counts.offBoarded.toString()} />
       </div>
 
-      {/* Needs attention */}
+      {/* Recently active — live + onboarding properties (the working portfolio).
+       * Moved above "Needs attention" so MV-1 et al. don't get buried under
+       * 33 paused alerts. */}
+      <section style={{ marginBottom: 28 }}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 500 }}>Recently active</h3>
+        {recentActivity.length === 0 ? (
+          <div style={{ padding: 20, color: 'var(--color-text-tertiary)', fontSize: 13, border: '0.5px dashed var(--color-border-tertiary)', borderRadius: 8 }}>
+            No live or onboarding properties yet — check All properties.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+            {recentActivity.map((p) => (
+              <PropertyCardMini key={p.code} property={p} ownerName={ownerName(p.primaryOwnerId)} onOpen={() => onOpen(p.code)} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Needs attention — only truly urgent items (filtered above) */}
       {alerts.length > 0 && (
         <section style={{ marginBottom: 24 }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 500 }}>Needs attention</h3>
+          <h3 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 500 }}>Needs attention · {alerts.length}</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {alerts.map((a, i) => (
               <button
@@ -83,7 +110,7 @@ export function OverviewPage({ onOpen }: Props) {
                 onClick={() => onOpen(a.propertyCode)}
               >
                 <span className={`chip ${a.tone === 'warning' ? 'warn' : a.tone === 'info' ? 'info' : ''}`}>
-                  {a.kind === 'paused' ? 'Paused' : a.kind === 'onboarding' ? 'Onboarding' : a.kind === 'no_photos' ? 'Photos' : a.kind === 'syndic' ? 'Syndic' : 'Pending'}
+                  {a.kind === 'paused' ? 'Paused' : a.kind === 'onboarding' ? 'Onboarding' : a.kind === 'no_photos' ? 'Photos' : 'Pending'}
                 </span>
                 <span className="mono" style={{ fontSize: 11 }}>{a.propertyCode}</span>
                 <span style={{ flex: 1, fontSize: 13 }}>{a.label}</span>
@@ -93,16 +120,6 @@ export function OverviewPage({ onOpen }: Props) {
           </div>
         </section>
       )}
-
-      {/* Recent activity */}
-      <section>
-        <h3 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 500 }}>Recently active</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-          {recentActivity.map((p) => (
-            <PropertyCardMini key={p.code} property={p} ownerName={ownerName(p.primaryOwnerId)} onOpen={() => onOpen(p.code)} />
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
