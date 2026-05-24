@@ -741,13 +741,37 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   // available.
 
   // Auto-scroll to the latest message when the thread changes or its messages
-  // load. Otherwise the pane lands at the top of long threads and the user
-  // has to scroll down every time.
+  // load. Mary bug 97b0f7fb (re-report of 434b9435): "lower part fluctuates
+  // like crashing" — root cause was likely this effect firing on every SSE
+  // refetch when message count changed, snapping scroll to bottom and
+  // competing with image/attachment height changes for layout. Now:
+  //
+  //   - On thread switch: hard snap to bottom (intentional landing).
+  //   - On message-count change within the same thread: only snap if the
+  //     user is already near the bottom (within 80px). Otherwise leave
+  //     scroll where they had it — don't fight the user's read position.
+  //
+  // The "near bottom" check uses a ref so we can read scroll state without
+  // a re-render trigger. The previous-thread-id ref distinguishes the two
+  // cases without adding new state.
   const threadBodyRef = useRef<HTMLDivElement>(null);
+  const lastScrolledThreadIdRef = useRef<string | null>(null);
   useEffect(() => {
     const el = threadBodyRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [selected, thread?.messages?.length]);
+    if (!el) return;
+    const switchedThread = lastScrolledThreadIdRef.current !== (thread?.id ?? null);
+    if (switchedThread) {
+      el.scrollTop = el.scrollHeight;
+      lastScrolledThreadIdRef.current = thread?.id ?? null;
+      return;
+    }
+    // Same thread, message-count change. Stick to bottom only if we were
+    // already near it; otherwise respect the user's scroll position.
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 80) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [selected, thread?.id, thread?.messages?.length]);
   const unread = sourceThreads.filter((t) => t.unread).length;
 
   const activeFilterCount =
