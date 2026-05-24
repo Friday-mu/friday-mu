@@ -32,6 +32,11 @@ const { shouldAutoDraftWebsiteEvent, triggerWebsiteDraftGeneration } = require('
 // network delay; tight enough to make replay attacks impractical.
 const REPLAY_WINDOW_MS = 5 * 60 * 1000;
 
+// T3.7 v0.2 — friday.mu is single-tenant (Friday Mauritius) for now,
+// so every website-inbox INSERT lands on FR. When per-tenant routing
+// arrives we'll derive this from the signature / payload instead.
+const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
 const ALLOWED_EVENT_TYPES = new Set([
   'booking.request_submitted',
   'booking.proof_uploaded',
@@ -102,15 +107,18 @@ async function recordEvent({
   signature,
   signedAt,
 }) {
-  // 1. Upsert the thread.
+  // 1. Upsert the thread. T3.7 v0.2 — explicit tenant_id matches the
+  // new unique index `idx_inbox_threads_tenant_email_unique` from
+  // mig 087. Pre-fix this conflict path errored with "no unique or
+  // exclusion constraint matching the ON CONFLICT specification".
   const threadRes = await query(
     `
     INSERT INTO inbox_threads (
-      guest_email, guest_email_raw, guest_name, guest_phone,
+      tenant_id, guest_email, guest_email_raw, guest_name, guest_phone,
       last_event_type, last_event_at
     )
-    VALUES (LOWER($1), $2, $3, $4, $5, NOW())
-    ON CONFLICT ((LOWER(guest_email))) DO UPDATE SET
+    VALUES ($6::uuid, LOWER($1), $2, $3, $4, $5, NOW())
+    ON CONFLICT (tenant_id, (LOWER(guest_email))) DO UPDATE SET
       -- Refresh contact details if the new event carries them; keep
       -- the prior value otherwise.
       guest_email_raw   = COALESCE(EXCLUDED.guest_email_raw, inbox_threads.guest_email_raw),
@@ -121,7 +129,7 @@ async function recordEvent({
       updated_at        = NOW()
     RETURNING id
     `,
-    [guest.email, guest.raw, guest.name, guest.phone, eventType],
+    [guest.email, guest.raw, guest.name, guest.phone, eventType, FR_TENANT_ID],
   );
   const threadId = threadRes.rows[0].id;
 

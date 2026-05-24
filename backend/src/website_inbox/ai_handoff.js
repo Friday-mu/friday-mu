@@ -13,6 +13,9 @@ const AI_EVENT_TYPE = 'website.ai_handoff';
 const TAKEOVER_EVENT_TYPE = 'website.ai_handoff_takeover';
 const VISITOR_MESSAGE_EVENT_TYPE = 'website.visitor_message';
 const STAFF_REPLY_EVENT_TYPE = 'staff.reply_sent';
+// T3.7 v0.2 — same single-tenant default as webhook.js. Drop when
+// per-tenant routing arrives.
+const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
 function clampText(value, max) {
   if (typeof value !== 'string') return '';
@@ -355,14 +358,17 @@ async function recordHandoff({ parsed, signature, signedAt }) {
   const { handoffId, conversationKey, reference, envelope } = parsed;
   const guestEmail = `website-ai+${safeKey(conversationKey).slice(0, 48)}@friday.mu`;
 
+  // T3.7 v0.2 — explicit tenant_id matches the new unique index from
+  // mig 087. Pre-fix this ON CONFLICT clause errored because the old
+  // (LOWER(guest_email)) unique index was dropped + replaced.
   const threadRes = await query(
     `
     INSERT INTO inbox_threads (
-      guest_email, guest_email_raw, guest_name, guest_phone,
+      tenant_id, guest_email, guest_email_raw, guest_name, guest_phone,
       last_event_type, last_event_at, notes
     )
-    VALUES (LOWER($1), $1, $2, NULL, $3, NOW(), $4)
-    ON CONFLICT ((LOWER(guest_email))) DO UPDATE SET
+    VALUES ($5::uuid, LOWER($1), $1, $2, NULL, $3, NOW(), $4)
+    ON CONFLICT (tenant_id, (LOWER(guest_email))) DO UPDATE SET
       guest_name      = EXCLUDED.guest_name,
       last_event_type = EXCLUDED.last_event_type,
       last_event_at   = NOW(),
@@ -370,7 +376,7 @@ async function recordHandoff({ parsed, signature, signedAt }) {
       updated_at      = NOW()
     RETURNING id
     `,
-    [guestEmail, subjectFor(envelope), AI_EVENT_TYPE, noteFor(envelope)],
+    [guestEmail, subjectFor(envelope), AI_EVENT_TYPE, noteFor(envelope), FR_TENANT_ID],
   );
   const threadId = threadRes.rows[0].id;
 
