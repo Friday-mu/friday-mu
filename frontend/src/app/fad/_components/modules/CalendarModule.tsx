@@ -326,6 +326,17 @@ export function CalendarModule() {
     new Set(EVENT_TYPES.map((t) => t.id)),
   );
   const [mineOnly, setMineOnly] = useState(false);
+  // Multi-calendar v0.3 (T75 · 2026-05-25 · bug #0887d756):
+  // (a) Default to active properties only — 60-property unfiltered
+  //     view drowned the real working portfolio. Operators kept
+  //     filtering manually every session.
+  // (b) Zone filter (north / west / all) — Ishant feedback. Property
+  //     model has `zone` field already.
+  // (c) Week-jump arrows for faster navigation than per-day scroll.
+  type McalPropertyFilter = 'active' | 'all';
+  type McalZoneFilter = 'all' | 'north' | 'west';
+  const [mcalPropertyFilter, setMcalPropertyFilter] = useState<McalPropertyFilter>('active');
+  const [mcalZoneFilter, setMcalZoneFilter] = useState<McalZoneFilter>('all');
   const [selectedEvent, setSelectedEvent] = useState<{ ev: CalEvent; x: number; y: number } | null>(
     null,
   );
@@ -483,6 +494,43 @@ export function CalendarModule() {
           >
             Mine only
           </FilterChip>
+          {tab === 'multi' && (
+            <>
+              <span style={{ width: 1, height: 18, background: 'var(--color-border-tertiary)', margin: '0 4px' }} />
+              <FilterChip
+                active={mcalPropertyFilter === 'active'}
+                onClick={() => setMcalPropertyFilter(mcalPropertyFilter === 'active' ? 'all' : 'active')}
+              >
+                {mcalPropertyFilter === 'active' ? 'Active only' : 'All properties'}
+              </FilterChip>
+              <FilterChip
+                active={mcalZoneFilter === 'north'}
+                onClick={() => setMcalZoneFilter(mcalZoneFilter === 'north' ? 'all' : 'north')}
+              >
+                North
+              </FilterChip>
+              <FilterChip
+                active={mcalZoneFilter === 'west'}
+                onClick={() => setMcalZoneFilter(mcalZoneFilter === 'west' ? 'all' : 'west')}
+              >
+                West
+              </FilterChip>
+              <button
+                className="btn ghost sm"
+                onClick={() => setViewDate((prev) => addDays(prev, -7))}
+                title="Jump back one week"
+              >
+                ‹ Week
+              </button>
+              <button
+                className="btn ghost sm"
+                onClick={() => setViewDate((prev) => addDays(prev, 7))}
+                title="Jump forward one week"
+              >
+                Week ›
+              </button>
+            </>
+          )}
         </FilterBar>
         {!demoData && (reservationsLoading || tasksLoading) && (
           <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
@@ -499,7 +547,19 @@ export function CalendarModule() {
 
         {tab === 'multi' ? (
           <MultiCalendarMounted
-            properties={liveProperties}
+            properties={(() => {
+              // v0.3: apply active + zone filters before handing to grid.
+              // Default 'active' filter excludes paused/archived/onboarding;
+              // user can toggle to 'all' from the toolbar to see paused too.
+              let list = liveProperties;
+              if (mcalPropertyFilter === 'active') {
+                list = list.filter((p) => p.lifecycleStatus === 'live');
+              }
+              if (mcalZoneFilter !== 'all') {
+                list = list.filter((p) => p.zone === mcalZoneFilter);
+              }
+              return list;
+            })()}
             reservations={sourceReservations}
             tasks={sourceTasks}
             days={days}

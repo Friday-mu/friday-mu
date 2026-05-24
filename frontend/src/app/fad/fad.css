@@ -12034,6 +12034,39 @@ body:has(.ops-create-drawer) .bug-fab {
 .mcal-band-owner { background: rgb(122, 76, 175); }
 .mcal-band-email { background: rgb(120, 120, 120); }
 
+/* v0.3 — status-based coloring (Ishant bug #0887d756). Confirmed = solid
+   trust-blue, reserved = amber (paid? maybe, awaiting commit), inquiry
+   = neutral gray, owner = purple, other = mid-gray. Channel info moves
+   to a glyph at the start of the band (.mcal-band-channel-glyph). */
+.mcal-band-status-confirmed { background: rgb(53, 122, 189); color: #fff; }
+.mcal-band-status-reserved { background: rgb(220, 165, 60); color: #1a1a1a; }
+.mcal-band-status-inquiry { background: rgb(140, 140, 140); color: #fff; }
+.mcal-band-status-owner { background: rgb(122, 76, 175); color: #fff; }
+.mcal-band-status-other { background: rgb(105, 105, 105); color: #fff; }
+
+.mcal-band-channel-glyph {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 4px 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+}
+/* Per-channel glyph color hints — light alpha background only; the
+   icon character itself stays neutral so it reads on any band color. */
+.mcal-channel-airbnb { background: rgba(255, 90, 95, 0.35); }
+.mcal-channel-booking { background: rgba(80, 130, 220, 0.35); }
+.mcal-channel-direct { background: rgba(72, 173, 122, 0.45); }
+.mcal-channel-vrbo { background: rgba(255, 165, 50, 0.4); }
+.mcal-channel-owner { background: rgba(180, 130, 220, 0.4); }
+.mcal-channel-email { background: rgba(200, 200, 200, 0.4); }
+
 .mcal-today-line {
   align-self: stretch;
   background: rgba(220, 60, 110, 0.45);

@@ -76,15 +76,23 @@ function buildDateColumns(start: Date, days: number): DateColumn[] {
   return out;
 }
 
-const channelColorClass: Record<ReservationChannel, string> = {
-  airbnb: 'mcal-band-airbnb',
-  booking: 'mcal-band-booking',
-  vrbo: 'mcal-band-vrbo',
-  direct: 'mcal-band-direct',
-  owner: 'mcal-band-owner',
-  email: 'mcal-band-email',
-};
+// v0.3 (bug #0887d756) — Ishant wanted color to encode the status
+// (confirmed / reserved-but-not-yet-paid / inquiry), not the booking
+// platform. Channel is now communicated by an icon at the start of the
+// band (Airbnb / Booking.com / Friday-logo-for-direct etc.) — see
+// channelGlyph below.
+type BandStatus = 'confirmed' | 'reserved' | 'inquiry' | 'owner' | 'other';
 
+function statusColorClass(rsv: { status?: string; channel: ReservationChannel }): string {
+  const s = String(rsv.status || '').toLowerCase();
+  if (rsv.channel === 'owner') return 'mcal-band-status-owner';
+  if (s === 'confirmed' || s === 'checked_in' || s === 'checked_out' || s === 'booked') return 'mcal-band-status-confirmed';
+  if (s === 'reserved' || s === 'awaiting_payment' || s === 'pending') return 'mcal-band-status-reserved';
+  if (s === 'inquiry' || s === 'request' || s === '') return 'mcal-band-status-inquiry';
+  return 'mcal-band-status-other';
+}
+
+// Short channel codes still used for the title= tooltip on the band.
 const channelShort: Record<ReservationChannel, string> = {
   airbnb: 'AIR',
   booking: 'BDC',
@@ -92,6 +100,18 @@ const channelShort: Record<ReservationChannel, string> = {
   direct: 'DIR',
   owner: 'OWN',
   email: 'EML',
+};
+
+// Icon glyph at the start of each band — disambiguates the booking
+// platform without consuming color. Single-character placeholders that
+// the CSS can substitute with proper SVGs later (mcal-channel-glyph-*).
+const channelGlyph: Record<ReservationChannel, string> = {
+  airbnb: 'Ⓐ',     // Airbnb (round A)
+  booking: 'Ⓑ',    // Booking.com (round B)
+  vrbo: 'Ⓥ',       // VRBO
+  direct: 'F',     // Friday direct — uppercase F stands in for the logo
+  owner: 'Ⓞ',      // Owner stay
+  email: '✉',      // Email
 };
 
 interface PositionedReservation {
@@ -321,14 +341,16 @@ export function MultiCalendarGrid({
                   .filter(Boolean);
               })()}
 
-              {/* Reservation bars overlay — same grid row, higher z */}
+              {/* Reservation bars overlay — same grid row, higher z.
+                  v0.3: color encodes STATUS (confirmed/reserved/inquiry/owner),
+                  channel is shown as a glyph at the start of the band. */}
               {positions.map((pos, i) => (
                 <button
                   key={`${p.id}-rsv-${i}`}
                   type="button"
                   className={
                     'mcal-band ' +
-                    channelColorClass[pos.rsv.channel] +
+                    statusColorClass(pos.rsv) +
                     (pos.clippedLeft ? ' mcal-band-clip-left' : '') +
                     (pos.clippedRight ? ' mcal-band-clip-right' : '')
                   }
@@ -341,9 +363,11 @@ export function MultiCalendarGrid({
                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                     onReservationClick?.(pos.rsv, rect.left + rect.width / 2, rect.bottom);
                   }}
-                  title={`${pos.rsv.guestName} · ${pos.rsv.nights}n · ${pos.rsv.channel.toUpperCase()}`}
+                  title={`${pos.rsv.guestName} · ${pos.rsv.nights}n · ${pos.rsv.channel.toUpperCase()} · ${pos.rsv.status || 'inquiry'}`}
                 >
-                  <span className="mcal-band-channel mono">{channelShort[pos.rsv.channel]}</span>
+                  <span className={'mcal-band-channel-glyph mcal-channel-' + pos.rsv.channel} aria-label={channelShort[pos.rsv.channel]}>
+                    {channelGlyph[pos.rsv.channel]}
+                  </span>
                   <span className="mcal-band-guest">{pos.rsv.guestName}</span>
                 </button>
               ))}
@@ -370,11 +394,14 @@ export function MultiCalendarGrid({
         </span>
         <span style={{ flex: 1 }} />
         <span className="mcal-legend">
-          <span className="mcal-legend-dot mcal-band-airbnb" /> Airbnb
-          <span className="mcal-legend-dot mcal-band-booking" /> BDC
-          <span className="mcal-legend-dot mcal-band-direct" /> Direct
-          <span className="mcal-legend-dot mcal-band-vrbo" /> VRBO
-          <span className="mcal-legend-dot mcal-band-owner" /> Owner
+          <span className="mcal-legend-dot mcal-band-status-confirmed" /> Confirmed
+          <span className="mcal-legend-dot mcal-band-status-reserved" /> Reserved
+          <span className="mcal-legend-dot mcal-band-status-inquiry" /> Inquiry
+          <span className="mcal-legend-dot mcal-band-status-owner" /> Owner stay
+          <span style={{ width: 1, height: 14, background: 'var(--color-border-tertiary)', margin: '0 6px' }} />
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+            Channels: Ⓐ Airbnb · Ⓑ Booking · Ⓥ VRBO · F Direct · Ⓞ Owner · ✉ Email
+          </span>
         </span>
       </div>
     </div>
