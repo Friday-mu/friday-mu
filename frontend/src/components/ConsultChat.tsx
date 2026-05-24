@@ -7,7 +7,6 @@ import { apiFetch, stripProtocolTags } from './types'
 import { trackEvent } from '../lib/analytics'
 import TeachingCard from './TeachingCard'
 import ConflictBanner from './ConflictBanner'
-import TaskSuggestionCard, { type TaskSuggestion } from './TaskSuggestionCard'
 
 interface ConsultChatProps {
   conversationId?: string
@@ -23,9 +22,6 @@ interface ConsultChatProps {
   onDraftUpdate?: (content: string) => void
   chips?: Array<{label: string, instruction?: string, onClick?: () => void}>
   onTeachingCreated?: (teaching: { id: string; instruction: string; scope: string }) => void
-  /** Fired when the operator clicks "+ Create task" on a Friday-suggested task
-   *  card. Caller opens its CreateTaskDrawer with the suggestion prefilled. */
-  onTaskSuggestionAccept?: (suggestion: TaskSuggestion) => void
 }
 
 
@@ -60,7 +56,7 @@ interface HistorySession {
 export default function ConsultChat({
   conversationId, context, initialInstruction, draftBody, contextData,
   onConfirm, onCancel, confirmLabel, propertyCode, active = true,
-  onDraftUpdate, chips, onTeachingCreated, onTaskSuggestionAccept,
+  onDraftUpdate, chips, onTeachingCreated,
 }: ConsultChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
@@ -69,10 +65,6 @@ export default function ConsultChat({
   const [error, setError] = useState<string | null>(null)
   const [draftUpdated, setDraftUpdated] = useState(false)
   const [teachingActions, setTeachingActions] = useState<TeachingActionData[]>([])
-  // Per-turn AI-proposed task suggestions. Operator accepts → opens
-  // CreateTaskDrawer with the suggestion prefilled. Dismissed entries
-  // stay rendered (greyed) so the operator has a visual trail.
-  const [taskSuggestions, setTaskSuggestions] = useState<Array<{ suggestion: TaskSuggestion; messageIndex: number; dismissed: boolean }>>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [compactionNotice, setCompactionNotice] = useState(false)
   const [missingKnowledge, setMissingKnowledge] = useState(false)
@@ -115,7 +107,6 @@ export default function ConsultChat({
     setReplyText('')
     setDraftUpdated(false)
     setTeachingActions([])
-    setTaskSuggestions([])
     setCompactionNotice(false)
     setMissingKnowledge(false)
     setDraftRefreshNotice(false)
@@ -322,7 +313,7 @@ export default function ConsultChat({
     return () => el.removeEventListener('focus', handleFocus)
   }, [active, started])
 
-  const sendConsult = async (instruction: string, history: ChatMessage[]): Promise<{response: string | null, draftUpdate?: string, teachingAction?: TeachingActionData, teachingActions?: TeachingActionData[], taskSuggestions?: TaskSuggestion[], sessionId?: string, compacted?: boolean, missingKnowledge?: boolean}> => {
+  const sendConsult = async (instruction: string, history: ChatMessage[]): Promise<{response: string | null, draftUpdate?: string, teachingAction?: TeachingActionData, teachingActions?: TeachingActionData[], sessionId?: string, compacted?: boolean, missingKnowledge?: boolean}> => {
     const data = await apiFetch('/api/ai/consult', {
       method: 'POST',
       body: JSON.stringify({
@@ -335,7 +326,7 @@ export default function ConsultChat({
         ...(sessionId ? { sessionId } : {}),
       }),
     })
-    return { response: data.response as string, draftUpdate: data.draft_update as string | undefined, teachingAction: data.teaching_action as TeachingActionData | undefined, teachingActions: data.teaching_actions as TeachingActionData[] | undefined, taskSuggestions: data.task_suggestions as TaskSuggestion[] | undefined, sessionId: data.sessionId, compacted: data.compacted, missingKnowledge: data.missingKnowledge }
+    return { response: data.response as string, draftUpdate: data.draft_update as string | undefined, teachingAction: data.teaching_action as TeachingActionData | undefined, teachingActions: data.teaching_actions as TeachingActionData[] | undefined, sessionId: data.sessionId, compacted: data.compacted, missingKnowledge: data.missingKnowledge }
   }
 
   const sendAndProcess = async (instruction: string) => {
@@ -371,26 +362,6 @@ export default function ConsultChat({
         setTeachingActions(prev => [...prev, ...result.teachingActions!])
       } else if (result.teachingAction) {
         setTeachingActions(prev => [...prev, result.teachingAction!])
-      }
-      // Friday-proposed task suggestions. Pin them to the assistant
-      // message that just landed so they render inline under the right
-      // reply (we know the assistant message just got appended).
-      if (result.taskSuggestions && result.taskSuggestions.length > 0) {
-        setMessages(latest => {
-          const msgIdx = Math.max(0, latest.length - 1);
-          setTaskSuggestions(prev => [
-            ...prev,
-            ...result.taskSuggestions!.map((s) => ({ suggestion: s, messageIndex: msgIdx, dismissed: false })),
-          ]);
-          return latest;
-        });
-        try {
-          trackEvent('consult_task_suggestion_received', {
-            count: result.taskSuggestions.length,
-            context,
-            propertyCode: propertyCode || null,
-          });
-        } catch {}
       }
       if (result.missingKnowledge) {
         setMissingKnowledge(true)
@@ -518,10 +489,8 @@ export default function ConsultChat({
             )
           }
 
-          // Friday-suggested tasks pinned to this assistant message
-          const inlineSuggestions = taskSuggestions.filter((ts) => ts.messageIndex === i);
           return (
-            <div key={i} className="flex justify-start" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+            <div key={i} className="flex justify-start">
               <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm friday-markdown" style={{
                 background: 'rgba(30,41,59,0.5)',
                 color: '#e2e8f0',
@@ -529,47 +498,6 @@ export default function ConsultChat({
               }}>
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
-              {inlineSuggestions.length > 0 && (
-                <div style={{ marginTop: 6, width: '100%', maxWidth: '85%' }}>
-                  {inlineSuggestions.map((ts, sIdx) => {
-                    const globalIdx = taskSuggestions.indexOf(ts);
-                    return (
-                      <TaskSuggestionCard
-                        key={`${i}-${sIdx}`}
-                        suggestion={ts.suggestion}
-                        dismissed={ts.dismissed}
-                        onAccept={(s) => {
-                          if (onTaskSuggestionAccept) onTaskSuggestionAccept(s);
-                          // Mark as dismissed once accepted so the card
-                          // collapses (the actual CreateTaskDrawer that
-                          // opens has its own confirm/cancel).
-                          setTaskSuggestions((prev) =>
-                            prev.map((x, xi) => (xi === globalIdx ? { ...x, dismissed: true } : x)),
-                          );
-                          try {
-                            trackEvent('consult_task_suggestion_accepted', {
-                              department: s.department,
-                              priority: s.priority,
-                              propertyCode: s.propertyCode || null,
-                            });
-                          } catch {}
-                        }}
-                        onDismiss={() => {
-                          setTaskSuggestions((prev) =>
-                            prev.map((x, xi) => (xi === globalIdx ? { ...x, dismissed: true } : x)),
-                          );
-                          try {
-                            trackEvent('consult_task_suggestion_dismissed', {
-                              department: ts.suggestion.department,
-                              priority: ts.suggestion.priority,
-                            });
-                          } catch {}
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )
         })}
