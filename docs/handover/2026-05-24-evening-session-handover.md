@@ -162,3 +162,61 @@ auto-translate isn't in FAD. Shipped:
 - Tree tip: `634569de` (code)
 - Backend: pm2 restart 285, mig 088 applied
 - Frontend: 634569de
+
+---
+
+## Addendum — late-night follow-up session (2026-05-24 ~19:00–19:35)
+
+Resumed post-`/compact` per the night-handover prompt. Took the open
+queue in priority order. Five further deliverables shipped + verified
+on prod.
+
+| # | Item | Commit | Status |
+|---|---|---|---|
+| 13 | **T3.10** full ReservationDetail wiring (Folio + Payments + Accounting) — mig 089, new backend routes, frontend client, optimistic mutations, live Guesty money_breakdown threading through Folio + Accounting tabs | `eb8f85c6` | ✅ verified end-to-end on prod (LF-7 / Mathis reservation, FR admin) |
+| 14 | **T3.10 follow-ups** — `resolveReservationId` now handles `guesty_reservations.id` cache UUIDs, sanitises overlay channel/status enums against fad_reservations CHECK constraints, DELETE returns `{ok:true}` JSON instead of 204 (apiFetch chokes on empty body). Also `ALTER TABLE OWNER TO friday` on mig 089 tables (prod permission grant) | `e502944a` | ✅ verified on prod (add line / record payment / persist across tabs / remove line) |
+| 15 | **T3.15 v0.4 Operations Overview FR** — operations.status enum widened (reported/scheduled/ready/active/done/etc.), operations.overview.* (title, kicker, KPIs, escalations, daily brief, agenda, file/comment counts). useT() now accepts an optional interpolation params object as the 2nd arg | `47bb4608` | ✅ verified on prod with `localStorage.setItem('fad:lang','fr')` |
+| 16 | **i18n interpolation fix** — react-i18next was using `{{n}}` default; source files use `{n}` (matching the existing `arrivalsBooked` convention). Configured prefix/suffix to single braces so `t('key', {n: 5})` interpolates correctly | `bb8a3623` | ✅ verified (`2 TÂCHES`, `6 fichiers` now render instead of literal `{n}`) |
+| 17 | **T3.7 v0.2 — website_inbox writer-path tenant scoping** — `webhook.js` + `ai_handoff.js` `ON CONFLICT ((LOWER(guest_email)))` was broken since mig 087 dropped that unique index. Now `ON CONFLICT (tenant_id, (LOWER(guest_email)))` + explicit `tenant_id` in INSERT VALUES. Real prod bug fix, not just hardening | `3dfb210f` | ✅ tests pass (17/17), pm2 restart 291 |
+
+**Migrations applied this session:**
+- **089_reservation_folio_payments.sql** — `fad_reservation_folio_lines` + `fad_reservation_payments` (both with `tenant_id`, `amount_minor` BIGINT, FK CASCADE delete to `fad_reservations(id)`). Plus `ALTER TABLE OWNER TO friday` so the app user has perms.
+
+**Final live state (2026-05-24 19:35 MUR):**
+- Tree tip: `3dfb210f`
+- Frontend: `bb8a3623` deployed to `/var/www/fad/`
+- Backend: pm2 restart 291, mig 089 applied
+- Cumulative restart count today: 286 → 291 (six restarts including the Slack fix from before this addendum)
+
+**Authoritative findings from this session:**
+
+1. **`guesty_reservations.id` vs `fad_reservations.id` confusion.** GET `/api/reservations/:id` returns `id: row.id` where `row` is the joined `guesty_reservations.*` — so frontend always holds the CACHE UUID, not the overlay UUID. `resolveReservationId` was only checking `fad_reservations.id`, so every new write-path (folio/payments) 404'd. Fixed by adding a Path 2 lookup against `guesty_reservations.id` that materialises the overlay if it doesn't exist. Pattern is now: any new write route under `/:id` should use `resolveReservationId`, which handles all three id shapes.
+
+2. **`fad_reservations` CHECK constraints are stricter than `guesty_reservations`.** Guesty hands back channels like `agoda` / `homeaway` / `expedia` and statuses like `reserved` / `canceled` — the overlay enum only accepts a small set. `materialiseOverlay` now passes through `sanitizeOverlayChannel` + `sanitizeOverlayStatus` which NULL out unknowns rather than letting INSERT throw.
+
+3. **react-i18next interpolation prefix.** Default is `{{var}}` but the FAD source files were written for `{var}` (existing `arrivalsBooked` got around it with `.replace('{n}', ...)` at the call site). Configured the bootstrap to use single braces, so all current + future strings interpolate naturally with `t('key', { var: value })`.
+
+4. **`ON CONFLICT` clauses must match the unique index expression after mig 087.** The schema migration dropped the old `(LOWER(guest_email))` unique index, replaced with `(tenant_id, LOWER(guest_email))`, but the webhook + ai_handoff upsert paths still referenced the old expression. Postgres rejects with "no unique or exclusion constraint matching the ON CONFLICT specification". This was silently breaking every retried website inquiry from a repeat guest since the mig landed earlier today.
+
+**Open queue (priority order, post-late-night-session):**
+
+1. **T3.9 — full PropertyDetail tabs** (Listings push-through + per-property tasks/reservations already live; amenities + pricing calendar still pending). Listings tab has fixture mutation (`setBaseDescription` / `setChannelDescription`) that should write through to a backend route.
+2. **T3.15 v0.5 — Operations remaining + Properties + Inbox bodies.** ManagerWorkbenchPanel + Schedule + MyTasks + AllTasks pages still EN. PropertyDetail tabs (Identity/Owner/Operational/Financial/Listings/Activity) untouched. TeamInbox cards EN. Roughly 2-3h to do all three.
+3. **Bug #5** Mary inbox flicker — blocked (needs Mary pair-debug)
+4. **Bug #3** Franny notification routing — blocked (needs Franny re-test)
+5. **Bug #4** Ishant Breezeway schedule cards — blocked (needs Ishant screenshot)
+6. **T1.15 / Phase 4** TaskDetail Breezeway re-skin — blocked (needs Ishant screenshot)
+7. **T1.14 Margin** — blocked on Finance Phase 3 (GL + owner payouts schema)
+8. **Calendar v0.5** all three sub-items — blocked on clarifications/screenshots
+9. **`tagline` translation field** — Ishant confirmed the website session hallucinated this; no FAD action needed unless website team formally requests it later
+
+**Pending action items for Ishant (NOT for Claude to fix):**
+
+None remaining as of 19:35 MUR. Earlier Slack webhook + Notion mirror items both resolved during this session (Slack pivoted to chat.postMessage with bot token; Notion mirror flagged as low-priority nice-to-have that can be done from Ishant's session whenever).
+
+**Recovery (post-compact, if needed):**
+
+1. Read this file from the addendum onward.
+2. `git log --oneline -15` + `curl https://admin.friday.mu/version.json + /api/version`.
+3. Connect Chrome MCP to deviceId `c49e054a-1059-4f2c-87bf-41fc0e71b03c`.
+4. Default next move: T3.15 v0.5 module body sweep (Operations ManagerWorkbench → Properties → Inbox) OR T3.9 Listings push-through. Open queue above is priority-ordered.
