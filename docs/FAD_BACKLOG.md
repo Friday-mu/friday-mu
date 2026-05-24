@@ -56,6 +56,35 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - "Recover prior Calendar work if regressed" — requires git history vs current-behavior diff with Ishant in the loop.
 - **Recommendation**: when next paired on prod, open the Calendar with real data and screenshot the actual visible bugs. 10-minute pair → 30-min fix.
 
+### Multi-calendar v0.4 (SHIPPED 2026-05-24 evening · `013b3e12`)
+- Effort: M · ✅ 3 of 6 deferred items shipped · 3 deferred to v0.5
+- **Shipped this round:**
+  - **Custom date picker** — native `<input type="date">` next to the
+    Today / ‹ › nav. Jump to any date directly. Mobile gets OS picker
+    for free.
+  - **Lane dedup** — overlapping reservations on the same property no
+    longer obscure each other. New per-property greedy lane assigner
+    in `positionByProperty()`; bands stack via `marginTop = 8 + lane *
+    30`. Row height grows via inline `gridAutoRows` so day-cells
+    stretch alongside. Verified on prod: GBH-B4, GBH-C3, GBH-C5,
+    GBH-C6, LB-1/2/3, LB-C all show clean stacked lanes.
+  - **Hover task preview** — replaces the slow `title=` tooltip with a
+    rich 260px popover on `.mcal-task-chip` mouseenter. Shows title,
+    department, priority, due date, assignees, description preview.
+    Position:fixed so it escapes scroll clipping; pointerEvents:none.
+- **Deferred to v0.5:**
+  - **Past-date pricing** — ambiguous ask. Current behavior already
+    hides price when Guesty returns null for past dates. Two
+    interpretations: show the historical published rate (Guesty
+    doesn't store that) OR show what each guest paid (would need
+    derived "nightly rate from subTotal/nights" per past reservation).
+    Needs Ishant's clarification.
+  - **Block-dates feature** — needs backend route POST
+    `/api/calendar/block` + UI to set/clear blocks. Defer until
+    backend lands.
+  - **Column alignment** — couldn't reproduce. Needs Ishant
+    screenshot of the specific misalignment.
+
 ### T1.4 — Old CaptureDrawer mock removal ✓ shipped 2026-05-23
 - Removed in commit (this batch). 338 lines deleted: `CaptureDrawer` + `ReceiptExtraction` + `CaptureProps` interface + orphaned `captureMode` state + orphaned `ApprovalTier` import.
 
