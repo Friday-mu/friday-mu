@@ -9715,6 +9715,115 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   color: var(--color-text-primary);
 }
 
+/* TaskDetail UI redesign (T1.15) — Breezeway-style meta grid.
+ * Each row is LABEL on the left in a fixed column, value on the
+ * right, optional + Add action right-aligned. Rhythm matches the
+ * reference: clean, scannable, no boxed borders per row. */
+.ops-meta-grid {
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  margin-bottom: 14px;
+}
+.ops-meta-row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 4px;
+  min-height: 40px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.ops-meta-row:last-child {
+  border-bottom: 0;
+}
+.ops-meta-row > .ops-meta-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ops-meta-row > .ops-meta-value {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.ops-meta-row > .ops-meta-value.muted {
+  color: var(--color-text-tertiary);
+}
+.ops-meta-row > .ops-meta-action {
+  justify-self: end;
+}
+.ops-meta-row > .ops-meta-action .btn.link,
+.ops-meta-row > .ops-meta-action .btn.ghost {
+  font-size: 11px;
+  color: var(--color-brand-accent);
+  padding: 2px 6px;
+}
+.ops-meta-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+.ops-meta-attachments > span {
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  background: var(--color-background-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+}
+.ops-meta-attachments > span img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Compact assignee chip used inside meta-row + still works in the
+ * existing Assignees CollapsibleSection. */
+.ops-assignee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 2px;
+  background: var(--color-background-secondary);
+  border-radius: 16px;
+  font-size: 12px;
+}
+.ops-assignee-chip .avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  color: white;
+  font-size: 9px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .ops-meta-row {
+    grid-template-columns: 110px 1fr auto;
+    gap: 10px;
+  }
+}
+
 .ops-task-detail-header {
   padding: 10px 18px;
   border-bottom: 0.5px solid var(--color-border-tertiary);

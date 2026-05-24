@@ -927,8 +927,25 @@ function Body({
         />
       )}
 
+      {/* TaskDetail UI redesign (T1.15) — Breezeway-style meta grid.
+       * Surfaces the at-a-glance metadata (date, property, time,
+       * assignees, attachments count, linked reservation, risk flags)
+       * in a consistent label/value rhythm. Replaces the standalone
+       * Assignees + Reservation Link collapsibles that used to be
+       * further down the body, and brings the Property header up so
+       * the eye lands on it immediately. */}
+      <TaskMetaGrid
+        task={task}
+        assignees={assignees}
+        canManageTasks={canManageTasks}
+        evidenceQueueLength={evidenceQueue.length}
+        elapsedSeconds={elapsedSeconds}
+        onOpenAssigneePicker={() => setAssigneePickerOpen(true)}
+        onUpdateAssignees={onUpdateAssignees}
+      />
+
       {task.description && (
-        <Section title="Original description">
+        <Section title="Description">
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>{task.description}</p>
         </Section>
       )}
@@ -962,55 +979,12 @@ function Body({
         </Section>
       )}
 
-      <CollapsibleSection title="Assignees" defaultOpen={assignees.length > 0 && assignees.length <= 3}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {assignees.length === 0 && <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Unassigned</span>}
-          {assignees.map((u) => (
-            <span key={u.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '2px 8px 2px 2px', background: 'var(--color-background-secondary)', borderRadius: 16 }}>
-              <span
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 11,
-                  background: u.avatarColor,
-                  color: 'white',
-                  fontSize: 9,
-                  fontWeight: 500,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {u.initials}
-              </span>
-              {u.name}
-              {canManageTasks && (
-                <button
-                  type="button"
-                  className="fad-util-btn"
-                  onClick={() => onUpdateAssignees(task.assigneeIds.filter((id) => id !== u.id))}
-                  title="Remove assignee"
-                  style={{ width: 16, height: 16, padding: 0, fontSize: 11, lineHeight: 1, opacity: 0.6 }}
-                >
-                  ×
-                </button>
-              )}
-            </span>
-          ))}
-          {canManageTasks && (
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => setAssigneePickerOpen((v) => !v)}
-              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14 }}
-            >
-              {assigneePickerOpen ? 'Done' : assignees.length === 0 ? '+ Assign' : '+ Add'}
-            </button>
-          )}
-        </div>
-        {canManageTasks && assigneePickerOpen && (
+      {/* Assignee picker — opened from the meta-grid + Add Assignee
+       * button. The summary (avatars + remove) is rendered in the
+       * meta row above; this picker collapses below it. */}
+      {canManageTasks && assigneePickerOpen && (
+        <Section title="Pick a teammate">
           <div style={{
-            marginTop: 8,
             padding: 8,
             border: '0.5px solid var(--color-border-secondary)',
             borderRadius: 6,
@@ -1018,9 +992,6 @@ function Body({
             maxHeight: 220,
             overflowY: 'auto',
           }}>
-            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-              Pick a teammate
-            </div>
             {staffUsers.length === 0 && (
               <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>No staff loaded yet.</div>
             )}
@@ -1057,12 +1028,15 @@ function Body({
                 </button>
               );
             })}
+            <div style={{ marginTop: 8, textAlign: 'right' }}>
+              <button type="button" className="btn ghost sm" onClick={() => setAssigneePickerOpen(false)}>Done</button>
+            </div>
           </div>
-        )}
-      </CollapsibleSection>
+        </Section>
+      )}
 
       {task.reservationId && (
-        <CollapsibleSection title="Reservation link">
+        <CollapsibleSection title="Reservation link" defaultOpen={false}>
           <ReservationPanel reservationId={task.reservationId} staffMode={role === 'field'} />
         </CollapsibleSection>
       )}
@@ -2420,6 +2394,172 @@ function ReservationPanel({ reservationId, staffMode }: { reservationId: string;
         >
           Open reservation
         </button>
+      )}
+    </div>
+  );
+}
+
+/* TaskDetail UI redesign (T1.15) — Breezeway-style meta grid.
+ *
+ * Surfaces the at-a-glance task metadata in a consistent
+ * LABEL · VALUE · ACTION rhythm directly under the Execution panel.
+ * Each row is its own .ops-meta-row; styling lives in fad.css under
+ * the "TaskDetail UI redesign (T1.15)" CSS block.
+ *
+ * Rows rendered (omitted when value is empty):
+ *   - DATE (Due date + time, falls back to "Not scheduled")
+ *   - PROPERTY (propertyCode + area label)
+ *   - TIME (estimated vs elapsed on task)
+ *   - ASSIGNEES (avatar chips, with × remove + Add)
+ *   - ATTACHMENTS (count + thumbnails placeholder)
+ *   - LINKED RESERVATION (if any)
+ *   - RISK FLAGS (any overdue / blocked / etc — only when present)
+ *
+ * The standalone Assignees + Reservation Link collapsibles that
+ * used to live further down are now redundant — they were replaced
+ * by these inline meta rows. The assignee picker still opens as a
+ * separate section below the grid when Add Assignee is clicked.
+ */
+function TaskMetaGrid({
+  task,
+  assignees,
+  canManageTasks,
+  evidenceQueueLength,
+  elapsedSeconds,
+  onOpenAssigneePicker,
+  onUpdateAssignees,
+}: {
+  task: Task;
+  assignees: Array<{ id: string; name: string; initials: string; avatarColor: string }>;
+  canManageTasks: boolean;
+  evidenceQueueLength: number;
+  elapsedSeconds: number;
+  onOpenAssigneePicker: () => void;
+  onUpdateAssignees: (next: string[]) => void;
+}) {
+  const due = formatDue(task);
+  const propertyLabel = task.propertyCode || 'No property';
+  const propertyArea = compactText(task.sourcePayload?.property?.name ?? null);
+  const estimated = task.estimatedMinutes
+    ? formatDuration(task.estimatedMinutes * 60)
+    : null;
+  const attachmentCount = task.attachmentCount + evidenceQueueLength;
+
+  return (
+    <div className="ops-meta-grid">
+      <div className="ops-meta-row">
+        <span className="ops-meta-label">Date</span>
+        <span className={`ops-meta-value${due === 'Not scheduled' ? ' muted' : ''}`}>{due}</span>
+        <span className="ops-meta-action" />
+      </div>
+
+      <div className="ops-meta-row">
+        <span className="ops-meta-label">Property</span>
+        <span className="ops-meta-value">
+          <span className="chip" style={{ fontSize: 11, padding: '2px 7px' }}>{propertyLabel}</span>
+          {propertyArea && (
+            <span style={{ color: 'var(--color-text-tertiary)', fontSize: 12 }}>{propertyArea}</span>
+          )}
+        </span>
+        <span className="ops-meta-action" />
+      </div>
+
+      <div className="ops-meta-row">
+        <span className="ops-meta-label">Time</span>
+        <span className="ops-meta-value">
+          <span className="ops-timer-pill">{formatDuration(elapsedSeconds)}</span>
+          {estimated && (
+            <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
+              of {estimated} estimated
+            </span>
+          )}
+          {!estimated && (
+            <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
+              No estimate set
+            </span>
+          )}
+        </span>
+        <span className="ops-meta-action" />
+      </div>
+
+      <div className="ops-meta-row">
+        <span className="ops-meta-label">Assignees</span>
+        <span className={`ops-meta-value${assignees.length === 0 ? ' muted' : ''}`}>
+          {assignees.length === 0 && <span>Unassigned</span>}
+          {assignees.map((u) => (
+            <span key={u.id} className="ops-assignee-chip">
+              <span className="avatar" style={{ background: u.avatarColor }}>{u.initials}</span>
+              {u.name}
+              {canManageTasks && (
+                <button
+                  type="button"
+                  className="fad-util-btn"
+                  onClick={() => onUpdateAssignees(task.assigneeIds.filter((id) => id !== u.id))}
+                  title="Remove assignee"
+                  style={{ width: 16, height: 16, padding: 0, fontSize: 11, lineHeight: 1, opacity: 0.6 }}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+        </span>
+        <span className="ops-meta-action">
+          {canManageTasks && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={onOpenAssigneePicker}
+              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14 }}
+            >
+              {assignees.length === 0 ? '+ Assign' : '+ Add'}
+            </button>
+          )}
+        </span>
+      </div>
+
+      <div className="ops-meta-row">
+        <span className="ops-meta-label">Attachments</span>
+        <span className={`ops-meta-value${attachmentCount === 0 ? ' muted' : ''}`}>
+          {attachmentCount === 0
+            ? <span>No attachments yet</span>
+            : <span>{attachmentCount} attached</span>}
+        </span>
+        <span className="ops-meta-action" />
+      </div>
+
+      {task.reservationId && (
+        <div className="ops-meta-row">
+          <span className="ops-meta-label">Reservation</span>
+          <span className="ops-meta-value">
+            <span className="mono" style={{ fontSize: 12 }}>{String(task.reservationId).slice(0, 8)}…</span>
+          </span>
+          <span className="ops-meta-action" />
+        </div>
+      )}
+
+      {task.tags && task.tags.length > 0 && (
+        <div className="ops-meta-row">
+          <span className="ops-meta-label">Tags</span>
+          <span className="ops-meta-value">
+            {task.tags.map((t) => (
+              <span key={t} className="chip" style={{ fontSize: 11, padding: '2px 7px' }}>{t}</span>
+            ))}
+          </span>
+          <span className="ops-meta-action" />
+        </div>
+      )}
+
+      {task.riskFlags && task.riskFlags.length > 0 && (
+        <div className="ops-meta-row">
+          <span className="ops-meta-label">Risk</span>
+          <span className="ops-meta-value">
+            {task.riskFlags.map((rf) => (
+              <RiskFlagBadge key={rf} flag={rf} label={RISK_LABEL[rf]} />
+            ))}
+          </span>
+          <span className="ops-meta-action" />
+        </div>
       )}
     </div>
   );
