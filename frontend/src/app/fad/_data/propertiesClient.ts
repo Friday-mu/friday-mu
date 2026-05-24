@@ -364,6 +364,31 @@ export async function loadPropertyCards(propertyIdOrGuestyId: string): Promise<P
   return res.cards || [];
 }
 
+/** SWR-style hook for a property's Cards. Returns [] until the fetch returns
+ *  so the caller can fall back to fixture defaults during the initial render.
+ *  Errors surface on `error` but don't throw — the OperationalTab degrades to
+ *  fixtures gracefully when the backend is unavailable. */
+export function usePropertyCards(propertyIdOrGuestyId: string | undefined): {
+  cards: PropertyCardRecord[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
+  const [cards, setCards] = useState<PropertyCardRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const refetch = useCallback(() => {
+    if (!propertyIdOrGuestyId) { setLoading(false); return; }
+    setLoading(true);
+    loadPropertyCards(propertyIdOrGuestyId)
+      .then((r) => { setCards(r); setError(null); })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load cards'))
+      .finally(() => setLoading(false));
+  }, [propertyIdOrGuestyId]);
+  useEffect(() => { refetch(); }, [refetch]);
+  return { cards, loading, error, refetch };
+}
+
 export async function createPropertyCard(propertyIdOrGuestyId: string, input: {
   category: string;
   title: string;

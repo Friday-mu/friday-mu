@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   PROPERTY_BY_CODE,
   PROPERTY_BY_ID,
@@ -16,11 +16,14 @@ import {
   type Property,
   type PropertyCard,
   type PropertyCardCategory,
+  type CardSurface,
+  type CardSource,
 } from '../../../_data/properties';
 import { COHORT_LABEL } from '../../../_data/reviews';
 import { FIN_OWNERS } from '../../../_data/finance';
 import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
+import { usePropertyCards } from '../../../_data/propertiesClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
 import { useCurrentRole } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
@@ -422,12 +425,45 @@ function OperationalTab({ property, role }: { property: Property; role: string }
   const [, setRev] = useState(0);
   const bump = () => setRev((n) => n + 1);
   const [importOpen, setImportOpen] = useState(false);
-  const cards = useMemo(() => cardsForProperty(property.id, { includeGlobal: true }), [property.id]);
+  // Pull real Property Cards from the backend (mig 077 + 2026-05-24 wiring).
+  // Falls back to fixture-only cards in demo mode or when the backend errors
+  // — keeps the UI useful in both contexts.
+  const { cards: liveCardRecords, loading: cardsLoading, refetch: refetchCards } = usePropertyCards(property.id);
+  const liveCards = useMemo<PropertyCard[]>(
+    () => liveCardRecords.map((r) => ({
+      id: r.id,
+      propertyId: (r.property_id || 'global') as string | 'global',
+      category: r.category as PropertyCardCategory,
+      title: r.title,
+      body: r.body,
+      surface: r.surface as CardSurface,
+      source: r.source as CardSource,
+      aiExtractionMetadata: r.ai_thread_id && r.ai_confidence != null
+        ? { threadId: r.ai_thread_id, confidence: r.ai_confidence }
+        : undefined,
+      lastUpdated: r.updated_at,
+      lastUpdatedByUserId: r.last_updated_by_user_id ?? '',
+    })),
+    [liveCardRecords],
+  );
+  const fixtureCards = useMemo(() => cardsForProperty(property.id, { includeGlobal: true }), [property.id]);
+  // Live data wins; only fall back to fixtures when liveOnlyMode is off AND
+  // backend returned no cards (avoids showing demo cards in prod-FR alongside
+  // empty real state).
+  const cards = liveCards.length > 0
+    ? liveCards
+    : (!liveOnlyMode() ? fixtureCards : []);
   const cardsByCategory = useMemo(() => {
     const map: Partial<Record<PropertyCardCategory, PropertyCard[]>> = {};
     cards.forEach((c) => { (map[c.category] = map[c.category] ?? []).push(c); });
     return map;
   }, [cards]);
+  // Refetch when the import drawer closes (a newly-imported card should appear).
+  const wasImportOpen = useRef(importOpen);
+  useEffect(() => {
+    if (wasImportOpen.current && !importOpen) refetchCards();
+    wasImportOpen.current = importOpen;
+  }, [importOpen, refetchCards]);
 
   const isFieldRole = role === 'field';
   // Time-gated access codes: if Field, would only show on day-of-task-at-property in real product.
