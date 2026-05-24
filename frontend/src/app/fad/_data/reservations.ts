@@ -94,6 +94,20 @@ export interface Reservation {
   createdAt?: string;
   /** "Extension of [linked reservation]" — source reservation ID for BDC extensions per scoping pack §8. */
   extensionOf?: string;
+  /**
+   * Guesty money breakdown (from mig 085 + financials.js inference). All
+   * values in major units, same currency as `currency`. Populated only when
+   * sourced from the live API — fixture rows leave it undefined and the
+   * tabs fall back to channel-fee heuristics.
+   */
+  moneyBreakdown?: {
+    subTotal?: number;
+    roomRevenue?: number;
+    cleaningFee?: number;
+    taxes?: number;
+    hostPayout?: number;
+    hostServiceFee?: number;
+  };
 }
 
 export const RESERVATIONS: Reservation[] = [

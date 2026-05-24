@@ -116,6 +116,18 @@ function shapeMergedReservation(row) {
     outstanding_balance: financials.balanceDue,
     payment_status: financials.paymentStatus ? String(financials.paymentStatus) : null,
     currency_code: financials.currency || row.currency_code,
+    // Guesty money breakdown (mig 085 + financials.js extraction). All
+    // major-unit numbers; null when Guesty doesn't expose that path.
+    // FolioTab + AccountingTab consume these to replace channel-fee
+    // heuristics with truthful per-reservation numbers.
+    money_breakdown: {
+      sub_total: financials.subTotal,
+      room_revenue: financials.roomRevenue,
+      cleaning_fee: financials.cleaningFee,
+      taxes: financials.taxes,
+      host_payout: financials.hostPayout,
+      host_service_fee: financials.hostServiceFee,
+    },
     // FAD-native overlay fields
     cleaning_arrangement: o?.cleaning_arrangement || null,
     special_requests: {
@@ -782,6 +794,230 @@ router.post('/:id/cancel', attachIdentity, async (req, res) => {
     res.json({ ok: true, reservation: rows[0] });
   } catch (e) {
     console.error('[reservations] cancel error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// Folio lines — custom guest-facing/internal line items overlaid on
+// the Guesty money breakdown. Migration 089 created the storage.
+// ────────────────────────────────────────────────────────────────
+
+const FOLIO_KINDS = new Set([
+  'accommodation', 'cleaning_fee', 'tourist_tax', 'extra',
+  'discount', 'channel_fee', 'manual_adjustment',
+]);
+const SUPPORTED_CURRENCIES = new Set(['MUR', 'EUR', 'USD']);
+const PAYMENT_METHODS = new Set([
+  'channel_payout', 'bank_transfer', 'card', 'cash', 'manual_adjustment',
+]);
+const PAYMENT_STATUSES = new Set(['pending', 'received', 'refunded']);
+
+function shapeFolioLine(row) {
+  return {
+    id: row.id,
+    reservation_id: row.reservation_id,
+    kind: row.kind,
+    label: row.label,
+    amount_minor: Number(row.amount_minor),
+    currency: row.currency,
+    guest_facing: row.guest_facing,
+    notes: row.notes,
+    added_by_user_id: row.added_by_user_id,
+    added_at: row.added_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function shapePayment(row) {
+  return {
+    id: row.id,
+    reservation_id: row.reservation_id,
+    ts: row.ts,
+    amount_minor: Number(row.amount_minor),
+    currency: row.currency,
+    method: row.method,
+    status: row.status,
+    reference: row.reference,
+    notes: row.notes,
+    source: row.source,
+    external_id: row.external_id,
+    recorded_by_user_id: row.recorded_by_user_id,
+    created_at: row.created_at,
+  };
+}
+
+router.get('/:id/folio', attachIdentity, async (req, res) => {
+  try {
+    const resolved = await resolveReservationId(req.tenantId, req.params.id);
+    if (!resolved) return res.status(404).json({ error: 'Reservation not found' });
+    const { rows } = await query(
+      `SELECT id, reservation_id, kind, label, amount_minor, currency,
+              guest_facing, notes, added_by_user_id, added_at, updated_at
+         FROM fad_reservation_folio_lines
+        WHERE tenant_id = $1 AND reservation_id = $2
+        ORDER BY added_at ASC`,
+      [req.tenantId, resolved.reservationId],
+    );
+    res.json({ lines: rows.map(shapeFolioLine) });
+  } catch (e) {
+    console.error('[reservations] folio list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:id/folio', attachIdentity, async (req, res) => {
+  try {
+    const resolved = await resolveReservationId(req.tenantId, req.params.id);
+    if (!resolved) return res.status(404).json({ error: 'Reservation not found' });
+    const b = req.body || {};
+    const kind = typeof b.kind === 'string' ? b.kind : null;
+    const label = typeof b.label === 'string' ? b.label.trim() : '';
+    const amountMinor = Number.isFinite(Number(b.amount_minor)) ? Math.round(Number(b.amount_minor)) : null;
+    const currency = typeof b.currency === 'string' ? b.currency.toUpperCase() : null;
+    const guestFacing = b.guest_facing !== false;
+    const notes = typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim() : null;
+    if (!kind || !FOLIO_KINDS.has(kind)) return res.status(400).json({ error: 'invalid kind' });
+    if (!label) return res.status(400).json({ error: 'label required' });
+    if (amountMinor == null) return res.status(400).json({ error: 'amount_minor required (integer)' });
+    if (!currency || !SUPPORTED_CURRENCIES.has(currency)) return res.status(400).json({ error: 'invalid currency' });
+    const { rows } = await query(
+      `INSERT INTO fad_reservation_folio_lines
+         (tenant_id, reservation_id, kind, label, amount_minor, currency,
+          guest_facing, notes, added_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, reservation_id, kind, label, amount_minor, currency,
+                 guest_facing, notes, added_by_user_id, added_at, updated_at`,
+      [
+        req.tenantId, resolved.reservationId, kind, label, amountMinor,
+        currency, guestFacing, notes, req.identity?.userId || null,
+      ],
+    );
+    res.status(201).json(shapeFolioLine(rows[0]));
+  } catch (e) {
+    console.error('[reservations] folio add error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/:id/folio/:lineId', attachIdentity, async (req, res) => {
+  try {
+    const resolved = await resolveReservationId(req.tenantId, req.params.id);
+    if (!resolved) return res.status(404).json({ error: 'Reservation not found' });
+    const b = req.body || {};
+    const sets = [];
+    const params = [req.tenantId, resolved.reservationId, req.params.lineId];
+    let i = 4;
+    if (typeof b.label === 'string') {
+      const label = b.label.trim();
+      if (!label) return res.status(400).json({ error: 'label cannot be empty' });
+      sets.push(`label = $${i++}`); params.push(label);
+    }
+    if (b.amount_minor !== undefined) {
+      const n = Number(b.amount_minor);
+      if (!Number.isFinite(n)) return res.status(400).json({ error: 'amount_minor must be a number' });
+      sets.push(`amount_minor = $${i++}`); params.push(Math.round(n));
+    }
+    if (b.notes !== undefined) {
+      const notes = typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim() : null;
+      sets.push(`notes = $${i++}`); params.push(notes);
+    }
+    if (b.guest_facing !== undefined) {
+      sets.push(`guest_facing = $${i++}`); params.push(!!b.guest_facing);
+    }
+    if (sets.length === 0) return res.status(400).json({ error: 'no fields to update' });
+    const { rows } = await query(
+      `UPDATE fad_reservation_folio_lines
+          SET ${sets.join(', ')}
+        WHERE tenant_id = $1 AND reservation_id = $2 AND id = $3
+        RETURNING id, reservation_id, kind, label, amount_minor, currency,
+                  guest_facing, notes, added_by_user_id, added_at, updated_at`,
+      params,
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'folio line not found' });
+    res.json(shapeFolioLine(rows[0]));
+  } catch (e) {
+    console.error('[reservations] folio patch error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/:id/folio/:lineId', attachIdentity, async (req, res) => {
+  try {
+    const resolved = await resolveReservationId(req.tenantId, req.params.id);
+    if (!resolved) return res.status(404).json({ error: 'Reservation not found' });
+    const { rowCount } = await query(
+      `DELETE FROM fad_reservation_folio_lines
+        WHERE tenant_id = $1 AND reservation_id = $2 AND id = $3`,
+      [req.tenantId, resolved.reservationId, req.params.lineId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'folio line not found' });
+    res.status(204).end();
+  } catch (e) {
+    console.error('[reservations] folio delete error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// Payments — manually-recorded payments overlay. Channel payouts
+// flow through Guesty's payments[]; we merge both sources on read.
+// ────────────────────────────────────────────────────────────────
+
+router.get('/:id/payments', attachIdentity, async (req, res) => {
+  try {
+    const resolved = await resolveReservationId(req.tenantId, req.params.id);
+    if (!resolved) return res.status(404).json({ error: 'Reservation not found' });
+    const { rows } = await query(
+      `SELECT id, reservation_id, ts, amount_minor, currency, method,
+              status, reference, notes, source, external_id,
+              recorded_by_user_id, created_at
+         FROM fad_reservation_payments
+        WHERE tenant_id = $1 AND reservation_id = $2
+        ORDER BY ts DESC`,
+      [req.tenantId, resolved.reservationId],
+    );
+    res.json({ payments: rows.map(shapePayment) });
+  } catch (e) {
+    console.error('[reservations] payments list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:id/payments', attachIdentity, async (req, res) => {
+  try {
+    const resolved = await resolveReservationId(req.tenantId, req.params.id);
+    if (!resolved) return res.status(404).json({ error: 'Reservation not found' });
+    const b = req.body || {};
+    const amountMinor = Number.isFinite(Number(b.amount_minor)) ? Math.round(Number(b.amount_minor)) : null;
+    const currency = typeof b.currency === 'string' ? b.currency.toUpperCase() : null;
+    const method = typeof b.method === 'string' ? b.method : null;
+    const status = typeof b.status === 'string' ? b.status : 'received';
+    const reference = typeof b.reference === 'string' && b.reference.trim() ? b.reference.trim() : null;
+    const notes = typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim() : null;
+    const tsRaw = typeof b.ts === 'string' && b.ts ? new Date(b.ts) : new Date();
+    if (amountMinor == null || amountMinor === 0) return res.status(400).json({ error: 'amount_minor required (non-zero integer)' });
+    if (!currency || !SUPPORTED_CURRENCIES.has(currency)) return res.status(400).json({ error: 'invalid currency' });
+    if (!method || !PAYMENT_METHODS.has(method)) return res.status(400).json({ error: 'invalid method' });
+    if (!PAYMENT_STATUSES.has(status)) return res.status(400).json({ error: 'invalid status' });
+    if (Number.isNaN(tsRaw.getTime())) return res.status(400).json({ error: 'invalid ts (use ISO 8601)' });
+    const { rows } = await query(
+      `INSERT INTO fad_reservation_payments
+         (tenant_id, reservation_id, ts, amount_minor, currency, method,
+          status, reference, notes, source, recorded_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'manual', $10)
+       RETURNING id, reservation_id, ts, amount_minor, currency, method,
+                 status, reference, notes, source, external_id,
+                 recorded_by_user_id, created_at`,
+      [
+        req.tenantId, resolved.reservationId, tsRaw.toISOString(),
+        amountMinor, currency, method, status, reference, notes,
+        req.identity?.userId || null,
+      ],
+    );
+    res.status(201).json(shapePayment(rows[0]));
+  } catch (e) {
+    console.error('[reservations] payment add error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

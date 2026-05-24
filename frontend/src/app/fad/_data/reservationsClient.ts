@@ -76,6 +76,18 @@ interface RawReservation {
     currency_code?: string | null;
     synced_at?: string | null;
   };
+  // Guesty money breakdown (mig 085 + financials.js extraction). All
+  // major-unit numbers; null when Guesty doesn't expose that path. Used
+  // by FolioTab + AccountingTab to derive accurate per-reservation
+  // numbers instead of channel-fee heuristics.
+  money_breakdown?: {
+    sub_total?: number | null;
+    room_revenue?: number | null;
+    cleaning_fee?: number | null;
+    taxes?: number | null;
+    host_payout?: number | null;
+    host_service_fee?: number | null;
+  };
   synced_at?: string | null;
 }
 
@@ -234,7 +246,21 @@ export function transformReservation(r: RawReservation): Reservation {
       currency: (r.calendar_pricing?.currency_code || r.currency_code || 'EUR') as Reservation['currency'],
       syncedAt: r.calendar_pricing?.synced_at || undefined,
     },
-    touristTax: 0,
+    // touristTax from the Guesty money.totalTaxes path (mig 085). For
+    // Mauritius this is the MRA tourist tax that's pass-through to the
+    // gov't — staff can override via custom folio lines if Guesty's
+    // tax bucket lumps in something else.
+    touristTax: r.money_breakdown?.taxes != null && Number.isFinite(r.money_breakdown.taxes)
+      ? Math.round(r.money_breakdown.taxes)
+      : 0,
+    moneyBreakdown: {
+      subTotal: r.money_breakdown?.sub_total ?? undefined,
+      roomRevenue: r.money_breakdown?.room_revenue ?? undefined,
+      cleaningFee: r.money_breakdown?.cleaning_fee ?? undefined,
+      taxes: r.money_breakdown?.taxes ?? undefined,
+      hostPayout: r.money_breakdown?.host_payout ?? undefined,
+      hostServiceFee: r.money_breakdown?.host_service_fee ?? undefined,
+    },
     balanceDue,
     payoutStatus: balanceDue > 0 ? 'pending' : 'captured',
     currency: (r.currency_code || 'EUR') as Reservation['currency'],
@@ -565,4 +591,156 @@ export function resolutionCenterLabel(channel: ReservationChannel): string {
     case 'owner':
       return 'No external channel';
   }
+}
+
+// ───────────────── Folio lines (T3.10 — mig 089) ─────────────────
+//
+// Custom guest-facing or internal line items overlaid on the
+// Guesty-derived breakdown. Amounts in minor units (cents/centimes).
+
+export type FolioLineKindApi =
+  | 'accommodation'
+  | 'cleaning_fee'
+  | 'tourist_tax'
+  | 'extra'
+  | 'discount'
+  | 'channel_fee'
+  | 'manual_adjustment';
+
+export interface FolioLineRecord {
+  id: string;
+  reservation_id: string;
+  kind: FolioLineKindApi;
+  label: string;
+  amount_minor: number;
+  currency: 'MUR' | 'EUR' | 'USD';
+  guest_facing: boolean;
+  notes: string | null;
+  added_by_user_id: string | null;
+  added_at: string;
+  updated_at: string;
+}
+
+export interface AddFolioLineInput {
+  kind: FolioLineKindApi;
+  label: string;
+  amountMinor: number;
+  currency: 'MUR' | 'EUR' | 'USD';
+  guestFacing?: boolean;
+  notes?: string;
+}
+
+export interface UpdateFolioLineInput {
+  label?: string;
+  amountMinor?: number;
+  notes?: string | null;
+  guestFacing?: boolean;
+}
+
+export async function loadFolioLines(reservationIdOrGuestyId: string): Promise<FolioLineRecord[]> {
+  const res = await apiFetch(`/api/reservations/${encodeURIComponent(reservationIdOrGuestyId)}/folio`) as { lines?: FolioLineRecord[] };
+  return res.lines || [];
+}
+
+export async function addFolioLineApi(
+  reservationIdOrGuestyId: string,
+  input: AddFolioLineInput,
+): Promise<FolioLineRecord> {
+  return await apiFetch(`/api/reservations/${encodeURIComponent(reservationIdOrGuestyId)}/folio`, {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: input.kind,
+      label: input.label,
+      amount_minor: input.amountMinor,
+      currency: input.currency,
+      guest_facing: input.guestFacing !== false,
+      notes: input.notes || null,
+    }),
+  }) as FolioLineRecord;
+}
+
+export async function updateFolioLineApi(
+  reservationIdOrGuestyId: string,
+  lineId: string,
+  patch: UpdateFolioLineInput,
+): Promise<FolioLineRecord> {
+  const body: Record<string, unknown> = {};
+  if (patch.label !== undefined) body.label = patch.label;
+  if (patch.amountMinor !== undefined) body.amount_minor = patch.amountMinor;
+  if (patch.notes !== undefined) body.notes = patch.notes;
+  if (patch.guestFacing !== undefined) body.guest_facing = patch.guestFacing;
+  return await apiFetch(
+    `/api/reservations/${encodeURIComponent(reservationIdOrGuestyId)}/folio/${encodeURIComponent(lineId)}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  ) as FolioLineRecord;
+}
+
+export async function deleteFolioLineApi(
+  reservationIdOrGuestyId: string,
+  lineId: string,
+): Promise<void> {
+  await apiFetch(
+    `/api/reservations/${encodeURIComponent(reservationIdOrGuestyId)}/folio/${encodeURIComponent(lineId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+// ───────────────── Payments (T3.10 — mig 089) ─────────────────
+
+export type PaymentMethodApi =
+  | 'channel_payout'
+  | 'bank_transfer'
+  | 'card'
+  | 'cash'
+  | 'manual_adjustment';
+
+export type PaymentStatusApi = 'pending' | 'received' | 'refunded';
+
+export interface PaymentRecord {
+  id: string;
+  reservation_id: string;
+  ts: string;
+  amount_minor: number;
+  currency: 'MUR' | 'EUR' | 'USD';
+  method: PaymentMethodApi;
+  status: PaymentStatusApi;
+  reference: string | null;
+  notes: string | null;
+  source: 'manual' | 'guesty' | 'channel';
+  external_id: string | null;
+  recorded_by_user_id: string | null;
+  created_at: string;
+}
+
+export interface RecordPaymentInput {
+  amountMinor: number;
+  currency: 'MUR' | 'EUR' | 'USD';
+  method: PaymentMethodApi;
+  status?: PaymentStatusApi;
+  reference?: string;
+  notes?: string;
+  ts?: string;
+}
+
+export async function loadPayments(reservationIdOrGuestyId: string): Promise<PaymentRecord[]> {
+  const res = await apiFetch(`/api/reservations/${encodeURIComponent(reservationIdOrGuestyId)}/payments`) as { payments?: PaymentRecord[] };
+  return res.payments || [];
+}
+
+export async function recordPaymentApi(
+  reservationIdOrGuestyId: string,
+  input: RecordPaymentInput,
+): Promise<PaymentRecord> {
+  return await apiFetch(`/api/reservations/${encodeURIComponent(reservationIdOrGuestyId)}/payments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      amount_minor: input.amountMinor,
+      currency: input.currency,
+      method: input.method,
+      status: input.status || 'received',
+      reference: input.reference || null,
+      notes: input.notes || null,
+      ts: input.ts,
+    }),
+  }) as PaymentRecord;
 }

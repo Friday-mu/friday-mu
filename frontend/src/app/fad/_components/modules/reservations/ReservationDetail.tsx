@@ -17,16 +17,9 @@ import {
   formatStayWindow,
   notesForReservation,
   activityForReservation,
-  paymentsForReservation,
-  recordManualPayment,
-  folioLinesForReservation,
-  addFolioLine,
-  updateFolioLine,
-  removeFolioLine,
   type Reservation,
   type ReservationActivity,
   type PaymentMethod,
-  type FolioLine,
   type FolioLineKind,
 } from '../../../_data/reservations';
 import {
@@ -35,7 +28,16 @@ import {
   resolutionCenterUrl,
   resolutionCenterLabel,
   loadReservationActivity,
+  loadFolioLines,
+  addFolioLineApi,
+  updateFolioLineApi,
+  deleteFolioLineApi,
+  loadPayments,
+  recordPaymentApi,
   type ReservationActivityRecord,
+  type FolioLineRecord,
+  type PaymentRecord,
+  type PaymentMethodApi,
 } from '../../../_data/reservationsClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
 import { INBOX_THREADS } from '../../../_data/fixtures';
@@ -990,34 +992,78 @@ function OperationsTab({ r }: { r: Reservation }) {
 }
 
 function FolioTab({ r, access }: { r: Reservation; access: FinancialAccess }) {
-  const currentUserId = useCurrentUserId();
-  const [, setRev] = useState(0);
-  const bumpRev = () => setRev((n) => n + 1);
+  const [customLines, setCustomLines] = useState<FolioLineRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  // Fixture is mutable (add/edit/remove) — read fresh on every render
-  // rather than memoising. Cost is trivial (small filter); memoising required
-  // a `rev` dep that was easy to forget.
-  const customLines = folioLinesForReservation(r.id);
+
+  // T3.10 — folio lines persisted in fad_reservation_folio_lines
+  // (mig 089). Lookup by reservation id OR guesty id (resolved server-side).
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    loadFolioLines(r.id)
+      .then((lines) => {
+        if (cancelled) return;
+        setCustomLines(lines);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err?.message || 'Failed to load folio');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [r.id]);
 
   if (access === 'none') return null;
 
-  // Phase 1: derive default line items if no custom ones exist. Custom lines override the derived view.
-  const accommodationFare = Math.max(0, r.totalAmount - r.touristTax);
-  const channelFeeRate = r.channel === 'direct' || r.channel === 'email' || r.channel === 'owner' ? 0 : r.channel === 'booking' ? 0.15 : 0.18;
-  const channelFee = Math.round(accommodationFare * channelFeeRate);
-  const ownerSplit = Math.round((accommodationFare - channelFee) * 0.7);
-  const fridayMargin = (accommodationFare - channelFee) - ownerSplit;
+  // Prefer the live Guesty money breakdown (mig 085) over channel-fee
+  // heuristics. Falls back to the old derivation when the API hasn't
+  // surfaced a breakdown yet (older synced rows or manual reservations).
+  const mb = r.moneyBreakdown;
+  const hasBreakdown = mb && (mb.subTotal != null || mb.roomRevenue != null);
+  const cleaningFee = hasBreakdown && mb!.cleaningFee != null ? Math.round(mb!.cleaningFee) : 0;
+  const taxes = hasBreakdown && mb!.taxes != null ? Math.round(mb!.taxes) : r.touristTax;
+  const roomRevenue = hasBreakdown && mb!.roomRevenue != null
+    ? Math.round(mb!.roomRevenue)
+    : Math.max(0, r.totalAmount - cleaningFee - taxes);
+  const channelFee = hasBreakdown && mb!.hostServiceFee != null
+    ? Math.round(mb!.hostServiceFee)
+    : (() => {
+        // Fallback heuristic when Guesty doesn't expose hostServiceFee
+        const rate = r.channel === 'direct' || r.channel === 'email' || r.channel === 'owner'
+          ? 0 : r.channel === 'booking' ? 0.15 : 0.18;
+        return Math.round((r.totalAmount - taxes) * rate);
+      })();
+  // hostPayout = gross - channel fee - taxes (per Guesty's own definition).
+  // Friday and owner split the net 70/30 (per scoping pack). Use the
+  // breakdown when available, else derive.
+  const netForSplit = hasBreakdown && mb!.hostPayout != null
+    ? Math.round(mb!.hostPayout - cleaningFee) // cleaning is owner pass-through in our model
+    : Math.max(0, r.totalAmount - channelFee - taxes - cleaningFee);
+  const ownerSplit = Math.round(netForSplit * 0.7);
+  const fridayMargin = netForSplit - ownerSplit;
 
-  const guestFacingLines = customLines.filter((l) => l.guestFacing);
-  const guestFacingExtraTotal = guestFacingLines.reduce((sum, l) => sum + l.amount, 0);
+  const guestFacingLines = customLines.filter((l) => l.guest_facing);
+  const guestFacingExtraTotal = guestFacingLines.reduce(
+    (sum, l) => sum + l.amount_minor / 100,
+    0,
+  );
   const adjustedTotal = r.totalAmount + guestFacingExtraTotal;
+
+  const handleLineMutated = (updater: (prev: FolioLineRecord[]) => FolioLineRecord[]) => {
+    setCustomLines(updater);
+  };
 
   return (
     <>
       <div className="task-detail-section">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <h5 style={{ margin: 0 }}>Folio · guest-facing</h5>
-          {!addOpen && (
+          {!addOpen && !loading && (
             <button
               className="btn ghost sm"
               onClick={() => setAddOpen(true)}
@@ -1027,19 +1073,39 @@ function FolioTab({ r, access }: { r: Reservation; access: FinancialAccess }) {
             </button>
           )}
         </div>
-        <Row label="Accommodation fare" value={formatMoney(accommodationFare, r.currency)} />
-        <Row label="Tourist tax (MRA)" value={formatMoney(r.touristTax, r.currency)} muted />
-        {guestFacingLines.map((l) => (
-          <FolioLineRow key={l.id} line={l} onMutated={bumpRev} />
+        <Row label="Room rent" value={formatMoney(roomRevenue, r.currency)} />
+        {cleaningFee > 0 && (
+          <Row label="Cleaning fee" value={formatMoney(cleaningFee, r.currency)} muted />
+        )}
+        <Row label="Tourist tax (MRA)" value={formatMoney(taxes, r.currency)} muted />
+        {loading && (
+          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', padding: '6px 0' }}>
+            Loading custom lines…
+          </div>
+        )}
+        {loadError && (
+          <div style={{ fontSize: 11, color: 'var(--color-text-danger)', padding: '6px 0' }}>
+            Couldn&apos;t load custom folio lines · {loadError}
+          </div>
+        )}
+        {!loading && !loadError && guestFacingLines.map((l) => (
+          <FolioLineRow
+            key={l.id}
+            line={l}
+            reservationId={r.id}
+            onUpdated={(updated) => handleLineMutated((prev) =>
+              prev.map((p) => p.id === updated.id ? updated : p))}
+            onRemoved={() => handleLineMutated((prev) =>
+              prev.filter((p) => p.id !== l.id))}
+          />
         ))}
         {addOpen && (
           <FolioAddForm
             reservationId={r.id}
             currency={r.currency}
-            currentUserId={currentUserId}
-            onAdded={() => {
+            onAdded={(line) => {
               setAddOpen(false);
-              bumpRev();
+              handleLineMutated((prev) => [...prev, line]);
             }}
             onCancel={() => setAddOpen(false)}
           />
@@ -1054,11 +1120,17 @@ function FolioTab({ r, access }: { r: Reservation; access: FinancialAccess }) {
       {access === 'full' && (
         <div className="task-detail-section">
           <h5>Owner split · admin only</h5>
-          <Row label="Channel fee (est.)" value={`− ${formatMoney(channelFee, r.currency)}`} muted />
+          <Row
+            label={hasBreakdown ? 'Channel fee (Guesty)' : 'Channel fee (est.)'}
+            value={`− ${formatMoney(channelFee, r.currency)}`}
+            muted
+          />
           <Row label="Net to owner (70%)" value={formatMoney(ownerSplit, r.currency)} />
           <Row label="Friday margin (30%)" value={formatMoney(fridayMargin, r.currency)} bold borderTop />
           <div style={{ marginTop: 12, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            Phase 1: derived from totals + manual adjustments. Phase 2 reads real Folio breakdown from Finance.
+            {hasBreakdown
+              ? 'Channel fee from Guesty money.hostServiceFee · 70/30 split per scoping pack §6.'
+              : 'Phase 1 fallback: derived from totals + per-channel heuristic. Reservation lacks Guesty money breakdown.'}
           </div>
         </div>
       )}
@@ -1071,23 +1143,56 @@ function FolioTab({ r, access }: { r: Reservation; access: FinancialAccess }) {
   );
 }
 
-function FolioLineRow({ line, onMutated }: { line: FolioLine; onMutated: () => void }) {
+function FolioLineRow({
+  line,
+  reservationId,
+  onUpdated,
+  onRemoved,
+}: {
+  line: FolioLineRecord;
+  reservationId: string;
+  onUpdated: (updated: FolioLineRecord) => void;
+  onRemoved: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [draftLabel, setDraftLabel] = useState(line.label);
-  const [draftAmount, setDraftAmount] = useState(line.amount);
+  // Track the amount in major units in the UI; convert to minor on save.
+  const [draftAmount, setDraftAmount] = useState(line.amount_minor / 100);
+  const [busy, setBusy] = useState(false);
 
-  const save = () => {
-    updateFolioLine(line.id, { label: draftLabel.trim() || line.label, amount: draftAmount });
-    setEditing(false);
-    fireToast('Folio line updated');
-    onMutated();
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const updated = await updateFolioLineApi(reservationId, line.id, {
+        label: draftLabel.trim() || line.label,
+        amountMinor: Math.round(draftAmount * 100),
+      });
+      onUpdated(updated);
+      setEditing(false);
+      fireToast('Folio line updated');
+    } catch (err) {
+      fireToast('Failed to update · ' + ((err as Error)?.message || 'unknown'));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const remove = () => {
-    removeFolioLine(line.id);
-    fireToast('Folio line removed');
-    onMutated();
+  const remove = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await deleteFolioLineApi(reservationId, line.id);
+      onRemoved();
+      fireToast('Folio line removed');
+    } catch (err) {
+      fireToast('Failed to remove · ' + ((err as Error)?.message || 'unknown'));
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const amountMajor = line.amount_minor / 100;
 
   if (editing) {
     return (
@@ -1109,11 +1214,13 @@ function FolioLineRow({ line, onMutated }: { line: FolioLine; onMutated: () => v
         <input
           type="number"
           value={draftAmount}
-          onChange={(e) => setDraftAmount(parseInt(e.target.value || '0', 10))}
+          onChange={(e) => setDraftAmount(parseFloat(e.target.value || '0'))}
           style={{ ...inputStyle, textAlign: 'right' }}
         />
-        <button className="btn primary sm" onClick={save}>Save</button>
-        <button className="btn ghost sm" onClick={() => setEditing(false)}>Cancel</button>
+        <button className="btn primary sm" onClick={save} disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button className="btn ghost sm" onClick={() => setEditing(false)} disabled={busy}>Cancel</button>
       </div>
     );
   }
@@ -1123,27 +1230,28 @@ function FolioLineRow({ line, onMutated }: { line: FolioLine; onMutated: () => v
       <span style={{ flex: 1, fontSize: 13 }}>
         {line.label}
         <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 6 }}>
-          {FOLIO_LINE_KIND_LABEL[line.kind]}
+          {FOLIO_LINE_KIND_LABEL[line.kind as FolioLineKind]}
         </span>
       </span>
       <span
         className="mono"
         style={{
           fontSize: 13,
-          color: line.amount < 0 ? 'var(--color-text-success)' : undefined,
+          color: amountMajor < 0 ? 'var(--color-text-success)' : undefined,
         }}
       >
-        {line.amount < 0 ? '−' : '+'}
-        {formatMoney(Math.abs(line.amount), line.currency)}
+        {amountMajor < 0 ? '−' : '+'}
+        {formatMoney(Math.abs(amountMajor), line.currency)}
       </span>
       <button
         className="btn ghost sm"
         style={{ padding: '2px 8px', fontSize: 11 }}
         onClick={() => {
           setDraftLabel(line.label);
-          setDraftAmount(line.amount);
+          setDraftAmount(amountMajor);
           setEditing(true);
         }}
+        disabled={busy}
       >
         Edit
       </button>
@@ -1151,6 +1259,7 @@ function FolioLineRow({ line, onMutated }: { line: FolioLine; onMutated: () => v
         className="btn ghost sm"
         style={{ padding: '2px 8px', fontSize: 11, color: 'var(--color-text-danger)' }}
         onClick={remove}
+        disabled={busy}
       >
         Remove
       </button>
@@ -1161,38 +1270,47 @@ function FolioLineRow({ line, onMutated }: { line: FolioLine; onMutated: () => v
 function FolioAddForm({
   reservationId,
   currency,
-  currentUserId,
   onAdded,
   onCancel,
 }: {
   reservationId: string;
   currency: 'MUR' | 'EUR' | 'USD';
-  currentUserId: string;
-  onAdded: () => void;
+  onAdded: (line: FolioLineRecord) => void;
   onCancel: () => void;
 }) {
   const [kind, setKind] = useState<FolioLineKind>('extra');
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState(0);
   const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
+    if (busy) return;
     if (!label.trim()) {
       fireToast('Label required');
       return;
     }
-    addFolioLine({
-      reservationId,
-      kind,
-      label: label.trim(),
-      amount,
-      currency,
-      guestFacing: true,
-      addedByUserId: currentUserId,
-      notes: notes.trim() || undefined,
-    });
-    fireToast(`Folio line added · ${formatMoney(Math.abs(amount), currency)}`);
-    onAdded();
+    if (!Number.isFinite(amount) || amount === 0) {
+      fireToast('Enter a non-zero amount');
+      return;
+    }
+    setBusy(true);
+    try {
+      const line = await addFolioLineApi(reservationId, {
+        kind,
+        label: label.trim(),
+        amountMinor: Math.round(amount * 100),
+        currency,
+        guestFacing: true,
+        notes: notes.trim() || undefined,
+      });
+      fireToast(`Folio line added · ${formatMoney(Math.abs(amount), currency)}`);
+      onAdded(line);
+    } catch (err) {
+      fireToast('Failed to add · ' + ((err as Error)?.message || 'unknown'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -1215,7 +1333,7 @@ function FolioAddForm({
         <input
           type="number"
           value={amount}
-          onChange={(e) => setAmount(parseInt(e.target.value || '0', 10))}
+          onChange={(e) => setAmount(parseFloat(e.target.value || '0'))}
           placeholder="Amount (negative for discount)"
           style={inputStyle}
         />
@@ -1235,21 +1353,35 @@ function FolioAddForm({
         style={inputStyle}
       />
       <div style={{ marginTop: 6, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button className="btn ghost sm" onClick={onCancel}>Cancel</button>
-        <button className="btn primary sm" onClick={handleAdd}>Add line</button>
+        <button className="btn ghost sm" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button className="btn primary sm" onClick={handleAdd} disabled={busy}>
+          {busy ? 'Saving…' : 'Add line'}
+        </button>
       </div>
     </div>
   );
 }
 
 function AccountingTab({ r }: { r: Reservation }) {
-  // Phase 1: derive a sketch of GL entries from reservation totals + status.
-  // Phase 2: Finance schema exposes reservation-keyed reads from Owners ledger / AP / Cash / Advanced deposit.
-  const accommodationFare = Math.max(0, r.totalAmount - r.touristTax);
-  const channelFeeRate = r.channel === 'direct' || r.channel === 'email' || r.channel === 'owner' ? 0 : r.channel === 'booking' ? 0.15 : 0.18;
-  const channelFee = Math.round(accommodationFare * channelFeeRate);
-  const ownerSplit = Math.round((accommodationFare - channelFee) * 0.7);
-  const fridayMargin = (accommodationFare - channelFee) - ownerSplit;
+  // T3.10 — derive a sketch of GL entries from reservation totals + status,
+  // preferring the Guesty money breakdown (mig 085) over channel-fee
+  // heuristics. Finance Phase 3 will replace this with real reads from
+  // Owners ledger / AP / Cash / Advanced deposit.
+  const mb = r.moneyBreakdown;
+  const hasBreakdown = mb && (mb.subTotal != null || mb.roomRevenue != null);
+
+  const cleaningFee = hasBreakdown && mb!.cleaningFee != null ? Math.round(mb!.cleaningFee) : 0;
+  const taxes = hasBreakdown && mb!.taxes != null ? Math.round(mb!.taxes) : r.touristTax;
+  const channelFeeRate = r.channel === 'direct' || r.channel === 'email' || r.channel === 'owner'
+    ? 0 : r.channel === 'booking' ? 0.15 : 0.18;
+  const channelFee = hasBreakdown && mb!.hostServiceFee != null
+    ? Math.round(mb!.hostServiceFee)
+    : Math.round((r.totalAmount - taxes) * channelFeeRate);
+  const netForSplit = hasBreakdown && mb!.hostPayout != null
+    ? Math.round(mb!.hostPayout - cleaningFee)
+    : Math.max(0, r.totalAmount - channelFee - taxes - cleaningFee);
+  const ownerSplit = Math.round(netForSplit * 0.7);
+  const fridayMargin = netForSplit - ownerSplit;
   const isOwnerStay = r.channel === 'owner';
 
   type Entry = { account: string; debit?: number; credit?: number; note?: string };
@@ -1267,9 +1399,18 @@ function AccountingTab({ r }: { r: Reservation }) {
   } else {
     entries.push({ account: 'Cash / channel payout', debit: r.totalAmount, note: 'Gross receipt' });
     if (channelFee > 0) {
-      entries.push({ account: 'Channel commission expense', credit: channelFee, note: `${Math.round(channelFeeRate * 100)}% on accommodation fare` });
+      entries.push({
+        account: 'Channel commission expense',
+        credit: channelFee,
+        note: hasBreakdown && mb!.hostServiceFee != null
+          ? 'From Guesty money.hostServiceFee'
+          : `${Math.round(channelFeeRate * 100)}% on accommodation fare (est.)`,
+      });
     }
-    entries.push({ account: 'Tourist tax payable (MRA)', credit: r.touristTax, note: 'Pass-through to MRA' });
+    if (cleaningFee > 0) {
+      entries.push({ account: 'Owners ledger — cleaning pass-through', credit: cleaningFee, note: 'Cleaning fee held in trust for owner' });
+    }
+    entries.push({ account: 'Tourist tax payable (MRA)', credit: taxes, note: 'Pass-through to MRA' });
     entries.push({ account: 'Owners ledger — payout owed', credit: ownerSplit, note: '70% of net' });
     entries.push({ account: 'Friday revenue', credit: fridayMargin, note: '30% of net (management fee)' });
     if (r.balanceDue > 0) {
@@ -1315,7 +1456,9 @@ function AccountingTab({ r }: { r: Reservation }) {
         </div>
       </div>
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 8, lineHeight: 1.55 }}>
-        Phase 1: derived from totals + channel commission heuristics. Phase 2: real Finance schema reads (Owners ledger / AP / Cash / Advanced deposit) keyed by reservationId.
+        {hasBreakdown
+          ? 'Channel commission + cleaning + taxes from Guesty money breakdown (mig 085); 70/30 owner split per scoping §6. Phase 3: replace with real Finance reads keyed by reservation_id.'
+          : 'Phase 1 fallback: derived from totals + channel commission heuristics. Phase 2: real Finance schema reads (Owners ledger / AP / Cash / Advanced deposit) keyed by reservationId.'}
       </div>
     </>
   );
@@ -1337,40 +1480,70 @@ const tdStyle: React.CSSProperties = {
 };
 
 function PaymentsTab({ r }: { r: Reservation }) {
-  // Read fresh on every render — fixture is mutated by recordManualPayment.
-  const payments = paymentsForReservation(r.id);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
-  const [amount, setAmount] = useState(r.balanceDue);
-  const [method, setMethod] = useState<PaymentMethod>('bank_transfer');
+  // Default to balanceDue (in major units) for convenience.
+  const [amount, setAmount] = useState<number>(r.balanceDue);
+  const [method, setMethod] = useState<PaymentMethodApi>('bank_transfer');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
-  const [, setRev] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  // T3.10 — manual payments persisted in fad_reservation_payments (mig 089).
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    loadPayments(r.id)
+      .then((rows) => {
+        if (cancelled) return;
+        setPayments(rows);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err?.message || 'Failed to load payments');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [r.id]);
 
   const totalReceived = payments
     .filter((p) => p.status === 'received')
-    .reduce((sum, p) => sum + p.amount, 0);
+    .reduce((sum, p) => sum + p.amount_minor / 100, 0);
   const totalRefunded = payments
     .filter((p) => p.status === 'refunded')
-    .reduce((sum, p) => sum + p.amount, 0);
+    .reduce((sum, p) => sum + p.amount_minor / 100, 0);
 
-  const handleRecord = () => {
-    if (amount <= 0) {
+  const handleRecord = async () => {
+    if (busy) return;
+    if (!Number.isFinite(amount) || amount <= 0) {
       fireToast('Enter a positive amount');
       return;
     }
-    recordManualPayment({
-      reservationId: r.id,
-      amount,
-      currency: r.currency,
-      method,
-      reference: reference.trim() || undefined,
-      notes: notes.trim() || undefined,
-    });
-    fireToast(`Manual payment recorded · ${formatMoney(amount, r.currency)}`);
-    setRecordOpen(false);
-    setReference('');
-    setNotes('');
-    setRev((n) => n + 1);
+    setBusy(true);
+    try {
+      const row = await recordPaymentApi(r.id, {
+        amountMinor: Math.round(amount * 100),
+        currency: r.currency,
+        method,
+        status: 'received',
+        reference: reference.trim() || undefined,
+        notes: notes.trim() || undefined,
+      });
+      setPayments((prev) => [row, ...prev]);
+      fireToast(`Manual payment recorded · ${formatMoney(amount, r.currency)}`);
+      setRecordOpen(false);
+      setReference('');
+      setNotes('');
+    } catch (err) {
+      fireToast('Failed to record · ' + ((err as Error)?.message || 'unknown'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -1392,49 +1565,62 @@ function PaymentsTab({ r }: { r: Reservation }) {
       </div>
 
       <div className="task-detail-section">
-        <h5>Records · {payments.length}</h5>
-        {payments.length === 0 && (
+        <h5>Records · {loading ? '…' : payments.length}</h5>
+        {loading && (
+          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            Loading payments…
+          </div>
+        )}
+        {loadError && (
+          <div style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>
+            Failed to load · {loadError}
+          </div>
+        )}
+        {!loading && !loadError && payments.length === 0 && (
           <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
             No payment records yet.
           </div>
         )}
-        {payments.map((p, i) => (
-          <div
-            key={p.id}
-            style={{
-              padding: '10px 0',
-              borderBottom: i < payments.length - 1 ? '0.5px solid var(--color-border-tertiary)' : 0,
-              fontSize: 12,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-              <span style={{ fontWeight: 500 }}>{PAYMENT_METHOD_LABEL[p.method]}</span>
-              <span
-                className="mono"
-                style={{
-                  fontWeight: 500,
-                  color:
-                    p.status === 'refunded'
-                      ? 'var(--color-text-danger)'
-                      : 'var(--color-text-success)',
-                }}
-              >
-                {p.status === 'refunded' ? '−' : ''}
-                {formatMoney(p.amount, p.currency)}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-              <span className="mono">{p.ts.slice(0, 16).replace('T', ' ')}</span>
-              {p.reference && <span className="mono">· {p.reference}</span>}
-              <span className={'chip sm ' + (p.status === 'refunded' ? 'warn' : '')}>{p.status}</span>
-            </div>
-            {p.notes && (
-              <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
-                {p.notes}
+        {!loading && !loadError && payments.map((p, i) => {
+          const amountMajor = p.amount_minor / 100;
+          return (
+            <div
+              key={p.id}
+              style={{
+                padding: '10px 0',
+                borderBottom: i < payments.length - 1 ? '0.5px solid var(--color-border-tertiary)' : 0,
+                fontSize: 12,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+                <span style={{ fontWeight: 500 }}>{PAYMENT_METHOD_LABEL[p.method as PaymentMethod]}</span>
+                <span
+                  className="mono"
+                  style={{
+                    fontWeight: 500,
+                    color:
+                      p.status === 'refunded'
+                        ? 'var(--color-text-danger)'
+                        : 'var(--color-text-success)',
+                  }}
+                >
+                  {p.status === 'refunded' ? '−' : ''}
+                  {formatMoney(amountMajor, p.currency)}
+                </span>
               </div>
-            )}
-          </div>
-        ))}
+              <div style={{ display: 'flex', gap: 8, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                <span className="mono">{p.ts.slice(0, 16).replace('T', ' ')}</span>
+                {p.reference && <span className="mono">· {p.reference}</span>}
+                <span className={'chip sm ' + (p.status === 'refunded' ? 'warn' : '')}>{p.status}</span>
+              </div>
+              {p.notes && (
+                <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
+                  {p.notes}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {recordOpen ? (
@@ -1445,13 +1631,14 @@ function PaymentsTab({ r }: { r: Reservation }) {
               <input
                 type="number"
                 min={0}
+                step="0.01"
                 value={amount}
-                onChange={(e) => setAmount(parseInt(e.target.value || '0', 10))}
+                onChange={(e) => setAmount(parseFloat(e.target.value || '0'))}
                 style={inputStyle}
               />
             </Field>
             <Field label="Method">
-              <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} style={inputStyle}>
+              <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethodApi)} style={inputStyle}>
                 <option value="bank_transfer">Bank transfer</option>
                 <option value="card">Card</option>
                 <option value="cash">Cash</option>
@@ -1482,8 +1669,10 @@ function PaymentsTab({ r }: { r: Reservation }) {
             </Field>
           </div>
           <div style={{ marginTop: 10, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-            <button className="btn ghost sm" onClick={() => setRecordOpen(false)}>Cancel</button>
-            <button className="btn primary sm" onClick={handleRecord}>Record payment</button>
+            <button className="btn ghost sm" onClick={() => setRecordOpen(false)} disabled={busy}>Cancel</button>
+            <button className="btn primary sm" onClick={handleRecord} disabled={busy}>
+              {busy ? 'Saving…' : 'Record payment'}
+            </button>
           </div>
         </div>
       ) : (
@@ -1495,7 +1684,7 @@ function PaymentsTab({ r }: { r: Reservation }) {
       )}
 
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 12, lineHeight: 1.55 }}>
-        Phase 1: no payment processor connected — manual records only. Phase 2: Stripe / processor integration when wired.
+        Phase 1: no payment processor connected — manual records only. Channel payouts continue to flow via Guesty&apos;s payments[] array; future sync will merge them automatically.
       </div>
     </>
   );
