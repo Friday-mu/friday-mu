@@ -875,7 +875,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
     >
       <ModuleHeader
-        title="Inbox"
+        title={inboxT('module.inbox', 'Inbox')}
         actions={actions}
       />
       {chipsRow}
