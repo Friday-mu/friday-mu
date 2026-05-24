@@ -8,6 +8,7 @@ import {
   type TaskStatus,
   type TaskSource,
 } from '../../../_data/tasks';
+import { useApiTasks } from '../../../_data/useApiTasks';
 import type { Property } from '../../../_data/properties';
 import { fireToast } from '../../Toaster';
 
@@ -89,10 +90,22 @@ export function PropertyTasksTab({ property }: Props) {
   const [pinned, setPinned] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const allTasks = useMemo(
-    () => TASKS.filter((t) => t.propertyCode === property.code),
-    [property.code],
-  );
+  // #35 — live tasks filtered by propertyCode on the backend. Falls
+  // back to fixture TASKS when the live fetch is unavailable (preview
+  // mode / no auth) so the tab still demos without a backend.
+  const liveFilter = useMemo(() => ({ property: property.code }), [property.code]);
+  const { tasks: liveTasks, error: liveError } = useApiTasks(liveFilter);
+  const allTasks = useMemo(() => {
+    if (liveTasks && liveTasks.length > 0) return liveTasks;
+    if (liveError || (liveTasks && liveTasks.length === 0)) {
+      // When live returns explicitly empty, prefer that over fixtures
+      // — except when there's an outright error, fall back so the tab
+      // isn't empty in dev/demo.
+      if (liveError) return TASKS.filter((t) => t.propertyCode === property.code);
+      return [];
+    }
+    return TASKS.filter((t) => t.propertyCode === property.code);
+  }, [liveTasks, liveError, property.code]);
 
   const aggregates = useMemo(() => {
     const open = allTasks.filter((t) => isOpen(t.status)).length;

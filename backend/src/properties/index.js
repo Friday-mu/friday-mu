@@ -110,6 +110,14 @@ function shapeMergedListing(row) {
     hero_photo_id: o.hero_photo_id || null,
     tags: Array.isArray(o.tags) ? o.tags : [],
     amenities: Array.isArray(o.amenities) ? o.amenities : [],
+    // T1 #34 — surface raw Guesty amenities (e.g. "Air conditioning",
+    // "TV", "Wireless Internet"). Read-only Phase 1; the editable
+    // FAD-side `amenities` overlay is the per-property tagged set for
+    // filtering / Quote-builder / channel-push. The Guesty list is
+    // the source of truth for "what's actually in the unit" per the
+    // OTAs and gets shown next to the FAD-tagged set in the Identity
+    // tab Amenities section.
+    guesty_amenities: Array.isArray(g.raw?.amenities) ? g.raw.amenities : [],
     is_syndic_managed: !!o.is_syndic_managed,
     syndic_id: o.syndic_id || null,
     last_activity_at: o.last_activity_at || g.synced_at || null,

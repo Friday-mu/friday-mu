@@ -81,6 +81,9 @@ interface MergedListing {
   hero_photo_id: string | null;
   tags: string[] | null;
   amenities: string[] | null;
+  /** T1 #34 — raw Guesty amenities list (read-only). Side-by-side
+   *  with the editable FAD overlay `amenities` in PropertyDetail. */
+  guesty_amenities?: string[] | null;
   is_syndic_managed: boolean;
   syndic_id: string | null;
   last_activity_at: string | null;
@@ -257,6 +260,7 @@ export function mergedListingToProperty(l: MergedListing): Property {
     photoIds: photoId ? [photoId] : [],
     tags,
     amenities,
+    guestyAmenities: Array.isArray(l.guesty_amenities) ? l.guesty_amenities : [],
     description: l.description || undefined,
     isSyndicManaged: !!l.is_syndic_managed,
     syndicId: l.syndic_id || undefined,

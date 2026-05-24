@@ -316,6 +316,56 @@ function IdentityTab({ property }: { property: Property }) {
         )}
       </Section>
 
+      {/* #34 — Amenities split into two surfaces:
+       *  - Guesty amenities (read-only, source of truth for OTAs;
+       *    pulled from guesty_listings.raw.amenities at /api/properties)
+       *  - FAD tagged amenities (overlay, for Quote-builder + filters)
+       *  Empty states are explicit so ops can see what's missing.
+       */}
+      <Section title="Amenities">
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
+          Guesty (live, read-only) · {property.guestyAmenities?.length || 0} listed
+        </div>
+        {property.guestyAmenities && property.guestyAmenities.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 14 }}>
+            {property.guestyAmenities.map((a) => (
+              <span
+                key={a}
+                className="chip"
+                style={{ fontSize: 11, padding: '2px 8px' }}
+              >
+                {a}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+            None on Guesty yet — add via Guesty Listings → Amenities.
+          </p>
+        )}
+
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8, paddingTop: 8, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+          FAD overlay (editable, used by Quote builder + filters) · {property.amenities?.length || 0} tagged
+        </div>
+        {property.amenities && property.amenities.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {property.amenities.map((a) => (
+              <span
+                key={a}
+                className="chip info"
+                style={{ fontSize: 11, padding: '2px 8px' }}
+              >
+                {a}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+            No FAD tags yet — Phase 2 wires the editable matrix.
+          </p>
+        )}
+      </Section>
+
       {(property.parentPropertyId || property.isCombo) && (
         <Section title="Multi-unit group">
           {property.parentPropertyId && (
@@ -739,6 +789,10 @@ function PricingTab({ property }: { property: Property }) {
   const to = toDate.toISOString().slice(0, 10);
   const { pricesByListing, loading, error, refetch } = useCalendarGrid(from, to);
   const cells = pricesByListing.get(listingId) || {};
+  // #36 — view toggle. List was shipped first; calendar grid is the
+  // "month-on-a-page" view that maps to operator intuition (Sundays
+  // line up vertically, weekends visible at a glance).
+  const [view, setView] = useState<'list' | 'calendar'>('calendar');
 
   // Build a stable list of date rows for the window, even if the
   // backend has no entry for some days. Missing days render as "—".
@@ -760,26 +814,242 @@ function PricingTab({ property }: { property: Property }) {
         {error && <p style={{ fontSize: 12, color: 'var(--color-text-warning)', margin: 0 }}>{error}</p>}
         {!loading && !error && (
           <>
-            <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '0 0 12px' }}>
-              Prices read from Guesty calendar cache. Blocked dates are FAD-local (Phase 1)
-              — Phase 2 will write blocks through to Guesty. Editing individual nightly
-              prices comes in Phase 2 along with the channel-manager work.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {days.map(({ iso, cell }) => (
-                <PricingRow
-                  key={iso}
-                  iso={iso}
-                  cell={cell}
-                  listingGuestyId={listingId}
-                  onChanged={refetch}
-                />
-              ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ display: 'inline-flex', borderRadius: 'var(--radius-sm)', border: '0.5px solid var(--color-border-tertiary)', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  className={'btn ghost sm' + (view === 'calendar' ? ' active' : '')}
+                  onClick={() => setView('calendar')}
+                  style={{ borderRadius: 0, border: 0, background: view === 'calendar' ? 'var(--color-background-tertiary)' : 'transparent', fontSize: 11, padding: '4px 10px' }}
+                >
+                  Calendar
+                </button>
+                <button
+                  type="button"
+                  className={'btn ghost sm' + (view === 'list' ? ' active' : '')}
+                  onClick={() => setView('list')}
+                  style={{ borderRadius: 0, border: 0, background: view === 'list' ? 'var(--color-background-tertiary)' : 'transparent', fontSize: 11, padding: '4px 10px' }}
+                >
+                  List
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 0, flex: 1 }}>
+                Prices read from Guesty cache · blocks are FAD-local (Phase 1).
+              </p>
             </div>
+            {view === 'list' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {days.map(({ iso, cell }) => (
+                  <PricingRow
+                    key={iso}
+                    iso={iso}
+                    cell={cell}
+                    listingGuestyId={listingId}
+                    onChanged={refetch}
+                  />
+                ))}
+              </div>
+            )}
+            {view === 'calendar' && (
+              <PricingCalendarGrid
+                days={days}
+                listingGuestyId={listingId}
+                onChanged={refetch}
+              />
+            )}
           </>
         )}
       </Section>
     </div>
+  );
+}
+
+// #36 — month-on-a-page calendar grid for the per-property pricing
+// view. 7-column layout (Mon-Sun, week starting Monday to match
+// Mauritius convention). Each cell shows price + block badge; click
+// opens the same per-row Block/Unblock UI used by the list view.
+function PricingCalendarGrid({
+  days,
+  listingGuestyId,
+  onChanged,
+}: {
+  days: Array<{ iso: string; cell: CellPrice | null }>;
+  listingGuestyId: string;
+  onChanged: () => void;
+}) {
+  // Pad to align the first day to Monday (getDay: 0=Sun, 1=Mon,...).
+  const first = days[0];
+  if (!first) return null;
+  const firstDate = new Date(`${first.iso}T12:00:00`);
+  const firstDow = firstDate.getDay(); // 0..6
+  const padStart = (firstDow + 6) % 7; // monday-first
+  const cells: Array<{ iso: string; cell: CellPrice | null } | null> = [
+    ...Array(padStart).fill(null),
+    ...days,
+  ];
+  // Group by month for headers.
+  const monthLabel = (iso: string) => {
+    const d = new Date(`${iso}T12:00:00`);
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+  const months: Array<{ label: string; weeks: Array<Array<{ iso: string; cell: CellPrice | null } | null>> }> = [];
+  let currentMonth = '';
+  let currentMonthEntry: { label: string; weeks: Array<Array<{ iso: string; cell: CellPrice | null } | null>> } | null = null;
+  let week: Array<{ iso: string; cell: CellPrice | null } | null> = [];
+  for (let i = 0; i < cells.length; i++) {
+    const entry = cells[i];
+    const iso = entry?.iso;
+    const m = iso ? monthLabel(iso) : currentMonth;
+    if (m && m !== currentMonth) {
+      if (currentMonthEntry && week.length > 0) {
+        // pad current week to 7 then push
+        while (week.length < 7) week.push(null);
+        currentMonthEntry.weeks.push(week);
+        week = [];
+      }
+      currentMonth = m;
+      currentMonthEntry = { label: m, weeks: [] };
+      months.push(currentMonthEntry);
+    }
+    week.push(entry);
+    if (week.length === 7) {
+      currentMonthEntry?.weeks.push(week);
+      week = [];
+    }
+  }
+  if (week.length > 0 && currentMonthEntry) {
+    while (week.length < 7) week.push(null);
+    currentMonthEntry.weeks.push(week);
+  }
+
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {months.map((m) => (
+        <div key={m.label}>
+          <div style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: 'var(--color-text-tertiary)',
+            marginBottom: 8,
+          }}>{m.label}</div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: 4,
+            marginBottom: 4,
+          }}>
+            {DOW.map((d) => (
+              <div key={d} style={{ fontSize: 10, textAlign: 'center', color: 'var(--color-text-tertiary)', padding: '2px 0' }}>{d}</div>
+            ))}
+          </div>
+          {m.weeks.map((wk, wi) => (
+            <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+              {wk.map((entry, di) => (
+                <PricingCalendarCell
+                  key={di}
+                  entry={entry}
+                  listingGuestyId={listingGuestyId}
+                  onChanged={onChanged}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PricingCalendarCell({
+  entry,
+  listingGuestyId,
+  onChanged,
+}: {
+  entry: { iso: string; cell: CellPrice | null } | null;
+  listingGuestyId: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!entry) {
+    return <div style={{ minHeight: 56, background: 'transparent' }} />;
+  }
+  const { iso, cell } = entry;
+  const date = new Date(`${iso}T12:00:00`);
+  const day = date.getDate();
+  const dow = date.getDay(); // 0=Sun, 6=Sat
+  const isWeekend = dow === 0 || dow === 6;
+  const today = new Date().toISOString().slice(0, 10);
+  const isToday = iso === today;
+  const isBlocked = !!cell?.blocked;
+  const priceText = cell?.price_minor != null
+    ? `${cell.currency === 'EUR' ? '€' : cell.currency === 'MUR' ? 'Rs' : cell.currency === 'USD' ? '$' : ''}${Math.round(cell.price_minor / 100)}`
+    : null;
+  const handleClick = async () => {
+    if (busy) return;
+    if (isBlocked) {
+      setBusy(true);
+      try {
+        await unblockDates(listingGuestyId, [iso]);
+        onChanged();
+      } catch (e) {
+        fireToast(e instanceof Error ? e.message : 'Unblock failed');
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      // Quick-block with default reason. List view has the full
+      // reason + notes form; calendar tap is the fast path.
+      setBusy(true);
+      try {
+        await blockDates({ listingGuestyId, dates: [iso], reason: 'maintenance' });
+        onChanged();
+      } catch (e) {
+        fireToast(e instanceof Error ? e.message : 'Block failed');
+      } finally {
+        setBusy(false);
+      }
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={busy}
+      title={
+        isBlocked
+          ? `${iso} · Blocked${cell?.block_reason ? ` · ${cell.block_reason}` : ''} · tap to unblock`
+          : `${iso} · ${priceText || 'no price'} · tap to block`
+      }
+      style={{
+        minHeight: 56,
+        padding: '4px 6px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        background: isBlocked
+          ? 'var(--color-bg-warning, rgba(245, 158, 11, 0.12))'
+          : isWeekend
+            ? 'rgba(150, 150, 150, 0.05)'
+            : 'var(--color-background-primary)',
+        border: isToday ? '1px solid var(--color-brand-accent)' : '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+        cursor: busy ? 'wait' : 'pointer',
+        opacity: busy ? 0.6 : 1,
+        textAlign: 'left',
+        color: 'inherit',
+        fontFamily: 'inherit',
+      }}
+    >
+      <span className="mono" style={{ fontSize: 11, color: isToday ? 'var(--color-brand-accent)' : 'var(--color-text-tertiary)', fontWeight: isToday ? 600 : 400 }}>{day}</span>
+      <span className="mono" style={{ fontSize: 12, fontWeight: 500 }}>{priceText || '—'}</span>
+      {isBlocked && (
+        <span style={{ fontSize: 9, color: 'var(--color-text-warning)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>blocked</span>
+      )}
+    </button>
   );
 }
 

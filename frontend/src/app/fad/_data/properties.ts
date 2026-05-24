@@ -274,6 +274,10 @@ export interface Property {
   tags: string[];
   /** Per-property amenity set. Phase 1 derived from common defaults; Phase 2 editable. */
   amenities?: Amenity[];
+  /** T1 #34 — raw Guesty amenities list (read-only). Source of truth
+   *  for what the OTAs see. Side-by-side with the FAD overlay
+   *  `amenities` set for ops + Quote builder. */
+  guestyAmenities?: string[];
   /** Base property description (channel descriptions live on ListingRecord). */
   description?: string;
 
