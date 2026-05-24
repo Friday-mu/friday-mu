@@ -76,9 +76,22 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
       : 0;
 
     // ─── Channel mix (window) ───
+    // Normalise Guesty's raw channel codes (airbnb2, bookingCom, scrape-l3)
+    // into the friendly labels operators use elsewhere in FAD.
     const channelRes = await query(
       `SELECT
-         COALESCE(NULLIF(r.channel, ''), r.source, 'unknown') AS channel,
+         CASE
+           WHEN LOWER(COALESCE(r.channel, '')) IN ('airbnb', 'airbnb2', 'airbnb-v2') THEN 'Airbnb'
+           WHEN LOWER(COALESCE(r.channel, '')) IN ('booking', 'bookingcom', 'booking.com', 'bdc') THEN 'Booking.com'
+           WHEN LOWER(COALESCE(r.channel, '')) IN ('vrbo', 'homeaway') THEN 'VRBO'
+           WHEN LOWER(COALESCE(r.channel, '')) IN ('direct', 'website', 'friday', 'friday-direct') THEN 'Direct'
+           WHEN LOWER(COALESCE(r.channel, '')) IN ('manual', 'phone', 'walk-in') THEN 'Manual'
+           WHEN LOWER(COALESCE(r.channel, '')) IN ('owner') THEN 'Owner'
+           WHEN LOWER(COALESCE(r.channel, '')) IN ('email') THEN 'Email'
+           WHEN LOWER(COALESCE(r.channel, '')) LIKE 'scrape%' THEN 'Scraped (legacy)'
+           WHEN COALESCE(NULLIF(r.channel, ''), '') = '' THEN 'Unknown'
+           ELSE INITCAP(r.channel)
+         END AS channel,
          COUNT(*)::int AS reservation_count,
          COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
          COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0)::int AS booked_nights
