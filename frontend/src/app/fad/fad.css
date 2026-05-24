@@ -3567,6 +3567,30 @@ html.fad-dark .cal-popover { box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
   padding: 4px 8px;
 }
 
+/* v0.4 — custom date picker tucked alongside the prev/today/next nav.
+   Match the nav button height + look neutral so it doesn't shout. */
+.cal-date-picker {
+  margin-left: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: var(--font-mono-fad, inherit);
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  height: 24px;
+  line-height: 1;
+  color-scheme: light dark;
+}
+.cal-date-picker:hover {
+  background: var(--color-background-tertiary);
+}
+.cal-date-picker:focus {
+  outline: 1px solid var(--color-brand-accent);
+  outline-offset: 1px;
+}
+
 /* The view-switcher dropdown replaces the Day/Week/Month tabs at <768px. */
 .cal-view-switcher {
   display: none;

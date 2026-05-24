@@ -12,7 +12,7 @@
 // reservation bars can overlay day-cells via shared grid-row + z-index
 // instead of fighting `display: contents` on a single mega-grid.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Property } from '../../../_data/properties';
 import type { Reservation, ReservationChannel } from '../../../_data/reservations';
 import type { Task } from '../../../_data/tasks';
@@ -120,14 +120,31 @@ interface PositionedReservation {
   spanCols: number;
   clippedLeft: boolean;
   clippedRight: boolean;
+  /** v0.4 — vertical lane index when reservations overlap on the same
+   *  property. Lane 0 = topmost; bands at lane>0 are pushed down via
+   *  marginTop so they stack instead of obscuring each other. */
+  lane: number;
+}
+
+/** v0.4 lane-assignment helper. Given a property's reservations sorted
+ *  by startCol, pick the lowest lane index whose previous band has
+ *  already ended (lastUsedEndCol[lane] < startCol). Returns the lane
+ *  number (0-indexed); extends the lane array if none fit. */
+function assignLane(startCol: number, lastUsedEndCol: number[]): number {
+  for (let lane = 0; lane < lastUsedEndCol.length; lane++) {
+    if (lastUsedEndCol[lane] < startCol) return lane;
+  }
+  lastUsedEndCol.push(0);
+  return lastUsedEndCol.length - 1;
 }
 
 function positionByProperty(
   reservations: Reservation[],
   columns: DateColumn[],
   windowEnd: Date,
-): Map<string, PositionedReservation[]> {
+): { byProperty: Map<string, PositionedReservation[]>; maxLanesByProperty: Map<string, number> } {
   const byProperty = new Map<string, PositionedReservation[]>();
+  const maxLanesByProperty = new Map<string, number>();
   const colByIso = new Map(columns.map((c, i) => [c.iso, i]));
   for (const r of reservations) {
     if (r.status === 'cancelled') continue;
@@ -157,10 +174,25 @@ function positionByProperty(
       spanCols,
       clippedLeft,
       clippedRight,
+      lane: 0, // filled in after sort below
     });
     byProperty.set(r.propertyCode, arr);
   }
-  return byProperty;
+
+  // Second pass: per-property lane assignment. Sort by startCol so the
+  // greedy lane picker is deterministic + minimal.
+  for (const [propertyCode, positions] of byProperty.entries()) {
+    positions.sort((a, b) => a.startCol - b.startCol);
+    const lastUsedEndCol: number[] = [];
+    for (const pos of positions) {
+      const lane = assignLane(pos.startCol, lastUsedEndCol);
+      pos.lane = lane;
+      lastUsedEndCol[lane] = pos.startCol + pos.spanCols - 1;
+    }
+    maxLanesByProperty.set(propertyCode, lastUsedEndCol.length);
+  }
+
+  return { byProperty, maxLanesByProperty };
 }
 
 export function MultiCalendarGrid({
@@ -181,11 +213,16 @@ export function MultiCalendarGrid({
     () => new Date(windowStart.getTime() + (windowDays - 1) * DAY_MS),
     [windowStart, windowDays],
   );
-  const positioned = useMemo(
+  const { byProperty: positioned, maxLanesByProperty } = useMemo(
     () => positionByProperty(reservations, columns, windowEnd),
     [reservations, columns, windowEnd],
   );
   const todayColIdx = columns.findIndex((c) => c.iso === todayIso);
+
+  // v0.4 — hover task preview popover. Anchored near the task chip,
+  // shows title + due + assignee + truncated description. Replaces the
+  // slow + plain browser `title=` tooltip.
+  const [hoveredTask, setHoveredTask] = useState<{ task: Task; x: number; y: number } | null>(null);
 
   const gridTemplateColumns = `${PROPERTY_COL_PX}px repeat(${windowDays}, minmax(${DAY_COL_PX}px, 1fr))`;
 
@@ -234,11 +271,14 @@ export function MultiCalendarGrid({
         {/* Property rows */}
         {sortedProperties.map((p) => {
           const positions = positioned.get(p.code) || [];
+          // v0.4 — row height grows with lane stack (28px per lane).
+          const lanes = Math.max(1, maxLanesByProperty.get(p.code) ?? 1);
+          const rowHeight = Math.max(56, 16 + lanes * 30);
           return (
             <div
               key={p.id}
               className="mcal-property-row"
-              style={{ gridTemplateColumns }}
+              style={{ gridTemplateColumns, gridAutoRows: `${rowHeight}px` }}
             >
               <button
                 type="button"
@@ -332,7 +372,15 @@ export function MultiCalendarGrid({
                           e.stopPropagation();
                           onTaskClick?.(t);
                         }}
-                        title={`${t.title} · ${t.department || '—'} · ${(t.assigneeNames?.[0] || '').slice(0, 20)}`}
+                        onMouseEnter={(e) => {
+                          // v0.4 — open hover preview anchored just
+                          // below the chip; small +6px y-offset so the
+                          // popover doesn't immediately re-trigger a
+                          // mouseLeave when it appears under the cursor.
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          setHoveredTask({ task: t, x: rect.left, y: rect.bottom + 6 });
+                        }}
+                        onMouseLeave={() => setHoveredTask(null)}
                       >
                         {t.title.slice(0, 12)}
                       </button>
@@ -343,7 +391,10 @@ export function MultiCalendarGrid({
 
               {/* Reservation bars overlay — same grid row, higher z.
                   v0.3: color encodes STATUS (confirmed/reserved/inquiry/owner),
-                  channel is shown as a glyph at the start of the band. */}
+                  channel is shown as a glyph at the start of the band.
+                  v0.4: lane dedup — overlapping reservations stack via
+                  marginTop + alignSelf:start so they no longer obscure
+                  each other. */}
               {positions.map((pos, i) => (
                 <button
                   key={`${p.id}-rsv-${i}`}
@@ -357,6 +408,10 @@ export function MultiCalendarGrid({
                   style={{
                     gridColumn: `${pos.startCol} / span ${pos.spanCols}`,
                     gridRow: 1,
+                    alignSelf: 'start',
+                    marginTop: 8 + pos.lane * 30,
+                    marginBottom: 0,
+                    minHeight: 26,
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -387,6 +442,59 @@ export function MultiCalendarGrid({
           );
         })}
       </div>
+
+      {/* v0.4 — hover task preview popover. Position fixed so it
+          escapes any scroll-container clipping. */}
+      {hoveredTask && (
+        <div
+          className="mcal-task-hover-preview"
+          style={{
+            position: 'fixed',
+            left: Math.min(hoveredTask.x, window.innerWidth - 280),
+            top: hoveredTask.y,
+            zIndex: 50,
+            width: 260,
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 4px 16px rgba(15, 24, 54, 0.18)',
+            padding: 10,
+            fontSize: 12,
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{ fontWeight: 500, marginBottom: 4, color: 'var(--color-text-primary)' }}>
+            {hoveredTask.task.title}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            {hoveredTask.task.department && <span>{hoveredTask.task.department}</span>}
+            {hoveredTask.task.priority && (
+              <>
+                <span>·</span>
+                <span style={{ textTransform: 'capitalize' }}>{hoveredTask.task.priority}</span>
+              </>
+            )}
+            {hoveredTask.task.dueDate && (
+              <>
+                <span>·</span>
+                <span>Due {String(hoveredTask.task.dueDate).slice(0, 10)}</span>
+              </>
+            )}
+          </div>
+          {hoveredTask.task.assigneeNames && hoveredTask.task.assigneeNames.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 6 }}>
+              Assigned: {hoveredTask.task.assigneeNames.slice(0, 3).join(', ')}
+              {hoveredTask.task.assigneeNames.length > 3 && ` +${hoveredTask.task.assigneeNames.length - 3}`}
+            </div>
+          )}
+          {hoveredTask.task.description && (
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+              {hoveredTask.task.description.slice(0, 140)}
+              {hoveredTask.task.description.length > 140 && '…'}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mcal-footer">
         <span className="mono">

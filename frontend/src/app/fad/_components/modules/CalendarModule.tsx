@@ -455,6 +455,21 @@ export function CalendarModule() {
               <button className="btn ghost sm" onClick={() => navStep(1)} aria-label="Next">
                 ›
               </button>
+              {/* v0.4 — custom date picker. Jump to any date directly
+                  instead of stepping day/week/month at a time. Native
+                  input gives iOS/Android their proper picker on mobile
+                  for free. */}
+              <input
+                type="date"
+                value={viewDate.toISOString().slice(0, 10)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setViewDate(new Date(`${v}T12:00:00`));
+                }}
+                className="cal-date-picker"
+                aria-label="Jump to date"
+                title="Jump to a specific date"
+              />
             </div>
             <button
               className="btn sm cal-action-sync"
