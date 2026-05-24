@@ -694,3 +694,60 @@ fetch('/api/availability/search?from=2026-07-01&to=2026-07-08&guests=4',
   {headers:{Authorization:'Bearer '+localStorage.gms_token}})
   .then(r=>r.json()).then(d=>({matches: d.matches?.length, sample: d.matches?.[0]}))
 ```
+
+## Appendix H — Post-compaction prompt (paste verbatim after `/compact`)
+
+```text
+Resume the FAD overnight autonomous run.
+
+Read these two documents IN ORDER before anything else:
+1. /Users/judith/repos/friday-admin-dashboard/docs/handover/2026-05-24-overnight-autonomous-plan.md
+   — Full 10-phase plan + 8 appendices (schemas, multi-calendar architecture,
+     task UI mockup, API contracts, file list, risks, verification snippets,
+     and this post-compaction prompt).
+2. /Users/judith/.openclaw/workspace/tmp/claude-code-compaction-handover-20260524-evening.md
+   — Session state, hard constraints, recovery actions, where data lives.
+
+Then verify live state (4 commands in parallel):
+- cd /Users/judith/repos/friday-admin-dashboard && git status
+- cd /Users/judith/repos/friday-admin-dashboard && git log --oneline -15
+- curl -fsS https://admin.friday.mu/version.json
+- curl -fsS https://admin.friday.mu/api/version
+
+Then check Chrome MCP "Working Browser" is still connected:
+- list_connected_browsers → pick deviceId c49e054a-1059-4f2c-87bf-41fc0e71b03c
+  (re-pair via switch_browser if not present)
+
+Then find the first unfinished phase per git history vs the plan's expected
+phase commits (Appendix E lists every file each phase touches — grep recent
+commits against that list).
+
+Pre-authorised by Ishant (do NOT ask):
+- Multi-calendar v0.1 = full FE rebuild as primary view; old Month/Week stay
+  as alternate tabs.
+- Quote v1 = link to Friday Website Vercel preview.
+- Insights without backend = "Phase 2 pending" placeholder, never fake numbers.
+- All new tables fad_* prefixed, multi-tenant from day one.
+
+Hard rules (immutable):
+- Git author = Judith Friday <judith@friday.mu> (hook-enforced).
+- Type-check + build pass before every deploy. Roll back on regression.
+- Verify on prod via Chrome MCP after every deploy.
+- Mobile QA (375×812) after every UI commit.
+- Multi-tenant safety: grep tenant_id filter after every new backend route.
+- No --no-verify, no force-push, no skipping hooks.
+- Don't touch website_inbox or Friday Website code.
+- Skip VPS backups (disk 87%).
+
+Stopping conditions:
+- 3 consecutive deploy failures → halt + jump to Phase 10 morning handover.
+- Migration fails non-trivially → halt.
+- Context > 80% → wrap up cleanly with morning handover.
+- Production regression I can't diagnose in 30 min → halt.
+
+Resume at the first unfinished phase. Don't re-do earlier phases.
+Don't ask for confirmation between phases. Park anything not in the plan
+into the morning handover at docs/handover/2026-05-25-morning-handover.md.
+
+Go.
+```
