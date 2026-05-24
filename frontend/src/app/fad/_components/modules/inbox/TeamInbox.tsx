@@ -39,6 +39,7 @@ import { useJwtUserId, usePermissions } from '../../usePermissions';
 import { IconCal, IconClose, IconDownload, IconExpand, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
 import { ScheduleCallDrawer } from './ScheduleCallDrawer';
 import { ChannelMembersDrawer } from './ChannelMembersDrawer';
+import { CreateTaskDrawer, type CreateTaskPrefill } from '../operations/CreateTaskDrawer';
 import { fireToast } from '../../Toaster';
 import { trackEvent } from '../../../../../lib/analytics';
 
@@ -187,6 +188,11 @@ export function TeamInbox({
   const [draft, setDraft] = useState('');
   const [callOpen, setCallOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  // Create-task drawer launched from the team-inbox thread header.
+  // No reservation context for staff threads, but we plumb the channel
+  // or DM-peer name as the task title seed + the most-recent message
+  // as the description.
+  const [createTaskPrefill, setCreateTaskPrefill] = useState<CreateTaskPrefill | null>(null);
 
   // Resolve the selected channel's database id so the messages hook
   // can fetch via /api/team/channels/:id/messages (the API takes the
@@ -830,6 +836,40 @@ export function TeamInbox({
                   )}
                 </>
               )}
+              <span className="sep">·</span>
+              <button
+                type="button"
+                onClick={() => {
+                  // Inter-module link (2026-05-25 same morning): create a
+                  // task from a team-inbox thread. Channel = title seed;
+                  // most recent message = description.
+                  const latest = messages.length > 0 ? messages[messages.length - 1] : null;
+                  const latestBody = latest?.text || '';
+                  const titleSeed = selection.kind === 'channel'
+                    ? `Follow up · #${targetTitle.replace(/^#/, '')}`
+                    : `Follow up · ${targetTitle}`;
+                  setCreateTaskPrefill({
+                    title: titleSeed.slice(0, 100),
+                    description: latestBody.slice(0, 500),
+                    assigneeIds: currentUserId ? [currentUserId] : undefined,
+                    source: 'manual',
+                  });
+                }}
+                title="Create an Ops task from this thread"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'inherit',
+                  fontSize: 'inherit',
+                  padding: 0,
+                  textDecoration: 'underline',
+                  textDecorationStyle: 'dotted',
+                  textUnderlineOffset: 2,
+                }}
+              >
+                + Task
+              </button>
             </div>
           </div>
           <div className="inbox-thread-body">
@@ -1083,6 +1123,16 @@ export function TeamInbox({
         onClose={() => setPreviewAttachment(null)}
         onDownload={handleAttachmentDownload}
       />
+
+      {createTaskPrefill && (
+        <CreateTaskDrawer
+          open={true}
+          onClose={() => setCreateTaskPrefill(null)}
+          onCreated={() => setCreateTaskPrefill(null)}
+          mode="manager_schedule"
+          prefill={createTaskPrefill}
+        />
+      )}
     </>
   );
 }
