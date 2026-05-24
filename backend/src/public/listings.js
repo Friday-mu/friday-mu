@@ -143,6 +143,15 @@ function shapeListingPublic(row) {
     summary: pubDesc.summary || null,
     space: pubDesc.space || null,
 
+    // FAD-authored per-locale overrides (mig 088). Always emitted as
+    // an object — empty {} when nothing is authored. Website consumer
+    // resolves: translations.<locale>.name ?? top-level name (etc).
+    // Only `name` + `description` supported in v0.1; `tagline` deferred
+    // pending clarification from the website team about its semantics.
+    translations: row.fad_translations && typeof row.fad_translations === 'object'
+      ? row.fad_translations
+      : {},
+
     // amenities[] is already a clean string[] in Guesty. Pass through.
     amenities: Array.isArray(raw.amenities) ? raw.amenities : [],
 
@@ -182,10 +191,17 @@ function sendWithEtag(req, res, payload) {
 
 router.get('/', attachApiClient, requireScope('listings:read'), async (req, res) => {
   try {
+    // LEFT JOIN fad_properties so we pick up the per-locale translations
+    // overlay (mig 088). Missing overlay → fad_translations is NULL,
+    // shapeListingPublic emits an empty {} so the response shape stays
+    // stable for the website consumer.
     const { rows } = await query(
-      `SELECT * FROM guesty_listings
-         WHERE tenant_id = $1 AND is_active = TRUE
-         ORDER BY nickname`,
+      `SELECT gl.*, fp.translations AS fad_translations
+         FROM guesty_listings gl
+         LEFT JOIN fad_properties fp
+           ON fp.tenant_id = gl.tenant_id AND fp.guesty_id = gl.guesty_id
+        WHERE gl.tenant_id = $1 AND gl.is_active = TRUE
+        ORDER BY gl.nickname`,
       [req.apiClient.tenantId],
     );
     // Single named-key envelope per the website-side contract — no
@@ -204,14 +220,18 @@ router.get('/', attachApiClient, requireScope('listings:read'), async (req, res)
 router.get('/:nickname', attachApiClient, requireScope('listings:read'), async (req, res) => {
   try {
     // Look up by nickname OR guesty_id (both unique). Lets callers use
-    // whichever they have without a second lookup.
+    // whichever they have without a second lookup. LEFT JOIN
+    // fad_properties to fold in the translations overlay (mig 088).
     const key = String(req.params.nickname || '').trim();
     if (!key) return publicError(res, 400, 'invalid_request', 'nickname required');
     const { rows } = await query(
-      `SELECT * FROM guesty_listings
-         WHERE tenant_id = $1
-           AND (nickname = $2 OR guesty_id = $2)
-         LIMIT 1`,
+      `SELECT gl.*, fp.translations AS fad_translations
+         FROM guesty_listings gl
+         LEFT JOIN fad_properties fp
+           ON fp.tenant_id = gl.tenant_id AND fp.guesty_id = gl.guesty_id
+        WHERE gl.tenant_id = $1
+          AND (gl.nickname = $2 OR gl.guesty_id = $2)
+        LIMIT 1`,
       [req.apiClient.tenantId, key],
     );
     if (rows.length === 0) {

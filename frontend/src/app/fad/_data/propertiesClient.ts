@@ -87,6 +87,11 @@ interface MergedListing {
   synced_at: string | null;
   primary_owner_id?: string | null;
   primary_owner_display_name?: string | null;
+  /** mig 088 — per-locale overlay copy authored by the team. */
+  translations?: {
+    en?: { name?: string | null; description?: string | null };
+    fr?: { name?: string | null; description?: string | null };
+  } | null;
   availability?: {
     blocked_30d?: number | null;
     min_price_minor_30d?: number | null;
@@ -236,6 +241,7 @@ export function mergedListingToProperty(l: MergedListing): Property {
     // placeholder when no fad_property_owners row exists yet.
     primaryOwnerId: l.primary_owner_id || 'o-guesty-unknown',
     primaryOwnerName: l.primary_owner_display_name || undefined,
+    translations: l.translations || undefined,
     maintenanceCapOverrideMinor: l.maintenance_cap_override_minor || undefined,
     contract: l.contract?.status ? {
       status: (l.contract.status as 'active' | 'pending' | 'renewal_due' | 'expired'),
@@ -377,6 +383,28 @@ export async function createProperty(input: CreatePropertyInput): Promise<Proper
     body: JSON.stringify(input),
   })) as MergedListing;
   return mergedListingToProperty(res);
+}
+
+// ───────────────── Translations ─────────────────
+// mig 088 + PATCH /api/properties/:id/translations. The id can be the
+// guesty_id (preferred — stable across reseeds) or the overlay UUID.
+// Partial: pass only the locale block you're changing; existing locales
+// stay intact. Empty/null values clear that field.
+
+export interface PropertyTranslations {
+  en?: { name?: string | null; description?: string | null };
+  fr?: { name?: string | null; description?: string | null };
+}
+
+export async function updatePropertyTranslations(
+  propertyIdOrGuestyId: string,
+  translations: PropertyTranslations,
+): Promise<{ id: string; translations: PropertyTranslations }> {
+  const res = (await apiFetch(`/api/properties/${encodeURIComponent(propertyIdOrGuestyId)}/translations`, {
+    method: 'PATCH',
+    body: JSON.stringify({ translations }),
+  })) as { id: string; translations: PropertyTranslations };
+  return res;
 }
 
 // ───────────────── Cards ─────────────────

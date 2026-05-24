@@ -23,7 +23,7 @@ import { COHORT_LABEL } from '../../../_data/reviews';
 import { FIN_OWNERS } from '../../../_data/finance';
 import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
-import { usePropertyCards } from '../../../_data/propertiesClient';
+import { usePropertyCards, updatePropertyTranslations, type PropertyTranslations } from '../../../_data/propertiesClient';
 import { useOwnersByGuestyId } from '../../../_data/ownersClient';
 import { usePropertySummary, formatMinor } from '../../../_data/financeClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
@@ -269,6 +269,10 @@ function OverviewTab({ property }: { property: Property }) {
 function IdentityTab({ property }: { property: Property }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <Section title="Public copy (EN / FR)">
+        <TranslationsEditor property={property} />
+      </Section>
+
       {property.heroPhotoUrl && (
         <div
           style={{
@@ -981,5 +985,174 @@ function Stat({ label, value }: { label: string; value: string }) {
 function Label({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{children}</div>
+  );
+}
+
+// ───────────────── Translations editor (mig 088 / FR rollout) ─────────────────
+//
+// Side-by-side EN / FR inputs for name + description. Saves via
+// PATCH /api/properties/:id/translations. Top-level name + description
+// from Guesty are shown as placeholders so the team knows what FR will
+// fall back to when blank.
+//
+// Per the website session brief: humans author FR. No LLM auto-translate.
+// Empty FR is a "needs human" queue, not a TODO for AI.
+function TranslationsEditor({ property }: { property: Property }) {
+  const incoming = property.translations || {};
+  const [enName, setEnName] = useState<string>(incoming.en?.name ?? '');
+  const [enDesc, setEnDesc] = useState<string>(incoming.en?.description ?? '');
+  const [frName, setFrName] = useState<string>(incoming.fr?.name ?? '');
+  const [frDesc, setFrDesc] = useState<string>(incoming.fr?.description ?? '');
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync local state when the underlying property prop changes
+  // (e.g. after a refetch).
+  useEffect(() => {
+    setEnName(incoming.en?.name ?? '');
+    setEnDesc(incoming.en?.description ?? '');
+    setFrName(incoming.fr?.name ?? '');
+    setFrDesc(incoming.fr?.description ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [property.id, incoming.en?.name, incoming.en?.description, incoming.fr?.name, incoming.fr?.description]);
+
+  const dirty =
+    enName !== (incoming.en?.name ?? '') ||
+    enDesc !== (incoming.en?.description ?? '') ||
+    frName !== (incoming.fr?.name ?? '') ||
+    frDesc !== (incoming.fr?.description ?? '');
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const payload: PropertyTranslations = {
+        en: { name: enName.trim() || null, description: enDesc.trim() || null },
+        fr: { name: frName.trim() || null, description: frDesc.trim() || null },
+      };
+      const id = property.id;
+      await updatePropertyTranslations(id, payload);
+      fireToast('Translations saved');
+    } catch (err) {
+      fireToast(err instanceof Error ? `Failed: ${err.message}` : 'Failed to save translations');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const guestyName = property.name; // top-level (Guesty-sourced) display name
+  const guestyDesc = ''; // FAD frontend doesn't expose Guesty description directly
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+        Authored EN/FR copy the public website renders. Leave a field blank to fall back to the
+        Guesty-sourced top-level name/description. No machine translation — humans author both
+        sides so guests get our voice, not a translator's.
+      </p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div>
+          <Label>Name · EN</Label>
+          <input
+            type="text"
+            value={enName}
+            onChange={(e) => setEnName(e.target.value)}
+            placeholder={guestyName ? `(Guesty: ${guestyName})` : 'e.g. Beachfront Apt with Pool'}
+            maxLength={200}
+            style={{
+              width: '100%',
+              marginTop: 4,
+              padding: '8px 10px',
+              fontSize: 13,
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+            }}
+          />
+        </div>
+        <div>
+          <Label>Nom · FR</Label>
+          <input
+            type="text"
+            value={frName}
+            onChange={(e) => setFrName(e.target.value)}
+            placeholder="(non traduit — laisse vide pour utiliser l'EN)"
+            maxLength={200}
+            style={{
+              width: '100%',
+              marginTop: 4,
+              padding: '8px 10px',
+              fontSize: 13,
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+            }}
+          />
+        </div>
+
+        <div>
+          <Label>Description · EN</Label>
+          <textarea
+            value={enDesc}
+            onChange={(e) => setEnDesc(e.target.value)}
+            placeholder={guestyDesc || 'Long-form description shown on the public listing page'}
+            maxLength={4000}
+            rows={6}
+            style={{
+              width: '100%',
+              marginTop: 4,
+              padding: '8px 10px',
+              fontSize: 13,
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+            }}
+          />
+        </div>
+        <div>
+          <Label>Description · FR</Label>
+          <textarea
+            value={frDesc}
+            onChange={(e) => setFrDesc(e.target.value)}
+            placeholder="(non traduit — laisse vide pour utiliser l'EN)"
+            maxLength={4000}
+            rows={6}
+            style={{
+              width: '100%',
+              marginTop: 4,
+              padding: '8px 10px',
+              fontSize: 13,
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+            }}
+          />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        {dirty && (
+          <span style={{ alignSelf: 'center', fontSize: 11, color: 'var(--color-text-warning)' }}>
+            Unsaved changes
+          </span>
+        )}
+        <button
+          type="button"
+          className="btn primary sm"
+          onClick={save}
+          disabled={!dirty || saving}
+          style={{ opacity: !dirty || saving ? 0.6 : 1 }}
+        >
+          {saving ? 'Saving…' : 'Save translations'}
+        </button>
+      </div>
+    </div>
   );
 }

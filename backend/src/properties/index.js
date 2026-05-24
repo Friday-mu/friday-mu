@@ -118,6 +118,11 @@ function shapeMergedListing(row) {
     // are joined in the list/single query. Phase 2 (T3.12).
     primary_owner_id: row.primary_owner_guesty_id || null,
     primary_owner_display_name: row.primary_owner_display_name || null,
+    // mig 088 — per-locale overlay copy (name + description).
+    // Always emitted as an object; empty {} when nothing authored.
+    translations: o.translations && typeof o.translations === 'object'
+      ? o.translations
+      : {},
     availability: {
       blocked_30d: row.blocked_30d != null ? Number(row.blocked_30d) : 0,
       min_price_minor_30d: row.min_price_minor_30d != null ? Number(row.min_price_minor_30d) : null,
@@ -458,6 +463,99 @@ router.get('/:id', attachIdentity, async (req, res) => {
     res.json(shapeMergedListing(rows[0]));
   } catch (e) {
     console.error('[properties] get error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// PATCH /:id/translations — write the EN/FR overlay copy
+// ────────────────────────────────────────────────────────────────
+//
+// Per the website session brief: FAD becomes the canonical source
+// for per-listing translated copy. Body shape:
+//   { translations: { en?: {name?, description?},
+//                     fr?: {name?, description?} } }
+//
+// Fields are validated + capped; nulls/empties are dropped via
+// jsonb_strip_nulls so missing values fall back to the next layer
+// (FR → EN → top-level Guesty name).
+//
+// Auto-creates the overlay row if it doesn't exist yet.
+
+const TRANSLATION_LOCALES = new Set(['en', 'fr']);
+const TRANSLATION_FIELDS = new Set(['name', 'description']);
+const TRANSLATION_NAME_MAX = 200;
+const TRANSLATION_DESCRIPTION_MAX = 4000;
+
+function sanitizeTranslations(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { ok: false, error: 'translations must be an object' };
+  }
+  const out = {};
+  for (const locale of Object.keys(input)) {
+    if (!TRANSLATION_LOCALES.has(locale)) {
+      return { ok: false, error: `locale "${locale}" not supported (only en / fr)` };
+    }
+    const block = input[locale];
+    if (block === null) {
+      // Allow null to clear an entire locale block.
+      out[locale] = null;
+      continue;
+    }
+    if (typeof block !== 'object' || Array.isArray(block)) {
+      return { ok: false, error: `translations.${locale} must be an object` };
+    }
+    const cleaned = {};
+    for (const field of Object.keys(block)) {
+      if (!TRANSLATION_FIELDS.has(field)) {
+        return { ok: false, error: `translations.${locale}.${field} not supported (only name / description)` };
+      }
+      const value = block[field];
+      if (value === null || value === undefined || value === '') {
+        cleaned[field] = null;
+        continue;
+      }
+      if (typeof value !== 'string') {
+        return { ok: false, error: `translations.${locale}.${field} must be a string` };
+      }
+      const trimmed = value.trim();
+      const max = field === 'description' ? TRANSLATION_DESCRIPTION_MAX : TRANSLATION_NAME_MAX;
+      if (trimmed.length > max) {
+        return { ok: false, error: `translations.${locale}.${field} exceeds ${max} chars` };
+      }
+      cleaned[field] = trimmed;
+    }
+    out[locale] = cleaned;
+  }
+  return { ok: true, value: out };
+}
+
+router.patch('/:id/translations', attachIdentity, async (req, res) => {
+  try {
+    if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
+    const resolved = await resolvePropertyId(req.tenantId, req.params.id);
+    if (!resolved) return res.status(404).json({ error: 'Property not found' });
+
+    const parsed = sanitizeTranslations(req.body?.translations);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+    // Merge the incoming partial into the existing JSON, then strip
+    // empty leaves so the on-disk shape stays minimal + the consumer
+    // fallback (fr → en → top-level) works without explicit null checks.
+    const { rows } = await query(
+      `UPDATE fad_properties
+          SET translations = jsonb_strip_nulls(
+                COALESCE(translations, '{}'::jsonb) || $1::jsonb
+              ),
+              updated_at = NOW()
+        WHERE tenant_id = $2 AND id = $3
+        RETURNING id, name, description, translations`,
+      [JSON.stringify(parsed.value), req.tenantId, resolved.propertyId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Property not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('[properties] patch translations error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

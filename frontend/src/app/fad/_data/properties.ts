@@ -229,6 +229,15 @@ export interface Property {
   isCombo?: boolean;
   componentPropertyIds?: string[];
 
+  /** mig 088 — per-locale overlay copy authored by the team. The
+   *  website consumes via /api/public/listings. Empty object means
+   *  nothing authored; consumer falls back to top-level name/description
+   *  (which is Guesty-sourced). */
+  translations?: {
+    en?: { name?: string | null; description?: string | null };
+    fr?: { name?: string | null; description?: string | null };
+  };
+
   // Owners (link via PROPERTY_OWNERS; primaryOwnerId is the signing party)
   primaryOwnerId: string;
   /** Live primary-owner display name from fad_owners (T3.12). When set,
