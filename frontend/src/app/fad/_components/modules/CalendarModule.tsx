@@ -699,9 +699,9 @@ function WeekView({
     y: number;
   } | null>(null);
   // Cap stays-lane height by default — with 60+ properties the packed lanes
-  // can easily exceed 30 rows, producing an unusable wall of bars. Operator
-  // can expand on demand.
-  const STAYS_LANE_VISIBLE = 6;
+  // can easily exceed 30 rows. Default 12 lanes (matches MonthView) covers
+  // most realistic peak loads; toggle reveals the rest.
+  const STAYS_LANE_VISIBLE = 12;
   const [staysExpanded, setStaysExpanded] = useState(false);
   const monthLabel = days[0]
     ? new Date(days[0].isoDate).toLocaleString('en-US', { month: 'short' })
@@ -1170,7 +1170,11 @@ function MonthView({
     return out;
   }, [days]);
 
-  const MAX_LANES = 3;
+  // Tuned for the FR portfolio (60 properties → 60-100 simultaneous stays
+   // in peak season). 12 lanes captures most of them; the rest still fall
+   // into the per-day "+N more" popover. Going lower hides too much; going
+   // higher makes each week-row very tall on a normal viewport.
+  const MAX_LANES = 12;
 
   return (
     <div className="cal-month">
