@@ -44,8 +44,14 @@ export interface TopPropertyRow {
 
 export interface RevenueTrendPoint {
   day: string;
-  reservation_count: number;
+  /** Number of listings occupied on this day (correct hospitality metric). */
+  occupied_count: number;
+  /** Per-night pro-rated revenue summed across all stays in residence. */
   revenue_minor: number;
+}
+
+export interface TopPropertyRowExt extends TopPropertyRow {
+  adr_minor?: number | null;
 }
 
 export interface PortfolioResponse {

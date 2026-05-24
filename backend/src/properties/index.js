@@ -287,32 +287,54 @@ router.get('/', attachIdentity, async (req, res) => {
             LIMIT 1
          ) owner_join ON TRUE
          LEFT JOIN LATERAL (
+           -- Window-correct (2026-05-25 fix): clip nights to the last
+           -- 30 days, pro-rate revenue by overlap fraction. Mirrors
+           -- backend/src/analytics/portfolio.js#aggregateWindow.
+           WITH window_bounds AS (
+             SELECT (CURRENT_DATE - INTERVAL '30 days')::date AS w_from,
+                    CURRENT_DATE::date AS w_to
+           ),
+           overlap AS (
+             SELECT
+               GREATEST(LEAST(r.check_out_date, (wb.w_to + INTERVAL '1 day')::date) - GREATEST(r.check_in_date, wb.w_from), 0)::int AS nights_in_window,
+               GREATEST(r.check_out_date - r.check_in_date, 0)::int AS total_stay_nights,
+               r.total_amount_minor,
+               r.currency_code
+             FROM guesty_reservations r, window_bounds wb
+             WHERE r.tenant_id = gl.tenant_id
+               AND r.listing_guesty_id = gl.guesty_id
+               AND r.check_in_date < (wb.w_to + INTERVAL '1 day')::date
+               AND r.check_out_date > wb.w_from
+               AND COALESCE(r.status, 'confirmed') NOT IN ('canceled', 'cancelled')
+           )
            SELECT
-             COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
-             COUNT(*)::int AS reservation_count,
-             COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0)::int AS booked_nights,
+             COALESCE(SUM(
+               CASE
+                 WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
+                 ELSE ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+               END
+             ), 0)::bigint AS revenue_minor,
+             COUNT(*) FILTER (WHERE nights_in_window > 0)::int AS reservation_count,
+             COALESCE(SUM(nights_in_window), 0)::int AS booked_nights,
              CASE
-               WHEN COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0) > 0
-                 THEN LEAST(100, (COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0) * 100 / 30))::int
+               WHEN COALESCE(SUM(nights_in_window), 0) > 0
+                 THEN LEAST(100, ROUND(COALESCE(SUM(nights_in_window), 0)::numeric * 100 / 30))::int
                ELSE NULL
              END AS occupancy_pct,
              CASE
-               WHEN COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0) > 0
-                 THEN (COALESCE(SUM(r.total_amount_minor), 0) / COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 1))::bigint
+               WHEN COALESCE(SUM(nights_in_window), 0) > 0
+                 THEN (
+                   COALESCE(SUM(
+                     CASE
+                       WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
+                       ELSE ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+                     END
+                   ), 0) / COALESCE(SUM(nights_in_window), 1)
+                 )::bigint
                ELSE NULL
              END AS adr_minor,
-             (SELECT currency_code FROM guesty_reservations r2
-               WHERE r2.tenant_id = gl.tenant_id AND r2.listing_guesty_id = gl.guesty_id
-                 AND r2.check_in_date >= CURRENT_DATE - INTERVAL '30 days'
-                 AND r2.check_in_date <= CURRENT_DATE
-                 AND r2.currency_code IS NOT NULL
-               GROUP BY currency_code ORDER BY COUNT(*) DESC LIMIT 1) AS currency
-           FROM guesty_reservations r
-           WHERE r.tenant_id = gl.tenant_id
-             AND r.listing_guesty_id = gl.guesty_id
-             AND r.check_in_date >= CURRENT_DATE - INTERVAL '30 days'
-             AND r.check_in_date <= CURRENT_DATE
-             AND COALESCE(r.status, 'confirmed') NOT IN ('canceled', 'cancelled')
+             (SELECT currency_code FROM overlap WHERE currency_code IS NOT NULL GROUP BY currency_code ORDER BY COUNT(*) DESC LIMIT 1) AS currency
+           FROM overlap
          ) metrics ON TRUE
          WHERE ${filters.join(' AND ')}
          UNION ALL

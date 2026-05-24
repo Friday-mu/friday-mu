@@ -58,94 +58,153 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
     const kpiCurrent = await aggregateWindow(tenantId, windowFrom, windowTo);
     const kpiPrev = await aggregateWindow(tenantId, prevFrom, prevTo);
 
-    const windowNights = windowDays * Math.max(activeProps, 1);
-    const occupancyPct = windowNights > 0
-      ? Math.min(100, Math.round((kpiCurrent.booked_nights / windowNights) * 100))
+    // Available room-nights = window_days × active_listings (industry
+    // standard denominator). With clipped booked_nights from the fixed
+    // aggregator above, occupancy is now a real percentage that won't
+    // run away to 100% on every popular property.
+    const availableNights = windowDays * Math.max(activeProps, 1);
+    const occupancyPct = availableNights > 0
+      ? Math.min(100, Math.round((kpiCurrent.booked_nights / availableNights) * 100))
       : 0;
-    const prevOccupancyPct = windowNights > 0
-      ? Math.min(100, Math.round((kpiPrev.booked_nights / windowNights) * 100))
+    const prevOccupancyPct = availableNights > 0
+      ? Math.min(100, Math.round((kpiPrev.booked_nights / availableNights) * 100))
       : 0;
+    // ADR = revenue per occupied room-night (only counts nights that
+    // were actually sold).
     const adrMinor = kpiCurrent.booked_nights > 0
       ? Math.round(kpiCurrent.revenue_minor / kpiCurrent.booked_nights)
       : 0;
     const prevAdrMinor = kpiPrev.booked_nights > 0
       ? Math.round(kpiPrev.revenue_minor / kpiPrev.booked_nights)
       : 0;
-    const revparMinor = windowDays > 0 && activeProps > 0
-      ? Math.round(kpiCurrent.revenue_minor / (windowDays * activeProps))
+    // RevPAR = revenue per available room-night (revenue ÷ all room-nights
+    // including unsold). RevPAR = Occupancy × ADR by definition.
+    const revparMinor = availableNights > 0
+      ? Math.round(kpiCurrent.revenue_minor / availableNights)
       : 0;
 
     // ─── Channel mix (window) ───
-    // Normalise Guesty's raw channel codes (airbnb2, bookingCom, scrape-l3)
-    // into the friendly labels operators use elsewhere in FAD.
-    // Falls back to r.source when r.channel is null (Layer-3 scraped rows
-    // have channel=null but source='scrape-l3'). Was incorrectly bucketing
-    // those 20% of rows into "Unknown" before the fallback was added.
+    // Window-correct: stays overlapping the window contribute their
+    // in-window nights + pro-rated revenue. Channel name normalised
+    // (Airbnb / Booking.com / Direct / etc.) with COALESCE channel →
+    // source fallback for scraped rows.
     const channelRes = await query(
-      `SELECT
-         CASE
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('airbnb', 'airbnb2', 'airbnb-v2') THEN 'Airbnb'
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('booking', 'bookingcom', 'booking.com', 'bdc') THEN 'Booking.com'
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('vrbo', 'homeaway') THEN 'VRBO'
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('direct', 'website', 'friday', 'friday-direct') THEN 'Direct'
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('manual', 'phone', 'walk-in') THEN 'Manual'
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('owner') THEN 'Owner'
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('email') THEN 'Email'
-           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) LIKE 'scrape%' THEN 'Scraped (legacy)'
-           WHEN COALESCE(NULLIF(r.channel, ''), r.source, '') = '' THEN 'Unknown'
-           ELSE INITCAP(COALESCE(NULLIF(r.channel, ''), r.source))
-         END AS channel,
-         COUNT(*)::int AS reservation_count,
-         COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
-         COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0)::int AS booked_nights
-       FROM guesty_reservations r
-       WHERE r.tenant_id = $1
-         AND r.check_in_date >= $2::date
-         AND r.check_in_date <= $3::date
-         AND ${ACTIVE_STATUS_FILTER}
-       GROUP BY 1
+      `WITH overlapping AS (
+         SELECT
+           CASE
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('airbnb', 'airbnb2', 'airbnb-v2') THEN 'Airbnb'
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('booking', 'bookingcom', 'booking.com', 'bdc') THEN 'Booking.com'
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('vrbo', 'homeaway') THEN 'VRBO'
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('direct', 'website', 'friday', 'friday-direct') THEN 'Direct'
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('manual', 'phone', 'walk-in') THEN 'Manual'
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('owner') THEN 'Owner'
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('email') THEN 'Email'
+             WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) LIKE 'scrape%' THEN 'Scraped (legacy)'
+             WHEN COALESCE(NULLIF(r.channel, ''), r.source, '') = '' THEN 'Unknown'
+             ELSE INITCAP(COALESCE(NULLIF(r.channel, ''), r.source))
+           END AS channel,
+           GREATEST(LEAST(r.check_out_date, ($3::date + INTERVAL '1 day')::date) - GREATEST(r.check_in_date, $2::date), 0)::int AS nights_in_window,
+           GREATEST(r.check_out_date - r.check_in_date, 0)::int AS total_stay_nights,
+           r.total_amount_minor
+         FROM guesty_reservations r
+         WHERE r.tenant_id = $1
+           AND r.check_in_date < ($3::date + INTERVAL '1 day')::date
+           AND r.check_out_date > $2::date
+           AND ${ACTIVE_STATUS_FILTER}
+       )
+       SELECT
+         channel,
+         COUNT(*) FILTER (WHERE nights_in_window > 0)::int AS reservation_count,
+         COALESCE(SUM(
+           CASE
+             WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
+             ELSE ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+           END
+         ), 0)::bigint AS revenue_minor,
+         COALESCE(SUM(nights_in_window), 0)::int AS booked_nights
+       FROM overlapping
+       GROUP BY channel
        ORDER BY reservation_count DESC`,
       [tenantId, windowFrom, windowTo],
     );
 
-    // ─── Top properties by reservation count ───
+    // ─── Top properties (window-correct: clip nights + pro-rate revenue) ───
+    // Occupancy here is per single listing — for an N-day window the
+    // denominator is just N (since this is one room's slice). Truly
+    // multi-unit listings would need a unit-count multiplier; out of
+    // scope for v0.1.
     const topPropsRes = await query(
-      `SELECT
-         COALESCE(p.code, gl.nickname) AS code,
-         gl.nickname,
-         gl.title,
-         gl.picture_url,
-         COUNT(r.*)::int AS reservation_count,
-         COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
-         COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0)::int AS booked_nights
-       FROM guesty_listings gl
-       LEFT JOIN fad_properties p
-         ON p.tenant_id = gl.tenant_id AND p.guesty_id = gl.guesty_id
-       LEFT JOIN guesty_reservations r
-         ON r.tenant_id = gl.tenant_id
-        AND r.listing_guesty_id = gl.guesty_id
-        AND r.check_in_date >= $2::date
-        AND r.check_in_date <= $3::date
-        AND ${ACTIVE_STATUS_FILTER}
-       WHERE gl.tenant_id = $1
-       GROUP BY p.code, gl.nickname, gl.title, gl.picture_url
-       ORDER BY reservation_count DESC, COALESCE(p.code, gl.nickname) ASC
+      `WITH overlap_per_res AS (
+         SELECT
+           gl.guesty_id AS listing_guesty_id,
+           COALESCE(p.code, gl.nickname) AS code,
+           gl.nickname,
+           gl.title,
+           gl.picture_url,
+           r.guesty_id AS reservation_id,
+           GREATEST(LEAST(r.check_out_date, ($3::date + INTERVAL '1 day')::date) - GREATEST(r.check_in_date, $2::date), 0)::int AS nights_in_window,
+           GREATEST(r.check_out_date - r.check_in_date, 0)::int AS total_stay_nights,
+           r.total_amount_minor
+         FROM guesty_listings gl
+         LEFT JOIN fad_properties p
+           ON p.tenant_id = gl.tenant_id AND p.guesty_id = gl.guesty_id
+         LEFT JOIN guesty_reservations r
+           ON r.tenant_id = gl.tenant_id
+          AND r.listing_guesty_id = gl.guesty_id
+          AND r.check_in_date < ($3::date + INTERVAL '1 day')::date
+          AND r.check_out_date > $2::date
+          AND ${ACTIVE_STATUS_FILTER}
+         WHERE gl.tenant_id = $1
+       )
+       SELECT
+         listing_guesty_id,
+         code,
+         nickname,
+         title,
+         picture_url,
+         COUNT(reservation_id) FILTER (WHERE nights_in_window > 0)::int AS reservation_count,
+         COALESCE(SUM(
+           CASE
+             WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
+             ELSE ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+           END
+         ), 0)::bigint AS revenue_minor,
+         COALESCE(SUM(nights_in_window), 0)::int AS booked_nights
+       FROM overlap_per_res
+       GROUP BY listing_guesty_id, code, nickname, title, picture_url
+       ORDER BY reservation_count DESC, code ASC
        LIMIT 10`,
       [tenantId, windowFrom, windowTo],
     );
 
     // ─── Daily revenue trend (chart) ───
+    // For each day in the window: sum the per-night pro-rated revenue
+    // from every overlapping stay. A 10-night €3000 stay contributes
+    // €300/night on each of its 10 calendar days. Gives a real "what
+    // revenue did the portfolio earn today" line — not "what new bookings
+    // started today".
     const trendRes = await query(
       `SELECT
          d::date AS day,
-         COUNT(r.*) FILTER (WHERE r.guesty_id IS NOT NULL)::int AS reservation_count,
-         COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor
+         (SELECT COUNT(*)::int FROM guesty_reservations r
+            WHERE r.tenant_id = $1
+              AND r.check_in_date <= d::date
+              AND r.check_out_date > d::date
+              AND ${ACTIVE_STATUS_FILTER}
+         ) AS occupied_count,
+         COALESCE((
+           SELECT SUM(
+             CASE
+               WHEN r.total_amount_minor IS NULL OR (r.check_out_date - r.check_in_date) = 0 THEN 0
+               ELSE ROUND(r.total_amount_minor::numeric / (r.check_out_date - r.check_in_date))
+             END
+           ) FROM guesty_reservations r
+            WHERE r.tenant_id = $1
+              AND r.check_in_date <= d::date
+              AND r.check_out_date > d::date
+              AND ${ACTIVE_STATUS_FILTER}
+         ), 0)::bigint AS revenue_minor
        FROM generate_series($2::date, $3::date, INTERVAL '1 day') d
-       LEFT JOIN guesty_reservations r
-         ON r.tenant_id = $1
-        AND r.check_in_date = d
-        AND ${ACTIVE_STATUS_FILTER}
-       GROUP BY d
        ORDER BY d ASC`,
       [tenantId, windowFrom, windowTo],
     );
@@ -209,13 +268,22 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
         reservation_count: Number(r.reservation_count),
         revenue_minor: Number(r.revenue_minor),
         booked_nights: Number(r.booked_nights),
+        // Per-listing occupancy: clipped nights ÷ window-days (single room).
+        // Caps at 100% only if our nights-in-window calc is exact (it is —
+        // GREATEST/LEAST clamp clean).
         occupancy_pct: windowDays > 0
           ? Math.min(100, Math.round((Number(r.booked_nights) / windowDays) * 100))
           : 0,
+        // Per-listing ADR (revenue ÷ occupied nights).
+        adr_minor: Number(r.booked_nights) > 0
+          ? Math.round(Number(r.revenue_minor) / Number(r.booked_nights))
+          : null,
       })),
       revenue_trend: trendRes.rows.map((r) => ({
         day: r.day,
-        reservation_count: Number(r.reservation_count),
+        // Number of listings occupied on this day (was: bookings starting today).
+        occupied_count: Number(r.occupied_count),
+        // Sum of per-night pro-rated revenue across all stays in residence.
         revenue_minor: Number(r.revenue_minor),
       })),
       data_quality: {
@@ -229,23 +297,54 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
   }
 });
 
+// Window-correct aggregation. The window is [fromIso, toIso] inclusive
+// of both ends — toIso is the LAST night the metric counts (so a stay
+// checking out on toIso+1 is fully in-window if it started in-window).
+//
+// Bug we're fixing (2026-05-25):
+//   - Previous version: SUM(check_out - check_in) for reservations
+//     whose check_in fell in the window. A 100-night stay starting on
+//     day 1 contributed all 100 nights to a 30-day window. ADR + Occ
+//     came out nonsensical (100% caps, €50 ADR for Mauritius villas).
+//
+// Correct math (per industry definition of occupied room-nights):
+//   nights_in_window = MAX(0, LEAST(check_out, to+1) - GREATEST(check_in, from))
+//   pro_rated_revenue = total_amount_minor * nights_in_window / total_stay_nights
+//
+// reservation_count = stays that OVERLAP the window at all (so a long
+//   stay that started before but extends into the window still counts).
 async function aggregateWindow(tenantId, fromIso, toIso) {
   const { rows } = await query(
-    `SELECT
-       COUNT(*)::int AS reservation_count,
-       COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
-       COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0)::int AS booked_nights,
-       (SELECT currency_code FROM guesty_reservations r2
-          WHERE r2.tenant_id = $1
-            AND r2.check_in_date >= $2::date
-            AND r2.check_in_date <= $3::date
-            AND r2.currency_code IS NOT NULL
+    `WITH overlapping AS (
+       SELECT
+         r.total_amount_minor,
+         r.currency_code,
+         r.check_in_date,
+         r.check_out_date,
+         GREATEST(
+           LEAST(r.check_out_date, ($3::date + INTERVAL '1 day')::date) - GREATEST(r.check_in_date, $2::date),
+           0
+         )::int AS nights_in_window,
+         GREATEST(r.check_out_date - r.check_in_date, 0)::int AS total_stay_nights
+       FROM guesty_reservations r
+       WHERE r.tenant_id = $1
+         AND r.check_in_date < ($3::date + INTERVAL '1 day')::date
+         AND r.check_out_date > $2::date
+         AND ${ACTIVE_STATUS_FILTER}
+     )
+     SELECT
+       COUNT(*) FILTER (WHERE nights_in_window > 0)::int AS reservation_count,
+       COALESCE(SUM(nights_in_window), 0)::int AS booked_nights,
+       COALESCE(SUM(
+         CASE
+           WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
+           ELSE ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+         END
+       ), 0)::bigint AS revenue_minor,
+       (SELECT currency_code FROM overlapping
+          WHERE currency_code IS NOT NULL
           GROUP BY currency_code ORDER BY COUNT(*) DESC LIMIT 1) AS currency
-     FROM guesty_reservations r
-     WHERE r.tenant_id = $1
-       AND r.check_in_date >= $2::date
-       AND r.check_in_date <= $3::date
-       AND ${ACTIVE_STATUS_FILTER}`,
+     FROM overlapping`,
     [tenantId, fromIso, toIso],
   );
   const row = rows[0] || {};

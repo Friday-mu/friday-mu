@@ -331,7 +331,7 @@ function LiveRevenueTrendChart({ trend, currency }: { trend: PortfolioResponse['
           <div
             key={p.day}
             style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, height: '100%' }}
-            title={`${String(p.day).slice(0, 10)} · ${formatKpiMinor(p.revenue_minor, currency)} · ${p.reservation_count} bookings`}
+            title={`${String(p.day).slice(0, 10)} · ${formatKpiMinor(p.revenue_minor, currency)} · ${p.occupied_count} listings occupied`}
           >
             <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
               <div

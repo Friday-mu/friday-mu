@@ -45,31 +45,37 @@ router.get('/property/:code/summary', attachIdentity, async (req, res) => {
     );
     const guestyId = propRes.rows[0]?.guesty_id || null;
 
-    // Revenue aggregation. Only reservations with a non-null check_in
-    // date in the window contribute.
+    // Revenue aggregation — window-correct (2026-05-25 fix).
+    // Counts stays that OVERLAP the window (not just start in it), clips
+    // their nights to the window edges, and pro-rates the revenue by the
+    // in-window fraction. Mirrors backend/src/analytics/portfolio.js.
     let revenue = { revenue_minor: 0, reservation_count: 0, booked_nights: 0, currency: 'EUR' };
     if (guestyId) {
       const revRes = await query(
-        `SELECT
-           COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
-           COUNT(*)::int AS reservation_count,
-           COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0)::int AS booked_nights,
-           (
-             SELECT r2.currency_code FROM guesty_reservations r2
-              WHERE r2.tenant_id = $1
-                AND r2.listing_guesty_id = $2
-                AND r2.check_in_date >= $3::date
-                AND r2.check_in_date <= $4::date
-                AND r2.currency_code IS NOT NULL
-              GROUP BY r2.currency_code
-              ORDER BY COUNT(*) DESC LIMIT 1
-           ) AS currency
-         FROM guesty_reservations r
-         WHERE r.tenant_id = $1
-           AND r.listing_guesty_id = $2
-           AND r.check_in_date >= $3::date
-           AND r.check_in_date <= $4::date
-           AND COALESCE(r.status, 'confirmed') NOT IN ('canceled', 'cancelled')`,
+        `WITH overlap AS (
+           SELECT
+             GREATEST(LEAST(r.check_out_date, ($4::date + INTERVAL '1 day')::date) - GREATEST(r.check_in_date, $3::date), 0)::int AS nights_in_window,
+             GREATEST(r.check_out_date - r.check_in_date, 0)::int AS total_stay_nights,
+             r.total_amount_minor,
+             r.currency_code
+           FROM guesty_reservations r
+           WHERE r.tenant_id = $1
+             AND r.listing_guesty_id = $2
+             AND r.check_in_date < ($4::date + INTERVAL '1 day')::date
+             AND r.check_out_date > $3::date
+             AND COALESCE(r.status, 'confirmed') NOT IN ('canceled', 'cancelled')
+         )
+         SELECT
+           COALESCE(SUM(
+             CASE
+               WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
+               ELSE ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+             END
+           ), 0)::bigint AS revenue_minor,
+           COUNT(*) FILTER (WHERE nights_in_window > 0)::int AS reservation_count,
+           COALESCE(SUM(nights_in_window), 0)::int AS booked_nights,
+           (SELECT currency_code FROM overlap WHERE currency_code IS NOT NULL GROUP BY currency_code ORDER BY COUNT(*) DESC LIMIT 1) AS currency
+         FROM overlap`,
         [req.tenantId, guestyId, windowFromIso, windowToIso],
       );
       const row = revRes.rows[0] || {};
