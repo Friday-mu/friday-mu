@@ -1680,15 +1680,36 @@ function TextMessage({
     .filter(([_, users]) => users.length > 0)
     .sort(([a], [b]) => REACTION_SET.indexOf(a as typeof REACTION_SET[number]) -
                         REACTION_SET.indexOf(b as typeof REACTION_SET[number]));
+  // T3.14 — chat-style alignment. Operator's own messages right-align
+  // with accent bg (.msg-bubble.us); teammate messages stay left-aligned
+  // (.msg-bubble.them). Mirrors guest inbox bubble convention.
+  const isMe = !!currentUserId && !!message.authorId && message.authorId === currentUserId;
 
   return (
     <div
-      className="msg-bubble them"
-      style={{ maxWidth: 'unset', position: 'relative' }}
+      className={'msg-bubble ' + (isMe ? 'us' : 'them')}
+      // T3.14 — drop the legacy maxWidth:'unset' so the .msg-bubble CSS
+      // 78% cap takes effect. Without the cap, .us { margin-left:auto }
+      // can't actually right-shift the bubble (it already fills 100%).
+      // Now both bubbles wrap to the chat column like the guest inbox.
+      style={{ position: 'relative' }}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
-      <div className="msg-meta" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div
+        className="msg-meta"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          // For operator's own messages right-align the meta row inside
+          // the (already right-shifted) bubble so the name + timestamp
+          // sit flush with the bubble's right edge — same visual rhythm
+          // as iMessage / WhatsApp own-message rows. Reading order stays
+          // [avatar][name][·timestamp] so the bullet still reads natural.
+          justifyContent: isMe ? 'flex-end' : 'flex-start',
+        }}
+      >
         {(() => {
           // Prefer the fixture (deterministic colour + initials for FR
           // team members). Fall back to the backend-captured author_display_name
@@ -1731,9 +1752,19 @@ function TextMessage({
         onDownload={onDownloadAttachment}
       />
       {/* Aggregated reactions — one chip per emoji with count.
-          Operator clicks their own chip to remove; clicks others to add. */}
+          Operator clicks their own chip to remove; clicks others to add.
+          For own messages, right-justify so chips don't dangle on the
+          left edge of a right-shifted bubble. */}
       {reactionEntries.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 4,
+            marginTop: 6,
+            justifyContent: isMe ? 'flex-end' : 'flex-start',
+          }}
+        >
           {reactionEntries.map(([emoji, users]) => {
             const meReacted = !!currentUserId && users.includes(currentUserId);
             return (
@@ -1765,13 +1796,16 @@ function TextMessage({
         </div>
       )}
       {/* Hover picker — three semantic emojis + an optional "Reply in
-          thread" button appear on top-right when hovering. */}
+          thread" button appear on top-right when hovering. For own
+          messages (right-shifted bubble) we flip the popup to top-LEFT
+          so it doesn't get clipped at the viewport edge — same pattern
+          as Slack / iMessage own-message hover actions. */}
       {hovering && onAddReaction && (
         <div
           style={{
             position: 'absolute',
             top: -14,
-            right: 8,
+            ...(isMe ? { left: 8 } : { right: 8 }),
             display: 'flex',
             gap: 2,
             padding: '2px 4px',
@@ -1831,26 +1865,27 @@ function TextMessage({
         </div>
       )}
       {(message.threadCount ?? 0) > 0 && !compact && (
-        <button
-          type="button"
-          onClick={onOpenThread}
-          disabled={!onOpenThread}
-          style={{
-            marginTop: 4,
-            padding: '2px 6px',
-            fontSize: 11,
-            color: 'var(--color-brand-accent)',
-            background: threadOpen ? 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.15))' : 'transparent',
-            border: 'none',
-            borderRadius: 4,
-            cursor: onOpenThread ? 'pointer' : 'default',
-            display: 'inline-block',
-            fontWeight: 500,
-          }}
-        >
-          💬 {message.threadCount} repl{message.threadCount === 1 ? 'y' : 'ies'}
-          {threadOpen && ' · hide'}
-        </button>
+        <div style={{ marginTop: 4, textAlign: isMe ? 'right' : 'left' }}>
+          <button
+            type="button"
+            onClick={onOpenThread}
+            disabled={!onOpenThread}
+            style={{
+              padding: '2px 6px',
+              fontSize: 11,
+              color: 'var(--color-brand-accent)',
+              background: threadOpen ? 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.15))' : 'transparent',
+              border: 'none',
+              borderRadius: 4,
+              cursor: onOpenThread ? 'pointer' : 'default',
+              display: 'inline-block',
+              fontWeight: 500,
+            }}
+          >
+            💬 {message.threadCount} repl{message.threadCount === 1 ? 'y' : 'ies'}
+            {threadOpen && ' · hide'}
+          </button>
+        </div>
       )}
     </div>
   );
