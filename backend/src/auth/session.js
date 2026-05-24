@@ -53,6 +53,10 @@ function shapeUser(user, token = null) {
     fad_role: resolveFadRole(user),
     tenant_id: user.tenant_id || DEFAULT_TENANT_ID,
     must_change_password: !!user.must_change_password,
+    // T3.15 v0.3 — cross-device UI language preference. Null = no
+    // preference set; frontend falls back to browser language + the
+    // localStorage cache (`fad:lang`). Set via PATCH /api/auth/me/preferences.
+    preferred_language: user.preferred_language || null,
   };
   if (token) shaped.token = token;
   return shaped;
@@ -72,7 +76,7 @@ async function loadActiveUserById(userId) {
   if (!userId) return null;
   const { rows } = await query(
     `SELECT id, username, email, password_hash, role, fad_role, display_name,
-            tenant_id, is_active, must_change_password
+            tenant_id, is_active, must_change_password, preferred_language
        FROM users
       WHERE id = $1
         AND is_active = TRUE
@@ -108,7 +112,7 @@ router.post('/login', async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT id, username, email, password_hash, role, display_name,
-              tenant_id, is_active, must_change_password
+              tenant_id, is_active, must_change_password, preferred_language
          FROM users
         WHERE LOWER(COALESCE(email, '')) = $1
            OR LOWER(COALESCE(username, '')) = $1
@@ -146,6 +150,40 @@ router.get('/me', async (req, res) => {
   } catch (e) {
     console.error('[auth/me] FAD-native auth check failed:', e.message);
     return res.status(500).json({ error: 'Auth check failed' });
+  }
+});
+
+// T3.15 v0.3 — update the caller's UI preferences (cross-device).
+// Currently only `preferred_language` ('en' | 'fr' | null). Validate
+// strictly so a bad payload can't write garbage into the column past
+// the CHECK constraint. Returns the updated user shape.
+router.patch('/me/preferences', async (req, res) => {
+  const payload = authPayload(req);
+  if (!payload) return res.status(401).json({ error: 'Unauthorized' });
+
+  const body = req.body || {};
+  const hasLang = Object.prototype.hasOwnProperty.call(body, 'preferred_language');
+  if (!hasLang) {
+    return res.status(400).json({ error: 'preferred_language is required' });
+  }
+  const next = body.preferred_language;
+  if (next !== null && next !== 'en' && next !== 'fr') {
+    return res.status(400).json({ error: 'preferred_language must be null, "en", or "fr"' });
+  }
+
+  try {
+    const userId = payload.user_id || payload.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    await query(
+      `UPDATE users SET preferred_language = $1 WHERE id = $2`,
+      [next, userId],
+    );
+    const user = await loadActiveUserById(userId);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    return res.json(shapeUser(user));
+  } catch (e) {
+    console.error('[auth/me/preferences] update failed:', e.message);
+    return res.status(500).json({ error: 'Could not update preferences' });
   }
 });
 

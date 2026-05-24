@@ -5,6 +5,7 @@ import { useEffect, useState, type MouseEvent } from 'react';
 // useTranslation()/useT() call fires. Must precede other module
 // imports.
 import '../_i18n';
+import { hydrateLanguageFromServer } from '../_i18n';
 import { MODULES, visibleSubPagesForModuleRole, type ModuleDef } from '../_data/modules';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
@@ -110,6 +111,9 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
         if (data?.must_change_password) setMustChangePassword(true);
       })
       .catch(() => undefined);
+    // T3.15 v0.3 — hydrate the UI language from the user's DB
+    // preference if no localStorage choice exists on this device.
+    void hydrateLanguageFromServer();
 
     const params = new URLSearchParams(window.location.search);
     let urlMod = params.get('m');

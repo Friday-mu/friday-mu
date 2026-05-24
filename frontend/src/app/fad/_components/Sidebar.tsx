@@ -197,9 +197,14 @@ export function Sidebar({
                                 onSelectSub?.(mod.id, sp.id);
                                 onMobileClose?.();
                               }}
-                              title={isLocked ? `${sp.label} · admin only` : sp.label}
+                              title={(() => {
+                                const localised = t(`subpage.${mod.id}.${sp.id}`, sp.label);
+                                return isLocked
+                                  ? `${localised} · ${t('shell.adminOnly', 'admin only')}`
+                                  : localised;
+                              })()}
                             >
-                              <span className="fad-nav-sub-label">{sp.label}</span>
+                              <span className="fad-nav-sub-label">{t(`subpage.${mod.id}.${sp.id}`, sp.label)}</span>
                               {subCount.total > 0 && <PendingChip count={subCount} collapsed={false} />}
                               {isLocked && <span className="fad-nav-sub-lock" aria-hidden="true">🔒</span>}
                             </button>

@@ -66,6 +66,62 @@ export async function setLanguage(lang: Lang): Promise<void> {
   ensureI18nInitialized();
   writeStoredLang(lang);
   await i18n.changeLanguage(lang);
+  // T3.15 v0.3 — fire-and-forget DB persist so the choice survives a
+  // logout / fresh device. Don't block on it; localStorage is the
+  // source of truth for the current tab.
+  void persistPreferredLanguageToServer(lang);
+}
+
+async function persistPreferredLanguageToServer(lang: Lang): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const token = window.localStorage.getItem('gms_token');
+  if (!token) return; // not logged in — skip silently
+  try {
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+    const url = `${apiBase}/api/auth/me/preferences`;
+    await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ preferred_language: lang }),
+    });
+  } catch {
+    // Silent — DB persist is a nice-to-have. localStorage already
+    // has the value so the current session is fine.
+  }
+}
+
+/**
+ * Hydrate the language from the user's DB preference on mount. Called
+ * once from FadApp; safely no-ops when not logged in or when the user
+ * has no preference set yet. localStorage takes precedence: if the
+ * user explicitly switched on this device, we don't overwrite that
+ * with a possibly-stale server-side value.
+ */
+export async function hydrateLanguageFromServer(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  ensureI18nInitialized();
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  if (stored === 'en' || stored === 'fr') return; // device choice wins
+  const token = window.localStorage.getItem('gms_token');
+  if (!token) return;
+  try {
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+    const res = await fetch(`${apiBase}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const me = await res.json();
+    const dbLang = me?.preferred_language;
+    if (dbLang === 'en' || dbLang === 'fr') {
+      writeStoredLang(dbLang);
+      await i18n.changeLanguage(dbLang);
+    }
+  } catch {
+    // Silent — fall back to the existing in-memory lang.
+  }
 }
 
 export function getLanguage(): Lang {

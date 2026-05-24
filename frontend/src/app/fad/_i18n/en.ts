@@ -50,23 +50,50 @@ export const en: TranslationShape = {
     training: 'Training',
     settings: 'Settings',
   },
+  // Sub-page labels are module-qualified to disambiguate context-
+  // sensitive ids ('all' means All properties in Properties, All
+  // reservations in Reservations). Add new keys as `subpage.<module>.<id>`.
+  // Fallback to the EN label from the MODULES fixture when no key matches.
   subpage: {
-    overview: 'Overview',
-    schedule: 'Schedule',
-    'my-tasks': 'My tasks',
-    'all-tasks': 'All tasks',
-    issues: 'Reported issues',
-    history: 'My history',
-    approvals: 'Approvals',
-    roster: 'Roster',
-    insights: 'Insights',
-    settings: 'Settings',
-    all: 'All',
-    'all-properties': 'All properties',
-    'all-reservations': 'All reservations',
-    inquiries: 'Inquiries',
-    onboarding: 'Onboarding',
-    transactions: 'Transactions',
+    // Operations
+    'operations.overview': 'Overview',
+    'operations.schedule': 'Schedule',
+    'operations.my': 'My tasks',
+    'operations.all': 'All tasks',
+    'operations.issues': 'Reported issues',
+    'operations.history': 'My history',
+    'operations.approvals': 'Approvals',
+    'operations.roster': 'Roster',
+    'operations.insights': 'Insights',
+    'operations.settings': 'Settings',
+    // Properties
+    'properties.overview': 'Overview',
+    'properties.all': 'All properties',
+    'properties.onboarding': 'Onboarding',
+    'properties.insights': 'Insights',
+    // Reservations
+    'reservations.overview': 'Overview',
+    'reservations.all': 'All reservations',
+    'reservations.inquiries': 'Inquiries',
+    // Finance
+    'finance.overview': 'Overview',
+    'finance.transactions': 'Transactions',
+    'finance.approvals': 'Approvals',
+    'finance.owner-statements': 'Owner statements',
+    'finance.tourist-tax': 'Tourist tax',
+    'finance.pnl': 'P&L',
+    'finance.reports': 'Reports',
+    'finance.float-ledger': 'Float ledger',
+    'finance.brand': 'Brand',
+    // HR
+    'hr.staff': 'Staff',
+    'hr.time-off': 'Time-off',
+    'hr.stats': 'Stats',
+    'hr.permissions': 'Permissions',
+    // Tenant settings
+    'tenant-settings.general': 'General',
+    'tenant-settings.users': 'Users',
+    'tenant-settings.permissions': 'Permissions',
   },
   shell: {
     askFriday: 'Ask Friday',
