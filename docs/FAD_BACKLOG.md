@@ -309,18 +309,40 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   appear on the right while the rest of the team messages appear on
   the left. like we do for guests."
 
-### T3.15 — French (FR) i18n for field staff modules (NEW 2026-05-24 evening)
-- Effort: L · open · scope-capture from Ishant
-- All field staff should have the option to switch FAD UI to French
-  for the modules they have access to (per current FIELD_PERMS:
-  Operations / Inbox · Team / HR self · Settings · limited Roster).
-- Scope decisions needed before implementation:
-  - Library choice — react-intl vs i18next vs custom (factor: bundle size + plural rules + interpolation needs)
-  - Language toggle location — Settings / Sidebar profile menu / header dropdown?
-  - Persistence — per-user (DB column on `users.preferred_language`) + localStorage cache?
-  - Translation source — first-pass machine via Gemini + human-review pass, OR upfront human translation of the FR-only module strings?
-  - Coverage scope — start with Operations only (highest field-staff use), expand to Inbox · Team / HR self next?
-  - Date/number formatting — `Intl.DateTimeFormat`/`Intl.NumberFormat` with locale prop (already used in a few spots for fr-MU)
+### T3.15 — French (FR) i18n for field staff modules (v0.1 SHIPPED 2026-05-24 evening · `97230bd2`)
+- Effort: L overall · v0.1 ✅ shipped · v0.2 scoped below
+- v0.1 (this session):
+  - **Library:** i18next + react-i18next bundled as TS modules (no
+    JSON fetch). Strict `TranslationShape` interface enforces fr.ts
+    matches en.ts key tree at compile time. ~30 KB added bundle.
+  - **Toggle:** Settings → Appearance → Language pill (EN | FR).
+    Visible to field staff (their Settings is restricted to
+    appearance + account, so this is the natural home).
+  - **Persistence:** `localStorage` key `fad:lang`. First-load default
+    respects browser language if it starts with `fr`.
+  - **Coverage shipped:** Sidebar module + group labels · Operations
+    module title/subtitle/tabs/primary actions · Settings module
+    title + section nav + Appearance section.
+  - **Implementation files:** `frontend/src/app/fad/_i18n/{en,fr,index,useT}.ts`
+    + `'use client'` side-effect import in `FadApp.tsx`. New hook
+    `useT()` returns `{t, lang, setLang}`. Specialised helpers
+    `useTranslateModule()` + `useTranslateGroup()` for sidebar lookups.
+- v0.2 follow-ups (open):
+  - **Sub-page labels** — need module-qualified keys to disambiguate
+    ('all' means All properties in Properties context, All reservations
+    in Reservations).
+  - **DB-backed per-user persistence** — `users.preferred_language`
+    column + sync at login. Currently per-device only.
+  - **Module body coverage** — Inbox, Calendar, Properties,
+    Reservations, HR, Finance bodies all still EN. Per-module sweep
+    needed (Operations is the template — copy its pattern).
+  - **Body strings inside Settings → Appearance card** — Density /
+    Sidebar / Dark mode rows + their "Currently: dark" copy. Quick win.
+  - **Account section + ChangePassword + Toaster + button copy** —
+    cross-cutting sweep, can ship alongside any module body sweep.
+- Original scope from Ishant: "the FAD should have a french version
+  for field staff. so all field staff should have the option to use
+  french for the modules they have access to."
 - Estimate after scoping: probably 1-2 days for the i18n harness +
   Operations module FR coverage, then incremental per-module pass.
 - Scope note from Ishant: "the FAD should have a french version for
