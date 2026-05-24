@@ -923,8 +923,11 @@ function statementExport(label: string, body: string) {
 
 function FinanceOwnerStatements() {
   const { openConfirm, openFriday } = useFinCtx();
-  const [selectedCode, setSelectedCode] = useState<string>(FIN_OWNER_STATEMENTS[0].propertyCode);
-  const selected = FIN_OWNER_STATEMENTS.find((s) => s.propertyCode === selectedCode) || FIN_OWNER_STATEMENTS[0];
+  const [selectedCode, setSelectedCode] = useState<string>(() => FIN_OWNER_STATEMENTS[0]?.propertyCode ?? '');
+  const selected = FIN_OWNER_STATEMENTS.find((s) => s.propertyCode === selectedCode) ?? FIN_OWNER_STATEMENTS[0];
+  if (!selected) {
+    return <div className="fin-empty" style={{ padding: 20, color: 'var(--color-text-tertiary)' }}>No owner statements for this period.</div>;
+  }
   const owner = FIN_OWNERS.find((o) => o.id === selected.ownerId);
   const property = FIN_PROPERTIES.find((p) => p.code === selected.propertyCode);
 
@@ -1263,15 +1266,15 @@ function FinanceTouristTax() {
           </div>
           <div style={{ padding: '14px 16px' }}>
             <div className="fin-tt-summary">
-              <div><div className="fin-row-sub">Net owed</div><div className="fin-row-amount">€ {FIN_TOURIST_TAX[0].netOwedEur.toLocaleString()}</div></div>
-              <div><div className="fin-row-sub">Refunded this period</div><div className="fin-row-amount">€ {FIN_TOURIST_TAX[0].refundedEur.toLocaleString()}</div></div>
+              <div><div className="fin-row-sub">Net owed</div><div className="fin-row-amount">€ {(FIN_TOURIST_TAX[0]?.netOwedEur ?? 0).toLocaleString()}</div></div>
+              <div><div className="fin-row-sub">Refunded this period</div><div className="fin-row-amount">€ {(FIN_TOURIST_TAX[0]?.refundedEur ?? 0).toLocaleString()}</div></div>
               {/* @demo:data — Tag: PROD-DATA-35 — see frontend/DEMO_CRUFT.md */}
               <div><div className="fin-row-sub">Reservations included</div><div className="fin-row-amount">14</div></div>
             </div>
             <div className="fin-capture-actions" style={{ marginTop: 14, justifyContent: 'flex-start' }}>
               <button className="btn ghost sm" onClick={() => openConfirm({
                 title: `MRA submission CSV — ${CURRENT_PERIOD.label}`,
-                body: <p>Generates an MRA-spec CSV of €{FIN_TOURIST_TAX[0].netOwedEur.toLocaleString()} across 14 reservations. Manual remittance in v1; auto-push to MRA portal lands Phase 2.</p>,
+                body: <p>Generates an MRA-spec CSV of €{(FIN_TOURIST_TAX[0]?.netOwedEur ?? 0).toLocaleString()} across 14 reservations. Manual remittance in v1; auto-push to MRA portal lands Phase 2.</p>,
                 primaryLabel: 'Download CSV',
               })}>Generate MRA submission CSV</button>
               <button className="btn primary sm" onClick={() => openConfirm({
@@ -1544,8 +1547,11 @@ function FinancePnL() {
 
 function FinanceFloatLedger() {
   const { openConfirm } = useFinCtx();
-  const [selectedAcct, setSelectedAcct] = useState<string>(FIN_FLOAT_ACCOUNTS[0].accountId);
-  const account = FIN_FLOAT_ACCOUNTS.find((a) => a.accountId === selectedAcct) || FIN_FLOAT_ACCOUNTS[0];
+  const [selectedAcct, setSelectedAcct] = useState<string>(() => FIN_FLOAT_ACCOUNTS[0]?.accountId ?? '');
+  const account = FIN_FLOAT_ACCOUNTS.find((a) => a.accountId === selectedAcct) ?? FIN_FLOAT_ACCOUNTS[0];
+  if (!account) {
+    return <div className="fin-empty" style={{ padding: 20, color: 'var(--color-text-tertiary)' }}>No float accounts configured.</div>;
+  }
   const accountMeta = FIN_ACCOUNTS.find((a) => a.id === account.accountId);
 
   const variancePct = account.targetFloatMinor
@@ -2642,7 +2648,7 @@ function PCStage3() {
     FIN_BANK_LINES.forEach((b) => { (m[b.accountId] = m[b.accountId] || []).push(b); });
     return m;
   }, []);
-  const [selectedId, setSelectedId] = useState<string>(FIN_BANK_LINES[0].id);
+  const [selectedId, setSelectedId] = useState<string>(() => FIN_BANK_LINES[0]?.id ?? '');
   const selected = FIN_BANK_LINES.find((b) => b.id === selectedId);
 
   return (
@@ -2969,7 +2975,7 @@ function BankUploadDrawer({
 }: { accountId?: string; payoutPlatform?: string; onClose: () => void }) {
   const isPayout = !!payoutPlatform;
   const [stage, setStage] = useState<'pick' | 'parsing' | 'preview' | 'committed'>('pick');
-  const [selectedAccount, setSelectedAccount] = useState<string>(accountId || FIN_ACCOUNTS[0].id);
+  const [selectedAccount, setSelectedAccount] = useState<string>(() => accountId || FIN_ACCOUNTS[0]?.id || '');
   const [selectedPlatform, setSelectedPlatform] = useState<string>(payoutPlatform || 'airbnb');
   const [fileName, setFileName] = useState<string>('');
 
