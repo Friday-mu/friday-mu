@@ -93,6 +93,21 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Fix is NOT a simple swap to `new Date()` — the fixtures themselves are anchored to 2026-04-27, so live TODAY against fixture dates would surface "due 27 days ago" everywhere. Real fix: gate the constant behind `liveOnlyMode()` (use fixture anchor in demo, real now in prod), AND audit each cascaded "in N days" / "M days ago" use site for sanity.
 - Production risk today is LOW because `liveOnlyMode()` already suppresses fixture-derived urgency. Keep on backlog but not urgent.
 
+### T1.11 — Occupancy / ADR not yet computed on Property cards
+- Effort: M · Status: open (surfaced 2026-05-24 audit)
+- Every Property card on Overview + All Properties shows "Occ 0%" and a flat ADR figure. Backend doesn't yet compute occupancy/ADR from reservations + calendar data.
+- Add backend aggregation: `GET /api/properties/:code/metrics?window=90d` returning `{occupancy_pct, adr_minor, revpar_minor}` derived from `guesty_reservations` + `guesty_calendar` over the window. Wire on the property card render.
+
+### T1.12 — Property owner names show "o-guesty-unknown"
+- Effort: S · Status: open (surfaced 2026-05-24 audit)
+- Property cards display "o-guesty-unknown" for the owner field. Cause: `primaryOwnerId` resolves via `FIN_OWNERS` fixture, but no real owner records exist yet for the Guesty-synced properties.
+- Either: (a) seed `fad_property_owners` from Guesty listing's `accountManager` field on sync, or (b) hide the owner row until owner data is wired (Owners module Sep-2026).
+
+### T1.13 — Ops Insights + Reservations Inquiries slow initial render (~5s)
+- Effort: S · Status: open (surfaced 2026-05-24 audit)
+- Both pages show "Loading…" for ~5s before content appears (data eventually renders correctly). Likely an unnecessary blocking spinner or missing initial cached state.
+- Investigate: drop the initial loading skeleton and lean on the existing stale-while-revalidate pattern, or pre-fetch on the navbar hover.
+
 ### ~~T1.10 — Brittle `array[0]` crash safety~~ ✓ shipped 2026-05-24 (`f9d375d6`)
 - Audit found 7 real sites in FinanceModule (Owner Statements, Tourist-tax summary, Float Ledger, Bank Recon, Bank Upload Drawer). All fixed with lazy `useState` initializers (`() => FIN_X[0]?.id ?? ''`) and empty-state JSX in the two sub-pages that depend on a selected record.
 - InboxModule, TeamInbox, FridayDrawer were ALREADY safe (`if (visibleChannels[0])` guards + `?.name.split() ?? 'there'`). Documented in commit message so future audits know to skip those.
