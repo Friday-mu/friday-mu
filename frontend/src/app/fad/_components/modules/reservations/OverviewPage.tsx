@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { useT } from '../../../_i18n/useT';
 import {
   RESERVATIONS,
   CHANNEL_LABEL,
@@ -34,6 +35,7 @@ function isoDay(iso: string): string {
 }
 
 export function OverviewPage({ onOpen }: Props) {
+  const { t } = useT();
   const today = TODAY_ISO;
   const sevenDaysOut = dayOffsetISO(today, 7);
   const thirtyDaysOut = dayOffsetISO(today, 30);
@@ -99,7 +101,7 @@ export function OverviewPage({ onOpen }: Props) {
       if (r.balanceDue > 0 && isoDay(r.checkIn) <= sevenDaysOut) {
         flags.push({
           reservationId: r.id,
-          label: 'Balance due before check-in',
+          label: t('reservations.overview.flag.balanceDue', 'Balance due before check-in'),
           detail: `${r.propertyCode} · ${r.guestName} · ${formatMoney(r.balanceDue, r.currency)}`,
           tone: 'warn',
         });
@@ -112,16 +114,16 @@ export function OverviewPage({ onOpen }: Props) {
     <div className="fad-module-body" style={{ flex: 1, overflowY: 'auto' }}>
       {/* KPI strip */}
       <div className="kpi-grid">
-        <KPI label="Arriving today" value={arrivingToday.length} sub={arrivingToday.map((r) => r.propertyCode).join(' · ') || '—'} />
-        <KPI label="Departing today" value={departingToday.length} sub={departingToday.map((r) => r.propertyCode).join(' · ') || '—'} />
-        <KPI label="In-house" value={inHouse.length} sub={inHouse.map((r) => r.propertyCode).slice(0, 4).join(' · ') || '—'} />
-        <KPI label="Next 7 days" value={next7d.length} sub={`${next7d.length} arrivals booked`} />
+        <KPI label={t('reservations.overview.kpi.arrivingToday', 'Arriving today')} value={arrivingToday.length} sub={arrivingToday.map((r) => r.propertyCode).join(' · ') || '—'} />
+        <KPI label={t('reservations.overview.kpi.departingToday', 'Departing today')} value={departingToday.length} sub={departingToday.map((r) => r.propertyCode).join(' · ') || '—'} />
+        <KPI label={t('reservations.overview.kpi.inHouse', 'In-house')} value={inHouse.length} sub={inHouse.map((r) => r.propertyCode).slice(0, 4).join(' · ') || '—'} />
+        <KPI label={t('reservations.overview.kpi.next7Days', 'Next 7 days')} value={next7d.length} sub={t('reservations.overview.kpi.arrivalsBooked', '{n} arrivals booked').replace('{n}', String(next7d.length))} />
       </div>
 
       {/* Urgent flags */}
       {urgent.length > 0 && (
         <section style={{ marginTop: 16 }}>
-          <SectionHeading>Needs attention · {urgent.length}</SectionHeading>
+          <SectionHeading>{t('reservations.overview.needsAttention', 'Needs attention')} · {urgent.length}</SectionHeading>
           <div className="card">
             {urgent.map((f, i) => (
               <button

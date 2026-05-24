@@ -179,6 +179,19 @@ export const en: TranslationShape = {
       inquiries: 'Inquiries',
     },
     newReservation: 'New reservation',
+    overview: {
+      kpi: {
+        arrivingToday: 'Arriving today',
+        departingToday: 'Departing today',
+        inHouse: 'In-house',
+        next7Days: 'Next 7 days',
+        arrivalsBooked: '{n} arrivals booked',
+      },
+      needsAttention: 'Needs attention',
+      flag: {
+        balanceDue: 'Balance due before check-in',
+      },
+    },
   },
 
   // ─── HR module ────────────────────────────────────────────────
@@ -290,6 +303,11 @@ export interface TranslationShape {
     subtitle: string;
     tabs: Record<string, string>;
     newReservation: string;
+    overview: {
+      kpi: Record<string, string>;
+      needsAttention: string;
+      flag: Record<string, string>;
+    };
   };
   hr: {
     subtitle: { field: string; manager: string };

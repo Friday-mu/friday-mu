@@ -165,6 +165,19 @@ export const fr: TranslationShape = {
       inquiries: 'Demandes',
     },
     newReservation: 'Nouvelle réservation',
+    overview: {
+      kpi: {
+        arrivingToday: 'Arrivées du jour',
+        departingToday: 'Départs du jour',
+        inHouse: 'Sur place',
+        next7Days: '7 prochains jours',
+        arrivalsBooked: '{n} arrivées réservées',
+      },
+      needsAttention: 'À traiter',
+      flag: {
+        balanceDue: 'Solde dû avant l’arrivée',
+      },
+    },
   },
 
   hr: {
