@@ -57,7 +57,9 @@ export function ensureI18nInitialized(): void {
     // The provider below swaps on mount.
     lng: typeof window === 'undefined' ? 'en' : readStoredLang(),
     fallbackLng: 'en',
-    interpolation: { escapeValue: false },
+    // Use single-brace placeholders {n} / {date} / {error} — matches
+    // the convention already established in arrivalsBooked and friends.
+    interpolation: { escapeValue: false, prefix: '{', suffix: '}' },
     returnEmptyString: false,
   });
 }
