@@ -443,7 +443,26 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   field staff. so all field staff should have the option to use french
   for the modules they have access to."
 
-### T3.7 — website_inbox tenant_id migration (NEW, promoted from T3.2 audit)
+### T3.7 — website_inbox tenant_id migration (v0.1 read-path SHIPPED 2026-05-24 evening · `b5ed4df4`)
+- **v0.1 shipped:**
+  - Migration 087 adds `tenant_id UUID NOT NULL DEFAULT FR_TENANT_ID`
+    to `inbox_threads`, `inbox_events`, `inbox_guesty_jobs`. 19
+    existing prod threads backfilled to FR. Tenant-blind unique-email
+    index dropped + replaced with `(tenant_id, lower(guest_email))`
+    so two tenants can each have a `guest@example.com` thread.
+  - `threads.js` read paths scoped behind attachIdentity +
+    `WHERE tenant_id = req.tenantId`: GET /threads · GET /threads/:id
+    · PATCH /threads/:id · POST /threads/:id/reply · POST
+    /threads/:id/mark-paid. Verified live: GET returns 19 threads to
+    the FR admin; a non-FR tenant would see empty results.
+- **v0.2 deferred (no-op for FR-only deployment, hardening for non-FR):**
+  - `webhook.js` INSERT paths inherit the FR_TENANT_ID DEFAULT —
+    safe today, needs explicit tenant routing once non-FR webhooks land.
+  - `ai_handoff.js`, `jobs.js`, drafts INSERT + UPDATE paths same.
+  - The draft endpoints (POST /threads/:id/drafts/*) still ignore
+    tenant — admin from tenant A could approve/revise a draft on
+    tenant B's thread if they had the IDs. Low risk while FR is the
+    only tenant. (NEW, promoted from T3.2 audit)
 - Effort: M-L · Blocks: non-FR tenant rollout (T3.2 closure) · Status: open
 - `inbox_threads` + `inbox_events` + `inbox_guesty_jobs` + `inbox_drafts(?)` lack `tenant_id` columns (mig 033 era).
 - ~30 SQL sites in `backend/src/website_inbox/*` operate without tenant filters; 2 routes (GET /threads, PATCH /threads/:id) don't even use `attachIdentity`.
