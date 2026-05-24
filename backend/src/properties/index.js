@@ -259,7 +259,7 @@ router.get('/', attachIdentity, async (req, res) => {
           ${typeof req.query.lifecycle === 'string'
             ? `AND p.lifecycle_status = $${params.length}` /* re-uses lifecycle param already pushed */
             : ''}
-       ORDER BY 2->>'code' NULLS LAST, 1->>'nickname' NULLS LAST`,
+       ORDER BY (overlay->>'code') NULLS LAST, (guesty->>'nickname') NULLS LAST`,
       params,
     );
     res.json({ listings: rows.map(shapeMergedListing) });

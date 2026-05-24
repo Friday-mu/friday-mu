@@ -159,16 +159,21 @@ function dedupeRawReservations(rows: RawReservation[]): RawReservation[] {
 
 function mapStatus(s?: string | null): ReservationStatus {
   const v = String(s ?? '').toLowerCase();
+  // Empty/null status → 'confirmed'. ~96% of prod guesty_reservations rows
+  // come through with status=null today (Guesty webhook doesn't always set
+  // the field, or the column was added after the row was first synced). For
+  // those, the realistic default is "confirmed booking" — they wouldn't be
+  // in the cache otherwise. Defaulting to 'inquiry' broke the calendar.
+  if (!v) return 'confirmed';
   if (v === 'confirmed' || v === 'reserved') return 'confirmed';
   if (v === 'checked_in') return 'checked_in';
   if (v === 'checked_out') return 'checked_out';
   if (v === 'canceled' || v === 'cancelled') return 'cancelled';
   if (v === 'hold' || v === 'tentative' || v === 'pending') return 'hold';
   if (v === 'inquiry' || v === 'pending_quote' || v === 'request') return 'inquiry';
-  // Safer than 'confirmed': unknown / new Guesty statuses fall to inquiry so
-  // they surface as filterable in the UI instead of being silently treated as
-  // confirmed bookings.
-  return 'inquiry';
+  // Truly-unknown non-empty value: surface as 'confirmed' so it doesn't get
+  // silently hidden from the calendar.
+  return 'confirmed';
 }
 
 function mapChannel(c?: string | null, source?: string | null): ReservationChannel {
