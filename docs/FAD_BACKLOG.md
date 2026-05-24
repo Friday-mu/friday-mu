@@ -2,9 +2,9 @@
 
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
-> Last reviewed: **2026-05-23** (Judith — after the slice 3 batch).
-> Live on prod: frontend `deb49bd` · backend `bf166c9`.
-> Tree tip on `fad-rebuild`: `e9db5df` (5 frontend-only + 1 backend-only commits ahead of live).
+> Last reviewed: **2026-05-24** (Judith — after Calendar Month-view refactor + autonomous-mode sweep).
+> Live on prod: frontend `bbb48408` · backend `87b608c8`.
+> Tree tip on `fad-rebuild`: `bbb48408` (live).
 
 ## How to use this doc
 
@@ -82,6 +82,18 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Effort: XS · Blocks: nothing · Status: open
 - Already reclassified to offline-fallback (PROD-LOGIC-4) but never deleted.
 - Smart drafter (slice 2 of the AI task creation) is the replacement.
+
+### T1.9 — Hardcoded TODAY constants (drift away from demo-anchored math)
+- Effort: S · Blocks: real-time correctness · Status: open (surfaced 2026-05-24)
+- PROD-LOGIC-7 + PROD-LOGIC-9: 6 module files still pin `TODAY = '2026-04-27'` to keep fixture math self-consistent (`CalendarModule.tsx:38`, `reservations/InquiriesPage.tsx:34`, `reservations/OverviewPage.tsx:15`, `reservations/AllReservationsPage.tsx:23`, `hr/StaffPage.tsx:13`, `roster/RosterPage.tsx:26`, plus `_data/notifications.ts:19`, `_data/reviews.ts:621`, `_data/pendingCounts.ts:22`).
+- Swap to `new Date()` / server `now()`. Audit each "in N days" / "M days ago" calculation cascading from these.
+- Caveat: in demo mode the fixtures will drift; gate the anchor behind `liveOnlyMode()` and use real now in production.
+
+### T1.10 — Brittle `array[0]` crash safety
+- Effort: S · Blocks: empty-data UX (real-backend risk) · Status: open (surfaced 2026-05-24)
+- PROD-LOGIC-12: useState initialisers + `find() || array[0]` cascades that crash on empty arrays.
+- Sites: `FinanceModule.tsx:912-913`, `:1252-1253`, `:1529`, `:2624`, `:2948`; `InboxModule.tsx:139`; `inbox/TeamInbox.tsx:56-59`; `FridayDrawer.tsx:151`.
+- Add empty-state guards (`array.length > 0 ? array[0].id : null`) + loading/empty JSX states.
 
 ---
 
@@ -176,6 +188,15 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - Avoid duplicates: idempotency via reservation_id + template_id
 - Possible implementation: extend `backend/src/reservations/webhook.js` post-upsert hook → call a new `taskAutomation.fromReservation(reservation, eventType)` that consults a tenant-level rules table.
 
+### T3.8 — Email integration completion (Gmail watcher + classifier dependencies)
+- Effort: L · Blocks: inbound-email → Inbox-thread pipeline · Status: open (surfaced 2026-05-24 from backend TODO scan)
+- Backend has stub paths waiting for Google Cloud Platform credentials + missing tables:
+  - `backend/src/email/pull_worker.js:37` — "implement once gmail_client is reachable"
+  - `backend/src/email/watcher.js:58` — "actual sync. Steps once GCP is wired"
+  - `backend/src/email/classifier.js:85,91` — owners + vendors tables don't exist yet (Owners module Sep-2026 timeline)
+  - `backend/src/team_inbox/index.js:978` — frontend should map roster IDs → real DB UUIDs before send (mentions)
+- Probably should wait until Owners module backend lands (Sep-26) so classifier has its dependency tables. Capture here so it's not forgotten.
+
 ### T3.7 — website_inbox tenant_id migration (NEW, promoted from T3.2 audit)
 - Effort: M-L · Blocks: non-FR tenant rollout (T3.2 closure) · Status: open
 - `inbox_threads` + `inbox_events` + `inbox_guesty_jobs` + `inbox_drafts(?)` lack `tenant_id` columns (mig 033 era).
@@ -241,7 +262,16 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 ### Parked / repository hygiene
 - **T4.32 — 11 `agent-be-*` branches** — May-13 design backend work, never reconciled (effort: variable)
 - **T4.33 — WhatsApp burner bridge** — parked; blocked on QR/pairing
-- **T4.34 — Optimistic update layer** — mutations still wait round-trip; today's SWR fix only covered reads
+
+### Calendar v0.2 follow-up (post-2026-05-24 banded refactor)
+- **T4.38 — Calendar v0.2 enhancements** — effort: M-L · open
+- Today's commit `bbb48408` shipped: true continuous bands per week (no per-cell segments), channel colors, status overlays, today badge, channel legend, mobile-safe sizing. **Open follow-ups**:
+  - **Property × Date PMS view** (Guesty / Hospitable / Booking-extranet pattern): rows = properties, cols = days, stays = horizontal pills per property row. Eliminates "guest X across 3 calendars" perception by anchoring each stay to one property row. Add as new tab between Week and Month.
+  - **Today vertical line** in Week/Day views — clearer "now" marker than column-shading.
+  - **Occupancy heatmap** colour overlay (Month view): cells darken by % occupancy.
+  - **Drag-to-reschedule** stay bands in Week/Day — calls `PATCH /reservations/:id` to nudge check-in/out times.
+  - **Performance audit** with 100+ properties × 365-day window (real-data load test).
+  - **Filter by property** chips above the grid (matches Reservations module filter UX).
 
 ### New initiatives (v0.1 scope drafts ready, await Ishant decisions)
 - **T4.36 — Guest portal chat** (effort: 2-3 weeks once scope locks) — replace WhatsApp dependency for direct-booking + on-property guest messaging with a chat surface inside the guest portal. AI-augmented with full reservation + Property Cards context. Honest framing: complement to WhatsApp, not replacement (discovery friction kills pure-portal strategies). **Scope**: Notion [`36943ca8849281939417fad24d881f94`](https://www.notion.so/36943ca8849281939417fad24d881f94) (canonical) · repo mirror [`docs/scoping/2026-05-24-guest-portal-chat-v0.1.md`](scoping/2026-05-24-guest-portal-chat-v0.1.md). 15 open questions (channels, identity, notification, AI surfaces, OTA scope, auth, integration, etc.). Cross-cuts: Friday Website (separate session per AGENTS.md), Guests module v0.2, Inbox channel taxonomy.
@@ -268,7 +298,8 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-24 (today, this session)
-- **T3.2 — Multi-tenant safety sweep, partial** (`<this commit>`) — audited 9 high-traffic surfaces (all tenant-safe); surfaced `website_inbox/*` as a known blocker for non-FR rollout (~30 SQL sites without tenant_id; the underlying tables don't have the column). Full report at `docs/SECURITY_AUDIT_2026-05-24.md`. Promoted to T3.7 in Tier 3.
+- **Calendar Month view refactor — true continuous bands + channel colors + status overlays** (`bbb48408`) — Refactored MonthView from per-cell stay segments (which read as "blank duplicate bars" because the label only rendered on the start cell) to a per-week CSS grid where each stay spans grid-columns directly. The label sits inside the visible band the entire span. Channel colors now distinguish booking sources across Week + Month + +more popover (Airbnb red, Booking blue, VRBO bright-blue, Direct green, Owner amber, Email info-blue). Status overlays compose on top — checked_in inset border, checked_out 55% opacity, cancelled strike-through italic, hold diagonal-stripe. New channel-legend strip + today blue date badge. Mobile QA passed (stay popover + +more day-expansion both functional at 375×812). Live at frontend `bbb48408`. Backlog T4.38 created for v0.2 follow-ups (Property×Date PMS view, today vertical line, occupancy heatmap, drag-to-reschedule). T2.4 (Mary inbox fluctuation) removed per Ishant.
+- **T3.2 — Multi-tenant safety sweep, partial** (`f1920ee3`) — audited 9 high-traffic surfaces (all tenant-safe); surfaced `website_inbox/*` as a known blocker for non-FR rollout (~30 SQL sites without tenant_id; the underlying tables don't have the column). Full report at `docs/SECURITY_AUDIT_2026-05-24.md`. Promoted to T3.7 in Tier 3.
 - **T4.34 — Optimistic UI for W1 write paths** (`07e23e0e`) — CreatePropertyDrawer + CreateReservationDrawer + ReservationDetail cancel now feel instant. Drawer closes immediately, optimistic row in list, background reconcile + rollback on error.
 - **T4.35 — AI telemetry mislabel fixed** (`87b608c8`) — design/ai_{rough_budget,ask,annex_b_edit} + ai/translate now report the real provider+model+tokens from `runTextCompletion`. Cost reports finally reflect Gemini-primary routing. Bonus: token counts in 3 design endpoints were always null due to `parseKimiUsage(result.data)` reading an undefined field — now populated. Backend re-deployed; pm2 restart 256.
 - **T4.36 + T4.37 scope docs landed** (`e23ba92c`) — guest portal chat + field-staff map v0.1 drafts at `docs/scoping/2026-05-24-*.md`, both linked from backlog Tier 4. Await Ishant decisions on the 15 + 12 open questions.
