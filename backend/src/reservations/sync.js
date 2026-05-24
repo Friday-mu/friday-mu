@@ -13,6 +13,7 @@
 const { query } = require('../database/client');
 const { listReservations } = require('../integrations/guesty');
 const { inferReservationFinancials, majorToMinor } = require('./financials');
+const { upsertGuestForReservation } = require('../guests/sync_from_reservation');
 
 const DEFAULT_DAYS_BACK = 30;
 const DEFAULT_DAYS_FORWARD = 365;
@@ -123,6 +124,13 @@ async function syncReservationsForTenant(tenantId, opts = {}) {
     );
     if (result.rows[0]?.inserted) inserted++;
     else updated++;
+    // Best-effort fad_guests upsert. Never breaks reservation sync.
+    await upsertGuestForReservation(tenantId, {
+      guest_email: r.guest?.email || null,
+      guest_phone: r.guest?.phone || null,
+      guest_first_name: pickGuestName(r, 'first'),
+      guest_last_name: pickGuestName(r, 'last'),
+    });
   }
 
   return {
@@ -207,6 +215,14 @@ async function upsertReservationById(tenantId, reservationId) {
       JSON.stringify(r),
     ],
   );
+  // Best-effort fad_guests upsert (webhook path). Never breaks the
+  // single-reservation refresh.
+  await upsertGuestForReservation(tenantId, {
+    guest_email: r.guest?.email || null,
+    guest_phone: r.guest?.phone || null,
+    guest_first_name: pickGuestName(r, 'first'),
+    guest_last_name: pickGuestName(r, 'last'),
+  });
   return {
     inserted: !!result.rows[0]?.inserted,
     listingId: String(listingId),

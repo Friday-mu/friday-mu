@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useGuestLookup } from '../../../_data/guestsClient';
 import {
   RESERVATIONS,
   RESERVATION_BY_ID,
@@ -689,6 +690,12 @@ function GuestsTab({ r, reservations }: { r: Reservation; reservations: Reservat
   const profile = GUEST_PROFILES[r.guestName];
   const guestEmail = r.guestEmail?.trim().toLowerCase();
   const guestName = r.guestName.trim().toLowerCase();
+
+  // Live lookup against /api/guests (Phase 1, T3.11). Falls through to the
+  // fixture profile when the backend has no record yet (early-onboard
+  // tenant, or guest from a channel without email).
+  const live = useGuestLookup({ email: guestEmail || null, phone: null });
+
   const priorStays = useMemo(
     () =>
       reservations
@@ -702,13 +709,101 @@ function GuestsTab({ r, reservations }: { r: Reservation; reservations: Reservat
     [guestEmail, guestName, r.id, reservations],
   );
 
+  // Live path: backend resolved an fad_guests record. Render from that
+  // (canonical) and supplement with cross-reservation lookup for prior
+  // stays (already richer than the fixture lookup since it joins on the
+  // live guesty_reservations table).
+  if (live.guest) {
+    const g = live.guest;
+    const linkedStays = live.reservations.filter(
+      (rs) => (rs.confirmation_code || '') !== (r.confirmationCode || ''),
+    );
+    return (
+      <>
+        <div className="task-detail-section">
+          <h5>Profile</h5>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{g.display_name}</div>
+          <Grid2>
+            <Field label="Email">
+              {g.primary_email ? (
+                <span style={{ fontSize: 12 }}>{g.primary_email}</span>
+              ) : (
+                <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>
+              )}
+            </Field>
+            <Field label="Phone">
+              {g.primary_phone ? (
+                <span style={{ fontSize: 12 }} className="mono">{g.primary_phone}</span>
+              ) : (
+                <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>
+              )}
+            </Field>
+            <Field label="Language">{g.language_pref ? g.language_pref.toUpperCase() : '—'}</Field>
+            <Field label="Country">{g.country || '—'}</Field>
+            <Field label="VIP tier">
+              <span className={'chip sm ' + (g.vip_tier !== 'none' ? 'info' : '')}>
+                {g.vip_tier === 'none' ? '—' : g.vip_tier.toUpperCase()}
+              </span>
+            </Field>
+            <Field label="Lifetime stays">
+              <span className="mono">{g.total_stays_count}</span>
+            </Field>
+          </Grid2>
+        </div>
+
+        {g.notes && (
+          <div className="task-detail-section">
+            <h5>Notes on guest</h5>
+            <div style={{ fontSize: 13, lineHeight: 1.55 }}>{g.notes}</div>
+          </div>
+        )}
+
+        <div className="task-detail-section">
+          <h5>Prior stays · {linkedStays.length}</h5>
+          {linkedStays.length === 0 && (
+            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+              First confirmed stay with Friday.
+            </div>
+          )}
+          {linkedStays.slice(0, 12).map((p, i) => (
+            <div
+              key={p.guesty_id || `prior-${i}`}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '0.7fr 1fr 0.6fr 0.5fr',
+                gap: 10,
+                padding: '8px 0',
+                borderBottom: i < Math.min(linkedStays.length, 12) - 1 ? '0.5px solid var(--color-border-tertiary)' : 0,
+                fontSize: 12,
+                alignItems: 'center',
+              }}
+            >
+              <span className="mono" style={{ color: 'var(--color-text-tertiary)' }}>
+                {(p.check_in_date || '').slice(0, 10)}
+              </span>
+              <span className="mono">{p.listing_nickname || p.listing_guesty_id?.slice(-6) || '—'}</span>
+              <span style={{ color: 'var(--color-text-tertiary)' }}>{p.channel || '—'}</span>
+              <span className={'chip sm ' + (String(p.status).includes('cancel') ? 'warn' : '')}>{p.status || '—'}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 8 }}>
+          Live · fad_guests · {g.total_stays_count} stays · €
+          {((g.total_revenue_minor || 0) / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })} lifetime
+        </div>
+      </>
+    );
+  }
+
+  // Backend doesn't have a record yet — fall through to fixture / stub.
   if (!profile) {
     return (
       <div className="task-detail-section">
         <StubPanel
           title={r.guestName}
           body={`No profile on file. ${r.partySize.adults} adults${r.partySize.children ? ` + ${r.partySize.children} children` : ''}${r.partySize.infants ? ` + ${r.partySize.infants} infants` : ''}.`}
-          body2="Profile populates from channel data on first stay. When Guests module ships (Jul 2026): centralised profile + OTA verification + consent + documents."
+          body2={live.loading ? 'Checking live registry…' : 'Profile populates from channel data on first stay. Guests module v0.1 (T3.11) lookups by email — this guest has no fad_guests row yet.'}
         />
       </div>
     );

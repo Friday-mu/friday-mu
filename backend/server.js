@@ -978,6 +978,10 @@ app.use('/api/expenses', financeExpensesRoutes.router);
       p.startsWith('/api/properties') ||
       p.startsWith('/api/reservations') ||
       p.startsWith('/api/tasks') ||
+      p.startsWith('/api/guests') ||
+      p.startsWith('/api/owners') ||
+      p.startsWith('/api/availability') ||
+      p.startsWith('/api/quotes') ||
       p.startsWith('/api/integrations/guesty/webhook') || // HMAC-signed
       p.startsWith('/api/integrations/guesty/scraped-reservations') || // HMAC-signed (scraper)
       p.startsWith('/api/integrations/guesty/scraped-listings') // HMAC-signed (scraper)
@@ -1120,6 +1124,9 @@ app.use('/api/outbound', outboundModule.router);
 app.use('/api/properties', require('./src/properties'));
 app.use('/api/reservations', require('./src/reservations'));
 app.use('/api/tasks', require('./src/tasks'));
+// FAD-native Guests module (T3.11). Backfilled from guesty_reservations;
+// kept fresh by sync.js after each reservation upsert.
+app.use('/api/guests', require('./src/guests'));
 // Webhook needs the RAW body (Buffer) for HMAC verification — Guesty
 // signs the exact bytes they send, and express.json() restringifies.
 const guestyWebhook = require('./src/reservations/webhook');
