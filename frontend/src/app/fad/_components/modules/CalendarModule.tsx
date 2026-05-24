@@ -220,18 +220,23 @@ interface Stay {
   endsThisWeek: boolean;
 }
 
-function computeStaysInWindow(days: ViewDay[], reservations: Reservation[]): Stay[] {
+function computeStaysInWindow(
+  days: ViewDay[],
+  reservations: Reservation[],
+  opts: { includeInquiries?: boolean } = {},
+): Stay[] {
   if (days.length === 0) return [];
   const firstISO = days[0].isoDate;
   const lastISO = days[days.length - 1].isoDate;
+  const includeInquiries = opts.includeInquiries === true;
   return reservations
     .filter((r) => {
-      // Calendar shows only stays that are actually happening — confirmed +
-      // active. Inquiries / pending-quotes / unconfirmed holds / cancellations
-      // are out (use the Reservations module's filter to see those). This
-      // prevents the "calendar has way too many entries" feel that comes from
-      // visualising every speculative pre-booking.
-      if (r.status === 'cancelled' || r.status === 'inquiry' || r.status === 'hold') return false;
+      // Cancellations always out — they're a noise floor.
+      if (r.status === 'cancelled') return false;
+      // Inquiries + holds are speculative bookings. Default off so the
+      // calendar reflects what's actually happening; opt-in via the
+      // "Show inquiries" toggle in the toolbar.
+      if (!includeInquiries && (r.status === 'inquiry' || r.status === 'hold')) return false;
       const inISO = r.checkIn.slice(0, 10);
       const outISO = r.checkOut.slice(0, 10);
       return outISO > firstISO && inISO <= lastISO;
@@ -328,6 +333,10 @@ export function CalendarModule() {
     new Set(EVENT_TYPES.map((t) => t.id)),
   );
   const [mineOnly, setMineOnly] = useState(false);
+  // Calendar v0.5 — Ishant feedback 0887d756: inquiries clutter the
+  // default view. Default off; opt-in via toolbar toggle. Hold +
+  // inquiry both treated as speculative (see computeStaysInWindow).
+  const [showInquiries, setShowInquiries] = useState(false);
   // Multi-calendar v0.3 (T75 · 2026-05-25 · bug #0887d756):
   // (a) Default to active properties only — 60-property unfiltered
   //     view drowned the real working portfolio. Operators kept
@@ -372,7 +381,21 @@ export function CalendarModule() {
     return [...fixedEvents, ...reservationEvents, ...taskEvents];
   }, [days, mineOnly, currentUserId, rev, sourceReservations, sourceTasks, demoData]);
 
-  const stays = useMemo(() => packStays(computeStaysInWindow(days, sourceReservations)), [days, rev, sourceReservations]);
+  const stays = useMemo(
+    () => packStays(computeStaysInWindow(days, sourceReservations, { includeInquiries: showInquiries })),
+    [days, rev, sourceReservations, showInquiries],
+  );
+  // Calendar v0.5 — same speculative-booking filter for the multi-
+  // calendar grid. Default-off keeps the grid focused on confirmed
+  // stays; toggle reveals inquiries + holds.
+  const mcalReservations = useMemo(
+    () => sourceReservations.filter((r) => {
+      if (r.status === 'cancelled') return false;
+      if (!showInquiries && (r.status === 'inquiry' || r.status === 'hold')) return false;
+      return true;
+    }),
+    [sourceReservations, showInquiries],
+  );
   const staysVisible = typeFilter.has('reservation');
 
   // Map "reservation" chip to checkin/checkout event types so the existing per-type filter
@@ -511,6 +534,12 @@ export function CalendarModule() {
           >
             Mine only
           </FilterChip>
+          <FilterChip
+            active={showInquiries}
+            onClick={() => setShowInquiries((v) => !v)}
+          >
+            Show inquiries
+          </FilterChip>
           {tab === 'multi' && (
             <>
               <span style={{ width: 1, height: 18, background: 'var(--color-border-tertiary)', margin: '0 4px' }} />
@@ -577,7 +606,7 @@ export function CalendarModule() {
               }
               return list;
             })()}
-            reservations={sourceReservations}
+            reservations={mcalReservations}
             tasks={sourceTasks}
             days={days}
             onReservationClick={(rsv, x, y) => setSelectedStay({ rsv, x, y })}
