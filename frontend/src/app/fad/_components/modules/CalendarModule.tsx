@@ -610,7 +610,13 @@ export function CalendarModule() {
             tasks={sourceTasks}
             days={days}
             onReservationClick={(rsv, x, y) => setSelectedStay({ rsv, x, y })}
-            onPropertyClick={(p) => { window.location.href = `/fad?m=properties&sub=overview&p=${encodeURIComponent(p.code)}`; }}
+            onPropertyClick={(p) => {
+              // Cross-link to the per-property full Calendar tab so
+              // users get the same timeline scoped to the property
+              // they tapped. The `tab=calendar` query param is honored
+              // by PropertyDetail's initialTab resolver.
+              window.location.href = `/fad?m=properties&sub=overview&p=${encodeURIComponent(p.code)}&tab=calendar`;
+            }}
           />
         ) : tab === 'agenda' ? (
           <AgendaView

@@ -14,13 +14,19 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
     title: 'Friday Admin',
   },
+  // 2026-05-25 — friday-logo.jpg was corrupt (only top sliver
+  // rendered, rest gray), so the favicon + apple-touch were showing
+  // the broken JPG everywhere. Replaced with the clean PNG icons +
+  // regenerated apple-touch from icon-192. Order matters: browsers
+  // pick the first matching icon, so we lead with the high-res PNGs.
   icons: {
     icon: [
-      { url: '/friday-logo.jpg', type: 'image/jpeg' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
       { url: '/favicon.ico', sizes: 'any' },
     ],
-    apple: '/friday-logo.jpg',
-    shortcut: '/friday-logo.jpg',
+    apple: '/apple-touch-icon.png',
+    shortcut: '/icon-192.png',
   },
 }
 

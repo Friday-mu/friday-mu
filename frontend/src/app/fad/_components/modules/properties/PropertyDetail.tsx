@@ -25,7 +25,8 @@ import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
 import { usePropertyCards, updatePropertyTranslations, type PropertyTranslations } from '../../../_data/propertiesClient';
 import { useCalendarGrid, blockDates, unblockDates } from '../../../_data/calendarGridClient';
-import { BLOCK_REASON_LABEL, type BlockReason, type CellPrice } from './../calendar/MultiCalendarGrid';
+import { BLOCK_REASON_LABEL, MultiCalendarGrid, type BlockReason, type CellPrice } from './../calendar/MultiCalendarGrid';
+import { useApiTasks } from '../../../_data/useApiTasks';
 import { useOwnersByGuestyId } from '../../../_data/ownersClient';
 import { usePropertySummary, formatMinor } from '../../../_data/financeClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
@@ -49,6 +50,7 @@ const TABS = [
   { id: 'owner', label: 'Owner' },
   { id: 'operational', label: 'Operational' },
   { id: 'financial', label: 'Financial' },
+  { id: 'calendar', label: 'Calendar' },
   { id: 'pricing', label: 'Pricing' },
   { id: 'listings', label: 'Listings' },
   { id: 'reservations', label: 'Reservations' },
@@ -59,7 +61,7 @@ const TABS = [
 /** Role-based tab gating per scoping pack §6. */
 function visibleTabsFor(role: string): string[] {
   if (role === 'field') {
-    return ['overview', 'identity', 'operational', 'reservations', 'tasks', 'activity'];
+    return ['overview', 'identity', 'operational', 'calendar', 'reservations', 'tasks', 'activity'];
   }
   return TABS.map((t) => t.id);
 }
@@ -69,7 +71,18 @@ export function PropertyDetail({ propertyCode, onClose }: Props) {
   const visibleTabIds = useMemo(() => visibleTabsFor(role), [role]);
   const visibleTabs = TABS.filter((t) => visibleTabIds.includes(t.id));
 
-  const [tab, setTab] = useState<string>(visibleTabs[0]?.id ?? 'overview');
+  // Honor ?tab=<id> deep link (e.g. from Calendar module's property
+  // click → Calendar tab pre-selected) but only if the tab is visible
+  // to the current role. Falls through to the first visible tab.
+  const initialTab = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const requested = params.get('tab');
+      if (requested && visibleTabIds.includes(requested)) return requested;
+    }
+    return visibleTabs[0]?.id ?? 'overview';
+  }, [visibleTabIds, visibleTabs]);
+  const [tab, setTab] = useState<string>(initialTab);
   const property = PROPERTY_BY_CODE[propertyCode];
 
   if (!property) {
@@ -108,6 +121,7 @@ export function PropertyDetail({ propertyCode, onClose }: Props) {
         {tab === 'owner' && <OwnerTab property={property} role={role} />}
         {tab === 'operational' && <OperationalTab property={property} role={role} />}
         {tab === 'financial' && <FinancialTab property={property} role={role} />}
+        {tab === 'calendar' && <PropertyCalendarTab property={property} />}
         {tab === 'pricing' && <PricingTab property={property} />}
         {tab === 'listings' && <ListingsTab property={property} />}
         {tab === 'reservations' && <ReservationsTab property={property} />}
@@ -770,6 +784,107 @@ function FinancialTab({ property, role }: { property: Property; role: string }) 
           Open in Finance →
         </button>
       </Section>
+    </div>
+  );
+}
+
+// ───────────────── Tab: Calendar (per-property) ─────────────────
+//
+// Per-property timeline showing reservations + tasks + blocks + prices
+// in one view. Reuses MultiCalendarGrid with a single-property array
+// so the band/chip/cell rendering matches the cross-property surface
+// in CalendarModule exactly. The 90-day window matches Reservations
+// scope locked in §5.3 (active + future 90 days + past 12 months
+// searchable; default window = active + 90d).
+//
+// Cross-link: clicking a property in CalendarModule's MultiCalendarGrid
+// opens PropertyDetail with `?tab=calendar` so users land here directly.
+function PropertyCalendarTab({ property }: { property: Property }) {
+  const windowStart = useMemo(() => new Date(), []);
+  const windowDays = 90;
+  const from = windowStart.toISOString().slice(0, 10);
+  const toDate = useMemo(
+    () => new Date(windowStart.getTime() + (windowDays - 1) * 86400000),
+    [windowStart],
+  );
+  const to = toDate.toISOString().slice(0, 10);
+  const todayIso = windowStart.toISOString().slice(0, 10);
+
+  const { pricesByListing, refetch: refetchGrid } = useCalendarGrid(from, to);
+
+  // Live reservations scoped to this property's code, filtered
+  // client-side to drop cancelled (the calendar filter pattern from
+  // CalendarModule). Inquiries default-off; the toggle below reveals.
+  const [showInquiries, setShowInquiries] = useState(false);
+  const { reservations: liveRsv } = useLiveReservations();
+  const reservations = useMemo(() => {
+    if (!liveRsv) return [];
+    return liveRsv.filter((r) => {
+      if (r.propertyCode !== property.code) return false;
+      if (r.status === 'cancelled') return false;
+      if (!showInquiries && (r.status === 'inquiry' || r.status === 'hold')) return false;
+      return true;
+    });
+  }, [liveRsv, property.code, showInquiries]);
+
+  // Live tasks for this property, in-window.
+  const taskFilter = useMemo(() => ({ property: property.code, from, to }), [property.code, from, to]);
+  const { tasks: liveTasks } = useApiTasks(taskFilter);
+  const tasksByPropertyCode = useMemo(() => {
+    const map = new Map<string, typeof liveTasks>();
+    if (liveTasks) map.set(property.code, liveTasks);
+    return map;
+  }, [liveTasks, property.code]);
+
+  // MultiCalendarGrid expects a Property[]-shaped list. Pass a one-item
+  // array sourced from the PropertyDetail's loaded property. The shape
+  // already matches (lifecycleStatus / code / name / heroPhotoUrl /
+  // id = guestyId).
+  const singleProperty = useMemo(() => [{
+    id: property.id, // guesty_id when present (the listing key)
+    code: property.code,
+    name: property.name,
+    lifecycleStatus: property.lifecycleStatus,
+    heroPhotoUrl: property.heroPhotoUrl,
+  }], [property]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+        <span>{windowDays}-day window · {from} → {to}</span>
+        <span style={{ flex: 1 }} />
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={showInquiries}
+            onChange={(e) => setShowInquiries(e.target.checked)}
+          />
+          Show inquiries
+        </label>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+        Reservations (bands) · tasks (chips) · blocks (overlay) · prices in empty cells. Tap a date to block; tap a reservation to open.
+      </div>
+      <MultiCalendarGrid
+        properties={singleProperty as never}
+        reservations={reservations}
+        pricesByListing={pricesByListing}
+        tasksByPropertyCode={tasksByPropertyCode}
+        windowStart={windowStart}
+        windowDays={windowDays}
+        todayIso={todayIso}
+        onBlocksChanged={refetchGrid}
+        onReservationClick={(rsv) => {
+          if (typeof window !== 'undefined') {
+            window.location.href = `/fad?m=reservations&sub=overview&rsv=${rsv.id}`;
+          }
+        }}
+        onTaskClick={(task) => {
+          if (typeof window !== 'undefined') {
+            window.location.href = `/fad?m=operations&sub=all&task=${task.id}`;
+          }
+        }}
+      />
     </div>
   );
 }
