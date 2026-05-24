@@ -31,7 +31,10 @@ export function AllPropertiesPage({ onOpen }: Props) {
   const [, setRev] = useState(0);
   const bump = () => setRev((n) => n + 1);
 
-  const ownerName = (id: string) => FIN_OWNERS.find((o) => o.id === id)?.name ?? id;
+  // Phase 2 (T3.12): prefer the live fad_owners display name. Fall back
+  // to the FIN_OWNERS fixture for legacy demo rows, then the raw id.
+  const ownerName = (p: Property) =>
+    p.primaryOwnerName ?? FIN_OWNERS.find((o) => o.id === p.primaryOwnerId)?.name ?? p.primaryOwnerId;
 
   const filtered = useMemo(() => {
     let rows: Property[] = PROPERTIES.slice();
@@ -181,7 +184,7 @@ export function AllPropertiesPage({ onOpen }: Props) {
                   <td><span className={`chip sm ${badge.tone === 'success' ? 'info' : badge.tone === 'warning' ? 'warn' : ''}`}>{badge.label}</span></td>
                   <td>{COHORT_LABEL[p.region]}</td>
                   <td>{p.bedrooms === 0 ? 'Studio' : p.bedrooms}</td>
-                  <td>{ownerName(p.primaryOwnerId)}</td>
+                  <td>{ownerName(p)}</td>
                   <td style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{channels}</td>
                   <td>{p.occupancy90d > 0 ? `${Math.round(p.occupancy90d * 100)}%` : '—'}</td>
                   <td>{p.adr > 0 ? `€${p.adr}` : '—'}</td>
@@ -226,7 +229,7 @@ export function AllPropertiesPage({ onOpen }: Props) {
               <div className="prop-mobile-meta">
                 <span>{COHORT_LABEL[p.region]}</span>
                 <span>{p.bedrooms === 0 ? 'Studio' : `${p.bedrooms} bed`}</span>
-                <span>{ownerName(p.primaryOwnerId)}</span>
+                <span>{ownerName(p)}</span>
               </div>
               <div className="prop-mobile-stats">
                 <span><small>Occ</small>{p.occupancy90d > 0 ? `${Math.round(p.occupancy90d * 100)}%` : '—'}</span>

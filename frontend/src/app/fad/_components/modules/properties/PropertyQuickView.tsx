@@ -92,7 +92,7 @@ function PropertyQuickViewModal({ code, onClose }: { code: string; onClose: () =
   }
 
   const badge = lifecycleBadge(property);
-  const ownerName = FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name ?? property.primaryOwnerId;
+  const ownerName = property.primaryOwnerName ?? FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name ?? property.primaryOwnerId;
   const openFull = () => { window.location.href = `/fad?m=properties&sub=overview&p=${property.code}`; };
 
   return (
@@ -190,7 +190,7 @@ export function PropertyQuickView({ code, x, y, onClose }: QuickViewProps) {
   }
 
   const badge = lifecycleBadge(property);
-  const ownerName = FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name ?? property.primaryOwnerId;
+  const ownerName = property.primaryOwnerName ?? FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name ?? property.primaryOwnerId;
 
   const openFull = () => {
     window.location.href = `/fad?m=properties&sub=overview&p=${property.code}`;
@@ -296,7 +296,7 @@ export function PropertyMiniCard({ code }: PropertyQuickViewWrapperProps) {
     return <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Property {code} not found.</div>;
   }
   const badge = lifecycleBadge(property);
-  const ownerName = FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name ?? property.primaryOwnerId;
+  const ownerName = property.primaryOwnerName ?? FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name ?? property.primaryOwnerId;
   return (
     <div className="card" style={{ padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>

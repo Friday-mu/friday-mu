@@ -33,7 +33,9 @@ export function OverviewPage({ onOpen }: Props) {
     activePending: PROPERTIES.filter((p) => p.lifecycleStatus === 'live' && !isOnboardingComplete(p)).length,
   }), [fixtureRev]);
 
-  const ownerName = (id: string) => FIN_OWNERS.find((o) => o.id === id)?.name ?? id;
+  // Phase 2 (T3.12): prefer live fad_owners display_name.
+  const ownerName = (p: Property) =>
+    p.primaryOwnerName ?? FIN_OWNERS.find((o) => o.id === p.primaryOwnerId)?.name ?? p.primaryOwnerId;
 
   // "Truly urgent" alerts only — exclude paused-with-return-date (those are
   // seasonal/planned pauses, not action items) and syndic flags (informational
@@ -92,7 +94,7 @@ export function OverviewPage({ onOpen }: Props) {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
             {recentActivity.map((p) => (
-              <PropertyCardMini key={p.code} property={p} ownerName={ownerName(p.primaryOwnerId)} onOpen={() => onOpen(p.code)} />
+              <PropertyCardMini key={p.code} property={p} ownerName={ownerName(p)} onOpen={() => onOpen(p.code)} />
             ))}
           </div>
         )}
