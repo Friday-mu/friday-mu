@@ -22,6 +22,7 @@ import { confidenceTier } from '../_data/draftsClient';
 import { PROPERTIES } from '../_data/properties';
 import { fireToast } from './Toaster';
 import { IconCheck, IconClose, IconRefresh, IconSend, IconSparkle } from './icons';
+import TaskSuggestionCard, { type TaskSuggestion } from '../../../components/TaskSuggestionCard';
 
 /** Structured teaching proposal emitted by FAD's [TEACH] tag parser.
  *  One per assistant turn at most. */
@@ -62,6 +63,10 @@ interface ConsultMessage {
   /** Per-action local state — 'pending' (showing), 'saving' (POST in
    *  flight), 'saved' (success), 'dismissed' (operator declined). */
   teachingStates?: Array<'pending' | 'saving' | 'saved' | 'dismissed'>;
+  /** Friday-proposed task suggestions (rendered as inline cards). */
+  taskSuggestions?: TaskSuggestion[];
+  /** Per-suggestion local state — 'pending' / 'accepted' / 'dismissed'. */
+  taskSuggestionStates?: Array<'pending' | 'accepted' | 'dismissed'>;
   /** Optional citations / sources surfaced by Friday for accountability. */
   source?: string;
 }
@@ -76,6 +81,7 @@ interface ConsultResponse {
   confidence?: number;
   draft_update?: string;
   teaching_actions?: TeachingAction[];
+  task_suggestions?: TaskSuggestion[];
   sessionId?: string;
   missingKnowledge?: boolean;
   compacted?: boolean;
@@ -192,6 +198,11 @@ interface Props {
 
   onRefreshThread?: () => void;
   onClose: () => void;
+
+  /** Fired when the operator clicks "+ Create task" on a Friday-suggested
+   *  task card inside the consult chat. Parent opens its CreateTaskDrawer
+   *  prefilled with the suggestion. */
+  onTaskSuggestionAccept?: (s: TaskSuggestion) => void;
 }
 
 export function FridayConsult({
@@ -211,6 +222,7 @@ export function FridayConsult({
   onPendingQueryConsumed,
   onRefreshThread,
   onClose,
+  onTaskSuggestionAccept,
 }: Props) {
   // The "working draft body" is what the operator will eventually send.
   // Seeded from the active Inbox draft if any, else the in-progress
@@ -506,17 +518,20 @@ export function FridayConsult({
       }
 
       const teachings = Array.isArray(data?.teaching_actions) ? data!.teaching_actions! : [];
+      const taskSuggs = Array.isArray(data?.task_suggestions) ? data!.task_suggestions! : [];
       const aiMsg: ConsultMessage = {
         role: 'friday',
         text: (data?.response || '').trim(),
         draftUpdate: data?.draft_update,
         teachingActions: teachings.length > 0 ? teachings : undefined,
         teachingStates: teachings.length > 0 ? teachings.map(() => 'pending' as const) : undefined,
+        taskSuggestions: taskSuggs.length > 0 ? taskSuggs : undefined,
+        taskSuggestionStates: taskSuggs.length > 0 ? taskSuggs.map(() => 'pending' as const) : undefined,
         source: data?.model,
       };
       setMsgs((m) => {
         const next = [...m];
-        if (aiMsg.text.length > 0 || teachings.length > 0) {
+        if (aiMsg.text.length > 0 || teachings.length > 0 || taskSuggs.length > 0) {
           next.push(aiMsg);
         }
         if (newDraftBody.length > 0) {
@@ -653,6 +668,30 @@ export function FridayConsult({
 
   const dismissTeaching = (msgIndex: number, actionIndex: number) => {
     setTeachingState(msgIndex, actionIndex, 'dismissed');
+  };
+
+  // Task-suggestion handlers — operator clicks "+ Create task" on an
+  // inline Friday-proposed task card. We mark the card as accepted (so
+  // it collapses) and bubble the suggestion up so the parent inbox can
+  // open its CreateTaskDrawer prefilled.
+  const setTaskSuggestionState = (msgIndex: number, sIndex: number, state: 'accepted' | 'dismissed') => {
+    setMsgs((current) =>
+      current.map((msg, mi) =>
+        mi === msgIndex && msg.taskSuggestionStates
+          ? {
+              ...msg,
+              taskSuggestionStates: msg.taskSuggestionStates.map((s, si) => (si === sIndex ? state : s)),
+            }
+          : msg,
+      ),
+    );
+  };
+  const acceptTaskSuggestion = (msgIndex: number, sIndex: number, s: TaskSuggestion) => {
+    if (onTaskSuggestionAccept) onTaskSuggestionAccept(s);
+    setTaskSuggestionState(msgIndex, sIndex, 'accepted');
+  };
+  const dismissTaskSuggestion = (msgIndex: number, sIndex: number) => {
+    setTaskSuggestionState(msgIndex, sIndex, 'dismissed');
   };
 
   // Load past consult sessions for this conversation when the history
@@ -842,6 +881,8 @@ export function FridayConsult({
                 onChipClick={submit}
                 onConfirmTeaching={confirmTeaching}
                 onDismissTeaching={dismissTeaching}
+                onAcceptTaskSuggestion={acceptTaskSuggestion}
+                onDismissTaskSuggestion={dismissTaskSuggestion}
               />
             ));
           })()}
@@ -1056,6 +1097,8 @@ function MessageRow({
   onChipClick: _onChipClick,
   onConfirmTeaching,
   onDismissTeaching,
+  onAcceptTaskSuggestion,
+  onDismissTaskSuggestion,
 }: {
   m: ConsultMessage;
   msgIndex: number;
@@ -1070,6 +1113,8 @@ function MessageRow({
   onChipClick: (text: string) => void;
   onConfirmTeaching: (msgIndex: number, actionIndex: number, ta: TeachingAction, extraPropertyCodes?: string[]) => void;
   onDismissTeaching: (msgIndex: number, actionIndex: number) => void;
+  onAcceptTaskSuggestion: (msgIndex: number, suggestionIndex: number, s: TaskSuggestion) => void;
+  onDismissTaskSuggestion: (msgIndex: number, suggestionIndex: number) => void;
 }) {
   // Draft-role messages render very differently from chat:
   //   - Latest = an editable card with Approve & send
@@ -1150,6 +1195,16 @@ function MessageRow({
           onConfirm={(extraPropertyCodes) => onConfirmTeaching(msgIndex, ai, ta, extraPropertyCodes)}
           onDismiss={() => onDismissTeaching(msgIndex, ai)}
         />
+      ))}
+      {m.taskSuggestions && m.taskSuggestions.map((ts, ti) => (
+        <div key={`task-${ti}`} style={{ maxWidth: '85%', marginTop: 6 }}>
+          <TaskSuggestionCard
+            suggestion={ts}
+            dismissed={(m.taskSuggestionStates && m.taskSuggestionStates[ti]) !== 'pending'}
+            onAccept={(s) => onAcceptTaskSuggestion(msgIndex, ti, s)}
+            onDismiss={() => onDismissTaskSuggestion(msgIndex, ti)}
+          />
+        </div>
       ))}
     </div>
   );

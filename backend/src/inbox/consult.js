@@ -333,6 +333,7 @@ function stripProtocolTags(text) {
   return String(text || '')
     .replace(/\[DRAFT_UPDATE\][\s\S]*?\[\/DRAFT_UPDATE\]/g, '')
     .replace(/\[TEACH\][\s\S]*?\[\/TEACH\]/g, '')
+    .replace(/\[TASK\][\s\S]*?\[\/TASK\]/g, '')
     .trim();
 }
 
@@ -380,6 +381,38 @@ function parseTeachingActions(responseText, teachingIdMap = {}) {
     }
   }
   return actions.filter((a) => a.instruction);
+}
+
+// Parse [TASK]{json}[/TASK] suggestions emitted by Friday Consult when
+// the conversation surfaces actionable work. Mirrors parseTeachingActions
+// shape so the response field is the obvious sibling to teaching_actions.
+function parseTaskSuggestions(responseText) {
+  const suggestions = [];
+  const matches = [...String(responseText || '').matchAll(/\[TASK\]([\s\S]*?)\[\/TASK\]/g)];
+  const VALID_DEPT = new Set(['cleaning', 'inspection', 'maintenance', 'office']);
+  const VALID_PRIO = new Set(['urgent', 'high', 'medium', 'low', 'lowest']);
+  for (const match of matches) {
+    const raw = match[1].trim();
+    try {
+      const parsed = JSON.parse(raw);
+      const title = String(parsed.title || '').trim();
+      if (!title) continue;
+      const dept = String(parsed.department || '').toLowerCase();
+      const prio = String(parsed.priority || '').toLowerCase();
+      suggestions.push({
+        title: title.slice(0, 140),
+        description: String(parsed.description || '').trim().slice(0, 1000) || null,
+        propertyCode: parsed.property_code || parsed.propertyCode || null,
+        department: VALID_DEPT.has(dept) ? dept : 'maintenance',
+        priority: VALID_PRIO.has(prio) ? prio : 'medium',
+        subdepartment: parsed.subdepartment || null,
+        dueDate: parsed.due_date || parsed.dueDate || null,
+      });
+    } catch {
+      // Malformed JSON — skip. Friday will re-propose if it still matters.
+    }
+  }
+  return suggestions;
 }
 
 function selectConsultSurface(context) {
@@ -605,6 +638,16 @@ TEACHING PROTOCOL:
 [TEACH]{"action":"create","instruction":"Keep checkout messages to 1-2 sentences","scope":"global"}[/TEACH]
 [TEACH]{"action":"create","instruction":"No daily cleaning. Linen change on Wednesdays only.","scope":"property","property_code":"LB-C"}[/TEACH]
 [TEACH]{"action":"flag_conflict","conflicting":"T2","instruction":"Always mention pool hours for this property","reason":"T2 says keep messages brief"}[/TEACH]
+
+TASK SUGGESTION PROTOCOL:
+- When the conversation surfaces real operational work (a maintenance request, cleaning issue, supply run, follow-up reminder, owner ack needed, etc.), emit a [TASK] JSON block so the operator can one-click create it.
+- Only propose a task when it's clearly actionable + not already handled in this thread. Do not propose tasks for purely informational requests, draft revisions, or learning rules.
+- Choose department: cleaning · inspection · maintenance · office.
+- Choose priority: urgent (guest is on-property + blocked) · high (guest arriving in <24h or comfort impact) · medium (standard turnaround) · low (cosmetic / nice-to-have).
+- Property code: prefer the conversation's property when present, omit if uncertain.
+- Format examples:
+[TASK]{"title":"Fix toilet leak at GBH-C8 — guest reports flooding","department":"maintenance","priority":"urgent","property_code":"GBH-C8","description":"Guest Gael Le Metayer messaged: keypad broken at entry door. Mathias to send technician this afternoon."}[/TASK]
+[TASK]{"title":"Restock welcome amenities at LB-3 before tomorrow's arrival","department":"cleaning","priority":"high","property_code":"LB-3","description":"Standard arrival pack: water, coffee, snacks."}[/TASK]
 
 Be concise. Surface missing knowledge honestly. Do not invent prices, availability, property features, refunds, or operational commitments.`;
   const confidenceGates = `
@@ -1128,12 +1171,19 @@ router.post('/', attachIdentity, async (req, res) => {
         }
       }
       const teachingActions = parseTeachingActions(result.text, teachingIdMap);
+      const taskSuggestions = parseTaskSuggestions(result.text);
       let responseTextForClient = stripProtocolTags(responseTextForHistory);
       if (!responseTextForClient && draftUpdate) {
         responseTextForClient = 'Done — I updated the draft in the editor.';
       }
       if (!responseTextForClient && teachingActions.length > 0) {
         responseTextForClient = 'I found a teaching candidate for you to confirm.';
+      }
+      if (!responseTextForClient && taskSuggestions.length > 0) {
+        const n = taskSuggestions.length;
+        responseTextForClient = n === 1
+          ? 'I think this is worth a task — review below.'
+          : `I think ${n} tasks are worth creating — review below.`;
       }
 
       const userHistory = {
@@ -1186,6 +1236,7 @@ router.post('/', attachIdentity, async (req, res) => {
         confidence,
         ...(draftUpdate ? { draft_update: draftUpdate } : {}),
         ...(teachingActions.length > 0 ? { teaching_actions: teachingActions, teaching_action: teachingActions[0] } : {}),
+        ...(taskSuggestions.length > 0 ? { task_suggestions: taskSuggestions } : {}),
         sessionId: activeSessionId,
         metadata: {
           surface: composed.metadata.surface,
