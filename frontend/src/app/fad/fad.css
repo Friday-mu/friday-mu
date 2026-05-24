@@ -11799,3 +11799,273 @@ body:has(.ops-create-drawer) .bug-fab {
   .fad-design-payments-table { display: none !important; }
   .fad-design-payments-cards { display: flex !important; }
 }
+
+
+/* ─── Multi-calendar v0.1 (T4.38 · 2026-05-24 overnight Phase 5) ───── */
+
+.mcal-root {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-md);
+  background: var(--color-background-primary);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.mcal-scroller {
+  overflow: auto;
+  max-height: calc(100vh - 280px);
+  position: relative;
+}
+
+/* Each row (header + property rows) is its own grid so bands can overlay
+ * day cells via shared grid-row + z-index. */
+.mcal-header-row,
+.mcal-property-row {
+  display: grid;
+  grid-auto-rows: 56px;
+  min-width: max-content;
+  position: relative; /* anchors the today line */
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.mcal-header-row {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--color-background-secondary);
+  grid-auto-rows: 50px;
+}
+
+/* Sticky property column (column 1) */
+.mcal-header-property,
+.mcal-property-cell {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--color-background-primary);
+  border-right: 0.5px solid var(--color-border-secondary);
+  grid-column: 1;
+  grid-row: 1;
+  box-sizing: border-box;
+}
+
+.mcal-header-property {
+  background: var(--color-background-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-weight: 500;
+  font-size: 13px;
+  z-index: 6;
+}
+
+.mcal-header-count {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+
+.mcal-header-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 2px;
+  font-size: 11px;
+  border-right: 0.5px solid var(--color-border-tertiary);
+  box-sizing: border-box;
+  background: var(--color-background-secondary);
+}
+
+.mcal-date-dow {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.mcal-date-num {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mcal-date-month {
+  font-size: 9px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mcal-weekend { background: rgba(150, 150, 150, 0.04); }
+.mcal-today { background: rgba(86, 128, 202, 0.08); }
+.mcal-month-start { border-left: 1.5px solid var(--color-border-secondary); }
+
+.mcal-property-cell {
+  display: grid;
+  grid-template-columns: 56px 1fr 8px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-bottom: 0;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  border-style: solid;
+  border-color: transparent;
+  border-right-color: var(--color-border-secondary);
+  border-width: 0.5px;
+}
+
+.mcal-property-cell:hover {
+  background: var(--color-background-secondary);
+}
+
+.mcal-thumb {
+  width: 56px;
+  height: 44px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--color-background-secondary);
+}
+
+.mcal-thumb-placeholder {
+  background-image: linear-gradient(135deg, rgba(86, 128, 202, 0.2), rgba(86, 128, 202, 0.08));
+}
+
+.mcal-property-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mcal-property-code {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.mcal-property-name {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcal-lifecycle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+  margin-right: 2px;
+}
+
+.mcal-dot-live { background: rgb(72, 173, 122); }
+.mcal-dot-onboarding { background: rgb(220, 160, 60); }
+.mcal-dot-paused { background: rgb(150, 150, 150); }
+
+/* Day cells (background per row, row 1) */
+.mcal-day-cell {
+  border-right: 0.5px solid var(--color-border-tertiary);
+  box-sizing: border-box;
+  background: transparent;
+  cursor: default;
+  min-height: 56px;
+}
+
+/* Reservation band: overlays day cells via shared grid-row + higher z */
+.mcal-band {
+  align-self: center;
+  margin: 6px 2px;
+  min-height: 32px;
+  border-radius: 5px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 0;
+  color: white;
+  overflow: hidden;
+  white-space: nowrap;
+  z-index: 2;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.mcal-band-channel {
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.mcal-band-guest {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.mcal-band-clip-left {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: 0;
+}
+
+.mcal-band-clip-right {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-right: 0;
+}
+
+.mcal-band-airbnb { background: rgb(255, 90, 95); }
+.mcal-band-booking { background: rgb(0, 53, 128); }
+.mcal-band-vrbo { background: rgb(255, 119, 0); }
+.mcal-band-direct { background: rgb(72, 173, 122); }
+.mcal-band-owner { background: rgb(122, 76, 175); }
+.mcal-band-email { background: rgb(120, 120, 120); }
+
+.mcal-today-line {
+  align-self: stretch;
+  background: rgba(220, 60, 110, 0.45);
+  width: 2px;
+  justify-self: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mcal-footer {
+  border-top: 0.5px solid var(--color-border-tertiary);
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--color-background-secondary);
+}
+
+.mcal-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.mcal-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 2px;
+  margin-left: 6px;
+}

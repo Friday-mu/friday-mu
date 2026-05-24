@@ -291,6 +291,23 @@ export async function hydratePropertiesFromGuesty(): Promise<void> {
   bumpFixtureRev();
 }
 
+/** Convenience hook that wraps useHydratePropertiesFromGuesty and
+ *  returns the materialised PROPERTIES array each render. Used by
+ *  surfaces (MultiCalendar) that want a single .properties handle
+ *  instead of relying on the PROPERTIES global. */
+export function useLiveProperties(): {
+  properties: Property[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
+  const { loading, error, refetch, rev } = useHydratePropertiesFromGuesty();
+  // PROPERTIES mutates in place; depend on rev so the consumer re-renders.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _r = rev;
+  return { properties: PROPERTIES.slice(), loading, error, refetch };
+}
+
 export function useHydratePropertiesFromGuesty(): {
   hydrated: boolean;
   loading: boolean;

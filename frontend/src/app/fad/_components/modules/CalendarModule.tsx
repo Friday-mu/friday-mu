@@ -25,8 +25,10 @@ import { FilterBar, FilterChip } from '../FilterBar';
 import { IconClose, IconPlus, IconRefresh } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
+import { MultiCalendarGrid } from './calendar/MultiCalendarGrid';
+import { useLiveProperties } from '../../_data/propertiesClient';
 
-type CalView = 'agenda' | 'day' | 'week' | 'month';
+type CalView = 'multi' | 'agenda' | 'day' | 'week' | 'month';
 
 interface ViewDay {
   isoDate: string;
@@ -122,6 +124,12 @@ function computeViewDays(viewDate: Date, view: CalView): ViewDay[] {
     const monday = startOfWeek(viewDate);
     return Array.from({ length: 7 }, (_, i) => make(addDays(monday, i)));
   }
+  if (view === 'multi') {
+    // 60-day window anchored 7 days before viewDate (so today + recent
+    // history + next ~7 weeks are all visible without scrolling).
+    const start = addDays(viewDate, -7);
+    return Array.from({ length: 60 }, (_, i) => make(addDays(start, i)));
+  }
   // month: 5 weeks anchored on Mon-of-week-containing-1st
   const firstOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
   const monday = startOfWeek(firstOfMonth);
@@ -134,7 +142,7 @@ function viewSubtitle(viewDate: Date, view: CalView, days: ViewDay[]): string {
   if (view === 'day') {
     return fmt(days[0].isoDate, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
   }
-  if (view === 'week' || view === 'agenda') {
+  if (view === 'week' || view === 'agenda' || view === 'multi') {
     const first = days[0].isoDate;
     const last = days[days.length - 1].isoDate;
     return `${fmt(first, { month: 'short', day: 'numeric' })} → ${fmt(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
@@ -277,8 +285,11 @@ export function CalendarModule() {
   const currentUserId = useCurrentUserId();
   const demoData = !liveOnlyMode();
   const [tab, setTab] = useState<CalView>(() => (
-    typeof window !== 'undefined' && window.innerWidth <= 768 ? 'agenda' : 'week'
+    typeof window !== 'undefined' && window.innerWidth <= 768 ? 'agenda' : 'multi'
   ));
+  // Live properties for the multi-calendar (Phase 5, T4.38). Triggered
+  // lazily — only hydrate when the multi tab is the active view.
+  const { properties: liveProperties } = useLiveProperties();
   const [viewDate, setViewDate] = useState<Date>(() => new Date(`${TODAY_ISO}T12:00:00`));
   const days = useMemo(() => computeViewDays(viewDate, tab), [viewDate, tab]);
   const taskWindowFilter = useMemo<FetchTasksPageInput>(() => ({
@@ -327,6 +338,7 @@ export function CalendarModule() {
   const [rev, setRev] = useState(0);
   const bumpRev = () => setRev((n) => n + 1);
   const tabs = [
+    { id: 'multi', label: 'Multi' },
     { id: 'agenda', label: 'Agenda' },
     { id: 'day', label: 'Day' },
     { id: 'week', label: 'Week' },
@@ -382,6 +394,7 @@ export function CalendarModule() {
     setViewDate((prev) => {
       if (tab === 'day') return addDays(prev, dir);
       if (tab === 'week' || tab === 'agenda') return addDays(prev, dir * 7);
+      if (tab === 'multi') return addDays(prev, dir * 30);
       return new Date(prev.getFullYear(), prev.getMonth() + dir, 1);
     });
   };
@@ -472,7 +485,17 @@ export function CalendarModule() {
           </div>
         )}
 
-        {tab === 'agenda' ? (
+        {tab === 'multi' ? (
+          <MultiCalendarGrid
+            properties={liveProperties}
+            reservations={sourceReservations}
+            windowStart={days[0] ? new Date(`${days[0].isoDate}T00:00:00`) : new Date()}
+            windowDays={Math.max(days.length, 30)}
+            todayIso={TODAY_ISO}
+            onReservationClick={(rsv, x, y) => setSelectedStay({ rsv, x, y })}
+            onPropertyClick={(p) => { window.location.href = `/fad?m=properties&sub=overview&p=${encodeURIComponent(p.code)}`; }}
+          />
+        ) : tab === 'agenda' ? (
           <AgendaView
             days={days}
             events={visibleEvents}
