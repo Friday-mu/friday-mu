@@ -224,42 +224,51 @@ router.get('/', attachIdentity, async (req, res) => {
     }
     // Default scope: all guesty listings (with merged overlay where present)
     // PLUS overlay-only rows (prospects) that have no guesty_id yet.
+    // Postgres won't accept JSON-extractor expressions in an ORDER BY that
+    // sits on a UNION result, so we expose the two sort keys as proper
+    // columns in both branches and ORDER BY them by name in the outer query.
     const { rows } = await query(
-      `SELECT
-         row_to_json(gl) AS guesty,
-         row_to_json(p) AS overlay,
-         cal.blocked_30d,
-         cal.min_price_minor_30d,
-         cal.max_price_minor_30d,
-         cal.calendar_synced_at
-       FROM guesty_listings gl
-       LEFT JOIN fad_properties p
-         ON p.tenant_id = gl.tenant_id AND p.guesty_id = gl.guesty_id
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_30d,
-                MIN(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS min_price_minor_30d,
-                MAX(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS max_price_minor_30d,
-                MAX(gc.fetched_at) AS calendar_synced_at
-           FROM guesty_calendar gc
-          WHERE gc.tenant_id = gl.tenant_id
-            AND gc.listing_guesty_id = gl.guesty_id
-            AND gc.date >= CURRENT_DATE
-            AND gc.date < CURRENT_DATE + INTERVAL '30 days'
-       ) cal ON TRUE
-       WHERE ${filters.join(' AND ')}
-       UNION ALL
-       SELECT NULL::json AS guesty,
-              row_to_json(p) AS overlay,
-              NULL::bigint AS blocked_30d,
-              NULL::bigint AS min_price_minor_30d,
-              NULL::bigint AS max_price_minor_30d,
-              NULL::timestamptz AS calendar_synced_at
-         FROM fad_properties p
-        WHERE p.tenant_id = $1 AND p.guesty_id IS NULL
-          ${typeof req.query.lifecycle === 'string'
-            ? `AND p.lifecycle_status = $${params.length}` /* re-uses lifecycle param already pushed */
-            : ''}
-       ORDER BY (overlay->>'code') NULLS LAST, (guesty->>'nickname') NULLS LAST`,
+      `SELECT * FROM (
+         SELECT
+           row_to_json(gl) AS guesty,
+           row_to_json(p) AS overlay,
+           p.code AS sort_code,
+           gl.nickname AS sort_nickname,
+           cal.blocked_30d,
+           cal.min_price_minor_30d,
+           cal.max_price_minor_30d,
+           cal.calendar_synced_at
+         FROM guesty_listings gl
+         LEFT JOIN fad_properties p
+           ON p.tenant_id = gl.tenant_id AND p.guesty_id = gl.guesty_id
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_30d,
+                  MIN(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS min_price_minor_30d,
+                  MAX(gc.price_minor) FILTER (WHERE gc.price_minor IS NOT NULL) AS max_price_minor_30d,
+                  MAX(gc.fetched_at) AS calendar_synced_at
+             FROM guesty_calendar gc
+            WHERE gc.tenant_id = gl.tenant_id
+              AND gc.listing_guesty_id = gl.guesty_id
+              AND gc.date >= CURRENT_DATE
+              AND gc.date < CURRENT_DATE + INTERVAL '30 days'
+         ) cal ON TRUE
+         WHERE ${filters.join(' AND ')}
+         UNION ALL
+         SELECT NULL::json AS guesty,
+                row_to_json(p) AS overlay,
+                p.code AS sort_code,
+                NULL::text AS sort_nickname,
+                NULL::bigint AS blocked_30d,
+                NULL::bigint AS min_price_minor_30d,
+                NULL::bigint AS max_price_minor_30d,
+                NULL::timestamptz AS calendar_synced_at
+           FROM fad_properties p
+          WHERE p.tenant_id = $1 AND p.guesty_id IS NULL
+            ${typeof req.query.lifecycle === 'string'
+              ? `AND p.lifecycle_status = $${params.length}` /* re-uses lifecycle param already pushed */
+              : ''}
+       ) merged
+       ORDER BY sort_code NULLS LAST, sort_nickname NULLS LAST`,
       params,
     );
     res.json({ listings: rows.map(shapeMergedListing) });
