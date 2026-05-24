@@ -79,9 +79,17 @@ html.fad-dark {
    * 100vh causes. Fallback to 100vh for browsers without dvh support. */
   height: 100vh;
   height: 100dvh;
-  /* iOS PWA notch: keep the header below the safe-area-inset-top. The
-   * inset is 0 on non-notched devices, so this is a no-op there. */
-  padding-top: env(safe-area-inset-top, 0px);
+  /* Bug 495868d6 (Ishant 2026-05-24, iPhone 15 Pro PWA): top + bottom
+   * letterboxing on PWA. Root cause was DOUBLE safe-area padding — the
+   * shell padded top by the inset AND the header padded itself by the
+   * inset, leaving a visible body-bg strip behind the Dynamic Island.
+   *
+   * Fix: shell DOES NOT pad top. Header alone handles the inset by
+   * expanding its own height + padding its content down past the
+   * Dynamic Island, so the header background extends edge-to-edge to
+   * the absolute top. Same idea applies for the bottom — .fad-app's
+   * padding-bottom is the inset (kept) so the bottom content is above
+   * the home indicator while the body BG covers underneath. */
   display: flex;
   flex-direction: column;
   font-family: var(--font-sans-fad);
@@ -122,11 +130,19 @@ html.fad-dark {
 
 /* ───────────────────── HEADER ───────────────────── */
 .fad-header {
-  height: 48px;
-  flex: 0 0 48px;
+  /* Bug 495868d6 (Ishant 2026-05-24): on iPhone 15 Pro PWA the header
+   * height was a fixed 48px, sitting BELOW the safe-area-inset-top
+   * (.fad-app used to add the inset as its own padding-top). That left
+   * a visible body-bg strip behind the Dynamic Island. The header now
+   * grows to (48px + inset) and pads its own content down by the
+   * inset, so the header background extends to the absolute top edge
+   * of the viewport, covering behind the Dynamic Island. Same shape
+   * the `.fad-drawer-header` already uses for the same reason. */
+  height: calc(48px + env(safe-area-inset-top, 0px));
+  flex: 0 0 calc(48px + env(safe-area-inset-top, 0px));
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: env(safe-area-inset-top, 0px) 16px 0;
   border-bottom: 0.5px solid var(--color-border-tertiary);
   background: var(--color-background-primary);
   gap: 16px;
@@ -6140,13 +6156,20 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 }
 
 /* ───────────────── iOS PWA safe-area handling ─────────────────
- * When installed on iOS with viewportFit: 'cover', the notch and home
- * indicator can cover edge content. Use env(safe-area-inset-*) to pad.
+ * When installed on iOS with viewportFit: 'cover', the notch + Dynamic
+ * Island + home indicator can cover edge content. The header itself
+ * extends into the inset area (height grows by inset, content padded
+ * down) per the primary `.fad-header` rule above. This block only
+ * needs to handle the LEFT / RIGHT insets (landscape notch) and the
+ * shell's BOTTOM padding for the home indicator.
+ *
+ * Note: top inset is handled by the primary `.fad-header` rule, NOT
+ * here — re-applying it would double the padding and reintroduce the
+ * letterboxing bug (495868d6).
  */
 .fad-header {
-  padding-top: env(safe-area-inset-top, 0);
-  padding-left: max(env(safe-area-inset-left, 0), 0px);
-  padding-right: max(env(safe-area-inset-right, 0), 0px);
+  padding-left: max(env(safe-area-inset-left, 0), 16px);
+  padding-right: max(env(safe-area-inset-right, 0), 16px);
 }
 .fad-app {
   padding-bottom: env(safe-area-inset-bottom, 0);
