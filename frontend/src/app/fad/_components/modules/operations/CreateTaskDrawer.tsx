@@ -401,86 +401,9 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     }
   };
 
-  const parseNl = () => {
-    if (!nl.trim()) return;
-    // @demo:logic — Tag: PROD-LOGIC-4 — see frontend/DEMO_CRUFT.md
-    // Replace with: POST /api/intent/parse-task (real LLM intent endpoint).
-    // Phase 1: regex-based intent parsing. Phase 2 swaps to real LLM.
-    const raw = nl.trim();
-    const text = nl.toLowerCase();
-
-    const property = mentionedPropertyCode(raw);
-    if (property) {
-      setPropertyCode(property);
-      setPropertyQuery(property);
-    }
-
-    const assignees = assigneeIdsFromText(text);
-    if (assignees.length > 0) setAssigneeIds(assignees);
-
-    if (/\bclean\b|\bturnover\b|\blinen\b|\bdeep\b/.test(text)) {
-      setDepartment('cleaning');
-      setSubdepartment(/\bdeep\b/.test(text) ? 'deep_clean' : 'standard_clean');
-      setTemplate(/\bdeep\b/.test(text) ? 'Deep clean' : 'Standard clean');
-    } else if (/\binspection\b|\binspect\b|\bpre-arrival\b/.test(text)) {
-      setDepartment('inspection');
-      setSubdepartment(/\bpost\b|\bafter clean\b|\bpost-clean\b/.test(text) ? 'post_clean' : 'pre_arrival');
-      setTemplate(/\bpost\b|\bafter clean\b|\bpost-clean\b/.test(text) ? 'Post-clean inspection' : 'Inspection follow-up');
-    } else if (/\bplumbing\b|\bleak\b|\bsink\b|\btoilet\b|\bshower\b|\bdrain\b|\bwater\b|\bpressure\b/.test(text)) {
-      setDepartment('maintenance');
-      setSubdepartment('plumbing');
-      setTemplate('Preventative maintenance');
-      setElement(/\btoilet\b/.test(text) ? 'Toilet' : /\bshower\b/.test(text) ? 'Shower' : 'Plumbing');
-    } else if (/\bac\b|\baircon\b|\bcooling\b/.test(text)) {
-      setDepartment('maintenance');
-      setSubdepartment('aircon');
-      setTemplate('Preventative maintenance');
-      setElement('AC');
-    } else if (/\bgarden\b|\bhedge\b|\blawn\b/.test(text)) {
-      setDepartment('maintenance');
-      setSubdepartment('garden');
-      setTemplate('Preventative maintenance');
-      setElement('Garden');
-    } else if (/\bpool\b/.test(text)) {
-      setDepartment('maintenance');
-      setSubdepartment('pool');
-      setTemplate('Preventative maintenance');
-      setElement('Pool');
-    } else if (/\bamenit(y|ies)\b|\bwelcome pack\b|\bconsumable\b/.test(text)) {
-      setDepartment('cleaning');
-      setSubdepartment('amenities');
-      setTemplate('Amenities form');
-    }
-
-    if (/\burgent\b|\bnow\b|\basap\b|\bbefore guest\b|\bbefore arrival\b/.test(text)) setPriority('urgent');
-    else if (/\bhigh\b|\bsoon\b|\btoday\b/.test(text)) setPriority('high');
-    else if (/\bno rush\b|\blow priority\b/.test(text)) setPriority('low');
-
-    if (/\btomorrow\b/.test(text)) setDueDate(addDaysIso(TODAY, 1));
-    else if (/\btoday\b/.test(text)) setDueDate(TODAY);
-    else if (/\bnext week\b|\bweek\b/.test(text)) setDueDate(addDaysIso(TODAY, 6));
-
-    const parsedTime = timeFromText(text);
-    if (parsedTime) setDueTime(parsedTime);
-
-    const duration = durationFromText(text);
-    if (duration) setEstimatedMinutes(String(duration));
-
-    const nextTags = [
-      /\bowner\b|\bbillable\b|\bcharge\b/.test(text) ? 'owner-billable' : '',
-      /\baccess\b|\bkey\b|\bgate\b|\block\b/.test(text) ? 'access' : '',
-      /\barrival\b|\bcheck-?in\b/.test(text) ? 'arrival' : '',
-      /\bfollow[- ]?up\b/.test(text) ? 'follow-up' : '',
-    ].filter(Boolean);
-    if (nextTags.length > 0) setTagText((current) => mergeTags(current, nextTags));
-
-    const nextTitle = assignees.includes('u-bryan')
-      ? compactTaskTitle(raw).replace(/\bBrian\b/g, 'Bryan')
-      : compactTaskTitle(raw);
-    setTitle(nextTitle);
-    if (!description.trim()) setDescription(raw);
-    fireToast('Form pre-filled from your description · review and submit');
-  };
+  // T1.8 (2026-05-24): parseNl regex-based offline drafter removed —
+  // the Friday-smart drafter (sendSmartTurn) is reliable in prod and
+  // the regex fallback never fired in real use. Saved ~80 lines.
 
   const toggleAssignee = (id: string) => {
     setAssigneeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -689,17 +612,10 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
                 >
                   {smartTurns.length === 0 ? 'Draft with Friday' : 'Refine'}
                 </button>
-                {smartTurns.length === 0 && (
-                  <button
-                    className="btn ghost sm"
-                    type="button"
-                    onClick={parseNl}
-                    disabled={!nl.trim()}
-                    title="Offline fallback — regex-based field population"
-                  >
-                    Quick draft (offline)
-                  </button>
-                )}
+                {/* T1.8 (2026-05-24): "Quick draft (offline)" + parseNl removed.
+                    The Friday-smart drafter has proven reliable on prod; the
+                    regex fallback never fired in real use. Removing the
+                    button (+ unused parseNl below) per the overnight plan. */}
               </div>
               {smartError && <div className="ops-form-alert failed">{smartError}</div>}
             </section>
