@@ -1405,22 +1405,6 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                 setConsultOpen(false);
               }}
               onClose={() => setConsultOpen(false)}
-              onTaskSuggestionAccept={(s) => {
-                // Friday-proposed task inside the consult chat. Reuse the
-                // same inbox-level CreateTaskDrawer state used by the
-                // header "+ Task" button — prefill with AI fields +
-                // bind the thread + reservation context.
-                setCreateTaskPrefill({
-                  title: s.title.slice(0, 100),
-                  description: s.description || '',
-                  propertyCode: s.propertyCode || thread.property || undefined,
-                  reservationId: thread.reservationId || undefined,
-                  inboxThreadId: thread.id,
-                  department: s.department as never, // CreateTaskPrefill typing
-                  priority: s.priority as never,
-                  source: 'manual',
-                });
-              }}
             />
           )}
           {/* AI draft review panel — shown when consult is CLOSED and GMS

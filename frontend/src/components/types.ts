@@ -50,7 +50,6 @@ export function stripProtocolTags(text: string): string {
   return text
     .replace(/\[DRAFT_UPDATE\][\s\S]*?\[\/DRAFT_UPDATE\]/g, '')
     .replace(/\[TEACH\][\s\S]*?\[\/TEACH\]/g, '')
-    .replace(/\[TASK\][\s\S]*?\[\/TASK\]/g, '')
     .replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/g, '')
     .replace(/\[DRAFT\][\s\S]*?\[\/DRAFT\]/g, '')
     .replace(/\[REVISION_REQUEST\]/g, '')
