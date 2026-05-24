@@ -29,6 +29,7 @@ import {
   type PortfolioResponse,
 } from '../../_data/analyticsClient';
 import { useLiveReviews } from '../../_data/reviewsClient';
+import { useApiTasks } from '../../_data/useApiTasks';
 import { IconDownload, IconSparkle } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
 
@@ -399,12 +400,171 @@ function PendingDataBanner({ note }: { note?: string }) {
   );
 }
 
-/* ───────────── Revenue ───────────── */
+/* ───────────── Revenue (live, T1.14) ─────────────
+ * Reads usePortfolio(30) — same SQL aggregate the Overview already
+ * surfaces, just re-shaped per-property and per-month. The fixture
+ * version is preserved further down as RevenueTabFixture for reference. */
 function RevenueTab() {
+  const { portfolio, loading, error } = usePortfolio(30);
+  const { portfolio: portfolio90 } = usePortfolio(90);
+
+  if (loading && !portfolio) {
+    return (
+      <div className="kpi-grid kpi-grid-3">
+        {[1, 2, 3].map((i) => (
+          <div className="kpi" key={i}>
+            <div className="kpi-label">Loading…</div>
+            <div className="kpi-value" style={{ opacity: 0.4 }}>—</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (error || !portfolio) {
+    return (
+      <div role="alert" style={{ padding: '12px 16px', color: 'var(--color-text-warning)', fontSize: 13 }}>
+        Failed to load revenue data: {error || 'unknown error'}.
+      </div>
+    );
+  }
+
+  const { currency, top_properties, window: windowInfo, revenue_trend } = portfolio;
+  const fmt = (minor: number) => {
+    const major = Math.round(minor / 100);
+    const sym = currency === 'EUR' ? '€' : currency === 'MUR' ? 'Rs' : currency === 'USD' ? '$' : '';
+    return `${sym} ${major.toLocaleString()}`;
+  };
+  const fmtCompact = (minor: number) => {
+    const major = minor / 100;
+    if (major >= 1000) return `${(major / 1000).toFixed(major >= 10000 ? 0 : 1)}k`;
+    return Math.round(major).toString();
+  };
+
+  // Build monthly buckets from revenue_trend (daily).
+  const monthly = (() => {
+    const buckets = new Map<string, number>();
+    for (const day of revenue_trend) {
+      const ym = day.day.slice(0, 7); // YYYY-MM
+      buckets.set(ym, (buckets.get(ym) || 0) + day.revenue_minor);
+    }
+    return Array.from(buckets.entries()).map(([ym, revenue]) => ({ ym, revenue }));
+  })();
+  const monthlyMax = Math.max(1, ...monthly.map((m) => m.revenue));
+
+  // Top-property sorted by revenue (already sorted by portfolio backend,
+  // but defensive re-sort in case the wrapper changes).
+  const top = [...top_properties].sort((a, b) => b.revenue_minor - a.revenue_minor);
+  const totalTop = top.reduce((a, p) => a + p.revenue_minor, 0);
+  const total90 = portfolio90?.kpis.revenue_minor ?? 0;
+
+  return (
+    <>
+      <div style={{
+        padding: '8px 14px',
+        marginBottom: 16,
+        background: 'rgba(72, 173, 122, 0.08)',
+        borderLeft: '2px solid rgb(72, 173, 122)',
+        borderRadius: 4,
+        fontSize: 12,
+        color: 'var(--color-text-secondary)',
+      }}>
+        <strong style={{ fontWeight: 500 }}>Live data.</strong>{' '}
+        Daily revenue trend + per-property breakdown computed from
+        guesty_reservations over the last {windowInfo.days} days. Net-to-owner
+        + channel fees split lands when Finance Phase 3 ships (per
+        Analytics scoping §7).
+      </div>
+      <div className="kpi-grid kpi-grid-3">
+        <div className="kpi">
+          <div className="kpi-label">Revenue · last {windowInfo.days}d</div>
+          <div className="kpi-value">€ {fmtCompact(portfolio.kpis.revenue_minor)}</div>
+          <div className="kpi-sub">{portfolio.kpis.reservation_count} bookings</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Revenue · last 90d</div>
+          <div className="kpi-value">€ {fmtCompact(total90)}</div>
+          <div className="kpi-sub">{portfolio90?.kpis.reservation_count ?? '—'} bookings</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Top property contribution</div>
+          <div className="kpi-value">
+            {top[0]?.code || '—'}
+          </div>
+          <div className="kpi-sub">
+            {top[0] ? fmt(top[0].revenue_minor) + ' · ' + Math.round((top[0].revenue_minor / Math.max(1, portfolio.kpis.revenue_minor)) * 100) + '%' : '—'}
+          </div>
+        </div>
+      </div>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-header">
+          <div className="card-title">Revenue by month · last {windowInfo.days}d</div>
+          <div className="card-subtitle">aggregated from daily pro-rated nights</div>
+          <AskAnalyticsCTA question="Why is this month pacing different from prior?" />
+        </div>
+        <div className="card-body">
+          {monthly.length === 0 ? (
+            <div style={{ padding: 12, fontSize: 12, color: 'var(--color-text-tertiary)' }}>No revenue in window.</div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 160 }}>
+              {monthly.map((m) => (
+                <div key={m.ym} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%' }}>
+                  <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <div style={{ background: 'var(--color-brand-accent)', height: `${(m.revenue / monthlyMax) * 100}%` }} />
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{m.ym}</div>
+                  <div className="mono" style={{ fontSize: 11 }}>€ {fmtCompact(m.revenue)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">Revenue by property · last {windowInfo.days}d</div>
+          <div className="card-subtitle">{fmt(totalTop)} across top {top.length} properties</div>
+          <AskAnalyticsCTA question="Which property drove the biggest revenue change?" />
+        </div>
+        {top.length === 0 ? (
+          <div style={{ padding: 14, fontSize: 12, color: 'var(--color-text-tertiary)' }}>No properties with revenue in window.</div>
+        ) : (
+          top.map((p) => {
+            const pct = (p.revenue_minor / Math.max(1, totalTop)) * 100;
+            return (
+              <div
+                key={p.code || p.title}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '120px 1fr 110px',
+                  gap: 12,
+                  padding: '12px 16px',
+                  borderBottom: '0.5px solid var(--color-border-tertiary)',
+                  fontSize: 13,
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontWeight: 500 }}>{p.code || p.nickname || '—'}</span>
+                <div style={{ position: 'relative', height: 8, background: 'var(--color-background-secondary)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, background: 'var(--color-brand-accent)', opacity: 0.7 }} />
+                </div>
+                <span className="mono" style={{ textAlign: 'right' }}>{fmt(p.revenue_minor)}</span>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+}
+
+/* Legacy fixture-driven version kept for reference during the live-data
+ * rollout. Remove once the live RevenueTab has been pair-verified by
+ * the team. */
+function RevenueTabFixture() {
   const total = REVENUE_BY_PROPERTY.reduce((a, p) => a + p.gross, 0);
   return (
     <>
-      <PendingDataBanner note="Live revenue per property + month is on the Overview tab (live · last 30d)." />
+      <PendingDataBanner note="Fixture mode — superseded by RevenueTab (live)." />
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
           <div className="card-title">Revenue by month</div>
@@ -1319,11 +1479,178 @@ function ReviewsTab() {
   );
 }
 
-/* ───────────── Team ───────────── */
+/* ───────────── Team (live, T1.14) ─────────────
+ * Aggregates per-assignee task workload from useApiTasks. The fixture
+ * TeamTabFixture is preserved below as a reference. */
 function TeamTab() {
+  // 30-day window keeps the lookup bounded + matches the rest of Analytics.
+  const since = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  }, []);
+  const taskFilter = useMemo(() => ({ updatedAfter: since, limit: 1000 }), [since]);
+  const { tasks, loading, error } = useApiTasks(taskFilter);
+
+  const stats = useMemo(() => {
+    if (!tasks || tasks.length === 0) return [];
+    const acc = new Map<string, { total: number; completed: number; overdue: number }>();
+    const now = Date.now();
+    for (const t of tasks) {
+      const names = t.assigneeNames && t.assigneeNames.length > 0 ? t.assigneeNames : ['Unassigned'];
+      for (const name of names) {
+        const cur = acc.get(name) || { total: 0, completed: 0, overdue: 0 };
+        cur.total += 1;
+        const isFinished = t.status === 'completed' || t.status === 'closed';
+        if (isFinished) cur.completed += 1;
+        if (t.dueDate && !isFinished) {
+          const due = new Date(t.dueDate).getTime();
+          if (!Number.isNaN(due) && due < now) cur.overdue += 1;
+        }
+        acc.set(name, cur);
+      }
+    }
+    return Array.from(acc.entries())
+      .map(([name, s]) => ({ name, ...s, completionPct: s.total > 0 ? (s.completed / s.total) * 100 : 0 }))
+      .sort((a, b) => b.total - a.total);
+  }, [tasks]);
+
+  if (loading && (!tasks || tasks.length === 0)) {
+    return (
+      <div className="kpi-grid kpi-grid-3">
+        {[1, 2, 3].map((i) => (
+          <div className="kpi" key={i}>
+            <div className="kpi-label">Loading…</div>
+            <div className="kpi-value" style={{ opacity: 0.4 }}>—</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div role="alert" style={{ padding: '12px 16px', color: 'var(--color-text-warning)', fontSize: 13 }}>
+        Failed to load team workload: {error}.
+      </div>
+    );
+  }
+
+  const totalTasks = stats.reduce((a, s) => a + s.total, 0);
+  const totalCompleted = stats.reduce((a, s) => a + s.completed, 0);
+  const totalOverdue = stats.reduce((a, s) => a + s.overdue, 0);
+
   return (
     <>
-      <PendingDataBanner note="Aggregate task / message / review counts per staff member — Phase 2 wiring." />
+      <div style={{
+        padding: '8px 14px',
+        marginBottom: 16,
+        background: 'rgba(72, 173, 122, 0.08)',
+        borderLeft: '2px solid rgb(72, 173, 122)',
+        borderRadius: 4,
+        fontSize: 12,
+        color: 'var(--color-text-secondary)',
+      }}>
+        <strong style={{ fontWeight: 500 }}>Live data · last 30d.</strong>{' '}
+        Per-assignee task workload from /api/tasks. A task with multiple
+        assignees counts toward each. Messages + reviews + leads per
+        person are deferred until each module exposes a per-actor
+        aggregate route.
+      </div>
+      <div className="kpi-grid kpi-grid-3">
+        <div className="kpi">
+          <div className="kpi-label">Total task touches · last 30d</div>
+          <div className="kpi-value">{totalTasks}</div>
+          <div className="kpi-sub">across {stats.length} {stats.length === 1 ? 'person' : 'people'}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Completed</div>
+          <div className="kpi-value">{totalCompleted}</div>
+          <div className="kpi-sub">{totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0}% completion rate</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Overdue (open)</div>
+          <div className="kpi-value">{totalOverdue}</div>
+          <div className="kpi-sub">across the team</div>
+        </div>
+      </div>
+      <div style={{ marginBottom: 16, padding: 12, background: 'var(--color-bg-info)', borderLeft: '2px solid var(--color-brand-accent)', borderRadius: 4, fontSize: 12, color: 'var(--color-text-info)' }}>
+        <strong style={{ fontWeight: 500 }}>Per-staff AI performance</strong> (first-draft acceptance, teachings contributed, credits) lives in{' '}
+        <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>Training → Performance</span>. This tab shows operational workload.
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">Workload distribution · past 30 days</div>
+          <div className="card-subtitle">tasks per assignee · completion rate · open overdue</div>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
+            gap: 12,
+            padding: '10px 16px',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            color: 'var(--color-text-tertiary)',
+          }}
+        >
+          <span>Staff</span>
+          <span>Tasks touched</span>
+          <span>Completed</span>
+          <span>Completion %</span>
+          <span>Overdue (open)</span>
+        </div>
+        {stats.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+            No tasks in window.
+          </div>
+        ) : (
+          stats.map((t) => (
+            <div
+              key={t.name}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
+                gap: 12,
+                padding: '14px 16px',
+                borderBottom: '0.5px solid var(--color-border-tertiary)',
+                fontSize: 13,
+                alignItems: 'center',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="avatar sm">{t.name[0]}</span>
+                <span style={{ fontWeight: 500 }}>{t.name}</span>
+              </div>
+              <span className="mono">{t.total}</span>
+              <span className="mono">{t.completed}</span>
+              <span
+                className="mono"
+                style={{ color: t.completionPct >= 70 ? 'var(--color-text-success)' : t.completionPct < 40 ? 'var(--color-text-danger)' : 'inherit' }}
+              >
+                {Math.round(t.completionPct)}%
+              </span>
+              <span
+                className="mono"
+                style={{ color: t.overdue > 0 ? 'var(--color-text-warning)' : 'var(--color-text-tertiary)' }}
+              >
+                {t.overdue}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+/* Legacy fixture-driven version, preserved during the live-data rollout.
+ * Remove once TeamTab has been pair-verified. */
+function TeamTabFixture() {
+  return (
+    <>
+      <PendingDataBanner note="Fixture mode — superseded by TeamTab (live)." />
       <div style={{ marginBottom: 16, padding: 12, background: 'var(--color-bg-info)', borderLeft: '2px solid var(--color-brand-accent)', borderRadius: 4, fontSize: 12, color: 'var(--color-text-info)' }}>
         <strong style={{ fontWeight: 500 }}>Per-staff AI performance</strong> (first-draft acceptance, teachings contributed, credits) lives in{' '}
         <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>Training → Performance</span>. This tab shows operational workload.
