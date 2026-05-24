@@ -160,11 +160,15 @@ function dedupeRawReservations(rows: RawReservation[]): RawReservation[] {
 function mapStatus(s?: string | null): ReservationStatus {
   const v = String(s ?? '').toLowerCase();
   if (v === 'confirmed' || v === 'reserved') return 'confirmed';
-  if (v === 'checked_in' || v === 'inquiry') return 'checked_in';
+  if (v === 'checked_in') return 'checked_in';
   if (v === 'checked_out') return 'checked_out';
   if (v === 'canceled' || v === 'cancelled') return 'cancelled';
-  if (v === 'hold' || v === 'tentative') return 'hold';
-  return 'confirmed';
+  if (v === 'hold' || v === 'tentative' || v === 'pending') return 'hold';
+  if (v === 'inquiry' || v === 'pending_quote' || v === 'request') return 'inquiry';
+  // Safer than 'confirmed': unknown / new Guesty statuses fall to inquiry so
+  // they surface as filterable in the UI instead of being silently treated as
+  // confirmed bookings.
+  return 'inquiry';
 }
 
 function mapChannel(c?: string | null, source?: string | null): ReservationChannel {

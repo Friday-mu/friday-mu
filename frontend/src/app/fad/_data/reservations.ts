@@ -14,7 +14,8 @@ export type ReservationStatus =
   | 'checked_in'
   | 'checked_out'
   | 'cancelled'
-  | 'hold';
+  | 'hold'
+  | 'inquiry';
 
 /** Reservations channel taxonomy — `owner` denotes an owner-stay block;
  *  distinct from Reviews taxonomy because owner stays don't generate reviews. */
@@ -489,6 +490,7 @@ export const STATUS_LABEL: Record<ReservationStatus, string> = {
   checked_out: 'Checked out',
   cancelled: 'Cancelled',
   hold: 'Hold',
+  inquiry: 'Inquiry',
 };
 
 export const PAYOUT_LABEL: Record<PayoutStatus, string> = {

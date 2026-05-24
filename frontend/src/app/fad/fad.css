@@ -1189,10 +1189,23 @@ html.fad-dark .send-split-main { color: #0b0d14; }
 
 .cal-stays-row {
   display: grid;
-  grid-template-columns: 64px repeat(7, 1fr);
+  grid-template-columns: 64px repeat(7, minmax(0, 1fr));
   align-items: center;
   min-height: 24px;
 }
+
+.cal-stays-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--color-brand-accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 12px;
+  text-align: left;
+  align-self: flex-start;
+}
+.cal-stays-toggle:hover { text-decoration: underline; }
 
 .cal-stays-rowlabel {
   text-align: right;
@@ -1274,6 +1287,22 @@ html.fad-dark .send-split-main { color: #0b0d14; }
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 3-letter channel chip prefix inside stay bands. Subtle pill so colour
+ * isn't the only signal of source. */
+.cal-stay-channel,
+.cal-mv-band-channel {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  flex-shrink: 0;
+}
+.cal-mv-band-channel {
+  margin-right: 6px;
 }
 
 .cal-stay-prop {
@@ -1511,7 +1540,11 @@ html.fad-dark .send-split-main { color: #0b0d14; }
 
 .cal-allday-row {
   display: grid;
-  grid-template-columns: 64px repeat(7, 1fr);
+  /* minmax(0, 1fr) so long pill content can't push columns wider than their
+   * share of the available width — without it, nowrap pill text overrides
+   * 1fr and the row's total width balloons past the viewport, producing the
+   * "all-day row scrolls horizontally" bug. */
+  grid-template-columns: 64px repeat(7, minmax(0, 1fr));
   border-bottom: 0.5px solid var(--color-border-tertiary);
   background: var(--color-background-secondary);
 }

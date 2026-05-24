@@ -57,6 +57,21 @@ const TYPE_LABEL: Record<CalEvent['type'], string> = {
   meeting: 'Meeting',
 };
 
+/** 3-letter channel chip shown inside stay bands so colour isn't the only
+ *  signal of source. Matches the channel-legend strip at the foot of the
+ *  calendar. */
+function channelShort(c: Reservation['channel']): string {
+  switch (c) {
+    case 'airbnb': return 'AIR';
+    case 'booking': return 'BDC';
+    case 'vrbo': return 'VRB';
+    case 'direct': return 'DIR';
+    case 'owner': return 'OWN';
+    case 'email': return 'EML';
+    default: return '';
+  }
+}
+
 function eventOpenLabel(type: CalEvent['type']): string {
   switch (type) {
     case 'task':
@@ -200,7 +215,12 @@ function computeStaysInWindow(days: ViewDay[], reservations: Reservation[]): Sta
   const lastISO = days[days.length - 1].isoDate;
   return reservations
     .filter((r) => {
-      if (r.status === 'cancelled') return false;
+      // Calendar shows only stays that are actually happening — confirmed +
+      // active. Inquiries / pending-quotes / unconfirmed holds / cancellations
+      // are out (use the Reservations module's filter to see those). This
+      // prevents the "calendar has way too many entries" feel that comes from
+      // visualising every speculative pre-booking.
+      if (r.status === 'cancelled' || r.status === 'inquiry' || r.status === 'hold') return false;
       const inISO = r.checkIn.slice(0, 10);
       const outISO = r.checkOut.slice(0, 10);
       return outISO > firstISO && inISO <= lastISO;
@@ -678,9 +698,16 @@ function WeekView({
     x: number;
     y: number;
   } | null>(null);
+  // Cap stays-lane height by default — with 60+ properties the packed lanes
+  // can easily exceed 30 rows, producing an unusable wall of bars. Operator
+  // can expand on demand.
+  const STAYS_LANE_VISIBLE = 6;
+  const [staysExpanded, setStaysExpanded] = useState(false);
   const monthLabel = days[0]
     ? new Date(days[0].isoDate).toLocaleString('en-US', { month: 'short' })
     : '';
+  const visibleStayRows = staysExpanded ? stayRows : stayRows.slice(0, STAYS_LANE_VISIBLE);
+  const hiddenStayRowsCount = Math.max(stayRows.length - visibleStayRows.length, 0);
   return (
     <div className="cal-wrap">
       <div className="cal-head">
@@ -696,7 +723,7 @@ function WeekView({
       </div>
       {stayRows.length > 0 && (
         <div className="cal-stays-lane">
-          {stayRows.map((row, rowIdx) => (
+          {visibleStayRows.map((row, rowIdx) => (
             <div key={rowIdx} className="cal-stays-row">
               <div className="cal-stays-rowlabel">{rowIdx === 0 ? 'Stays' : ''}</div>
               {row.map((s) => (
@@ -720,6 +747,7 @@ function WeekView({
                   title={`${s.rsv.guestName} · ${s.rsv.propertyCode} · ${s.rsv.nights} nts`}
                 >
                   {s.startsThisWeek && <span className="cal-stay-end-dot left" aria-hidden="true" />}
+                  <span className="cal-stay-channel mono">{channelShort(s.rsv.channel)}</span>
                   <span className="cal-stay-label">
                     {s.rsv.guestName} <span className="cal-stay-prop mono">{s.rsv.propertyCode}</span>
                   </span>
@@ -728,6 +756,24 @@ function WeekView({
               ))}
             </div>
           ))}
+          {hiddenStayRowsCount > 0 && (
+            <button
+              type="button"
+              className="cal-stays-toggle"
+              onClick={() => setStaysExpanded(true)}
+            >
+              + Show {hiddenStayRowsCount} more lane{hiddenStayRowsCount === 1 ? '' : 's'} of stays
+            </button>
+          )}
+          {staysExpanded && stayRows.length > STAYS_LANE_VISIBLE && (
+            <button
+              type="button"
+              className="cal-stays-toggle"
+              onClick={() => setStaysExpanded(false)}
+            >
+              Collapse stays lane
+            </button>
+          )}
         </div>
       )}
       {hasAnyAllDay && (
@@ -1015,6 +1061,7 @@ function DayView({
                   }}
                 >
                   <span className="cal-stay-end-dot" aria-hidden="true" />
+                  <span className="cal-stay-channel mono">{channelShort(s.rsv.channel)}</span>
                   <span className="cal-stay-label">
                     {s.rsv.guestName}{' '}
                     <span className="cal-stay-prop mono">{s.rsv.propertyCode}</span>
@@ -1262,10 +1309,19 @@ function MonthView({
                       }}
                       title={`${rsv.guestName} · ${rsv.propertyCode} · ${rsv.nights} nts · ${CHANNEL_LABEL[rsv.channel] || rsv.channel}`}
                     >
-                      <span className="cal-mv-band-label">
-                        {rsv.guestName}{' '}
-                        <span className="cal-mv-band-prop mono">{rsv.propertyCode}</span>
-                      </span>
+                      {/* Label hidden on continuation segments (clip-left) so a
+                       * multi-week stay reads as ONE entity instead of "guest
+                       * appears N times" across rows. The colored band itself
+                       * is the continuation signal. */}
+                      {!p.clipLeft && (
+                        <>
+                          <span className="cal-mv-band-channel mono">{channelShort(rsv.channel)}</span>
+                          <span className="cal-mv-band-label">
+                            {rsv.guestName}{' '}
+                            <span className="cal-mv-band-prop mono">{rsv.propertyCode}</span>
+                          </span>
+                        </>
+                      )}
                     </button>
                   );
                 })}
