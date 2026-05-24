@@ -123,7 +123,22 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Fix is NOT a simple swap to `new Date()` — the fixtures themselves are anchored to 2026-04-27, so live TODAY against fixture dates would surface "due 27 days ago" everywhere. Real fix: gate the constant behind `liveOnlyMode()` (use fixture anchor in demo, real now in prod), AND audit each cascaded "in N days" / "M days ago" use site for sanity.
 - Production risk today is LOW because `liveOnlyMode()` already suppresses fixture-derived urgency. Keep on backlog but not urgent.
 
-### T1.14 — All "Insights" surfaces wired to real data (replace fake stats everywhere)
+### T1.14 — All "Insights" surfaces wired to real data (Channels + Reviews SHIPPED · `f71c6e38`)
+- **Shipped 2026-05-24 evening:** Analytics module Channels + Reviews
+  tabs now drive from live data. Channels reads
+  `usePortfolio(30).channel_mix` (same SQL as Overview) + derives
+  estimated commissions from industry-default rates per channel
+  (Airbnb 15% / Booking.com 17% / VRBO 8% / Direct 0%) — flagged as
+  "estimated" in the live banner since per-tenant commission schedule
+  isn't yet stored. Reviews reads `useLiveReviews()` from
+  reviewsClient.ts, builds 6-month rolling trend + volume + per-channel
+  breakdown locally (review count is small, hundreds).
+- **Still open:** Revenue / Team / Margin tabs still on
+  PendingDataBanner. Each needs its own SQL aggregate (Revenue:
+  per-property-per-month from `guesty_reservations`; Team: task
+  completion per assignee from `tasks`; Margin: revenue - estimated
+  costs schema). Ops + Properties insights already live.
+
 - Effort: M-L · open (2026-05-24, Ishant correction — not just HR time-off)
 - Every module's Insights sub-page still shows hardcoded numbers / narratives. Audit + replace:
   - HR Insights (incl. workload, leave stats, capacity)
