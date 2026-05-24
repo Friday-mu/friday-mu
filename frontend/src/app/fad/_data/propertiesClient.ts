@@ -234,6 +234,7 @@ export function mergedListingToProperty(l: MergedListing): Property {
     listings,
     baseRateMUR: typeof l.base_price_minor === 'number' ? l.base_price_minor : 0,
     heroPhotoId: photoId,
+    heroPhotoUrl: l.picture_url || null,
     photoIds: photoId ? [photoId] : [],
     tags,
     amenities,

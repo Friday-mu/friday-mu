@@ -144,10 +144,12 @@ function PropertyCardMini({ property, ownerName, onOpen }: { property: Property;
     >
       <div style={{
         aspectRatio: '16 / 9',
-        background: 'radial-gradient(ellipse at 30% 30%, rgba(86,128,202,0.3), transparent 60%), linear-gradient(135deg, var(--color-brand-navy), #1a2855)',
+        background: property.heroPhotoUrl
+          ? `linear-gradient(180deg, rgba(0,0,0,0.0) 40%, rgba(0,0,0,0.55) 100%), url(${property.heroPhotoUrl}) center/cover no-repeat`
+          : 'radial-gradient(ellipse at 30% 30%, rgba(86,128,202,0.3), transparent 60%), linear-gradient(135deg, var(--color-brand-navy), #1a2855)',
         position: 'relative',
       }}>
-        <span className="mono" style={{ position: 'absolute', top: 10, left: 10, fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>{property.code}</span>
+        <span className="mono" style={{ position: 'absolute', top: 10, left: 10, fontSize: 10, color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>{property.code}</span>
         <span className={`chip sm ${badge.tone === 'success' ? 'info' : badge.tone === 'warning' ? 'warn' : ''}`} style={{ position: 'absolute', top: 8, right: 8 }}>
           {badge.label}
         </span>

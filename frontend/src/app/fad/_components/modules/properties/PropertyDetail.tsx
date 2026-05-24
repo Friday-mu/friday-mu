@@ -260,6 +260,18 @@ function OverviewTab({ property }: { property: Property }) {
 function IdentityTab({ property }: { property: Property }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {property.heroPhotoUrl && (
+        <div
+          style={{
+            aspectRatio: '16 / 9',
+            background: `linear-gradient(180deg, rgba(0,0,0,0.0) 50%, rgba(0,0,0,0.35) 100%), url(${property.heroPhotoUrl}) center/cover no-repeat`,
+            borderRadius: 'var(--radius-md)',
+            border: '0.5px solid var(--color-border-tertiary)',
+          }}
+          aria-label={`${property.name} hero photo (from Guesty)`}
+        />
+      )}
+
       <Section title="Photo gallery">
         <PhotoGallery property={property} />
       </Section>

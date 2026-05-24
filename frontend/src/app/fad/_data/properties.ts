@@ -252,6 +252,10 @@ export interface Property {
 
   // Photos
   heroPhotoId?: string;
+  /** Real Guesty CDN URL when the listing has a synced cover photo. Used by
+   *  PropertyCardMini + the Identity tab hero. Falls back to gradient
+   *  placeholder when null/absent. */
+  heroPhotoUrl?: string | null;
   photoIds: string[];
 
   // Tags + filters
