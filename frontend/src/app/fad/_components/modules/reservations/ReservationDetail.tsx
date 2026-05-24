@@ -691,10 +691,16 @@ function GuestsTab({ r, reservations }: { r: Reservation; reservations: Reservat
   const guestEmail = r.guestEmail?.trim().toLowerCase();
   const guestName = r.guestName.trim().toLowerCase();
 
-  // Live lookup against /api/guests (Phase 1, T3.11). Falls through to the
-  // fixture profile when the backend has no record yet (early-onboard
-  // tenant, or guest from a channel without email).
-  const live = useGuestLookup({ email: guestEmail || null, phone: null });
+  // Live lookup against /api/guests (Phase 1, T3.11). Most OTA bookings
+  // arrive with redacted email + phone, so name-bucket lookup is the
+  // most useful path in practice — Guesty redacts these for Airbnb (by
+  // policy) and often Booking. Falls through to fixture only if every
+  // key misses.
+  const live = useGuestLookup({
+    email: guestEmail || null,
+    phone: null,
+    name: r.guestName || null,
+  });
 
   const priorStays = useMemo(
     () =>

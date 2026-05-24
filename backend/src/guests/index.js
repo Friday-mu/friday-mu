@@ -116,8 +116,9 @@ router.post('/lookup', attachIdentity, async (req, res) => {
   const tenantId = req.tenantId;
   const email = String(req.body?.email || '').trim().toLowerCase();
   const phone = normalisePhone(req.body?.phone);
-  if (!email && !phone) {
-    return res.status(400).json({ error: 'email or phone required' });
+  const name = String(req.body?.name || '').trim().toLowerCase();
+  if (!email && !phone && !name) {
+    return res.status(400).json({ error: 'email, phone, or name required' });
   }
   try {
     if (email) {
@@ -138,6 +139,21 @@ router.post('/lookup', attachIdentity, async (req, res) => {
             AND REGEXP_REPLACE(TRIM(primary_phone), '[^0-9+]', '', 'g') = $2
           LIMIT 1`,
         [tenantId, phone],
+      );
+      if (rows.length) return res.json({ guest: shapeGuest(rows[0]) });
+    }
+    if (name) {
+      // Name-bucket fallback: only when email + phone both NULL on the
+      // stored row. Matches the index from migration 080.
+      const { rows } = await query(
+        `SELECT * FROM fad_guests
+          WHERE tenant_id = $1
+            AND primary_email IS NULL
+            AND primary_phone IS NULL
+            AND LOWER(TRIM(display_name)) = $2
+          ORDER BY total_stays_count DESC, last_seen_at DESC NULLS LAST
+          LIMIT 1`,
+        [tenantId, name],
       );
       if (rows.length) return res.json({ guest: shapeGuest(rows[0]) });
     }
@@ -174,7 +190,7 @@ router.get('/:id/reservations', attachIdentity, async (req, res) => {
   if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Not found' });
   try {
     const { rows: gRows } = await query(
-      `SELECT primary_email, primary_phone FROM fad_guests
+      `SELECT primary_email, primary_phone, display_name FROM fad_guests
         WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
       [req.tenantId, req.params.id],
     );
@@ -183,6 +199,9 @@ router.get('/:id/reservations', attachIdentity, async (req, res) => {
       ? String(gRows[0].primary_email).trim().toLowerCase()
       : null;
     const phone = normalisePhone(gRows[0].primary_phone);
+    const nameKey = (!email && !phone && gRows[0].display_name)
+      ? String(gRows[0].display_name).trim().toLowerCase()
+      : null;
 
     const wheres = ['r.tenant_id = $1'];
     const params = [req.tenantId];
@@ -194,6 +213,14 @@ router.get('/:id/reservations', attachIdentity, async (req, res) => {
     if (phone) {
       params.push(phone);
       matchClauses.push(`REGEXP_REPLACE(TRIM(COALESCE(r.guest_phone, '')), '[^0-9+]', '', 'g') = $${params.length}`);
+    }
+    if (nameKey) {
+      params.push(nameKey);
+      matchClauses.push(
+        `(NULLIF(LOWER(TRIM(r.guest_email)), '') IS NULL
+          AND NULLIF(TRIM(r.guest_phone), '') IS NULL
+          AND LOWER(TRIM(CONCAT_WS(' ', r.guest_first_name, r.guest_last_name))) = $${params.length})`,
+      );
     }
     if (!matchClauses.length) return res.json({ reservations: [] });
     wheres.push(`(${matchClauses.join(' OR ')})`);

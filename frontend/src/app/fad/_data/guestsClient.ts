@@ -84,17 +84,23 @@ export async function loadGuestReservations(id: string): Promise<GuestReservatio
   return res.reservations || [];
 }
 
-/** Lookup by email and/or phone — used by ReservationDetail to resolve
+/** Lookup by email, phone, or name — used by ReservationDetail to resolve
  *  the reservation's guest to its centralised fad_guests record. Returns
- *  null if no match. */
-export async function lookupGuest(input: { email?: string | null; phone?: string | null }): Promise<GuestRecord | null> {
-  if (!input.email && !input.phone) return null;
+ *  null if no match. Name is the lowest-priority key (OTA bookings often
+ *  have redacted emails/phones; name is the only stable handle). */
+export async function lookupGuest(input: {
+  email?: string | null;
+  phone?: string | null;
+  name?: string | null;
+}): Promise<GuestRecord | null> {
+  if (!input.email && !input.phone && !input.name) return null;
   try {
     const res = (await apiFetch('/api/guests/lookup', {
       method: 'POST',
       body: JSON.stringify({
         email: input.email || undefined,
         phone: input.phone || undefined,
+        name: input.name || undefined,
       }),
     })) as { guest: GuestRecord | null };
     return res.guest;
@@ -140,7 +146,12 @@ export async function patchGuest(id: string, input: Partial<{
 /** Lookup hook for the ReservationDetail Guests tab. Returns the
  *  resolved guest + their prior stays. `null` while loading; an empty
  *  object once we've checked and found no match. */
-export function useGuestLookup(input: { email?: string | null; phone?: string | null; enabled?: boolean }): {
+export function useGuestLookup(input: {
+  email?: string | null;
+  phone?: string | null;
+  name?: string | null;
+  enabled?: boolean;
+}): {
   guest: GuestRecord | null;
   reservations: GuestReservationRecord[];
   loading: boolean;
@@ -148,7 +159,7 @@ export function useGuestLookup(input: { email?: string | null; phone?: string | 
   error: string | null;
   refetch: () => void;
 } {
-  const enabled = input.enabled !== false && !!(input.email || input.phone);
+  const enabled = input.enabled !== false && !!(input.email || input.phone || input.name);
   const [guest, setGuest] = useState<GuestRecord | null>(null);
   const [reservations, setReservations] = useState<GuestReservationRecord[]>([]);
   const [loading, setLoading] = useState(enabled);
@@ -157,6 +168,7 @@ export function useGuestLookup(input: { email?: string | null; phone?: string | 
 
   const email = input.email ?? null;
   const phone = input.phone ?? null;
+  const name = input.name ?? null;
 
   const refetch = useCallback(() => {
     if (!enabled) {
@@ -168,7 +180,7 @@ export function useGuestLookup(input: { email?: string | null; phone?: string | 
     }
     setLoading(true);
     setError(null);
-    lookupGuest({ email, phone })
+    lookupGuest({ email, phone, name })
       .then(async (g) => {
         if (!g) {
           setGuest(null);
@@ -187,7 +199,7 @@ export function useGuestLookup(input: { email?: string | null; phone?: string | 
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'lookup failed'))
       .finally(() => setLoading(false));
-  }, [email, phone, enabled]);
+  }, [email, phone, name, enabled]);
 
   useEffect(() => { refetch(); }, [refetch]);
 
