@@ -402,12 +402,23 @@ async function notifyAdmins({ tenantId, reporterUserId, type, title, description
 
 // Slack webhook fan-out — fire-and-forget on every submission so the
 // team sees real-time feedback in a Slack channel. Set
-// SLACK_FEEDBACK_WEBHOOK_URL on the VPS env to enable. Falsy / unset
-// → no-op. We deliberately don't await this call; a slow Slack call
-// must not block the feedback POST response to the user.
+// Slack delivery — preferred path is chat.postMessage with the bot
+// token + a channel id (SLACK_BOT_TOKEN + SLACK_FEEDBACK_CHANNEL,
+// falling back to SLACK_NOTIFY_CHANNEL which the GMS already has
+// configured). Legacy path is an incoming-webhook URL via
+// SLACK_FEEDBACK_WEBHOOK_URL — kept for backward compat, used only
+// when the bot path isn't configured. Both fall back silently when
+// nothing is configured. Fire-and-forget — a slow Slack call must
+// not block the feedback POST response.
 async function notifySlack({ type, title, description, severity, routeUrl, moduleLabel, userDisplayName, userUsername, id }) {
-  const url = process.env.SLACK_FEEDBACK_WEBHOOK_URL;
-  if (!url) return;
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  const channel = process.env.SLACK_FEEDBACK_CHANNEL || process.env.SLACK_NOTIFY_CHANNEL;
+  const webhookUrl = process.env.SLACK_FEEDBACK_WEBHOOK_URL;
+  if (!botToken && !webhookUrl) return;
+  if (botToken && !channel) {
+    console.warn('[feedback] SLACK_BOT_TOKEN set but no SLACK_FEEDBACK_CHANNEL/SLACK_NOTIFY_CHANNEL — Slack delivery skipped');
+    return;
+  }
   const icon = type === 'bug' ? '🐛' : type === 'feature' ? '💡' : '✨';
   const reporter = userDisplayName || userUsername || 'unknown';
   const sevLabel = severity ? `*Severity:* ${severity}\n` : '';
@@ -430,20 +441,49 @@ async function notifySlack({ type, title, description, severity, routeUrl, modul
     },
     {
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: `Feedback id: \`${id}\` · open inbox: <https://gms.friday.mu/fad?m=settings|Settings → Feedback inbox>` }],
+      elements: [{ type: 'mrkdwn', text: `Feedback id: \`${id}\` · open inbox: <https://admin.friday.mu/fad?m=settings|Settings → Feedback inbox>` }],
     },
   ];
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blocks, text: `${icon} New ${type} from ${reporter}: ${title || description.slice(0, 80)}` }),
-    });
-    if (!res.ok) {
-      console.warn('[feedback] slack webhook returned', res.status);
+  const fallbackText = `${icon} New ${type} from ${reporter}: ${title || description.slice(0, 80)}`;
+
+  // Path 1 (preferred): chat.postMessage with bot token + channel.
+  if (botToken && channel) {
+    try {
+      const res = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Authorization: `Bearer ${botToken}`,
+        },
+        body: JSON.stringify({ channel, blocks, text: fallbackText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        console.warn('[feedback] slack chat.postMessage failed:', res.status, data?.error || 'unknown');
+        // Don't fall through to webhook on permission errors — those are config issues,
+        // not transient failures. Webhook fallback only fires if bot wasn't configured.
+      }
+      return;
+    } catch (err) {
+      console.warn('[feedback] slack chat.postMessage threw:', err.message);
+      return;
     }
-  } catch (err) {
-    console.warn('[feedback] slack webhook failed:', err.message);
+  }
+
+  // Path 2 (legacy): incoming webhook URL.
+  if (webhookUrl) {
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocks, text: fallbackText }),
+      });
+      if (!res.ok) {
+        console.warn('[feedback] slack webhook returned', res.status);
+      }
+    } catch (err) {
+      console.warn('[feedback] slack webhook failed:', err.message);
+    }
   }
 }
 
