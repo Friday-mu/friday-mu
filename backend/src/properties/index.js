@@ -114,6 +114,10 @@ function shapeMergedListing(row) {
     syndic_id: o.syndic_id || null,
     last_activity_at: o.last_activity_at || g.synced_at || null,
     synced_at: g.synced_at || null,
+    // Primary owner — populated when fad_property_owners + fad_owners
+    // are joined in the list/single query. Phase 2 (T3.12).
+    primary_owner_id: row.primary_owner_guesty_id || null,
+    primary_owner_display_name: row.primary_owner_display_name || null,
     availability: {
       blocked_30d: row.blocked_30d != null ? Number(row.blocked_30d) : 0,
       min_price_minor_30d: row.min_price_minor_30d != null ? Number(row.min_price_minor_30d) : null,
@@ -237,7 +241,9 @@ router.get('/', attachIdentity, async (req, res) => {
            cal.blocked_30d,
            cal.min_price_minor_30d,
            cal.max_price_minor_30d,
-           cal.calendar_synced_at
+           cal.calendar_synced_at,
+           owner_join.guesty_owner_id AS primary_owner_guesty_id,
+           owner_join.display_name AS primary_owner_display_name
          FROM guesty_listings gl
          LEFT JOIN fad_properties p
            ON p.tenant_id = gl.tenant_id AND p.guesty_id = gl.guesty_id
@@ -252,6 +258,16 @@ router.get('/', attachIdentity, async (req, res) => {
               AND gc.date >= CURRENT_DATE
               AND gc.date < CURRENT_DATE + INTERVAL '30 days'
          ) cal ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT po.owner_id AS guesty_owner_id, fo.display_name
+             FROM fad_property_owners po
+             LEFT JOIN fad_owners fo
+               ON fo.tenant_id = po.tenant_id AND fo.guesty_owner_id = po.owner_id
+            WHERE po.tenant_id = p.tenant_id
+              AND po.property_id = p.id
+              AND po.is_primary = TRUE
+            LIMIT 1
+         ) owner_join ON TRUE
          WHERE ${filters.join(' AND ')}
          UNION ALL
          SELECT NULL::json AS guesty,
@@ -261,8 +277,20 @@ router.get('/', attachIdentity, async (req, res) => {
                 NULL::bigint AS blocked_30d,
                 NULL::bigint AS min_price_minor_30d,
                 NULL::bigint AS max_price_minor_30d,
-                NULL::timestamptz AS calendar_synced_at
+                NULL::timestamptz AS calendar_synced_at,
+                owner_join.guesty_owner_id AS primary_owner_guesty_id,
+                owner_join.display_name AS primary_owner_display_name
            FROM fad_properties p
+           LEFT JOIN LATERAL (
+             SELECT po.owner_id AS guesty_owner_id, fo.display_name
+               FROM fad_property_owners po
+               LEFT JOIN fad_owners fo
+                 ON fo.tenant_id = po.tenant_id AND fo.guesty_owner_id = po.owner_id
+              WHERE po.tenant_id = p.tenant_id
+                AND po.property_id = p.id
+                AND po.is_primary = TRUE
+              LIMIT 1
+           ) owner_join ON TRUE
           WHERE p.tenant_id = $1 AND p.guesty_id IS NULL
             ${typeof req.query.lifecycle === 'string'
               ? `AND p.lifecycle_status = $${params.length}` /* re-uses lifecycle param already pushed */
@@ -294,7 +322,9 @@ router.get('/:id', attachIdentity, async (req, res) => {
          cal.blocked_30d,
          cal.min_price_minor_30d,
          cal.max_price_minor_30d,
-         cal.calendar_synced_at
+         cal.calendar_synced_at,
+         owner_join.guesty_owner_id AS primary_owner_guesty_id,
+         owner_join.display_name AS primary_owner_display_name
        FROM fad_properties p
        LEFT JOIN guesty_listings gl
          ON gl.tenant_id = p.tenant_id AND gl.guesty_id = p.guesty_id
@@ -309,6 +339,16 @@ router.get('/:id', attachIdentity, async (req, res) => {
             AND gc.date >= CURRENT_DATE
             AND gc.date < CURRENT_DATE + INTERVAL '30 days'
        ) cal ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT po.owner_id AS guesty_owner_id, fo.display_name
+           FROM fad_property_owners po
+           LEFT JOIN fad_owners fo
+             ON fo.tenant_id = po.tenant_id AND fo.guesty_owner_id = po.owner_id
+          WHERE po.tenant_id = p.tenant_id
+            AND po.property_id = p.id
+            AND po.is_primary = TRUE
+          LIMIT 1
+       ) owner_join ON TRUE
        WHERE p.tenant_id = $1 AND ${where}
        UNION ALL
        SELECT
@@ -317,7 +357,9 @@ router.get('/:id', attachIdentity, async (req, res) => {
          cal.blocked_30d,
          cal.min_price_minor_30d,
          cal.max_price_minor_30d,
-         cal.calendar_synced_at
+         cal.calendar_synced_at,
+         NULL::text AS primary_owner_guesty_id,
+         NULL::text AS primary_owner_display_name
        FROM guesty_listings gl
        LEFT JOIN LATERAL (
          SELECT COUNT(*) FILTER (WHERE gc.is_available = FALSE) AS blocked_30d,

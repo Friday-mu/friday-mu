@@ -231,6 +231,9 @@ export interface Property {
 
   // Owners (link via PROPERTY_OWNERS; primaryOwnerId is the signing party)
   primaryOwnerId: string;
+  /** Live primary-owner display name from fad_owners (T3.12). When set,
+   *  prefer this over FIN_OWNERS fixture lookups. */
+  primaryOwnerName?: string;
   /** Maintenance spend cap override in MUR minor. Undefined = inherit from contract.
    *  Per T&Cs: Rs 2,500 OR 10% of booking, whichever applies (Finance/Owner contract owns). */
   maintenanceCapOverrideMinor?: number;

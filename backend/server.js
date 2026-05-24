@@ -1127,6 +1127,9 @@ app.use('/api/tasks', require('./src/tasks'));
 // FAD-native Guests module (T3.11). Backfilled from guesty_reservations;
 // kept fresh by sync.js after each reservation upsert.
 app.use('/api/guests', require('./src/guests'));
+// FAD-native Owners module (T3.12). Seeded from Guesty listing owner IDs
+// (placeholder display names); admins patch real names + contact in.
+app.use('/api/owners', require('./src/owners'));
 // Webhook needs the RAW body (Buffer) for HMAC verification — Guesty
 // signs the exact bytes they send, and express.json() restringifies.
 const guestyWebhook = require('./src/reservations/webhook');

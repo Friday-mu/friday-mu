@@ -85,6 +85,8 @@ interface MergedListing {
   syndic_id: string | null;
   last_activity_at: string | null;
   synced_at: string | null;
+  primary_owner_id?: string | null;
+  primary_owner_display_name?: string | null;
   availability?: {
     blocked_30d?: number | null;
     min_price_minor_30d?: number | null;
@@ -222,7 +224,10 @@ export function mergedListingToProperty(l: MergedListing): Property {
     sqm: l.sqm || undefined,
     parentPropertyId: l.parent_property_id || undefined,
     isCombo: !!l.is_combo,
-    primaryOwnerId: 'o-guesty-unknown', // Populated when /:id/owners is fetched
+    // Prefer the live primary owner (mig 081). Falls back to the legacy
+    // placeholder when no fad_property_owners row exists yet.
+    primaryOwnerId: l.primary_owner_id || 'o-guesty-unknown',
+    primaryOwnerName: l.primary_owner_display_name || undefined,
     maintenanceCapOverrideMinor: l.maintenance_cap_override_minor || undefined,
     contract: l.contract?.status ? {
       status: (l.contract.status as 'active' | 'pending' | 'renewal_due' | 'expired'),

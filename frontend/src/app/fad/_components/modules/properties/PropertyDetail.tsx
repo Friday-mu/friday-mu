@@ -24,6 +24,7 @@ import { FIN_OWNERS } from '../../../_data/finance';
 import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
 import { usePropertyCards } from '../../../_data/propertiesClient';
+import { useOwnersByGuestyId } from '../../../_data/ownersClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
 import { useCurrentRole } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
@@ -122,7 +123,11 @@ const overlayStyle: React.CSSProperties = {
 
 function PropertyDetailHeader({ property, onClose }: { property: Property; onClose: () => void }) {
   const badge = lifecycleBadge(property);
-  const ownerName = FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name ?? property.primaryOwnerId;
+  // Phase 2 (T3.12): prefer the live owner name from fad_owners. Fall
+  // back to the FIN_OWNERS fixture lookup, then to the raw ID.
+  const ownerName = property.primaryOwnerName
+    ?? FIN_OWNERS.find((o) => o.id === property.primaryOwnerId)?.name
+    ?? property.primaryOwnerId;
   const { done, total } = checklistProgress(property);
   const showProgress = property.lifecycleStatus === 'onboarding' || (property.lifecycleStatus === 'live' && !isOnboardingComplete(property));
 
@@ -332,15 +337,50 @@ function IdentityTab({ property }: { property: Property }) {
 // ───────────────── Tab: Owner ─────────────────
 
 function OwnerTab({ property, role }: { property: Property; role: string }) {
-  const owners = ownersOfProperty(property.id);
+  const fixtureOwners = ownersOfProperty(property.id);
   const contract = getContract(property);
   const showSensitive = role === 'director';
   const showCapPresence = role === 'commercial_marketing' || role === 'ops_manager' || role === 'director';
+  // Phase 2 (T3.12): resolve the live primary owner via Guesty owner_id
+  // → fad_owners.guesty_owner_id. When the live name is available we
+  // render it; otherwise fall back to the FIN_OWNERS fixture lookup.
+  const { byGuestyId } = useOwnersByGuestyId();
+  const liveOwner = property.primaryOwnerId
+    ? byGuestyId.get(property.primaryOwnerId)
+    : undefined;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <Section title="Owners">
-        {owners.map((po) => {
+        {liveOwner && (
+          <div className="card" style={{ padding: 14, marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <strong style={{ fontSize: 14 }}>{liveOwner.display_name}</strong>
+              <span className="chip sm info">Primary</span>
+              <span style={{ marginLeft: 'auto', fontSize: 13 }}><strong>100%</strong> ownership</span>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              {liveOwner.language && <span>Language: {liveOwner.language.toUpperCase()}</span>}
+              {liveOwner.contact_email && <span>{liveOwner.contact_email}</span>}
+              {liveOwner.contact_phone && <span className="mono">{liveOwner.contact_phone}</span>}
+              {liveOwner.country && <span>· {liveOwner.country}</span>}
+            </div>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+              <button
+                className="btn ghost sm"
+                onClick={() => { window.location.href = `/fad?m=owners&id=${liveOwner.id}`; }}
+              >
+                Open in Owners →
+              </button>
+              {!liveOwner.contact_email && (
+                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>
+                  Placeholder name — edit to fill in real owner details.
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        {!liveOwner && fixtureOwners.map((po) => {
           const owner = FIN_OWNERS.find((o) => o.id === po.ownerId);
           if (!owner) return null;
           return (
@@ -364,6 +404,11 @@ function OwnerTab({ property, role }: { property: Property; role: string }) {
             </div>
           );
         })}
+        {!liveOwner && fixtureOwners.length === 0 && (
+          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            No owner linked yet · seed via the Owners module
+          </div>
+        )}
       </Section>
 
       <Section title="Contract">
