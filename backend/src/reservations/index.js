@@ -191,13 +191,25 @@ async function resolveReservationId(tenantId, idOrGuestyId) {
   if (!idOrGuestyId) return null;
   const isUuid = UUID_RE.test(idOrGuestyId);
   if (isUuid) {
+    // Path 1: matches a fad_reservations overlay row directly.
     const { rows } = await query(
       'SELECT id, guesty_id FROM fad_reservations WHERE tenant_id = $1 AND id = $2 LIMIT 1',
       [tenantId, idOrGuestyId],
     );
     if (rows.length > 0) return { reservationId: rows[0].id, guestyId: rows[0].guesty_id };
-    return null;
+    // Path 2: caller passed the guesty_reservations cache UUID
+    // (what GET /:id returns as `id`). Look up the cache row's guesty_id
+    // and recurse into the materialisation path below.
+    const cacheById = await query(
+      `SELECT guesty_id, listing_guesty_id, confirmation_code, status, channel
+         FROM guesty_reservations
+        WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+      [tenantId, idOrGuestyId],
+    );
+    if (cacheById.rows.length === 0) return null;
+    return materialiseOverlay(tenantId, cacheById.rows[0]);
   }
+  // Non-UUID — treat as a Guesty external id string.
   const existing = await query(
     'SELECT id, guesty_id FROM fad_reservations WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
     [tenantId, idOrGuestyId],
@@ -213,19 +225,51 @@ async function resolveReservationId(tenantId, idOrGuestyId) {
     [tenantId, idOrGuestyId],
   );
   if (cache.rows.length === 0) return null;
-  const g = cache.rows[0];
+  return materialiseOverlay(tenantId, cache.rows[0]);
+}
+
+// Normalise a guesty_reservations.channel value to the fad_reservations
+// CHECK constraint enum. Anything outside the enum (e.g. 'agoda',
+// 'homeaway', 'expedia') gets NULL'd rather than rejected; the overlay
+// keeps the freeform channel via the joined guesty row.
+const FAD_CHANNEL_ENUM = new Set(['airbnb', 'booking', 'direct', 'vrbo', 'email', 'owner']);
+const FAD_STATUS_ENUM = new Set(['confirmed', 'checked_in', 'checked_out', 'cancelled', 'hold', 'draft']);
+function sanitizeOverlayChannel(raw) {
+  if (!raw) return null;
+  const v = String(raw).toLowerCase();
+  if (FAD_CHANNEL_ENUM.has(v)) return v;
+  if (v.includes('airbnb')) return 'airbnb';
+  if (v.includes('booking') || v === 'bookingcom' || v === 'bdc') return 'booking';
+  if (v.includes('vrbo')) return 'vrbo';
+  if (v.includes('owner')) return 'owner';
+  return null;
+}
+function sanitizeOverlayStatus(raw) {
+  if (!raw) return null;
+  const v = String(raw).toLowerCase();
+  if (FAD_STATUS_ENUM.has(v)) return v;
+  if (v === 'reserved') return 'confirmed';
+  if (v === 'canceled') return 'cancelled';
+  if (v === 'pending' || v === 'tentative') return 'hold';
+  return null;
+}
+
+async function materialiseOverlay(tenantId, g) {
   const insert = await query(
     `INSERT INTO fad_reservations
        (tenant_id, guesty_id, confirmation_code, status, channel, source_kind)
      VALUES ($1, $2, $3, $4, $5, 'guesty_pull')
      ON CONFLICT (tenant_id, guesty_id) DO NOTHING
      RETURNING id, guesty_id`,
-    [tenantId, g.guesty_id, g.confirmation_code, g.status, g.channel],
+    [
+      tenantId, g.guesty_id, g.confirmation_code,
+      sanitizeOverlayStatus(g.status), sanitizeOverlayChannel(g.channel),
+    ],
   );
   if (insert.rows.length === 0) {
     const again = await query(
       'SELECT id, guesty_id FROM fad_reservations WHERE tenant_id = $1 AND guesty_id = $2 LIMIT 1',
-      [tenantId, idOrGuestyId],
+      [tenantId, g.guesty_id],
     );
     return again.rows.length > 0
       ? { reservationId: again.rows[0].id, guestyId: again.rows[0].guesty_id }
@@ -952,7 +996,7 @@ router.delete('/:id/folio/:lineId', attachIdentity, async (req, res) => {
       [req.tenantId, resolved.reservationId, req.params.lineId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'folio line not found' });
-    res.status(204).end();
+    res.json({ ok: true });
   } catch (e) {
     console.error('[reservations] folio delete error:', e.message);
     res.status(500).json({ error: e.message });
