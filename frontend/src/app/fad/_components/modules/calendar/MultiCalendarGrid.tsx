@@ -15,16 +15,29 @@
 import { useMemo } from 'react';
 import type { Property } from '../../../_data/properties';
 import type { Reservation, ReservationChannel } from '../../../_data/reservations';
+import type { Task } from '../../../_data/tasks';
+
+export interface CellPrice {
+  price_minor: number | null;
+  available: boolean | null;
+  currency: string | null;
+}
 
 interface Props {
   properties: Property[];
   reservations: Reservation[];
+  /** Optional: per-(listing_guesty_id) per-(YYYY-MM-DD) price + availability.
+   *  Renders €PRICE in empty cells when present. v0.2 addition. */
+  pricesByListing?: Map<string, Record<string, CellPrice>>;
+  /** Optional: tasks grouped by propertyCode for in-cell chip overlay. v0.2. */
+  tasksByPropertyCode?: Map<string, Task[]>;
   windowStart: Date;       // inclusive
   windowDays: number;      // number of date columns
   todayIso: string;
   onReservationClick?: (rsv: Reservation, x: number, y: number) => void;
   onPropertyClick?: (property: Property) => void;
   onCellClick?: (property: Property, dateIso: string) => void;
+  onTaskClick?: (task: Task) => void;
 }
 
 const DAY_MS = 86400000;
@@ -33,6 +46,13 @@ const DAY_COL_PX = 56;
 
 function isoDateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function formatCellPrice(cell: CellPrice): string {
+  if (cell.price_minor == null) return '';
+  const major = Math.round(cell.price_minor / 100);
+  const sym = cell.currency === 'EUR' ? '€' : cell.currency === 'MUR' ? 'Rs' : cell.currency === 'USD' ? '$' : '';
+  return `${sym}${major}`;
 }
 
 interface DateColumn {
@@ -126,12 +146,15 @@ function positionByProperty(
 export function MultiCalendarGrid({
   properties,
   reservations,
+  pricesByListing,
+  tasksByPropertyCode,
   windowStart,
   windowDays,
   todayIso,
   onReservationClick,
   onPropertyClick,
   onCellClick,
+  onTaskClick,
 }: Props) {
   const columns = useMemo(() => buildDateColumns(windowStart, windowDays), [windowStart, windowDays]);
   const windowEnd = useMemo(
@@ -228,19 +251,75 @@ export function MultiCalendarGrid({
                 />
               </button>
 
-              {/* Day cells (background grid) */}
-              {columns.map((c, idx) => (
-                <div
-                  key={`${p.id}-${c.iso}`}
-                  className={
-                    'mcal-day-cell' +
-                    (c.weekendish ? ' mcal-weekend' : '') +
-                    (c.iso === todayIso ? ' mcal-today' : '')
-                  }
-                  style={{ gridColumn: idx + 2, gridRow: 1 }}
-                  onClick={() => onCellClick?.(p, c.iso)}
-                />
-              ))}
+              {/* Day cells (background grid) — show €PRICE when no
+                  reservation covers this cell + we have price data. */}
+              {columns.map((c, idx) => {
+                const priceMap = p.id && pricesByListing ? pricesByListing.get(p.id) : undefined;
+                const cell = priceMap?.[c.iso];
+                const hasReservation = positions.some((pos) => {
+                  // The reservation positions are 1-based with +2 offset
+                  // (sticky col + grid-base). idx+2 = this cell's startCol.
+                  const cellCol = idx + 2;
+                  return cellCol >= pos.startCol && cellCol < pos.startCol + pos.spanCols;
+                });
+                const showPrice = !hasReservation && cell && cell.available !== false && cell.price_minor != null && cell.price_minor > 0;
+                const isBlocked = !hasReservation && cell && cell.available === false;
+                return (
+                  <button
+                    key={`${p.id}-${c.iso}`}
+                    type="button"
+                    className={
+                      'mcal-day-cell' +
+                      (c.weekendish ? ' mcal-weekend' : '') +
+                      (c.iso === todayIso ? ' mcal-today' : '') +
+                      (isBlocked ? ' mcal-day-blocked' : '')
+                    }
+                    style={{ gridColumn: idx + 2, gridRow: 1 }}
+                    onClick={() => onCellClick?.(p, c.iso)}
+                    title={isBlocked ? 'Blocked' : showPrice && cell ? `${formatCellPrice(cell)} · ${c.iso}` : c.iso}
+                  >
+                    {showPrice && cell && (
+                      <span className="mcal-cell-price mono">{formatCellPrice(cell)}</span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* Task chips overlay (v0.2) — per-cell + property */}
+              {tasksByPropertyCode && (() => {
+                const tasks = tasksByPropertyCode.get(p.code) || [];
+                return tasks
+                  .filter((t) => t.dueDate)
+                  .map((t) => {
+                    const dueIso = String(t.dueDate).slice(0, 10);
+                    const colIdx = columns.findIndex((c) => c.iso === dueIso);
+                    if (colIdx < 0) return null;
+                    const hasReservation = positions.some((pos) => {
+                      const cellCol = colIdx + 2;
+                      return cellCol >= pos.startCol && cellCol < pos.startCol + pos.spanCols;
+                    });
+                    return (
+                      <button
+                        key={`${p.id}-task-${t.id}`}
+                        type="button"
+                        className={'mcal-task-chip mcal-task-prio-' + (t.priority || 'medium')}
+                        style={{
+                          gridColumn: colIdx + 2,
+                          gridRow: 1,
+                          alignSelf: hasReservation ? 'flex-start' : 'flex-end',
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTaskClick?.(t);
+                        }}
+                        title={`${t.title} · ${t.department || '—'} · ${(t.assigneeNames?.[0] || '').slice(0, 20)}`}
+                      >
+                        {t.title.slice(0, 12)}
+                      </button>
+                    );
+                  })
+                  .filter(Boolean);
+              })()}
 
               {/* Reservation bars overlay — same grid row, higher z */}
               {positions.map((pos, i) => (

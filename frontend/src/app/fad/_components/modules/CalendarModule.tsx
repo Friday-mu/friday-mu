@@ -25,9 +25,10 @@ import { FilterBar, FilterChip } from '../FilterBar';
 import { IconClose, IconPlus, IconRefresh } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
-import { MultiCalendarGrid } from './calendar/MultiCalendarGrid';
+import { MultiCalendarGrid, type CellPrice } from './calendar/MultiCalendarGrid';
 import { AvailabilitySearchModal } from './calendar/AvailabilitySearchModal';
 import { useLiveProperties } from '../../_data/propertiesClient';
+import { useCalendarGrid } from '../../_data/calendarGridClient';
 
 type CalView = 'multi' | 'agenda' | 'day' | 'week' | 'month';
 
@@ -291,6 +292,7 @@ export function CalendarModule() {
   // Live properties for the multi-calendar (Phase 5, T4.38). Triggered
   // lazily — only hydrate when the multi tab is the active view.
   const { properties: liveProperties } = useLiveProperties();
+  // v0.2: per-cell €PRICE + availability. Only fetched in multi tab.
   const [viewDate, setViewDate] = useState<Date>(() => new Date(`${TODAY_ISO}T12:00:00`));
   const days = useMemo(() => computeViewDays(viewDate, tab), [viewDate, tab]);
   const taskWindowFilter = useMemo<FetchTasksPageInput>(() => ({
@@ -496,12 +498,11 @@ export function CalendarModule() {
         )}
 
         {tab === 'multi' ? (
-          <MultiCalendarGrid
+          <MultiCalendarMounted
             properties={liveProperties}
             reservations={sourceReservations}
-            windowStart={days[0] ? new Date(`${days[0].isoDate}T00:00:00`) : new Date()}
-            windowDays={Math.max(days.length, 30)}
-            todayIso={TODAY_ISO}
+            tasks={sourceTasks}
+            days={days}
             onReservationClick={(rsv, x, y) => setSelectedStay({ rsv, x, y })}
             onPropertyClick={(p) => { window.location.href = `/fad?m=properties&sub=overview&p=${encodeURIComponent(p.code)}`; }}
           />
@@ -937,6 +938,56 @@ function WeekView({
         ))}
       </div>
     </div>
+  );
+}
+
+// Multi-calendar wrapper that fetches per-cell price + groups tasks
+// by property. Kept as a sibling so the parent CalendarModule doesn't
+// fire the calendar-grid fetch on other tabs (Agenda / Week / Month).
+// Phase 5 v0.2 (T4.38 v0.2 · 2026-05-25).
+function MultiCalendarMounted({
+  properties,
+  reservations,
+  tasks,
+  days,
+  onReservationClick,
+  onPropertyClick,
+}: {
+  properties: import('../../_data/properties').Property[];
+  reservations: import('../../_data/reservations').Reservation[];
+  tasks: Task[];
+  days: ViewDay[];
+  onReservationClick: (rsv: import('../../_data/reservations').Reservation, x: number, y: number) => void;
+  onPropertyClick: (p: import('../../_data/properties').Property) => void;
+}) {
+  const from = days[0]?.isoDate;
+  const to = days[days.length - 1]?.isoDate;
+  const { pricesByListing } = useCalendarGrid(from, to);
+
+  // Group tasks by propertyCode for in-cell chip overlay.
+  const tasksByPropertyCode = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const t of tasks) {
+      if (!t.propertyCode || !t.dueDate) continue;
+      const arr = map.get(t.propertyCode) || [];
+      arr.push(t);
+      map.set(t.propertyCode, arr);
+    }
+    return map;
+  }, [tasks]);
+
+  return (
+    <MultiCalendarGrid
+      properties={properties}
+      reservations={reservations}
+      pricesByListing={pricesByListing}
+      tasksByPropertyCode={tasksByPropertyCode}
+      windowStart={from ? new Date(`${from}T00:00:00`) : new Date()}
+      windowDays={Math.max(days.length, 30)}
+      todayIso={TODAY_ISO}
+      onReservationClick={onReservationClick}
+      onPropertyClick={onPropertyClick}
+    />
   );
 }
 

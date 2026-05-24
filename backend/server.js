@@ -983,6 +983,7 @@ app.use('/api/expenses', financeExpensesRoutes.router);
       p.startsWith('/api/availability') ||
       p.startsWith('/api/quotes') ||
       p.startsWith('/api/analytics') ||
+      p.startsWith('/api/calendar') ||
       p.startsWith('/api/finance/property/') ||
       p.startsWith('/api/integrations/guesty/webhook') || // HMAC-signed
       p.startsWith('/api/integrations/guesty/scraped-reservations') || // HMAC-signed (scraper)
@@ -1147,6 +1148,8 @@ app.use('/api/quotes', require('./src/quotes'));
 // Per scoping pack 36a43ca884928165b886fc3043e399a0. Cube Core + LLM
 // agent land in Phases 1+ once Ishant acks the droplet allocation.
 app.use('/api/analytics', require('./src/analytics/portfolio'));
+// Multi-calendar v0.2 per-cell price/availability grid (T4.38 v0.2).
+app.use('/api/calendar', require('./src/properties/calendar_grid'));
 // Webhook needs the RAW body (Buffer) for HMAC verification — Guesty
 // signs the exact bytes they send, and express.json() restringifies.
 const guestyWebhook = require('./src/reservations/webhook');
