@@ -183,6 +183,89 @@ async function autoDismissInquiryFollowups() {
     if (dismissed > 0) {
       console.log(`[followup-scanner] auto-dismissed ${dismissed} stale inquiry_followup actions`);
     }
+
+    // 1d. Dismiss orphaned followup DRAFTS once the reservation is now
+    // committed / check-in passed / team responded. The pending_actions
+    // passes above already cover the action surfaces, but the followup
+    // draft itself sits in the inbox as draft_ready until something
+    // explicitly transitions it. Operators were seeing follow-up drafts
+    // appear in threads where the guest had already booked — see
+    // feedback cea6ac30 (Ishant 2026-05-18). This sweep mirrors the
+    // pending_action dismiss criteria, but operates on the drafts table.
+    let draftsDismissed = 0;
+    try {
+      // 1d-a. Reservation now committed.
+      const dBooked = await query(`
+        WITH dismissed AS (
+          UPDATE drafts d
+          SET state = 'dismissed',
+              rejection_reason = 'reservation_committed (auto)',
+              updated_at = NOW()
+          FROM conversations c
+          LEFT JOIN reservations r ON r.id = c.reservation_id
+          LEFT JOIN reservations r2 ON r2.guesty_reservation_id = c.guesty_reservation_id AND r.id IS NULL
+          WHERE d.conversation_id = c.id
+            AND d.draft_type = 'followup'
+            AND d.state IN ('draft_ready', 'under_review', 'friday_drafting')
+            AND LOWER(COALESCE(r.status, r2.status, '')) IN ('confirmed', 'booked', 'checked_in', 'reserved')
+          RETURNING d.id
+        )
+        SELECT COUNT(*)::int AS n FROM dismissed
+      `);
+      draftsDismissed += Number(dBooked.rows[0]?.n || 0);
+
+      // 1d-b. Check-in date in the past.
+      const dCheckin = await query(`
+        WITH dismissed AS (
+          UPDATE drafts d
+          SET state = 'dismissed',
+              rejection_reason = 'checkin_passed (auto)',
+              updated_at = NOW()
+          FROM conversations c
+          WHERE d.conversation_id = c.id
+            AND d.draft_type = 'followup'
+            AND d.state IN ('draft_ready', 'under_review', 'friday_drafting')
+            AND c.check_in_date IS NOT NULL
+            AND c.check_in_date::date < CURRENT_DATE
+          RETURNING d.id
+        )
+        SELECT COUNT(*)::int AS n FROM dismissed
+      `);
+      draftsDismissed += Number(dCheckin.rows[0]?.n || 0);
+
+      // 1d-c. Team already responded after last inbound (mirrors 1c).
+      const dResponded = await query(`
+        WITH dismissed AS (
+          UPDATE drafts d
+          SET state = 'dismissed',
+              rejection_reason = 'team_responded (auto)',
+              updated_at = NOW()
+          FROM conversations c
+          WHERE d.conversation_id = c.id
+            AND d.draft_type = 'followup'
+            AND d.state IN ('draft_ready', 'under_review', 'friday_drafting')
+            AND EXISTS (
+              SELECT 1 FROM messages m_out
+              WHERE m_out.conversation_id = c.id
+                AND m_out.direction = 'outbound'
+                AND m_out.is_auto_response IS NOT TRUE
+                AND m_out.created_at > (
+                  SELECT MAX(m_in.created_at) FROM messages m_in
+                  WHERE m_in.conversation_id = c.id AND m_in.direction = 'inbound'
+                )
+            )
+          RETURNING d.id
+        )
+        SELECT COUNT(*)::int AS n FROM dismissed
+      `);
+      draftsDismissed += Number(dResponded.rows[0]?.n || 0);
+
+      if (draftsDismissed > 0) {
+        console.log(`[followup-scanner] auto-dismissed ${draftsDismissed} orphaned followup drafts`);
+      }
+    } catch (e) {
+      console.error('[followup-scanner] draft auto-dismiss pass failed:', e.message);
+    }
   } catch (e) {
     console.error('[followup-scanner] auto-dismiss pass failed:', e.message);
   }
