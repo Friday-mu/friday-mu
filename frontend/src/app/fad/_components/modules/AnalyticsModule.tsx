@@ -297,9 +297,13 @@ function OverviewTab() {
       )}
 
       <div style={{ marginTop: 16, padding: '8px 12px', fontSize: 11, color: 'var(--color-text-tertiary)', background: 'var(--color-background-secondary)', borderRadius: 4 }}>
-        Phase 0 live · deterministic SQL aggregates from guesty_reservations.
-        <strong style={{ fontWeight: 500 }}> Phase 1 (proactive AI insights, push digest) + Phase 2 (Cube Core + per-module Insights panels)</strong> per scoping pack.
-        Revenue gaps where Guesty cache lacks total_amount_minor.
+        Phase 0 live · deterministic SQL aggregates from guesty_reservations + guesty_calendar.
+        Nights clipped to window. Revenue pro-rated by stay-overlap fraction. ADR computed over PRICED booked nights only (scraped rows that lack pricing don't drag the average down).
+        {portfolio.data_quality?.gap_note && (
+          <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+            <strong style={{ fontWeight: 500 }}>Data quality:</strong> {portfolio.data_quality.gap_note}
+          </div>
+        )}
       </div>
     </>
   );

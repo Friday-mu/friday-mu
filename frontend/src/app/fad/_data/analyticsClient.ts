@@ -14,6 +14,10 @@ export interface PortfolioKPIs {
   reservation_count_prev: number;
   booked_nights: number;
   booked_nights_prev: number;
+  /** Subset of booked_nights that came with pricing data — denominator for ADR. */
+  priced_booked_nights?: number;
+  /** Total room-nights that could have been sold (active_properties × window_days). */
+  available_nights?: number;
   occupancy_pct: number;
   occupancy_pct_prev: number;
   adr_minor: number;

@@ -69,13 +69,14 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
     const prevOccupancyPct = availableNights > 0
       ? Math.min(100, Math.round((kpiPrev.booked_nights / availableNights) * 100))
       : 0;
-    // ADR = revenue per occupied room-night (only counts nights that
-    // were actually sold).
-    const adrMinor = kpiCurrent.booked_nights > 0
-      ? Math.round(kpiCurrent.revenue_minor / kpiCurrent.booked_nights)
+    // ADR = revenue per occupied room-night. Divide by PRICED nights only —
+    // scraped reservations have no revenue and would otherwise drag the
+    // average down to nonsense. priced_booked_nights ≤ booked_nights.
+    const adrMinor = kpiCurrent.priced_booked_nights > 0
+      ? Math.round(kpiCurrent.revenue_minor / kpiCurrent.priced_booked_nights)
       : 0;
-    const prevAdrMinor = kpiPrev.booked_nights > 0
-      ? Math.round(kpiPrev.revenue_minor / kpiPrev.booked_nights)
+    const prevAdrMinor = kpiPrev.priced_booked_nights > 0
+      ? Math.round(kpiPrev.revenue_minor / kpiPrev.priced_booked_nights)
       : 0;
     // RevPAR = revenue per available room-night (revenue ÷ all room-nights
     // including unsold). RevPAR = Occupancy × ADR by definition.
@@ -239,6 +240,8 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
         reservation_count_prev: kpiPrev.reservation_count,
         booked_nights: kpiCurrent.booked_nights,
         booked_nights_prev: kpiPrev.booked_nights,
+        priced_booked_nights: kpiCurrent.priced_booked_nights,
+        available_nights: availableNights,
         occupancy_pct: occupancyPct,
         occupancy_pct_prev: prevOccupancyPct,
         adr_minor: adrMinor,
@@ -287,8 +290,13 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
         revenue_minor: Number(r.revenue_minor),
       })),
       data_quality: {
-        revenue_source: 'guesty_reservations',
-        gap_note: 'Some reservations may have NULL total_amount_minor where Guesty cache lacks the value — those contribute to reservation_count + booked_nights but not revenue. Sync follow-up logged.',
+        revenue_source: 'guesty_reservations (money.totalPrice via Guesty Open API)',
+        nights_method: 'pro-rated overlap with window — nights_in_window = MAX(0, LEAST(check_out, to+1) - GREATEST(check_in, from))',
+        revenue_method: 'pro-rated: total_amount_minor × nights_in_window ÷ total_stay_nights',
+        adr_denominator: 'PRICED booked nights only (excludes scraped rows without pricing)',
+        gap_note: kpiCurrent.priced_booked_nights < kpiCurrent.booked_nights
+          ? `${kpiCurrent.booked_nights - kpiCurrent.priced_booked_nights} of ${kpiCurrent.booked_nights} booked nights came from scraped reservations without pricing data — those nights count in Occupancy but don't carry revenue. ADR is computed over the ${kpiCurrent.priced_booked_nights} priced nights to stay honest.`
+          : 'All booked nights in this window carry pricing data.',
       },
     });
   } catch (e) {
@@ -313,6 +321,11 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
 //
 // reservation_count = stays that OVERLAP the window at all (so a long
 //   stay that started before but extends into the window still counts).
+//
+// priced_booked_nights = subset of booked_nights where the stay carried
+//   a non-null total_amount_minor. ADR-over-priced is the realistic
+//   per-night rate; ADR-over-all gets dragged down by scraped rows
+//   that have no pricing.
 async function aggregateWindow(tenantId, fromIso, toIso) {
   const { rows } = await query(
     `WITH overlapping AS (
@@ -335,6 +348,7 @@ async function aggregateWindow(tenantId, fromIso, toIso) {
      SELECT
        COUNT(*) FILTER (WHERE nights_in_window > 0)::int AS reservation_count,
        COALESCE(SUM(nights_in_window), 0)::int AS booked_nights,
+       COALESCE(SUM(nights_in_window) FILTER (WHERE total_amount_minor IS NOT NULL AND total_stay_nights > 0), 0)::int AS priced_booked_nights,
        COALESCE(SUM(
          CASE
            WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
@@ -352,6 +366,7 @@ async function aggregateWindow(tenantId, fromIso, toIso) {
     reservation_count: Number(row.reservation_count || 0),
     revenue_minor: Number(row.revenue_minor || 0),
     booked_nights: Number(row.booked_nights || 0),
+    priced_booked_nights: Number(row.priced_booked_nights || 0),
     currency: row.currency || null,
   };
 }
