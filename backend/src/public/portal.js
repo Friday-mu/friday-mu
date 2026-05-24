@@ -377,28 +377,69 @@ router.post('/stays/resolve', attachApiClient, requireScope('portal:read'), asyn
 // ────────────────────────────────────────────────────────────────
 
 async function buildResponseEnvelope({ token, effectiveKind, bookingSummary, reservationId }) {
-  void reservationId; // Reservation-mode is wired in slice 2; for now we keep returning booking_request mode
   const now = new Date();
   const mode = modeForKind(effectiveKind);
   const requestId = crypto.randomBytes(8).toString('hex');
   const subjectLine = buildSubjectLine(effectiveKind, token.context, bookingSummary);
 
-  // Slice 1: messages array stays empty (slice 2 wires the conversation).
-  // Note from website session: minimal kinds (contact / experience_enquiry)
-  // can return [] + empty attached and still render correctly.
-  const messages = [];
+  // Slice 3: when effectiveKind === 'reservation', pull the full bundle
+  // (fad_reservations + guesty_reservations + guesty_listings + photos)
+  // and compose the 8 reservation-mode blocks. Otherwise envelope is
+  // thread-only (conversation + attached request summary).
+  let reservationBundle = null;
+  if (effectiveKind === 'reservation' && reservationId) {
+    try {
+      reservationBundle = await fetchReservationBundle(token.tenant_id, reservationId);
+    } catch (e) {
+      console.error('[public/portal] fetchReservationBundle error:', e.message);
+      reservationBundle = null;
+    }
+  }
 
-  const attached = buildAttachedPayload({ kind: effectiveKind, token, bookingSummary });
+  // Messages: pulled from inbox_events for thread_id. Visitor messages
+  // + staff replies become PortalMessage rows. AI handoff explanations
+  // are ops-only — not surfaced to the guest.
+  const messages = token.thread_id
+    ? await extractThreadMessages(token.thread_id, token.guest_name)
+    : [];
+
+  const attached = buildAttachedPayload({
+    kind: effectiveKind,
+    token,
+    bookingSummary,
+    reservationBundle,
+  });
 
   const thread = {
     id: token.thread_id || token.inquiry_id || token.token,
     kind: effectiveKind,
     subjectLine,
     createdAt: token.created_at.toISOString(),
-    status: 'awaiting_friday',
+    status: deriveThreadStatus(messages),
     messages,
     attached,
   };
+
+  // Reservation-mode-only top-level blocks.
+  let reservationBlock, listingBlock, checklistBlock, visibilityBlock,
+      arrivalBlock, houseGuideBlock, exploreBlock, addonsBlock;
+  let analyticsContext = {};
+  if (reservationBundle) {
+    visibilityBlock = computeVisibility(reservationBundle, now);
+    reservationBlock = buildReservationBlock(reservationBundle);
+    listingBlock = buildListingBlock(reservationBundle);
+    checklistBlock = buildChecklistBlock(reservationBundle, visibilityBlock);
+    arrivalBlock = buildArrivalBlock(reservationBundle, visibilityBlock);
+    houseGuideBlock = buildHouseGuideBlock(reservationBundle);
+    exploreBlock = buildExploreBlock(reservationBundle);
+    addonsBlock = buildAddonsBlock(reservationBundle);
+    analyticsContext = {
+      reservationId: reservationBlock.id,
+      listingId: listingBlock.id,
+      channel: reservationBlock.channel,
+      stage: visibilityBlock.currentStage,
+    };
+  }
 
   return {
     ok: true,
@@ -413,11 +454,24 @@ async function buildResponseEnvelope({ token, effectiveKind, bookingSummary, res
     mode,
     thread,
     support: SUPPORT_COMMON,
+    ...(reservationBundle ? {
+      reservationId: reservationBlock.id,
+      listingId: listingBlock.id,
+      reservation: reservationBlock,
+      listing: listingBlock,
+      checklist: checklistBlock,
+      visibility: visibilityBlock,
+      arrival: arrivalBlock,
+      houseGuide: houseGuideBlock,
+      explore: exploreBlock,
+      addons: addonsBlock,
+    } : {}),
     analytics: {
       mode,
       threadId: thread.id,
       threadKind: thread.kind,
       ...(token.context?.listingSlug ? { listingSlug: token.context.listingSlug } : {}),
+      ...analyticsContext,
     },
   };
 }
@@ -443,8 +497,11 @@ function buildSubjectLine(kind, context, bookingSummary) {
   return ctx.subject || 'Message to Friday';
 }
 
-function buildAttachedPayload({ kind, token, bookingSummary }) {
+function buildAttachedPayload({ kind, token, bookingSummary, reservationBundle }) {
   const ctx = token.context || {};
+  if (kind === 'reservation' && reservationBundle) {
+    return { reservationId: reservationBundle.fad.id };
+  }
   if (kind === 'booking_request' && bookingSummary) {
     return {
       bookingRequestId: token.request_id,
@@ -476,8 +533,9 @@ function buildAttachedPayload({ kind, token, bookingSummary }) {
     };
   }
   if (kind === 'reservation') {
-    // Reservation-mode envelope is wired in slice 2. For now return
-    // the bookingRequestId pointer so the resolver doesn't 500.
+    // Fallback: kind says reservation but bundle missing (FK set but
+    // join returned nothing). Return the bookingRequestId pointer so
+    // the resolver still renders the conversation surface.
     return { bookingRequestId: token.request_id };
   }
   if (kind === 'owner_enquiry') {
@@ -513,6 +571,579 @@ function buildAttachedPayload({ kind, token, bookingSummary }) {
     };
   }
   return {};
+}
+
+// ────────────────────────────────────────────────────────────────
+// Slice 3 — reservation-mode envelope builders
+// ────────────────────────────────────────────────────────────────
+//
+// All 8 reservation-mode blocks (reservation/listing/checklist/
+// visibility/arrival/houseGuide/explore/addons) plus the conversation
+// messages array are derived here from:
+//   - fad_reservations   (FAD overlay — notes, access_info_sent_at)
+//   - guesty_reservations (raw guest + dates + money)
+//   - guesty_listings    (property data + amenities + access codes)
+//   - fad_property_photos (editorial gallery, optional)
+//
+// House guide content is minimal (Wi-Fi card from raw.wifiName,
+// emergency card with the on-call line). Editorial expansion is its
+// own slice — when fad_property_guide / Sanity content is wired we
+// add it here without changing the contract shape.
+
+const STAGE_PRE_ARRIVAL = 'pre_arrival';
+const STAGE_ACCESS_WINDOW = 'access_window';
+const STAGE_IN_STAY = 'in_stay';
+const STAGE_POST_CHECKOUT = 'post_checkout';
+const STAGE_POST_BOOKING = 'post_booking';
+const STAGE_EXPIRED = 'expired';
+
+// 4-hour access-codes window before declared arrival.
+const ACCESS_WINDOW_MS = 4 * 60 * 60 * 1000;
+// Portal stays renderable in read-only mode for 90d after checkout.
+const POST_CHECKOUT_PORTAL_MS = 90 * 24 * 60 * 60 * 1000;
+
+async function fetchReservationBundle(tenantId, reservationId) {
+  const { rows } = await query(
+    `
+    SELECT
+      fr.id                              AS fr_id,
+      fr.confirmation_code               AS fr_confirmation_code,
+      fr.status                          AS fr_status,
+      fr.channel                         AS fr_channel,
+      fr.cleaning_arrangement            AS fr_cleaning_arrangement,
+      fr.special_requests_notes          AS fr_special_requests_notes,
+      fr.internal_notes                  AS fr_internal_notes,
+      fr.access_info_sent_at             AS fr_access_info_sent_at,
+      fr.actual_arrival                  AS fr_actual_arrival,
+      fr.actual_departure                AS fr_actual_departure,
+      gr.guesty_id                       AS gr_guesty_id,
+      gr.confirmation_code               AS gr_confirmation_code,
+      gr.status                          AS gr_status,
+      gr.channel                         AS gr_channel,
+      gr.check_in_date                   AS gr_check_in_date,
+      gr.check_out_date                  AS gr_check_out_date,
+      gr.nights                          AS gr_nights,
+      gr.adults                          AS gr_adults,
+      gr.children                        AS gr_children,
+      gr.infants                         AS gr_infants,
+      gr.guest_first_name                AS gr_guest_first_name,
+      gr.guest_last_name                 AS gr_guest_last_name,
+      gr.guest_email                     AS gr_guest_email,
+      gr.guest_phone                     AS gr_guest_phone,
+      gr.total_amount_minor              AS gr_total_amount_minor,
+      gr.currency_code                   AS gr_currency_code,
+      gr.raw                             AS gr_raw,
+      gl.id                              AS gl_id,
+      gl.guesty_id                       AS gl_guesty_id,
+      gl.nickname                        AS gl_nickname,
+      gl.title                           AS gl_title,
+      gl.address_full                    AS gl_address_full,
+      gl.address_city                    AS gl_address_city,
+      gl.address_country                 AS gl_address_country,
+      gl.picture_url                     AS gl_picture_url,
+      gl.property_type                   AS gl_property_type,
+      gl.bedrooms                        AS gl_bedrooms,
+      gl.accommodates                    AS gl_accommodates,
+      gl.raw                             AS gl_raw,
+      fp.id                              AS fp_id,
+      fp.code                            AS fp_code
+    FROM fad_reservations fr
+    LEFT JOIN guesty_reservations gr
+      ON gr.tenant_id = fr.tenant_id AND gr.guesty_id = fr.guesty_id
+    LEFT JOIN guesty_listings gl
+      ON gl.tenant_id = fr.tenant_id AND gl.guesty_id = gr.listing_guesty_id
+    LEFT JOIN fad_properties fp
+      ON fp.id = fr.property_id
+    WHERE fr.id = $1 AND fr.tenant_id = $2
+    LIMIT 1
+    `,
+    [reservationId, tenantId],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+
+  // Photo gallery: prefer editorial (fad_property_photos) if any rows
+  // exist for this property, else fall back to raw.pictures.
+  let photos = [];
+  if (r.fp_id) {
+    const ph = await query(
+      `SELECT url, alt_text, is_hero, display_order
+         FROM fad_property_photos
+        WHERE property_id = $1
+        ORDER BY is_hero DESC, display_order ASC, created_at ASC
+        LIMIT 12`,
+      [r.fp_id],
+    );
+    photos = ph.rows.map((row) => ({ src: row.url, alt: row.alt_text || r.gl_title || 'Property photo' }));
+  }
+  if (photos.length === 0 && Array.isArray(r.gl_raw?.pictures)) {
+    photos = r.gl_raw.pictures.slice(0, 12).map((p) => ({
+      src: p.original || p.thumbnail || p.url,
+      alt: r.gl_title || 'Property photo',
+    })).filter((p) => p.src);
+  }
+
+  return {
+    fad: {
+      id: r.fr_id,
+      confirmation_code: r.fr_confirmation_code,
+      status: r.fr_status,
+      channel: r.fr_channel,
+      cleaning_arrangement: r.fr_cleaning_arrangement,
+      special_requests_notes: r.fr_special_requests_notes,
+      internal_notes: r.fr_internal_notes,
+      access_info_sent_at: r.fr_access_info_sent_at,
+      actual_arrival: r.fr_actual_arrival,
+      actual_departure: r.fr_actual_departure,
+    },
+    guesty: {
+      guesty_id: r.gr_guesty_id,
+      confirmation_code: r.gr_confirmation_code,
+      status: r.gr_status,
+      channel: r.gr_channel,
+      check_in_date: r.gr_check_in_date,
+      check_out_date: r.gr_check_out_date,
+      nights: r.gr_nights,
+      adults: r.gr_adults || 0,
+      children: r.gr_children || 0,
+      infants: r.gr_infants || 0,
+      guest_first_name: r.gr_guest_first_name,
+      guest_last_name: r.gr_guest_last_name,
+      guest_email: r.gr_guest_email,
+      guest_phone: r.gr_guest_phone,
+      total_amount_minor: r.gr_total_amount_minor,
+      currency_code: r.gr_currency_code,
+      raw: r.gr_raw || {},
+    },
+    listing: {
+      id: r.gl_id,
+      guesty_id: r.gl_guesty_id,
+      nickname: r.gl_nickname,
+      title: r.gl_title,
+      address_full: r.gl_address_full,
+      address_city: r.gl_address_city,
+      address_country: r.gl_address_country,
+      picture_url: r.gl_picture_url,
+      property_type: r.gl_property_type,
+      bedrooms: r.gl_bedrooms,
+      accommodates: r.gl_accommodates,
+      raw: r.gl_raw || {},
+    },
+    property: {
+      id: r.fp_id,
+      code: r.fp_code,
+    },
+    photos,
+  };
+}
+
+async function extractThreadMessages(threadId, guestNameFromToken) {
+  if (!threadId) return [];
+  const { rows } = await query(
+    `SELECT id, event_type, payload, created_at
+       FROM inbox_events
+      WHERE thread_id = $1
+        AND event_type IN (
+          'website.visitor_message',
+          'staff.reply_sent',
+          'contact.form_submitted',
+          'booking.request_submitted',
+          'experience.enquiry_submitted'
+        )
+      ORDER BY created_at ASC
+      LIMIT 50`,
+    [threadId],
+  );
+  const out = [];
+  for (const r of rows) {
+    const p = r.payload || {};
+    if (r.event_type === 'website.visitor_message') {
+      const text = pickText(p, ['message', 'text', 'body']);
+      if (!text) continue;
+      out.push({
+        id: r.id,
+        author: 'visitor',
+        authorDisplayName: guestNameFromToken || p.guest_name || p.fromName || 'You',
+        text,
+        sentAt: r.created_at.toISOString(),
+      });
+    } else if (r.event_type === 'staff.reply_sent') {
+      const text = pickText(p, ['message', 'text', 'body', 'replyBody']);
+      if (!text) continue;
+      out.push({
+        id: r.id,
+        author: 'friday_team',
+        authorDisplayName: 'Friday team',
+        text,
+        sentAt: r.created_at.toISOString(),
+      });
+    } else if (r.event_type === 'contact.form_submitted'
+            || r.event_type === 'booking.request_submitted'
+            || r.event_type === 'experience.enquiry_submitted') {
+      // Surface the original form message as the visitor's opening
+      // turn so the conversation has a starting point.
+      const text = pickText(p, ['message', 'notes', 'note', 'requestNote', 'guestNote']);
+      if (!text) continue;
+      out.push({
+        id: r.id,
+        author: 'visitor',
+        authorDisplayName: guestNameFromToken || p.guestName || p.guest_name || 'You',
+        text,
+        sentAt: r.created_at.toISOString(),
+      });
+    }
+  }
+  return out;
+}
+
+function pickText(payload, keys) {
+  for (const k of keys) {
+    const v = payload?.[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function deriveThreadStatus(messages) {
+  if (!messages || messages.length === 0) return 'awaiting_friday';
+  const last = messages[messages.length - 1];
+  return last.author === 'visitor' ? 'awaiting_friday' : 'awaiting_visitor';
+}
+
+function computeVisibility(bundle, now) {
+  const ci = parseStayDate(bundle.guesty.check_in_date);
+  const co = parseStayDate(bundle.guesty.check_out_date);
+  const ciTime = applyTimeOfDay(ci, bundle.listing.raw?.defaultCheckInTime || '15:00');
+  const coTime = applyTimeOfDay(co, bundle.listing.raw?.defaultCheckOutTime || '10:00');
+  const accessOpensAt = ciTime ? new Date(ciTime.getTime() - ACCESS_WINDOW_MS) : null;
+  const portalExpiresAt = coTime ? new Date(coTime.getTime() + POST_CHECKOUT_PORTAL_MS) : null;
+
+  let currentStage = STAGE_POST_BOOKING;
+  if (now >= ciTime) currentStage = STAGE_IN_STAY;
+  if (now >= coTime) currentStage = STAGE_POST_CHECKOUT;
+  if (now < ciTime && accessOpensAt && now >= accessOpensAt) currentStage = STAGE_ACCESS_WINDOW;
+  else if (now < ciTime) currentStage = STAGE_PRE_ARRIVAL;
+  if (portalExpiresAt && now > portalExpiresAt) currentStage = STAGE_EXPIRED;
+
+  const cancelled = (bundle.guesty.status === 'cancelled') || (bundle.fad.status === 'cancelled');
+  const confirmed = !cancelled && (bundle.fad.status === 'confirmed' || bundle.guesty.status === 'confirmed' || bundle.guesty.status === 'inquiry');
+  const accessUnlocked = !cancelled && (currentStage === STAGE_ACCESS_WINDOW
+    || currentStage === STAGE_IN_STAY
+    || !!bundle.fad.access_info_sent_at);
+  const inStayOrLater = currentStage === STAGE_IN_STAY
+    || currentStage === STAGE_POST_CHECKOUT
+    || currentStage === STAGE_ACCESS_WINDOW;
+
+  const reasons = [];
+  reasons.push({
+    field: 'exactAddress',
+    status: confirmed ? 'available' : 'locked',
+    code: confirmed ? 'available' : 'reservation_not_confirmed',
+    message: confirmed
+      ? 'Address visible because the booking is confirmed.'
+      : 'Exact address shows once the booking is confirmed.',
+  });
+  reasons.push({
+    field: 'accessCodes',
+    status: accessUnlocked ? 'available' : 'locked',
+    code: accessUnlocked ? 'available' : 'too_early',
+    ...(accessOpensAt && !accessUnlocked ? { availableAt: accessOpensAt.toISOString() } : {}),
+    message: accessUnlocked
+      ? 'Access codes are available.'
+      : 'Access codes show 4 hours before your declared arrival.',
+  });
+  reasons.push({
+    field: 'accessInstructions',
+    status: accessUnlocked ? 'available' : 'locked',
+    code: accessUnlocked ? 'available' : 'too_early',
+    ...(accessOpensAt && !accessUnlocked ? { availableAt: accessOpensAt.toISOString() } : {}),
+    message: accessUnlocked
+      ? 'Arrival instructions are available.'
+      : 'Detailed arrival steps appear with your access codes.',
+  });
+  reasons.push({
+    field: 'wifiPassword',
+    status: inStayOrLater ? 'available' : 'locked',
+    code: inStayOrLater ? 'available' : 'too_early',
+    ...(accessOpensAt && !inStayOrLater ? { availableAt: accessOpensAt.toISOString() } : {}),
+    message: inStayOrLater
+      ? 'Wi-Fi password is available.'
+      : 'Wi-Fi appears alongside access on arrival day.',
+  });
+  reasons.push({
+    field: 'addons',
+    status: confirmed && currentStage !== STAGE_EXPIRED ? 'available' : 'locked',
+    code: confirmed ? 'available' : 'reservation_not_confirmed',
+    message: confirmed
+      ? 'Experiences and extras are open.'
+      : 'Add-ons unlock when the booking is confirmed.',
+  });
+
+  return {
+    currentStage,
+    canViewExactAddress: confirmed,
+    canViewAccessInstructions: accessUnlocked,
+    canViewAccessCodes: accessUnlocked,
+    canViewWifiPassword: inStayOrLater,
+    canSubmitCheckInForm: confirmed && currentStage !== STAGE_EXPIRED,
+    canRequestAddons: confirmed && currentStage !== STAGE_EXPIRED,
+    reasons,
+  };
+}
+
+function parseStayDate(d) {
+  if (!d) return null;
+  if (d instanceof Date) return d;
+  // Date columns serialise as YYYY-MM-DD strings; parse as Mauritius
+  // local midnight (the stay is anchored to local dates).
+  return new Date(`${String(d).slice(0, 10)}T00:00:00+04:00`);
+}
+
+function applyTimeOfDay(date, hhmm) {
+  if (!date) return null;
+  const [hh, mm] = String(hhmm || '15:00').split(':').map((s) => parseInt(s, 10) || 0);
+  const out = new Date(date.getTime());
+  // Build a fresh Mauritius-local timestamp at hh:mm.
+  const isoDate = out.toISOString().slice(0, 10);
+  return new Date(`${isoDate}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+04:00`);
+}
+
+function buildReservationBlock(bundle) {
+  const channel = mapReservationChannel(bundle.fad.channel || bundle.guesty.channel);
+  return {
+    id: bundle.fad.id,
+    confirmationCode: bundle.fad.confirmation_code
+      || bundle.guesty.confirmation_code
+      || `FR-${String(bundle.fad.id).slice(0, 8).toUpperCase()}`,
+    status: mapReservationStatus(bundle.fad.status || bundle.guesty.status),
+    channel,
+    checkIn: dateOnly(bundle.guesty.check_in_date),
+    checkOut: dateOnly(bundle.guesty.check_out_date),
+    checkInTime: bundle.listing.raw?.defaultCheckInTime || '15:00',
+    checkOutTime: bundle.listing.raw?.defaultCheckOutTime || '10:00',
+    nights: bundle.guesty.nights || 0,
+    guests: {
+      adults: bundle.guesty.adults
+        || bundle.guesty.raw?.guestsCount
+        || bundle.guesty.raw?.guests
+        || 0,
+      children: bundle.guesty.children || 0,
+      infants: bundle.guesty.infants || 0,
+    },
+    primaryGuest: {
+      displayName: [bundle.guesty.guest_first_name, bundle.guesty.guest_last_name]
+        .filter(Boolean).join(' ') || 'Guest',
+      ...(bundle.guesty.guest_email ? { emailMasked: maskEmail(bundle.guesty.guest_email) } : {}),
+      ...(bundle.guesty.guest_phone ? { phoneMasked: maskPhone(bundle.guesty.guest_phone) } : {}),
+    },
+    payment: {
+      currency: normaliseCurrency(bundle.guesty.currency_code),
+      ...(bundle.guesty.total_amount_minor != null
+        ? { totalAmount: Number(bundle.guesty.total_amount_minor) / 100 }
+        : {}),
+      balanceDue: 0,
+      status: 'paid',
+    },
+  };
+}
+
+function mapReservationChannel(c) {
+  const v = String(c || '').toLowerCase();
+  if (v === 'airbnb') return 'airbnb';
+  if (v === 'booking' || v === 'bookingcom' || v === 'booking.com') return 'booking';
+  if (v === 'vrbo') return 'vrbo';
+  if (v === 'direct' || v === 'friday' || v === 'website') return 'friday_mu';
+  if (v === 'owner') return 'owner';
+  return 'other';
+}
+
+function mapReservationStatus(s) {
+  const v = String(s || '').toLowerCase();
+  if (v === 'checked_in') return 'checked_in';
+  if (v === 'checked_out') return 'checked_out';
+  if (v === 'cancelled' || v === 'canceled') return 'cancelled';
+  if (v === 'hold') return 'hold';
+  return 'confirmed';
+}
+
+function normaliseCurrency(c) {
+  const v = String(c || '').toUpperCase();
+  return ['EUR', 'MUR', 'USD'].includes(v) ? v : 'EUR';
+}
+
+function maskEmail(e) {
+  if (!e) return '';
+  const [user, domain] = String(e).split('@');
+  if (!domain) return e;
+  const head = user.length <= 2 ? user[0] : user.slice(0, 2);
+  return `${head}***@${domain}`;
+}
+
+function maskPhone(p) {
+  if (!p) return '';
+  const digits = String(p).replace(/[^0-9+]/g, '');
+  if (digits.length <= 4) return digits;
+  return `${digits.slice(0, 4)} *** ${digits.slice(-2)}`;
+}
+
+function dateOnly(d) {
+  if (!d) return '';
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+}
+
+function buildListingBlock(bundle) {
+  const heroPhoto = bundle.photos[0] || (bundle.listing.picture_url
+    ? { src: bundle.listing.picture_url, alt: bundle.listing.title || 'Property photo' }
+    : null);
+  const area = bundle.listing.address_city || extractAreaFromAddress(bundle.listing.address_full) || 'Mauritius';
+  return {
+    id: bundle.listing.id || bundle.listing.guesty_id || 'unknown',
+    propertyCode: bundle.listing.nickname || bundle.property?.code || bundle.fad.confirmation_code || '—',
+    name: bundle.listing.title || bundle.listing.nickname || 'Friday property',
+    area,
+    publicLocationLabel: area,
+    ...(heroPhoto ? { image: heroPhoto } : {}),
+    ...(bundle.photos.length > 0 ? { photos: bundle.photos } : {}),
+    ...(bundle.listing.address_full ? {
+      exactAddress: bundle.listing.address_full,
+      mapsUrl: `https://maps.google.com/?q=${encodeURIComponent(bundle.listing.address_full)}`,
+    } : {}),
+  };
+}
+
+function extractAreaFromAddress(addr) {
+  if (!addr) return null;
+  // Guesty addresses look like "Royal Road, Flic en Flac, Mauritius" —
+  // middle segment is usually the area.
+  const parts = String(addr).split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 2) return parts[parts.length - 2];
+  return parts[0] || null;
+}
+
+function buildChecklistBlock(bundle, visibility) {
+  const items = [];
+  items.push({
+    id: 'payment',
+    label: 'Booking confirmed and paid',
+    status: 'complete',
+  });
+  items.push({
+    id: 'check_in_form',
+    label: 'Pre-arrival form complete',
+    status: visibility.canSubmitCheckInForm ? 'required' : 'locked',
+    ...(visibility.canSubmitCheckInForm ? { href: '#check-in' } : {}),
+  });
+  items.push({
+    id: 'identity_documents',
+    label: 'Passports / IDs on file',
+    status: 'required',
+    reason: 'Upload via the pre-arrival form.',
+  });
+  items.push({
+    id: 'arrival_time',
+    label: 'Arrival time shared',
+    status: 'optional',
+    href: '#check-in',
+  });
+  items.push({
+    id: 'house_rules',
+    label: 'House rules accepted',
+    status: 'required',
+  });
+  items.push({
+    id: 'access_ready',
+    label: 'Access details available',
+    status: visibility.canViewAccessCodes ? 'complete' : 'locked',
+    ...(visibility.canViewAccessCodes ? {} : { reason: 'Reveals 4 hours before your declared arrival.' }),
+  });
+  return items;
+}
+
+function buildArrivalBlock(bundle, visibility) {
+  const out = {
+    checkInTime: bundle.listing.raw?.defaultCheckInTime || '15:00',
+    checkOutTime: bundle.listing.raw?.defaultCheckOutTime || '10:00',
+  };
+  const directions = bundle.listing.raw?.publicDescription?.transit
+    || bundle.listing.raw?.publicDescription?.gettingAround
+    || null;
+  if (directions) out.publicDirections = String(directions).slice(0, 600);
+  out.fallbackInstructions = 'If anything is unclear or the codes do not work, call the team on +230 408 4119. We are on standby through your check-in window.';
+  if (visibility.canViewAccessCodes) {
+    const codes = [];
+    const doorCode = bundle.listing.raw?.doorCode;
+    const lockCode = bundle.listing.raw?.lockCode;
+    if (doorCode) codes.push({ label: 'Door code', value: String(doorCode).trim() });
+    if (lockCode && String(lockCode).trim() !== String(doorCode || '').trim()) {
+      codes.push({ label: 'Lock code', value: String(lockCode).trim() });
+    }
+    if (codes.length > 0) out.accessCodes = codes;
+  }
+  return out;
+}
+
+function buildHouseGuideBlock(bundle) {
+  const sections = [];
+  const wifiCards = [];
+  const wifiName = bundle.listing.raw?.wifiName;
+  const wifiPassword = bundle.listing.raw?.wifiPassword;
+  if (wifiName) {
+    wifiCards.push({
+      id: 'wifi-main',
+      category: 'wifi_tech',
+      title: 'Wi-Fi',
+      body: wifiPassword
+        ? `Network: ${wifiName}. Password unlocks alongside your access codes on arrival.`
+        : `Network: ${wifiName}. Password shows alongside your access codes on arrival.`,
+      surface: 'guest_facing',
+      sensitivity: 'access_sensitive',
+    });
+  }
+  if (wifiCards.length > 0) sections.push({ id: 'wifi-tech', title: 'Wi-Fi and tech', cards: wifiCards });
+
+  const amenities = Array.isArray(bundle.listing.raw?.amenities) ? bundle.listing.raw.amenities : [];
+  if (amenities.length > 0) {
+    sections.push({
+      id: 'amenities',
+      title: 'In the residence',
+      cards: [{
+        id: 'amenities-summary',
+        category: 'appliances',
+        title: 'Amenities at a glance',
+        body: amenities.slice(0, 20).join(' · '),
+        surface: 'guest_facing',
+        sensitivity: 'stay_only',
+      }],
+    });
+  }
+
+  sections.push({
+    id: 'emergency',
+    title: 'Emergency',
+    cards: [{
+      id: 'emergency-numbers',
+      category: 'emergency',
+      title: 'Emergency contacts',
+      body: 'Police 999 · Ambulance 114 · Fire 115. Friday on-call line is +230 408 4119.',
+      surface: 'guest_facing',
+      sensitivity: 'public',
+    }],
+  });
+
+  return sections;
+}
+
+function buildExploreBlock(_bundle) {
+  // Curated content source not wired yet (Sanity / Notion). Returning
+  // a single nearby-essentials section so the surface renders.
+  return [];
+}
+
+function buildAddonsBlock(_bundle) {
+  // Bokun feed not wired yet — addons section renders empty on the
+  // portal until the experiences slice lands.
+  return [];
 }
 
 module.exports = router;
