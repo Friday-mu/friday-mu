@@ -291,3 +291,406 @@ Before "go":
 - [ ] PRE-FLIGHT: re-read this plan immediately before starting Phase 1
 
 Once Ishant says **"go"**: start Phase 1. Don't ask for confirmation between phases. Don't stop for clarification on items already pre-authorised above. Park anything not in the plan into the morning handover.
+
+---
+
+# Appendices — deeper detail
+
+## Appendix A — Guests + Owners schema (full SQL)
+
+### `backend/migrations/079_guests_fad_native.sql`
+
+```sql
+-- Guests module — FAD-native overlay over Guesty's reservation-embedded
+-- guest data. Lets us track preferences, language, VIP tier, and notes
+-- across stays. Backfilled from guesty_reservations on first run.
+
+CREATE TABLE IF NOT EXISTS fad_guests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid
+    REFERENCES tenants(id) ON DELETE CASCADE,
+  primary_email TEXT,
+  primary_phone TEXT,
+  display_name TEXT NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  language_pref TEXT CHECK (language_pref IN ('en', 'fr', 'es', 'de', NULL)),
+  country TEXT,
+  vip_tier TEXT NOT NULL DEFAULT 'none'
+    CHECK (vip_tier IN ('none', 'silver', 'gold', 'vip')),
+  notes TEXT,
+  first_seen_at TIMESTAMPTZ,
+  last_seen_at TIMESTAMPTZ,
+  total_stays_count INT NOT NULL DEFAULT 0,
+  total_revenue_minor BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Best-effort dedup key. We prefer email, fall back to phone, then to
+-- a stable surrogate so the unique constraint never blocks an insert.
+CREATE UNIQUE INDEX IF NOT EXISTS fad_guests_tenant_identity_uq
+  ON fad_guests (
+    tenant_id,
+    COALESCE(
+      NULLIF(LOWER(TRIM(primary_email)), ''),
+      'phone:' || COALESCE(NULLIF(TRIM(primary_phone), ''), 'NO-PHONE:' || id::text)
+    )
+  );
+
+CREATE INDEX IF NOT EXISTS fad_guests_tenant_email_idx
+  ON fad_guests (tenant_id, LOWER(primary_email));
+CREATE INDEX IF NOT EXISTS fad_guests_tenant_last_seen_idx
+  ON fad_guests (tenant_id, last_seen_at DESC NULLS LAST);
+
+CREATE TRIGGER fad_guests_set_updated_at
+  BEFORE UPDATE ON fad_guests
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at_now();
+
+-- Backfill (idempotent): one row per distinct (email | phone) seen in
+-- guesty_reservations. Uses the most-recent reservation as the source
+-- of truth for name + language.
+INSERT INTO fad_guests (
+  tenant_id, primary_email, primary_phone, display_name,
+  first_name, last_name, first_seen_at, last_seen_at,
+  total_stays_count, total_revenue_minor
+)
+SELECT
+  r.tenant_id,
+  NULLIF(LOWER(TRIM(r.guest_email)), '') AS email,
+  NULLIF(TRIM(r.guest_phone), '') AS phone,
+  COALESCE(
+    NULLIF(TRIM(CONCAT_WS(' ', r.guest_first_name, r.guest_last_name)), ''),
+    r.guest_email,
+    'Unnamed guest'
+  ) AS display_name,
+  r.guest_first_name,
+  r.guest_last_name,
+  MIN(r.check_in_date) AS first_seen,
+  MAX(r.check_in_date) AS last_seen,
+  COUNT(*) AS stays,
+  COALESCE(SUM(r.total_amount_minor), 0)
+FROM guesty_reservations r
+WHERE (r.guest_email IS NOT NULL OR r.guest_phone IS NOT NULL
+       OR r.guest_first_name IS NOT NULL OR r.guest_last_name IS NOT NULL)
+GROUP BY r.tenant_id, email, phone,
+         r.guest_first_name, r.guest_last_name, r.guest_email
+ON CONFLICT (tenant_id, COALESCE(
+  NULLIF(LOWER(TRIM(primary_email)), ''),
+  'phone:' || COALESCE(NULLIF(TRIM(primary_phone), ''), 'NO-PHONE:' || id::text)
+)) DO NOTHING;
+```
+
+### `backend/migrations/080_owners_fad_native.sql`
+
+```sql
+-- Owners module — FAD-native property-owner records. Links to existing
+-- fad_property_owners (mig 077) which already provides the M:N edge
+-- with ownership_pct.
+
+CREATE TABLE IF NOT EXISTS fad_owners (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid
+    REFERENCES tenants(id) ON DELETE CASCADE,
+  display_name TEXT NOT NULL,
+  legal_entity_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
+  address TEXT,
+  country TEXT DEFAULT 'MU',
+  payment_pref TEXT CHECK (payment_pref IN ('bank_transfer', 'mcb_juice', 'cheque', 'cash', NULL)),
+  bank_details_encrypted BYTEA, -- pgcrypto sym_encrypt() — never returned raw
+  language TEXT DEFAULT 'en' CHECK (language IN ('en', 'fr', 'es', NULL)),
+  statement_day INT CHECK (statement_day BETWEEN 1 AND 28), -- monthly statement send day
+  commission_pct_default NUMERIC(5,2), -- e.g. 20.00
+  notes TEXT,
+  archived_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS fad_owners_tenant_active_idx
+  ON fad_owners (tenant_id) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS fad_owners_tenant_email_idx
+  ON fad_owners (tenant_id, LOWER(contact_email));
+
+CREATE TRIGGER fad_owners_set_updated_at
+  BEFORE UPDATE ON fad_owners
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at_now();
+
+-- Extend fad_property_owners to FK fad_owners. Existing rows have
+-- owner_id as a free-text string; widen to a UUID owner_record_id
+-- without dropping the legacy column (back-compat during migration).
+ALTER TABLE fad_property_owners
+  ADD COLUMN IF NOT EXISTS owner_record_id UUID REFERENCES fad_owners(id);
+CREATE INDEX IF NOT EXISTS fad_property_owners_owner_record_idx
+  ON fad_property_owners (owner_record_id);
+```
+
+### `backend/migrations/081_quotes_fad_native.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS fad_quotes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid
+    REFERENCES tenants(id) ON DELETE CASCADE,
+  created_by_user_id UUID,
+  property_codes TEXT[] NOT NULL,
+  check_in DATE NOT NULL,
+  check_out DATE NOT NULL,
+  guests_adults INT NOT NULL DEFAULT 1,
+  guests_children INT NOT NULL DEFAULT 0,
+  share_url TEXT NOT NULL,
+  expires_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'sent'
+    CHECK (status IN ('draft', 'sent', 'opened', 'converted', 'expired')),
+  opened_at TIMESTAMPTZ,
+  converted_reservation_id UUID,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS fad_quotes_tenant_recent_idx
+  ON fad_quotes (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS fad_quotes_status_idx
+  ON fad_quotes (tenant_id, status) WHERE status IN ('sent', 'opened');
+
+CREATE TRIGGER fad_quotes_set_updated_at
+  BEFORE UPDATE ON fad_quotes
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at_now();
+```
+
+## Appendix B — Multi-calendar architecture
+
+### Component tree
+
+```
+CalendarModuleV2 (new)
+├── CalendarToolbar
+│   ├── PropertyFilters (Cities, Tags, Status, Add filter)
+│   ├── DateRangePicker (week / month / 60-day)
+│   ├── ViewSwitcher (Multi | Month | Week | Day | Agenda)
+│   └── Actions (Today, Find availability)
+├── CalendarGrid
+│   ├── PropertyColumnSticky (left, sticky)
+│   │   └── PropertyRowHeader[] (thumbnail, code, lifecycle icon)
+│   ├── DateHeaderRowSticky (top, sticky)
+│   │   └── DayCellHeader[] (Mon 24, with month-change separator)
+│   └── GridBody
+│       ├── DayBackgrounds[][] (cells with optional €PRICE)
+│       ├── ReservationBars[] (positioned via grid-column span)
+│       ├── TaskChips[] (positioned via cell + offset)
+│       └── TodayLine (vertical, position absolute, z-index high)
+└── Drawers
+    ├── ReservationDetail (existing, opened on bar click)
+    ├── TaskDetail (new Breezeway-style, opened on chip click)
+    ├── PropertyDetail (existing, opened on row-header click)
+    ├── CreateReservationDrawer (opened on empty-cell click; date prefilled)
+    └── AvailabilitySearchModal (opened from toolbar)
+```
+
+### Data flow
+
+Single `useCalendarData({from, to, propertyFilter})` hook:
+
+```ts
+{
+  properties: PropertyForCalendar[],   // /api/properties + thumbnail
+  reservationsByProperty: Map<code, Reservation[]>,  // /api/reservations
+  tasksByProperty: Map<code, Task[]>,                // /api/tasks?group_by=property_code
+  pricesByCell: Map<`${code}|${date}`, {price_minor, available}>, // /api/properties/calendar
+}
+```
+
+Backed by 3 parallel fetches, SWR-cached, refetches on filter change.
+
+### Performance plan
+
+- Virtualise date columns: render visible window + 7-day buffer each side.
+- Property rows: render all 60 (acceptable — they're light DOM).
+- IntersectionObserver on the grid body to detect scroll → prefetch next 30-day window.
+- CSS Grid `contain: strict` on the grid body + each cell to limit reflow.
+- Reservation bars positioned via CSS grid spans (no absolute positioning calcs in JS).
+- Today line: single absolute element with transform set once per scroll frame.
+- Target: scroll latency < 16ms with 60 props × 60 days × ~80 reservations.
+
+### Backend extensions
+
+- Extend `GET /api/properties?include=calendar&from=&to=&calendar_window=60d` to optionally hydrate `calendar` field with per-day price + availability. Current LATERAL JOIN already pulls 30-day window; widen to a date-range param.
+- New `GET /api/tasks?dueAfter=&dueBefore=&group_by=property_code` returning `{by_property: {<code>: Task[]}}`. Aggregation done server-side to halve the payload.
+
+## Appendix C — Task detail UI section-by-section
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ 👁 [Medium] [In Progress]              [⤴ open] [⋮] [×]    │   ← compact header
+├────────────────────────────────────────────────────────────┤
+│ 🔧 Fix toilet leak                                          │   ← title (16px, bold)
+│ 📅 May 24, 2026                            🕒 Add time     │   ← due + add-time chip
+├────────────────────────────────────────────────────────────┤
+│ BW-C4                                                       │   ← property code (mono, 13px)
+│ Coastal Road                                                │   ← address (12px, secondary)
+│ + Add element                                              │   ← optional links (reservation, etc.)
+├────────────────────────────────────────────────────────────┤
+│ Add a description…  ← clickable, editable inline           │
+├────────────────────────────────────────────────────────────┤
+│ ⏱ TIME                                  0h 24m 15s  [⏵/⏸] │   ← timer red when running
+├────────────────────────────────────────────────────────────┤
+│ 👤 ASSIGNEES                            + Add assignee     │
+│   ◉ Bryan Henri                              Remove        │   ← row per assignee, hover Remove
+├────────────────────────────────────────────────────────────┤
+│ ⭐ GUEST RATING                          Not Rated         │
+├────────────────────────────────────────────────────────────┤
+│ 📎 ATTACHMENTS                          + Add attachment   │
+│   [thumb][thumb][thumb][thumb][thumb]                       │   ← thumbnail grid, click → lightbox
+├────────────────────────────────────────────────────────────┤
+│ 🏷 TASK TAGS                                + Add tag       │
+│   [breezeway-import] [historical-import] (chips)            │
+├────────────────────────────────────────────────────────────┤
+│ 🔗 LINKED RESERVATIONS                  + Link reservation │
+│   (rsv card if linked, else empty)                          │
+├────────────────────────────────────────────────────────────┤
+│ 💬 Write a comment. Type '@' to mention someone.            │   ← input always visible
+│                                                             │
+│ ◉ Mary Oladimeji  commented                       9h ago   │   ← comment thread, newest top
+│   Reopened this task @Bryan @Franny. Guest said …          │
+│ ◉ Bryan Henri commented                          16h ago   │
+│   Sealed the hole. Added silicone …                         │
+└────────────────────────────────────────────────────────────┘
+
+         ┌──────────────────────┐
+         │  ⏸ Stop · 0h 24m 15s │  ← floating timer button (sticky bottom right)
+         └──────────────────────┘
+```
+
+CSS class prefix: `.task-d2-*` so we don't collide with the existing `.task-detail-*`. Old component stays in place as fallback until v2 is verified.
+
+Section rendering order is fixed; each section is independently collapsible later (v0.2). Edit affordances are inline-trigger (click the value, edit, blur to save) — no modal for simple fields.
+
+## Appendix D — API endpoint contracts
+
+### `GET /api/guests`
+```
+?search=<str>&vip_tier=<tier>&limit=200&offset=0
+→ { results: GuestRecord[], total: number, limit, offset, hasMore }
+```
+
+### `GET /api/guests/:id/reservations`
+```
+→ { reservations: Reservation[] }
+  — Joined via guesty_reservations.guest_email = fad_guests.primary_email
+    OR (matching first_name + last_name + LOWER trim)
+```
+
+### `GET /api/owners`
+```
+?archived=<true|false>&limit=200
+→ { results: OwnerRecord[], total }
+  — Joins fad_property_owners to compute property_count per owner
+```
+
+### `GET /api/finance/property/:code/summary?window=90d`
+```
+→ {
+  revenue_minor, channel_fees_minor, expenses_minor,
+  net_to_owner_minor, friday_margin_minor,
+  reservation_count, occupancy_pct, adr_minor, revpar_minor,
+  currency, window_from, window_to
+}
+```
+
+### `GET /api/availability/search?from=&to=&guests=`
+```
+→ {
+  matches: [
+    { property_code, nickname, picture_url, region,
+      available_nights, total_nights, nightly_avg_minor,
+      total_minor, currency }
+  ],
+  unavailable: [{ property_code, nickname, reason }]
+}
+```
+
+### `POST /api/quotes`
+```
+body: { property_codes: string[], from, to, guests_adults, guests_children?, expires_in_days? }
+→ { quote_id, share_url, expires_at }
+```
+
+### `PATCH /api/tasks/:id/assignees`
+```
+body: { user_ids: string[] }
+→ { task: Task }
+```
+
+## Appendix E — Files I'll create / modify
+
+### New files
+- `backend/migrations/079_guests_fad_native.sql`
+- `backend/migrations/080_owners_fad_native.sql`
+- `backend/migrations/081_quotes_fad_native.sql`
+- `backend/src/guests/index.js`
+- `backend/src/owners/index.js`
+- `backend/src/quotes/index.js`
+- `backend/src/availability/search.js`
+- `frontend/src/app/fad/_data/guestsClient.ts`
+- `frontend/src/app/fad/_data/ownersClient.ts`
+- `frontend/src/app/fad/_data/quotesClient.ts`
+- `frontend/src/app/fad/_data/availabilityClient.ts`
+- `frontend/src/app/fad/_components/modules/CalendarModuleV2.tsx`
+- `frontend/src/app/fad/_components/modules/calendar/MultiCalendarGrid.tsx`
+- `frontend/src/app/fad/_components/modules/calendar/AvailabilitySearchModal.tsx`
+- `frontend/src/app/fad/_components/modules/calendar/QuoteSendModal.tsx`
+- `frontend/src/app/fad/_components/modules/operations/TaskDetailV2.tsx`
+
+### Modified files
+- `backend/server.js` — register guests / owners / quotes / availability routers
+- `backend/src/reservations/sync.js` — extend with fad_guests upsert
+- `backend/src/properties/sync.js` — extend with fad_owners seed from accountManager
+- `frontend/src/app/fad/_data/propertiesClient.ts` — replace 'o-guesty-unknown' with real owner lookup
+- `frontend/src/app/fad/_components/modules/properties/PropertyDetail.tsx` — Owner tab + Financial tab + Insights tab use real backend
+- `frontend/src/app/fad/_components/modules/reservations/ReservationDetail.tsx` — Guests tab uses real fad_guests
+- `frontend/src/app/fad/_components/modules/CalendarModule.tsx` → swap to V2 default, keep old as fallback tab
+- `frontend/src/app/fad/_components/modules/OperationsModule.tsx` → swap TaskDetail to V2
+- `docs/FAD_BACKLOG.md` — strike completed items, bump live version each deploy
+
+## Appendix F — Risks I'm watching
+
+| Risk | Mitigation |
+|---|---|
+| guests/owners backfill takes too long on prod | Run via `SELECT ... INTO ... LIMIT 1000` in batches if needed |
+| Multi-calendar laggy with 60×60 cells | Ship with date-window=30-day default; widen on user demand |
+| TaskDetail v2 breaks existing keyboard shortcuts | Keep v1 mounted in shadow for one deploy; A/B route via a feature flag URL param |
+| Owners table empties existing owner display | Wire fallback — when no fad_owners row found, render the old "o-guesty-unknown" placeholder instead of crashing |
+| Multi-tenant SQL site introduced without filter | After every backend route addition: `grep -E 'FROM fad_(guests|owners|quotes)' backend/src/` and visually verify each has a `tenant_id = $X` clause |
+| Friday Website preview URL shape unknown | Ship URL generator with a fallback `https://preview-friday-website.vercel.app/search?codes=X,Y` — Ishant validates tomorrow, easy to adjust |
+
+## Appendix G — Verification snippets (paste these in Chrome MCP JS console after each deploy)
+
+### After Phase 1 (Guests):
+```js
+fetch('/api/guests?limit=5', {headers:{Authorization:'Bearer '+localStorage.gms_token}})
+  .then(r=>r.json()).then(d=>({count: d.results?.length, sample: d.results?.[0]}))
+```
+
+### After Phase 2 (Owners):
+```js
+fetch('/api/owners', {headers:{Authorization:'Bearer '+localStorage.gms_token}})
+  .then(r=>r.json()).then(d=>({count: d.results?.length, with_props: d.results?.filter(o=>o.property_count>0).length}))
+```
+
+### After Phase 5 (Multi-calendar):
+```js
+// Visual verification only — navigate to /fad?m=calendar and screenshot.
+// Check: 60 properties × 60 day columns, no horizontal page scroll
+// (grid should scroll internally), today line visible, prices in
+// available cells.
+```
+
+### After Phase 6 (Availability):
+```js
+fetch('/api/availability/search?from=2026-07-01&to=2026-07-08&guests=4',
+  {headers:{Authorization:'Bearer '+localStorage.gms_token}})
+  .then(r=>r.json()).then(d=>({matches: d.matches?.length, sample: d.matches?.[0]}))
+```
