@@ -119,14 +119,20 @@ export function InquiriesPage({ onOpenReservation }: Props) {
             Failed to load website inquiries: {error}
           </div>
         )}
+        {/* T1.13 (2026-05-25) — replaced the 5s blocking "Loading website
+            inquiries…" centered block with a slim inline banner above
+            an empty-state, so the page structure (KPIs, filters, card
+            frame) is visible immediately and the inquiry list paints
+            in when fetch resolves. */}
         {loading && rows.length === 0 && (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
-            Loading website inquiries…
+          <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--color-text-tertiary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-brand-accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+            Loading inquiries…
           </div>
         )}
-        {!loading && filtered.length === 0 && (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
-            No live website inquiries match this filter.
+        {filtered.length === 0 && (
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+            {loading ? 'No inquiries cached yet — fetching live data…' : 'No live website inquiries match this filter.'}
           </div>
         )}
         {filtered.map((inq, i) => (

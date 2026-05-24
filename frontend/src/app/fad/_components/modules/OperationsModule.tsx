@@ -3988,6 +3988,12 @@ function InsightsPage() {
       tone: 'success',
     },
   ];
+  // T1.13 (2026-05-25) — drop the blocking 5s loading skeleton. The
+  // cards already render with zero values + empty-state copy when
+  // TASKS is empty, so we can show the page shape instantly and let
+  // the data paint in when the fetch resolves. Stale-while-revalidate
+  // pattern (subscribers fire) means subsequent re-renders pick up
+  // the data without operator-visible jank.
   const initialLoading = loading && TASKS.length === 0;
 
   return (
@@ -3997,11 +4003,14 @@ function InsightsPage() {
           Insights could not load live tasks: {error}
         </div>
       )}
-      {initialLoading ? (
-        <LoadingState label="Loading live task metrics" />
-      ) : (
-        <>
-          <Section title="Attention now">
+      {initialLoading && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 6, background: 'var(--color-background-secondary)', color: 'var(--color-text-tertiary)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-brand-accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+          Loading live task metrics…
+        </div>
+      )}
+      <>
+        <Section title="Attention now">
             <div className="ops-insight-attention">
               {attentionRows.map((row) => (
                 <div key={row.label} className="ops-insight-attention-row" data-tone={row.tone}>
@@ -4055,7 +4064,6 @@ function InsightsPage() {
         </Section>
           </div>
         </>
-      )}
     </div>
   );
 }
