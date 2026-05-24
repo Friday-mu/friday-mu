@@ -341,6 +341,15 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     }
   };
 
+  // T1.15 (2026-05-25): plumb editable assignees from the body section.
+  // Persist the new array via updateTask + bump rev so the list re-renders.
+  const setAssigneeIds = async (nextIds: string[]) => {
+    await runApiMutation('assignees', async () => {
+      await updateTask({ taskId: task.id, patch: { assigneeIds: nextIds }, actorId: currentUserId });
+      onBumpRev();
+    });
+  };
+
   const setStatus = async (status: Task['status']) => {
     setCloseArmed(false);
     // 2026-05-23 — requirements UI is hidden (see SHOW_TASK_REQUIREMENTS).
@@ -486,6 +495,8 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           onCaptureExpense={() => setCaptureExpenseOpen(true)}
           expenses={taskExpenses}
           expensesLoading={expensesLoading}
+          staffUsers={staffUsers}
+          onUpdateAssignees={setAssigneeIds}
         />
         <Comments
           task={task}
@@ -841,6 +852,8 @@ function Body({
   onCaptureExpense,
   expenses,
   expensesLoading,
+  staffUsers,
+  onUpdateAssignees,
 }: {
   task: Task;
   role: NonNullable<ReturnType<typeof usePermissions>['role']>;
@@ -876,8 +889,11 @@ function Body({
   onCaptureExpense: () => void;
   expenses: ExpenseRow[];
   expensesLoading: boolean;
+  staffUsers: OperationsStaffUser[];
+  onUpdateAssignees: (nextIds: string[]) => void;
 }) {
   const assignees = taskAssigneePeople(task);
+  const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const canViewSensitiveContext = canManageTasks || task.assigneeIds.includes(currentUserId);
   return (
     <>
@@ -947,10 +963,10 @@ function Body({
       )}
 
       <CollapsibleSection title="Assignees" defaultOpen={assignees.length > 0 && assignees.length <= 3}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {assignees.length === 0 && <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Unassigned</span>}
           {assignees.map((u) => (
-            <span key={u.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <span key={u.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '2px 8px 2px 2px', background: 'var(--color-background-secondary)', borderRadius: 16 }}>
               <span
                 style={{
                   width: 22,
@@ -968,9 +984,81 @@ function Body({
                 {u.initials}
               </span>
               {u.name}
+              {canManageTasks && (
+                <button
+                  type="button"
+                  className="fad-util-btn"
+                  onClick={() => onUpdateAssignees(task.assigneeIds.filter((id) => id !== u.id))}
+                  title="Remove assignee"
+                  style={{ width: 16, height: 16, padding: 0, fontSize: 11, lineHeight: 1, opacity: 0.6 }}
+                >
+                  ×
+                </button>
+              )}
             </span>
           ))}
+          {canManageTasks && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setAssigneePickerOpen((v) => !v)}
+              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14 }}
+            >
+              {assigneePickerOpen ? 'Done' : assignees.length === 0 ? '+ Assign' : '+ Add'}
+            </button>
+          )}
         </div>
+        {canManageTasks && assigneePickerOpen && (
+          <div style={{
+            marginTop: 8,
+            padding: 8,
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 6,
+            background: 'var(--color-background-primary)',
+            maxHeight: 220,
+            overflowY: 'auto',
+          }}>
+            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+              Pick a teammate
+            </div>
+            {staffUsers.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>No staff loaded yet.</div>
+            )}
+            {staffUsers.map((s) => {
+              const isAssigned = task.assigneeIds.includes(s.id);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => {
+                    const next = isAssigned
+                      ? task.assigneeIds.filter((id) => id !== s.id)
+                      : [...task.assigneeIds, s.id];
+                    onUpdateAssignees(next);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    padding: '6px 8px',
+                    background: isAssigned ? 'rgba(86, 128, 202, 0.08)' : 'transparent',
+                    border: 0,
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    fontSize: 12,
+                    color: 'inherit',
+                  }}
+                >
+                  <span style={{ width: 16, color: 'var(--color-text-success)' }}>{isAssigned ? '✓' : ''}</span>
+                  <span style={{ flex: 1 }}>{s.name || s.id}</span>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{s.role || ''}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </CollapsibleSection>
 
       {task.reservationId && (
