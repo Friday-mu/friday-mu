@@ -21,7 +21,26 @@ export interface CellPrice {
   price_minor: number | null;
   available: boolean | null;
   currency: string | null;
+  /** v0.5 — true when blocked via fad_calendar_blocks overlay (mig 090). */
+  blocked?: boolean;
+  block_reason?: string | null;
+  block_notes?: string | null;
 }
+
+export type BlockReason =
+  | 'owner_stay'
+  | 'maintenance'
+  | 'private_use'
+  | 'channel_block'
+  | 'other';
+
+export const BLOCK_REASON_LABEL: Record<BlockReason, string> = {
+  owner_stay: 'Owner stay',
+  maintenance: 'Maintenance',
+  private_use: 'Private use',
+  channel_block: 'Channel block',
+  other: 'Other',
+};
 
 interface Props {
   properties: Property[];
@@ -38,6 +57,9 @@ interface Props {
   onPropertyClick?: (property: Property) => void;
   onCellClick?: (property: Property, dateIso: string) => void;
   onTaskClick?: (task: Task) => void;
+  /** v0.5 — fired when staff blocks or unblocks dates via the popover.
+   *  Parent should refetch the grid data so the new state shows. */
+  onBlocksChanged?: () => void;
 }
 
 const DAY_MS = 86400000;
@@ -207,6 +229,7 @@ export function MultiCalendarGrid({
   onPropertyClick,
   onCellClick,
   onTaskClick,
+  onBlocksChanged,
 }: Props) {
   const columns = useMemo(() => buildDateColumns(windowStart, windowDays), [windowStart, windowDays]);
   const windowEnd = useMemo(
@@ -223,6 +246,17 @@ export function MultiCalendarGrid({
   // shows title + due + assignee + truncated description. Replaces the
   // slow + plain browser `title=` tooltip.
   const [hoveredTask, setHoveredTask] = useState<{ task: Task; x: number; y: number } | null>(null);
+
+  // v0.5 — block-cell popover state. Anchored at the click point with
+  // viewport clamping in the popover JSX.
+  const [blockingCell, setBlockingCell] = useState<{
+    property: Property;
+    listingGuestyId: string;
+    dateIso: string;
+    cell: CellPrice | null;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const gridTemplateColumns = `${PROPERTY_COL_PX}px repeat(${windowDays}, minmax(${DAY_COL_PX}px, 1fr))`;
 
@@ -335,8 +369,37 @@ export function MultiCalendarGrid({
                       (isBlocked ? ' mcal-day-blocked' : '')
                     }
                     style={{ gridColumn: idx + 2, gridRow: 1 }}
-                    onClick={() => onCellClick?.(p, c.iso)}
-                    title={isBlocked ? 'Blocked' : showPrice && cell ? `${formatCellPrice(cell)} · ${c.iso}` : c.iso}
+                    onClick={(e) => {
+                      // Reservation cells shouldn't trigger block popover —
+                      // they have their own click handler on the band.
+                      if (hasReservation) return;
+                      // External handler wins (if a parent wires onCellClick
+                      // for a different surface). Otherwise open the block
+                      // popover.
+                      if (onCellClick) {
+                        onCellClick(p, c.iso);
+                        return;
+                      }
+                      if (!p.id) return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setBlockingCell({
+                        property: p,
+                        listingGuestyId: p.id,
+                        dateIso: c.iso,
+                        cell: cell || null,
+                        x: rect.left + rect.width / 2,
+                        y: rect.bottom + 6,
+                      });
+                    }}
+                    title={
+                      isBlocked && cell?.block_reason
+                        ? `Blocked · ${cell.block_reason}${cell.block_notes ? ' · ' + cell.block_notes : ''}`
+                        : isBlocked
+                          ? 'Blocked'
+                          : showPrice && cell
+                            ? `${formatCellPrice(cell)} · ${c.iso}`
+                            : c.iso
+                    }
                   >
                     {showPrice && cell && (
                       <span className="mcal-cell-price mono">{formatCellPrice(cell)}</span>
@@ -512,6 +575,178 @@ export function MultiCalendarGrid({
           </span>
         </span>
       </div>
+
+      {/* v0.5 — block-cell popover. Click a free cell to block or
+          unblock that date for a property. Phase 1: FAD-local; Phase 2
+          will write through to Guesty. */}
+      {blockingCell && (
+        <BlockCellPopover
+          property={blockingCell.property}
+          listingGuestyId={blockingCell.listingGuestyId}
+          dateIso={blockingCell.dateIso}
+          cell={blockingCell.cell}
+          anchorX={blockingCell.x}
+          anchorY={blockingCell.y}
+          onClose={() => setBlockingCell(null)}
+          onChanged={() => {
+            setBlockingCell(null);
+            onBlocksChanged?.();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ───────────────── Block / unblock popover (v0.5) ─────────────────
+
+function BlockCellPopover({
+  property,
+  listingGuestyId,
+  dateIso,
+  cell,
+  anchorX,
+  anchorY,
+  onClose,
+  onChanged,
+}: {
+  property: Property;
+  listingGuestyId: string;
+  dateIso: string;
+  cell: CellPrice | null;
+  anchorX: number;
+  anchorY: number;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  // Dynamic import — keeps the network client out of the grid module's
+  // first-paint critical path. Imported eagerly here since the popover
+  // is already rendered.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { blockDates, unblockDates } = require('../../../_data/calendarGridClient') as typeof import('../../../_data/calendarGridClient');
+  const isBlocked = !!cell?.blocked;
+  const initialReason: BlockReason = (cell?.block_reason as BlockReason) || 'owner_stay';
+  const [reason, setReason] = useState<BlockReason>(initialReason);
+  const [notes, setNotes] = useState(cell?.block_notes || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleBlock = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await blockDates({ listingGuestyId, dates: [dateIso], reason, notes: notes.trim() || undefined });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to block date');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnblock = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await unblockDates(listingGuestyId, [dateIso]);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to unblock date');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const popoverWidth = 280;
+  const left = typeof window !== 'undefined'
+    ? Math.min(Math.max(anchorX - popoverWidth / 2, 8), window.innerWidth - popoverWidth - 8)
+    : anchorX;
+  const top = anchorY;
+
+  return (
+    <>
+      {/* Click-outside scrim */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 49, background: 'transparent',
+        }}
+      />
+      <div
+        style={{
+          position: 'fixed',
+          left,
+          top,
+          zIndex: 50,
+          width: popoverWidth,
+          background: 'var(--color-background-primary)',
+          border: '0.5px solid var(--color-border-secondary)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: '0 8px 24px rgba(15, 24, 54, 0.18)',
+          padding: 12,
+          fontSize: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+          <strong>{property.code} · {dateIso.slice(5)}</strong>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)' }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        {isBlocked ? (
+          <>
+            <div style={{ color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+              Currently blocked{cell?.block_reason ? ` · ${BLOCK_REASON_LABEL[cell.block_reason as BlockReason] || cell.block_reason}` : ''}
+              {cell?.block_notes && <div style={{ fontStyle: 'italic', marginTop: 4 }}>&ldquo;{cell.block_notes}&rdquo;</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button className="btn ghost sm" onClick={onClose} disabled={busy}>Close</button>
+              <button className="btn sm" onClick={handleUnblock} disabled={busy} style={{ color: 'var(--color-text-danger)' }}>
+                {busy ? 'Unblocking…' : 'Unblock'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <label style={{ display: 'block', marginBottom: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Reason</label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value as BlockReason)}
+              disabled={busy}
+              style={{ width: '100%', padding: 6, marginBottom: 8, fontSize: 12, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)' }}
+            >
+              {(['owner_stay', 'maintenance', 'private_use', 'channel_block', 'other'] as BlockReason[]).map((r) => (
+                <option key={r} value={r}>{BLOCK_REASON_LABEL[r]}</option>
+              ))}
+            </select>
+            <label style={{ display: 'block', marginBottom: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Notes (optional)</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={busy}
+              placeholder="e.g. Mary &amp; Pierre · annual visit"
+              style={{ width: '100%', padding: 6, marginBottom: 8, fontSize: 12, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)' }}
+            />
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button className="btn ghost sm" onClick={onClose} disabled={busy}>Cancel</button>
+              <button className="btn primary sm" onClick={handleBlock} disabled={busy}>
+                {busy ? 'Blocking…' : 'Block date'}
+              </button>
+            </div>
+          </>
+        )}
+        {error && (
+          <div style={{ marginTop: 8, color: 'var(--color-text-danger)', fontSize: 11 }}>{error}</div>
+        )}
+      </div>
+    </>
   );
 }

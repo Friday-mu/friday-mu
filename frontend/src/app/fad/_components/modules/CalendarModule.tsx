@@ -1068,7 +1068,7 @@ function MultiCalendarMounted({
 }) {
   const from = days[0]?.isoDate;
   const to = days[days.length - 1]?.isoDate;
-  const { pricesByListing } = useCalendarGrid(from, to);
+  const { pricesByListing, refetch: refetchGrid } = useCalendarGrid(from, to);
 
   // Group tasks by propertyCode for in-cell chip overlay.
   const tasksByPropertyCode = useMemo(() => {
@@ -1093,6 +1093,7 @@ function MultiCalendarMounted({
       todayIso={TODAY_ISO}
       onReservationClick={onReservationClick}
       onPropertyClick={onPropertyClick}
+      onBlocksChanged={refetchGrid}
     />
   );
 }
