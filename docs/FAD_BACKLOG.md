@@ -392,14 +392,27 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
     primary CTAs when language toggles to French.
   - TranslationShape interface extended to enforce fr.ts coverage of
     properties.* / reservations.* / hr.* at compile-time.
-- v0.3 follow-ups (open):
-  - **Sub-page labels** — need module-qualified keys to disambiguate
-    ('all' means All properties in Properties context, All reservations
-    in Reservations).
-  - **DB-backed per-user persistence** — `users.preferred_language`
-    column + sync at login. Currently per-device only.
+- v0.3 (SHIPPED 2026-05-24 evening · `a2c57583`):
+  - **Sub-page label disambiguation** — Sidebar sub-page lookup
+    switched to module-qualified keys (subpage.<module>.<id>) so 'all'
+    can be "Tous les logements" in Properties context and "Toutes les
+    réservations" in Reservations without collision. Coverage:
+    Operations / Properties / Reservations / Finance / HR / Tenant
+    settings. Verified live: Properties sub-pages render Aperçu / Tous
+    les logements / Mise en service / Indicateurs in FR.
+  - **DB-backed users.preferred_language** — language choice now
+    survives across devices. Migration 086 adds the column with CHECK
+    ('en'|'fr'|NULL). Backend exposes via shapeUser() + login + /me.
+    New PATCH /api/auth/me/preferences validates + writes. Frontend
+    setLanguage() fire-and-forgets the PATCH on toggle;
+    hydrateLanguageFromServer() called once from FadApp on mount
+    seeds the lang from the DB when localStorage has no choice yet.
+    localStorage wins over the server value to keep per-device
+    overrides stable mid-session.
+- v0.4 follow-ups (open):
   - **Module body coverage** — Cards / table headers / empty states /
     hover tooltips / form labels inside each module body still EN.
+    Biggest remaining scope.
   - **Finance** — skipped in v0.2 because title is dynamic per
     sub-page. Admin-only, not field-staff visible, so lower priority.
   - **Body strings inside Settings → Appearance card** — Density /
