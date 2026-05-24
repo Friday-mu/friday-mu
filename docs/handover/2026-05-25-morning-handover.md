@@ -456,3 +456,102 @@ If Ishant says "go" again, the natural sequence is:
 
 Otherwise the overnight plan doc at `docs/handover/2026-05-24-overnight-autonomous-plan.md`
 remains the canonical reference for what was scoped vs deferred.
+
+---
+
+## Appendix — Post-compaction prompt (2026-05-24 evening-late, third compact)
+
+Mirror of the post-compaction prompt written into the workspace handover at
+`/Users/judith/.openclaw/workspace/tmp/claude-code-compaction-handover-20260524-evening-late.md`
+so it survives even if the workspace tmp file is missed. Third compact of the
+day after morning (overnight autonomous) and afternoon (cherry-pick + SSE root
+cause). Evening session shipped 5 bug fixes + Calendar v0.3 partial + captured
+two new scope items (T3.14 TeamInbox threads, T3.15 French i18n).
+
+```text
+Resume the FAD work. Read these IN ORDER before doing anything:
+
+1. /Users/judith/.openclaw/workspace/tmp/claude-code-compaction-handover-20260524-evening-late.md
+   — Session state from immediately before /compact. Open queue, hard
+     constraints, authoritative findings, decisions locked this session.
+2. /Users/judith/.openclaw/workspace/tmp/claude-code-compaction-handover-20260524-afternoon.md
+   — Afternoon handover (cherry-pick math fix + scrape dedup + SSE
+     architecture root cause).
+3. /Users/judith/repos/friday-admin-dashboard/docs/handover/2026-05-25-morning-handover.md
+   — Broader morning ledger (overnight 10-phase plan + follow-ups).
+
+Then verify live state in parallel:
+- cd /Users/judith/repos/friday-admin-dashboard && git status
+- cd /Users/judith/repos/friday-admin-dashboard && git log --oneline -15
+- curl -fsS https://admin.friday.mu/version.json
+- curl -fsS https://admin.friday.mu/api/version
+
+Then check Chrome MCP "Working Browser":
+- list_connected_browsers → pick deviceId c49e054a-1059-4f2c-87bf-41fc0e71b03c
+  (switch_browser to re-pair if absent)
+
+Pre-authorised decisions LOCKED (do NOT re-litigate):
+- nginx /api/events/ block has proxy_buffering off + HTTP/2 + SW v6
+  defensive install + public/ asset perms 644. Root cause of morning
+  TeamInbox/thread regression. See afternoon handover for details.
+- Scraping is fallback only — Guesty API always overrides scrape rows
+  on confirmation_code match.
+- All hospitality metrics computed on FAD backend. Guesty = raw data
+  only. Industry-correct math (VRMA + STR): room revenue (subTotal -
+  cleaning), paid + total occupancy split, ADR over priced+paid nights
+  only, RevPAR = revenue ÷ available room-nights.
+- Friday Consult inline task suggestions ship via [TASK]{json}[/TASK]
+  protocol.
+- Multi-calendar v0.3 is the desktop default Calendar view; status
+  colors (confirmed/reserved/inquiry/owner) NOT channel colors;
+  channel info via glyph at band start.
+
+Hard rules (immutable):
+- Git author = Judith Friday <judith@friday.mu> (hook-enforced).
+- Type-check + build pass before every deploy. Roll back on regression.
+- Verify on prod via Chrome MCP after every deploy.
+- Mobile QA (375×812) after every UI commit — Chrome MCP resize_window
+  is unreliable; needs real phone.
+- Multi-tenant safety: grep tenant_id filter after every new backend route.
+- No --no-verify, no force-push, no skipping hooks.
+- Don't touch website_inbox until T3.7.
+- Don't edit Friday Website code (GMS edits OK if needed — was done
+  this session for bug #12 fix in friday-gms repo).
+- Skip VPS backups (disk 69%).
+
+Stopping conditions:
+- 3 consecutive deploy failures → halt + write next handover.
+- Migration fails non-trivially → halt.
+- Context > 80% → wrap up cleanly with a fresh handover.
+- Production regression you can't diagnose in 30 min → halt.
+
+Open queue (priority order, from the handover):
+1. T3.14 — TeamInbox thread replies + chat-style alignment (NEWEST ASK,
+   M, Ishant scope from 2026-05-24 evening). Backend has
+   parent_message_id + /api/team/messages/:kind/:id/replies route.
+   Frontend needs the action button + nested-reply renderer +
+   operator-right/teammates-left bubble alignment.
+2. T3.15 — French i18n for field staff (NEWEST ASK, L, needs scoping
+   pass first — library choice, toggle location, persistence,
+   translation source). Field staff modules: Operations / Inbox · Team
+   / HR self / Settings.
+3. Bug #5 Mary inbox flickering (needs Mary pair-debug)
+4. Bug #3 Franny notification routing (needs Franny re-test)
+5. Bug #4 Ishant schedule + Breezeway cards (waiting on Breezeway screenshot)
+6. Calendar v0.4 — 6 deferred sub-items (past-date pricing, lane
+   dedup, column alignment, block-dates feature, hover-task preview,
+   custom date picker)
+7. T3.7 — website_inbox tenant_id migration (non-FR rollout blocker)
+8. T1.15 — TaskDetail Breezeway re-skin (same screenshot dep as #5)
+9. T1.14 — Insights surfaces wired to real data
+10. T3.9 / T3.10 — PropertyDetail + ReservationDetail tabs full wiring
+
+Resume at the first unfinished item Ishant points to, or wait for his
+pick. T3.14 and T3.15 are the two NEWEST asks; ask Ishant which to
+tackle first (or whether to scope T3.15 in detail before building).
+Don't ask for confirmation between items if he says "go ahead one by
+one". Don't restart context-gathering — the three handover docs are
+authoritative.
+
+Go.
+```
