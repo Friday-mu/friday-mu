@@ -12,14 +12,24 @@ export interface PortfolioKPIs {
   revenue_minor_prev: number;
   reservation_count: number;
   reservation_count_prev: number;
+  /** Total occupied nights (paid + owner stays). */
   booked_nights: number;
   booked_nights_prev: number;
-  /** Subset of booked_nights that came with pricing data — denominator for ADR. */
+  /** Paying stays only — owner stays excluded. Industry-standard revenue mgmt view. */
+  paid_booked_nights?: number;
+  /** Subset of paid_booked_nights with pricing data — ADR denominator. */
   priced_booked_nights?: number;
+  /** Subset that came from the clean Guesty money.subTotal breakdown
+   *  (room revenue, no cleaning/taxes) vs the total_amount_minor fallback. */
+  clean_revenue_nights?: number;
   /** Total room-nights that could have been sold (active_properties × window_days). */
   available_nights?: number;
+  /** PAID occupancy — paying stays ÷ available. */
   occupancy_pct: number;
   occupancy_pct_prev: number;
+  /** TOTAL occupancy including owner stays — useful for ops planning. */
+  total_occupancy_pct?: number;
+  total_occupancy_pct_prev?: number;
   adr_minor: number;
   adr_minor_prev: number;
   revpar_minor: number;
@@ -66,7 +76,18 @@ export interface PortfolioResponse {
   channel_mix: ChannelMixRow[];
   top_properties: TopPropertyRow[];
   revenue_trend: RevenueTrendPoint[];
-  data_quality: { revenue_source: string; gap_note: string };
+  data_quality: {
+    revenue_source: string;
+    nights_method?: string;
+    revenue_method?: string;
+    occupancy_method?: string;
+    adr_denominator?: string;
+    breakdown_coverage?: string;
+    unpriced_note?: string | null;
+    owner_block_note?: string | null;
+    /** Legacy single-field — fallback if older endpoint version returns it. */
+    gap_note?: string;
+  };
 }
 
 export async function loadPortfolio(windowDays = 30): Promise<PortfolioResponse> {

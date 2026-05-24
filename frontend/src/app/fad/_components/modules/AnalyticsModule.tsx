@@ -158,9 +158,11 @@ function OverviewTab() {
           dir="flat"
         />
         <KpiCard
-          label="Occupancy"
+          label="Paid occupancy"
           value={`${kpis.occupancy_pct}%`}
-          sub={`${occDelta.dir === 'flat' ? '—' : (occDelta.pct > 0 ? '+' : '') + occDelta.pct + 'pp'} vs prior · ${kpis.active_properties} live props`}
+          sub={kpis.total_occupancy_pct != null && kpis.total_occupancy_pct !== kpis.occupancy_pct
+            ? `${kpis.total_occupancy_pct}% with owner stays · ${kpis.active_properties} live props`
+            : `${occDelta.dir === 'flat' ? '—' : (occDelta.pct > 0 ? '+' : '') + occDelta.pct + 'pp'} vs prior · ${kpis.active_properties} live props`}
           dir={occDelta.dir}
         />
         <KpiCard
@@ -297,10 +299,28 @@ function OverviewTab() {
       )}
 
       <div style={{ marginTop: 16, padding: '8px 12px', fontSize: 11, color: 'var(--color-text-tertiary)', background: 'var(--color-background-secondary)', borderRadius: 4 }}>
-        Phase 0 live · deterministic SQL aggregates from guesty_reservations + guesty_calendar.
-        Nights clipped to window. Revenue pro-rated by stay-overlap fraction. ADR computed over PRICED booked nights only (scraped rows that lack pricing don't drag the average down).
+        <div style={{ marginBottom: 4 }}>
+          Phase 0 live · industry-standard hospitality math (VRMA + STR).
+          Revenue = room revenue (rent only, excl. cleaning + taxes when Guesty breakdown is available).
+          Occupancy = paid stays ÷ available room-nights (industry standard for revenue management).
+        </div>
+        {portfolio.data_quality?.breakdown_coverage && (
+          <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
+            <strong style={{ fontWeight: 500 }}>Precision:</strong> {portfolio.data_quality.breakdown_coverage}
+          </div>
+        )}
+        {portfolio.data_quality?.unpriced_note && (
+          <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
+            <strong style={{ fontWeight: 500 }}>Unpriced rows:</strong> {portfolio.data_quality.unpriced_note}
+          </div>
+        )}
+        {portfolio.data_quality?.owner_block_note && (
+          <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
+            <strong style={{ fontWeight: 500 }}>Owner stays:</strong> {portfolio.data_quality.owner_block_note}
+          </div>
+        )}
         {portfolio.data_quality?.gap_note && (
-          <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+          <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
             <strong style={{ fontWeight: 500 }}>Data quality:</strong> {portfolio.data_quality.gap_note}
           </div>
         )}
