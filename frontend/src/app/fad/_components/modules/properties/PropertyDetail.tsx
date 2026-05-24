@@ -24,6 +24,8 @@ import { FIN_OWNERS } from '../../../_data/finance';
 import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
 import { usePropertyCards, updatePropertyTranslations, type PropertyTranslations } from '../../../_data/propertiesClient';
+import { useCalendarGrid, blockDates, unblockDates } from '../../../_data/calendarGridClient';
+import { BLOCK_REASON_LABEL, type BlockReason, type CellPrice } from './../calendar/MultiCalendarGrid';
 import { useOwnersByGuestyId } from '../../../_data/ownersClient';
 import { usePropertySummary, formatMinor } from '../../../_data/financeClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
@@ -47,6 +49,7 @@ const TABS = [
   { id: 'owner', label: 'Owner' },
   { id: 'operational', label: 'Operational' },
   { id: 'financial', label: 'Financial' },
+  { id: 'pricing', label: 'Pricing' },
   { id: 'listings', label: 'Listings' },
   { id: 'reservations', label: 'Reservations' },
   { id: 'tasks', label: 'Tasks' },
@@ -105,6 +108,7 @@ export function PropertyDetail({ propertyCode, onClose }: Props) {
         {tab === 'owner' && <OwnerTab property={property} role={role} />}
         {tab === 'operational' && <OperationalTab property={property} role={role} />}
         {tab === 'financial' && <FinancialTab property={property} role={role} />}
+        {tab === 'pricing' && <PricingTab property={property} />}
         {tab === 'listings' && <ListingsTab property={property} />}
         {tab === 'reservations' && <ReservationsTab property={property} />}
         {tab === 'tasks' && <PropertyTasksTab property={property} />}
@@ -716,6 +720,179 @@ function FinancialTab({ property, role }: { property: Property; role: string }) 
           Open in Finance →
         </button>
       </Section>
+    </div>
+  );
+}
+
+// ───────────────── Tab: Pricing (Calendar v0.5) ─────────────────
+//
+// Per-property pricing view. Reads /api/calendar/grid for the next 60
+// days and lets staff block / unblock dates inline. Editing the price
+// itself is gated to Phase 2 (write-through to Guesty's pricing API);
+// blocks are FAD-local via fad_calendar_blocks (mig 090).
+
+function PricingTab({ property }: { property: Property }) {
+  const listingId = property.id;
+  const today = new Date();
+  const from = today.toISOString().slice(0, 10);
+  const toDate = new Date(today.getTime() + 60 * 86400000);
+  const to = toDate.toISOString().slice(0, 10);
+  const { pricesByListing, loading, error, refetch } = useCalendarGrid(from, to);
+  const cells = pricesByListing.get(listingId) || {};
+
+  // Build a stable list of date rows for the window, even if the
+  // backend has no entry for some days. Missing days render as "—".
+  const days = useMemo(() => {
+    const out: Array<{ iso: string; cell: CellPrice | null }> = [];
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(today.getTime() + i * 86400000);
+      const iso = d.toISOString().slice(0, 10);
+      out.push({ iso, cell: cells[iso] || null });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, pricesByListing]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <Section title={`Pricing · next 60 days · ${property.code}`}>
+        {loading && <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Loading…</p>}
+        {error && <p style={{ fontSize: 12, color: 'var(--color-text-warning)', margin: 0 }}>{error}</p>}
+        {!loading && !error && (
+          <>
+            <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '0 0 12px' }}>
+              Prices read from Guesty calendar cache. Blocked dates are FAD-local (Phase 1)
+              — Phase 2 will write blocks through to Guesty. Editing individual nightly
+              prices comes in Phase 2 along with the channel-manager work.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {days.map(({ iso, cell }) => (
+                <PricingRow
+                  key={iso}
+                  iso={iso}
+                  cell={cell}
+                  listingGuestyId={listingId}
+                  onChanged={refetch}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+function PricingRow({
+  iso,
+  cell,
+  listingGuestyId,
+  onChanged,
+}: {
+  iso: string;
+  cell: CellPrice | null;
+  listingGuestyId: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [reason, setReason] = useState<BlockReason>('owner_stay');
+  const [notes, setNotes] = useState('');
+  const isBlocked = !!cell?.blocked;
+  const date = new Date(`${iso}T12:00:00`);
+  const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+  const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const priceText = cell?.price_minor != null
+    ? `${cell.currency === 'EUR' ? '€' : cell.currency === 'MUR' ? 'Rs' : cell.currency === 'USD' ? '$' : ''}${Math.round(cell.price_minor / 100)}`
+    : '—';
+
+  const handleBlock = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await blockDates({ listingGuestyId, dates: [iso], reason, notes: notes.trim() || undefined });
+      setExpanded(false);
+      onChanged();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Block failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnblock = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await unblockDates(listingGuestyId, [iso]);
+      onChanged();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Unblock failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '8px 10px',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        background: isBlocked ? 'var(--color-bg-warning, rgba(245, 158, 11, 0.06))' : undefined,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+        <span className="mono" style={{ width: 28, color: 'var(--color-text-tertiary)' }}>{weekday}</span>
+        <span className="mono" style={{ width: 70 }}>{monthDay}</span>
+        <span className="mono" style={{ flex: 1, fontWeight: 500 }}>{priceText}</span>
+        {isBlocked ? (
+          <>
+            <span className="chip sm warn">{cell?.block_reason ? BLOCK_REASON_LABEL[cell.block_reason as BlockReason] || cell.block_reason : 'Blocked'}</span>
+            {cell?.block_notes && (
+              <span style={{ fontSize: 11, fontStyle: 'italic', color: 'var(--color-text-tertiary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {cell.block_notes}
+              </span>
+            )}
+            <button className="btn ghost sm" onClick={handleUnblock} disabled={busy} style={{ color: 'var(--color-text-danger)' }}>
+              {busy ? '…' : 'Unblock'}
+            </button>
+          </>
+        ) : (
+          <>
+            {cell?.available === false && <span className="chip sm">Unavailable</span>}
+            <button className="btn ghost sm" onClick={() => setExpanded((v) => !v)} disabled={busy}>
+              {expanded ? 'Cancel' : 'Block'}
+            </button>
+          </>
+        )}
+      </div>
+      {expanded && !isBlocked && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8, paddingLeft: 38 }}>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value as BlockReason)}
+            disabled={busy}
+            style={{ padding: 4, fontSize: 11, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)' }}
+          >
+            {(['owner_stay', 'maintenance', 'private_use', 'channel_block', 'other'] as BlockReason[]).map((r) => (
+              <option key={r} value={r}>{BLOCK_REASON_LABEL[r]}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Notes (optional)"
+            disabled={busy}
+            style={{ flex: 1, padding: 4, fontSize: 11, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)' }}
+          />
+          <button className="btn primary sm" onClick={handleBlock} disabled={busy}>
+            {busy ? 'Saving…' : 'Confirm'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
