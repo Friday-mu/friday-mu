@@ -2,9 +2,9 @@
 
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
-> Last reviewed: **2026-05-24** (Judith — after Calendar Month-view refactor + autonomous-mode sweep).
-> Live on prod: frontend `bbb48408` · backend `87b608c8`.
-> Tree tip on `fad-rebuild`: `bbb48408` (live).
+> Last reviewed: **2026-05-24** (Judith — after Calendar Month-view refactor + T1.10 array-safety sweep).
+> Live on prod: frontend `f9d375d6` · backend `87b608c8`.
+> Tree tip on `fad-rebuild`: `f9d375d6` (live).
 
 ## How to use this doc
 
@@ -83,17 +83,19 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Already reclassified to offline-fallback (PROD-LOGIC-4) but never deleted.
 - Smart drafter (slice 2 of the AI task creation) is the replacement.
 
-### T1.9 — Hardcoded TODAY constants (drift away from demo-anchored math)
-- Effort: S · Blocks: real-time correctness · Status: open (surfaced 2026-05-24)
-- PROD-LOGIC-7 + PROD-LOGIC-9: 6 module files still pin `TODAY = '2026-04-27'` to keep fixture math self-consistent (`CalendarModule.tsx:38`, `reservations/InquiriesPage.tsx:34`, `reservations/OverviewPage.tsx:15`, `reservations/AllReservationsPage.tsx:23`, `hr/StaffPage.tsx:13`, `roster/RosterPage.tsx:26`, plus `_data/notifications.ts:19`, `_data/reviews.ts:621`, `_data/pendingCounts.ts:22`).
-- Swap to `new Date()` / server `now()`. Audit each "in N days" / "M days ago" calculation cascading from these.
-- Caveat: in demo mode the fixtures will drift; gate the anchor behind `liveOnlyMode()` and use real now in production.
+### T1.9 — Hardcoded TODAY constants (gate behind liveOnlyMode)
+- Effort: S-M · Blocks: real-time correctness in demo + future-proofing prod · Status: open (re-scoped 2026-05-24)
+- Actual current state (verified 2026-05-24): only 3 files still pin `'2026-04-27'` (DEMO_CRUFT entry was stale):
+  - `_data/reviews.ts:216` `const TODAY_ISO = '2026-04-27';`
+  - `_data/pendingCounts.ts:27-30` `const TODAY = '2026-04-27';` + 3 derivatives (TODAY_MS / TODAY_DAY / TODAY_MONTH)
+  - `_components/modules/hr/StaffPage.tsx:22` `const TODAY = '2026-04-27';`
+- CalendarModule, OverviewPage, AllReservationsPage, RosterPage already use `new Date()`. InquiriesPage + notifications.ts have no current TODAY pin.
+- Fix is NOT a simple swap to `new Date()` — the fixtures themselves are anchored to 2026-04-27, so live TODAY against fixture dates would surface "due 27 days ago" everywhere. Real fix: gate the constant behind `liveOnlyMode()` (use fixture anchor in demo, real now in prod), AND audit each cascaded "in N days" / "M days ago" use site for sanity.
+- Production risk today is LOW because `liveOnlyMode()` already suppresses fixture-derived urgency. Keep on backlog but not urgent.
 
-### T1.10 — Brittle `array[0]` crash safety
-- Effort: S · Blocks: empty-data UX (real-backend risk) · Status: open (surfaced 2026-05-24)
-- PROD-LOGIC-12: useState initialisers + `find() || array[0]` cascades that crash on empty arrays.
-- Sites: `FinanceModule.tsx:912-913`, `:1252-1253`, `:1529`, `:2624`, `:2948`; `InboxModule.tsx:139`; `inbox/TeamInbox.tsx:56-59`; `FridayDrawer.tsx:151`.
-- Add empty-state guards (`array.length > 0 ? array[0].id : null`) + loading/empty JSX states.
+### ~~T1.10 — Brittle `array[0]` crash safety~~ ✓ shipped 2026-05-24 (`f9d375d6`)
+- Audit found 7 real sites in FinanceModule (Owner Statements, Tourist-tax summary, Float Ledger, Bank Recon, Bank Upload Drawer). All fixed with lazy `useState` initializers (`() => FIN_X[0]?.id ?? ''`) and empty-state JSX in the two sub-pages that depend on a selected record.
+- InboxModule, TeamInbox, FridayDrawer were ALREADY safe (`if (visibleChannels[0])` guards + `?.name.split() ?? 'there'`). Documented in commit message so future audits know to skip those.
 
 ---
 
@@ -298,6 +300,7 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-24 (today, this session)
+- **T1.10 — Brittle `array[0]` crash safety** (`f9d375d6`) — 7 useState initializers + inline accesses in FinanceModule (Owner Statements, Tourist Tax summary, Float Ledger, Bank Recon, Bank Upload Drawer) now use lazy `() => FIN_X[0]?.id ?? ''` initializers; OwnerStatements + FloatLedger return small empty-state instead of crashing on null `selected`. InboxModule + TeamInbox + FridayDrawer already had appropriate guards — no changes there.
 - **Calendar Month view refactor — true continuous bands + channel colors + status overlays** (`bbb48408`) — Refactored MonthView from per-cell stay segments (which read as "blank duplicate bars" because the label only rendered on the start cell) to a per-week CSS grid where each stay spans grid-columns directly. The label sits inside the visible band the entire span. Channel colors now distinguish booking sources across Week + Month + +more popover (Airbnb red, Booking blue, VRBO bright-blue, Direct green, Owner amber, Email info-blue). Status overlays compose on top — checked_in inset border, checked_out 55% opacity, cancelled strike-through italic, hold diagonal-stripe. New channel-legend strip + today blue date badge. Mobile QA passed (stay popover + +more day-expansion both functional at 375×812). Live at frontend `bbb48408`. Backlog T4.38 created for v0.2 follow-ups (Property×Date PMS view, today vertical line, occupancy heatmap, drag-to-reschedule). T2.4 (Mary inbox fluctuation) removed per Ishant.
 - **T3.2 — Multi-tenant safety sweep, partial** (`f1920ee3`) — audited 9 high-traffic surfaces (all tenant-safe); surfaced `website_inbox/*` as a known blocker for non-FR rollout (~30 SQL sites without tenant_id; the underlying tables don't have the column). Full report at `docs/SECURITY_AUDIT_2026-05-24.md`. Promoted to T3.7 in Tier 3.
 - **T4.34 — Optimistic UI for W1 write paths** (`07e23e0e`) — CreatePropertyDrawer + CreateReservationDrawer + ReservationDetail cancel now feel instant. Drawer closes immediately, optimistic row in list, background reconcile + rollback on error.
