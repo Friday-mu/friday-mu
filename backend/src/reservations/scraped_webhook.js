@@ -90,6 +90,27 @@ async function handleScrapedReservation(req, res) {
   }
 
   try {
+    // Scrape-vs-API guardrail (2026-05-25): if Guesty's API has already
+    // returned this reservation (matched on confirmation_code), the API
+    // row is authoritative — skip the scrape insert entirely so it can't
+    // shadow the real record. Pre-existing scrape rows from before this
+    // change are swept by migration 084 + the dedup in sync.js.
+    if (r.confirmationCode) {
+      const existing = await query(
+        `SELECT 1 FROM guesty_reservations
+          WHERE tenant_id = $1
+            AND confirmation_code = $2
+            AND source IS NOT NULL
+            AND source <> 'scrape-l3'
+          LIMIT 1`,
+        [FR_TENANT_ID, r.confirmationCode],
+      );
+      if (existing.rows.length > 0) {
+        console.log('[scraped-reservations] skip — API row exists for %s', r.confirmationCode);
+        return res.json({ ok: true, skipped: 'api_row_authoritative', confirmationCode: r.confirmationCode });
+      }
+    }
+
     await query(
       `INSERT INTO guesty_reservations (
          tenant_id, guesty_id, listing_guesty_id, confirmation_code,

@@ -124,6 +124,28 @@ async function syncReservationsForTenant(tenantId, opts = {}) {
     );
     if (result.rows[0]?.inserted) inserted++;
     else updated++;
+
+    // Scrape-vs-API dedup (2026-05-25): the moment Guesty's API returns
+    // a reservation, the scraped row for the same booking is stale.
+    // Delete it. Match on confirmation_code which is stable across the
+    // two paths (scraper sets it from the listing page; API sets it from
+    // the source-of-truth record). guesty_id differs because the
+    // scraper invents a synthetic ID (`scrape:HMZ2XSQKSA`) vs Guesty's
+    // real Mongo `_id`.
+    if (r.confirmationCode) {
+      await query(
+        `DELETE FROM guesty_reservations
+          WHERE tenant_id = $1
+            AND confirmation_code = $2
+            AND source = 'scrape-l3'
+            AND guesty_id <> $3`,
+        [tenantId, r.confirmationCode, String(r._id)],
+      ).catch((e) => {
+        // Never break sync over dedup. Stale rows can be cleaned later.
+        console.warn('[reservations/sync] scrape dedup failed for %s: %s', r.confirmationCode, e.message);
+      });
+    }
+
     // Best-effort fad_guests upsert. Never breaks reservation sync.
     await upsertGuestForReservation(tenantId, {
       guest_email: r.guest?.email || null,
@@ -215,6 +237,19 @@ async function upsertReservationById(tenantId, reservationId) {
       JSON.stringify(r),
     ],
   );
+  // Scrape-vs-API dedup (webhook path, mirrors poller).
+  if (r.confirmationCode) {
+    await query(
+      `DELETE FROM guesty_reservations
+        WHERE tenant_id = $1
+          AND confirmation_code = $2
+          AND source = 'scrape-l3'
+          AND guesty_id <> $3`,
+      [tenantId, r.confirmationCode, String(r._id)],
+    ).catch((e) => {
+      console.warn('[reservations/webhook] scrape dedup failed for %s: %s', r.confirmationCode, e.message);
+    });
+  }
   // Best-effort fad_guests upsert (webhook path). Never breaks the
   // single-reservation refresh.
   await upsertGuestForReservation(tenantId, {
