@@ -286,21 +286,25 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - `backend/src/team_inbox/index.js:978` — frontend should map roster IDs → real DB UUIDs before send (mentions)
 - Probably should wait until Owners module backend lands (Sep-26) so classifier has its dependency tables. Capture here so it's not forgotten.
 
-### T3.14 — TeamInbox: thread replies + chat-style alignment (NEW 2026-05-24 evening)
-- Effort: M · open · scope-capture from Ishant
-- Two missing pieces vs the guest inbox:
-  1. **Reply in threads** — when an operator replies to a team channel
-     message, the reply should be threaded (parent_message_id) and
-     rendered nested under the parent, not as a new top-level message.
-     Backend already has `parent_message_id` on `team_channel_messages`
-     + `/api/team/messages/:kind/:id/replies` route. UI surface is
-     missing the "Reply in thread" action + the nested-reply layout.
-  2. **Chat-style alignment** — the current operator's own messages
-     should appear on the RIGHT, teammates' messages on the LEFT,
-     matching the guest-inbox bubble layout. Today both sides render
-     left-aligned. CSS + per-message `from === currentUserId` check
-     in TeamInbox's message renderer.
-- Scope note from Ishant: "we had scope that you should be able to
+### T3.14 — TeamInbox: thread replies + chat-style alignment (SHIPPED 2026-05-24 evening · `4cdc4f46`)
+- Effort: M · ✅ closed
+- Two pieces:
+  1. **Reply in threads** — already shipped earlier (useMessageReplies hook,
+     ThreadSurface component, hover-reply button, thread-count badges,
+     parent_message_id flat-thread backend). No work needed this round.
+  2. **Chat-style alignment** — shipped this round. Operator's own
+     messages now right-align (.msg-bubble.us, accent bg) with avatar
+     on the right; teammate messages stay left-aligned (.msg-bubble.them,
+     neutral bg). Reactions row, hover-action popup, and thread-count
+     badge all flip per-side. Same visual rhythm as guest inbox.
+- Latent bug surfaced + fixed in same commit (`4cdc4f46`):
+  `useJwtUserId()` was fixture-mapping known emails to TASK_USERS ids
+  (Ishant → 'u-ishant') instead of returning the raw DB UUID, breaking
+  the `authorId === currentUserId` comparison. Added `useJwtRawUserId()`
+  hook for backend-id matching; TeamInbox + ScheduleCallDrawer now use
+  it. Side-effect: ScheduleCallDrawer's "exclude self from invitee list"
+  now actually excludes self (was always including).
+- Original scope from Ishant: "we had scope that you should be able to
   reply in threads in the team inbox. and the users messages should
   appear on the right while the rest of the team messages appear on
   the left. like we do for guests."
