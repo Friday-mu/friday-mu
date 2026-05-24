@@ -1082,12 +1082,52 @@ function MultiCalendarMounted({
     return map;
   }, [tasks]);
 
+  // Cleaning-status dot next to property name (Calendar v0.6, Ishant
+  // 2026-05-25). State machine derived from reservations + ops tasks:
+  //   - In-stay (guest currently checked in) → dirty
+  //   - Checked out today/yesterday + no clean task complete → dirty
+  //   - Clean task complete + no inspection complete → awaiting_inspection
+  //   - Inspection complete within 3d → clean
+  //   - Inspection complete > 3d ago or no recent inspection → needs_refresh
+  //   - No data / no recent activity → idle
+  // Uses ALL tasks (not just dueDate-bound), so a separate full list.
+  const allTasksByPropertyCode = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const t of tasks) {
+      if (!t.propertyCode) continue;
+      const arr = map.get(t.propertyCode) || [];
+      arr.push(t);
+      map.set(t.propertyCode, arr);
+    }
+    return map;
+  }, [tasks]);
+  const reservationsByPropertyCode = useMemo(() => {
+    const map = new Map<string, typeof reservations>();
+    for (const r of reservations) {
+      if (!r.propertyCode || r.status === 'cancelled') continue;
+      const arr = map.get(r.propertyCode) || [];
+      arr.push(r);
+      map.set(r.propertyCode, arr);
+    }
+    return map;
+  }, [reservations]);
+  const cleaningStatusByProperty = useMemo(() => {
+    const map = new Map<string, 'clean' | 'awaiting_inspection' | 'dirty' | 'needs_refresh' | 'idle'>();
+    for (const p of properties) {
+      const rsv = reservationsByPropertyCode.get(p.code) || [];
+      const ts = allTasksByPropertyCode.get(p.code) || [];
+      map.set(p.code, computeCleaningStatus(rsv, ts, TODAY_ISO));
+    }
+    return map;
+  }, [properties, reservationsByPropertyCode, allTasksByPropertyCode]);
+
   return (
     <MultiCalendarGrid
       properties={properties}
       reservations={reservations}
       pricesByListing={pricesByListing}
       tasksByPropertyCode={tasksByPropertyCode}
+      cleaningStatusByProperty={cleaningStatusByProperty}
       windowStart={from ? new Date(`${from}T00:00:00`) : new Date()}
       windowDays={Math.max(days.length, 30)}
       todayIso={TODAY_ISO}
@@ -1096,6 +1136,67 @@ function MultiCalendarMounted({
       onBlocksChanged={refetchGrid}
     />
   );
+}
+
+// Cleaning-status helper. Pure function — easy to unit-test once we
+// wire jest. Returns one of the 5 states for a property based on the
+// reservation timeline + cleaning/inspection task history.
+function computeCleaningStatus(
+  reservations: Array<{ status?: string; checkIn?: string; checkOut?: string }>,
+  tasks: Array<{ department?: string; subdepartment?: string; status?: string; completedAt?: string; updatedAt?: string; dueDate?: string }>,
+  todayIso: string,
+): 'clean' | 'awaiting_inspection' | 'dirty' | 'needs_refresh' | 'idle' {
+  const isoDays = (a: string, b: string) => {
+    const da = new Date(`${a.slice(0, 10)}T00:00:00`).getTime();
+    const db = new Date(`${b.slice(0, 10)}T00:00:00`).getTime();
+    return Math.round((db - da) / 86400000);
+  };
+  // 1) In-stay → dirty (guest currently in-house)
+  const inStay = reservations.some((r) => r.checkIn && r.checkOut
+    && r.checkIn.slice(0, 10) <= todayIso
+    && todayIso < r.checkOut.slice(0, 10));
+  if (inStay) return 'dirty';
+
+  // 2) Most-recent checkout
+  const recentCheckouts = reservations
+    .map((r) => r.checkOut?.slice(0, 10))
+    .filter((d): d is string => !!d && d <= todayIso)
+    .sort()
+    .reverse();
+  const lastCheckout = recentCheckouts[0] ?? null;
+
+  // 3) Most-recent completed cleaning + inspection tasks
+  const cleaned = tasks
+    .filter((t) => (t.department === 'cleaning' || /clean/i.test(String(t.subdepartment || '')))
+      && (t.status === 'completed' || t.status === 'closed'))
+    .map((t) => (t.completedAt || t.updatedAt || '').slice(0, 10))
+    .filter(Boolean)
+    .sort()
+    .reverse();
+  const inspected = tasks
+    .filter((t) => (t.department === 'inspection' || /inspection/i.test(String(t.subdepartment || '')))
+      && (t.status === 'completed' || t.status === 'closed'))
+    .map((t) => (t.completedAt || t.updatedAt || '').slice(0, 10))
+    .filter(Boolean)
+    .sort()
+    .reverse();
+  const lastCleaned = cleaned[0] ?? null;
+  const lastInspected = inspected[0] ?? null;
+
+  // 4) Branch on the timeline
+  if (lastCheckout) {
+    const cleanAfterCheckout = lastCleaned && lastCleaned >= lastCheckout;
+    const inspectAfterCheckout = lastInspected && lastInspected >= lastCheckout;
+    if (!cleanAfterCheckout) return 'dirty';
+    if (cleanAfterCheckout && !inspectAfterCheckout) return 'awaiting_inspection';
+    // Inspected after checkout
+    if (lastInspected && isoDays(lastInspected, todayIso) <= 3) return 'clean';
+    return 'needs_refresh';
+  }
+  // No recent checkout. If we have a recent inspection → still clean.
+  if (lastInspected && isoDays(lastInspected, todayIso) <= 3) return 'clean';
+  if (lastInspected && isoDays(lastInspected, todayIso) > 3) return 'needs_refresh';
+  return 'idle';
 }
 
 function MobileDayList({

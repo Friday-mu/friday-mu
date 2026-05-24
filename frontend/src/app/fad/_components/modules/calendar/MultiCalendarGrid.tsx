@@ -50,6 +50,10 @@ interface Props {
   pricesByListing?: Map<string, Record<string, CellPrice>>;
   /** Optional: tasks grouped by propertyCode for in-cell chip overlay. v0.2. */
   tasksByPropertyCode?: Map<string, Task[]>;
+  /** Calendar v0.6 (Ishant 2026-05-25): cleaning state per propertyCode.
+   *  Renders a colored dot next to the property name + tooltip.
+   *  Derived from in-stay + last cleaning/inspection ops tasks. */
+  cleaningStatusByProperty?: Map<string, 'clean' | 'awaiting_inspection' | 'dirty' | 'needs_refresh' | 'idle'>;
   windowStart: Date;       // inclusive
   windowDays: number;      // number of date columns
   todayIso: string;
@@ -222,6 +226,7 @@ export function MultiCalendarGrid({
   reservations,
   pricesByListing,
   tasksByPropertyCode,
+  cleaningStatusByProperty,
   windowStart,
   windowDays,
   todayIso,
@@ -332,17 +337,42 @@ export function MultiCalendarGrid({
                   <div className="mcal-property-code mono">{p.code}</div>
                   <div className="mcal-property-name">{p.name}</div>
                 </div>
-                <div
-                  className={
-                    'mcal-lifecycle-dot ' +
-                    (p.lifecycleStatus === 'live'
-                      ? 'mcal-dot-live'
-                      : p.lifecycleStatus === 'onboarding'
-                      ? 'mcal-dot-onboarding'
-                      : 'mcal-dot-paused')
+                {(() => {
+                  // Cleaning-state dot (v0.6) takes priority over the
+                  // lifecycle dot for live properties — operationally
+                  // it's more actionable. Paused/onboarding properties
+                  // still show their lifecycle dot since cleaning state
+                  // isn't meaningful for them.
+                  const clean = cleaningStatusByProperty?.get(p.code);
+                  if (p.lifecycleStatus !== 'live' || !clean) {
+                    return (
+                      <div
+                        className={
+                          'mcal-lifecycle-dot ' +
+                          (p.lifecycleStatus === 'live'
+                            ? 'mcal-dot-live'
+                            : p.lifecycleStatus === 'onboarding'
+                            ? 'mcal-dot-onboarding'
+                            : 'mcal-dot-paused')
+                        }
+                        title={p.lifecycleStatus}
+                      />
+                    );
                   }
-                  title={p.lifecycleStatus}
-                />
+                  const cleaningTitle = {
+                    clean: 'Clean · ready for guest',
+                    awaiting_inspection: 'Cleaned · awaiting inspection',
+                    dirty: 'Needs cleaning',
+                    needs_refresh: 'Idle > 3 days · needs refresh',
+                    idle: 'No recent activity',
+                  }[clean];
+                  return (
+                    <div
+                      className={'mcal-lifecycle-dot mcal-clean-dot mcal-clean-' + clean}
+                      title={cleaningTitle}
+                    />
+                  );
+                })()}
               </button>
 
               {/* Day cells (background grid) — show €PRICE when no

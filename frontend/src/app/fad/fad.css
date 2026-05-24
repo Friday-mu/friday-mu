@@ -12021,9 +12021,17 @@ body:has(.ops-create-drawer) .bug-fab {
   justify-content: center;
   padding: 4px 2px;
   font-size: 11px;
-  border-right: 0.5px solid var(--color-border-tertiary);
   box-sizing: border-box;
   background: var(--color-background-secondary);
+  /* Calendar v0.6 — match the body .mcal-day-cell border treatment so
+   * header columns line up with body columns to the half-pixel. Without
+   * this, header had only right border (0.5px) while body had all four
+   * sides at 0.5px transparent except right + bottom, accumulating a
+   * sub-pixel x-offset down the row. */
+  border-style: solid;
+  border-color: transparent;
+  border-right-color: var(--color-border-tertiary);
+  border-width: 0.5px;
 }
 
 .mcal-date-dow {
@@ -12117,6 +12125,16 @@ body:has(.ops-create-drawer) .bug-fab {
 .mcal-dot-live { background: rgb(72, 173, 122); }
 .mcal-dot-onboarding { background: rgb(220, 160, 60); }
 .mcal-dot-paused { background: rgb(150, 150, 150); }
+
+/* Calendar v0.6 — cleaning-status dot (replaces lifecycle dot for live
+ * properties). Maps to the operations state machine derived from
+ * reservations + cleaning/inspection tasks. */
+.mcal-clean-dot { width: 10px; height: 10px; }
+.mcal-clean-clean              { background: rgb(72, 173, 122); }    /* green */
+.mcal-clean-awaiting_inspection{ background: rgb(220, 165, 60); }    /* yellow */
+.mcal-clean-dirty              { background: rgb(220, 80, 70); }     /* red */
+.mcal-clean-needs_refresh      { background: rgb(220, 165, 60); box-shadow: 0 0 0 1.5px rgba(220, 165, 60, 0.25); } /* yellow with halo */
+.mcal-clean-idle               { background: rgb(150, 150, 150); }   /* gray */
 
 /* Day cells (background per row, row 1) */
 .mcal-day-cell {

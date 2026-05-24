@@ -181,6 +181,16 @@ function mapStatus(s?: string | null): ReservationStatus {
   if (v === 'checked_in') return 'checked_in';
   if (v === 'checked_out') return 'checked_out';
   if (v === 'canceled' || v === 'cancelled') return 'cancelled';
+  // 2026-05-25 (Li Da bug): Guesty inquiry-flow placeholders carry
+  // status='expired' or 'closed' or 'denied' / 'voided' when the
+  // operator opts out / lets the auto-quote expire. These were
+  // falling through to 'confirmed' and stacking on the multi-cal
+  // grid (10 placeholder rows for one inquirer, overlapping across
+  // 8 properties). Map them all to 'cancelled' so the existing
+  // calendar filter (r.status === 'cancelled' → hide) suppresses
+  // them. They stay in the DB for audit / Reservations list "all"
+  // tabs where useful.
+  if (v === 'expired' || v === 'closed' || v === 'denied' || v === 'voided') return 'cancelled';
   if (v === 'hold' || v === 'tentative' || v === 'pending') return 'hold';
   if (v === 'inquiry' || v === 'pending_quote' || v === 'request') return 'inquiry';
   // Truly-unknown non-empty value: surface as 'confirmed' so it doesn't get
