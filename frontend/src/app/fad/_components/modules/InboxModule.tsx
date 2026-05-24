@@ -32,6 +32,7 @@ import {
 } from '../../_data/draftsClient';
 import { DraftPanel } from './inbox/DraftPanel';
 import { SendPreflightModal } from './inbox/SendPreflightModal';
+import { CreateTaskDrawer, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { apiFetch } from '../../../../components/types';
 
 // Human-readable relative time. Used in list rows + message bubbles.
@@ -205,6 +206,10 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   // left with zero reservation context.
   const [isNarrow, setIsNarrow] = useState(false);
   const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
+  // Create-task drawer launched from the inbox thread header. Prefill
+  // captures the thread context so the new task links back to this
+  // conversation + the linked reservation/property.
+  const [createTaskPrefill, setCreateTaskPrefill] = useState<CreateTaskPrefill | null>(null);
   const [aiToolbarExpanded, setAiToolbarExpanded] = useState(false);
   // Collapsed-by-default. Operator clicks the label to expand when
   // they want the summary; otherwise it's wasted vertical space.
@@ -1156,6 +1161,33 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
               >
                 Mark unread
               </button>
+              {/* Inter-module link (2026-05-25): "+ Task" creates an Ops
+                  task with the inbox thread + reservation + property
+                  prefilled. Closes the "how do I task this guest
+                  request?" gap. */}
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => {
+                  // Prefer the subject as the task title; fall back to a
+                  // formatted "Follow up · <guest>". Drop the preview into
+                  // description so the operator has the request inline.
+                  const cleanSubject = (thread.subject || '').trim();
+                  const title = cleanSubject || `Follow up · ${thread.guest || 'guest'}`;
+                  setCreateTaskPrefill({
+                    title: title.slice(0, 100),
+                    description: thread.preview || cleanSubject || '',
+                    propertyCode: thread.property || undefined,
+                    reservationId: thread.reservationId || undefined,
+                    inboxThreadId: thread.id,
+                    source: 'manual',
+                  });
+                }}
+                title="Create an Ops task linked to this thread + reservation"
+                style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
+              >
+                + Task
+              </button>
             </div>
             <div className={'inbox-thread-details' + (isMobile && !mobileDetailsOpen ? ' mobile-hidden' : '')}>
             <div className="inbox-thread-meta" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
@@ -1530,6 +1562,17 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
           </>
         )}
       </div>
+      {createTaskPrefill && (
+        <CreateTaskDrawer
+          open={true}
+          onClose={() => setCreateTaskPrefill(null)}
+          onCreated={() => {
+            setCreateTaskPrefill(null);
+          }}
+          mode="manager_schedule"
+          prefill={createTaskPrefill}
+        />
+      )}
     </div>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
-// @demo:data — Tag: PROD-DATA-28 — see frontend/DEMO_CRUFT.md
-// Analytics (Overview, Revenue, Occupancy, Channels, Reviews, Team, Margin)
-// Entire module is inline demo JSX content (cards, tables, charts with
-// hardcoded mock data). Replace with real backend-driven content when
-// the module ships, or render a 'Coming soon' placeholder until then.
+// Analytics module — Phase 0 (deterministic tier-1 metrics from
+// /api/analytics/portfolio). Per scoping pack
+// 36a43ca884928165b886fc3043e399a0 the Overview + Occupancy tabs are
+// the first to wire live; other tabs (Revenue / Channels / Reviews /
+// Team / Margin) remain fixture-driven until Phase 2 (Cube Core +
+// per-module Insights panels).
 
 import { useState } from 'react';
 import {
@@ -20,6 +21,13 @@ import {
   REVIEW_TREND,
   TEAM_LOAD,
 } from '../../_data/analytics';
+import {
+  usePortfolio,
+  useOccupancyHeatmap,
+  formatKpiMinor,
+  deltaPct,
+  type PortfolioResponse,
+} from '../../_data/analyticsClient';
 import { IconDownload, IconSparkle } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
 
@@ -99,72 +107,270 @@ function AskAnalyticsCTA({ question }: { question: string }) {
   );
 }
 
-/* ───────────── Overview ───────────── */
+/* ───────────── Overview ─────────────
+ * Phase 0 live: KPIs, revenue trend, top properties, channel mix all
+ * drive from /api/analytics/portfolio over a rolling-30 window. The
+ * insight bullets remain "Phase 2 pending" placeholder per scoping. */
 function OverviewTab() {
-  return (
-    <>
+  const { portfolio, loading, error, refetch } = usePortfolio(30);
+
+  if (loading && !portfolio) {
+    return (
       <div className="kpi-grid">
-        {ANALYTICS_OVERVIEW_KPI.map((k, i) => (
+        {[1, 2, 3, 4].map((i) => (
           <div className="kpi" key={i}>
-            <div className="kpi-label">{k.label}</div>
-            <div className="kpi-value">{k.value}</div>
-            <div className={'kpi-sub' + (k.dir ? ' ' + k.dir : '')}>{k.sub}</div>
+            <div className="kpi-label">Loading…</div>
+            <div className="kpi-value" style={{ opacity: 0.4 }}>—</div>
           </div>
         ))}
       </div>
+    );
+  }
+  if (error || !portfolio) {
+    return (
+      <div role="alert" style={{ padding: '12px 16px', color: 'var(--color-text-warning)', fontSize: 13 }}>
+        Failed to load portfolio analytics: {error || 'unknown error'}.
+        <button className="btn ghost sm" onClick={refetch} style={{ marginLeft: 8 }}>Retry</button>
+      </div>
+    );
+  }
+
+  // Rename `window` from the payload to avoid masking the global Window
+  // object inside child handlers (button onClick uses `window.location`).
+  const { kpis, currency, channel_mix, top_properties, revenue_trend, ops, window: windowInfo } = portfolio;
+  const revDelta = deltaPct(kpis.revenue_minor, kpis.revenue_minor_prev);
+  const occDelta = deltaPct(kpis.occupancy_pct, kpis.occupancy_pct_prev);
+  const adrDelta = deltaPct(kpis.adr_minor, kpis.adr_minor_prev);
+
+  return (
+    <>
+      <div className="kpi-grid">
+        <KpiCard
+          label={`Revenue · last ${windowInfo.days}d`}
+          value={formatKpiMinor(kpis.revenue_minor, currency)}
+          sub={`${revDelta.dir === 'flat' ? '—' : (revDelta.pct > 0 ? '+' : '') + revDelta.pct + '%'} vs prior ${windowInfo.days}d`}
+          dir={revDelta.dir}
+        />
+        <KpiCard
+          label="Bookings"
+          value={String(kpis.reservation_count)}
+          sub={`${kpis.booked_nights} booked nights`}
+          dir="flat"
+        />
+        <KpiCard
+          label="Occupancy"
+          value={`${kpis.occupancy_pct}%`}
+          sub={`${occDelta.dir === 'flat' ? '—' : (occDelta.pct > 0 ? '+' : '') + occDelta.pct + 'pp'} vs prior · ${kpis.active_properties} live props`}
+          dir={occDelta.dir}
+        />
+        <KpiCard
+          label="ADR"
+          value={formatKpiMinor(kpis.adr_minor, currency)}
+          sub={`RevPAR ${formatKpiMinor(kpis.revpar_minor, currency)} · ADR ${adrDelta.dir === 'flat' ? '—' : (adrDelta.pct > 0 ? '+' : '') + adrDelta.pct + '%'} vs prior`}
+          dir={adrDelta.dir}
+        />
+      </div>
+
       <div className="two-col">
         <div className="card">
-          <AnalyticsCardHeader title="Revenue trend · 6 months" subtitle="gross / fees / net" />
+          <AnalyticsCardHeader
+            title={`Revenue trend · last ${windowInfo.days}d`}
+            subtitle={`live · ${currency} · ${kpis.reservation_count} bookings · ${windowInfo.from} → ${windowInfo.to}`}
+          />
           <div className="card-body">
-            <RevenueTrendChart />
+            <LiveRevenueTrendChart trend={revenue_trend} currency={currency} />
           </div>
         </div>
         <div className="card">
           <AnalyticsCardHeader
-            title="Portfolio health"
-            subtitle="Click a metric to drill"
+            title="Channel mix"
+            subtitle={`reservation share · last ${windowInfo.days}d`}
           />
-          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* @demo:data — Tag: PROD-DATA-43 — see frontend/DEMO_CRUFT.md */}
-            {[
-              { label: 'Occupancy trending up', detail: '+3pp vs last year', dir: 'up' as const },
-              { label: 'Direct-book share recovering', detail: '+2pp QoQ, goal 25% by Oct', dir: 'up' as const },
-              { label: 'Sable Noir rating slipping', detail: '4.2 avg · −0.2 vs prev', dir: 'down' as const },
-              { label: 'Nitzana soft-launch', detail: '45% occ · full calendar May', dir: 'flat' as const },
-              { label: 'First-draft acceptance below target', detail: '79% · target 85%', dir: 'down' as const },
-            ].map((i, idx) => (
+          <div className="card-body">
+            {channel_mix.length === 0 && (
+              <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>
+                No bookings in this window.
+              </p>
+            )}
+            {channel_mix.map((c) => (
               <div
-                key={idx}
+                key={c.channel}
                 style={{
-                  display: 'flex',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 50px 80px',
+                  gap: 8,
                   alignItems: 'center',
-                  gap: 12,
                   padding: '8px 0',
-                  borderBottom:
-                    idx < 4 ? '0.5px solid var(--color-border-tertiary)' : 'none',
+                  fontSize: 13,
+                  borderBottom: '0.5px solid var(--color-border-tertiary)',
                 }}
               >
-                <span
-                  className="dot"
-                  style={{
-                    background:
-                      i.dir === 'up'
-                        ? 'var(--color-text-success)'
-                        : i.dir === 'down'
-                        ? 'var(--color-text-danger)'
-                        : 'var(--color-text-tertiary)',
-                  }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{i.label}</div>
-                  <div className="row-meta">{i.detail}</div>
-                </div>
+                <span style={{ fontWeight: 500, textTransform: 'capitalize' }}>
+                  {c.channel || 'unknown'}
+                </span>
+                <span className="mono" style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                  {c.reservation_count}
+                </span>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {c.share_pct}%
+                </span>
               </div>
             ))}
           </div>
         </div>
       </div>
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <AnalyticsCardHeader
+          title="Top properties by bookings"
+          subtitle={`last ${windowInfo.days}d · click to drill into property detail`}
+        />
+        <div className="card-body" style={{ padding: 0 }}>
+          {top_properties.slice(0, 10).map((p) => (
+            <button
+              key={p.code || p.nickname || Math.random()}
+              type="button"
+              onClick={() => {
+                if (p.code) {
+                  window.history.pushState({}, '', `/fad?m=properties&sub=overview&p=${encodeURIComponent(p.code)}`);
+                  window.location.href = `/fad?m=properties&sub=overview&p=${encodeURIComponent(p.code)}`;
+                }
+              }}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '48px 1.6fr 1fr 1fr 1fr 0.8fr',
+                gap: 12,
+                padding: '10px 16px',
+                borderBottom: '0.5px solid var(--color-border-tertiary)',
+                alignItems: 'center',
+                fontSize: 13,
+                background: 'transparent',
+                border: 0,
+                borderBottomColor: 'var(--color-border-tertiary)',
+                borderBottomStyle: 'solid',
+                borderBottomWidth: '0.5px',
+                width: '100%',
+                textAlign: 'left',
+                cursor: p.code ? 'pointer' : 'default',
+                color: 'inherit',
+                fontFamily: 'inherit',
+              }}
+            >
+              {p.picture_url ? (
+                <div style={{ width: 40, height: 30, borderRadius: 3, backgroundImage: `url(${p.picture_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+              ) : (
+                <div style={{ width: 40, height: 30, borderRadius: 3, background: 'var(--color-background-secondary)' }} />
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div className="mono" style={{ fontWeight: 500 }}>{p.code || '—'}</div>
+                <div className="row-meta" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.title || p.nickname || '—'}
+                </div>
+              </div>
+              <span className="mono">{p.reservation_count} bookings</span>
+              <span className="mono">{p.booked_nights} nights</span>
+              <span className="mono">{p.occupancy_pct}% occ</span>
+              <span className="mono" style={{ textAlign: 'right' }}>
+                {formatKpiMinor(p.revenue_minor, currency)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {(ops.open_tasks != null || ops.overdue_tasks != null) && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <AnalyticsCardHeader title="Operations health" subtitle="open + overdue tasks across the portfolio" />
+          <div className="card-body" style={{ display: 'flex', gap: 32 }}>
+            <div>
+              <div className="kpi-label">Open tasks</div>
+              <div className="kpi-value">{ops.open_tasks ?? '—'}</div>
+            </div>
+            <div>
+              <div className="kpi-label">Overdue</div>
+              <div className="kpi-value" style={{ color: (ops.overdue_tasks || 0) > 0 ? 'var(--color-text-danger)' : undefined }}>
+                {ops.overdue_tasks ?? '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 16, padding: '8px 12px', fontSize: 11, color: 'var(--color-text-tertiary)', background: 'var(--color-background-secondary)', borderRadius: 4 }}>
+        Phase 0 live · deterministic SQL aggregates from guesty_reservations.
+        <strong style={{ fontWeight: 500 }}> Phase 1 (proactive AI insights, push digest) + Phase 2 (Cube Core + per-module Insights panels)</strong> per scoping pack.
+        Revenue gaps where Guesty cache lacks total_amount_minor.
+      </div>
     </>
+  );
+}
+
+function KpiCard({ label, value, sub, dir }: { label: string; value: string; sub: string; dir: 'up' | 'down' | 'flat' }) {
+  return (
+    <div className="kpi">
+      <div className="kpi-label">{label}</div>
+      <div className="kpi-value">{value}</div>
+      <div className={'kpi-sub ' + dir}>{sub}</div>
+    </div>
+  );
+}
+
+function LiveRevenueTrendChart({ trend, currency }: { trend: PortfolioResponse['revenue_trend']; currency: string }) {
+  if (!trend.length) {
+    return <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>No data in window.</p>;
+  }
+  const max = Math.max(1, ...trend.map((p) => p.revenue_minor));
+  // Sample down to ~30 columns max for visual clarity on long windows.
+  const sample = trend.length > 30
+    ? trend.filter((_, i) => i % Math.ceil(trend.length / 30) === 0)
+    : trend;
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 140 }}>
+        {sample.map((p) => (
+          <div
+            key={p.day}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, height: '100%' }}
+            title={`${String(p.day).slice(0, 10)} · ${formatKpiMinor(p.revenue_minor, currency)} · ${p.reservation_count} bookings`}
+          >
+            <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+              <div
+                style={{
+                  background: p.revenue_minor > 0 ? 'var(--color-brand-accent)' : 'var(--color-background-secondary)',
+                  height: `${Math.max(2, (p.revenue_minor / max) * 100)}%`,
+                  minHeight: 2,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 6 }}>
+        <span className="mono">{String(sample[0]?.day).slice(0, 10)}</span>
+        <span className="mono">{String(sample[sample.length - 1]?.day).slice(0, 10)}</span>
+      </div>
+    </>
+  );
+}
+
+/* Banner shown above fixture-driven tabs until Phase 2 (Cube Core +
+ * per-module Insights panels) wires them live. Anti-fake-numbers
+ * disclosure per scoping pack §5 governance. */
+function PendingDataBanner({ note }: { note?: string }) {
+  return (
+    <div style={{
+      padding: '10px 14px',
+      marginBottom: 16,
+      background: 'rgba(220, 160, 60, 0.08)',
+      borderLeft: '2px solid rgb(220, 160, 60)',
+      borderRadius: 4,
+      fontSize: 12,
+      color: 'var(--color-text-secondary)',
+    }}>
+      <strong style={{ fontWeight: 500 }}>Data wiring · Phase 2 pending.</strong>{' '}
+      Numbers below are illustrative fixtures until the central metric layer (Cube Core) lands per the Analytics scoping pack.
+      {note && <span> · {note}</span>}
+    </div>
   );
 }
 
@@ -173,6 +379,7 @@ function RevenueTab() {
   const total = REVENUE_BY_PROPERTY.reduce((a, p) => a + p.gross, 0);
   return (
     <>
+      <PendingDataBanner note="Live revenue per property + month is on the Overview tab (live · last 30d)." />
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header">
           <div className="card-title">Revenue by month</div>
@@ -322,125 +529,155 @@ function RevenueTrendChart() {
   );
 }
 
-/* ───────────── Occupancy ───────────── */
+/* ───────────── Occupancy ─────────────
+ * Live heatmap from /api/analytics/occupancy-heatmap (last 6 months of
+ * per-property occupancy as a % of nights booked). */
 function OccupancyTab() {
+  const { portfolio } = usePortfolio(30);
+  const { heatmap, loading, error } = useOccupancyHeatmap(6);
+
+  const occ = portfolio?.kpis.occupancy_pct ?? null;
+  const adr = portfolio?.kpis.adr_minor ?? null;
+  const revpar = portfolio?.kpis.revpar_minor ?? null;
+  const currency = portfolio?.currency || 'EUR';
+
   return (
     <>
       <div className="kpi-grid kpi-grid-3">
-        <div className="kpi">
-          <div className="kpi-label">Portfolio occ · 30d</div>
-          <div className="kpi-value">79%</div>
-          <div className="kpi-sub up">+3pp vs LY</div>
-        </div>
-        <div className="kpi">
-          <div className="kpi-label">ADR · 30d</div>
-          <div className="kpi-value">€ 312</div>
-          <div className="kpi-sub up">+€14 vs LY</div>
-        </div>
-        <div className="kpi">
-          <div className="kpi-label">RevPAR · 30d</div>
-          <div className="kpi-value">€ 246</div>
-          <div className="kpi-sub up">+6% vs LY</div>
-        </div>
+        <KpiCard
+          label="Portfolio occ · 30d"
+          value={occ != null ? `${occ}%` : '—'}
+          sub={portfolio ? `${portfolio.kpis.active_properties} live props` : ''}
+          dir="flat"
+        />
+        <KpiCard
+          label="ADR · 30d"
+          value={adr != null ? formatKpiMinor(adr, currency) : '—'}
+          sub={portfolio ? `${portfolio.kpis.booked_nights} booked nights` : ''}
+          dir="flat"
+        />
+        <KpiCard
+          label="RevPAR · 30d"
+          value={revpar != null ? formatKpiMinor(revpar, currency) : '—'}
+          sub={portfolio ? `${portfolio.kpis.reservation_count} bookings` : ''}
+          dir="flat"
+        />
       </div>
+
       <div className="card">
         <div className="card-header">
-          <div className="card-title">Occupancy heatmap</div>
-          <div className="card-subtitle">per property · 6 months</div>
-          <AskAnalyticsCTA question="Which property has the most occupancy upside?" />
+          <div className="card-title">Occupancy heatmap · 6 months</div>
+          <div className="card-subtitle">
+            {heatmap
+              ? `live · ${heatmap.properties.length} live properties × ${heatmap.months.length} months`
+              : 'loading…'}
+          </div>
         </div>
         <div style={{ padding: 16 }}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `60px repeat(${OCC_HEATMAP_MONTHS.length}, 1fr)`,
-              gap: 4,
-              marginBottom: 6,
-            }}
-          >
-            <span />
-            {OCC_HEATMAP_MONTHS.map((m) => (
+          {loading && !heatmap && (
+            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Loading heatmap…</p>
+          )}
+          {error && (
+            <p style={{ fontSize: 12, color: 'var(--color-text-warning)' }}>Failed: {error}</p>
+          )}
+          {heatmap && (
+            <>
               <div
-                key={m}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `60px repeat(${heatmap.months.length}, 1fr)`,
+                  gap: 4,
+                  marginBottom: 6,
+                }}
+              >
+                <span />
+                {heatmap.months.map((m) => (
+                  <div
+                    key={m}
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--color-text-tertiary)',
+                      textAlign: 'center',
+                      fontFamily: 'var(--font-mono-fad)',
+                    }}
+                  >
+                    {String(m).slice(0, 7)}
+                  </div>
+                ))}
+              </div>
+              {heatmap.properties.map((p) => (
+                <div
+                  key={p.code || p.nickname || Math.random()}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: `60px repeat(${heatmap.months.length}, 1fr)`,
+                    gap: 4,
+                    marginBottom: 4,
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--color-text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={p.nickname || p.code || ''}
+                  >
+                    {p.code || p.nickname || '—'}
+                  </div>
+                  {p.row.map((v, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        height: 24,
+                        background:
+                          v === 0
+                            ? 'var(--color-background-secondary)'
+                            : `color-mix(in srgb, var(--color-brand-accent) ${v}%, transparent)`,
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 10,
+                        fontFamily: 'var(--font-mono-fad)',
+                        color: v > 50 ? '#fff' : 'var(--color-text-tertiary)',
+                      }}
+                      title={`${p.code || p.nickname}: ${String(heatmap.months[i]).slice(0, 7)} = ${v}%`}
+                    >
+                      {v === 0 ? '—' : `${v}%`}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              <div
                 style={{
                   fontSize: 11,
                   color: 'var(--color-text-tertiary)',
-                  textAlign: 'center',
-                  fontFamily: 'var(--font-mono-fad)',
-                }}
-              >
-                {m}
-              </div>
-            ))}
-          </div>
-          {OCC_HEATMAP_PROPS.map((p) => (
-            <div
-              key={p.code}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: `60px repeat(${OCC_HEATMAP_MONTHS.length}, 1fr)`,
-                gap: 4,
-                marginBottom: 4,
-              }}
-            >
-              <div
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  color: 'var(--color-text-primary)',
+                  marginTop: 12,
                   display: 'flex',
+                  gap: 8,
                   alignItems: 'center',
                 }}
               >
-                {p.code}
-              </div>
-              {p.row.map((v, i) => (
+                <span>0%</span>
                 <div
-                  key={i}
                   style={{
-                    height: 28,
+                    flex: 1,
+                    height: 6,
                     background:
-                      v === 0
-                        ? 'var(--color-background-secondary)'
-                        : `color-mix(in srgb, var(--color-brand-accent) ${Math.round(
-                            v * 100
-                          )}%, transparent)`,
-                    borderRadius: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 10,
-                    fontFamily: 'var(--font-mono-fad)',
-                    color: v > 0.5 ? '#fff' : 'var(--color-text-tertiary)',
+                      'linear-gradient(to right, var(--color-background-secondary), var(--color-brand-accent))',
+                    borderRadius: 3,
                   }}
-                >
-                  {v === 0 ? '—' : Math.round(v * 100) + '%'}
-                </div>
-              ))}
-            </div>
-          ))}
-          <div
-            style={{
-              fontSize: 11,
-              color: 'var(--color-text-tertiary)',
-              marginTop: 12,
-              display: 'flex',
-              gap: 8,
-              alignItems: 'center',
-            }}
-          >
-            <span>0%</span>
-            <div
-              style={{
-                flex: 1,
-                height: 6,
-                background:
-                  'linear-gradient(to right, var(--color-background-secondary), var(--color-brand-accent))',
-                borderRadius: 3,
-              }}
-            />
-            <span>100%</span>
-          </div>
+                />
+                <span>100%</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </>
@@ -453,6 +690,7 @@ function ChannelsTab() {
   const totalCommission = CHANNEL_COSTS.reduce((a, c) => a + c.commission, 0);
   return (
     <>
+      <PendingDataBanner note="Live channel mix (reservation share) is on the Overview tab." />
       <div className="kpi-grid kpi-grid-3">
         <div className="kpi">
           <div className="kpi-label">YTD revenue</div>
@@ -576,6 +814,7 @@ function ChannelsTab() {
 function ReviewsTab() {
   return (
     <>
+      <PendingDataBanner note="Reviews backend already exists at /api/reviews/list — wire here in Phase 2." />
       <div className="two-col" style={{ marginBottom: 20 }}>
         <div className="card">
           <div className="card-header">
@@ -744,6 +983,7 @@ function ReviewsTab() {
 function TeamTab() {
   return (
     <>
+      <PendingDataBanner note="Aggregate task / message / review counts per staff member — Phase 2 wiring." />
       <div style={{ marginBottom: 16, padding: 12, background: 'var(--color-bg-info)', borderLeft: '2px solid var(--color-brand-accent)', borderRadius: 4, fontSize: 12, color: 'var(--color-text-info)' }}>
         <strong style={{ fontWeight: 500 }}>Per-staff AI performance</strong> (first-draft acceptance, teachings contributed, credits) lives in{' '}
         <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>Training → Performance</span>. This tab shows operational workload.
@@ -807,6 +1047,7 @@ function MarginTab() {
   const totalGross = MARGIN_BREAKDOWN[0].value;
   return (
     <>
+      <PendingDataBanner note="True margin breakdown gated on Finance Phase 3 (GL + owner payouts) per Analytics scoping §7." />
       <div className="card">
         <div className="card-header">
           <div className="card-title">Margin breakdown · MTD</div>
