@@ -67,7 +67,7 @@ export interface MarkFundsReceivedInput {
 async function loadBookingRequest(threadId: string): Promise<BookingRequestRecord | null> {
   try {
     return (await apiFetch(
-      `/api/inbox/threads/${encodeURIComponent(threadId)}/booking-request`,
+      `/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`,
     )) as BookingRequestRecord;
   } catch (e) {
     // 404 = not a booking_request thread; treat as null.
@@ -110,7 +110,7 @@ export async function setPaymentTerms(
   threadId: string,
   input: SetPaymentTermsInput,
 ): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
     method: 'PATCH',
     body: JSON.stringify({
       action: 'set_payment_terms',
@@ -125,7 +125,7 @@ export async function markFundsReceived(
   threadId: string,
   input: MarkFundsReceivedInput,
 ): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
     method: 'PATCH',
     body: JSON.stringify({
       action: 'mark_funds_received',
@@ -139,7 +139,7 @@ export async function declineBookingRequest(
   threadId: string,
   reason?: string,
 ): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
     method: 'PATCH',
     body: JSON.stringify({
       action: 'decline',
@@ -149,7 +149,7 @@ export async function declineBookingRequest(
 }
 
 export async function resetBookingRequestToReview(threadId: string): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
     method: 'PATCH',
     body: JSON.stringify({ action: 'reset_to_review' }),
   })) as BookingRequestRecord;
