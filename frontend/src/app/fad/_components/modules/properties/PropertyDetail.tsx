@@ -25,6 +25,7 @@ import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
 import { usePropertyCards } from '../../../_data/propertiesClient';
 import { useOwnersByGuestyId } from '../../../_data/ownersClient';
+import { usePropertySummary, formatMinor } from '../../../_data/financeClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
 import { useCurrentRole } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
@@ -659,15 +660,10 @@ function CardRow({ card, accessTimeGated }: { card: PropertyCard; accessTimeGate
 // ───────────────── Tab: Financial ─────────────────
 
 function FinancialTab({ property, role }: { property: Property; role: string }) {
-  // Mock per-property revenue using ADR + occupancy. Real numbers come from Finance Phase 2.
-  // @demo:config — Hardcoded MUR/EUR rate (44), PMC commission (0.20), Airbnb commission (0.17),
-  // mock float ratio (0.08), tourist-tax proxy (0.05). Replace with GET /api/finance/policies
-  // returning {pmcRate, channelRates, mur_eur_rate, touristTaxRate}. Tag: PROD-CONFIG-1.
-  const yearlyRevenueMUR = Math.round(property.adr * 365 * property.occupancyYTD * 44); // 44 ≈ MUR per EUR
-  const payoutMUR = Math.round(yearlyRevenueMUR * (1 - 0.20 - 0.17)); // less PMC commission + Airbnb
-  const ownerBalanceMUR = Math.round(payoutMUR * 0.08); // mock float
-  const touristTaxMUR = Math.round(property.adr * 0.05 * 365 * property.occupancyYTD * 44);
-
+  // T1.11 + Phase 3: live 90-day summary from /api/finance/property/:code/summary.
+  // Aggregates revenue from guesty_reservations + expenses from the expenses
+  // table. Channel fees + Friday margin land in Finance Phase 2.
+  const { summary, loading, error } = usePropertySummary(property.code, 90);
   const showOwnerBalance = role === 'director';
 
   if (property.lifecycleStatus === 'onboarding') {
@@ -680,25 +676,38 @@ function FinancialTab({ property, role }: { property: Property; role: string }) 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <Section title="Year to date">
-        <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-          <Stat label="Revenue YTD" value={`Rs ${(yearlyRevenueMUR).toLocaleString()}`} />
-          <Stat label="Payout YTD" value={`Rs ${(payoutMUR).toLocaleString()}`} />
-          {showOwnerBalance && <Stat label="Owner balance" value={`Rs ${(ownerBalanceMUR).toLocaleString()}`} />}
-          <Stat label="Tourist tax collected" value={`Rs ${(touristTaxMUR).toLocaleString()}`} />
-        </div>
-        <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          Mock · derived from occupancy × ADR × WAR rate. Real numbers source from FinanceModule period close · Phase 2.
-        </p>
+      <Section title="Last 90 days">
+        {loading && (
+          <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Loading…</p>
+        )}
+        {error && (
+          <p style={{ fontSize: 12, color: 'var(--color-text-warning)', margin: 0 }}>
+            Failed to load: {error}
+          </p>
+        )}
+        {summary && (
+          <>
+            <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+              <Stat label="Revenue" value={formatMinor(summary.revenue_minor, summary.currency)} />
+              <Stat label="Reservations" value={String(summary.reservation_count)} />
+              <Stat label="Occupancy" value={`${summary.occupancy_pct}%`} />
+              <Stat label="ADR" value={summary.adr_minor != null ? formatMinor(summary.adr_minor, summary.currency) : '—'} />
+              <Stat label="Expenses" value={formatMinor(summary.expenses_minor, summary.currency)} />
+              {showOwnerBalance && <Stat label="Net to owner" value={formatMinor(summary.net_to_owner_minor, summary.currency)} />}
+            </div>
+            <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              Live · {summary.booked_nights} booked / {summary.window_nights} nights · {summary.window_from} → {summary.window_to}.
+              Channel fees + Friday margin land in Finance Phase 2.
+            </p>
+          </>
+        )}
       </Section>
 
       <Section title="Recent transactions">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <TxRow desc="Channel payout — Airbnb · April batch" amount="+ Rs 184,200" date="2026-04-26" />
-          <TxRow desc="Owner statement — March release" amount="− Rs 64,400" date="2026-04-03" />
-          <TxRow desc="Maintenance · A/C service · Mathias 2hr" amount="− Rs 1,500" date="2026-04-15" />
-          <TxRow desc="Tourist tax remittance · March" amount="− Rs 8,820" date="2026-04-07" />
-        </div>
+        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 0 }}>
+          Channel payouts + owner statements + tourist-tax remittances surface here when Finance Phase 2 lands the ledger entries (T3.10).
+          For now, see [Finance → Transactions] for cross-property activity.
+        </p>
         <button className="btn ghost sm" style={{ marginTop: 12 }} onClick={() => { window.location.href = `/fad?m=finance&sub=transactions`; }}>
           Open in Finance →
         </button>

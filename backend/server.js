@@ -982,6 +982,7 @@ app.use('/api/expenses', financeExpensesRoutes.router);
       p.startsWith('/api/owners') ||
       p.startsWith('/api/availability') ||
       p.startsWith('/api/quotes') ||
+      p.startsWith('/api/finance/property/') ||
       p.startsWith('/api/integrations/guesty/webhook') || // HMAC-signed
       p.startsWith('/api/integrations/guesty/scraped-reservations') || // HMAC-signed (scraper)
       p.startsWith('/api/integrations/guesty/scraped-listings') // HMAC-signed (scraper)
@@ -1130,6 +1131,10 @@ app.use('/api/guests', require('./src/guests'));
 // FAD-native Owners module (T3.12). Seeded from Guesty listing owner IDs
 // (placeholder display names); admins patch real names + contact in.
 app.use('/api/owners', require('./src/owners'));
+// Per-property finance summary (T1.11). Aggregates revenue from
+// guesty_reservations + expenses from the expenses table; computes
+// occupancy / ADR / RevPAR over a configurable window.
+app.use('/api/finance', require('./src/finance/property_summary'));
 // Webhook needs the RAW body (Buffer) for HMAC verification — Guesty
 // signs the exact bytes they send, and express.json() restringifies.
 const guestyWebhook = require('./src/reservations/webhook');

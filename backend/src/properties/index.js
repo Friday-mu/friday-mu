@@ -124,6 +124,18 @@ function shapeMergedListing(row) {
       max_price_minor_30d: row.max_price_minor_30d != null ? Number(row.max_price_minor_30d) : null,
       calendar_synced_at: row.calendar_synced_at || null,
     },
+    // T1.11: rolling 30-day occupancy + ADR computed from
+    // guesty_reservations.check_in_date. Null on properties with no
+    // bookings in the window. Currency derived from the dominant
+    // reservation currency (falls back to EUR).
+    metrics_30d: {
+      occupancy_pct: row.metrics_occupancy_pct != null ? Number(row.metrics_occupancy_pct) : null,
+      adr_minor: row.metrics_adr_minor != null ? Number(row.metrics_adr_minor) : null,
+      revenue_minor: row.metrics_revenue_minor != null ? Number(row.metrics_revenue_minor) : null,
+      booked_nights: row.metrics_booked_nights != null ? Number(row.metrics_booked_nights) : 0,
+      reservation_count: row.metrics_reservation_count != null ? Number(row.metrics_reservation_count) : 0,
+      currency: row.metrics_currency || null,
+    },
   };
 }
 
@@ -243,7 +255,13 @@ router.get('/', attachIdentity, async (req, res) => {
            cal.max_price_minor_30d,
            cal.calendar_synced_at,
            owner_join.guesty_owner_id AS primary_owner_guesty_id,
-           owner_join.display_name AS primary_owner_display_name
+           owner_join.display_name AS primary_owner_display_name,
+           metrics.occupancy_pct AS metrics_occupancy_pct,
+           metrics.adr_minor AS metrics_adr_minor,
+           metrics.revenue_minor AS metrics_revenue_minor,
+           metrics.booked_nights AS metrics_booked_nights,
+           metrics.reservation_count AS metrics_reservation_count,
+           metrics.currency AS metrics_currency
          FROM guesty_listings gl
          LEFT JOIN fad_properties p
            ON p.tenant_id = gl.tenant_id AND p.guesty_id = gl.guesty_id
@@ -268,6 +286,34 @@ router.get('/', attachIdentity, async (req, res) => {
               AND po.is_primary = TRUE
             LIMIT 1
          ) owner_join ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT
+             COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
+             COUNT(*)::int AS reservation_count,
+             COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0)::int AS booked_nights,
+             CASE
+               WHEN COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0) > 0
+                 THEN LEAST(100, (COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0) * 100 / 30))::int
+               ELSE NULL
+             END AS occupancy_pct,
+             CASE
+               WHEN COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 0) > 0
+                 THEN (COALESCE(SUM(r.total_amount_minor), 0) / COALESCE(SUM(GREATEST(r.check_out_date - r.check_in_date, 0)), 1))::bigint
+               ELSE NULL
+             END AS adr_minor,
+             (SELECT currency_code FROM guesty_reservations r2
+               WHERE r2.tenant_id = gl.tenant_id AND r2.listing_guesty_id = gl.guesty_id
+                 AND r2.check_in_date >= CURRENT_DATE - INTERVAL '30 days'
+                 AND r2.check_in_date <= CURRENT_DATE
+                 AND r2.currency_code IS NOT NULL
+               GROUP BY currency_code ORDER BY COUNT(*) DESC LIMIT 1) AS currency
+           FROM guesty_reservations r
+           WHERE r.tenant_id = gl.tenant_id
+             AND r.listing_guesty_id = gl.guesty_id
+             AND r.check_in_date >= CURRENT_DATE - INTERVAL '30 days'
+             AND r.check_in_date <= CURRENT_DATE
+             AND COALESCE(r.status, 'confirmed') NOT IN ('canceled', 'cancelled')
+         ) metrics ON TRUE
          WHERE ${filters.join(' AND ')}
          UNION ALL
          SELECT NULL::json AS guesty,
@@ -279,7 +325,13 @@ router.get('/', attachIdentity, async (req, res) => {
                 NULL::bigint AS max_price_minor_30d,
                 NULL::timestamptz AS calendar_synced_at,
                 owner_join.guesty_owner_id AS primary_owner_guesty_id,
-                owner_join.display_name AS primary_owner_display_name
+                owner_join.display_name AS primary_owner_display_name,
+                NULL::int AS metrics_occupancy_pct,
+                NULL::bigint AS metrics_adr_minor,
+                NULL::bigint AS metrics_revenue_minor,
+                NULL::int AS metrics_booked_nights,
+                NULL::int AS metrics_reservation_count,
+                NULL::text AS metrics_currency
            FROM fad_properties p
            LEFT JOIN LATERAL (
              SELECT po.owner_id AS guesty_owner_id, fo.display_name

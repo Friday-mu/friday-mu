@@ -93,6 +93,14 @@ interface MergedListing {
     max_price_minor_30d?: number | null;
     calendar_synced_at?: string | null;
   };
+  metrics_30d?: {
+    occupancy_pct?: number | null;
+    adr_minor?: number | null;
+    revenue_minor?: number | null;
+    booked_nights?: number | null;
+    reservation_count?: number | null;
+    currency?: string | null;
+  };
 }
 
 interface MergedListingsResponse {
@@ -247,10 +255,17 @@ export function mergedListingToProperty(l: MergedListing): Property {
     isSyndicManaged: !!l.is_syndic_managed,
     syndicId: l.syndic_id || undefined,
     occupancyYTD: 0,
-    occupancy90d: 0,
-    adr: typeof l.availability?.min_price_minor_30d === 'number'
-      ? Math.round(l.availability.min_price_minor_30d / 100)
+    // T1.11: rolling-30 occupancy + ADR from /api/properties metrics_30d.
+    // Falls back to 0 / synthetic min-nightly when the property has no
+    // bookings in the window.
+    occupancy90d: typeof l.metrics_30d?.occupancy_pct === 'number'
+      ? l.metrics_30d.occupancy_pct / 100
       : 0,
+    adr: typeof l.metrics_30d?.adr_minor === 'number' && l.metrics_30d.adr_minor > 0
+      ? Math.round(l.metrics_30d.adr_minor / 100)
+      : (typeof l.availability?.min_price_minor_30d === 'number'
+          ? Math.round(l.availability.min_price_minor_30d / 100)
+          : 0),
     rating: 0,
     ratingCount: 0,
     lastActivityAt: l.last_activity_at || l.synced_at || '',
