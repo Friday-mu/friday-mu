@@ -33,6 +33,8 @@ import {
   cancelReservation,
   resolutionCenterUrl,
   resolutionCenterLabel,
+  loadReservationActivity,
+  type ReservationActivityRecord,
 } from '../../../_data/reservationsClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
 import { INBOX_THREADS } from '../../../_data/fixtures';
@@ -1388,7 +1390,42 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'su
 }
 
 function ActivityTab({ r }: { r: Reservation }) {
-  const activity = activityForReservation(r.id);
+  // Pull live activity from the backend (mig 078 + 2026-05-24 wiring). Falls
+  // back to fixture activity when liveOnlyMode is off OR when the backend
+  // returns nothing — preserves the demo UX in dev without leaking demo
+  // entries into prod-FR alongside real ones.
+  const [liveActivity, setLiveActivity] = useState<ReservationActivityRecord[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadReservationActivity(r.id, 100)
+      .then((rows) => { if (!cancelled) setLiveActivity(rows); })
+      .catch(() => { if (!cancelled) setLiveActivity([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [r.id]);
+
+  const liveAsFixture: ReservationActivity[] = (liveActivity ?? []).map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    ts: row.ts,
+    actorId: row.actor_id ?? undefined,
+    detail: row.detail,
+  } as ReservationActivity));
+
+  const fixtureActivity = activityForReservation(r.id);
+  const activity = liveAsFixture.length > 0
+    ? liveAsFixture
+    : (!liveOnlyMode() ? fixtureActivity : []);
+
+  if (loading && activity.length === 0) {
+    return (
+      <div className="task-detail-section">
+        <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>Loading activity…</div>
+      </div>
+    );
+  }
   if (activity.length === 0) {
     return (
       <div className="task-detail-section">
