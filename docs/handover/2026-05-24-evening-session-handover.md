@@ -135,3 +135,30 @@ If you (future-self) come back to this and the auto-summary is fuzzy:
 3. Connect Chrome MCP to deviceId `c49e054a-1059-4f2c-87bf-41fc0e71b03c` (re-pair via `switch_browser` if absent).
 4. Open queue above is priority-ordered. T3.15 v0.4 body strings is the most visible remaining payoff for full FR coverage.
 5. Don't re-litigate any of the 11 shipped items — each has its commit + verification trail above.
+
+---
+
+## Addendum — 12th deliverable (2026-05-24 ~18:36)
+
+**FR translations overlay for listings** (commit `634569de`) — per the
+website session's brief, but with the brief's premise corrected:
+auto-translate isn't in FAD. Shipped:
+- mig 088: `fad_properties.translations jsonb` + 60/60 backfill of
+  `translations.en` + GIN index.
+- PATCH `/api/properties/:id/translations` with field/locale whitelist,
+  null-clearing, auto-overlay-creation.
+- `/api/public/listings` + `/api/properties` both LEFT JOIN
+  `fad_properties` and emit `translations` on every row.
+- PropertyDetail → Identity tab → new "Public copy (EN / FR)" section
+  with 2×2 grid (Name EN/FR · Description EN/FR) + Save button.
+- Tested end-to-end on prod with BS-1: PATCH → 200, read-back via
+  `/api/properties/:id` returns the FR, cleanup → 200.
+- Handover note written to `~/.openclaw/workspace/projects/fad/handover-fr-translations-2026-05-24.md`
+  (for the website session to consume).
+- `tagline` deferred — doesn't exist in FAD/Guesty schema, awaiting
+  website team clarification on what they mean by it.
+
+**Updated live state (final):**
+- Tree tip: `634569de` (code)
+- Backend: pm2 restart 285, mig 088 applied
+- Frontend: 634569de
