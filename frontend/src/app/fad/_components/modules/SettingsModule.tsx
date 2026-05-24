@@ -81,12 +81,15 @@ function Appearance({ theme, onToggleTheme }: Props) {
     <div className="card settings-section">
       <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>{t('settings.sections.appearance', 'Appearance')}</h3>
       <p style={{ margin: '0 0 16px', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
-        Light, dark, or follow your system.
+        {t('settings.appearance.subtitle', 'Light, dark, or follow your system.')}
       </p>
       <div className="settings-row">
         <div>
-          <h5>Dark mode</h5>
-          <p>Currently: {theme}. FAD follows your OS preference by default.</p>
+          <h5>{t('settings.appearance.darkMode', 'Dark mode')}</h5>
+          <p>
+            {t('settings.appearance.currentlyLabel', 'Currently:')} {t(`settings.theme.${theme}`, theme)}.{' '}
+            {t('settings.appearance.darkModeHelp', 'FAD follows your OS preference by default.')}
+          </p>
         </div>
         <div className={'toggle' + (theme === 'dark' ? ' on' : '')} onClick={onToggleTheme} />
       </div>
@@ -123,17 +126,17 @@ function Appearance({ theme, onToggleTheme }: Props) {
       </div>
       <div className="settings-row">
         <div>
-          <h5>Density</h5>
-          <p>Dense is standard for Inbox; comfy on large displays.</p>
+          <h5>{t('settings.appearance.density', 'Density')}</h5>
+          <p>{t('settings.appearance.densityHelp', 'Dense is standard for Inbox; comfy on large displays.')}</p>
         </div>
-        <span className="settings-value">Dense</span>
+        <span className="settings-value">{t('settings.appearance.densityValue', 'Dense')}</span>
       </div>
       <div className="settings-row">
         <div>
-          <h5>Sidebar</h5>
-          <p>Remembered per device.</p>
+          <h5>{t('settings.appearance.sidebar', 'Sidebar')}</h5>
+          <p>{t('settings.appearance.sidebarHelp', 'Remembered per device.')}</p>
         </div>
-        <span className="settings-value">Expanded</span>
+        <span className="settings-value">{t('settings.appearance.sidebarValue', 'Expanded')}</span>
       </div>
     </div>
   );

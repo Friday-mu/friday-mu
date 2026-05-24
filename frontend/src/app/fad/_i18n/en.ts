@@ -217,6 +217,18 @@ export const en: TranslationShape = {
       dark: 'Dark',
       auto: 'System',
     },
+    appearance: {
+      subtitle: 'Light, dark, or follow your system.',
+      darkMode: 'Dark mode',
+      darkModeHelp: 'FAD follows your OS preference by default.',
+      currentlyLabel: 'Currently:',
+      density: 'Density',
+      densityHelp: 'Dense is standard for Inbox; comfy on large displays.',
+      densityValue: 'Dense',
+      sidebar: 'Sidebar',
+      sidebarHelp: 'Remembered per device.',
+      sidebarValue: 'Expanded',
+    },
     signOut: 'Sign out',
   },
 
@@ -288,6 +300,7 @@ export interface TranslationShape {
     sections: Record<string, string>;
     language: { label: string; help: string; en: string; fr: string };
     theme: Record<string, string>;
+    appearance: Record<string, string>;
     signOut: string;
   };
   common: Record<string, string>;

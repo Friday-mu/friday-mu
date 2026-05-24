@@ -29,11 +29,23 @@ const { recordAiTakeoverForThread } = require('./ai_handoff');
 
 function mountThreads(router) {
   // ── LIST ──────────────────────────────────────────────────────
-  router.get('/threads', async (req, res) => {
+  // T3.7 — attachIdentity + tenant scoping so the FAD-side list only
+  // returns threads belonging to the caller's tenant. Pre-migration
+  // 087 data is backfilled to FR_TENANT_ID, so existing rows
+  // continue to land for the FR-team requests; non-FR tenants would
+  // see an empty list (correct — they have no website-inbox traffic
+  // yet).
+  router.get('/threads', attachIdentity, async (req, res) => {
     try {
+      const tenantId = req.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'tenant context required' });
+      }
       const { status, q } = req.query;
       const filters = [];
-      const params = [];
+      const params = [tenantId];
+      // First filter is always tenant_id; subsequent filters add to params.
+      filters.push(`t.tenant_id = $1`);
       if (status && ['open', 'in_progress', 'paid', 'closed'].includes(status)) {
         params.push(status);
         filters.push(`t.status = $${params.length}`);
@@ -142,11 +154,14 @@ function mountThreads(router) {
   });
 
   // ── DETAIL ────────────────────────────────────────────────────
-  router.get('/threads/:id', async (req, res) => {
+  // T3.7 — scope by tenant_id so an admin from tenant A can't fetch
+  // a thread belonging to tenant B by guessing the UUID.
+  router.get('/threads/:id', attachIdentity, async (req, res) => {
     try {
+      if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
       const threadRes = await query(
-        `SELECT * FROM inbox_threads WHERE id = $1`,
-        [req.params.id],
+        `SELECT * FROM inbox_threads WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, req.tenantId],
       );
       if (threadRes.rows.length === 0) {
         return res.status(404).json({ error: 'Thread not found' });
@@ -184,8 +199,11 @@ function mountThreads(router) {
   });
 
   // ── PATCH (status / notes) ────────────────────────────────────
-  router.patch('/threads/:id', async (req, res) => {
+  // T3.7 — tenant_id scope so admin from tenant A can't mutate
+  // tenant B's threads.
+  router.patch('/threads/:id', attachIdentity, async (req, res) => {
     try {
+      if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
       const { status, notes } = req.body || {};
       const sets = [];
       const params = [];
@@ -203,8 +221,9 @@ function mountThreads(router) {
       if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
       sets.push('updated_at = NOW()');
       params.push(req.params.id);
+      params.push(req.tenantId);
       const { rows } = await query(
-        `UPDATE inbox_threads SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+        `UPDATE inbox_threads SET ${sets.join(', ')} WHERE id = $${params.length - 1} AND tenant_id = $${params.length} RETURNING *`,
         params,
       );
       if (rows.length === 0) return res.status(404).json({ error: 'Thread not found' });
@@ -233,9 +252,10 @@ function mountThreads(router) {
         });
       }
 
+      if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
       const threadRes = await query(
-        `SELECT * FROM inbox_threads WHERE id = $1`,
-        [req.params.id],
+        `SELECT * FROM inbox_threads WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, req.tenantId],
       );
       if (threadRes.rows.length === 0) return res.status(404).json({ error: 'Thread not found' });
       const t = threadRes.rows[0];
@@ -446,9 +466,10 @@ function mountThreads(router) {
   // the worker; this endpoint is fast + idempotent.
   router.post('/threads/:id/mark-paid', attachIdentity, async (req, res) => {
     try {
+      if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
       const threadRes = await query(
-        `SELECT * FROM inbox_threads WHERE id = $1`,
-        [req.params.id],
+        `SELECT * FROM inbox_threads WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, req.tenantId],
       );
       if (threadRes.rows.length === 0) return res.status(404).json({ error: 'Thread not found' });
       const t = threadRes.rows[0];

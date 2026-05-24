@@ -201,6 +201,18 @@ export const fr: TranslationShape = {
       dark: 'Sombre',
       auto: 'Système',
     },
+    appearance: {
+      subtitle: 'Clair, sombre, ou suivre votre système.',
+      darkMode: 'Mode sombre',
+      darkModeHelp: 'FAD suit la préférence de votre système par défaut.',
+      currentlyLabel: 'Actuel :',
+      density: 'Densité',
+      densityHelp: 'Dense est la norme pour la Boîte de réception ; confortable sur grands écrans.',
+      densityValue: 'Dense',
+      sidebar: 'Barre latérale',
+      sidebarHelp: 'Mémorisé par appareil.',
+      sidebarValue: 'Étendue',
+    },
     signOut: 'Se déconnecter',
   },
 
