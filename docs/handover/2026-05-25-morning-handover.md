@@ -1,15 +1,16 @@
 # Morning handover — 2026-05-25
 
-> What changed overnight (2026-05-24 → 25). Read this first, then the
-> ledger below for full commit refs. Per-phase deferrals + open
-> questions at the bottom.
+> What changed overnight (2026-05-24 → 25) + the follow-up session
+> Ishant asked for ("look at scoping docs, build Analytics, ship low-
+> hanging fruits, audit inter-module links, retest"). Read this first,
+> then the per-section detail below.
 
 ## Ledger — what shipped
 
 Live versions (verify via `curl https://admin.friday.mu/version.json` + `/api/version`):
 
-- Frontend: `36502839` (last deploy 2026-05-24T03:56Z)
-- Backend: `9e18f180` (last deploy 2026-05-24T03:52Z)
+- Frontend: `7ecc77b9` (Analytics module live + Inbox → Ops "+ Task")
+- Backend: `7ecc77b9` (Analytics endpoints + channel-name normalisation)
 - Branch: `fad-rebuild` (tree tip = live)
 
 Phases shipped vs the overnight plan:
@@ -23,9 +24,20 @@ Phases shipped vs the overnight plan:
 | 5 | Multi-calendar v0.1 (T4.38) | ✓ shipped | `a66fbaa0` |
 | 6 | Availability search (T4.39) | ✓ shipped | `9e18f180` |
 | 7 | Quote generator v0.1 (T4.40) | ✓ shipped | `9e18f180` (same commit) |
-| 8 | Insights wiring (T1.14) | DEFERRED | — |
+| 8 | Insights wiring (T1.14) | PARTIAL — banners + Analytics tabs | `f9a6f5f6` |
 | 9 | Quick wins (T1.8/T1.9/T1.13/T1.17) | PARTIAL — T1.8 only | `36502839` |
 | 10 | Handover doc | this file | — |
+
+Additional follow-up session (after Ishant's request — same morning):
+
+| Item | Status | Commit |
+|---|---|---|
+| Analytics module v0.1 — Phase 0 per scoping pack | ✓ shipped | `f9a6f5f6` · `7ecc77b9` |
+| Inbox → Ops "+ Task" inter-module link | ✓ shipped | `f9a6f5f6` |
+| Analytics Phase-2-pending banners on fixture tabs | ✓ shipped | `f9a6f5f6` |
+| Channel-name normalisation (Guesty raw → friendly) | ✓ shipped | `7ecc77b9` |
+| Mobile retest (375×812) | NOT RUN — Chrome MCP resize_window didn't take | — |
+| TeamInbox "+ Task" affordance | DEFERRED — needs design pass for non-reservation context | — |
 
 ## Phase-by-phase detail
 
@@ -221,6 +233,76 @@ Deferred:
   fire POST /api/expenses/extract (Gemini). Likely culprits: auto-trigger
   never fires (frontend), LLM endpoint returns non-JSON, or CORS.
   Needs ~1 hr of focused debugging.
+
+## Follow-up session detail (after "build Analytics" directive)
+
+### Analytics module v0.1 — Phase 0 shipped
+
+Per scoping pack [`36a43ca884928165b886fc3043e399a0`](https://www.notion.so/36a43ca884928165b886fc3043e399a0). The scoping calls for a 5-layer Intelligence Core (data sources → Cube Core metric layer → deterministic insight engine → proactive AI agent → surfaces). Cube Core + AI agent are gated on infra ack (~$12-18/mo droplet) so Phase 0 deterministic SQL aggregates landed today; Phases 1-2+ wait for your ack.
+
+**Backend** (`backend/src/analytics/portfolio.js`):
+- `GET /api/analytics/portfolio?windowDays=N` — tier-1 KPIs (revenue, reservations, booked-nights, occupancy %, ADR, RevPAR) over rolling window + period-over-period deltas + channel mix + top-10 properties + daily revenue trend + ops health (open + overdue tasks).
+- `GET /api/analytics/occupancy-heatmap?months=N` — per-property × month occupancy %.
+- Channel names normalised (Airbnb / Booking.com / VRBO / Direct / Manual / Owner / Email / Scraped legacy / Unknown).
+- All tenant-scoped via `attachIdentity`; lockdown allowlist updated.
+
+**Frontend** (`frontend/src/app/fad/_components/modules/AnalyticsModule.tsx`):
+- Overview tab + Occupancy tab now drive from live `/api/analytics`.
+- KPI cards show period-over-period deltas + arrows.
+- Top-properties list with thumbnail + bookings + nights + occupancy + revenue, click → deep-link to PropertyDetail.
+- 5 remaining tabs (Revenue / Channels / Reviews / Team / Margin) get a "Data wiring · Phase 2 pending" banner instead of pretending the fixture numbers are real (anti-fake-numbers per scoping §5 governance).
+
+**Live counts** on prod (86 reservations / 1145 booked nights / 27 active properties in last 30d):
+```
+Revenue: € — (cache gap, see below)
+Bookings: 86
+Occupancy: 100% (capped — multi-unit properties have overlapping
+  bookings; needs unit-count denominator in Phase 2)
+Channel mix: Airbnb 47% · Manual 27% · Unknown 20% · Booking.com 7%
+Top property: RC-15 (11 bookings · 57 nights · 100% occ)
+Ops health: 394 open tasks · 114 overdue
+```
+
+**Known data-quality issues** (logged for fix-in-next-session):
+- Revenue €0 because `guesty_reservations.total_amount_minor` is NULL for most rows. Same Guesty cache gap that affected PropertyDetail Financial tab. Fix: extend `backend/src/reservations/sync.js` to compute via `inferReservationFinancials(r)` before upsert.
+- Occupancy hits 100% for multi-unit properties (LB-C, RC-15 cluster) because overlapping unit bookings inflate booked_nights beyond `windowDays`. Need per-property unit count from Guesty.
+- "Unknown" channel = 20% — these are scrape-l3 rows where the `channel` field is NULL but `source = 'scrape-l3'`. The new normaliser uses channel only. Fix: COALESCE channel → source again in the normalised CASE.
+
+### Inter-module link — Inbox → Ops "+ Task" (Ishant's specific ask)
+
+In the inbox audit Ishant specifically asked about "creating tasks appearing in chats, inline in chats". Confirmed both InboxModule (guest threads) and TeamInbox (staff threads) had NO task-creation affordance — true gap.
+
+**Shipped**: "+ Task" button in the guest-thread header alongside Mark unread + Reservation (`frontend/src/app/fad/_components/modules/InboxModule.tsx`). Clicking opens the existing CreateTaskDrawer prefilled with:
+- `title` from `thread.subject` (truncated to 100 chars)
+- `description` from `thread.preview`
+- `propertyCode` from `thread.property`
+- `reservationId` from `thread.reservationId`
+- `inboxThreadId` set so the task links back to the conversation
+
+Verified on prod with Gael Le Metayer's WhatsApp thread (door keypad broken at GBH-C8) — drawer opens, all fields prefilled correctly. Operator can now task the issue in <5 seconds without leaving inbox.
+
+**Deferred — TeamInbox version**: channel/DM threads have no reservation context; needs a focused design pass for what makes a meaningful "+ Task" affordance there (probably "+ Task for #channel" or "+ Task assigned to @user" with the recent message as description). Logged as T1.18 for next session.
+
+### Retest results
+
+Verified live on prod (frontend `7ecc77b9` · backend `7ecc77b9` · desktop only):
+- ✓ Calendar Multi view — 60 properties × 60 days × 81 reservations rendering with channel-colored bars + today pink line + sticky columns
+- ✓ Analytics Overview tab — KPIs + revenue trend chart + channel mix + top-10 properties
+- ✓ Properties → All properties — Owner column shows fad_owners display names (no more raw hex IDs)
+- ✓ Inbox → guest thread → "+ Task" button opens drawer with thread context prefilled
+- ✓ Analytics endpoint smoke test: portfolio + heatmap both return 200 with sensible data shapes
+- NOT VERIFIED on mobile (375×812) — Chrome MCP `resize_window` reported success but viewport stayed at 1372. Worth a manual phone-touch QA pass.
+- NOT VERIFIED — clicking a live property card in Analytics top-list to confirm the deep-link to PropertyDetail works.
+
+### Low-hanging fruits surveyed but NOT shipped
+
+From the field-staff map scoping (`docs/scoping/2026-05-24-field-staff-map-v0.1.md`) + guest-portal-chat scoping + Analytics scoping:
+
+- Field-staff map (T4.37): 1-2 week build. Needs Mapbox setup + PWA service worker work + privacy policy doc. Too big for autonomous.
+- Guest portal chat (T4.36): 2-3 week build. Cross-cuts Friday Website (per AGENTS.md rule we can't edit website in same session). Defer.
+- Analytics Phase 1 (proactive AI agent + push digest into Ask Friday): needs Cube Core infra ack + Gemini wiring (model-agnostic per scoping). Hour-scale work once infra is in place.
+- Per-module Insights panels (Analytics Phase 2 + T1.14 deferred): now have a clear pattern (Phase 2 banner). The right next pass is per module: 30-40 min each to write the deterministic SQL aggregation, wire the panel.
+- Multi-calendar v0.2 (per-cell €PRICE, task chips, drag-to-create): biggest user-visible polish item. Smaller than v0.1 was. 2-3 hr.
 
 ## Critical things Ishant should know
 
