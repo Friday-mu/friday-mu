@@ -7,6 +7,7 @@ import { canSeeModule, useCurrentRole, useCurrentUserId } from './usePermissions
 import { pendingCountFor, pendingCountForSubpage, subscribePendingRev, type PendingCount } from '../_data/pendingCounts';
 import { useEnabledModules } from '../_data/useEnabledModules';
 import { FR_TENANT_ID, useCurrentTenantId } from '../_data/useTenantIdentity';
+import { useT, useTranslateGroup, useTranslateModule } from '../_i18n/useT';
 
 interface Props {
   active: string;
@@ -39,6 +40,12 @@ export function Sidebar({
   const { enabledSet } = useEnabledModules();
   const tenantId = useCurrentTenantId();
   const isKnownNonFrTenant = tenantId !== null && tenantId !== FR_TENANT_ID;
+  // T3.15 — localised labels for sidebar chrome. Sub-page labels stay
+  // on the fixture string in v0.1 (per-module sub-page i18n is a
+  // follow-up sweep).
+  const { t } = useT();
+  const tGroup = useTranslateGroup();
+  const tModule = useTranslateModule();
 
   // Subscribe to fixture-mutation bumps so badges re-compute reactively
   const [pendingRev, setPendingRev] = useState(0);
@@ -97,13 +104,13 @@ export function Sidebar({
                 onOpenFridayFs();
                 onMobileClose?.();
               }}
-              title="Ask Friday — fullscreen"
+              title={t('shell.askFriday', 'Ask Friday') + ' — fullscreen'}
               aria-pressed={fridayFs}
             >
               <span className="fad-nav-icon">
                 <IconSparkle />
               </span>
-              <span className="fad-friday-label">Ask Friday</span>
+              <span className="fad-friday-label">{t('shell.askFriday', 'Ask Friday')}</span>
               <span className="fad-friday-expand" aria-hidden="true">
                 <IconExpand size={12} />
               </span>
@@ -122,10 +129,10 @@ export function Sidebar({
               key={g.id}
             >
               {tierChanged && g.tier === 'manage' && (
-                <div className="fad-sidebar-tier-label">Manage</div>
+                <div className="fad-sidebar-tier-label">{t('group.Manage', 'Manage')}</div>
               )}
               <div className="fad-sidebar-group-label">
-                <span>{g.label}</span>
+                <span>{tGroup(g.label, g.label)}</span>
               </div>
               {groupMods.map((mod) => {
                 const IconComp = iconFor(mod.icon);
@@ -162,12 +169,17 @@ export function Sidebar({
                         onSelect(mod.id);
                         onMobileClose?.();
                       }}
-                      title={moduleCount.total > 0 ? `${mod.label} · ${moduleCount.total} pending` : mod.label}
+                      title={(() => {
+                        const localised = tModule(mod.id, mod.label);
+                        return moduleCount.total > 0
+                          ? `${localised} · ${moduleCount.total} ${t('shell.pending', 'pending')}`
+                          : localised;
+                      })()}
                     >
                       <span className="fad-nav-icon">
                         <IconComp />
                       </span>
-                      <span className="fad-nav-label">{mod.label}</span>
+                      <span className="fad-nav-label">{tModule(mod.id, mod.label)}</span>
                       {moduleCount.total > 0 && <PendingChip count={moduleCount} collapsed={collapsed} />}
                     </button>
                     {showSubs && (

@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useState, type MouseEvent } from 'react';
+// T3.15 — side-effect import boots i18next before any module-level
+// useTranslation()/useT() call fires. Must precede other module
+// imports.
+import '../_i18n';
 import { MODULES, visibleSubPagesForModuleRole, type ModuleDef } from '../_data/modules';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';

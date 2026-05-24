@@ -18,6 +18,7 @@ import { ChangePasswordModal } from '../ChangePasswordModal';
 import { fireToast } from '../Toaster';
 import { TASK_USER_BY_ID } from '../../_data/tasks';
 import { ROLE_LABEL } from '../../_data/permissions';
+import { useT } from '../../_i18n/useT';
 
 interface Props {
   theme: 'light' | 'dark';
@@ -38,12 +39,13 @@ const FIELD_SECTION_IDS = new Set(['appearance', 'account']);
 
 export function SettingsModule({ theme, onToggleTheme }: Props) {
   const role = useCurrentRole();
+  const { t } = useT();
   const sections = role === 'field' ? SECTIONS.filter((s) => FIELD_SECTION_IDS.has(s.id)) : SECTIONS;
   const [section, setSection] = useState(sections[0]?.id ?? 'appearance');
   return (
     <>
       <ModuleHeader
-        title="Settings"
+        title={t('settings.title', 'Settings')}
         subtitle={role === 'field' ? 'Your profile and device preferences' : 'Your profile, team, GMS, and system preferences'}
       />
       <div className="fad-module-body">
@@ -55,7 +57,7 @@ export function SettingsModule({ theme, onToggleTheme }: Props) {
                 className={'settings-nav-item' + (section === s.id ? ' active' : '')}
                 onClick={() => setSection(s.id)}
               >
-                {s.label}
+                {t(`settings.sections.${s.id}`, s.label)}
               </button>
             ))}
           </div>
@@ -74,9 +76,10 @@ export function SettingsModule({ theme, onToggleTheme }: Props) {
 }
 
 function Appearance({ theme, onToggleTheme }: Props) {
+  const { t, lang, setLang } = useT();
   return (
     <div className="card settings-section">
-      <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>Appearance</h3>
+      <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>{t('settings.sections.appearance', 'Appearance')}</h3>
       <p style={{ margin: '0 0 16px', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
         Light, dark, or follow your system.
       </p>
@@ -86,6 +89,37 @@ function Appearance({ theme, onToggleTheme }: Props) {
           <p>Currently: {theme}. FAD follows your OS preference by default.</p>
         </div>
         <div className={'toggle' + (theme === 'dark' ? ' on' : '')} onClick={onToggleTheme} />
+      </div>
+      {/* T3.15 — language toggle (lives in Appearance because Settings
+          for field staff is restricted to appearance + account only). */}
+      <div className="settings-row">
+        <div>
+          <h5>{t('settings.language.label', 'Language')}</h5>
+          <p>{t('settings.language.help', 'Choose the language used for buttons, menus and labels across modules you can access.')}</p>
+        </div>
+        <div role="radiogroup" aria-label={t('settings.language.label', 'Language')} style={{ display: 'inline-flex', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          {(['en', 'fr'] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              role="radio"
+              aria-checked={lang === opt}
+              onClick={() => { void setLang(opt); }}
+              style={{
+                padding: '6px 14px',
+                fontSize: 13,
+                background: lang === opt ? 'var(--color-brand-accent)' : 'transparent',
+                color: lang === opt ? '#fff' : 'var(--color-text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: lang === opt ? 500 : 400,
+                fontFamily: 'inherit',
+              }}
+            >
+              {opt === 'en' ? t('settings.language.en', 'English') : t('settings.language.fr', 'Français')}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="settings-row">
         <div>

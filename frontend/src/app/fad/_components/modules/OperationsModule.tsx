@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
+import { useT } from '../../_i18n/useT';
 import {
   TASK_PROPERTIES,
   TASK_USER_BY_ID,
@@ -286,26 +287,29 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   const canSeeRoster = useCanSee('hr_roster', 'read');
   const canSeeSettings = useCanSee('settings');
   const isField = role === 'field';
+  // T3.15 — localised chrome strings. Tab labels are field-staff-visible
+  // (My tasks / My history), so they get translation keys too.
+  const { t: i18nT } = useT();
 
   const tabs = (
     isField
       ? [
-          { id: 'my', label: 'My tasks' },
-          { id: 'history', label: 'My history' },
+          { id: 'my', label: i18nT('operations.tabs.my', 'My tasks') },
+          { id: 'history', label: i18nT('operations.tabs.history', 'My history') },
         ]
       : [
-          { id: 'overview', label: 'Overview' },
-          { id: 'schedule', label: 'Schedule' },
-          { id: 'my', label: 'My tasks' },
-          { id: 'all', label: 'All tasks' },
-          { id: 'issues', label: 'Reported issues' },
-          { id: 'history', label: 'My history' },
-          canSeeApprovals && { id: 'approvals', label: 'Approvals' },
-          canSeeRoster && { id: 'roster', label: 'Roster' },
-          { id: 'insights', label: 'Insights' },
-          canSeeSettings && { id: 'settings', label: 'Settings' },
+          { id: 'overview', label: i18nT('operations.tabs.overview', 'Overview') },
+          { id: 'schedule', label: i18nT('operations.tabs.schedule', 'Schedule') },
+          { id: 'my', label: i18nT('operations.tabs.my', 'My tasks') },
+          { id: 'all', label: i18nT('operations.tabs.all', 'All tasks') },
+          { id: 'issues', label: i18nT('operations.tabs.issues', 'Reported issues') },
+          { id: 'history', label: i18nT('operations.tabs.history', 'My history') },
+          canSeeApprovals && { id: 'approvals', label: i18nT('operations.tabs.approvals', 'Approvals') },
+          canSeeRoster && { id: 'roster', label: i18nT('operations.tabs.roster', 'Roster') },
+          { id: 'insights', label: i18nT('operations.tabs.insights', 'Insights') },
+          canSeeSettings && { id: 'settings', label: i18nT('operations.tabs.settings', 'Settings') },
         ]
-  ).filter((t): t is { id: string; label: string } => Boolean(t));
+  ).filter((tab): tab is { id: string; label: string } => Boolean(tab));
 
   const canonicalSubPage = subPage === 'intake' || subPage === 'inbox-ai' ? 'issues' : subPage;
   const active = tabs.find((t) => t.id === canonicalSubPage)?.id ?? (isField ? 'my' : 'overview');
@@ -413,18 +417,20 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
-        title="Operations"
-        subtitle={isField ? 'Assigned work · comments · evidence · history' : 'Tasks · reported issues · approvals · roster · insights'}
+        title={i18nT('module.operations', 'Operations')}
+        subtitle={isField
+          ? i18nT('operations.subtitle.field', 'Assigned work · comments · evidence · history')
+          : i18nT('operations.subtitle.manager', 'Tasks · reported issues · approvals · roster · insights')}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}
         actions={isField ? (
           <button className="btn primary sm" onClick={openStandaloneReport}>
-            <IconPlus size={12} /> Report issue
+            <IconPlus size={12} /> {i18nT('operations.reportIssue', 'Report issue')}
           </button>
         ) : active === 'schedule' ? null : (
           <button className="btn primary sm" onClick={() => openManagerCreate()}>
-            <IconPlus size={12} /> New task
+            <IconPlus size={12} /> {i18nT('operations.newTask', 'New task')}
           </button>
         )}
       />
