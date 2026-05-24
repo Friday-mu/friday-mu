@@ -93,6 +93,38 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Fix is NOT a simple swap to `new Date()` — the fixtures themselves are anchored to 2026-04-27, so live TODAY against fixture dates would surface "due 27 days ago" everywhere. Real fix: gate the constant behind `liveOnlyMode()` (use fixture anchor in demo, real now in prod), AND audit each cascaded "in N days" / "M days ago" use site for sanity.
 - Production risk today is LOW because `liveOnlyMode()` already suppresses fixture-derived urgency. Keep on backlog but not urgent.
 
+### T1.14 — All "Insights" surfaces wired to real data (replace fake stats everywhere)
+- Effort: M-L · open (2026-05-24, Ishant correction — not just HR time-off)
+- Every module's Insights sub-page still shows hardcoded numbers / narratives. Audit + replace:
+  - HR Insights (incl. workload, leave stats, capacity)
+  - Reviews Insights
+  - Properties Insights (some real today, e.g. photo gallery sweep, but anomaly/portfolio bullets still hardcoded — PROD-DATA-43)
+  - Analytics Insights
+  - Operations Insights
+  - Finance Insights
+- Per-surface: confirm there's a backend route, write the aggregation if missing, replace fixture imports with the live hook.
+
+### T1.15 — Task detail UI simplification (Breezeway-inspired) ★ AWAITING SCREENSHOT
+- Effort: M · status: parked-on-screenshot (Ishant 2026-05-24)
+- Current task detail panel feels cluttered. Breezeway reference incoming. Direction:
+  - Description prominently at top
+  - Execution summary moves to Complete flow (not start)
+  - Start/Stop timer becomes floating bottom-of-panel button
+  - "Open in full view" — actually wire it
+  - Assignee editable on existing tasks
+- Don't begin until Ishant's Breezeway screenshot lands so the redesign is anchored on a concrete example.
+
+### T1.16 — Unify "New task" drawer (Friday-draft everywhere)
+- Effort: S · open (2026-05-24)
+- Ops · Overview "+ New task" opens a drawer with the AI-assisted Friday draft input.
+- Ops · Schedule "+ New task" opens a plainer drawer without it.
+- Pick the Overview version, delete the Schedule-only variant, wire the same drawer at both entry points (Roster's "+ New task" too).
+
+### T1.17 — Expense capture: receipt upload LLM OCR not firing
+- Effort: M · open (2026-05-24)
+- User uploads a receipt in the Capture Expense drawer; the Gemini OCR auto-fill that's supposed to populate amount/vendor/category doesn't trigger.
+- Debug path: `POST /api/expenses/receipts` upload, then `POST /api/expenses/extract` should be auto-called. Check the call chain, the LLM response, and the auto-fill side effect on the form.
+
 ### T1.11 — Occupancy / ADR not yet computed on Property cards
 - Effort: M · Status: open (surfaced 2026-05-24 audit)
 - Every Property card on Overview + All Properties shows "Occ 0%" and a flat ADR figure. Backend doesn't yet compute occupancy/ADR from reservations + calendar data.
@@ -205,6 +237,51 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - Avoid duplicates: idempotency via reservation_id + template_id
 - Possible implementation: extend `backend/src/reservations/webhook.js` post-upsert hook → call a new `taskAutomation.fromReservation(reservation, eventType)` that consults a tenant-level rules table.
 
+### T3.9 — PropertyDetail tabs full backend wiring (NEW 2026-05-24)
+- Effort: L · open · partial-shipped (hero photo wired today `8423fc77`)
+- After Ishant click-through audit, every tab on the property drill-down needs real backend data:
+  - **Identity & Layout**: ~~hero photo~~ ✓ · photo gallery (needs `GET /api/properties/:code/photos` from Guesty listings) · amenities verification (already in `l.amenities`, just verify rendering)
+  - **Owner**: real owner from `fad_property_owners` (depends on T1.12 + Owners module backend)
+  - **Operational**: list Property Cards (`/api/properties/:code/cards` already exists, render them)
+  - **Financial**: per-property revenue + expense from FAD finance (`GET /api/finance/property/:code/summary`)
+  - **Listings**: channel coverage from `l.listings[]` array (already in API, just render)
+  - **Reservations**: filter `/api/reservations?listing=<guesty_id>` (already supported)
+  - **Tasks**: filter `/api/tasks?property_code=<code>` (already supported)
+  - **Insights**: per-property metrics from real backend, not fixture
+- Onboarding tab deferred (big sub-scope per Ishant).
+
+### T3.10 — ReservationDetail tabs full backend wiring (NEW 2026-05-24)
+- Effort: M-L · open
+- After Ishant click-through: every tab on the reservation drill-down needs real data wired:
+  - **Booking details**: dates, guests, channel, confirmation code (basic — verify rendering)
+  - **Guests**: profile, contact, history (depends on Guests module backend below)
+  - **Operations**: tasks linked to this reservation (`/api/tasks?reservation_guesty_id=<id>`)
+  - **Folio**: line-items from reservation financials (already returned by `/api/reservations` `outstanding_balance`, etc. — just render)
+  - **Accounting**: bookkeeping entries (depends on Finance per-reservation)
+  - **Payments**: payment history (Guesty payment data — needs new endpoint)
+  - **Activity log**: already wired via `/api/reservations/:id/activity`
+
+### T3.11 — Guests module backend wiring (NEW 2026-05-24)
+- Effort: L · open
+- Today Guests module is fixture-only. Build backend:
+  - `fad_guests` table — id, tenant_id, primary_email, primary_phone, display_name, language_pref, country, vip_tier, notes, first_seen_at, last_seen_at
+  - Sync from `guesty_reservations.guest_*` columns on each reservation upsert.
+  - Routes: `GET /api/guests`, `GET /api/guests/:id`, `GET /api/guests/:id/reservations`, `PATCH /api/guests/:id`.
+  - Frontend: replace fixture imports with hooks.
+
+### T3.12 — Owners module backend wiring (NEW 2026-05-24)
+- Effort: L · open · resolves T1.12 ("o-guesty-unknown")
+- Today Owners module is fixture-only. Build backend:
+  - `fad_owners` table — id, tenant_id, display_name, contact_email, phone, address, payment_pref, language, statement_day, notes
+  - Link to `fad_property_owners` (M:N already exists). Seed display_name from Guesty `accountManager` field on sync.
+  - Routes: `GET /api/owners`, `GET /api/owners/:id`, `GET /api/owners/:id/properties`, `GET /api/owners/:id/statements`.
+  - Frontend: replace `FIN_OWNERS` fixture with hooks.
+
+### T3.13 — Reviews backend verification — pull through FAD API not direct (NEW 2026-05-24)
+- Effort: S-M · open
+- Verify the Reviews module fetches through `admin.friday.mu/api/reviews/*` (FAD as the canonical integration source per §5.7) and NOT directly from Reva / Guesty in the browser.
+- If currently direct: add backend proxy + cache + re-point frontend.
+
 ### T3.8 — Email integration completion (Gmail watcher + classifier dependencies)
 - Effort: L · Blocks: inbound-email → Inbox-thread pipeline · Status: open (surfaced 2026-05-24 from backend TODO scan)
 - Backend has stub paths waiting for Google Cloud Platform credentials + missing tables:
@@ -280,15 +357,32 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - **T4.32 — 11 `agent-be-*` branches** — May-13 design backend work, never reconciled (effort: variable)
 - **T4.33 — WhatsApp burner bridge** — parked; blocked on QR/pairing
 
-### Calendar v0.2 follow-up (post-2026-05-24 banded refactor)
-- **T4.38 — Calendar v0.2 enhancements** — effort: M-L · open
-- Today's commit `bbb48408` shipped: true continuous bands per week (no per-cell segments), channel colors, status overlays, today badge, channel legend, mobile-safe sizing. **Open follow-ups**:
-  - **Property × Date PMS view** (Guesty / Hospitable / Booking-extranet pattern): rows = properties, cols = days, stays = horizontal pills per property row. Eliminates "guest X across 3 calendars" perception by anchoring each stay to one property row. Add as new tab between Week and Month.
-  - **Today vertical line** in Week/Day views — clearer "now" marker than column-shading.
-  - **Occupancy heatmap** colour overlay (Month view): cells darken by % occupancy.
-  - **Drag-to-reschedule** stay bands in Week/Day — calls `PATCH /reservations/:id` to nudge check-in/out times.
-  - **Performance audit** with 100+ properties × 365-day window (real-data load test).
-  - **Filter by property** chips above the grid (matches Reservations module filter UX).
+### Calendar v0.2 — MULTI-CALENDAR REBUILD (Ishant 2026-05-24 directive)
+- **T4.38 — Multi-calendar rebuild** — effort: XL (1-2 weeks) · open · **MAJOR REDESIGN**
+- Today's banded refactor (`bbb48408`) was a stepping stone. The actual ask is a full Guesty Multi-Calendar–style surface:
+  - **Property × Date grid** (rows = properties, cols = days, horizontal scroll for date range). Replaces or sits alongside today's Month/Week views as the primary view.
+  - Each cell shows: **nightly price**, **availability** (open / booked / blocked), reservation pill spanning multiple cells when occupied.
+  - **Hover on a stay** → quick reservation preview (guest / channel / nights / status).
+  - **Click + drag dates** → opens Create Reservation drawer with dates prefilled. (Phase 1: open the drawer. Phase 2: drag-to-confirm.)
+  - **Tasks + meetings overlay** on the same grid — what Guesty doesn't have. Stays the FAD differentiator.
+  - **Block dates via Guesty API** (if API supports — investigate `PATCH /listings/:id/calendar`). Same surface for unblock.
+  - **Change check-in / check-out times** by clicking the stay edge — calls existing `PATCH /reservations/:id`.
+  - Performance target: 60 properties × 60-day window scrolling smoothly.
+- **Decision needed (Ishant)**: scrap current Calendar frontend and build fresh, or layer this in as a new tab? Backend stays (already pulls guesty_calendar via LATERAL join).
+- **Scope continues below at T4.39 (availability search) and T4.40 (quote generator).**
+
+### T4.39 — Availability search in Calendar (NEW 2026-05-24)
+- Effort: L · open · depends on T4.38 multi-calendar grid
+- Operator inputs: date range + party size + (optional) filters (region, bedrooms, amenities). Output: list of available properties with nightly + total price.
+- Backend: `GET /api/availability/search?from=Y-M-D&to=Y-M-D&guests=N&region=...` returning `[{property_code, available, nightly_minor, total_minor, currency}]`. Computed from `guesty_calendar` + listing data.
+- The Friday Website (Vercel preview, not live) already has this filter UI — port logic / share the data path.
+
+### T4.40 — Quote generator (NEW 2026-05-24)
+- Effort: L · open · depends on T4.39 availability search
+- After availability search, operator picks N properties to pitch. System generates a shareable link.
+- v1 simplest: link redirects guest to the Friday Website (preview) with property-filter query params → guest sees the curated short-list with prices.
+- v2: native FAD quote page with custom messaging + WhatsApp/email send button.
+- Storage: `fad_quotes` table — quote_id, created_by, properties[], from/to dates, party_size, expires_at, status.
 
 ### New initiatives (v0.1 scope drafts ready, await Ishant decisions)
 - **T4.36 — Guest portal chat** (effort: 2-3 weeks once scope locks) — replace WhatsApp dependency for direct-booking + on-property guest messaging with a chat surface inside the guest portal. AI-augmented with full reservation + Property Cards context. Honest framing: complement to WhatsApp, not replacement (discovery friction kills pure-portal strategies). **Scope**: Notion [`36943ca8849281939417fad24d881f94`](https://www.notion.so/36943ca8849281939417fad24d881f94) (canonical) · repo mirror [`docs/scoping/2026-05-24-guest-portal-chat-v0.1.md`](scoping/2026-05-24-guest-portal-chat-v0.1.md). 15 open questions (channels, identity, notification, AI surfaces, OTA scope, auth, integration, etc.). Cross-cuts: Friday Website (separate session per AGENTS.md), Guests module v0.2, Inbox channel taxonomy.
