@@ -338,6 +338,31 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   appear on the right while the rest of the team messages appear on
   the left. like we do for guests."
 
+### FAB reports — email + push + in-app notification fan-out (SHIPPED 2026-05-24 evening · `4de1b127`)
+- Effort: M · ✅ shipped + verified end-to-end on prod · Slack pending env var
+- Per Ishant: "the FAB reports dont notify me by email or push. they
+  should do both. as well as slack."
+- Backend `notifyAdmins()` in `feedback.js` now fires `notifyUsers()`
+  for every admin/director in the reporter's tenant (excluding the
+  reporter themselves). `notifyUsers` fans out to:
+  - `fad_notifications` DB row (in-app bell list)
+  - SSE `notification.created` event (live banner in open tabs)
+  - `sendPushToUsers` → VAPID web push (subscribed devices)
+  - `sendEmailNotifications` → Resend (offline recipients only by
+    default; `FAD_EMAIL_NOTIFY_ONLINE_USERS=true` to override)
+- Notification shape: type `feedback_<type>`, title `🐛 New <type>
+  from <reporter> · <severity>`, body `<title>\n<route>`, url
+  `/fad?m=settings`, priority `high` when severity high/critical.
+- Slack (already wired via `notifySlack`) silently no-ops on prod
+  until `SLACK_FEEDBACK_WEBHOOK_URL` is set in `/var/www/fad-backend/.env`.
+  Needs Ishant's action to enable the Slack leg.
+- Verified end-to-end: smoke-test POST → 2 `fad_notifications` rows
+  for Judith + Mathias (Ishant excluded as reporter) · pm2 logs clean
+  · test row cleaned up afterwards.
+- Catalogued as `feature-catalog` commit `02df90e` in new
+  `ui/fad-feedback-fab.md` entry (FAD-specific superset of the
+  generic `feedback-fab.md` — doesn't duplicate, references parent).
+
 ### T3.15 — French (FR) i18n for field staff modules (v0.1 SHIPPED 2026-05-24 evening · `97230bd2`)
 - Effort: L overall · v0.1 ✅ shipped · v0.2 scoped below
 - v0.1 (this session):
@@ -356,15 +381,27 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
     + `'use client'` side-effect import in `FadApp.tsx`. New hook
     `useT()` returns `{t, lang, setLang}`. Specialised helpers
     `useTranslateModule()` + `useTranslateGroup()` for sidebar lookups.
-- v0.2 follow-ups (open):
+- v0.2 (SHIPPED 2026-05-24 evening · `72465726`):
+  - **Module header coverage** — Inbox (both guest + team view) ·
+    Calendar · Properties (title + subtitle + 4 tabs + "New property"
+    CTA) · Reservations (title + subtitle + 3 tabs + "New reservation"
+    CTA) · HR (title + role-dependent subtitle + 4 tabs) all wired
+    through the same `useT()` pattern + new keys in en.ts / fr.ts.
+  - Live verified on prod: Boîte de réception, Logements, Réservations,
+    Calendrier, RH, Opérations all swap headers + tab labels +
+    primary CTAs when language toggles to French.
+  - TranslationShape interface extended to enforce fr.ts coverage of
+    properties.* / reservations.* / hr.* at compile-time.
+- v0.3 follow-ups (open):
   - **Sub-page labels** — need module-qualified keys to disambiguate
     ('all' means All properties in Properties context, All reservations
     in Reservations).
   - **DB-backed per-user persistence** — `users.preferred_language`
     column + sync at login. Currently per-device only.
-  - **Module body coverage** — Inbox, Calendar, Properties,
-    Reservations, HR, Finance bodies all still EN. Per-module sweep
-    needed (Operations is the template — copy its pattern).
+  - **Module body coverage** — Cards / table headers / empty states /
+    hover tooltips / form labels inside each module body still EN.
+  - **Finance** — skipped in v0.2 because title is dynamic per
+    sub-page. Admin-only, not field-staff visible, so lower priority.
   - **Body strings inside Settings → Appearance card** — Density /
     Sidebar / Dark mode rows + their "Currently: dark" copy. Quick win.
   - **Account section + ChangePassword + Toaster + button copy** —
