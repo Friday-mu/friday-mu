@@ -24,10 +24,15 @@ import { PROPERTIES } from './properties';
 import { portfolioInsights } from './properties';
 import { liveOnlyMode } from './demoMode';
 
-const TODAY = '2026-04-27';
-const TODAY_MS = new Date(TODAY).getTime();
-const TODAY_DAY = new Date(TODAY).getDate();
-const TODAY_MONTH = new Date(TODAY).toISOString().slice(0, 7);
+// T1.9 (2026-05-25): TODAY gating — wall clock in live-only mode, fixture
+// anchor (2026-04-27) otherwise. Functions rather than module-load
+// constants so a long-running tab rolls over at midnight in live mode.
+function todayDate(): Date {
+  return liveOnlyMode() ? new Date() : new Date('2026-04-27');
+}
+function todayMs(): number { return todayDate().getTime(); }
+function todayDay(): number { return todayDate().getDate(); }
+function todayMonth(): string { return todayDate().toISOString().slice(0, 7); }
 
 type Role = TaskUser['role'];
 
@@ -84,7 +89,7 @@ export function pendingOperations(role: Role, userId: string): PendingCount {
 
   const overdue = TASKS.filter((t) => {
     if (t.status === 'completed' || t.status === 'cancelled') return false;
-    if (t.dueDate > TODAY) return false; // not yet due
+    if (t.dueDate > todayDate().toISOString().slice(0, 10)) return false; // not yet due
     // Manager sees team-wide overdue; field/commercial only sees own
     if (!isManager && !t.assigneeIds.includes(userId)) return false;
     return true;
@@ -117,7 +122,7 @@ export function pendingOperationsApprovals(role: Role): PendingCount {
 export function pendingCalendar(role: Role, _userId: string): PendingCount {
   if (role === 'external') return ZERO;
   const todayCheckins = RESERVATIONS.filter((r) => {
-    return r.checkIn.startsWith(TODAY) && r.status === 'confirmed' && !r.accessInfoSentAt;
+    return r.checkIn.startsWith(todayDate().toISOString().slice(0, 10)) && r.status === 'confirmed' && !r.accessInfoSentAt;
   });
   return {
     total: todayCheckins.length,
@@ -135,7 +140,7 @@ export function pendingReservations(role: Role, _userId: string): PendingCount {
   const balanceCritical = RESERVATIONS.filter((r) => {
     if (r.status !== 'confirmed' || r.balanceDue <= 0) return false;
     const checkInMs = new Date(r.checkIn).getTime();
-    const daysUntil = (checkInMs - TODAY_MS) / 86400000;
+    const daysUntil = (checkInMs - todayMs()) / 86400000;
     return daysUntil >= 0 && daysUntil <= 3;
   });
   return { total: balanceCritical.length, tone: balanceCritical.length > 0 ? 'urgent' : 'normal' };
@@ -149,7 +154,7 @@ export function pendingProperties(role: Role, _userId: string): PendingCount {
   if (role === 'field' || role === 'external') return ZERO;
   const stuck = PROPERTIES.filter((p) => {
     if (p.lifecycleStatus !== 'onboarding') return false;
-    const days = (TODAY_MS - new Date(p.lastActivityAt).getTime()) / 86400000;
+    const days = (todayMs() - new Date(p.lastActivityAt).getTime()) / 86400000;
     return days > 7;
   });
   const highInsights = portfolioInsights().filter((i) => i.severity === 'high');
@@ -163,7 +168,7 @@ export function pendingPropertiesOnboarding(role: Role): PendingCount {
   if (role === 'field' || role === 'external') return ZERO;
   const stuck = PROPERTIES.filter((p) => {
     if (p.lifecycleStatus !== 'onboarding') return false;
-    const days = (TODAY_MS - new Date(p.lastActivityAt).getTime()) / 86400000;
+    const days = (todayMs() - new Date(p.lastActivityAt).getTime()) / 86400000;
     return days > 7;
   });
   return { total: stuck.length, tone: stuck.length > 0 ? 'urgent' : 'normal' };
@@ -192,7 +197,7 @@ export function pendingReviews(role: Role, _userId: string): PendingCount {
   const unreplied = REVIEWS.filter((rv) => {
     if ((rv as any).replyText) return false;
     const submittedMs = new Date((rv as any).submittedAt ?? '2000-01-01').getTime();
-    const days = (TODAY_MS - submittedMs) / 86400000;
+    const days = (todayMs() - submittedMs) / 86400000;
     const window = REPLY_WINDOW_DAYS[(rv as any).channel as string] ?? 14;
     return days <= window;
   });
@@ -217,9 +222,9 @@ export function pendingFinance(role: Role, _userId: string): PendingCount {
 
   // @demo:logic — Tag: PROD-LOGIC-13 — see frontend/DEMO_CRUFT.md
   // End-of-month reconciliation: last week of month + unreconciled posted/captured items
-  const isMonthEnd = TODAY_DAY >= 25;
+  const isMonthEnd = todayDay() >= 25;
   const monthEndItems = isMonthEnd
-    ? FIN_EXPENSES.filter((e) => e.periodId === `p-${TODAY_MONTH}` && e.status === 'pending_approval').length
+    ? FIN_EXPENSES.filter((e) => e.periodId === `p-${todayMonth()}` && e.status === 'pending_approval').length
     : 0;
 
   // Only surface a "reconciliation due" signal when there are real items to reconcile.
@@ -274,7 +279,8 @@ export function ackRosterWeek(weekId: string, publishedAt: string | undefined): 
 
 export function pendingRoster(role: Role, _userId: string): PendingCount {
   if (role === 'external') return ZERO;
-  const thisWeek = ROSTERS.find((r) => (r as any).status === 'published' && (r as any).weekStart <= TODAY && (r as any).weekEnd >= TODAY);
+  const _today = todayDate().toISOString().slice(0, 10);
+  const thisWeek = ROSTERS.find((r) => (r as any).status === 'published' && (r as any).weekStart <= _today && (r as any).weekEnd >= _today);
   if (!thisWeek) return ZERO;
   if (rosterAckedFor((thisWeek as any).id ?? 'this', (thisWeek as any).publishedAt)) return ZERO;
   return { total: 1, tone: 'normal' };

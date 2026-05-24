@@ -212,10 +212,16 @@ export function staffLinksForReview(reviewId: string): StaffReviewLink[] {
 
 // ───────────────── Aggregations / helpers ─────────────────
 
-// @demo:logic — Tag: PROD-LOGIC-7 — see frontend/DEMO_CRUFT.md. Replace with real Date.now() / server now().
-const TODAY_ISO = '2026-04-27';
+// T1.9 (2026-05-25): TODAY constant gated. In live-only mode use the
+// real wall clock so 30/60/90-day windows track today's date. Fixture
+// mode (demo flag off) freezes to 2026-04-27 so the seed reviews still
+// land in their expected buckets relative to that anchor.
+import { liveOnlyMode } from './demoMode';
+function getTodayMs(): number {
+  return liveOnlyMode() ? Date.now() : new Date('2026-04-27').getTime();
+}
 function daysAgo(iso: string): number {
-  return Math.round((new Date(TODAY_ISO).getTime() - new Date(iso).getTime()) / (24 * 60 * 60 * 1000));
+  return Math.round((getTodayMs() - new Date(iso).getTime()) / (24 * 60 * 60 * 1000));
 }
 
 // Helpers accept an optional `source` array so live data from useLiveReviews()

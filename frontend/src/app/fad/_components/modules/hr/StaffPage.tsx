@@ -17,9 +17,13 @@ import {
   reactivateStaff as apiReactivateStaff,
 } from '../../../_data/hrClient';
 
-// @demo:logic — Tag: PROD-LOGIC-9 — see frontend/DEMO_CRUFT.md
-// Hardcoded demo date. Replace with new Date() (server-aware).
-const TODAY = '2026-04-27';
+// T1.9 (2026-05-25): TODAY gating — wall clock in live-only mode,
+// fixture anchor (2026-04-27) when the demo flag is on so seed staff
+// keep their expected status (departing / departed buckets).
+import { liveOnlyMode } from '../../../_data/demoMode';
+function getToday(): string {
+  return liveOnlyMode() ? new Date().toISOString().slice(0, 10) : '2026-04-27';
+}
 
 type StatusFilter = 'active' | 'departing' | 'departed' | 'archived' | 'all';
 type StaffLifecycle = 'active' | 'departing' | 'departed' | 'archived';
@@ -31,7 +35,7 @@ function staffStatus(user: TaskUser): StaffLifecycle {
   // to true so the fixture fallback keeps showing as active here.
   if (user.active === false) return 'archived';
   if (!user.endDate) return 'active';
-  if (user.endDate < TODAY) return 'departed';
+  if (user.endDate < getToday()) return 'departed';
   return 'departing';
 }
 
