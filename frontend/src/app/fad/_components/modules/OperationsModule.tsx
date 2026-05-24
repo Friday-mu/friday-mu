@@ -2185,6 +2185,7 @@ function MyTasksPage({
 }) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
+  const { t } = useT();
   const myTaskFilter = useMemo(() => ({ assignee: 'me' as const }), []);
   const { tasks: assignedTasks, loading, error, refetch } = useApiTasks(myTaskFilter);
   const [dateTab, setDateTab] = useState<TaskDateTab>('today');
@@ -2240,10 +2241,12 @@ function MyTasksPage({
     setUpdatingId(task.id);
     try {
       await updateTask({ taskId: task.id, patch: { status }, actorId: currentUserId });
-      fireToast(status === 'completed' ? 'Task marked completed' : `Task moved to ${STATUS_LABEL[status].toLowerCase()}`);
+      fireToast(status === 'completed'
+        ? t('operations.mine.toastCompleted')
+        : t('operations.mine.toastMoved', { status: STATUS_LABEL[status].toLowerCase() }));
       refetch();
     } catch (e) {
-      fireToast(e instanceof Error ? e.message : 'Task update failed');
+      fireToast(e instanceof Error ? e.message : t('operations.mine.toastFailed'));
     } finally {
       setUpdatingId(null);
     }
@@ -2253,33 +2256,33 @@ function MyTasksPage({
     <div className="ops-my-tasks">
       <div className="ops-my-header">
         <div>
-          <div className="ops-mobile-kicker">{role === 'field' ? 'Assigned only' : 'Assigned to me'}</div>
-          <h2>My tasks</h2>
-          <p>{role === 'field' ? 'Start, comment, attach evidence, and complete only work assigned to you.' : 'Your own execution queue inside the manager board.'}</p>
+          <div className="ops-mobile-kicker">{role === 'field' ? t('operations.mine.kickerField') : t('operations.mine.kickerManager')}</div>
+          <h2>{t('operations.mine.title')}</h2>
+          <p>{role === 'field' ? t('operations.mine.introField') : t('operations.mine.introManager')}</p>
         </div>
         <div className="ops-my-header-side">
-          <div className="ops-my-counts" aria-label="My task counts">
-            <span><strong>{counts.active}</strong> active</span>
-            <span><strong>{counts.due}</strong> due</span>
-            <span><strong>{counts.blocked}</strong> blocked</span>
-            <span><strong>{counts.completed}</strong> done</span>
+          <div className="ops-my-counts" aria-label={t('operations.mine.countsAria')}>
+            <span><strong>{counts.active}</strong> {t('operations.mine.countActive')}</span>
+            <span><strong>{counts.due}</strong> {t('operations.mine.countDue')}</span>
+            <span><strong>{counts.blocked}</strong> {t('operations.mine.countBlocked')}</span>
+            <span><strong>{counts.completed}</strong> {t('operations.mine.countDone')}</span>
           </div>
         </div>
       </div>
 
       {error && (
         <div className="ops-my-alert">
-          Live tasks could not load: {error}. Offline queue is not enabled yet, so failed actions stay visible here instead of disappearing.
+          {t('operations.mine.loadError', { error })}
         </div>
       )}
-      {loading && assignedTasks.length === 0 && <LoadingState label="Loading assigned tasks" />}
+      {loading && assignedTasks.length === 0 && <LoadingState label={t('operations.mine.loadingAssigned')} />}
 
-      <div className="ops-my-tabs" role="tablist" aria-label="Task date range">
+      <div className="ops-my-tabs" role="tablist" aria-label={t('operations.mine.dateRangeAria')}>
         {[
-          ['today', 'Today'],
-          ['tomorrow', 'Tomorrow'],
-          ['week', 'Week'],
-          ['all', 'All'],
+          ['today', t('operations.mine.dateToday')],
+          ['tomorrow', t('operations.mine.dateTomorrow')],
+          ['week', t('operations.mine.dateWeek')],
+          ['all', t('operations.mine.dateAll')],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -2295,47 +2298,47 @@ function MyTasksPage({
       <div className="ops-my-filterbar">
         <input
           type="search"
-          placeholder="Search property, title, reservation..."
+          placeholder={t('operations.mine.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select value={sort} onChange={(e) => setSort(e.target.value as MyTaskSort)} aria-label="Sort my tasks">
-          <option value="suggested">Suggested</option>
-          <option value="due">Due time</option>
-          <option value="priority">Priority</option>
-          <option value="property">Property</option>
+        <select value={sort} onChange={(e) => setSort(e.target.value as MyTaskSort)} aria-label={t('operations.mine.sortAria')}>
+          <option value="suggested">{t('operations.mine.sortSuggested')}</option>
+          <option value="due">{t('operations.mine.sortDue')}</option>
+          <option value="priority">{t('operations.mine.sortPriority')}</option>
+          <option value="property">{t('operations.mine.sortProperty')}</option>
         </select>
-        <select value={department} onChange={(e) => setDepartment(e.target.value as Department | 'all')} aria-label="Department">
-          <option value="all">All departments</option>
-          <option value="cleaning">Cleaning</option>
-          <option value="inspection">Inspection</option>
-          <option value="maintenance">Maintenance</option>
-          <option value="office">Office</option>
+        <select value={department} onChange={(e) => setDepartment(e.target.value as Department | 'all')} aria-label={t('operations.mine.deptAria')}>
+          <option value="all">{t('operations.mine.deptAll')}</option>
+          <option value="cleaning">{t('operations.mine.deptCleaning')}</option>
+          <option value="inspection">{t('operations.mine.deptInspection')}</option>
+          <option value="maintenance">{t('operations.mine.deptMaintenance')}</option>
+          <option value="office">{t('operations.mine.deptOffice')}</option>
         </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority | 'all')} aria-label="Priority">
-          <option value="all">All priorities</option>
-          <option value="urgent">Urgent</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-          <option value="lowest">Lowest</option>
+        <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority | 'all')} aria-label={t('operations.mine.priorityAria')}>
+          <option value="all">{t('operations.mine.priorityAll')}</option>
+          <option value="urgent">{t('operations.mine.priorityUrgent')}</option>
+          <option value="high">{t('operations.mine.priorityHigh')}</option>
+          <option value="medium">{t('operations.mine.priorityMedium')}</option>
+          <option value="low">{t('operations.mine.priorityLow')}</option>
+          <option value="lowest">{t('operations.mine.priorityLowest')}</option>
         </select>
-        <select value={reservation} onChange={(e) => setReservation(e.target.value as ReservationFilter)} aria-label="Reservation state">
-          <option value="all">Any reservation</option>
-          <option value="linked">Linked reservation</option>
-          <option value="unlinked">No reservation</option>
+        <select value={reservation} onChange={(e) => setReservation(e.target.value as ReservationFilter)} aria-label={t('operations.mine.reservationAria')}>
+          <option value="all">{t('operations.mine.reservationAny')}</option>
+          <option value="linked">{t('operations.mine.reservationLinked')}</option>
+          <option value="unlinked">{t('operations.mine.reservationUnlinked')}</option>
         </select>
         {dateTab === 'all' && (
           <>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} aria-label="Start date" />
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} aria-label="End date" />
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} aria-label={t('operations.mine.startDateAria')} />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} aria-label={t('operations.mine.endDateAria')} />
           </>
         )}
       </div>
 
       <div className="ops-my-resultline">
-        <span>{visibleTasks.length} assigned task{visibleTasks.length === 1 ? '' : 's'}</span>
-        <span>{error ? 'Sync issue visible' : 'Live sync'}</span>
+        <span>{t(visibleTasks.length === 1 ? 'operations.mine.resultOne' : 'operations.mine.resultMany', { n: visibleTasks.length })}</span>
+        <span>{error ? t('operations.mine.syncIssue') : t('operations.mine.syncLive')}</span>
       </div>
 
       <div className="ops-my-groups">
@@ -2351,7 +2354,7 @@ function MyTasksPage({
                   key={task.id}
                   task={task}
                   busy={updatingId === task.id}
-                  syncLabel={error ? 'Not synced' : 'Live'}
+                  syncLabel={error ? t('operations.mine.notSynced') : t('operations.mine.live')}
                   onOpen={() => onOpenTask(task.id)}
                   onSetStatus={(status) => setTaskStatus(task, status)}
                 />
@@ -2359,7 +2362,7 @@ function MyTasksPage({
             </div>
           </section>
         ))}
-        {visibleTasks.length === 0 && <Empty>No assigned tasks match this view.</Empty>}
+        {visibleTasks.length === 0 && <Empty>{t('operations.mine.empty')}</Empty>}
       </div>
     </div>
   );
@@ -2623,6 +2626,7 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
 
 function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => void; onCreate: () => void }) {
   const { role } = usePermissions();
+  const { t } = useT();
 
   const [filters, setFilters] = useState<AllTasksFilters>({
     department: 'all',
@@ -2838,13 +2842,13 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
       <div className="ops-all-toolbar">
         {error && (
           <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
-            Live tasks could not load: {error}
+            {t('operations.overview.loadError', { error })}
           </div>
         )}
         <div className="all-tasks-search-row">
           <input
             type="search"
-            placeholder="Search tasks…"
+            placeholder={t('operations.all.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ flex: 1, padding: 8, fontSize: 13 }}
@@ -2865,7 +2869,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
                 whiteSpace: 'nowrap',
               }}
             >
-              <IconFilter size={14} /> Filters
+              <IconFilter size={14} /> {t('operations.all.filters')}
               {activeFilterCount > 0 && (
                 <span
                   className="mono"
@@ -2936,25 +2940,25 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
         <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
           <span>
             {loading && visibleTasks.length === 0
-              ? <LoadingInline label="Loading task page" />
-              : `${pageStart}-${pageEnd} of ${total} tasks`}
+              ? <LoadingInline label={t('operations.mine.loadingAssigned')} />
+              : t('operations.all.resultRange', { from: pageStart, to: pageEnd, total })}
           </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              aria-label="Tasks per page"
+              aria-label={t('operations.all.filters')}
               style={{ padding: '4px 8px', fontSize: 11, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)' }}
             >
-              <option value={50}>50 / page</option>
-              <option value={100}>100 / page</option>
-              <option value={200}>200 / page</option>
+              <option value={50}>{t('operations.all.perPage', { n: 50 })}</option>
+              <option value={100}>{t('operations.all.perPage', { n: 100 })}</option>
+              <option value={200}>{t('operations.all.perPage', { n: 200 })}</option>
             </select>
             <button className="btn ghost sm" disabled={!canPrev || loading} onClick={() => setOffset(Math.max(0, pageOffset - limit))}>
-              Prev
+              {t('operations.all.previous')}
             </button>
             <button className="btn ghost sm" disabled={!canNext || loading} onClick={() => setOffset(pageOffset + limit)}>
-              Next
+              {t('operations.all.next')}
             </button>
           </div>
         </div>
@@ -2993,7 +2997,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
             <TaskCard key={t.id} task={t} onClick={() => onOpenTask(t.id)} />
           ))}
         </div>
-        {visibleTasks.length === 0 && <Empty>No tasks match the filters.</Empty>}
+        {visibleTasks.length === 0 && <Empty>{t('operations.all.empty')}</Empty>}
       </div>
     </div>
   );
@@ -3341,6 +3345,7 @@ function appendTriageNote(task: Task, note: string): string {
 
 function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
   const currentUserId = useCurrentUserId();
+  const { t } = useT();
   const reportedTaskFilter = useMemo(() => ({ status: ['reported'] as TaskStatus[] }), []);
   const linkableTaskFilter = useMemo(() => ({ status: OPEN_SCHEDULE_STATUSES }), []);
   const { tasks: TASKS, loading, error, refetch } = useApiTasks(reportedTaskFilter);
@@ -3485,15 +3490,15 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
         <div style={{ padding: 12, borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
           {error && (
             <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
-              Reported issues could not load: {error}
+              {t('operations.overview.loadError', { error })}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0 }}>
-                Reported issues
+                {t('operations.issues.title')}
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{intakeTasks.length} reported</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{intakeTasks.length} {t('operations.issues.title').toLowerCase()}</div>
             </div>
             <button
               className="btn ghost sm"
@@ -3522,7 +3527,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading && intakeTasks.length === 0 && <LoadingState label="Loading reported issues" />}
+          {loading && intakeTasks.length === 0 && <LoadingState label={t('operations.mine.loadingAssigned')} />}
           {intakeTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
             const sourceSwatch = toneStyle(taskSourceTone(task.source));
