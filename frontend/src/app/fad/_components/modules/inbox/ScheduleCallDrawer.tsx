@@ -5,7 +5,7 @@ import { TASK_USERS } from '../../../_data/tasks';
 import { TEAM_MESSAGES, type ChannelKey, type TeamMessage, type TeamCallMeta } from '../../../_data/teamInbox';
 import { useTenantTeamUsers } from '../../../_data/teamInboxClient';
 import { IconClose, IconSend } from '../../icons';
-import { useCurrentUserId, useJwtUserId } from '../../usePermissions';
+import { useCurrentUserId, useJwtRawUserId } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 
 interface Props {
@@ -40,7 +40,11 @@ function tomorrowAt09(): { date: string; time: string } {
 
 export function ScheduleCallDrawer({ open, onClose, target, defaultInviteeIds, onScheduled }: Props) {
   const fixtureUserId = useCurrentUserId();
-  const currentUserId = useJwtUserId() ?? fixtureUserId;
+  // T3.14 fix — use raw JWT UUID (not fixture-mapped) so the
+  // `u.id !== currentUserId` filter actually excludes self from the
+  // tenant-user invitee list (tenantUsers are real DB UUIDs). Same
+  // matters for organizerId/authorId payloads sent to the backend.
+  const currentUserId = useJwtRawUserId() ?? fixtureUserId;
   const { users: tenantUsers } = useTenantTeamUsers();
   const initial = tomorrowAt09();
   const [title, setTitle] = useState('Quick sync');

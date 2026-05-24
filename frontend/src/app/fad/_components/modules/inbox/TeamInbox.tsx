@@ -35,7 +35,7 @@ import {
   type LiveUser,
 } from '../../../_data/teamInboxClient';
 import { TASK_USER_BY_ID, type TaskUser } from '../../../_data/tasks';
-import { useJwtUserId, usePermissions } from '../../usePermissions';
+import { useJwtRawUserId, usePermissions } from '../../usePermissions';
 import { IconCal, IconClose, IconDownload, IconExpand, IconPaperclip, IconPlus, IconSend, IconSparkle, IconUsers } from '../../icons';
 import { ScheduleCallDrawer } from './ScheduleCallDrawer';
 import { ChannelMembersDrawer } from './ChannelMembersDrawer';
@@ -89,10 +89,12 @@ export function TeamInbox({
   const _perms = usePermissions();
   const canManageChannels = _perms.role !== 'field' && _perms.role !== 'external';
   // Real DB user ID from JWT — used for matching against backend data
-  // (DM participants, reaction "I reacted", message author "is this me?").
-  // The role-switcher fixture id from useCurrentUserId() never matches
-  // real UUIDs the team_inbox API returns.
-  const currentUserId = useJwtUserId() ?? '';
+  // (DM participants, reaction "I reacted", message author "is this me?"
+  // for chat-style alignment). The role-switcher fixture id from
+  // useCurrentUserId() never matches real UUIDs the team_inbox API
+  // returns. useJwtUserId() also fixture-maps known emails; we need the
+  // RAW UUID to compare against backend authorIds.
+  const currentUserId = useJwtRawUserId() ?? '';
 
   // Live data from /api/team/* (polled every 30s for unread badges).
   const { channels: liveChannels, refetch: refetchChannels } = useChannels();

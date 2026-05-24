@@ -104,8 +104,23 @@ function resolveTaskUserIdFromJwt(): string | null {
   return decodeJwtUserId(token);
 }
 
+// Internal helper used by setRole / context seeding — returns the
+// fixture-mapped id (so the role-switcher UX can find a TASK_USERS row
+// for known emails). Don't export — backend matchers should use the
+// raw UUID via readRawJwtUserId().
 function readJwtUserId(): string | null {
   return resolveTaskUserIdFromJwt();
+}
+
+// Raw JWT user_id (the real DB UUID, never fixture-mapped). For code
+// that matches against backend data — DM participants, team-message
+// authorId, reaction "is this me?", organizer ids on call invites, etc.
+// Anything coming back from /api/team/* or /api/tasks/* uses the raw
+// UUID, so callers comparing against it must use this hook, not
+// useJwtUserId which goes through the role-switcher fixture map.
+function readRawJwtUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return decodeJwtUserId(localStorage.getItem('gms_token'));
 }
 
 function readJwtFadRole(): Role | null {
@@ -209,9 +224,36 @@ export function useCurrentUserId(): string {
   return ctx().currentUserId;
 }
 
+/**
+ * Returns the role-switcher-friendly user id — for known emails this is
+ * the TASK_USERS fixture id (e.g. 'u-ishant'), for unknown emails it
+ * falls back to the raw JWT user_id (UUID). Use this for UI surfaces
+ * keyed off the fixture (assignee dropdowns, fixture avatars, etc).
+ *
+ * For matching against backend data (DM participants, team-message
+ * authorId, reactions, organizer ids), use {@link useJwtRawUserId}
+ * instead — backend always returns the raw DB UUID, which the fixture
+ * mapping would silently mismatch.
+ */
 export function useJwtUserId(): string | null {
   return useMemo(() => {
     return readJwtUserId();
+  }, []);
+}
+
+/**
+ * Returns the raw JWT user_id — the real DB UUID, never fixture-mapped.
+ * Use this when comparing the logged-in user against any id that came
+ * back from a backend API (team_inbox messages, tasks, reactions, etc).
+ *
+ * T3.14 fix (2026-05-24) — `useJwtUserId` historically claimed to
+ * return the raw UUID but actually went through a fixture-mapping
+ * helper, silently breaking authorId comparisons in TeamInbox +
+ * ScheduleCallDrawer. This hook is the unambiguous one.
+ */
+export function useJwtRawUserId(): string | null {
+  return useMemo(() => {
+    return readRawJwtUserId();
   }, []);
 }
 
