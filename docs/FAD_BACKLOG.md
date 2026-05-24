@@ -3,8 +3,8 @@
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
 > Last reviewed: **2026-05-24** (Judith — after Calendar Month-view refactor + T1.10 array-safety sweep).
-> Live on prod: frontend `a1a77988` · backend `0306bbba`.
-> Tree tip on `fad-rebuild`: `a1a77988` (live).
+> Live on prod: frontend `7e85416d` · backend `0306bbba`.
+> Tree tip on `fad-rebuild`: `7e85416d` (live).
 
 ## How to use this doc
 
@@ -115,10 +115,8 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Don't begin until Ishant's Breezeway screenshot lands so the redesign is anchored on a concrete example.
 
 ### T1.16 — Unify "New task" drawer (Friday-draft everywhere)
-- Effort: S · open (2026-05-24)
-- Ops · Overview "+ New task" opens a drawer with the AI-assisted Friday draft input.
-- Ops · Schedule "+ New task" opens a plainer drawer without it.
-- Pick the Overview version, delete the Schedule-only variant, wire the same drawer at both entry points (Roster's "+ New task" too).
+- Effort: S · status: **awaiting repro** (audited 2026-05-24)
+- 2026-05-24 audit: Both Overview's header "+ New task" and Schedule's planner "+ New task" route through `openManagerCreate()` → `setCreateIntent({ mode: 'manager_schedule' })` → the same CreateTaskDrawer in manager mode, which renders the "Draft with Friday" section conditional on `resolvedMode === 'manager_schedule'`. They appear identical from the code path. Possibly the issue was from a transient view-as-field role or an older deploy. Please re-test on `7e85416d`+ and reopen with a screenshot if the discrepancy persists.
 
 ### T1.17 — Expense capture: receipt upload LLM OCR not firing
 - Effort: M · open (2026-05-24)
@@ -277,10 +275,8 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - Routes: `GET /api/owners`, `GET /api/owners/:id`, `GET /api/owners/:id/properties`, `GET /api/owners/:id/statements`.
   - Frontend: replace `FIN_OWNERS` fixture with hooks.
 
-### T3.13 — Reviews backend verification — pull through FAD API not direct (NEW 2026-05-24)
-- Effort: S-M · open
-- Verify the Reviews module fetches through `admin.friday.mu/api/reviews/*` (FAD as the canonical integration source per §5.7) and NOT directly from Reva / Guesty in the browser.
-- If currently direct: add backend proxy + cache + re-point frontend.
+### ~~T3.13 — Reviews backend verification~~ ✓ verified clean 2026-05-24
+- Confirmed: `reviewsClient.ts` calls `apiFetch('/api/reviews/list')` exclusively (FAD-fronted per §5.7). No direct browser → Reva / Guesty calls. Action: none.
 
 ### T3.8 — Email integration completion (Gmail watcher + classifier dependencies)
 - Effort: L · Blocks: inbound-email → Inbox-thread pipeline · Status: open (surfaced 2026-05-24 from backend TODO scan)
@@ -409,6 +405,10 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-24 (today, this session)
+- **PropertyDetail OperationalTab → live Property Cards from backend** (`704e6322`) — new `usePropertyCards()` SWR hook; backend `PropertyCardRecord` mapped to existing `PropertyCard` shape so renderers don't change; live wins, fixture only as backstop in demo mode.
+- **ReservationDetail ActivityTab → live activity log** (`7e85416d`) — fetches `/api/reservations/:id/activity` (mig 078 endpoint). Cancel/Patch/Create mutations wired W1 now populate activity going forward.
+- **Reviews module verified FAD-fronted** — closes T3.13 (no direct browser → Reva).
+- **Hero photo from Guesty CDN wired** (`8423fc77`) — PropertyCardMini on Overview + PropertyDetail Identity tab now show the real photo, falling back to gradient only when no Guesty sync exists.
 - **Properties Overview restructure + module-wide audit pass** (`a1a77988`) — Ishant flagged "MV-1 not pulling from Guesty" (it WAS pulling, just invisible because Overview's "Needs attention" listed 33 paused properties before "Recently active"). Restructured Overview: Recently active moved above alerts, filtered to live + onboarding (the working portfolio), capped at 12 cards. Alerts filtered to truly urgent items only (paused-no-return / onboarding-stalled / live-no-photos). Full module audit found Properties + Reservations + Ops all healthy and backend-wired: 60 properties, 210 reservations, 100+ tasks, 7 staff, 18 website inquiries — all rendering with real data. Three small follow-ups logged: T1.11 (occupancy/ADR computation), T1.12 (owner name "o-guesty-unknown"), T1.13 (slow initial render on Insights/Inquiries).
 - **Calendar v3 + Properties 500 hotfix** (`105af798` `0306bbba` `a7e0df89`) — Ishant prod check surfaced 3 real bugs after Calendar v2: (a) `/api/properties` 500ing since 2026-05-23T23:57 — `ORDER BY 2->>'code'` was being parsed as `integer ->> text` (invalid Postgres). Fix: expose `sort_code` / `sort_nickname` as proper columns in the UNION branches, wrap in subquery, ORDER BY by name. (b) my v2 `mapStatus` defaulted null status to 'inquiry' — 202 of 210 prod reservations have null status so the calendar filtered out 96% of bookings. Reverted: null/empty → 'confirmed'. (c) MAX_LANES=3 was hiding 1098 stays behind "+more" — too tight for a 60-property portfolio. Bumped to 12 (same for WeekView stays-lane). Visible labeled stays went from 3 → 24. Peak-occupancy days still hit the cap (max ~51 hidden); proper fix is Property × Date PMS view (T4.38). Properties module now shows 27 live + 33 paused.
 - **Calendar v2 — real duplicate fix + Week all-day overflow + channel chips + status filter** (`069cd35d`) — Re-investigated prod via Chrome MCP after Ishant's pushback ("you didn't fix the duplicates"). Real cause: multi-week stays render as one band per week → labelled N×. Fixes shipped: (1) continuation segments (clip-left) no longer render the label — colored band is the continuation cue so a 3-week stay reads as ONE entity. (2) Calendar now filters to active stays only (confirmed / checked_in / checked_out) — inquiries / holds / cancellations no longer leak in. (3) `mapStatus` bug fixed: `inquiry` was being mapped to `checked_in` (silently inflated active count) — now maps to a real `inquiry` status, and unknown statuses default to `inquiry` instead of `confirmed`. (4) Week all-day row no longer scrolls horizontally — `grid-template-columns: 64px repeat(7, minmax(0, 1fr))` instead of `1fr` (nowrap content was overriding 1fr). (5) 3-letter channel chip (AIR / BDC / DIR / OWN / VRB / EML) inside every stay band — Ishant: "some are red, some are green, I don't understand why". (6) WeekView stays-lane capped at 6 lanes with "+ Show N more" toggle (was producing 846px wall of bars with 60+ properties packed).
