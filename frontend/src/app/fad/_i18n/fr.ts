@@ -281,6 +281,21 @@ export const fr: TranslationShape = {
     },
   },
 
+  analytics: {
+    subtitle: 'Tableaux de bord portefeuille · scan rapide · données de chaque module',
+    askFriday: 'Demander à Friday',
+    exportPdf: 'Exporter en PDF',
+    tabs: {
+      overview: 'Aperçu',
+      revenue: 'Revenus',
+      occupancy: 'Taux d’occupation',
+      channels: 'Canaux',
+      reviews: 'Avis',
+      team: 'Équipe',
+      margin: 'Marge',
+    },
+  },
+
   properties: {
     subtitle: 'Couche d’unification entre Guesty (commercial) et Breezeway (opérationnel) · destination pour tout ce qui est ancré au logement',
     tabs: {
@@ -298,6 +313,7 @@ export const fr: TranslationShape = {
       overview: 'Aperçu',
       all: 'Toutes les réservations',
       inquiries: 'Demandes',
+      insights: 'Indicateurs',
     },
     newReservation: 'Nouvelle réservation',
     overview: {
@@ -311,6 +327,24 @@ export const fr: TranslationShape = {
       needsAttention: 'À traiter',
       flag: {
         balanceDue: 'Solde dû avant l’arrivée',
+      },
+    },
+    insights: {
+      loadError: 'Impossible de charger les indicateurs',
+      vsPrior: 'vs {days} j précédents',
+      bookedNights: '{n} nuits réservées',
+      liveProps: 'logements actifs',
+      channelMix: 'Mix de canaux',
+      shareLast: 'part de réservations · {days} derniers jours',
+      noBookings: 'Aucune réservation sur cette période.',
+      topProperties: 'Top logements par réservations',
+      lastDays: '{days} derniers jours',
+      openInAnalytics: 'Ouvrir dans Analytics',
+      kpi: {
+        revenue: 'Revenus',
+        bookings: 'Réservations',
+        occupancy: 'Occupation payée',
+        adr: 'PRM (ADR)',
       },
     },
   },

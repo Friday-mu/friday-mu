@@ -293,6 +293,22 @@ export const en: TranslationShape = {
     },
   },
 
+  // ─── Analytics module ──────────────────────────────────────────
+  analytics: {
+    subtitle: 'Portfolio dashboards · scan-first · data across every module',
+    askFriday: 'Ask Friday',
+    exportPdf: 'Export PDF',
+    tabs: {
+      overview: 'Overview',
+      revenue: 'Revenue',
+      occupancy: 'Occupancy',
+      channels: 'Channels',
+      reviews: 'Reviews',
+      team: 'Team',
+      margin: 'Margin',
+    },
+  },
+
   // ─── Properties module ────────────────────────────────────────
   properties: {
     subtitle: 'Unification layer between Guesty (commercial) and Breezeway (operational) · destination for everything property-anchored',
@@ -312,6 +328,7 @@ export const en: TranslationShape = {
       overview: 'Overview',
       all: 'All reservations',
       inquiries: 'Inquiries',
+      insights: 'Insights',
     },
     newReservation: 'New reservation',
     overview: {
@@ -325,6 +342,24 @@ export const en: TranslationShape = {
       needsAttention: 'Needs attention',
       flag: {
         balanceDue: 'Balance due before check-in',
+      },
+    },
+    insights: {
+      loadError: 'Failed to load insights',
+      vsPrior: 'vs prior {days}d',
+      bookedNights: '{n} booked nights',
+      liveProps: 'live props',
+      channelMix: 'Channel mix',
+      shareLast: 'reservation share · last {days}d',
+      noBookings: 'No bookings in this window.',
+      topProperties: 'Top properties by bookings',
+      lastDays: 'last {days}d',
+      openInAnalytics: 'Open in Analytics',
+      kpi: {
+        revenue: 'Revenue',
+        bookings: 'Bookings',
+        occupancy: 'Paid occupancy',
+        adr: 'ADR',
       },
     },
   },
@@ -460,6 +495,12 @@ export interface TranslationShape {
     issues: Record<string, string>;
     manager: Record<string, string>;
   };
+  analytics: {
+    subtitle: string;
+    askFriday: string;
+    exportPdf: string;
+    tabs: Record<string, string>;
+  };
   properties: {
     subtitle: string;
     tabs: Record<string, string>;
@@ -473,6 +514,19 @@ export interface TranslationShape {
       kpi: Record<string, string>;
       needsAttention: string;
       flag: Record<string, string>;
+    };
+    insights: {
+      loadError: string;
+      vsPrior: string;
+      bookedNights: string;
+      liveProps: string;
+      channelMix: string;
+      shareLast: string;
+      noBookings: string;
+      topProperties: string;
+      lastDays: string;
+      openInAnalytics: string;
+      kpi: Record<string, string>;
     };
   };
   hr: {

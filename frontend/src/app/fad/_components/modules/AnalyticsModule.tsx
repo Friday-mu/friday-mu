@@ -32,33 +32,35 @@ import { useLiveReviews } from '../../_data/reviewsClient';
 import { useApiTasks } from '../../_data/useApiTasks';
 import { IconDownload, IconSparkle } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
+import { useT } from '../../_i18n/useT';
 
 export function AnalyticsModule() {
+  const { t } = useT();
   const [tab, setTab] = useState('overview');
   const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'revenue', label: 'Revenue' },
-    { id: 'occupancy', label: 'Occupancy' },
-    { id: 'channels', label: 'Channels' },
-    { id: 'reviews', label: 'Reviews' },
-    { id: 'team', label: 'Team' },
-    { id: 'margin', label: 'Margin' },
+    { id: 'overview', label: t('analytics.tabs.overview', 'Overview') },
+    { id: 'revenue', label: t('analytics.tabs.revenue', 'Revenue') },
+    { id: 'occupancy', label: t('analytics.tabs.occupancy', 'Occupancy') },
+    { id: 'channels', label: t('analytics.tabs.channels', 'Channels') },
+    { id: 'reviews', label: t('analytics.tabs.reviews', 'Reviews') },
+    { id: 'team', label: t('analytics.tabs.team', 'Team') },
+    { id: 'margin', label: t('analytics.tabs.margin', 'Margin') },
   ];
   return (
     <>
       <ModuleHeader
-        title="Analytics"
-        subtitle="Portfolio dashboards · scan-first · data across every module"
+        title={t('module.analytics', 'Analytics')}
+        subtitle={t('analytics.subtitle', 'Portfolio dashboards · scan-first · data across every module')}
         tabs={tabs}
         activeTab={tab}
         onTabChange={setTab}
         actions={
           <>
             <button className="btn ghost sm">
-              <IconSparkle size={12} /> Ask Friday
+              <IconSparkle size={12} /> {t('analytics.askFriday', 'Ask Friday')}
             </button>
             <button className="btn sm">
-              <IconDownload size={12} /> Export PDF
+              <IconDownload size={12} /> {t('analytics.exportPdf', 'Export PDF')}
             </button>
           </>
         }

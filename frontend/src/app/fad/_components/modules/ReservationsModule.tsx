@@ -9,6 +9,7 @@ import type { Reservation } from '../../_data/reservations';
 import { OverviewPage } from './reservations/OverviewPage';
 import { AllReservationsPage } from './reservations/AllReservationsPage';
 import { InquiriesPage } from './reservations/InquiriesPage';
+import { ReservationsInsightsPage } from './reservations/ReservationsInsightsPage';
 import { ReservationDetail } from './reservations/ReservationDetail';
 import { CreateReservationDrawer } from './reservations/CreateReservationDrawer';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
@@ -24,6 +25,7 @@ export function ReservationsModule({ subPage, onChangeSubPage }: Props) {
     { id: 'overview', label: t('reservations.tabs.overview', 'Overview') },
     { id: 'all', label: t('reservations.tabs.all', 'All reservations') },
     { id: 'inquiries', label: t('reservations.tabs.inquiries', 'Inquiries') },
+    { id: 'insights', label: t('reservations.tabs.insights', 'Insights') },
   ];
 
   const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
@@ -70,6 +72,7 @@ export function ReservationsModule({ subPage, onChangeSubPage }: Props) {
         {active === 'overview' && <OverviewPage onOpen={setOpenId} />}
         {active === 'all' && <AllReservationsPage onOpen={setOpenId} />}
         {active === 'inquiries' && <InquiriesPage onOpenReservation={setOpenId} />}
+        {active === 'insights' && <ReservationsInsightsPage />}
       </div>
       {openId && (
         <ReservationDetail
