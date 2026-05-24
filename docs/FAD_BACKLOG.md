@@ -3,8 +3,8 @@
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
 > Last reviewed: **2026-05-24** (Judith — after Calendar Month-view refactor + T1.10 array-safety sweep).
-> Live on prod: frontend `f9d375d6` · backend `87b608c8`.
-> Tree tip on `fad-rebuild`: `f9d375d6` (live).
+> Live on prod: frontend `069cd35d` · backend `87b608c8`.
+> Tree tip on `fad-rebuild`: `069cd35d` (live).
 
 ## How to use this doc
 
@@ -300,6 +300,7 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 ## Recently shipped (rolling log — newest first)
 
 ### 2026-05-24 (today, this session)
+- **Calendar v2 — real duplicate fix + Week all-day overflow + channel chips + status filter** (`069cd35d`) — Re-investigated prod via Chrome MCP after Ishant's pushback ("you didn't fix the duplicates"). Real cause: multi-week stays render as one band per week → labelled N×. Fixes shipped: (1) continuation segments (clip-left) no longer render the label — colored band is the continuation cue so a 3-week stay reads as ONE entity. (2) Calendar now filters to active stays only (confirmed / checked_in / checked_out) — inquiries / holds / cancellations no longer leak in. (3) `mapStatus` bug fixed: `inquiry` was being mapped to `checked_in` (silently inflated active count) — now maps to a real `inquiry` status, and unknown statuses default to `inquiry` instead of `confirmed`. (4) Week all-day row no longer scrolls horizontally — `grid-template-columns: 64px repeat(7, minmax(0, 1fr))` instead of `1fr` (nowrap content was overriding 1fr). (5) 3-letter channel chip (AIR / BDC / DIR / OWN / VRB / EML) inside every stay band — Ishant: "some are red, some are green, I don't understand why". (6) WeekView stays-lane capped at 6 lanes with "+ Show N more" toggle (was producing 846px wall of bars with 60+ properties packed).
 - **T1.10 — Brittle `array[0]` crash safety** (`f9d375d6`) — 7 useState initializers + inline accesses in FinanceModule (Owner Statements, Tourist Tax summary, Float Ledger, Bank Recon, Bank Upload Drawer) now use lazy `() => FIN_X[0]?.id ?? ''` initializers; OwnerStatements + FloatLedger return small empty-state instead of crashing on null `selected`. InboxModule + TeamInbox + FridayDrawer already had appropriate guards — no changes there.
 - **Calendar Month view refactor — true continuous bands + channel colors + status overlays** (`bbb48408`) — Refactored MonthView from per-cell stay segments (which read as "blank duplicate bars" because the label only rendered on the start cell) to a per-week CSS grid where each stay spans grid-columns directly. The label sits inside the visible band the entire span. Channel colors now distinguish booking sources across Week + Month + +more popover (Airbnb red, Booking blue, VRBO bright-blue, Direct green, Owner amber, Email info-blue). Status overlays compose on top — checked_in inset border, checked_out 55% opacity, cancelled strike-through italic, hold diagonal-stripe. New channel-legend strip + today blue date badge. Mobile QA passed (stay popover + +more day-expansion both functional at 375×812). Live at frontend `bbb48408`. Backlog T4.38 created for v0.2 follow-ups (Property×Date PMS view, today vertical line, occupancy heatmap, drag-to-reschedule). T2.4 (Mary inbox fluctuation) removed per Ishant.
 - **T3.2 — Multi-tenant safety sweep, partial** (`f1920ee3`) — audited 9 high-traffic surfaces (all tenant-safe); surfaced `website_inbox/*` as a known blocker for non-FR rollout (~30 SQL sites without tenant_id; the underlying tables don't have the column). Full report at `docs/SECURITY_AUDIT_2026-05-24.md`. Promoted to T3.7 in Tier 3.
