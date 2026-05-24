@@ -139,10 +139,18 @@ export const en: TranslationShape = {
     dueDate: 'Due date',
     status: {
       open: 'Open',
+      reported: 'Reported',
+      scheduled: 'Scheduled',
+      ready: 'Ready',
       inProgress: 'In progress',
-      completed: 'Completed',
-      cancelled: 'Cancelled',
+      active: 'Active',
+      paused: 'Paused',
       blocked: 'Blocked',
+      completed: 'Completed',
+      done: 'Done',
+      closed: 'Closed',
+      cancelled: 'Cancelled',
+      all: 'All',
     },
     priorityLabel: {
       urgent: 'Urgent',
@@ -155,6 +163,38 @@ export const en: TranslationShape = {
       all: 'All',
       today: 'Today',
       week: 'This week',
+    },
+    overview: {
+      title: 'Operations dashboard',
+      fieldAgenda: 'My agenda',
+      managerAgenda: 'Manager agenda',
+      dateLabel: 'Date',
+      statusFiltersAria: 'Task status filters',
+      mobileDashboardAria: 'Mobile operations dashboard',
+      taskCountOne: '1 task',
+      taskCountMany: '{n} tasks',
+      kpi: {
+        openToday: 'Open today',
+        overdue: 'Overdue',
+        urgent: 'Urgent',
+        awaitingApproval: 'Awaiting approval',
+        reportedToday: 'Reported today',
+      },
+      loadingLive: 'Loading live tasks',
+      loadError: 'Live tasks could not load: {error}',
+      emptyAgenda: 'No tasks scheduled for this day.',
+      emptyAgendaForDate: 'No agenda tasks for {date}.',
+      anyTime: 'Any time',
+      reservationLinked: 'reservation linked',
+      noReservation: 'no reservation',
+      filesCount: '{n} files',
+      commentsCount: '{n} comments',
+      dailyBrief: 'Friday Daily Brief',
+      escalationsCount: 'Escalations · {n}',
+      noEscalations: 'No escalations.',
+      reservationUrgentCount: 'Reservation-driven urgent · {n}',
+      noReservationUrgent: 'No reservation-driven urgent tasks.',
+      recentActivity: 'Recent activity (last 24h)',
     },
   },
 
@@ -293,6 +333,32 @@ export interface TranslationShape {
     status: Record<string, string>;
     priorityLabel: Record<string, string>;
     filters: Record<string, string>;
+    overview: {
+      title: string;
+      fieldAgenda: string;
+      managerAgenda: string;
+      dateLabel: string;
+      statusFiltersAria: string;
+      mobileDashboardAria: string;
+      taskCountOne: string;
+      taskCountMany: string;
+      kpi: Record<string, string>;
+      loadingLive: string;
+      loadError: string;
+      emptyAgenda: string;
+      emptyAgendaForDate: string;
+      anyTime: string;
+      reservationLinked: string;
+      noReservation: string;
+      filesCount: string;
+      commentsCount: string;
+      dailyBrief: string;
+      escalationsCount: string;
+      noEscalations: string;
+      reservationUrgentCount: string;
+      noReservationUrgent: string;
+      recentActivity: string;
+    };
   };
   properties: {
     subtitle: string;

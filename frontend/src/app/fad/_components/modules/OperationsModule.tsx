@@ -612,36 +612,37 @@ function OverviewPage({
   };
   void pickFromPool;
 
+  const { t } = useT();
   return (
     <div className="ops-overview-page">
       {error && (
         <div style={{ marginBottom: 12, padding: 12, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
-          Live tasks could not load: {error}
+          {t('operations.overview.loadError', { error: String(error) })}
         </div>
       )}
-      {loading && TASKS.length === 0 && <LoadingState label="Loading live tasks" />}
+      {loading && TASKS.length === 0 && <LoadingState label={t('operations.overview.loadingLive')} />}
 
-      <section className="ops-mobile-dashboard" aria-label="Mobile operations dashboard">
+      <section className="ops-mobile-dashboard" aria-label={t('operations.overview.mobileDashboardAria')}>
         <div className="ops-mobile-dashboard-head">
           <div>
-            <div className="ops-mobile-kicker">{role === 'field' ? 'My agenda' : 'Manager agenda'}</div>
-            <h2>Operations dashboard</h2>
+            <div className="ops-mobile-kicker">{role === 'field' ? t('operations.overview.fieldAgenda') : t('operations.overview.managerAgenda')}</div>
+            <h2>{t('operations.overview.title')}</h2>
           </div>
           <label>
-            <span>Date</span>
+            <span>{t('operations.overview.dateLabel')}</span>
             <input type="date" value={dashboardDate} onChange={(e) => setDashboardDate(e.target.value)} />
           </label>
         </div>
-        <div className="ops-status-strip" aria-label="Task status filters">
+        <div className="ops-status-strip" aria-label={t('operations.overview.statusFiltersAria')}>
           {[
-            { id: 'open' as const, label: 'Open', count: statusCounts.open },
-            { id: 'reported' as const, label: 'Reported', count: statusCounts.counts.reported },
-            { id: 'scheduled' as const, label: 'Scheduled', count: statusCounts.counts.scheduled },
-            { id: 'ready' as const, label: 'Ready', count: statusCounts.counts.ready },
-            { id: 'in_progress' as const, label: 'Active', count: statusCounts.counts.in_progress },
-            { id: 'blocked' as const, label: 'Blocked', count: statusCounts.counts.blocked },
-            { id: 'completed' as const, label: 'Done', count: statusCounts.counts.completed },
-            { id: 'all' as const, label: 'All', count: statusCounts.total },
+            { id: 'open' as const, label: t('operations.status.open'), count: statusCounts.open },
+            { id: 'reported' as const, label: t('operations.status.reported'), count: statusCounts.counts.reported },
+            { id: 'scheduled' as const, label: t('operations.status.scheduled'), count: statusCounts.counts.scheduled },
+            { id: 'ready' as const, label: t('operations.status.ready'), count: statusCounts.counts.ready },
+            { id: 'in_progress' as const, label: t('operations.status.active'), count: statusCounts.counts.in_progress },
+            { id: 'blocked' as const, label: t('operations.status.blocked'), count: statusCounts.counts.blocked },
+            { id: 'completed' as const, label: t('operations.status.done'), count: statusCounts.counts.completed },
+            { id: 'all' as const, label: t('operations.status.all'), count: statusCounts.total },
           ].map((chip) => (
             <button
               key={chip.id}
@@ -667,7 +668,9 @@ function OverviewPage({
             <div className="ops-agenda-property" key={propertyCode}>
               <div className="ops-agenda-property-title">
                 <span className="mono">{propertyCode}</span>
-                <span>{tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+                <span>{tasks.length === 1
+                  ? t('operations.overview.taskCountOne')
+                  : t('operations.overview.taskCountMany', { n: tasks.length })}</span>
               </div>
               {tasks.map((task) => (
                 <button className="ops-agenda-row" type="button" key={task.id} onClick={() => onOpenTask(task.id)}>
@@ -679,12 +682,12 @@ function OverviewPage({
                     </small>
                   </span>
                   <span className="ops-agenda-indicators">
-                    {taskAttachmentCount(task) > 0 && <span>{taskAttachmentCount(task)} files</span>}
-                    {taskCommentCount(task) > 0 && <span>{taskCommentCount(task)} comments</span>}
+                    {taskAttachmentCount(task) > 0 && <span>{t('operations.overview.filesCount', { n: taskAttachmentCount(task) })}</span>}
+                    {taskCommentCount(task) > 0 && <span>{t('operations.overview.commentsCount', { n: taskCommentCount(task) })}</span>}
                   </span>
                   <span className="ops-agenda-time" onClick={(e) => e.stopPropagation()}>
                     {role === 'field' ? (
-                      <span>{task.dueTime ?? 'Any time'}</span>
+                      <span>{task.dueTime ?? t('operations.overview.anyTime')}</span>
                     ) : (
                       <input
                         type="time"
@@ -699,17 +702,17 @@ function OverviewPage({
               ))}
             </div>
           ))}
-          {dashboardByProperty.length === 0 && <Empty>No agenda tasks for {formatShortDate(dashboardDate)}.</Empty>}
+          {dashboardByProperty.length === 0 && <Empty>{t('operations.overview.emptyAgendaForDate', { date: formatShortDate(dashboardDate) })}</Empty>}
         </div>
       </section>
 
       {/* KPI strip */}
       <div className="ops-kpi-strip">
-        <KpiCard label="Open today" value={kpis.openToday} accent="var(--color-text-info)" />
-        <KpiCard label="Overdue" value={kpis.overdue} accent="var(--color-text-danger)" />
-        <KpiCard label="Urgent" value={kpis.urgent} accent="var(--color-text-warning)" />
-        <KpiCard label="Awaiting approval" value={kpis.awaitingApproval} accent="var(--color-brand-accent)" />
-        <KpiCard label="Reported today" value={kpis.reportedToday} accent="var(--color-text-success)" />
+        <KpiCard label={t('operations.overview.kpi.openToday')} value={kpis.openToday} accent="var(--color-text-info)" />
+        <KpiCard label={t('operations.overview.kpi.overdue')} value={kpis.overdue} accent="var(--color-text-danger)" />
+        <KpiCard label={t('operations.overview.kpi.urgent')} value={kpis.urgent} accent="var(--color-text-warning)" />
+        <KpiCard label={t('operations.overview.kpi.awaitingApproval')} value={kpis.awaitingApproval} accent="var(--color-brand-accent)" />
+        <KpiCard label={t('operations.overview.kpi.reportedToday')} value={kpis.reportedToday} accent="var(--color-text-success)" />
       </div>
 
       {/* AI Daily Brief — hidden when DAILY_BRIEF_POOL is empty */}
@@ -720,7 +723,7 @@ function OverviewPage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <AIBadge size="md" prefix="" />
             <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-brand-accent)' }}>
-              Friday Daily Brief
+              {t('operations.overview.dailyBrief')}
             </span>
             <span style={{ marginLeft: 'auto' }}>
               <AIRegenerateButton onClick={regenerateBrief} />
@@ -732,21 +735,21 @@ function OverviewPage({
 
       {/* Two-column layout */}
       <div className="ops-overview-grid">
-        <Section title={`Escalations · ${escalations.length}`}>
-          {escalations.map((t) => (
-            <TaskRowMini key={t.id} task={t} onClick={() => onOpenTask(t.id)} />
+        <Section title={t('operations.overview.escalationsCount', { n: escalations.length })}>
+          {escalations.map((task) => (
+            <TaskRowMini key={task.id} task={task} onClick={() => onOpenTask(task.id)} />
           ))}
-          {escalations.length === 0 && <Empty>No escalations.</Empty>}
+          {escalations.length === 0 && <Empty>{t('operations.overview.noEscalations')}</Empty>}
         </Section>
 
-        <Section title={`Reservation-driven urgent · ${reservationDriven.length}`}>
-          {reservationDriven.map((t) => (
-            <TaskRowMini key={t.id} task={t} onClick={() => onOpenTask(t.id)} />
+        <Section title={t('operations.overview.reservationUrgentCount', { n: reservationDriven.length })}>
+          {reservationDriven.map((task) => (
+            <TaskRowMini key={task.id} task={task} onClick={() => onOpenTask(task.id)} />
           ))}
-          {reservationDriven.length === 0 && <Empty>No reservation-driven urgent tasks.</Empty>}
+          {reservationDriven.length === 0 && <Empty>{t('operations.overview.noReservationUrgent')}</Empty>}
         </Section>
 
-        <Section title="Recent activity (last 24h)">
+        <Section title={t('operations.overview.recentActivity')}>
           {recentActivity.map(({ task, entry }, i) => {
             const actor = TASK_USER_BY_ID[entry.actorId];
             return (

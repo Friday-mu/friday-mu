@@ -32,15 +32,28 @@ export function useCurrentLang(): Lang {
  * language toggle UI.
  */
 export function useT(): {
-  t: (key: string, fallback?: string) => string;
+  t: (key: string, paramsOrFallback?: Record<string, string | number> | string, fallback?: string) => string;
   lang: Lang;
   setLang: (next: Lang) => Promise<void>;
 } {
   const { t: rawT } = useTranslation();
   const lang = useCurrentLang();
+  // Accepts either:
+  //   t('key')
+  //   t('key', 'Fallback EN string')
+  //   t('key', {n: 5, error: 'oops'})  — interpolation params
+  //   t('key', {n: 5}, 'Fallback EN string')
   const t = useCallback(
-    (key: string, fallback?: string): string => {
-      const value = rawT(key, { defaultValue: fallback ?? key });
+    (key: string, paramsOrFallback?: Record<string, string | number> | string, fallback?: string): string => {
+      let params: Record<string, string | number> | undefined;
+      let fb: string | undefined;
+      if (typeof paramsOrFallback === 'string') {
+        fb = paramsOrFallback;
+      } else if (paramsOrFallback) {
+        params = paramsOrFallback;
+        fb = fallback;
+      }
+      const value = rawT(key, { defaultValue: fb ?? key, ...(params || {}) });
       return typeof value === 'string' ? value : String(value);
     },
     [rawT],
