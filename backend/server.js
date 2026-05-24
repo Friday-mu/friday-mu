@@ -1135,6 +1135,13 @@ app.use('/api/owners', require('./src/owners'));
 // guesty_reservations + expenses from the expenses table; computes
 // occupancy / ADR / RevPAR over a configurable window.
 app.use('/api/finance', require('./src/finance/property_summary'));
+// Availability search (T4.39). Aggregates guesty_calendar over a window
+// + filters by guest count. Powers the Calendar "Find availability"
+// modal + the future quote builder.
+app.use('/api/availability', require('./src/availability/search'));
+// Quote-link generator (T4.40). Generates Friday Website preview URLs
+// + tracks status (sent / opened / converted).
+app.use('/api/quotes', require('./src/quotes'));
 // Webhook needs the RAW body (Buffer) for HMAC verification — Guesty
 // signs the exact bytes they send, and express.json() restringifies.
 const guestyWebhook = require('./src/reservations/webhook');

@@ -26,6 +26,7 @@ import { IconClose, IconPlus, IconRefresh } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
 import { MultiCalendarGrid } from './calendar/MultiCalendarGrid';
+import { AvailabilitySearchModal } from './calendar/AvailabilitySearchModal';
 import { useLiveProperties } from '../../_data/propertiesClient';
 
 type CalView = 'multi' | 'agenda' | 'day' | 'week' | 'month';
@@ -330,6 +331,7 @@ export function CalendarModule() {
     null,
   );
   const [createOpen, setCreateOpen] = useState(false);
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
   /** When set, render a CreateTaskDrawer prefilled for this reservation
    *  (triggered from StayPopover's `+ Task` button). */
   const [taskFromRsv, setTaskFromRsv] = useState<Reservation | null>(null);
@@ -417,11 +419,19 @@ export function CalendarModule() {
               onChange={(e) => setTab(e.target.value as CalView)}
               aria-label="Calendar view"
             >
+              <option value="multi">Multi</option>
               <option value="agenda">Agenda</option>
               <option value="day">Day</option>
               <option value="week">Week</option>
               <option value="month">Month</option>
             </select>
+            <button
+              className="btn sm"
+              onClick={() => setAvailabilityOpen(true)}
+              title="Find available properties for a date window"
+            >
+              Find availability
+            </button>
             <div className="cal-nav">
               <button className="btn ghost sm" onClick={() => navStep(-1)} aria-label="Previous">
                 ‹
@@ -625,6 +635,10 @@ export function CalendarModule() {
           }}
         />
       )}
+      <AvailabilitySearchModal
+        open={availabilityOpen}
+        onClose={() => setAvailabilityOpen(false)}
+      />
     </>
   );
 }
