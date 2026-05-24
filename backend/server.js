@@ -934,6 +934,14 @@ app.use('/api/public/team-presence', publicTeamPresenceRoutes.router);
 const publicChatRoutes = require('./src/public/chat');
 app.use('/api/public/chat', publicChatRoutes);
 
+// Portal v2 public API — slice 1 (claim + resolver). The two routes
+// share the /api/public root because the website calls /threads/claim
+// and /stays/resolve from different bases. Mounted at /api/public
+// (not a sub-path) so both routes resolve under their full contract
+// paths. See backend/src/public/portal.js.
+const publicPortalRoutes = require('./src/public/portal');
+app.use('/api/public', publicPortalRoutes);
+
 // FAD-native Ask Friday. Authenticated, read-only staff assistant over
 // live tenant-scoped operational context; mounted before the FR lockdown
 // because the router handles tenant scoping itself.
