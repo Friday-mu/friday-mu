@@ -218,7 +218,13 @@ export function CaptureExpenseDrawer({ open, task, onClose, onCreated }: Props) 
             }
           } catch (e) {
             // OCR failure is non-fatal — operator can fill manually.
-            setOcrNotes(`Auto-fill unavailable: ${e instanceof Error ? e.message : 'unknown error'}`);
+            // T1.17 (2026-05-25): surface the failure visibly so the
+            // operator knows the auto-fill didn't run — previously it
+            // failed silently, looking like "nothing happened".
+            const msg = e instanceof Error ? e.message : 'unknown error';
+            setOcrNotes(`Auto-fill unavailable: ${msg}`);
+            fireToast(`Receipt OCR failed — fill the form manually. (${msg.slice(0, 60)})`);
+            console.warn('[CaptureExpense] parseReceipt failed:', e);
           }
         }
         setPendingReceipts((prev) => [
