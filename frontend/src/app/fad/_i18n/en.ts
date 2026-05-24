@@ -31,7 +31,7 @@ export const en: TranslationShape = {
     properties: 'Properties',
     reservations: 'Reservations',
     finance: 'Finance',
-    'legal-admin': 'Legal & Admin',
+    legal: 'Legal & Admin',
     guests: 'Guests',
     owners: 'Owners',
     reviews: 'Reviews',
