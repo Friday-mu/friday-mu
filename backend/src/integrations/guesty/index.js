@@ -317,6 +317,44 @@ async function listListings({ limit = 100, maxPages = 20 } = {}) {
 // upcoming" — past 30 days through future 365 — so we don't pull the
 // historical archive on every poll. Caller can widen via opts when
 // doing a full backfill.
+// Reservation fields we explicitly ask Guesty to include. Without this,
+// the Open API returns a minimal shape that DOES NOT include `money` —
+// which is why total_amount_minor was NULL across 256/257 rows on prod
+// before this fix (2026-05-25). Once requested, the payload includes
+// money.totalPrice etc. and inferReservationFinancials populates the
+// total. Currency comes from money.currency in the same payload.
+const RESERVATION_FIELDS = [
+  '_id',
+  'accountId',
+  'listingId',
+  'guest',
+  'guests',
+  'guestsCount',
+  'status',
+  'source',
+  'channel',
+  'integration',
+  'checkIn',
+  'checkOut',
+  'checkInDateLocalized',
+  'checkOutDateLocalized',
+  'confirmationCode',
+  'creationInfo',
+  'lastUpdatedAt',
+  'money',
+  'totalPrice',
+  'currency',
+  'currencyCode',
+  'nightsPrice',
+  'totalNights',
+  'paymentInfo',
+  'invoice',
+  'financials',
+  'payments',
+  'accounting',
+  'cancellation',
+].join(',');
+
 async function listReservations({
   limit = 100,
   maxPages = 50,
@@ -329,7 +367,7 @@ async function listReservations({
   if (fromDate) filters.push({ field: 'checkInDateLocalized', operator: '$gte', value: fromDate });
   if (toDate) filters.push({ field: 'checkInDateLocalized', operator: '$lte', value: toDate });
   for (let page = 0; page < maxPages; page++) {
-    const params = { limit, skip };
+    const params = { limit, skip, fields: RESERVATION_FIELDS };
     if (filters.length > 0) params.filters = JSON.stringify(filters);
     const { data } = await guestyRequest({
       method: 'GET',
@@ -350,6 +388,7 @@ async function getReservation({ reservationId }) {
   const { data } = await guestyRequest({
     method: 'GET',
     path: `/reservations/${encodeURIComponent(reservationId)}`,
+    params: { fields: RESERVATION_FIELDS },
   });
   return data;
 }
