@@ -210,8 +210,30 @@ router.post('/parse-receipt', attachIdentity, async (req, res) => {
       durationMs: Date.now() - start,
     });
   } catch (e) {
-    console.error('[intent/parse-receipt] error:', e.message);
-    res.status(500).json({ error: e.message, durationMs: Date.now() - start });
+    // For Gemini / axios upstream failures, the actual cause is in
+    // e.response.data — without it, `e.message` is just "Request failed
+    // with status code 400" which tells us nothing. T1.17 (2026-05-25):
+    // expose Gemini's structured error payload + status so the operator
+    // toast surfaces a real reason ("image too large", "model not
+    // found", quota, etc.) and pm2 logs include enough to diagnose.
+    const upstreamStatus = e?.response?.status;
+    const upstreamData = e?.response?.data;
+    const upstreamMessage = upstreamData?.error?.message
+      || (typeof upstreamData === 'string' ? upstreamData.slice(0, 300) : null)
+      || e?.code
+      || e?.message;
+    console.error('[intent/parse-receipt] error:', JSON.stringify({
+      message: e?.message,
+      upstreamStatus,
+      upstreamMessage,
+      // Truncate the full payload — Gemini error.message is usually self-contained.
+      upstreamSnippet: upstreamData ? JSON.stringify(upstreamData).slice(0, 800) : null,
+    }));
+    res.status(upstreamStatus && upstreamStatus >= 400 && upstreamStatus < 500 ? upstreamStatus : 500).json({
+      error: upstreamMessage || e.message,
+      upstreamStatus,
+      durationMs: Date.now() - start,
+    });
   }
 });
 
