@@ -32,6 +32,7 @@ import {
 } from '../../_data/draftsClient';
 import { DraftPanel } from './inbox/DraftPanel';
 import { SendPreflightModal } from './inbox/SendPreflightModal';
+import { BookingRequestPanel } from './inbox/BookingRequestPanel';
 import { CreateTaskDrawer, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { apiFetch } from '../../../../components/types';
 
@@ -1327,6 +1328,12 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
             )}
             </div>
           </div>
+          {/* Portal v2 slice 2: panel renders when the selected thread
+              has a fad_portal_booking_requests row (silent for normal
+              guest threads). Lets ops set payment terms / mark funds /
+              decline / reset, which feeds the public portal resolver. */}
+          <BookingRequestPanel threadId={thread?.id} />
+
           <div className="inbox-thread-body" ref={threadBodyRef}>
             {/* Render full message thread when available (live data path). Falls
                 back to a single preview bubble for fixture/empty states.

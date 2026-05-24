@@ -519,6 +519,170 @@ function mountThreads(router) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // ── BOOKING REQUEST PANEL (Portal v2 slice 2) ──────────────────────
+  //
+  // GET   /threads/:id/booking-request
+  // PATCH /threads/:id/booking-request
+  //
+  // Operator-side controls for the fad_portal_booking_requests sidecar
+  // (mig 092). Mutating status here is what drives the
+  // public/stays/resolve responses on the website — once status flips
+  // to 'awaiting_payment', the guest's portal shows the payment
+  // tracker advanced; on 'confirmed' + converted_to_reservation_id set,
+  // the resolver auto-switches the same stayToken to reservation mode.
+  //
+  // Tenant-scoped via attachIdentity (admin operator session, NOT the
+  // public Bearer token used by the website).
+
+  router.get('/threads/:id/booking-request', attachIdentity, async (req, res) => {
+    try {
+      if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
+      const { rows } = await query(
+        `SELECT id, thread_id, request_id, listing_slug, listing_title,
+                check_in, check_out, nights,
+                party_adults, party_children, party_infants,
+                quoted_total_amount_minor, quoted_total_currency,
+                status, payment_choice, payment_currency,
+                paid_amount_minor, confirmation_deadline,
+                converted_to_reservation_id,
+                declined_at, declined_reason,
+                last_status_actor_id, last_status_change_at,
+                created_at, updated_at
+           FROM fad_portal_booking_requests
+          WHERE thread_id = $1 AND tenant_id = $2
+          LIMIT 1`,
+        [req.params.id, req.tenantId],
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'booking_request_not_found' });
+      }
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('[website_inbox/threads] booking-request get error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.patch('/threads/:id/booking-request', attachIdentity, async (req, res) => {
+    try {
+      if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
+      const action = String(req.body?.action || '').trim();
+      if (!['set_payment_terms', 'mark_funds_received', 'decline', 'reset_to_review'].includes(action)) {
+        return res.status(400).json({ error: 'invalid_action', message: 'action must be set_payment_terms | mark_funds_received | decline | reset_to_review' });
+      }
+      // Confirm the sidecar exists for this thread + tenant.
+      const lookup = await query(
+        `SELECT id, status FROM fad_portal_booking_requests
+          WHERE thread_id = $1 AND tenant_id = $2 LIMIT 1`,
+        [req.params.id, req.tenantId],
+      );
+      if (lookup.rows.length === 0) {
+        return res.status(404).json({ error: 'booking_request_not_found' });
+      }
+      const actorId = req.identity?.userId || null;
+
+      let updateSql = '';
+      let updateParams = [];
+
+      if (action === 'set_payment_terms') {
+        const choice = req.body?.payment_choice;
+        const currency = req.body?.payment_currency;
+        const deadlineRaw = req.body?.confirmation_deadline;
+        if (!['deposit_50', 'full'].includes(choice)) {
+          return res.status(400).json({ error: 'invalid_payment_choice' });
+        }
+        if (!['EUR', 'MUR', 'USD'].includes(currency)) {
+          return res.status(400).json({ error: 'invalid_payment_currency' });
+        }
+        let deadline = null;
+        if (deadlineRaw) {
+          const d = new Date(deadlineRaw);
+          if (Number.isNaN(d.getTime())) {
+            return res.status(400).json({ error: 'invalid_confirmation_deadline' });
+          }
+          deadline = d.toISOString();
+        }
+        updateSql = `UPDATE fad_portal_booking_requests
+                        SET status = 'awaiting_payment',
+                            payment_choice = $1,
+                            payment_currency = $2,
+                            confirmation_deadline = $3,
+                            last_status_actor_id = $4,
+                            last_status_change_at = NOW(),
+                            updated_at = NOW()
+                      WHERE thread_id = $5 AND tenant_id = $6
+                      RETURNING *`;
+        updateParams = [choice, currency, deadline, actorId, req.params.id, req.tenantId];
+      } else if (action === 'mark_funds_received') {
+        const paidAmountMajor = req.body?.paid_amount;
+        const reservationId = req.body?.reservation_id || null;
+        if (paidAmountMajor == null || !Number.isFinite(Number(paidAmountMajor)) || Number(paidAmountMajor) <= 0) {
+          return res.status(400).json({ error: 'invalid_paid_amount', message: 'paid_amount required (positive number)' });
+        }
+        const paidMinor = Math.round(Number(paidAmountMajor) * 100);
+        // reservation_id optional — if provided we validate it exists
+        // for this tenant, then set converted_to_reservation_id so the
+        // public resolver auto-switches to reservation mode.
+        if (reservationId) {
+          const rsv = await query(
+            `SELECT id FROM fad_reservations WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+            [reservationId, req.tenantId],
+          );
+          if (rsv.rows.length === 0) {
+            return res.status(400).json({ error: 'reservation_not_found', message: 'reservation_id does not exist for this tenant' });
+          }
+        }
+        updateSql = `UPDATE fad_portal_booking_requests
+                        SET status = 'confirmed',
+                            paid_amount_minor = $1,
+                            converted_to_reservation_id = COALESCE($2::uuid, converted_to_reservation_id),
+                            last_status_actor_id = $3,
+                            last_status_change_at = NOW(),
+                            updated_at = NOW()
+                      WHERE thread_id = $4 AND tenant_id = $5
+                      RETURNING *`;
+        updateParams = [paidMinor, reservationId, actorId, req.params.id, req.tenantId];
+      } else if (action === 'decline') {
+        const reason = req.body?.reason ? String(req.body.reason).slice(0, 2000) : null;
+        updateSql = `UPDATE fad_portal_booking_requests
+                        SET status = 'declined',
+                            declined_at = NOW(),
+                            declined_reason = $1,
+                            last_status_actor_id = $2,
+                            last_status_change_at = NOW(),
+                            updated_at = NOW()
+                      WHERE thread_id = $3 AND tenant_id = $4
+                      RETURNING *`;
+        updateParams = [reason, actorId, req.params.id, req.tenantId];
+      } else if (action === 'reset_to_review') {
+        // Escape hatch: ops mis-clicked, bring it back to pending_review.
+        // Clears the payment terms + declined fields but PRESERVES
+        // converted_to_reservation_id (the linked reservation row, if
+        // it exists, is a fact ops shouldn't accidentally unlink).
+        updateSql = `UPDATE fad_portal_booking_requests
+                        SET status = 'pending_review',
+                            payment_choice = NULL,
+                            payment_currency = NULL,
+                            paid_amount_minor = NULL,
+                            confirmation_deadline = NULL,
+                            declined_at = NULL,
+                            declined_reason = NULL,
+                            last_status_actor_id = $1,
+                            last_status_change_at = NOW(),
+                            updated_at = NOW()
+                      WHERE thread_id = $2 AND tenant_id = $3
+                      RETURNING *`;
+        updateParams = [actorId, req.params.id, req.tenantId];
+      }
+
+      const result = await query(updateSql, updateParams);
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('[website_inbox/threads] booking-request patch error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
 }
 
 module.exports = { mountThreads };
