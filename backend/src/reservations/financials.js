@@ -133,6 +133,37 @@ const BALANCE_DUE_PATHS = [
   'financials.remainingBalance',
 ];
 
+// Industry-standard revenue breakdown for hospitality analytics.
+// Room revenue = accommodation rent only (excludes cleaning + taxes).
+// Cleaning is a pass-through; taxes aren't revenue.
+const SUBTOTAL_PATHS = [
+  'money.subTotalPrice',
+  'subTotalPrice',
+  'money.subTotal',
+  'subTotal',
+];
+const CLEANING_FEE_PATHS = [
+  'money.fareCleaning',
+  'fareCleaning',
+  'money.cleaningFee',
+  'cleaningFee',
+];
+const TAXES_PATHS = [
+  'money.totalTaxes',
+  'totalTaxes',
+  'money.taxes',
+];
+const HOST_PAYOUT_PATHS = [
+  'money.hostPayout',
+  'hostPayout',
+  'money.hostPayoutUsd',
+];
+const HOST_SERVICE_FEE_PATHS = [
+  'money.hostServiceFee',
+  'hostServiceFee',
+  'money.hostServiceFeeIncTax',
+];
+
 function inferReservationFinancials(rawReservation) {
   const raw = asObject(rawReservation);
   const money = asObject(raw.money);
@@ -154,9 +185,32 @@ function inferReservationFinancials(rawReservation) {
   const balanceDue = moneyValue(raw, BALANCE_DUE_PATHS);
   const guestTotal = moneyValue(raw, GUEST_TOTAL_PATHS);
   const paid = amountPaid != null ? amountPaid : (paidFromPayments > 0 ? paidFromPayments : null);
+  const subTotal = moneyValue(raw, SUBTOTAL_PATHS);
+  const cleaningFee = moneyValue(raw, CLEANING_FEE_PATHS);
+  const taxes = moneyValue(raw, TAXES_PATHS);
+  const hostPayout = moneyValue(raw, HOST_PAYOUT_PATHS);
+  const hostServiceFee = moneyValue(raw, HOST_SERVICE_FEE_PATHS);
+
+  // Room revenue: industry standard excludes cleaning + taxes.
+  // Best estimate when we have subTotal: subTotal - cleaningFee (subTotal
+  // is pre-tax but still includes cleaning). Fallback: total - cleaning
+  // - taxes. Final fallback: total (less accurate but better than null).
+  let roomRevenue = null;
+  if (subTotal != null) {
+    roomRevenue = subTotal - (cleaningFee != null ? cleaningFee : 0);
+  } else if (guestTotal != null) {
+    roomRevenue = guestTotal - (cleaningFee != null ? cleaningFee : 0) - (taxes != null ? taxes : 0);
+  }
+  if (roomRevenue != null && roomRevenue < 0) roomRevenue = null;
 
   return {
     total: guestTotal != null ? guestTotal : (paid != null && balanceDue != null ? paid + balanceDue : null),
+    subTotal,
+    roomRevenue,
+    cleaningFee,
+    taxes,
+    hostPayout,
+    hostServiceFee,
     amountPaid: paid,
     balanceDue,
     paymentStatus: firstValue(raw, [

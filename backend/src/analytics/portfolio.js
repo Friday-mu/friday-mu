@@ -58,28 +58,36 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
     const kpiCurrent = await aggregateWindow(tenantId, windowFrom, windowTo);
     const kpiPrev = await aggregateWindow(tenantId, prevFrom, prevTo);
 
-    // Available room-nights = window_days × active_listings (industry
-    // standard denominator). With clipped booked_nights from the fixed
-    // aggregator above, occupancy is now a real percentage that won't
-    // run away to 100% on every popular property.
+    // Available room-nights = window_days × active_listings.
+    // v0.2 should subtract owner blocks + maintenance blocks from this
+    // (VRMA standard) once we have a per-day status feed.
     const availableNights = windowDays * Math.max(activeProps, 1);
-    const occupancyPct = availableNights > 0
+    // Total occupancy = all stays (paid + owner). Ops view.
+    const totalOccupancyPct = availableNights > 0
       ? Math.min(100, Math.round((kpiCurrent.booked_nights / availableNights) * 100))
       : 0;
-    const prevOccupancyPct = availableNights > 0
+    const prevTotalOccupancyPct = availableNights > 0
       ? Math.min(100, Math.round((kpiPrev.booked_nights / availableNights) * 100))
       : 0;
-    // ADR = revenue per occupied room-night. Divide by PRICED nights only —
-    // scraped reservations have no revenue and would otherwise drag the
-    // average down to nonsense. priced_booked_nights ≤ booked_nights.
+    // Paid occupancy = paying stays only. Revenue view (industry standard).
+    const occupancyPct = availableNights > 0
+      ? Math.min(100, Math.round((kpiCurrent.paid_booked_nights / availableNights) * 100))
+      : 0;
+    const prevOccupancyPct = availableNights > 0
+      ? Math.min(100, Math.round((kpiPrev.paid_booked_nights / availableNights) * 100))
+      : 0;
+    // ADR = room revenue per occupied PAID room-night that came with
+    // pricing data. Owner stays + unpriced rows excluded from the
+    // denominator so they don't drag the average down.
     const adrMinor = kpiCurrent.priced_booked_nights > 0
       ? Math.round(kpiCurrent.revenue_minor / kpiCurrent.priced_booked_nights)
       : 0;
     const prevAdrMinor = kpiPrev.priced_booked_nights > 0
       ? Math.round(kpiPrev.revenue_minor / kpiPrev.priced_booked_nights)
       : 0;
-    // RevPAR = revenue per available room-night (revenue ÷ all room-nights
-    // including unsold). RevPAR = Occupancy × ADR by definition.
+    // RevPAR = revenue per available room-night. By definition this is
+    // Paid-Occupancy × ADR (where ADR uses priced nights only). The
+    // formula is revenue ÷ availableNights regardless.
     const revparMinor = availableNights > 0
       ? Math.round(kpiCurrent.revenue_minor / availableNights)
       : 0;
@@ -240,10 +248,14 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
         reservation_count_prev: kpiPrev.reservation_count,
         booked_nights: kpiCurrent.booked_nights,
         booked_nights_prev: kpiPrev.booked_nights,
+        paid_booked_nights: kpiCurrent.paid_booked_nights,
         priced_booked_nights: kpiCurrent.priced_booked_nights,
+        clean_revenue_nights: kpiCurrent.clean_revenue_nights,
         available_nights: availableNights,
         occupancy_pct: occupancyPct,
         occupancy_pct_prev: prevOccupancyPct,
+        total_occupancy_pct: totalOccupancyPct,
+        total_occupancy_pct_prev: prevTotalOccupancyPct,
         adr_minor: adrMinor,
         adr_minor_prev: prevAdrMinor,
         revpar_minor: revparMinor,
@@ -290,13 +302,20 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
         revenue_minor: Number(r.revenue_minor),
       })),
       data_quality: {
-        revenue_source: 'guesty_reservations (money.totalPrice via Guesty Open API)',
+        revenue_source: 'guesty_reservations (money.subTotalPrice - money.fareCleaning via Guesty Open API)',
         nights_method: 'pro-rated overlap with window — nights_in_window = MAX(0, LEAST(check_out, to+1) - GREATEST(check_in, from))',
-        revenue_method: 'pro-rated: total_amount_minor × nights_in_window ÷ total_stay_nights',
-        adr_denominator: 'PRICED booked nights only (excludes scraped rows without pricing)',
-        gap_note: kpiCurrent.priced_booked_nights < kpiCurrent.booked_nights
-          ? `${kpiCurrent.booked_nights - kpiCurrent.priced_booked_nights} of ${kpiCurrent.booked_nights} booked nights came from scraped reservations without pricing data — those nights count in Occupancy but don't carry revenue. ADR is computed over the ${kpiCurrent.priced_booked_nights} priced nights to stay honest.`
-          : 'All booked nights in this window carry pricing data.',
+        revenue_method: 'room_revenue_minor (subTotal - cleaning) × nights_in_window ÷ total_stay_nights, prorated per night. Falls back to total_amount_minor when breakdown missing.',
+        occupancy_method: 'PAID occupancy = paying stays only (excludes owner stays). Industry standard for revenue management. total_occupancy_pct includes owner stays.',
+        adr_denominator: 'PRICED + PAID booked nights only (owner stays + unpriced rows excluded)',
+        breakdown_coverage: kpiCurrent.priced_booked_nights > 0
+          ? `${Math.round((kpiCurrent.clean_revenue_nights / kpiCurrent.priced_booked_nights) * 100)}% of revenue came from clean Guesty breakdown (subTotal - cleaning). Remainder uses total_amount_minor fallback which includes cleaning fees, so ADR is slightly inflated for those.`
+          : 'no pricing data in window',
+        unpriced_note: kpiCurrent.paid_booked_nights > kpiCurrent.priced_booked_nights
+          ? `${kpiCurrent.paid_booked_nights - kpiCurrent.priced_booked_nights} paid booked nights had no pricing data — they count in Occupancy but were excluded from ADR.`
+          : null,
+        owner_block_note: kpiCurrent.booked_nights > kpiCurrent.paid_booked_nights
+          ? `${kpiCurrent.booked_nights - kpiCurrent.paid_booked_nights} of ${kpiCurrent.booked_nights} booked nights were owner stays (free, non-revenue-generating). Paid occupancy is ${occupancyPct}% vs total occupancy ${totalOccupancyPct}%.`
+          : null,
       },
     });
   } catch (e) {
@@ -331,7 +350,9 @@ async function aggregateWindow(tenantId, fromIso, toIso) {
     `WITH overlapping AS (
        SELECT
          r.total_amount_minor,
+         r.room_revenue_minor,
          r.currency_code,
+         r.source,
          r.check_in_date,
          r.check_out_date,
          GREATEST(
@@ -347,14 +368,41 @@ async function aggregateWindow(tenantId, fromIso, toIso) {
      )
      SELECT
        COUNT(*) FILTER (WHERE nights_in_window > 0)::int AS reservation_count,
+       -- Total occupancy: any stay (including owner blocks). Reflects ops
+       -- reality (someone's there, room not available).
        COALESCE(SUM(nights_in_window), 0)::int AS booked_nights,
-       COALESCE(SUM(nights_in_window) FILTER (WHERE total_amount_minor IS NOT NULL AND total_stay_nights > 0), 0)::int AS priced_booked_nights,
+       -- Paid occupancy: excludes owner stays. The number that matters
+       -- for revenue management — what % of nights generated income.
+       COALESCE(SUM(nights_in_window) FILTER (WHERE LOWER(COALESCE(source,'')) NOT IN ('owner','owner-guest')), 0)::int AS paid_booked_nights,
+       -- Subset of paid booked nights that came with pricing data.
+       -- Used as the ADR denominator so unpriced rows don't drag avg.
+       COALESCE(SUM(nights_in_window) FILTER (
+         WHERE total_amount_minor IS NOT NULL
+           AND total_stay_nights > 0
+           AND LOWER(COALESCE(source,'')) NOT IN ('owner','owner-guest')
+       ), 0)::int AS priced_booked_nights,
+       -- Room revenue: industry-correct (excludes cleaning + taxes when
+       -- we have the breakdown). Falls back to total when breakdown is
+       -- missing — better imperfect data than no data.
        COALESCE(SUM(
          CASE
-           WHEN total_amount_minor IS NULL OR total_stay_nights = 0 THEN 0
-           ELSE ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+           WHEN total_stay_nights = 0 THEN 0
+           WHEN room_revenue_minor IS NOT NULL
+             THEN ROUND(room_revenue_minor::numeric * nights_in_window / total_stay_nights)
+           WHEN total_amount_minor IS NOT NULL
+             THEN ROUND(total_amount_minor::numeric * nights_in_window / total_stay_nights)
+           ELSE 0
          END
-       ), 0)::bigint AS revenue_minor,
+       ) FILTER (WHERE LOWER(COALESCE(source,'')) NOT IN ('owner','owner-guest')), 0)::bigint AS revenue_minor,
+       -- How much of revenue_minor came from the clean room_revenue
+       -- breakdown vs. fallback total_amount_minor. Lets the UI flag
+       -- precision (€80 ADR is "real" if 95% from breakdown; less so
+       -- if 95% from total fallback that includes cleaning fees).
+       COALESCE(SUM(nights_in_window) FILTER (
+         WHERE room_revenue_minor IS NOT NULL
+           AND total_stay_nights > 0
+           AND LOWER(COALESCE(source,'')) NOT IN ('owner','owner-guest')
+       ), 0)::int AS clean_revenue_nights,
        (SELECT currency_code FROM overlapping
           WHERE currency_code IS NOT NULL
           GROUP BY currency_code ORDER BY COUNT(*) DESC LIMIT 1) AS currency
@@ -366,7 +414,9 @@ async function aggregateWindow(tenantId, fromIso, toIso) {
     reservation_count: Number(row.reservation_count || 0),
     revenue_minor: Number(row.revenue_minor || 0),
     booked_nights: Number(row.booked_nights || 0),
+    paid_booked_nights: Number(row.paid_booked_nights || 0),
     priced_booked_nights: Number(row.priced_booked_nights || 0),
+    clean_revenue_nights: Number(row.clean_revenue_nights || 0),
     currency: row.currency || null,
   };
 }
