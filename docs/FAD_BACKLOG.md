@@ -2,9 +2,10 @@
 
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
-> Last reviewed: **2026-05-24** (Judith — after Calendar Month-view refactor + T1.10 array-safety sweep).
-> Live on prod: frontend `7e85416d` · backend `0306bbba`.
-> Tree tip on `fad-rebuild`: `7e85416d` (live).
+> Last reviewed: **2026-05-25** (Judith — after overnight autonomous run: Guests + Owners backends, PropertyDetail Financial, Multi-calendar v0.1, Availability search, Quote generator).
+> Live on prod: frontend `36502839` · backend `9e18f180`.
+> Tree tip on `fad-rebuild`: `36502839` (live).
+> Overnight run details: `docs/handover/2026-05-25-morning-handover.md`.
 
 ## How to use this doc
 
@@ -123,15 +124,16 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - User uploads a receipt in the Capture Expense drawer; the Gemini OCR auto-fill that's supposed to populate amount/vendor/category doesn't trigger.
 - Debug path: `POST /api/expenses/receipts` upload, then `POST /api/expenses/extract` should be auto-called. Check the call chain, the LLM response, and the auto-fill side effect on the form.
 
-### T1.11 — Occupancy / ADR not yet computed on Property cards
-- Effort: M · Status: open (surfaced 2026-05-24 audit)
-- Every Property card on Overview + All Properties shows "Occ 0%" and a flat ADR figure. Backend doesn't yet compute occupancy/ADR from reservations + calendar data.
-- Add backend aggregation: `GET /api/properties/:code/metrics?window=90d` returning `{occupancy_pct, adr_minor, revpar_minor}` derived from `guesty_reservations` + `guesty_calendar` over the window. Wire on the property card render.
+### ~~T1.11 — Occupancy / ADR not yet computed on Property cards~~ ✓ shipped 2026-05-24 (`823d6a30`)
+- Backend `GET /api/finance/property/:code/summary?windowDays=N` aggregates revenue + expenses + computes occupancy_pct, ADR, RevPAR.
+- `/api/properties` LIST also gains `metrics_30d` (occupancy_pct, adr_minor, revenue_minor, booked_nights, reservation_count, currency) via a LATERAL JOIN — surfaces directly on Overview cards.
+- **Follow-up data-quality issue**: `total_amount_minor` is NULL in the prod guesty_reservations cache for most rows (Guesty's API doesn't always populate it). Revenue + ADR currently show €0. Fix: extend `backend/src/reservations/sync.js` to compute via `inferReservationFinancials(r)` before upsert (which the helper already exposes). ETA 30 min.
 
-### T1.12 — Property owner names show "o-guesty-unknown"
-- Effort: S · Status: open (surfaced 2026-05-24 audit)
-- Property cards display "o-guesty-unknown" for the owner field. Cause: `primaryOwnerId` resolves via `FIN_OWNERS` fixture, but no real owner records exist yet for the Guesty-synced properties.
-- Either: (a) seed `fad_property_owners` from Guesty listing's `accountManager` field on sync, or (b) hide the owner row until owner data is wired (Owners module Sep-2026).
+### ~~T1.12 — Property owner names show "o-guesty-unknown"~~ ✓ shipped 2026-05-24 (Phase 2)
+- mig 081_owners_fad_native.sql + mig 082_backfill_properties_and_owners.sql created `fad_owners` + populated `fad_property_owners` from each Guesty listing's `raw.owners` array (38 distinct owners, 56/60 property links).
+- Display names default to "Guesty owner xxxxxxxx" (last 8 chars of Guesty owner ID). Admin patches in real names via PATCH /api/owners/:id.
+- Frontend: `primaryOwnerName` resolved from backend in the merged property shape; all 5 owner-rendering sites prefer it.
+- **Follow-up**: 4 properties (AVN-1, ES-13, AO-11, one other) have no Guesty owner_id in `raw.owners` — operator action needed to attribute these manually.
 
 ### T1.13 — Ops Insights + Reservations Inquiries slow initial render (~5s)
 - Effort: S · Status: open (surfaced 2026-05-24 audit)
@@ -259,21 +261,18 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - **Payments**: payment history (Guesty payment data — needs new endpoint)
   - **Activity log**: already wired via `/api/reservations/:id/activity`
 
-### T3.11 — Guests module backend wiring (NEW 2026-05-24)
-- Effort: L · open
-- Today Guests module is fixture-only. Build backend:
-  - `fad_guests` table — id, tenant_id, primary_email, primary_phone, display_name, language_pref, country, vip_tier, notes, first_seen_at, last_seen_at
-  - Sync from `guesty_reservations.guest_*` columns on each reservation upsert.
-  - Routes: `GET /api/guests`, `GET /api/guests/:id`, `GET /api/guests/:id/reservations`, `PATCH /api/guests/:id`.
-  - Frontend: replace fixture imports with hooks.
+### ~~T3.11 — Guests module backend wiring~~ ✓ shipped 2026-05-24 (`ee3e2504` + `612c0b75`)
+- mig 079 + 080 (name-bucket fallback for Guesty-redacted OTA emails). `fad_guests` table with email/phone/name partial-unique indexes; idempotent backfill.
+- Routes: `GET /` (search + vip_tier filter), `GET /:id`, `GET /:id/reservations` (matches via email/phone/name), `POST /lookup`, `POST /`, `PATCH /:id`. All tenant-scoped.
+- Reservations sync (poller + webhook) upserts fad_guests best-effort.
+- Frontend `guestsClient.ts` + `useGuestLookup` hook. ReservationDetail Guests tab live.
+- Live: 128 fad_guests on prod.
 
-### T3.12 — Owners module backend wiring (NEW 2026-05-24)
-- Effort: L · open · resolves T1.12 ("o-guesty-unknown")
-- Today Owners module is fixture-only. Build backend:
-  - `fad_owners` table — id, tenant_id, display_name, contact_email, phone, address, payment_pref, language, statement_day, notes
-  - Link to `fad_property_owners` (M:N already exists). Seed display_name from Guesty `accountManager` field on sync.
-  - Routes: `GET /api/owners`, `GET /api/owners/:id`, `GET /api/owners/:id/properties`, `GET /api/owners/:id/statements`.
-  - Frontend: replace `FIN_OWNERS` fixture with hooks.
+### ~~T3.12 — Owners module backend wiring~~ ✓ shipped 2026-05-24 (`8e5eceeb` + `b88d723b` + `886f6412`)
+- mig 081 + 082 (fad_properties materialise follow-up). `fad_owners` table seeded from each Guesty listing's `raw.owners` (display_name = "Guesty owner xxxxxxxx" placeholder; admin patches in real names).
+- Routes: list/get/get-properties/create/patch/archive/unarchive.
+- `/api/properties` LATERAL JOIN exposes `primary_owner_id` + `primary_owner_display_name`. 5 owner UI sites prefer live name.
+- Live: 38 fad_owners, 56/60 fad_property_owners.
 
 ### ~~T3.13 — Reviews backend verification~~ ✓ verified clean 2026-05-24
 - Confirmed: `reviewsClient.ts` calls `apiFetch('/api/reviews/list')` exclusively (FAD-fronted per §5.7). No direct browser → Reva / Guesty calls. Action: none.
@@ -353,32 +352,18 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - **T4.32 — 11 `agent-be-*` branches** — May-13 design backend work, never reconciled (effort: variable)
 - **T4.33 — WhatsApp burner bridge** — parked; blocked on QR/pairing
 
-### Calendar v0.2 — MULTI-CALENDAR REBUILD (Ishant 2026-05-24 directive)
-- **T4.38 — Multi-calendar rebuild** — effort: XL (1-2 weeks) · open · **MAJOR REDESIGN**
-- Today's banded refactor (`bbb48408`) was a stepping stone. The actual ask is a full Guesty Multi-Calendar–style surface:
-  - **Property × Date grid** (rows = properties, cols = days, horizontal scroll for date range). Replaces or sits alongside today's Month/Week views as the primary view.
-  - Each cell shows: **nightly price**, **availability** (open / booked / blocked), reservation pill spanning multiple cells when occupied.
-  - **Hover on a stay** → quick reservation preview (guest / channel / nights / status).
-  - **Click + drag dates** → opens Create Reservation drawer with dates prefilled. (Phase 1: open the drawer. Phase 2: drag-to-confirm.)
-  - **Tasks + meetings overlay** on the same grid — what Guesty doesn't have. Stays the FAD differentiator.
-  - **Block dates via Guesty API** (if API supports — investigate `PATCH /listings/:id/calendar`). Same surface for unblock.
-  - **Change check-in / check-out times** by clicking the stay edge — calls existing `PATCH /reservations/:id`.
-  - Performance target: 60 properties × 60-day window scrolling smoothly.
-- **Decision needed (Ishant)**: scrap current Calendar frontend and build fresh, or layer this in as a new tab? Backend stays (already pulls guesty_calendar via LATERAL join).
-- **Scope continues below at T4.39 (availability search) and T4.40 (quote generator).**
+### ~~T4.38 — Multi-calendar rebuild~~ ✓ v0.1 shipped 2026-05-24 (`a66fbaa0`)
+- Property × Date grid live as primary Calendar view on desktop. Sticky property column + sticky date header + today vertical pink line + channel-colored reservation bars + footer legend. 60-day default window. Old Month/Week/Day/Agenda preserved as alternate tabs (mobile still defaults to Agenda).
+- **v0.2 follow-ups** (logged for next session): per-cell €PRICE chips, task chip overlays, drag-to-create, virtualisation if 60×60 cells start to lag, block-dates-via-Guesty-API, click-edge to change check-in/check-out times.
 
-### T4.39 — Availability search in Calendar (NEW 2026-05-24)
-- Effort: L · open · depends on T4.38 multi-calendar grid
-- Operator inputs: date range + party size + (optional) filters (region, bedrooms, amenities). Output: list of available properties with nightly + total price.
-- Backend: `GET /api/availability/search?from=Y-M-D&to=Y-M-D&guests=N&region=...` returning `[{property_code, available, nightly_minor, total_minor, currency}]`. Computed from `guesty_calendar` + listing data.
-- The Friday Website (Vercel preview, not live) already has this filter UI — port logic / share the data path.
+### ~~T4.39 — Availability search in Calendar~~ ✓ shipped 2026-05-24 (`9e18f180`)
+- `GET /api/availability/search?from&to&guests` returns matches/partial/unavailable from `guesty_calendar` aggregation.
+- AvailabilitySearchModal opened from new "Find availability" button in Calendar toolbar. Date pickers + guest count → results list with thumbnails, region, nightly avg, total.
 
-### T4.40 — Quote generator (NEW 2026-05-24)
-- Effort: L · open · depends on T4.39 availability search
-- After availability search, operator picks N properties to pitch. System generates a shareable link.
-- v1 simplest: link redirects guest to the Friday Website (preview) with property-filter query params → guest sees the curated short-list with prices.
-- v2: native FAD quote page with custom messaging + WhatsApp/email send button.
-- Storage: `fad_quotes` table — quote_id, created_by, properties[], from/to dates, party_size, expires_at, status.
+### ~~T4.40 — Quote generator~~ ✓ v0.1 shipped 2026-05-24 (`9e18f180`)
+- mig 083 `fad_quotes` table. `/api/quotes` POST/GET/mark-opened. AvailabilitySearchModal "Generate quote link" produces a Friday Website Vercel-preview share URL with codes + dates baked in, with Copy + Open buttons.
+- **v2 follow-up**: native FAD quote page with custom messaging + WhatsApp/email send button (instead of redirect-only).
+- **Open question for Ishant**: Friday Website URL shape (`?codes=X,Y&from=…&to=…&guests=N`) needs validation before first real send.
 
 ### New initiatives (v0.1 scope drafts ready, await Ishant decisions)
 - **T4.36 — Guest portal chat** (effort: 2-3 weeks once scope locks) — replace WhatsApp dependency for direct-booking + on-property guest messaging with a chat surface inside the guest portal. AI-augmented with full reservation + Property Cards context. Honest framing: complement to WhatsApp, not replacement (discovery friction kills pure-portal strategies). **Scope**: Notion [`36943ca8849281939417fad24d881f94`](https://www.notion.so/36943ca8849281939417fad24d881f94) (canonical) · repo mirror [`docs/scoping/2026-05-24-guest-portal-chat-v0.1.md`](scoping/2026-05-24-guest-portal-chat-v0.1.md). 15 open questions (channels, identity, notification, AI surfaces, OTA scope, auth, integration, etc.). Cross-cuts: Friday Website (separate session per AGENTS.md), Guests module v0.2, Inbox channel taxonomy.
@@ -404,7 +389,17 @@ From `CLAUDE.md` + Notion running decisions log `34f43ca88492819f8284ea6a89e8624
 
 ## Recently shipped (rolling log — newest first)
 
-### 2026-05-24 (today, this session)
+### 2026-05-24 → 25 (overnight autonomous run)
+- **Phase 1 · Guests backend (T3.11)** — `ee3e2504` · `612c0b75` — mig 079 + 080 (name-bucket follow-up after live data showed 257 reservations with ZERO Guesty emails — name-keyed fallback critical for OTA bookings). `/api/guests` routes + `useGuestLookup` hook + ReservationDetail Guests tab wired. **128 fad_guests** on prod (was 0). Sync extended both reservation poller + webhook paths; best-effort, never breaks reservation sync.
+- **Phase 2 · Owners backend (T3.12)** — `8e5eceeb` · `b88d723b` · `886f6412` — closes T1.12. mig 081 + 082 (fad_properties materialise follow-up — overlay was lazy so first 081 seed found 0 properties to link). `/api/owners` routes + `useOwnersByGuestyId` hook. `/api/properties` LIST/SINGLE LATERAL JOIN exposes `primary_owner_id` + `primary_owner_display_name`. 5 owner-rendering sites prefer live name over fixture. **38 fad_owners**, **56/60 fad_property_owners** linked on prod.
+- **Phase 3 · PropertyDetail Financial + T1.11 occupancy** — `823d6a30` — `/api/finance/property/:code/summary?windowDays=N` aggregates revenue + expenses + computes occupancy_pct, ADR, RevPAR. `/api/properties` gains `metrics_30d`. FinancialTab now reads live `usePropertySummary` instead of `property.adr × 365 × occupancy × 44 MUR/EUR` mock. **Data quality follow-up**: revenue shows €0 because guesty_reservations.total_amount_minor is NULL in prod cache — sync helper needs to populate via `inferReservationFinancials` (logged for next session).
+- **Phase 5 · Multi-calendar v0.1 (T4.38)** — `a66fbaa0` — new Property × Date grid per the 2026-05-24 Guesty screenshot; primary Calendar view on desktop (old Month/Week/Day/Agenda stay as alternate tabs). Sticky property column (thumbnail + code + name + lifecycle dot) + sticky date header + today vertical pink line + per-row CSS-grid bands with channel colors (AIR/BDC/DIR/VRB/OWN/EML) + footer legend. 60-day default window. Live: 60 properties × 60 days, 81 reservations rendering.
+- **Phase 6 · Availability search (T4.39)** — `9e18f180` — `/api/availability/search?from&to&guests` returns matches/partial/unavailable. AvailabilitySearchModal opened from new "Find availability" button in Calendar toolbar. Date pickers + guest count → results list with thumbnails + nightly avg + total.
+- **Phase 7 · Quote generator v0.1 (T4.40)** — same commit `9e18f180` — mig 083 `fad_quotes` table. `/api/quotes` POST creates a Friday Website Vercel-preview share URL with codes + dates baked in; GET lists recent; POST /:id/mark-opened tracks engagement. "Generate quote link" button in AvailabilitySearchModal selects → URL with Copy + Open buttons. **Open question**: Friday Website URL shape (`?codes=X,Y&from=…&to=…&guests=N`) needs Ishant validation before first real send.
+- **Phase 9 partial · T1.8 parseNl removal** — `36502839` — `CreateTaskDrawer`'s "Quick draft (offline)" button + 80-line regex `parseNl` function removed. Smart drafter via `/api/intent/parse-task` has been reliable; the fallback never fired in prod.
+- **Phases 4 + 8 DEFERRED** — Task UI re-skin (2,457-line file, too risky for autonomous run; 3-section quick-fix path scoped in handover) + Insights wiring (banner pattern needs per-page surgery across 4 files). Logged with file/line pointers in `docs/handover/2026-05-25-morning-handover.md`.
+
+### 2026-05-24 (earlier this session)
 - **PropertyDetail OperationalTab → live Property Cards from backend** (`704e6322`) — new `usePropertyCards()` SWR hook; backend `PropertyCardRecord` mapped to existing `PropertyCard` shape so renderers don't change; live wins, fixture only as backstop in demo mode.
 - **ReservationDetail ActivityTab → live activity log** (`7e85416d`) — fetches `/api/reservations/:id/activity` (mig 078 endpoint). Cancel/Patch/Create mutations wired W1 now populate activity going forward.
 - **Reviews module verified FAD-fronted** — closes T3.13 (no direct browser → Reva).
