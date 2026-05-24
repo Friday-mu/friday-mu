@@ -36,8 +36,27 @@ Additional follow-up session (after Ishant's request — same morning):
 | Inbox → Ops "+ Task" inter-module link | ✓ shipped | `f9a6f5f6` |
 | Analytics Phase-2-pending banners on fixture tabs | ✓ shipped | `f9a6f5f6` |
 | Channel-name normalisation (Guesty raw → friendly) | ✓ shipped | `7ecc77b9` |
-| Mobile retest (375×812) | NOT RUN — Chrome MCP resize_window didn't take | — |
-| TeamInbox "+ Task" affordance | DEFERRED — needs design pass for non-reservation context | — |
+| TeamInbox "+ Task" affordance | ✓ shipped (added in queue run) | `7996e155` |
+
+Then Ishant said "go ahead one by one without stopping" — second queue run:
+
+| # | Item | Status | Commit |
+|---|---|---|---|
+| 1 | Guesty sync revenue fix (fields=...) — unblocked revenue everywhere | ✓ shipped | `7afe35c1` · `2c296c02` |
+| 2 | Analytics channel-source fallback (Scraped Legacy now 21% not Unknown) | ✓ shipped | `3643df98` |
+| 3 | ReservationDetail drawer wiring (T3.10) — id+confirmationCode lookup + loading state | ✓ shipped | `93d33ea9` |
+| 4 | TeamInbox "+ Task" | ✓ shipped | `7996e155` |
+| 5 | T1.9 TODAY gating | ✓ shipped | `21029da9` |
+| 6 | Multi-calendar v0.2 — per-cell €PRICE + task chip overlay | ✓ shipped | `c56d007b` |
+| 7 | TaskDetail T1.15 quick path — editable assignees + open-in-full-view verified | ✓ shipped | `636c2525` |
+| 8 | T1.17 expense LLM debug — surfaced silent failures via toast + console | ✓ shipped | `5f0ad16a` |
+| 9 | Mobile retest (375×812) | NOT RUN — Chrome MCP resize_window doesn't take; needs real phone | — |
+| 10 | Per-module Insights deeper wiring | SURVEYED — Ops + Properties already live; Reviews/HR/Finance still fixture (banners cover) | — |
+
+**Live versions after queue run (commits all pushed):**
+- Frontend: `5f0ad16a` (last deploy 2026-05-25 morning)
+- Backend: `3643df98` (last deploy after #2)
+- Tree tip: `5f0ad16a`
 
 ## Phase-by-phase detail
 
@@ -303,6 +322,31 @@ From the field-staff map scoping (`docs/scoping/2026-05-24-field-staff-map-v0.1.
 - Analytics Phase 1 (proactive AI agent + push digest into Ask Friday): needs Cube Core infra ack + Gemini wiring (model-agnostic per scoping). Hour-scale work once infra is in place.
 - Per-module Insights panels (Analytics Phase 2 + T1.14 deferred): now have a clear pattern (Phase 2 banner). The right next pass is per module: 30-40 min each to write the deterministic SQL aggregation, wire the panel.
 - Multi-calendar v0.2 (per-cell €PRICE, task chips, drag-to-create): biggest user-visible polish item. Smaller than v0.1 was. 2-3 hr.
+
+## Queue run highlights (after "go ahead one by one")
+
+### #1 — Guesty revenue fix (the big unlock)
+Before: 256/257 prod reservation rows had `total_amount_minor = NULL`. Revenue was €0 everywhere (Analytics, PropertyDetail Financial, top-properties).
+
+Root cause: Guesty Open API returns a minimal reservation shape by default; the `money` object isn't included. Our `listReservations()` call wasn't asking for it. The `inferReservationFinancials()` helper was correctly wired into sync.js but had nothing to extract from.
+
+Fix: pass `fields=` (SPACE-separated per Guesty's contract) listing money, paymentInfo, invoice, financials, totalPrice, currency, etc. After deploy + manual POST /api/reservations/sync:
+- 200/257 rows now carry pricing
+- €280,839.97 in the prod cache
+- Analytics 30d revenue: €55,213.57 (was €0)
+- Top property by revenue: LB-C €9,184.99
+
+### #2 — Channel-source fallback
+Scraped reservations had `channel=null` + `source='scrape-l3'`. The normaliser only looked at channel → bucketed them all as "Unknown" (20% of mix). Fix: COALESCE channel → source through every CASE branch. "Scraped (Legacy)" now shows 21% (correct).
+
+### #3 — ReservationDetail drawer
+Was matching only by `candidate.id === reservationId`. Widened to also match `confirmationCode`. Also added a loading state for the brief window while useLiveReservations is in-flight so we don't false-negative "Reservation not found". Now the Phase 1 Guests tab can actually be reached from Overview clicks.
+
+### #6 — Multi-calendar v0.2 (visual win)
+Per-cell €PRICE chips (€36, €49, €55, €62…) render in empty cells. Task chip overlays (Standard Cle, Refresh afte, Cleaning of, Re-design Is, Internet Top, etc.) overlay reservations + cells with priority colors. Looks like the Guesty reference screenshot now. Confirmed via desktop screenshot — 60 properties × 60 days × 100 reservations + price grid + task chips all rendering.
+
+### #7 — TaskDetail editable assignees
+× button on each chip + "+ Add" toggle that opens a teammate picker dropdown. Picker shows all loaded staff; click toggles assignment via PATCH /api/tasks/:id with the new assignee_user_ids array. Manager/director permission gate.
 
 ## Critical things Ishant should know
 
