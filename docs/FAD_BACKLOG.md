@@ -286,6 +286,43 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
   - `backend/src/team_inbox/index.js:978` — frontend should map roster IDs → real DB UUIDs before send (mentions)
 - Probably should wait until Owners module backend lands (Sep-26) so classifier has its dependency tables. Capture here so it's not forgotten.
 
+### T3.14 — TeamInbox: thread replies + chat-style alignment (NEW 2026-05-24 evening)
+- Effort: M · open · scope-capture from Ishant
+- Two missing pieces vs the guest inbox:
+  1. **Reply in threads** — when an operator replies to a team channel
+     message, the reply should be threaded (parent_message_id) and
+     rendered nested under the parent, not as a new top-level message.
+     Backend already has `parent_message_id` on `team_channel_messages`
+     + `/api/team/messages/:kind/:id/replies` route. UI surface is
+     missing the "Reply in thread" action + the nested-reply layout.
+  2. **Chat-style alignment** — the current operator's own messages
+     should appear on the RIGHT, teammates' messages on the LEFT,
+     matching the guest-inbox bubble layout. Today both sides render
+     left-aligned. CSS + per-message `from === currentUserId` check
+     in TeamInbox's message renderer.
+- Scope note from Ishant: "we had scope that you should be able to
+  reply in threads in the team inbox. and the users messages should
+  appear on the right while the rest of the team messages appear on
+  the left. like we do for guests."
+
+### T3.15 — French (FR) i18n for field staff modules (NEW 2026-05-24 evening)
+- Effort: L · open · scope-capture from Ishant
+- All field staff should have the option to switch FAD UI to French
+  for the modules they have access to (per current FIELD_PERMS:
+  Operations / Inbox · Team / HR self · Settings · limited Roster).
+- Scope decisions needed before implementation:
+  - Library choice — react-intl vs i18next vs custom (factor: bundle size + plural rules + interpolation needs)
+  - Language toggle location — Settings / Sidebar profile menu / header dropdown?
+  - Persistence — per-user (DB column on `users.preferred_language`) + localStorage cache?
+  - Translation source — first-pass machine via Gemini + human-review pass, OR upfront human translation of the FR-only module strings?
+  - Coverage scope — start with Operations only (highest field-staff use), expand to Inbox · Team / HR self next?
+  - Date/number formatting — `Intl.DateTimeFormat`/`Intl.NumberFormat` with locale prop (already used in a few spots for fr-MU)
+- Estimate after scoping: probably 1-2 days for the i18n harness +
+  Operations module FR coverage, then incremental per-module pass.
+- Scope note from Ishant: "the FAD should have a french version for
+  field staff. so all field staff should have the option to use french
+  for the modules they have access to."
+
 ### T3.7 — website_inbox tenant_id migration (NEW, promoted from T3.2 audit)
 - Effort: M-L · Blocks: non-FR tenant rollout (T3.2 closure) · Status: open
 - `inbox_threads` + `inbox_events` + `inbox_guesty_jobs` + `inbox_drafts(?)` lack `tenant_id` columns (mig 033 era).
