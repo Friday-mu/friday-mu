@@ -141,12 +141,14 @@ import {
 import { ModuleHeader } from '../ModuleHeader';
 import { useCanAccess } from '../usePermissions';
 import { TeamInbox } from './inbox/TeamInbox';
+import { useT } from '../../_i18n/useT';
 
 interface Props {
   onAskFriday: () => void;
 }
 
 export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
+  const { t: inboxT } = useT();
   const canSeeGuest = useCanAccess('inbox_guest', 'read');
   const canSeeTeam = useCanAccess('inbox_team', 'read');
 
@@ -852,7 +854,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
         style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
       >
         <ModuleHeader
-          title="Inbox"
+          title={inboxT('module.inbox', 'Inbox')}
           actions={actions}
         />
         {chipsRow}

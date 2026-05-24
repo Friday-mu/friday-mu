@@ -24,6 +24,7 @@ import { fireToast } from '../Toaster';
 import { FilterBar, FilterChip } from '../FilterBar';
 import { IconClose, IconPlus, IconRefresh } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
+import { useT } from '../../_i18n/useT';
 import { CreateTaskDrawer } from './operations/CreateTaskDrawer';
 import { MultiCalendarGrid, type CellPrice } from './calendar/MultiCalendarGrid';
 import { AvailabilitySearchModal } from './calendar/AvailabilitySearchModal';
@@ -285,6 +286,7 @@ type FilterChipId = 'reservation' | 'task' | 'maint' | 'meeting';
 
 export function CalendarModule() {
   const currentUserId = useCurrentUserId();
+  const { t: calT } = useT();
   const demoData = !liveOnlyMode();
   const [tab, setTab] = useState<CalView>(() => (
     typeof window !== 'undefined' && window.innerWidth <= 768 ? 'agenda' : 'multi'
@@ -419,7 +421,7 @@ export function CalendarModule() {
   return (
     <>
       <ModuleHeader
-        title="Calendar"
+        title={calT('module.calendar', 'Calendar')}
         subtitle={subtitle}
         tabs={tabs}
         activeTab={tab}

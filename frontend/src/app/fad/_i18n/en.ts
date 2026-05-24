@@ -131,6 +131,43 @@ export const en: TranslationShape = {
     },
   },
 
+  // ─── Properties module ────────────────────────────────────────
+  properties: {
+    subtitle: 'Unification layer between Guesty (commercial) and Breezeway (operational) · destination for everything property-anchored',
+    tabs: {
+      overview: 'Overview',
+      all: 'All properties',
+      onboarding: 'Onboarding',
+      insights: 'Insights',
+    },
+    newProperty: 'New property',
+  },
+
+  // ─── Reservations module ──────────────────────────────────────
+  reservations: {
+    subtitle: 'Lookup, detail, inquiries · supporting surface across Finance / Operations / Inbox',
+    tabs: {
+      overview: 'Overview',
+      all: 'All reservations',
+      inquiries: 'Inquiries',
+    },
+    newReservation: 'New reservation',
+  },
+
+  // ─── HR module ────────────────────────────────────────────────
+  hr: {
+    subtitle: {
+      field: 'Time-off · personal stats',
+      manager: 'Staff · time-off · stats · permissions',
+    },
+    tabs: {
+      staff: 'Staff',
+      timeOff: 'Time-off',
+      stats: 'Stats',
+      permissions: 'Permissions',
+    },
+  },
+
   // ─── Settings page ─────────────────────────────────────────────
   settings: {
     title: 'Settings',
@@ -204,6 +241,20 @@ export interface TranslationShape {
     status: Record<string, string>;
     priorityLabel: Record<string, string>;
     filters: Record<string, string>;
+  };
+  properties: {
+    subtitle: string;
+    tabs: Record<string, string>;
+    newProperty: string;
+  };
+  reservations: {
+    subtitle: string;
+    tabs: Record<string, string>;
+    newReservation: string;
+  };
+  hr: {
+    subtitle: { field: string; manager: string };
+    tabs: Record<string, string>;
   };
   settings: {
     title: string;

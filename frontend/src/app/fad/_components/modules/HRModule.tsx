@@ -8,6 +8,7 @@
 
 import { ModuleHeader } from '../ModuleHeader';
 import { useCanSee, useCurrentRole } from '../usePermissions';
+import { useT } from '../../_i18n/useT';
 import { StaffPage } from './hr/StaffPage';
 import { TimeOffPage } from './hr/TimeOffPage';
 import { StatsPage } from './hr/StatsPage';
@@ -20,17 +21,18 @@ interface Props {
 
 export function HRModule({ subPage, onChangeSubPage }: Props) {
   const role = useCurrentRole();
+  const { t } = useT();
   const canSeeStaff = useCanSee('hr_staff', 'read');
   const canSeeTimeOff = useCanSee('hr_time_off', 'read');
   const canSeeStats = useCanSee('hr_stats', 'read');
   const canSeePermissions = useCanSee('hr_permissions', 'read');
 
   const tabs = [
-    canSeeStaff && { id: 'staff', label: 'Staff' },
-    canSeeTimeOff && { id: 'time-off', label: 'Time-off' },
-    canSeeStats && { id: 'stats', label: 'Stats' },
-    canSeePermissions && { id: 'permissions', label: 'Permissions' },
-  ].filter((t): t is { id: string; label: string } => Boolean(t));
+    canSeeStaff && { id: 'staff', label: t('hr.tabs.staff', 'Staff') },
+    canSeeTimeOff && { id: 'time-off', label: t('hr.tabs.timeOff', 'Time-off') },
+    canSeeStats && { id: 'stats', label: t('hr.tabs.stats', 'Stats') },
+    canSeePermissions && { id: 'permissions', label: t('hr.tabs.permissions', 'Permissions') },
+  ].filter((tab): tab is { id: string; label: string } => Boolean(tab));
 
   const active = tabs.find((t) => t.id === subPage)?.id ?? tabs[0]?.id ?? 'staff';
 
@@ -52,8 +54,10 @@ export function HRModule({ subPage, onChangeSubPage }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
-        title="HR"
-        subtitle={role === 'field' ? 'Time-off · personal stats' : 'Staff · time-off · stats · permissions'}
+        title={t('module.hr', 'HR')}
+        subtitle={role === 'field'
+          ? t('hr.subtitle.field', 'Time-off · personal stats')
+          : t('hr.subtitle.manager', 'Staff · time-off · stats · permissions')}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}

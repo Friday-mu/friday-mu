@@ -123,6 +123,40 @@ export const fr: TranslationShape = {
     },
   },
 
+  properties: {
+    subtitle: 'Couche d’unification entre Guesty (commercial) et Breezeway (opérationnel) · destination pour tout ce qui est ancré au logement',
+    tabs: {
+      overview: 'Aperçu',
+      all: 'Tous les logements',
+      onboarding: 'Mise en service',
+      insights: 'Indicateurs',
+    },
+    newProperty: 'Nouveau logement',
+  },
+
+  reservations: {
+    subtitle: 'Recherche, détail, demandes · surface de support pour Finance / Opérations / Boîte de réception',
+    tabs: {
+      overview: 'Aperçu',
+      all: 'Toutes les réservations',
+      inquiries: 'Demandes',
+    },
+    newReservation: 'Nouvelle réservation',
+  },
+
+  hr: {
+    subtitle: {
+      field: 'Congés · statistiques personnelles',
+      manager: 'Équipe · congés · statistiques · permissions',
+    },
+    tabs: {
+      staff: 'Équipe',
+      timeOff: 'Congés',
+      stats: 'Statistiques',
+      permissions: 'Permissions',
+    },
+  },
+
   settings: {
     title: 'Paramètres',
     sections: {

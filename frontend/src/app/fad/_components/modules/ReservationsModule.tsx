@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
+import { useT } from '../../_i18n/useT';
 import { IconPlus } from '../icons';
 import { fireToast } from '../Toaster';
 import type { Reservation } from '../../_data/reservations';
@@ -18,10 +19,11 @@ interface Props {
 }
 
 export function ReservationsModule({ subPage, onChangeSubPage }: Props) {
+  const { t } = useT();
   const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'all', label: 'All reservations' },
-    { id: 'inquiries', label: 'Inquiries' },
+    { id: 'overview', label: t('reservations.tabs.overview', 'Overview') },
+    { id: 'all', label: t('reservations.tabs.all', 'All reservations') },
+    { id: 'inquiries', label: t('reservations.tabs.inquiries', 'Inquiries') },
   ];
 
   const active = tabs.find((t) => t.id === subPage)?.id ?? 'overview';
@@ -53,14 +55,14 @@ export function ReservationsModule({ subPage, onChangeSubPage }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <ModuleHeader
-        title="Reservations"
-        subtitle="Lookup, detail, inquiries · supporting surface across Finance / Operations / Inbox"
+        title={t('module.reservations', 'Reservations')}
+        subtitle={t('reservations.subtitle', 'Lookup, detail, inquiries · supporting surface across Finance / Operations / Inbox')}
         tabs={tabs}
         activeTab={active}
         onTabChange={onChangeSubPage}
         actions={
           <button className="btn primary sm" onClick={handleNew}>
-            <IconPlus size={12} /> New reservation
+            <IconPlus size={12} /> {t('reservations.newReservation', 'New reservation')}
           </button>
         }
       />
