@@ -105,10 +105,6 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 - Backend send path verified: `sendPushToUsers()` exists, handles 404/410 auto-cleanup of stale subs.
 - 4 April subscriptions will silently 410 on next send (they couldn't authenticate without a matching VAPID public anyway); operators just need to re-trigger Push opt-in.
 
-### T2.4 — Bug #5 Mary inbox fluctuation (`434b9435`)
-- Effort: ? · Status: **needs-repro** (waiting on Mary's browser recording)
-- Can't act without repro. Ping when Mary supplies.
-
 ### T2.9 — Recent Friday Consult bug reports (2026-05-23 batch)
 - Effort: M total · Status: 2 fixed in this session, 3 still need investigation.
 - Triaged from prod `feedback` table:

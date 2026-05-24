@@ -514,6 +514,26 @@ export function CalendarModule() {
               {t.label}
             </span>
           ))}
+          {typeFilter.has('reservation') && (
+            <>
+              <span style={{ width: 1, height: 12, background: 'var(--color-border-tertiary)' }} />
+              {(
+                [
+                  { id: 'airbnb', label: 'Airbnb' },
+                  { id: 'booking', label: 'Booking' },
+                  { id: 'direct', label: 'Direct' },
+                  { id: 'owner', label: 'Owner' },
+                  { id: 'vrbo', label: 'VRBO' },
+                  { id: 'email', label: 'Email' },
+                ] as const
+              ).map((c) => (
+                <span key={c.id} className={'cal-channel-legend channel-' + c.id}>
+                  <span className="cal-channel-legend-dot" />
+                  {c.label}
+                </span>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -685,6 +705,7 @@ function WeekView({
                   type="button"
                   className={
                     'cal-stay-band status-' + s.rsv.status +
+                    ' channel-' + s.rsv.channel +
                     (!s.startsThisWeek ? ' clip-left' : '') +
                     (!s.endsThisWeek ? ' clip-right' : '')
                   }
@@ -987,7 +1008,7 @@ function DayView({
                 <button
                   key={s.rsv.id}
                   type="button"
-                  className={'cal-stay-band status-' + s.rsv.status}
+                  className={'cal-stay-band status-' + s.rsv.status + ' channel-' + s.rsv.channel}
                   onClick={(evt) => {
                     const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect();
                     onStayClick(s.rsv, rect.right + 8, rect.top);
@@ -1093,6 +1114,17 @@ function MonthView({
     x: number;
     y: number;
   } | null>(null);
+
+  const weeks: ViewDay[][] = useMemo(() => {
+    const out: ViewDay[][] = [];
+    for (let i = 0; i < days.length; i += 7) {
+      out.push(days.slice(i, i + 7));
+    }
+    return out;
+  }, [days]);
+
+  const MAX_LANES = 3;
+
   return (
     <div className="cal-month">
       <div className="cal-month-head">
@@ -1102,82 +1134,187 @@ function MonthView({
           </div>
         ))}
       </div>
-      <div className="cal-month-grid">
-        {days.map((d, idx) => {
-          const evs = events.filter((e) => e.day === idx);
-          const cellStays = stays.filter((s) => s.startIdx <= idx && s.endIdx >= idx);
-          const stayOverflow = Math.max(cellStays.length - 2, 0);
-          const eventOverflow = Math.max(evs.length - 2, 0);
-          const totalOverflow = stayOverflow + eventOverflow;
+      <div className="cal-month-body">
+        {weeks.map((weekDays, weekIdx) => {
+          const weekStartIdx = weekIdx * 7;
+          const weekEndIdx = weekStartIdx + 6;
+
+          // Stays that intersect this week, longest-first so they take low lanes.
+          const weekStays = stays
+            .filter((s) => s.startIdx <= weekEndIdx && s.endIdx >= weekStartIdx)
+            .map((s) => ({
+              stay: s,
+              startCol: Math.max(0, s.startIdx - weekStartIdx),
+              endCol: Math.min(6, s.endIdx - weekStartIdx),
+              clipLeft: s.startIdx < weekStartIdx,
+              clipRight: s.endIdx > weekEndIdx,
+            }))
+            .sort((a, b) => {
+              const aSpan = a.endCol - a.startCol;
+              const bSpan = b.endCol - b.startCol;
+              if (bSpan !== aSpan) return bSpan - aSpan;
+              return a.startCol - b.startCol;
+            });
+
+          // First-fit lane allocation.
+          const lanes: { startCol: number; endCol: number }[][] = [];
+          const placedStays = weekStays.map((s) => {
+            let laneIdx = lanes.findIndex((lane) =>
+              lane.every((o) => o.endCol < s.startCol || o.startCol > s.endCol),
+            );
+            if (laneIdx < 0) {
+              lanes.push([{ startCol: s.startCol, endCol: s.endCol }]);
+              laneIdx = lanes.length - 1;
+            } else {
+              lanes[laneIdx].push({ startCol: s.startCol, endCol: s.endCol });
+            }
+            return { ...s, lane: laneIdx };
+          });
+
+          // Single-day events placed in the first free lane on their column.
+          const laneUsed: Set<number>[] = Array.from({ length: 7 }, () => new Set<number>());
+          placedStays.forEach((p) => {
+            for (let c = p.startCol; c <= p.endCol; c++) laneUsed[c].add(p.lane);
+          });
+          const placedEvents: { ev: CalEvent; col: number; lane: number }[] = [];
+          for (let col = 0; col < 7; col++) {
+            const dayIdx = weekStartIdx + col;
+            const cellEvents = events.filter((e) => e.day === dayIdx);
+            for (const ev of cellEvents) {
+              let lane = 0;
+              while (laneUsed[col].has(lane)) lane++;
+              laneUsed[col].add(lane);
+              placedEvents.push({ ev, col, lane });
+            }
+          }
+
+          const overflowPerCol: number[] = Array(7).fill(0);
+          placedStays.forEach((p) => {
+            if (p.lane >= MAX_LANES) {
+              for (let c = p.startCol; c <= p.endCol; c++) overflowPerCol[c]++;
+            }
+          });
+          placedEvents.forEach((p) => {
+            if (p.lane >= MAX_LANES) overflowPerCol[p.col]++;
+          });
+          const hasOverflowRow = overflowPerCol.some((n) => n > 0);
+          const totalRows = 1 + MAX_LANES + (hasOverflowRow ? 1 : 0);
+
           return (
             <div
-              key={d.isoDate}
-              className={
-                'cal-month-cell' +
-                (!d.inFocusMonth ? ' other' : '') +
-                (d.today ? ' today' : '')
-              }
+              key={weekDays[0].isoDate}
+              className="cal-month-week"
+              style={{
+                gridTemplateRows: `26px repeat(${MAX_LANES}, 18px)${hasOverflowRow ? ' 18px' : ''}`,
+              }}
             >
-              <div className="cal-month-day">{Number(d.date)}</div>
-              {cellStays.slice(0, 2).map((s) => {
-                const isStart = s.startIdx === idx && s.startsThisWeek;
-                const isEnd = s.endIdx === idx && s.endsThisWeek;
-                return (
-                  <button
-                    key={s.rsv.id}
-                    type="button"
+              {weekDays.map((d, col) => (
+                <div
+                  key={'bg-' + d.isoDate}
+                  className={
+                    'cal-mv-cell' +
+                    (!d.inFocusMonth ? ' other' : '') +
+                    (d.today ? ' today' : '')
+                  }
+                  style={{ gridColumn: col + 1, gridRow: `1 / ${totalRows + 1}` }}
+                />
+              ))}
+              {weekDays.map((d, col) => (
+                <div
+                  key={'num-' + d.isoDate}
+                  className="cal-mv-daynum-wrap"
+                  style={{ gridColumn: col + 1, gridRow: 1 }}
+                >
+                  <span
                     className={
-                      'cal-month-stay status-' + s.rsv.status +
-                      (isStart ? ' segment-start' : '') +
-                      (isEnd ? ' segment-end' : '') +
-                      (!isStart && !isEnd ? ' segment-middle' : '')
+                      'cal-mv-daynum' +
+                      (d.today ? ' today' : '') +
+                      (!d.inFocusMonth ? ' muted' : '')
                     }
+                  >
+                    {Number(d.date)}
+                  </span>
+                </div>
+              ))}
+              {placedStays
+                .filter((p) => p.lane < MAX_LANES)
+                .map((p) => {
+                  const rsv = p.stay.rsv;
+                  return (
+                    <button
+                      key={'s-' + rsv.id}
+                      type="button"
+                      className={
+                        'cal-mv-band' +
+                        ' channel-' + rsv.channel +
+                        ' status-' + rsv.status +
+                        (p.clipLeft ? ' clip-left' : '') +
+                        (p.clipRight ? ' clip-right' : '')
+                      }
+                      style={{
+                        gridColumn: `${p.startCol + 1} / ${p.endCol + 2}`,
+                        gridRow: 1 + p.lane + 1,
+                      }}
+                      onClick={(evt) => {
+                        evt.stopPropagation();
+                        const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect();
+                        onStayClick(rsv, rect.right + 8, rect.top);
+                      }}
+                      title={`${rsv.guestName} · ${rsv.propertyCode} · ${rsv.nights} nts · ${CHANNEL_LABEL[rsv.channel] || rsv.channel}`}
+                    >
+                      <span className="cal-mv-band-label">
+                        {rsv.guestName}{' '}
+                        <span className="cal-mv-band-prop mono">{rsv.propertyCode}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              {placedEvents
+                .filter((p) => p.lane < MAX_LANES)
+                .map((p, i) => (
+                  <button
+                    key={'e-' + p.col + '-' + p.lane + '-' + i}
+                    type="button"
+                    className={'cal-mv-event ' + p.ev.type}
+                    style={{
+                      gridColumn: p.col + 1,
+                      gridRow: 1 + p.lane + 1,
+                    }}
                     onClick={(evt) => {
                       evt.stopPropagation();
                       const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect();
-                      onStayClick(s.rsv, rect.right + 8, rect.top);
+                      onEventClick(p.ev, rect.right + 8, rect.top);
                     }}
-                    title={`${s.rsv.guestName} · ${s.rsv.propertyCode} · ${s.rsv.nights} nts`}
+                    title={p.ev.title}
                   >
-                    {isStart && <span className="cal-stay-end-dot" aria-hidden="true" />}
-                    <span className="cal-month-stay-label">
-                      {isStart ? `${s.rsv.guestName.split(' ').slice(-1)[0]} · ${s.rsv.propertyCode}` : ''}
-                    </span>
+                    {p.ev.title}
                   </button>
-                );
-              })}
-              {evs.slice(0, 2).map((e, i) => (
-                <div
-                  key={i}
-                  className={'cal-month-ev ' + e.type}
-                  onClick={(evt) => {
-                    evt.stopPropagation();
-                    const rect = (evt.target as HTMLElement).getBoundingClientRect();
-                    onEventClick(e, rect.right + 8, rect.top);
-                  }}
-                >
-                  {e.title}
-                </div>
-              ))}
-              {totalOverflow > 0 && (
-                <button
-                  type="button"
-                  className="cal-month-more"
-                  onClick={(evt) => {
-                    evt.stopPropagation();
-                    const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect();
-                    setExpand({
-                      isoDate: d.isoDate,
-                      events: evs,
-                      stays: cellStays,
-                      x: rect.left,
-                      y: rect.bottom + 4,
-                    });
-                  }}
-                >
-                  +{totalOverflow} more
-                </button>
-              )}
+                ))}
+              {hasOverflowRow &&
+                overflowPerCol.map((n, col) =>
+                  n > 0 ? (
+                    <button
+                      key={'o-' + col}
+                      type="button"
+                      className="cal-mv-more"
+                      style={{ gridColumn: col + 1, gridRow: totalRows }}
+                      onClick={(evt) => {
+                        evt.stopPropagation();
+                        const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect();
+                        const dayIdx = weekStartIdx + col;
+                        setExpand({
+                          isoDate: weekDays[col].isoDate,
+                          events: events.filter((e) => e.day === dayIdx),
+                          stays: stays.filter((s) => s.startIdx <= dayIdx && s.endIdx >= dayIdx),
+                          x: rect.left,
+                          y: rect.bottom + 4,
+                        });
+                      }}
+                    >
+                      +{n} more
+                    </button>
+                  ) : null,
+                )}
             </div>
           );
         })}
@@ -1202,7 +1339,7 @@ function MonthView({
                 <button
                   key={s.rsv.id}
                   type="button"
-                  className={'cal-allday-pill ' + (s.rsv.status === 'checked_in' ? 'checkin' : 'checkout')}
+                  className={'cal-allday-pill channel-' + s.rsv.channel + ' status-' + s.rsv.status}
                   onClick={(evt) => {
                     const rect = (evt.currentTarget as HTMLElement).getBoundingClientRect();
                     setExpand(null);

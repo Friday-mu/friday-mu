@@ -1281,99 +1281,211 @@ html.fad-dark .send-split-main { color: #0b0d14; }
   opacity: 0.75;
 }
 
-/* MonthView stay segments — share a continuous look across cells via squared edges. */
-.cal-month-stay {
+/* MonthView — true continuous bands via per-week CSS-grid spanning. Each band
+ * positions itself by gridColumnStart/End across whole cells, so the label
+ * sits inside the visible bar the entire span (no per-cell segments that look
+ * like unlabeled duplicates). */
+.cal-mv-cell {
+  border-right: 0.5px solid var(--color-border-tertiary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  z-index: 0;
+}
+.cal-mv-cell:nth-child(7n) { border-right: 0; }
+.cal-mv-cell.other { background: color-mix(in srgb, var(--color-background-secondary) 50%, transparent); }
+.cal-mv-cell.today { background: var(--color-brand-accent-soft); }
+
+.cal-mv-daynum-wrap {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 4px 6px;
+  z-index: 1;
+}
+.cal-mv-daynum {
+  font-family: var(--font-mono-fad);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+.cal-mv-daynum.muted { color: var(--color-text-tertiary); opacity: 0.5; }
+.cal-mv-daynum.today {
+  background: var(--color-brand-accent);
+  color: var(--color-background-primary);
+  font-weight: 600;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cal-mv-band {
+  margin: 0 2px;
+  padding: 0 10px;
+  height: 18px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 16px;
-  padding: 0 6px;
-  /* Extend past the cell's left/right padding (8px) plus 0.5px to cover the
-     vertical cell border so adjacent segments read as one continuous bar. */
-  margin: 1px -8.5px;
+  overflow: hidden;
+  cursor: pointer;
+  z-index: 2;
   background: var(--color-brand-accent-soft);
   color: var(--color-brand-accent);
-  border-top: 0.5px solid var(--color-brand-accent);
-  border-bottom: 0.5px solid var(--color-brand-accent);
-  border-left: 0;
-  border-right: 0;
-  font: inherit;
-  font-size: 9px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
+  border: 0.5px solid currentColor;
+  border-left: 3px solid currentColor;
   white-space: nowrap;
-  overflow: hidden;
-  /* Layer above the cell's border-right so it's not visually cut. */
-  position: relative;
-  z-index: 2;
+  text-align: left;
+  font-family: inherit;
 }
+.cal-mv-band:hover { filter: brightness(1.05); }
 
-.cal-month-stay.segment-start {
-  border-top-left-radius: 999px;
-  border-bottom-left-radius: 999px;
-  border-left: 0.5px solid var(--color-brand-accent);
-  margin-left: 2px;
-  padding-left: 6px;
-}
-
-.cal-month-stay.segment-end {
-  border-top-right-radius: 999px;
-  border-bottom-right-radius: 999px;
-  border-right: 0.5px solid var(--color-brand-accent);
-  margin-right: 2px;
-  padding-right: 6px;
-}
-
-.cal-month-stay.status-checked_in {
-  background: var(--color-bg-success);
-  color: var(--color-text-success);
-  border-color: var(--color-text-success);
-}
-
-.cal-month-stay.status-checked_in.segment-start { border-left-color: var(--color-text-success); }
-.cal-month-stay.status-checked_in.segment-end { border-right-color: var(--color-text-success); }
-
-.cal-month-stay.status-checked_out {
-  background: var(--color-background-secondary);
-  color: var(--color-text-tertiary);
-  border-color: var(--color-text-tertiary);
-  opacity: 0.7;
-}
-
-.cal-month-stay.status-checked_out.segment-start { border-left-color: var(--color-text-tertiary); }
-.cal-month-stay.status-checked_out.segment-end { border-right-color: var(--color-text-tertiary); }
-
-.cal-month-stay.status-hold {
-  background: var(--color-bg-warning);
-  color: var(--color-text-warning);
-  border-color: var(--color-text-warning);
-}
-
-.cal-month-stay-label {
+.cal-mv-band-label {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.cal-mv-band-prop {
+  font-size: 9px;
+  opacity: 0.65;
+  margin-left: 4px;
+}
 
-.cal-month-more {
+.cal-mv-band.clip-left {
+  margin-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left-width: 0;
+  padding-left: 6px;
+}
+.cal-mv-band.clip-right {
+  margin-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Status overlays (channel sets base color; status modifies). */
+.cal-mv-band.status-checked_in { box-shadow: inset 0 0 0 0.5px currentColor; }
+.cal-mv-band.status-checked_out { opacity: 0.55; }
+.cal-mv-band.status-cancelled { text-decoration: line-through; opacity: 0.4; font-style: italic; }
+.cal-mv-band.status-hold {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 3px,
+    rgba(255, 255, 255, 0.18) 3px,
+    rgba(255, 255, 255, 0.18) 6px
+  );
+}
+
+.cal-mv-event {
+  margin: 0 2px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  cursor: pointer;
+  z-index: 2;
+  white-space: nowrap;
+  text-align: left;
+  border: 0;
+  border-left: 2px solid;
+  font-family: inherit;
+}
+.cal-mv-event.task    { background: var(--color-bg-info); color: var(--color-text-info); border-color: var(--color-text-info); }
+.cal-mv-event.maint   { background: var(--color-bg-warning); color: var(--color-text-warning); border-color: var(--color-text-warning); }
+.cal-mv-event.meeting { background: var(--color-background-secondary); color: var(--color-text-primary); border-color: var(--color-text-tertiary); }
+
+.cal-mv-more {
   font-size: 10px;
   color: var(--color-text-tertiary);
-  padding: 2px 6px;
   background: transparent;
-  border: 0.5px dashed var(--color-border-tertiary);
-  border-radius: 3px;
+  border: 0;
   cursor: pointer;
+  padding: 2px 6px;
   text-align: left;
   font-family: inherit;
-  align-self: flex-start;
-  margin-top: 2px;
+  z-index: 2;
 }
-.cal-month-more:hover {
+.cal-mv-more:hover {
   background: var(--color-background-tertiary);
   color: var(--color-text-primary);
+  border-radius: 3px;
 }
+
+/* Channel colors — shared across Week-view .cal-stay-band, Month-view
+ * .cal-mv-band, and the +more popover .cal-allday-pill. Each booking source
+ * gets a brand-aligned hue so a glance at the calendar reveals the channel
+ * mix (Airbnb red, Booking blue, Direct green, etc.). */
+.cal-stay-band.channel-airbnb,
+.cal-mv-band.channel-airbnb,
+.cal-allday-pill.channel-airbnb {
+  background: rgba(255, 90, 95, 0.14);
+  color: #ff5a5f;
+  border-color: #ff5a5f;
+}
+.cal-stay-band.channel-booking,
+.cal-mv-band.channel-booking,
+.cal-allday-pill.channel-booking {
+  background: rgba(0, 113, 194, 0.14);
+  color: #1e90c2;
+  border-color: #1e90c2;
+}
+.cal-stay-band.channel-vrbo,
+.cal-mv-band.channel-vrbo,
+.cal-allday-pill.channel-vrbo {
+  background: rgba(58, 122, 254, 0.14);
+  color: #3a7afe;
+  border-color: #3a7afe;
+}
+.cal-stay-band.channel-direct,
+.cal-mv-band.channel-direct,
+.cal-allday-pill.channel-direct {
+  background: rgba(0, 158, 100, 0.16);
+  color: #2ea569;
+  border-color: #2ea569;
+}
+.cal-stay-band.channel-owner,
+.cal-mv-band.channel-owner,
+.cal-allday-pill.channel-owner {
+  background: rgba(176, 122, 0, 0.16);
+  color: #c08d20;
+  border-color: #c08d20;
+}
+.cal-stay-band.channel-email,
+.cal-mv-band.channel-email,
+.cal-allday-pill.channel-email {
+  background: var(--color-bg-info);
+  color: var(--color-text-info);
+  border-color: var(--color-text-info);
+}
+
+/* Channel legend row (under the calendar grid). */
+.cal-channel-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.cal-channel-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cal-channel-legend.channel-airbnb .cal-channel-legend-dot { background: #ff5a5f; }
+.cal-channel-legend.channel-booking .cal-channel-legend-dot { background: #1e90c2; }
+.cal-channel-legend.channel-vrbo .cal-channel-legend-dot { background: #3a7afe; }
+.cal-channel-legend.channel-direct .cal-channel-legend-dot { background: #2ea569; }
+.cal-channel-legend.channel-owner .cal-channel-legend-dot { background: #c08d20; }
+.cal-channel-legend.channel-email .cal-channel-legend-dot { background: var(--color-text-info); }
 
 /* DayView in-residence strip */
 .cal-day-stays {
@@ -2509,8 +2621,7 @@ html.fad-dark .fad-feedback-tab.is-active {
   /* Calendar */
   .cal-wrap { overflow-x: auto; }
   .cal-head, .cal-grid { min-width: 640px; }
-  .cal-month-grid { min-width: 0; }
-  .cal-month-cell { min-height: 60px; padding: 4px 6px; }
+  .cal-month-week { min-height: 78px; }
 
   /* Property detail */
   .pdetail-info { flex-wrap: wrap; gap: 12px; }
@@ -3545,43 +3656,20 @@ html.fad-dark .cal-popover { box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.cal-month-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-}
-.cal-month-cell {
-  min-height: 88px;
-  border-right: 0.5px solid var(--color-border-tertiary);
-  border-bottom: 0.5px solid var(--color-border-tertiary);
-  padding: 6px 8px;
+.cal-month-body {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+}
+.cal-month-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px 0;
+  padding: 0 0 4px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
   position: relative;
+  min-height: 96px;
 }
-.cal-month-cell:nth-child(7n) { border-right: 0; }
-.cal-month-cell.other { opacity: 0.35; }
-.cal-month-cell.today .cal-month-day { color: var(--color-brand-accent); font-weight: 500; }
-/* Month-view day number. 13px matches the Week-view `.cal-head-cell .day`
- * — without this they read at 11px which feels cramped + clipped-looking
- * against dense grid lines, even though nothing is technically clipped. */
-.cal-month-day { font-family: var(--font-mono-fad); font-size: 13px; color: var(--color-text-primary); line-height: 1.25; }
-.cal-month-ev {
-  font-size: 10px;
-  padding: 2px 5px;
-  border-radius: var(--radius-sm);
-  border-left: 2px solid;
-  cursor: pointer;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  line-height: 1.3;
-}
-.cal-month-ev.checkin { background: var(--color-bg-success); color: var(--color-text-success); border-color: var(--color-text-success); }
-.cal-month-ev.checkout { background: var(--color-brand-accent-soft); color: var(--color-brand-accent); border-color: var(--color-brand-accent); }
-.cal-month-ev.maint { background: var(--color-bg-warning); color: var(--color-text-warning); border-color: var(--color-text-warning); }
-.cal-month-ev.meeting { background: var(--color-background-secondary); color: var(--color-text-primary); border-color: var(--color-text-tertiary); }
-.cal-month-ev.task { background: var(--color-bg-info); color: var(--color-text-info); border-color: var(--color-text-info); }
+.cal-month-week:last-child { border-bottom: 0; }
 
 /* Modal
  * Mobile/PWA scroll-trap fix: the modal is a flex column with a capped
@@ -6141,10 +6229,12 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   .cal-stay-prop { font-size: 9px; }
   .cal-allday-pill { font-size: 10px; padding: 2px 5px; }
   .cal-allday-label { padding: 4px 6px; font-size: 9px; }
-  .cal-month-day { font-size: 12px; }
-  .cal-month-cell { min-height: 60px; padding: 4px 5px; gap: 2px; }
-  .cal-month-stay { height: 13px; font-size: 8px; padding: 0 4px; }
-  .cal-month-ev { font-size: 9px; padding: 1px 4px; }
+  .cal-month-week { min-height: 78px; }
+  .cal-mv-daynum { font-size: 11px; }
+  .cal-mv-daynum.today { width: 20px; height: 20px; font-size: 10px; }
+  .cal-mv-band { height: 15px; font-size: 9px; padding: 0 6px; }
+  .cal-mv-band-prop { font-size: 8px; }
+  .cal-mv-event { height: 15px; font-size: 9px; padding: 0 5px; }
 
   /* General buttons in module bodies */
   .fad-module-body .btn.sm { font-size: 11px; padding: 4px 8px; }
