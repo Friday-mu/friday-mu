@@ -89,12 +89,25 @@ function statusToneClass(s: Reservation['status']): string {
 }
 
 export function ReservationDetail({ reservationId, onClose, onCreateTask }: Props) {
-  const { reservations: liveReservations } = useLiveReservations();
+  const { reservations: liveReservations, loading: liveLoading } = useLiveReservations();
   const sourceReservations = liveReservations ?? (liveOnlyMode() ? [] : RESERVATIONS);
-  const r = useMemo(
-    () => sourceReservations.find((candidate) => candidate.id === reservationId) || (liveOnlyMode() ? undefined : RESERVATION_BY_ID[reservationId]),
-    [reservationId, sourceReservations],
-  );
+  // Lookup chain (broader matching unblocks T3.10):
+  //   1. exact id match (FAD overlay UUID)
+  //   2. guestyId match (live reservations expose .id == backend overlay
+  //      UUID but Calendar / Inbox sometimes hold a Guesty _id from a
+  //      raw payload; reservationsClient.transformReservation sets
+  //      .id = r.id which IS the overlay UUID, but for safety match
+  //      against both)
+  //   3. confirmationCode match
+  //   4. fixture fallback (only off liveOnlyMode)
+  const r = useMemo(() => {
+    const byId = sourceReservations.find((c) => c.id === reservationId);
+    if (byId) return byId;
+    const byCode = sourceReservations.find((c) => c.confirmationCode === reservationId);
+    if (byCode) return byCode;
+    if (!liveOnlyMode()) return RESERVATION_BY_ID[reservationId];
+    return undefined;
+  }, [reservationId, sourceReservations]);
   const role = useCurrentRole();
   const currentUserId = useCurrentUserId();
   const finAccess = financialAccessFor(role);
@@ -119,6 +132,26 @@ export function ReservationDetail({ reservationId, onClose, onCreateTask }: Prop
   }, [finAccess]);
 
   if (!r) {
+    // While the live fetch is in-flight, show a loading state instead of
+    // "not found" — otherwise users see the false-negative for the brief
+    // moment between drawer open + data arrive.
+    if (liveLoading && liveReservations == null) {
+      return (
+        <>
+          <div onClick={onClose} style={overlayStyle} />
+          <aside className="task-detail-pane open" style={paneStyle}>
+            <div style={{ padding: 24 }}>
+              <button className="fad-util-btn" onClick={onClose}>
+                <IconClose size={14} />
+              </button>
+              <div style={{ marginTop: 16, fontSize: 14, color: 'var(--color-text-tertiary)' }}>
+                Loading reservation…
+              </div>
+            </div>
+          </aside>
+        </>
+      );
+    }
     return (
       <>
         <div onClick={onClose} style={overlayStyle} />
@@ -129,6 +162,13 @@ export function ReservationDetail({ reservationId, onClose, onCreateTask }: Prop
             </button>
             <div style={{ marginTop: 16, fontSize: 14, color: 'var(--color-text-secondary)' }}>
               Reservation not found.
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono-fad)' }}>
+              id: {reservationId}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              The link may reference an older fixture id or a reservation that hasn't synced yet.
+              Reservations in the cache: {sourceReservations.length}.
             </div>
           </div>
         </aside>
