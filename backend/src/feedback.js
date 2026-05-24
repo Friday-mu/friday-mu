@@ -12,6 +12,7 @@ const express = require('express');
 const axios = require('axios');
 const { query } = require('./database/client');
 const { attachIdentity } = require('./design/auth');
+const { notifyUsers } = require('./realtime');
 
 const router = express.Router();
 
@@ -337,6 +338,68 @@ function selectFeedbackFields({ includeScreenshot = false } = {}) {
   `;
 }
 
+// ─── Push + email + in-app notification fan-out ─────────────────────
+// On every new feedback submission, notify every admin/director in the
+// tenant via the standard FAD notifications pipeline (DB row + SSE
+// push to live tabs + web push to subscribed devices + email when
+// recipient is offline). Slack continues to be its own separate
+// channel via notifySlack() below.
+//
+// Recipient policy: admins + directors of the SAME tenant as the
+// reporter. They're already the cohort with access to the Feedback
+// inbox at Settings → Feedback inbox, so this notifies the same
+// people who would otherwise have to discover the report by chance.
+//
+// Excludes the reporter themselves so the submitter doesn't get a
+// push echo of their own submission.
+async function notifyAdmins({ tenantId, reporterUserId, type, title, description, severity, routeUrl, moduleLabel, feedbackId, reporterDisplayName, reporterUsername }) {
+  try {
+    const { rows: admins } = await query(
+      `SELECT id
+         FROM users
+        WHERE tenant_id = $1
+          AND is_active = TRUE
+          AND role IN ('admin', 'director')
+          AND id <> COALESCE($2::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      [tenantId, reporterUserId || null],
+    );
+    if (admins.length === 0) return;
+    const userIds = admins.map((a) => a.id);
+    const reporter = reporterDisplayName || reporterUsername || 'someone';
+    const icon = type === 'bug' ? '🐛' : type === 'feature' ? '💡' : '✨';
+    const sevSuffix = severity ? ` · ${severity}` : '';
+    const route = routeUrl ? `\n${routeUrl}` : '';
+    const safeTitle = (title || description.slice(0, 80)).slice(0, 140);
+    await notifyUsers({
+      tenantId,
+      userIds,
+      type: `feedback_${type}`,
+      title: `${icon} New ${type} from ${reporter}${sevSuffix}`,
+      body: `${safeTitle}${route}`.slice(0, 500),
+      // Land them at Settings → Feedback inbox so they can triage.
+      url: '/fad?m=settings',
+      source: 'feedback',
+      sourceId: feedbackId,
+      priority: severity === 'critical' || severity === 'high' ? 'high' : 'normal',
+      // emailNotification:true overrides the default email-allowlist in
+      // sendEmailNotifications() so this category always emails when
+      // the recipient isn't currently online.
+      data: {
+        module: 'settings',
+        emailNotification: true,
+        feedbackId,
+        feedbackType: type,
+        severity: severity || null,
+        moduleLabel: moduleLabel || null,
+        routeUrl: routeUrl || null,
+        reporterUsername: reporterUsername || null,
+      },
+    });
+  } catch (err) {
+    console.warn('[feedback] notifyAdmins failed:', err.message);
+  }
+}
+
 // Slack webhook fan-out — fire-and-forget on every submission so the
 // team sees real-time feedback in a Slack channel. Set
 // SLACK_FEEDBACK_WEBHOOK_URL on the VPS env to enable. Falsy / unset
@@ -461,6 +524,24 @@ router.post('/', attachIdentity, async (req, res) => {
       userUsername: req.identity.username,
       id: rows[0].id,
     }).catch(() => { /* logged inside notifySlack */ });
+
+    // Fan out via the FAD notifications pipeline: in-app notification
+    // (SSE push to live tabs) + web push to subscribed devices + email
+    // when the recipient is offline. Targets tenant admins + directors
+    // (the cohort with access to the Feedback inbox).
+    notifyAdmins({
+      tenantId: req.tenantId,
+      reporterUserId: req.identity.userId,
+      type: rows[0].type,
+      title: rows[0].title,
+      description: rows[0].description,
+      severity: rows[0].severity,
+      routeUrl: rows[0].route_url,
+      moduleLabel: rows[0].module_label,
+      feedbackId: rows[0].id,
+      reporterDisplayName: req.identity.displayName,
+      reporterUsername: req.identity.username,
+    }).catch(() => { /* logged inside notifyAdmins */ });
 
     res.json(rows[0]);
   } catch (err) {
