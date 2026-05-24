@@ -145,6 +145,7 @@ export function FinanceModule({ subPage, role, onRoleChange, onAskFriday }: Prop
     pnl: 'P&L dashboard',
     'float-ledger': 'Float ledger',
     reports: 'Reports',
+    insights: 'Insights',
     settings: 'Settings',
   };
   const subSub: Record<string, string> = {
@@ -156,6 +157,7 @@ export function FinanceModule({ subPage, role, onRoleChange, onAskFriday }: Prop
     pnl: 'FR-internal P&L · entity-split · period drill-down',
     'float-ledger': 'Field-PM cards · top-ups vs spend · variance alerts',
     reports: 'P&L · cashflow · balance sheet · bank-financing-ready exports',
+    insights: 'Financial management cockpit · CEO read · scope locked, Phase 3',
     settings: 'Categories, caps, vendors, accounts, integrations',
   };
 
@@ -200,6 +202,7 @@ export function FinanceModule({ subPage, role, onRoleChange, onAskFriday }: Prop
             {subPage === 'pnl' && <FinancePnL />}
             {subPage === 'float-ledger' && <FinanceFloatLedger />}
             {subPage === 'reports' && <FinanceReports />}
+            {subPage === 'insights' && <FinanceInsightsStub />}
             {subPage === 'settings' && <FinanceSettings />}
           </>
         )}
@@ -3396,6 +3399,153 @@ function FormField({
     <div className="fin-field" style={style}>
       {label && <div className="fin-field-label">{label}</div>}
       {children}
+    </div>
+  );
+}
+
+/* Finance Insights — Phase 3 stub. Scope locked 2026-05-25, Notion
+ * 36a43ca8849281e48272f92596717764. Renders the five spine zones as
+ * section titles with no fake numbers, so the build target is visible
+ * in the UI without misleading anyone about live data. The full panel
+ * is an Analytics module deliverable gated on the Finance backend
+ * (6-account consolidated cash, VAT ledger, tourist-fee accrual,
+ * owner-payouts-due, vendor-payables, aged receivables) + a push
+ * engine for the compliance/liability tracker (morning brief + Slack
+ * on threshold breach). Admin-only — manager + contributor get the
+ * sidebar lock screen via FIN_ROLE_GATES.
+ */
+function FinanceInsightsStub() {
+  const SPINE = [
+    {
+      title: 'Headline row',
+      body: 'Consolidated operating cash (6 MUR accounts, GBH syndic ring-fenced out) · this month net · single pending-liability figure.',
+    },
+    {
+      title: 'Ranked insight feed',
+      body: 'Deterministic insight engine ranked by materiality: expenses above trend, unusual payouts, VAT deadlines approaching, tourist-fee liability growing, aged receivables.',
+    },
+    {
+      title: 'Standing reads',
+      body: 'This-month P&L vs trailing months · owner payouts due + vendor payables · month expenses breakdown · receivables.',
+    },
+    {
+      title: 'Compliance and liability tracker (spine, always-on)',
+      body: 'VAT position per quarter (open vs filed vs paid) · tourist-fee liability accruing and unremitted · statutory-accounts filing status against 30 June year-end. PUSHES into the Ask Friday morning brief and Slack on threshold breach.',
+    },
+    {
+      title: 'Agent question box',
+      body: 'Finance-scoped natural-language ask (e.g. "what did we spend on cleaning in April"), answered through the shared metric layer.',
+    },
+  ];
+  return (
+    <div style={{ padding: 16, maxWidth: 820 }}>
+      <div style={{
+        padding: '12px 14px',
+        marginBottom: 16,
+        borderRadius: 6,
+        border: '1px solid var(--color-brand-accent-soft)',
+        background: 'rgba(86, 128, 202, 0.06)',
+        fontSize: 13,
+        lineHeight: 1.5,
+        color: 'var(--color-text-secondary)',
+      }}>
+        <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+          Coming in Phase 3 · scope locked 2026-05-25
+        </div>
+        The Finance Insights panel is the CEO's financial management cockpit:
+        decision-grade reads of cash, P&amp;L, owed, and what&apos;s falling due, with an
+        always-on compliance + liability tracker that pushes into the morning
+        brief and Slack on threshold breach. Built as an Analytics module
+        deliverable, gated on the Finance backend (consolidated 6-account
+        cash, VAT ledger, tourist-fee accrual, owner-payouts-due, vendor
+        payables, aged receivables) and the shared Cube Core metric layer.
+        Admin-only: not for the accountant (they work in QuickBooks via the
+        Reports export), not for manager or contributor.
+        <div style={{ marginTop: 8 }}>
+          <a
+            href="https://www.notion.so/36a43ca8849281e48272f92596717764"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--color-brand-accent)', textDecoration: 'underline' }}
+          >
+            Open full scope on Notion →
+          </a>
+        </div>
+      </div>
+
+      <div style={{
+        fontSize: 10,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        color: 'var(--color-text-tertiary)',
+        fontWeight: 600,
+        marginBottom: 10,
+      }}>
+        Spine — five zones, one adaptive surface
+      </div>
+
+      {SPINE.map((zone, idx) => (
+        <div
+          key={zone.title}
+          style={{
+            padding: '12px 14px',
+            marginBottom: 8,
+            borderRadius: 6,
+            border: '0.5px solid var(--color-border-tertiary)',
+            background: 'var(--color-background-primary)',
+            opacity: 0.85,
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 4,
+          }}>
+            <span style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 4,
+              background: 'var(--color-background-secondary)',
+              color: 'var(--color-text-tertiary)',
+              fontFamily: 'var(--font-mono-fad)',
+            }}>{idx + 1}</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{zone.title}</span>
+            {idx === 3 && (
+              <span style={{
+                fontSize: 9,
+                padding: '1px 5px',
+                borderRadius: 3,
+                background: 'var(--color-bg-warning)',
+                color: 'var(--color-text-warning)',
+                fontWeight: 500,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}>push</span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
+            {zone.body}
+          </div>
+        </div>
+      ))}
+
+      <div style={{
+        marginTop: 20,
+        padding: '10px 12px',
+        borderRadius: 6,
+        background: 'var(--color-background-secondary)',
+        fontSize: 11,
+        color: 'var(--color-text-tertiary)',
+        lineHeight: 1.5,
+      }}>
+        <strong style={{ fontWeight: 600 }}>Boundary reminders:</strong>{' '}
+        TAC sits with Properties or Legal compliance (regulatory licence, not a
+        financial liability). Commercial-performance trends (occupancy, ADR,
+        RevPAR) stay in the Analytics module — the Finance panel is the
+        transaction-axis cash and accounting reality. The accountant-facing
+        export is a Finance Reports feature, not this panel.
+      </div>
     </div>
   );
 }

@@ -59,6 +59,7 @@ export const MODULES: ModuleDef[] = [
     { id: 'pnl', label: 'P&L dashboard' },
     { id: 'float-ledger', label: 'Float ledger' },
     { id: 'reports', label: 'Reports' },
+    { id: 'insights', label: 'Insights' },
     { id: 'settings', label: 'Settings' },
   ] },
   { id: 'legal', label: 'Legal & Admin', group: 'Business', tier: 'preview', warning: true, ship: "Apr '26", icon: 'IconLegal', path: '/gms/legal' },

@@ -15,10 +15,14 @@ export interface FinRoleGate {
 }
 
 export const FIN_ROLE_GATES: Record<FinRole, FinRoleGate> = {
+  // Finance Insights panel (`insights`) is admin-only per scope
+  // 36a43ca8849281e48272f92596717764: it's the CEO's financial
+  // management cockpit, gated to the top financial role. Mathias /
+  // Franny (manager / contributor) explicitly do NOT see it.
   admin: {
     sub: new Set([
       'overview', 'transactions', 'approvals', 'owner-statements',
-      'tourist-tax', 'pnl', 'float-ledger', 'reports', 'settings',
+      'tourist-tax', 'pnl', 'float-ledger', 'reports', 'insights', 'settings',
     ]),
     canApprove: true, canClose: true, canCapture: true,
     canEditVendors: true, canUploadStatements: true,
@@ -47,7 +51,7 @@ export const FIN_ROLE_LABELS: Record<FinRole, string> = {
 /** All Finance sub-page IDs (kept aligned with modules.ts subPages). */
 export const FIN_ALL_SUB_IDS = [
   'overview', 'transactions', 'approvals', 'owner-statements',
-  'tourist-tax', 'pnl', 'float-ledger', 'reports', 'settings',
+  'tourist-tax', 'pnl', 'float-ledger', 'reports', 'insights', 'settings',
 ];
 
 /** Compute the set of locked sub-page IDs for a given role — used by Sidebar for lock icons. */
