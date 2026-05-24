@@ -7,7 +7,7 @@
 // Team / Margin) remain fixture-driven until Phase 2 (Cube Core +
 // per-module Insights panels).
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ANALYTICS_OVERVIEW_KPI,
   CHANNEL_COSTS,
@@ -28,6 +28,7 @@ import {
   deltaPct,
   type PortfolioResponse,
 } from '../../_data/analyticsClient';
+import { useLiveReviews } from '../../_data/reviewsClient';
 import { IconDownload, IconSparkle } from '../icons';
 import { ModuleHeader } from '../ModuleHeader';
 
@@ -67,7 +68,7 @@ export function AnalyticsModule() {
         {tab === 'revenue' && <RevenueTab />}
         {tab === 'occupancy' && <OccupancyTab />}
         {tab === 'channels' && <ChannelsTab />}
-        {tab === 'reviews' && <ReviewsTab />}
+        {tab === 'reviews' && <ReviewsTabLive />}
         {tab === 'team' && <TeamTab />}
         {tab === 'margin' && <MarginTab />}
       </div>
@@ -709,132 +710,447 @@ function OccupancyTab() {
 }
 
 /* ───────────── Channels ───────────── */
+// T1.14 — default commission rates per channel. Used to ESTIMATE
+// channel cost since we don't yet store a per-tenant commission
+// schedule. Numbers are public industry defaults (Airbnb 15%,
+// Booking.com 17% on host pricing, etc.) — they're flagged as
+// "estimated" in the UI so operators don't take them as committed.
+const DEFAULT_CHANNEL_COMMISSION: Record<string, number> = {
+  Airbnb: 0.15,
+  'Booking.com': 0.17,
+  VRBO: 0.08,
+  Direct: 0.0,
+  Manual: 0.0,
+  Email: 0.0,
+  Owner: 0.0,
+  'Scraped (Legacy)': 0.15, // assume Airbnb-equivalent for legacy scrapes
+  Unknown: 0.12,
+};
+
 function ChannelsTab() {
-  const totalRevenue = CHANNEL_REVENUE.reduce((a, c) => a + c.gross, 0);
-  const totalCommission = CHANNEL_COSTS.reduce((a, c) => a + c.commission, 0);
+  const { portfolio, loading, error } = usePortfolio(30);
+
+  if (loading && !portfolio) {
+    return (
+      <div className="kpi-grid kpi-grid-3">
+        {[1, 2, 3].map((i) => (
+          <div className="kpi" key={i}>
+            <div className="kpi-label">Loading…</div>
+            <div className="kpi-value" style={{ opacity: 0.4 }}>—</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (error || !portfolio) {
+    return (
+      <div role="alert" style={{ padding: '12px 16px', color: 'var(--color-text-warning)', fontSize: 13 }}>
+        Failed to load channels data: {error || 'unknown error'}.
+      </div>
+    );
+  }
+
+  const { channel_mix, currency, window: windowInfo } = portfolio;
+  // Sort by revenue descending so the visual + table both rank consistently.
+  const channels = [...channel_mix].sort((a, b) => b.revenue_minor - a.revenue_minor);
+  const totalRevenue = channels.reduce((a, c) => a + c.revenue_minor, 0);
+  const totalCommission = channels.reduce((sum, c) => {
+    const rate = DEFAULT_CHANNEL_COMMISSION[c.channel] ?? 0.12;
+    return sum + c.revenue_minor * rate;
+  }, 0);
+  const directShare = channels
+    .filter((c) => c.channel === 'Direct' || c.channel === 'Email' || c.channel === 'Manual')
+    .reduce((sum, c) => sum + c.share_pct, 0);
+
+  const fmt = (minor: number) => {
+    const major = Math.round(minor / 100);
+    const sym = currency === 'EUR' ? '€' : currency === 'MUR' ? 'Rs' : currency === 'USD' ? '$' : '';
+    return `${sym} ${major.toLocaleString()}`;
+  };
+  const fmtCompact = (minor: number) => {
+    const major = minor / 100;
+    if (major >= 1000) return `${(major / 1000).toFixed(major >= 10000 ? 0 : 1)}k`;
+    return Math.round(major).toString();
+  };
+
   return (
     <>
-      <PendingDataBanner note="Live channel mix (reservation share) is on the Overview tab." />
+      <div style={{
+        padding: '8px 14px',
+        marginBottom: 16,
+        background: 'rgba(72, 173, 122, 0.08)',
+        borderLeft: '2px solid rgb(72, 173, 122)',
+        borderRadius: 4,
+        fontSize: 12,
+        color: 'var(--color-text-secondary)',
+      }}>
+        <strong style={{ fontWeight: 500 }}>Live data · last {windowInfo.days}d.</strong>{' '}
+        Channel revenue + share from the same SQL aggregate as the Overview tab.
+        Commissions are estimated using industry-default rates per channel
+        (Airbnb 15% · Booking.com 17% · VRBO 8% · Direct 0%) — actual
+        commissions land when the per-tenant commission schedule ships.
+      </div>
       <div className="kpi-grid kpi-grid-3">
         <div className="kpi">
-          <div className="kpi-label">YTD revenue</div>
-          <div className="kpi-value">€ {(totalRevenue / 1000).toFixed(0)}k</div>
-          <div className="kpi-sub">across 5 channels</div>
+          <div className="kpi-label">Revenue · last {windowInfo.days}d</div>
+          <div className="kpi-value">€ {fmtCompact(totalRevenue)}</div>
+          <div className="kpi-sub">across {channels.length} channels</div>
         </div>
         <div className="kpi">
-          <div className="kpi-label">Channel commissions</div>
-          <div className="kpi-value">€ {(totalCommission / 1000).toFixed(1)}k</div>
+          <div className="kpi-label">Estimated channel commissions</div>
+          <div className="kpi-value">€ {fmtCompact(totalCommission)}</div>
           <div className="kpi-sub">
-            {Math.round((totalCommission / totalRevenue) * 100)}% of revenue
+            {totalRevenue > 0 ? Math.round((totalCommission / totalRevenue) * 100) : 0}% of revenue
           </div>
         </div>
         <div className="kpi">
-          <div className="kpi-label">Direct-book share</div>
-          <div className="kpi-value">22%</div>
-          <div className="kpi-sub up">goal 25% by Q4</div>
+          <div className="kpi-label">Direct + Manual + Email share</div>
+          <div className="kpi-value">{Math.round(directShare)}%</div>
+          <div className="kpi-sub">no channel commission</div>
         </div>
       </div>
       <div className="two-col">
         <div className="card">
           <div className="card-header">
-            <div className="card-title">Channel mix · YTD</div>
+            <div className="card-title">Channel mix · last {windowInfo.days}d</div>
             <div className="card-subtitle">by revenue</div>
+            <AskAnalyticsCTA question="Which channel is growing the fastest this window?" />
           </div>
           <div className="card-body">
-            <div
-              style={{
-                display: 'flex',
-                height: 24,
-                borderRadius: 4,
-                overflow: 'hidden',
-                marginBottom: 16,
-              }}
-            >
-              {CHANNEL_REVENUE.map((c, i) => (
-                <div
-                  key={i}
-                  style={{
-                    flex: c.share,
-                    background: `color-mix(in srgb, var(--color-brand-accent) ${Math.max(
-                      25,
-                      Math.round(100 - i * 18)
-                    )}%, transparent)`,
-                  }}
-                  title={`${c.channel}: ${Math.round(c.share * 100)}%`}
-                />
-              ))}
-            </div>
-            {CHANNEL_REVENUE.map((c, i) => (
-              <div
-                key={i}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '8px 0',
-                  fontSize: 13,
-                  borderBottom: '0.5px solid var(--color-border-tertiary)',
-                }}
-              >
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    background: `color-mix(in srgb, var(--color-brand-accent) ${Math.max(
-                      25,
-                      Math.round(100 - i * 18)
-                    )}%, transparent)`,
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ flex: 1, fontWeight: 500 }}>{c.channel}</span>
-                <span className="mono" style={{ color: 'var(--color-text-tertiary)' }}>
-                  {Math.round(c.share * 100)}%
-                </span>
-                <span className="mono" style={{ width: 80, textAlign: 'right' }}>
-                  € {c.gross.toLocaleString()}
-                </span>
+            {channels.length === 0 ? (
+              <div style={{ padding: 12, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                No reservations in window.
               </div>
-            ))}
+            ) : (
+              <>
+                <div style={{ display: 'flex', height: 24, borderRadius: 4, overflow: 'hidden', marginBottom: 16 }}>
+                  {channels.map((c, i) => (
+                    <div
+                      key={c.channel}
+                      style={{
+                        flex: Math.max(c.revenue_minor, 1),
+                        background: `color-mix(in srgb, var(--color-brand-accent) ${Math.max(25, Math.round(100 - i * 14))}%, transparent)`,
+                      }}
+                      title={`${c.channel}: ${Math.round(c.share_pct)}%`}
+                    />
+                  ))}
+                </div>
+                {channels.map((c, i) => (
+                  <div
+                    key={c.channel}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 0',
+                      fontSize: 13,
+                      borderBottom: '0.5px solid var(--color-border-tertiary)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        background: `color-mix(in srgb, var(--color-brand-accent) ${Math.max(25, Math.round(100 - i * 14))}%, transparent)`,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ flex: 1, fontWeight: 500 }}>{c.channel}</span>
+                    <span className="mono" style={{ color: 'var(--color-text-tertiary)' }}>
+                      {Math.round(c.share_pct)}%
+                    </span>
+                    <span className="mono" style={{ width: 90, textAlign: 'right' }}>
+                      {fmt(c.revenue_minor)}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
         <div className="card">
           <div className="card-header">
-            <div className="card-title">Channel cost / take-rate</div>
-            <div className="card-subtitle">commission paid per channel</div>
+            <div className="card-title">Estimated channel cost</div>
+            <div className="card-subtitle">commission applied per channel</div>
           </div>
-          {CHANNEL_COSTS.map((c, i) => (
-            <div
-              key={i}
-              style={{
-                padding: '14px 16px',
-                borderBottom: '0.5px solid var(--color-border-tertiary)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{c.channel}</span>
-                <span
-                  className="mono"
-                  style={{ fontSize: 13, color: 'var(--color-text-danger)' }}
-                >
-                  − € {c.commission.toLocaleString()}
-                </span>
-              </div>
-              <div className="row-meta">
-                {c.notes} · effective {Math.round(c.effectiveRate * 100)}%
-              </div>
+          {channels.length === 0 ? (
+            <div style={{ padding: 14, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+              No reservations to compute commissions for.
             </div>
-          ))}
+          ) : (
+            channels.map((c) => {
+              const rate = DEFAULT_CHANNEL_COMMISSION[c.channel] ?? 0.12;
+              const commission = Math.round(c.revenue_minor * rate);
+              return (
+                <div
+                  key={c.channel}
+                  style={{
+                    padding: '14px 16px',
+                    borderBottom: '0.5px solid var(--color-border-tertiary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{c.channel}</span>
+                    <span className="mono" style={{ fontSize: 13, color: rate > 0 ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)' }}>
+                      {rate > 0 ? `− ${fmt(commission)}` : '—'}
+                    </span>
+                  </div>
+                  <div className="row-meta">
+                    {c.reservation_count} {c.reservation_count === 1 ? 'reservation' : 'reservations'} · estimated {Math.round(rate * 100)}% rate
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </>
   );
 }
 
-/* ───────────── Reviews ───────────── */
+/* ───────────── Reviews ─────────────
+ * T1.14 — wired to live /api/reviews/list (useLiveReviews) via reviewsClient.
+ * Aggregates locally because the reviews count is small (hundreds).
+ * Replaces fixture REVIEW_TREND + REVIEW_BY_REGION. */
+function ReviewsTabLive() {
+  const { reviews, loading, error } = useLiveReviews();
+
+  // Build a rolling 6-month trend (oldest first) — avg rating + count
+  // per calendar month, bucketing by submittedAt.
+  const trend = useMemo(() => {
+    if (!reviews || reviews.length === 0) return [];
+    const now = new Date();
+    const buckets: { month: string; year: number; m: number; ratings: number[] }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      buckets.push({
+        month: d.toLocaleString('en-US', { month: 'short' }),
+        year: d.getFullYear(),
+        m: d.getMonth(),
+        ratings: [],
+      });
+    }
+    for (const rv of reviews) {
+      const dt = new Date(rv.submittedAt);
+      if (Number.isNaN(dt.getTime())) continue;
+      const idx = buckets.findIndex((b) => b.year === dt.getFullYear() && b.m === dt.getMonth());
+      if (idx < 0) continue;
+      buckets[idx].ratings.push(rv.rating);
+    }
+    return buckets.map((b) => ({
+      month: b.month,
+      avg: b.ratings.length === 0 ? 0 : b.ratings.reduce((a, c) => a + c, 0) / b.ratings.length,
+      count: b.ratings.length,
+      partial: false,
+    }));
+  }, [reviews]);
+
+  // Channel mix on reviews — distinct from reservation channel mix.
+  // Useful for "which channel are guests actually leaving reviews on?"
+  const channelStats = useMemo(() => {
+    const acc = new Map<string, { count: number; ratingSum: number }>();
+    for (const rv of reviews || []) {
+      const cur = acc.get(rv.channel) || { count: 0, ratingSum: 0 };
+      cur.count += 1;
+      cur.ratingSum += rv.rating;
+      acc.set(rv.channel, cur);
+    }
+    return Array.from(acc.entries())
+      .map(([channel, { count, ratingSum }]) => ({
+        channel,
+        count,
+        avg: ratingSum / count,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [reviews]);
+
+  if (loading && (!reviews || reviews.length === 0)) {
+    return (
+      <div className="kpi-grid kpi-grid-3">
+        {[1, 2, 3].map((i) => (
+          <div className="kpi" key={i}>
+            <div className="kpi-label">Loading…</div>
+            <div className="kpi-value" style={{ opacity: 0.4 }}>—</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div role="alert" style={{ padding: '12px 16px', color: 'var(--color-text-warning)', fontSize: 13 }}>
+        Failed to load reviews: {error}.
+      </div>
+    );
+  }
+  if (!reviews || reviews.length === 0) {
+    return (
+      <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
+        No reviews in cache yet. Reviews sync from Guesty / Reva — check back after the next poll.
+      </div>
+    );
+  }
+
+  const overallAvg = reviews.reduce((a, r) => a + r.rating, 0) / reviews.length;
+  const last90Cutoff = new Date(Date.now() - 90 * 86400000);
+  const recent = reviews.filter((r) => new Date(r.submittedAt) >= last90Cutoff);
+  const recentAvg = recent.length > 0
+    ? recent.reduce((a, r) => a + r.rating, 0) / recent.length
+    : 0;
+  const trendMax = Math.max(1, ...trend.map((t) => t.count));
+
+  return (
+    <>
+      <div style={{
+        padding: '8px 14px',
+        marginBottom: 16,
+        background: 'rgba(72, 173, 122, 0.08)',
+        borderLeft: '2px solid rgb(72, 173, 122)',
+        borderRadius: 4,
+        fontSize: 12,
+        color: 'var(--color-text-secondary)',
+      }}>
+        <strong style={{ fontWeight: 500 }}>Live data.</strong>{' '}
+        Computed from {reviews.length} reviews in cache (Guesty + Reva sync). Rating
+        bars in the trend chart scale relative to 4.0–5.0; bars at zero
+        height mean no reviews landed in that month.
+      </div>
+      <div className="kpi-grid kpi-grid-3">
+        <div className="kpi">
+          <div className="kpi-label">Portfolio avg · all time</div>
+          <div className="kpi-value">{overallAvg.toFixed(2)}</div>
+          <div className="kpi-sub">{reviews.length} reviews</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Avg · last 90d</div>
+          <div className="kpi-value">{recent.length > 0 ? recentAvg.toFixed(2) : '—'}</div>
+          <div className="kpi-sub">{recent.length} reviews</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Channels reviewed</div>
+          <div className="kpi-value">{channelStats.length}</div>
+          <div className="kpi-sub">distinct sources</div>
+        </div>
+      </div>
+      <div className="two-col" style={{ marginBottom: 20 }}>
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">Rating trend · 6 months</div>
+            <div className="card-subtitle">portfolio average</div>
+            <AskAnalyticsCTA question="What drove the recent rating trend?" />
+          </div>
+          <div className="card-body">
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 140 }}>
+              {trend.map((r, i) => (
+                <div
+                  key={i}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4,
+                    height: '100%',
+                  }}
+                >
+                  <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <div style={{
+                      background: 'var(--color-brand-accent)',
+                      height: r.avg > 0 ? `${Math.max(2, ((r.avg - 4.0) / 1.0) * 100)}%` : '0%',
+                      opacity: r.count === 0 ? 0.25 : 1,
+                    }} />
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{r.month}</div>
+                  <div className="mono" style={{ fontSize: 11 }}>{r.avg > 0 ? r.avg.toFixed(1) : '—'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">Review volume</div>
+            <div className="card-subtitle">reviews received per month</div>
+          </div>
+          <div className="card-body">
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 140 }}>
+              {trend.map((r, i) => (
+                <div
+                  key={i}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}
+                >
+                  <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <div style={{
+                      background: 'var(--color-text-secondary)',
+                      height: `${(r.count / trendMax) * 100}%`,
+                    }} />
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{r.month}</div>
+                  <div className="mono" style={{ fontSize: 11 }}>{r.count}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">By channel</div>
+          <div className="card-subtitle">where guests leave reviews + how they rate</div>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '2fr 1fr 1fr',
+            gap: 12,
+            padding: '10px 16px',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            color: 'var(--color-text-tertiary)',
+          }}
+        >
+          <span>Channel</span>
+          <span>Count</span>
+          <span>Avg rating</span>
+        </div>
+        {channelStats.map((c) => (
+          <div
+            key={c.channel}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 1fr 1fr',
+              gap: 12,
+              padding: '14px 16px',
+              borderBottom: '0.5px solid var(--color-border-tertiary)',
+              fontSize: 13,
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontWeight: 500, textTransform: 'capitalize' }}>{c.channel}</span>
+            <span className="mono" style={{ color: 'var(--color-text-tertiary)' }}>{c.count}</span>
+            <span
+              className="mono"
+              style={{
+                fontWeight: 500,
+                color: c.avg >= 4.7 ? 'var(--color-text-success)' : c.avg < 4.5 ? 'var(--color-text-danger)' : 'inherit',
+              }}
+            >
+              {c.avg.toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* Legacy fixture-driven version — kept temporarily for reference while
+ * the live version stabilises. Wire ReviewsTabLive in the tab dispatcher. */
 function ReviewsTab() {
   return (
     <>
