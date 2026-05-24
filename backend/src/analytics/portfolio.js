@@ -78,19 +78,22 @@ router.get('/portfolio', attachIdentity, async (req, res) => {
     // ─── Channel mix (window) ───
     // Normalise Guesty's raw channel codes (airbnb2, bookingCom, scrape-l3)
     // into the friendly labels operators use elsewhere in FAD.
+    // Falls back to r.source when r.channel is null (Layer-3 scraped rows
+    // have channel=null but source='scrape-l3'). Was incorrectly bucketing
+    // those 20% of rows into "Unknown" before the fallback was added.
     const channelRes = await query(
       `SELECT
          CASE
-           WHEN LOWER(COALESCE(r.channel, '')) IN ('airbnb', 'airbnb2', 'airbnb-v2') THEN 'Airbnb'
-           WHEN LOWER(COALESCE(r.channel, '')) IN ('booking', 'bookingcom', 'booking.com', 'bdc') THEN 'Booking.com'
-           WHEN LOWER(COALESCE(r.channel, '')) IN ('vrbo', 'homeaway') THEN 'VRBO'
-           WHEN LOWER(COALESCE(r.channel, '')) IN ('direct', 'website', 'friday', 'friday-direct') THEN 'Direct'
-           WHEN LOWER(COALESCE(r.channel, '')) IN ('manual', 'phone', 'walk-in') THEN 'Manual'
-           WHEN LOWER(COALESCE(r.channel, '')) IN ('owner') THEN 'Owner'
-           WHEN LOWER(COALESCE(r.channel, '')) IN ('email') THEN 'Email'
-           WHEN LOWER(COALESCE(r.channel, '')) LIKE 'scrape%' THEN 'Scraped (legacy)'
-           WHEN COALESCE(NULLIF(r.channel, ''), '') = '' THEN 'Unknown'
-           ELSE INITCAP(r.channel)
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('airbnb', 'airbnb2', 'airbnb-v2') THEN 'Airbnb'
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('booking', 'bookingcom', 'booking.com', 'bdc') THEN 'Booking.com'
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('vrbo', 'homeaway') THEN 'VRBO'
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('direct', 'website', 'friday', 'friday-direct') THEN 'Direct'
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('manual', 'phone', 'walk-in') THEN 'Manual'
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('owner') THEN 'Owner'
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) IN ('email') THEN 'Email'
+           WHEN LOWER(COALESCE(NULLIF(r.channel, ''), r.source, '')) LIKE 'scrape%' THEN 'Scraped (legacy)'
+           WHEN COALESCE(NULLIF(r.channel, ''), r.source, '') = '' THEN 'Unknown'
+           ELSE INITCAP(COALESCE(NULLIF(r.channel, ''), r.source))
          END AS channel,
          COUNT(*)::int AS reservation_count,
          COALESCE(SUM(r.total_amount_minor), 0)::bigint AS revenue_minor,
