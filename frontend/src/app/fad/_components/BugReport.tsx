@@ -658,21 +658,28 @@ function BugReportModal({
         typeof window !== 'undefined'
           ? window.location.pathname + window.location.search
           : null;
+      // Only send the screenshot + diagnostics on the FIRST turn. Sending
+      // a 500KB–2MB base64 blob on every chat reply (a) bloats the upload
+      // each turn for no Gemini-side carry-over benefit (vision context
+      // isn't preserved between requests), (b) doubles the round-trip
+      // latency on slow connections — the modal felt "super slow" once
+      // we doubled the capture resolution AND switched to vision per-turn.
+      // The first turn primes the model with the visual; later turns are
+      // text follow-ups, which is faster + cheaper + sufficient.
+      const isFirstTurn = messages.length === 0;
+      const body: Record<string, unknown> = {
+        type,
+        transcript: nextMessages,
+        module_label: currentModuleLabel ?? null,
+        route_url: routeUrl,
+      };
+      if (isFirstTurn) {
+        body.screenshot_data_url = screenshot;
+        body.diagnostics = buildDiagnostics(screenshot);
+      }
       const data = await apiFetch('/api/feedback/chat', {
         method: 'POST',
-        body: JSON.stringify({
-          type,
-          transcript: nextMessages,
-          module_label: currentModuleLabel ?? null,
-          route_url: routeUrl,
-          // Send the screenshot + diagnostics so the backend can route to
-          // the Gemini vision path (if GEMINI_API_KEY is set on the server)
-          // and Friday can actually see what the user is reporting. Backend
-          // silently falls through to Kimi text-only if either is missing
-          // or the vision call fails, so this is safe to always include.
-          screenshot_data_url: screenshot,
-          diagnostics: buildDiagnostics(screenshot),
-        }),
+        body: JSON.stringify(body),
       }) as { reply: string };
       if (chatSeqRef.current !== chatSeq) return; // stale — user moved on
       const reply = (data?.reply || '').trim();

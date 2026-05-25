@@ -54,7 +54,12 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NANOBANANA_API_
 // everywhere" decision. 3.5-flash supports vision (image input), so the
 // screenshot-aware chat clarifier still works.
 const GEMINI_FEEDBACK_VISION_MODEL = process.env.GEMINI_FEEDBACK_VISION_MODEL || process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
-const GEMINI_FEEDBACK_TIMEOUT_MS = Number(process.env.GEMINI_FEEDBACK_TIMEOUT_MS) || 90_000;
+// 25 s is generous for a single chat clarifier turn — Gemini Vision
+// typically replies in 3–8 s. Was 90 s; that meant a stalled call could
+// keep the user staring at "Friday is thinking…" for a minute and a
+// half before falling through to Kimi text-only. 25 s × (vision then
+// Kimi fallback) ≈ 50 s worst case, still bounded but much less abusive.
+const GEMINI_FEEDBACK_TIMEOUT_MS = Number(process.env.GEMINI_FEEDBACK_TIMEOUT_MS) || 25_000;
 // 1.5 MB raw base64 cap. The full feedback submission accepts up to 5 MB
 // (MAX_SCREENSHOT_BYTES below) for archival; the chat clarifier sees a
 // smaller window because we pay model latency on each turn. The final
@@ -251,6 +256,7 @@ async function generateChatReply({ type, transcript, moduleLabel, routeUrl }) {
 }
 
 router.post('/chat', attachIdentity, async (req, res) => {
+  const startedAt = Date.now();
   try {
     const {
       type,
@@ -279,6 +285,8 @@ router.post('/chat', attachIdentity, async (req, res) => {
       routeUrl: typeof routeUrl === 'string' ? routeUrl.slice(0, 300) : null,
     };
     // Try the vision path first when the frontend attached a screenshot.
+    // The frontend now only attaches the screenshot on the FIRST turn,
+    // so subsequent turns skip straight to the fast text-only path.
     // generateChatReplyWithVision returns null on any failure (no key,
     // bad payload, model error) so we fall through to the Kimi text-only
     // path below — the user never blocks on the upgrade.
@@ -289,12 +297,16 @@ router.post('/chat', attachIdentity, async (req, res) => {
         screenshotParsed,
         diagnostics,
       });
-      if (visionResult) return res.json(visionResult);
+      if (visionResult) {
+        console.log(`[feedback] chat ok source=${visionResult.source} turns=${normalized.length} latency=${Date.now() - startedAt}ms`);
+        return res.json(visionResult);
+      }
     }
     const result = await generateChatReply(baseArgs);
+    console.log(`[feedback] chat ok source=${result.source || 'unknown'} turns=${normalized.length} hadScreenshot=${Boolean(screenshotParsed)} latency=${Date.now() - startedAt}ms`);
     res.json(result);
   } catch (err) {
-    console.error('[feedback] chat error:', err.message);
+    console.error(`[feedback] chat error after ${Date.now() - startedAt}ms:`, err.message);
     res.status(500).json({ error: 'Friday is having trouble — try again or submit as-is' });
   }
 });
