@@ -13,6 +13,7 @@ import { StaffPage } from './hr/StaffPage';
 import { TimeOffPage } from './hr/TimeOffPage';
 import { StatsPage } from './hr/StatsPage';
 import { PermissionsPage } from './hr/PermissionsPage';
+import { HRInsightsPage } from './hr/HRInsightsPage';
 
 interface Props {
   subPage: string;
@@ -31,6 +32,7 @@ export function HRModule({ subPage, onChangeSubPage }: Props) {
     canSeeStaff && { id: 'staff', label: t('hr.tabs.staff', 'Staff') },
     canSeeTimeOff && { id: 'time-off', label: t('hr.tabs.timeOff', 'Time-off') },
     canSeeStats && { id: 'stats', label: t('hr.tabs.stats', 'Stats') },
+    canSeeStats && { id: 'insights', label: t('hr.tabs.insights', 'Insights') },
     canSeePermissions && { id: 'permissions', label: t('hr.tabs.permissions', 'Permissions') },
   ].filter((tab): tab is { id: string; label: string } => Boolean(tab));
 
@@ -44,6 +46,8 @@ export function HRModule({ subPage, onChangeSubPage }: Props) {
         return canSeeTimeOff ? <TimeOffPage /> : null;
       case 'stats':
         return canSeeStats ? <StatsPage /> : null;
+      case 'insights':
+        return canSeeStats ? <HRInsightsPage /> : null;
       case 'permissions':
         return canSeePermissions ? <PermissionsPage /> : null;
       default:

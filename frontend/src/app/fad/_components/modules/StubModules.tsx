@@ -22,6 +22,7 @@ import {
   type Task,
 } from '../../_data/fixtures';
 import { useState } from 'react';
+import { OwnersInsightsPage } from './owners/OwnersInsightsPage';
 
 // @demo:auth — Tag: PROD-AUTH-5 — see frontend/DEMO_CRUFT.md
 // Hardcoded current user. Replace with: useCurrentUser() hook reading
@@ -1195,10 +1196,27 @@ export function OwnersModule() {
     { id: 'statements', label: 'Statements' },
     { id: 'payouts', label: 'Payouts' },
     { id: 'documents', label: 'Documents' },
+    { id: 'insights', label: 'Insights' },
   ];
   if (sel) {
     const owner = OWNERS.find((o) => o.name === sel);
     if (owner) return <OwnerDetail owner={owner} onBack={() => setSel(null)} />;
+  }
+  if (tab === 'insights') {
+    return (
+      <>
+        <ModuleHeader
+          title="Owners"
+          subtitle="Owner relationships and monthly statements"
+          tabs={tabs}
+          activeTab={tab}
+          onTabChange={setTab}
+        />
+        <div className="fad-module-body" style={{ flex: 1, overflowY: 'auto' }}>
+          <OwnersInsightsPage />
+        </div>
+      </>
+    );
   }
   return (
     <>
@@ -1209,7 +1227,7 @@ export function OwnersModule() {
         activeTab={tab}
         onTabChange={setTab}
       />
-      
+
       <div className="fad-module-body">
         <div className="card">
           {OWNERS.map((o, i) => (

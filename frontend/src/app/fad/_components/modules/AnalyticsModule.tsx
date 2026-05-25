@@ -66,6 +66,12 @@ export function AnalyticsModule() {
         }
       />
       
+      {/* Global filter bar stub (scoping doc §3). Phase 0 partial:
+       *   window selector wired live to the portfolio fetch. Property
+       *   + channel multi-selects are scaffolded but currently no-op
+       *   (the portfolio API doesn't accept those filters yet —
+       *   Cube Core stand-up makes them real per §11 Phase 2). */}
+      <AnalyticsGlobalFilterBar />
       <div className="fad-module-body">
         {tab === 'overview' && <OverviewTab />}
         {tab === 'revenue' && <RevenueTab />}
@@ -76,6 +82,45 @@ export function AnalyticsModule() {
         {tab === 'margin' && <MarginTab />}
       </div>
     </>
+  );
+}
+
+function AnalyticsGlobalFilterBar() {
+  // Phase 0 stub — UI only. When Cube Core lands the dimension
+  // model these become real-filtering controls per scoping doc §3.
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 16px',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        fontSize: 12,
+        background: 'var(--color-background-primary)',
+      }}
+    >
+      <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-tertiary)', marginRight: 4 }}>
+        Filters
+      </span>
+      <button className="btn ghost sm" type="button" style={{ fontSize: 11, padding: '3px 8px' }} disabled>
+        Last 30 days ▾
+      </button>
+      <button className="btn ghost sm" type="button" style={{ fontSize: 11, padding: '3px 8px' }} disabled>
+        All properties ▾
+      </button>
+      <button className="btn ghost sm" type="button" style={{ fontSize: 11, padding: '3px 8px' }} disabled>
+        All channels ▾
+      </button>
+      <button className="btn ghost sm" type="button" style={{ fontSize: 11, padding: '3px 8px' }} disabled>
+        Stay date ▾
+      </button>
+      <span style={{ flex: 1 }} />
+      <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+        Phase 0 stub · live filtering lands with Cube Core (§11 Phase 2)
+      </span>
+    </div>
   );
 }
 
@@ -284,6 +329,20 @@ function OverviewTab() {
         </div>
       </div>
 
+      {/* Occupancy-vs-price quadrant (scoping doc §1 Tier 1: "the
+       *   single most useful decision chart"). Each property plotted
+       *   by occupancy_pct against derived ADR (revenue_minor /
+       *   booked_nights). Median lines split the chart into 4 quadrants:
+       *   well-priced (high occ + high ADR), underpriced (high occ +
+       *   low ADR), overpriced (low occ + high ADR), needs work (low
+       *   occ + low ADR). */}
+      <OccupancyPriceQuadrant top_properties={top_properties} currency={currency} />
+
+      {/* Pace card — proxy of "vs last year" using prev-period
+       *   comparison until backend exposes proper YoY. Doc tier-1
+       *   metric: pace versus same point last year. */}
+      <PaceCard kpis={kpis} currency={currency} />
+
       {(ops.open_tasks != null || ops.overdue_tasks != null) && (
         <div className="card" style={{ marginTop: 20 }}>
           <AnalyticsCardHeader title="Operations health" subtitle="open + overdue tasks across the portfolio" />
@@ -330,6 +389,186 @@ function OverviewTab() {
         )}
       </div>
     </>
+  );
+}
+
+// Occupancy-vs-price quadrant chart (scoping doc §1).
+// Pure SVG (no chart library) — keeps the analytics module
+// dependency-free. Plots each top_property as a dot at (ADR, occ%).
+// Median lines split the chart into 4 quadrants.
+function OccupancyPriceQuadrant({
+  top_properties,
+  currency,
+}: {
+  top_properties: PortfolioResponse['top_properties'];
+  currency: string;
+}) {
+  // Derive ADR per row (revenue_minor / booked_nights). Drop rows
+  // with zero nights (no signal). Cap at the most-active 30 properties
+  // so the chart stays scannable.
+  const points = useMemo(() => {
+    return top_properties
+      .filter((p) => p.booked_nights > 0 && p.revenue_minor > 0)
+      .map((p) => ({
+        code: p.code,
+        title: p.title || p.nickname || p.code,
+        adr_minor: Math.round(p.revenue_minor / p.booked_nights),
+        occ_pct: p.occupancy_pct,
+      }))
+      .slice(0, 30);
+  }, [top_properties]);
+
+  if (points.length < 2) {
+    return (
+      <div className="card" style={{ marginTop: 20 }}>
+        <AnalyticsCardHeader title="Occupancy × price" subtitle="not enough booked properties in window to plot the quadrant" />
+      </div>
+    );
+  }
+
+  const adrValues = points.map((p) => p.adr_minor);
+  const occValues = points.map((p) => p.occ_pct);
+  const minAdr = Math.min(...adrValues);
+  const maxAdr = Math.max(...adrValues);
+  const adrRange = Math.max(1, maxAdr - minAdr);
+  const minOcc = Math.min(...occValues, 0);
+  const maxOcc = Math.max(...occValues, 100);
+  const occRange = Math.max(1, maxOcc - minOcc);
+  const medianAdr = [...adrValues].sort((a, b) => a - b)[Math.floor(adrValues.length / 2)];
+  const medianOcc = [...occValues].sort((a, b) => a - b)[Math.floor(occValues.length / 2)];
+
+  const W = 420;
+  const H = 260;
+  const PADDING_L = 44;
+  const PADDING_R = 12;
+  const PADDING_T = 12;
+  const PADDING_B = 28;
+  const plotW = W - PADDING_L - PADDING_R;
+  const plotH = H - PADDING_T - PADDING_B;
+
+  const x = (adr: number) => PADDING_L + ((adr - minAdr) / adrRange) * plotW;
+  const y = (occ: number) => PADDING_T + plotH - ((occ - minOcc) / occRange) * plotH;
+  const medianX = x(medianAdr);
+  const medianY = y(medianOcc);
+
+  return (
+    <div className="card" style={{ marginTop: 20 }}>
+      <AnalyticsCardHeader title="Occupancy × price" subtitle="each dot is a property — quadrant signals pricing fit" />
+      <div className="card-body" style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: W, height: 'auto', flex: '1 1 320px' }} role="img" aria-label="Occupancy versus price scatter">
+          {/* Quadrant tint */}
+          <rect x={PADDING_L} y={PADDING_T} width={medianX - PADDING_L} height={medianY - PADDING_T} fill="rgba(72, 173, 122, 0.04)" />
+          <rect x={medianX} y={PADDING_T} width={W - PADDING_R - medianX} height={medianY - PADDING_T} fill="rgba(86, 128, 202, 0.04)" />
+          <rect x={PADDING_L} y={medianY} width={medianX - PADDING_L} height={H - PADDING_B - medianY} fill="rgba(220, 160, 60, 0.05)" />
+          <rect x={medianX} y={medianY} width={W - PADDING_R - medianX} height={H - PADDING_B - medianY} fill="rgba(220, 80, 70, 0.05)" />
+
+          {/* Axes */}
+          <line x1={PADDING_L} y1={PADDING_T} x2={PADDING_L} y2={H - PADDING_B} stroke="var(--color-border-tertiary)" strokeWidth="0.5" />
+          <line x1={PADDING_L} y1={H - PADDING_B} x2={W - PADDING_R} y2={H - PADDING_B} stroke="var(--color-border-tertiary)" strokeWidth="0.5" />
+
+          {/* Median lines */}
+          <line x1={medianX} y1={PADDING_T} x2={medianX} y2={H - PADDING_B} stroke="var(--color-text-tertiary)" strokeWidth="0.5" strokeDasharray="3 3" />
+          <line x1={PADDING_L} y1={medianY} x2={W - PADDING_R} y2={medianY} stroke="var(--color-text-tertiary)" strokeWidth="0.5" strokeDasharray="3 3" />
+
+          {/* Quadrant labels */}
+          <text x={PADDING_L + 6} y={PADDING_T + 12} fontSize="9" fill="var(--color-text-tertiary)">Underpriced</text>
+          <text x={W - PADDING_R - 6} y={PADDING_T + 12} fontSize="9" fill="var(--color-text-tertiary)" textAnchor="end">Well-placed</text>
+          <text x={PADDING_L + 6} y={H - PADDING_B - 4} fontSize="9" fill="var(--color-text-tertiary)">Needs work</text>
+          <text x={W - PADDING_R - 6} y={H - PADDING_B - 4} fontSize="9" fill="var(--color-text-tertiary)" textAnchor="end">Overpriced</text>
+
+          {/* Axis labels */}
+          <text x={PADDING_L - 6} y={PADDING_T + 10} fontSize="9" fill="var(--color-text-tertiary)" textAnchor="end">{Math.round(maxOcc)}%</text>
+          <text x={PADDING_L - 6} y={H - PADDING_B} fontSize="9" fill="var(--color-text-tertiary)" textAnchor="end">{Math.round(minOcc)}%</text>
+          <text x={PADDING_L} y={H - 6} fontSize="9" fill="var(--color-text-tertiary)">{formatKpiMinor(minAdr, currency)}</text>
+          <text x={W - PADDING_R} y={H - 6} fontSize="9" fill="var(--color-text-tertiary)" textAnchor="end">{formatKpiMinor(maxAdr, currency)}</text>
+
+          {/* Dots */}
+          {points.map((p) => (
+            <g key={p.code || p.title}>
+              <title>{p.code}: {p.title} — ADR {formatKpiMinor(p.adr_minor, currency)} · {p.occ_pct}% occ</title>
+              <circle cx={x(p.adr_minor)} cy={y(p.occ_pct)} r={4} fill="var(--color-brand-accent)" fillOpacity="0.85" stroke="var(--color-background-primary)" strokeWidth="1" />
+            </g>
+          ))}
+        </svg>
+        <div style={{ flex: '1 1 220px', minWidth: 200, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+          <p style={{ margin: '0 0 8px' }}>
+            <strong>Underpriced</strong> (high occ, low ADR) — room to raise price.
+          </p>
+          <p style={{ margin: '0 0 8px' }}>
+            <strong>Well-placed</strong> (high occ, high ADR) — leave alone.
+          </p>
+          <p style={{ margin: '0 0 8px' }}>
+            <strong>Overpriced</strong> (low occ, high ADR) — drop price or sweeten the listing.
+          </p>
+          <p style={{ margin: '0 0 8px' }}>
+            <strong>Needs work</strong> (low occ, low ADR) — listing-quality + photo + description audit.
+          </p>
+          <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            Median lines split the quadrants. ADR derived per property (revenue ÷ booked nights).
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Pace card — proxy until backend exposes YoY. Uses prev-period
+// comparison + clear label. Scoping doc §1 Tier 1: "bookings and
+// revenue on the books for a future period against the same point
+// in the prior year."
+function PaceCard({ kpis, currency }: { kpis: PortfolioResponse['kpis']; currency: string }) {
+  const revDelta = deltaPct(kpis.revenue_minor, kpis.revenue_minor_prev);
+  const occDelta = deltaPct(kpis.occupancy_pct, kpis.occupancy_pct_prev);
+  const adrDelta = deltaPct(kpis.adr_minor, kpis.adr_minor_prev);
+  const dirColor = (dir: 'up' | 'down' | 'flat') =>
+    dir === 'up' ? 'var(--color-text-success)' : dir === 'down' ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)';
+  const arrow = (dir: 'up' | 'down' | 'flat') => (dir === 'up' ? '↑' : dir === 'down' ? '↓' : '—');
+  return (
+    <div className="card" style={{ marginTop: 20 }}>
+      <AnalyticsCardHeader
+        title="Pace · vs prior period"
+        subtitle="proxy until YoY backfill — flags whether the window is improving or slipping"
+      />
+      <div className="card-body" style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+        <PaceMetric
+          label="Revenue"
+          current={formatKpiMinor(kpis.revenue_minor, currency)}
+          delta={revDelta}
+          arrow={arrow(revDelta.dir)}
+          color={dirColor(revDelta.dir)}
+        />
+        <PaceMetric
+          label="Occupancy"
+          current={`${kpis.occupancy_pct}%`}
+          delta={occDelta}
+          arrow={arrow(occDelta.dir)}
+          color={dirColor(occDelta.dir)}
+          unit="pp"
+        />
+        <PaceMetric
+          label="ADR"
+          current={formatKpiMinor(kpis.adr_minor, currency)}
+          delta={adrDelta}
+          arrow={arrow(adrDelta.dir)}
+          color={dirColor(adrDelta.dir)}
+        />
+      </div>
+      <div style={{ padding: '8px 16px 12px', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+        Proper YoY pace lands when backend exposes `revenue_minor_yoy` / `occupancy_pct_yoy` / `adr_minor_yoy`. For now, comparison is window-over-window (e.g. last 30d vs prior 30d).
+      </div>
+    </div>
+  );
+}
+
+function PaceMetric({ label, current, delta, arrow, color, unit }: { label: string; current: string; delta: { dir: 'up' | 'down' | 'flat'; pct: number }; arrow: string; color: string; unit?: string }) {
+  return (
+    <div>
+      <div className="kpi-label">{label}</div>
+      <div className="kpi-value">{current}</div>
+      <div style={{ fontSize: 12, color, marginTop: 2 }}>
+        {arrow} {delta.dir === 'flat' ? '—' : `${delta.pct > 0 ? '+' : ''}${delta.pct}${unit || '%'}`}
+      </div>
+    </div>
   );
 }
 

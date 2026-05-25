@@ -10,6 +10,7 @@ import { AllReviewsPage } from './reviews/AllReviewsPage';
 import { TrendsPage } from './reviews/TrendsPage';
 import { StaffPerformancePage } from './reviews/StaffPerformancePage';
 import { SettingsPage } from './reviews/SettingsPage';
+import { ReviewsInsightsPage } from './reviews/ReviewsInsightsPage';
 import { liveOnlyMode } from '../../_data/demoMode';
 
 interface Props {
@@ -24,6 +25,7 @@ export function ReviewsModule({ subPage, onChangeSubPage }: Props) {
     { id: 'all', label: 'All reviews' },
     { id: 'trends', label: 'Trends' },
     { id: 'staff', label: 'Staff performance' },
+    { id: 'insights', label: 'Insights' },
     { id: 'settings', label: 'Settings' },
   ];
   const tabs = liveOnly ? allTabs.filter((tab) => tab.id !== 'trends' && tab.id !== 'staff') : allTabs;
@@ -43,6 +45,8 @@ export function ReviewsModule({ subPage, onChangeSubPage }: Props) {
         return <TrendsPage />;
       case 'staff':
         return <StaffPerformancePage />;
+      case 'insights':
+        return <ReviewsInsightsPage />;
       case 'settings':
         return <SettingsPage />;
       default:
