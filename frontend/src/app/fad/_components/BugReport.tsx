@@ -215,10 +215,19 @@ async function captureWithHtmlToImage(el: HTMLElement, backgroundColor: string):
     captureModulePromise = import('html-to-image') as Promise<typeof import('html-to-image')>;
   }
   const { toJpeg } = await captureModulePromise;
-  // pixelRatio: 1 (was 0.5) — captures at full CSS viewport size so
-  // mobile + desktop screenshots are readable enough for an agentic
-  // debugger to spot UI state. Filesize trade is acceptable for the
-  // 5MB submit ceiling (backend MAX_SCREENSHOT_BYTES).
+  // pixelRatio: 0.6 — was 1, which doubled the on-wire base64 vs the
+  // original 0.5 default. The previous bump (to 1) was the trigger for
+  // the modal feeling "super slow": large pages serialised into an
+  // 8–16 MB SVG, the synchronous DOM walk blocked the event loop, and
+  // the setTimeout-based withTimeout below couldn't fire because the
+  // event loop was held. 0.6 keeps screenshots readable while halving
+  // the serialisation cost.
+  //
+  // cacheBust: false — true was forcing a re-fetch of every <img> in
+  // the tree with a random query param, which on slow networks (Mauritius
+  // public wifi) made the capture stall further. We accept the slightly
+  // stale image cache; the screenshot only needs to show the user's
+  // current visible state, not bust CDN caches.
   //
   // skipFonts: true — html-to-image walks every stylesheet looking for
   // @font-face rules, which throws CORS on cross-origin sheets. The
@@ -227,9 +236,9 @@ async function captureWithHtmlToImage(el: HTMLElement, backgroundColor: string):
   return withTimeout(
     toJpeg(el, {
       quality: 0.7,
-      pixelRatio: 1,
+      pixelRatio: 0.6,
       backgroundColor,
-      cacheBust: true,
+      cacheBust: false,
       skipFonts: true,
       // filter returns FALSE to drop a node. Skip the FAB so it doesn't
       // appear in its own corner, and skip <script>/<style> children
@@ -254,12 +263,11 @@ async function captureWithHtml2canvas(el: HTMLElement, backgroundColor: string):
     html2canvasModulePromise = import('html2canvas') as Promise<typeof import('html2canvas')>;
   }
   const mod = await html2canvasModulePromise;
-  // scale: 1 (was 0.5) — match html-to-image's upgraded pixelRatio so
-  // fallback captures are equally readable.
+  // scale: 0.6 — match html-to-image's pixelRatio. See note above.
   const canvas = await withTimeout(
     mod.default(el, {
       backgroundColor,
-      scale: 1,
+      scale: 0.6,
       logging: false,
       useCORS: true,
       ignoreElements: (node) =>
@@ -274,15 +282,26 @@ async function captureWithHtml2canvas(el: HTMLElement, backgroundColor: string):
   return canvas.toDataURL('image/jpeg', 0.7);
 }
 
-async function captureViewport(): Promise<string | null> {
-  // Prefer `.fad-app` (the shell on /fad/*) so we get the actual app
-  // surface with its background. On routes outside the FAD shell —
-  // /design-docs/[doc] in particular, which is where Mathias filed
-  // bugs from — `.fad-app` isn't in the DOM. Fall back to document
-  // body so the FAB still produces a screenshot.
-  const el =
+// Pick the smallest element that still carries useful visual context.
+// `.fad-module-body` is the active module pane — drops the sidebar and
+// every other module's lazy DOM. `.fad-app` is the whole shell;
+// document.body is everything including <Toaster>, drawers, etc.
+//
+// Smaller scope means smaller serialised SVG means the synchronous DOM
+// walk completes fast enough to NOT block the setTimeout-based timeout
+// from firing. The previous behaviour of capturing `.fad-app` on a
+// 24-property Owners view produced an SVG large enough to hang the
+// renderer past the 16 s combined timeout.
+function pickCaptureRoot(): HTMLElement | null {
+  return (
+    (document.querySelector('.fad-module-body') as HTMLElement | null) ??
     (document.querySelector('.fad-app') as HTMLElement | null) ??
-    (document.body as HTMLElement | null);
+    (document.body as HTMLElement | null)
+  );
+}
+
+async function captureViewport(): Promise<string | null> {
+  const el = pickCaptureRoot();
   if (!el) return null;
   await settlePaint(el);
   const backgroundColor = resolveBackgroundColor(el);
@@ -333,39 +352,50 @@ export function BugReportFab({ currentModuleLabel }: Props) {
   }, []);
 
   const handleClick = useCallback(async () => {
-    if (capturing || open) return;
+    if (open) return;
     const captureSeq = captureSeqRef.current + 1;
     captureSeqRef.current = captureSeq;
-    setCapturing(true);
+    // Open the modal IMMEDIATELY. Previously we awaited the screenshot
+    // capture FIRST, which on a 24-property Owners view could block the
+    // event loop for 15+ seconds — the FAB sat "is-capturing" and the
+    // user just saw a frozen-looking button. The capture now runs in
+    // the background; the modal mounts in <100 ms and shows a "Capturing
+    // screenshot…" placeholder until the shot lands or the wall-clock
+    // kill switch (below) gives up. The portal-to-body in commit
+    // c760516d means the modal is OUTSIDE the captured tree, so the
+    // old "capture before open so the modal isn't in the tree" reason
+    // no longer applies.
     setScreenshot(null);
-    // Capture BEFORE the modal opens. FAD's capture targets `.fad-app`
-    // (not document.body like the website pattern does), and the modal
-    // is rendered inside `.fad-app`. Opening first would put the
-    // position-fixed overlay inside the captured tree and html-to-image
-    // hangs trying to walk it. Capture first, then open with the shot
-    // already in hand. (Website can open-then-capture because it
-    // targets body and the modal is excluded via the filter — different
-    // tree, different trade-off.)
+    setScreenshotPending(true);
+    setCapturing(true);
+    setOpen(true);
+
+    // Wall-clock kill switch — the internal withTimeout() races a
+    // setTimeout against the capture promise, but if html-to-image's
+    // synchronous DOM serialisation blocks the event loop, that
+    // setTimeout can't fire either. This timer is set BEFORE the await
+    // so it's queued in the macro-task queue and will fire after each
+    // event-loop yield, regardless of how long the capture takes. After
+    // 9 s, we mark the screenshot unavailable and let the user proceed.
+    const killSwitch = window.setTimeout(() => {
+      if (captureSeqRef.current !== captureSeq) return;
+      console.warn('[feedback] capture kill-switch fired at 9 s — proceeding without screenshot');
+      setScreenshotPending(false);
+      setCapturing(false);
+    }, 9_000);
+
     let shot: string | null = null;
     try {
       shot = await captureViewport();
     } catch (err) {
       console.warn('[feedback] capture failed:', err);
     }
+    window.clearTimeout(killSwitch);
     if (captureSeqRef.current !== captureSeq) return; // user moved on
     setScreenshot(shot);
+    setScreenshotPending(false);
     setCapturing(false);
-    setOpen(true);
-
-    // Hard failsafe: if something stalls below the internal timeouts
-    // (shouldn't happen with withTimeout in each capture path, but
-    // defence in depth), release the capturing state after 15s so the
-    // FAB doesn't sit stuck if the user re-triggers.
-    window.setTimeout(() => {
-      if (captureSeqRef.current !== captureSeq) return;
-      setCapturing(false);
-    }, 15_000);
-  }, [capturing, open]);
+  }, [open]);
 
   const handleClose = useCallback(() => {
     // Bump the capture seq so any in-flight screenshot from the
