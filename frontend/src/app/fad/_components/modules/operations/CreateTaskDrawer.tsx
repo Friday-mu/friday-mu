@@ -226,7 +226,7 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [requesterId, setRequesterId] = useState(currentUserId);
-  const [dueDate, setDueDate] = useState(TODAY);
+  const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [estimatedMinutes, setEstimatedMinutes] = useState('');
   const [template, setTemplate] = useState('');
@@ -256,8 +256,12 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     setPriority(prefill?.priority ?? 'medium');
     setAssigneeIds(resolvedMode === 'manager_schedule' ? prefill?.assigneeIds ?? [] : []);
     setRequesterId(currentUserId);
-    setDueDate(prefill?.dueDate ?? sourceTask?.dueDate ?? TODAY);
-    setDueTime(prefill?.dueTime ?? sourceTask?.dueTime ?? '');
+    setDueDate(
+      resolvedMode === 'manager_schedule'
+        ? prefill?.dueDate ?? sourceTask?.dueDate ?? TODAY
+        : prefill?.dueDate ?? '',
+    );
+    setDueTime(resolvedMode === 'manager_schedule' ? prefill?.dueTime ?? sourceTask?.dueTime ?? '' : '');
     setEstimatedMinutes(prefill?.estimatedMinutes ? String(prefill.estimatedMinutes) : '');
     setTemplate(prefill?.template ?? '');
     setElement(prefill?.category ?? '');
@@ -490,7 +494,7 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
         visibility: isReportIntent ? 'team' : 'all',
         assigneeIds: isReportIntent ? [] : assigneeIds,
         requesterId: requesterId || currentUserId,
-        dueDate: dueDate || TODAY,
+        dueDate: isReportIntent ? dueDate || undefined : dueDate || TODAY,
         dueTime: isReportIntent ? undefined : dueTime || undefined,
         estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : undefined,
         reservationId: isAssignedIssue
