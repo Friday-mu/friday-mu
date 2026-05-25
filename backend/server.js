@@ -1136,6 +1136,7 @@ app.use('/api/properties', require('./src/properties'));
 app.use('/api/reservations', require('./src/reservations'));
 app.use('/api/tasks', require('./src/tasks'));
 app.use('/api/operations', require('./src/operations/consult'));
+app.use('/api/operations', require('./src/operations/travel_time'));
 // FAD-native Guests module (T3.11). Backfilled from guesty_reservations;
 // kept fresh by sync.js after each reservation upsert.
 app.use('/api/guests', require('./src/guests'));

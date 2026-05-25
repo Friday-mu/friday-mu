@@ -83,6 +83,16 @@ Latest preview output:
 - Unmapped Breezeway rows: 2 (`Grand Baie Heights`, `Office / Store / Admin`) and both are non-unit/admin-style rows for Ops scheduling.
 - Breezeway coordinate coverage: 48 properties. Use exact pins later for Google travel-time routing; current prompt context only carries source coverage, not raw access fields.
 
+## Travel-Time Scaffold
+
+Added a server-side Google Routes adapter for Ops scheduling:
+
+- Endpoint: `POST /api/operations/travel-time/estimate`
+- Request: `{ "origin": { "lat": -20.1, "lng": 57.5 }, "destination": { "lat": -20.2, "lng": 57.6 }, "departureTime": "2026-05-26T09:00:00+04:00" }`
+- Response: provider, normalized origin/destination, duration seconds/minutes, static duration seconds, and distance meters.
+- Config: `GOOGLE_ROUTES_API_KEY` with optional `GOOGLE_ROUTES_URL` override. If the key is missing, the endpoint returns `google_routes_not_configured` with `configured:false`.
+- Scope: server-only scaffold. It does not expose a browser key and it does not schedule tasks by itself.
+
 ## External Research Summaries
 
 - Workforce scheduling should model demand, skills, days off, requests/preferences, and fairness together. This supports the Ops agent's monthly -> weekly -> daily method.
@@ -104,5 +114,5 @@ References:
 - Property-specific financial agreement fields still need to be read from the relevant property/finance records when automating owner charges.
 - Vendor live availability and exact prices are still not available. Lead times are planning assumptions.
 - Exact staff addresses are approximated by area only.
-- Google travel-time integration is referenced as desired, not wired in this slice.
+- Google travel-time API scaffold is wired at `POST /api/operations/travel-time/estimate`, but live estimates require `GOOGLE_ROUTES_API_KEY` and exact staff/property pins.
 - The current apply path supports schedule draft application, clear, and undo. Full roster mutation/application remains future work.
