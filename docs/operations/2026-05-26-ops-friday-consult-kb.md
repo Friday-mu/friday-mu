@@ -88,8 +88,8 @@ Latest preview output:
 Added a server-side Google Routes adapter for Ops scheduling:
 
 - Endpoint: `POST /api/operations/travel-time/estimate`
-- Request: `{ "origin": { "lat": -20.1, "lng": 57.5 }, "destination": { "lat": -20.2, "lng": 57.6 }, "departureTime": "2026-05-26T09:00:00+04:00" }`
-- Response: provider, normalized origin/destination, duration seconds/minutes, static duration seconds, and distance meters.
+- Request: `{ "origin": { "lat": -20.1, "lng": 57.5 }, "destination": { "lat": -20.2, "lng": 57.6 }, "departureTime": "2026-05-26T09:00:00+04:00" }` or `{ "originPropertyCode": "GBH-C8", "destinationPropertyCode": "VA-1", "departureTime": "2026-05-26T09:00:00+04:00" }`
+- Response: provider, normalized origin/destination, origin/destination source, optional resolved property labels, duration seconds/minutes, static duration seconds, and distance meters.
 - Config: `GOOGLE_ROUTES_API_KEY` with optional `GOOGLE_ROUTES_URL` override. If the key is missing, the endpoint returns `google_routes_not_configured` with `configured:false`.
 - Scope: server-only scaffold. It does not expose a browser key and it does not schedule tasks by itself.
 

@@ -43,7 +43,7 @@ Optimize in this order:
 - Ishant base: Le Datier Complex, Flic-en-Flac.
 - Mary placeholder: Sodnac/Centre.
 - When Google travel estimates are wired, use origin -> property -> property -> home/next duty, not straight-line distance.
-- FAD endpoint shape for route estimates: `POST /api/operations/travel-time/estimate` with `{ origin: { lat, lng }, destination: { lat, lng }, departureTime }`.
+- FAD endpoint shape for route estimates: `POST /api/operations/travel-time/estimate` with `{ origin: { lat, lng }, destination: { lat, lng }, departureTime }` or property-code fields `{ originPropertyCode, destinationPropertyCode, departureTime }`.
 - If Google Routes is not configured, keep the schedule draft conservative and surface that exact blocker instead of pretending route data exists.
 
 ## Daily Replanning

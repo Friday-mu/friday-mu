@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { attachIdentity } = require('../design/auth');
+const { query } = require('../database/client');
 
 const router = express.Router();
 
@@ -34,6 +35,73 @@ function parseDurationSeconds(value) {
   if (!match) return null;
   const seconds = Number(match[1]);
   return Number.isFinite(seconds) ? Math.round(seconds) : null;
+}
+
+function cleanPropertyCode(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function resolvePropertyPoint({
+  tenantId,
+  code,
+  queryImpl = query,
+  label,
+} = {}) {
+  const propertyCode = cleanPropertyCode(code);
+  if (!propertyCode) return null;
+  const { rows } = await queryImpl(
+    `SELECT code, name, geo_lat, geo_lng
+       FROM fad_properties
+      WHERE tenant_id = $1
+        AND UPPER(code) = UPPER($2)
+      LIMIT 1`,
+    [tenantId, propertyCode],
+  );
+  if (!rows || rows.length === 0) {
+    const err = new Error(`${label} property code was not found`);
+    err.status = 404;
+    err.code = `${label}_property_not_found`;
+    throw err;
+  }
+  const row = rows[0];
+  const point = parsePoint({ lat: row.geo_lat, lng: row.geo_lng });
+  if (!point) {
+    const err = new Error(`${label} property ${row.code || propertyCode} has no coordinates`);
+    err.status = 422;
+    err.code = `${label}_property_missing_coordinates`;
+    throw err;
+  }
+  return {
+    point,
+    property: {
+      code: row.code || propertyCode,
+      name: row.name || null,
+    },
+  };
+}
+
+async function resolveTravelPoint({
+  tenantId,
+  body,
+  label,
+  queryImpl = query,
+} = {}) {
+  const coordinate = parsePoint(body?.[label]);
+  if (coordinate) return { point: coordinate, source: 'coordinate', property: null };
+
+  const propertyCode = body?.[`${label}PropertyCode`] || body?.[`${label}Code`];
+  const property = await resolvePropertyPoint({
+    tenantId,
+    code: propertyCode,
+    queryImpl,
+    label,
+  });
+  if (property) return { point: property.point, source: 'property_code', property: property.property };
+
+  const err = new Error(`${label} must be {lat,lng}, "lat,lng", or ${label}PropertyCode`);
+  err.status = 400;
+  err.code = `invalid_${label}`;
+  throw err;
 }
 
 function buildRoutesBody({ origin, destination, departureTime }) {
@@ -117,12 +185,36 @@ async function estimateTravelTime({
   };
 }
 
+async function estimateTravelTimeForRequest({
+  body,
+  tenantId,
+  queryImpl = query,
+  fetchImpl = fetch,
+  apiKey = GOOGLE_ROUTES_API_KEY,
+} = {}) {
+  const origin = await resolveTravelPoint({ tenantId, body, label: 'origin', queryImpl });
+  const destination = await resolveTravelPoint({ tenantId, body, label: 'destination', queryImpl });
+  const result = await estimateTravelTime({
+    origin: origin.point,
+    destination: destination.point,
+    departureTime: body?.departureTime || null,
+    fetchImpl,
+    apiKey,
+  });
+  return {
+    ...result,
+    originSource: origin.source,
+    destinationSource: destination.source,
+    originProperty: origin.property,
+    destinationProperty: destination.property,
+  };
+}
+
 router.post('/travel-time/estimate', attachIdentity, async (req, res) => {
   try {
-    const result = await estimateTravelTime({
-      origin: req.body?.origin,
-      destination: req.body?.destination,
-      departureTime: req.body?.departureTime || null,
+    const result = await estimateTravelTimeForRequest({
+      body: req.body || {},
+      tenantId: req.tenantId,
     });
     res.json({ configured: true, ...result });
   } catch (error) {
@@ -142,6 +234,8 @@ module.exports = router;
 module.exports._test = {
   buildRoutesBody,
   estimateTravelTime,
+  estimateTravelTimeForRequest,
   parseDurationSeconds,
   parsePoint,
+  resolveTravelPoint,
 };
