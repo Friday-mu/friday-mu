@@ -72,8 +72,11 @@
       "lazy_loadable": {
         "staff-roster-rules": "always",
         "task-duration-skill-matrix": "always",
+        "property-data-sources": "always",
+        "property-ops-metadata": "always",
         "scheduling-methodology": "always",
         "owner-terms-approval-rules": "always",
+        "vendors-maintenance-pricing": "always",
         "turnover-maintenance-quality": "always",
         "srl-supplies-rules": "always",
         "learning-and-controls": "always"

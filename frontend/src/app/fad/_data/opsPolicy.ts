@@ -8,6 +8,8 @@ import type { PropertyTier } from './properties';
 export type OpsSize = 'small' | 'medium' | 'large';
 export type StaffTravelBase = 'cap_malheureux' | 'roche_terre' | 'flic_en_flac' | 'sodnac_unknown';
 export type StaffTransportMode = 'bus' | 'scooter' | 'car' | 'unknown';
+export type OpsRegion = 'north' | 'west' | 'north_west';
+export type MaintenanceComplexity = 'quick_reset' | 'low' | 'medium' | 'high';
 
 export interface OpsStaffPolicy {
   id: string;
@@ -22,6 +24,17 @@ export interface OpsStaffPolicy {
     notes?: string;
   };
   schedulingNotes?: string[];
+}
+
+export interface OpsMaintenanceVendorPolicy {
+  id: string;
+  name: string;
+  regions: OpsRegion[];
+  services: string[];
+  complexity: MaintenanceComplexity[];
+  leadTimeHours: number;
+  pricePosture: 'internal' | 'average' | 'higher' | 'unknown';
+  notes: string;
 }
 
 export const OPS_STAFF_POLICY: OpsStaffPolicy[] = [
@@ -83,6 +96,59 @@ export const OPS_STAFF_POLICY: OpsStaffPolicy[] = [
     avoidRoles: ['field_work'],
     transport: { notes: 'Exact location unknown. Use Sodnac/Centre as planning placeholder.' },
     schedulingNotes: ['Leaving end of May 2026. Do not make future roster assumptions beyond handover.'],
+  },
+];
+
+export const OPS_MAINTENANCE_VENDOR_POLICY: OpsMaintenanceVendorPolicy[] = [
+  {
+    id: 'internal-bryan',
+    name: 'Bryan Henri',
+    regions: ['north', 'west'],
+    services: ['maintenance', 'cleaning', 'procurement', 'inspection'],
+    complexity: ['quick_reset', 'low', 'medium'],
+    leadTimeHours: 0,
+    pricePosture: 'internal',
+    notes: 'Default internal first-line maintenance. West work should respect the 08:00-15:00 bus window when possible.',
+  },
+  {
+    id: 'vendor-rodney',
+    name: 'Rodney',
+    regions: ['west'],
+    services: ['ac', 'plumbing', 'limited_electrical'],
+    complexity: ['low', 'medium', 'high'],
+    leadTimeHours: 4,
+    pricePosture: 'average',
+    notes: 'West backup when Bryan cannot handle or cannot reach the property in time.',
+  },
+  {
+    id: 'vendor-joe',
+    name: 'Joe',
+    regions: ['west'],
+    services: ['general_maintenance'],
+    complexity: ['low', 'medium', 'high'],
+    leadTimeHours: 4,
+    pricePosture: 'average',
+    notes: 'New west vendor to validate after first jobs.',
+  },
+  {
+    id: 'vendor-faiz',
+    name: 'Faiz',
+    regions: ['north_west'],
+    services: ['electrical'],
+    complexity: ['medium', 'high'],
+    leadTimeHours: 24,
+    pricePosture: 'higher',
+    notes: 'Preferred for complex electrical work across north and west.',
+  },
+  {
+    id: 'vendor-adrien-multimaintenance',
+    name: 'Adrien / Multi-Maintenance Limited',
+    regions: ['north_west'],
+    services: ['complex_maintenance'],
+    complexity: ['high'],
+    leadTimeHours: 48,
+    pricePosture: 'higher',
+    notes: 'Use for larger complex work; harder to schedule.',
   },
 ];
 

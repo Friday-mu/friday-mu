@@ -15,8 +15,11 @@ This document mirrors the first Operations-specific Friday Consult KB shipped in
 - `SKILL.md`: identity, action protocol, planning ladder, output style.
 - `staff-roster-rules.md`: staff names, bases, transport, skills, night/weekend rules, fairness controls.
 - `task-duration-skill-matrix.md`: property size rules, combo properties, task durations, booking triggers, skill ownership.
+- `property-data-sources.md`: Guesty vs Breezeway vs FAD source roles, latest metadata-preview counts, and secret/coordinate safety rules.
+- `property-ops-metadata.md`: compact Guesty/Breezeway property size, capacity, source coverage, and coordinate-coverage map for scheduling context.
 - `scheduling-methodology.md`: monthly -> weekly -> daily -> live replan method, travel rules, exact-time visual behavior.
 - `owner-terms-approval-rules.md`: owner approval thresholds, urgent override, owner stay cleaning defaults, records.
+- `vendors-maintenance-pricing.md`: standardized agreement assumption, preferred vendors, lead times, maintenance escalation, internal pricing matrix direction.
 - `turnover-maintenance-quality.md`: STR cleaning, post-clean, arrival inspection, preventative maintenance, maintenance triage.
 - `srl-supplies-rules.md`: welcome pack and SRL quantity rules.
 - `learning-and-controls.md`: what the agent may learn, what requires human review, confidence gates, audit controls.
@@ -39,6 +42,47 @@ Ops-critical policy extracted:
 - Major repairs/upgrades above MUR 20,000 require owner approval; coordination fee up to 10% plus VAT may apply.
 - Lockbox/key-safe supply, maintenance, and code changes are authorized operationally.
 
+## Vendor And Maintenance Update
+
+Captured from Ishant on 2026-05-26:
+
+- No known property-specific operational agreement exceptions. Treat operating rules as standardized unless a financial/property override is explicitly stored.
+- Financial agreement details remain property-specific where present: commission, payment/cost treatment, owner caps, and charge rules.
+- Bryan Henri is the first-line internal maintenance owner. He covers north by scooter and west by bus plus west scooter. West work should normally fit roughly 08:00-15:00.
+- Ishant Ayadassen can cover simple west reset tasks when Bryan cannot get there quickly.
+- Rodney is a west vendor for AC, plumbing, and some limited electrical work. Use when Bryan cannot handle or cannot be there in time. Assume at least 4 hours lead time and average pricing.
+- Joe is a new west general maintenance vendor to validate. Assume at least 4 hours lead time and average pricing.
+- Faiz handles complex electrical work across north and west. Assume 1 day lead time and higher pricing.
+- Adrien / Multi-Maintenance Limited handles larger complex work across north and west. Assume 2 days lead time and higher pricing.
+- Internal work by Bryan needs a maintenance charge matrix before owner-visible charges can be automated.
+
+## Property Metadata Preview
+
+Added preview-only tooling:
+
+```bash
+cd backend
+node scripts/ops-property-metadata-preview.js \
+  --source all \
+  --guesty-keychain \
+  --breezeway-keychain \
+  --out ../docs/operations/2026-05-26-ops-property-metadata-preview.json
+```
+
+The script pulls available Guesty listing metadata and Breezeway property metadata, summarizes operational fields, infers draft Ops size, and preserves raw key shape without storing raw external payloads or credentials. It does not mutate FAD tables.
+
+Latest preview output:
+
+- Report: `docs/operations/2026-05-26-ops-property-metadata-preview.json`
+- Guesty listings summarized: 60
+- Breezeway properties summarized: 50
+- Merged property rows: 61
+- Matched in both Guesty and Breezeway: 48
+- Guesty-only rows: 11
+- Breezeway-only rows: 2
+- Unmapped Breezeway rows: 2 (`Grand Baie Heights`, `Office / Store / Admin`) and both are non-unit/admin-style rows for Ops scheduling.
+- Breezeway coordinate coverage: 48 properties. Use exact pins later for Google travel-time routing; current prompt context only carries source coverage, not raw access fields.
+
 ## External Research Summaries
 
 - Workforce scheduling should model demand, skills, days off, requests/preferences, and fairness together. This supports the Ops agent's monthly -> weekly -> daily method.
@@ -57,8 +101,8 @@ References:
 
 ## Known Non-Blocking Gaps
 
-- Property-specific signed agreement exceptions are not in the KB yet.
-- Vendor live prices and preferred vendor lead times are not in the KB yet.
+- Property-specific financial agreement fields still need to be read from the relevant property/finance records when automating owner charges.
+- Vendor live availability and exact prices are still not available. Lead times are planning assumptions.
 - Exact staff addresses are approximated by area only.
 - Google travel-time integration is referenced as desired, not wired in this slice.
 - The current apply path supports schedule draft application, clear, and undo. Full roster mutation/application remains future work.
