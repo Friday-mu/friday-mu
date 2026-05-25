@@ -280,6 +280,8 @@ export const en: TranslationShape = {
       filterResolved: 'Resolved',
       reportedBy: 'Reported by',
       reportedAt: 'Reported',
+      fieldScope: 'Issues you reported, plus open reported issues on properties where you have assigned work.',
+      emptyField: 'No reported issues linked to your work.',
     },
     manager: {
       kicker: 'Manager workbench',
@@ -290,6 +292,38 @@ export const en: TranslationShape = {
       capacityEmpty: 'No staff scheduled today.',
       escalationsTitle: 'Recent escalations',
       escalationsEmpty: 'No escalations in the last 24h.',
+    },
+    roster: {
+      staffCount: 'HR directory · {n} staff',
+      loading: 'Loading roster...',
+      unsaved: 'unsaved',
+      publishedOn: 'Published {date}',
+      managerOnly: 'Roster edits are manager-only',
+      publishManagerOnly: 'Roster publishing is manager-only',
+      saving: 'Saving...',
+      saveDraft: 'Save draft',
+      publish: 'Publish',
+      emptyStaff: 'No active HR staff records loaded.',
+      emptyRole: 'No staff visible for this role.',
+      changeAvailability: 'Change availability',
+      previousWeek: 'Previous week',
+      nextWeek: 'Next week',
+      today: 'Today',
+      status: {
+        draft: 'Draft',
+        published: 'Published',
+        archived: 'Archived',
+      },
+      availability: {
+        on: 'On',
+        off: 'Off',
+        leave: 'Leave',
+        standby: 'Stand-by',
+      },
+      zone: {
+        north: 'North',
+        west: 'West',
+      },
     },
   },
 
@@ -494,6 +528,26 @@ export interface TranslationShape {
     all: Record<string, string>;
     issues: Record<string, string>;
     manager: Record<string, string>;
+    roster: {
+      staffCount: string;
+      loading: string;
+      unsaved: string;
+      publishedOn: string;
+      managerOnly: string;
+      publishManagerOnly: string;
+      saving: string;
+      saveDraft: string;
+      publish: string;
+      emptyStaff: string;
+      emptyRole: string;
+      changeAvailability: string;
+      previousWeek: string;
+      nextWeek: string;
+      today: string;
+      status: Record<string, string>;
+      availability: Record<string, string>;
+      zone: Record<string, string>;
+    };
   };
   analytics: {
     subtitle: string;

@@ -63,6 +63,14 @@ const SOURCE_LABEL: Record<TaskSource, string> = {
   syndic: 'Syndic',
 };
 
+function taskOriginLabel(task: Task): string {
+  if (task.source === 'breezeway') return task.bzId ? `Breezeway #${task.bzId}` : 'Breezeway import';
+  if (task.source === 'reported_issue') return 'Reported issue';
+  if (task.source === 'inbox_ai') return 'Inbox proposal';
+  if (task.source === 'reservation_trigger') return 'Reservation task';
+  return SOURCE_LABEL[task.source] || 'Task';
+}
+
 // Priority left-bar bullets resolve through palette so they read sensibly in
 // dark mode and stay tied to semantic tones.
 function priorityBarColor(p: TaskPriority): string {
@@ -296,6 +304,8 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       ? [
           { id: 'my', label: i18nT('operations.tabs.my', 'My tasks') },
           { id: 'history', label: i18nT('operations.tabs.history', 'My history') },
+          { id: 'issues', label: i18nT('operations.tabs.issues', 'Reported issues') },
+          { id: 'roster', label: i18nT('operations.tabs.roster', 'Roster') },
         ]
       : [
           { id: 'overview', label: i18nT('operations.tabs.overview', 'Overview') },
@@ -404,7 +414,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       case 'approvals':
         return canSeeApprovals ? <ApprovalsPage onOpenTask={setDetailTaskId} /> : null;
       case 'roster':
-        return canSeeRoster ? <RosterPage /> : null;
+        return (canSeeRoster || isField) ? <RosterPage /> : null;
       case 'insights':
         return <InsightsPage />;
       case 'settings':
@@ -997,7 +1007,18 @@ interface PlannerDropTarget {
   rowId: string;
   date: string;
   bucketId?: ScheduleBucketId;
+  dueTime?: string;
   propertyCode?: string;
+}
+
+interface ScheduleAgentSuggestion {
+  taskId: string;
+  title: string;
+  propertyCode: string;
+  dueDate: string;
+  dueTime: string;
+  assigneeIds: string[];
+  reason: string;
 }
 
 const SCHEDULE_TIME_BUCKETS: ScheduleTimeBucket[] = [
@@ -1058,6 +1079,69 @@ function timeBucketForTask(task: Task): ScheduleBucketId {
 
 function taskTimeSortKey(task: Task): string {
   return `${task.dueTime || '99:99'}-${PRIORITY_ORDER[task.priority] ?? 99}-${textValue(task.title, 'Untitled task')}`;
+}
+
+function minutesToTime(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 45, Math.round(totalMinutes / 15) * 15));
+  const hour = Math.floor(clamped / 60);
+  const minute = clamped % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function taskDurationMinutes(task: Task): number {
+  const raw = Number(task.estimatedMinutes || 60);
+  if (!Number.isFinite(raw) || raw <= 0) return 60;
+  return Math.min(180, Math.max(30, Math.ceil(raw / 15) * 15));
+}
+
+function buildScheduleAgentPlan(input: {
+  selectedDate: string;
+  scheduledTasks: Task[];
+  unscheduledTasks: Task[];
+  staffOptions: OperationsStaffUser[];
+}): ScheduleAgentSuggestion[] {
+  const assignable = input.staffOptions.filter((user) => user.canAssign);
+  const staffLoad = new Map(assignable.map((user) => [user.id, 0]));
+  for (const task of input.scheduledTasks) {
+    for (const id of task.assigneeIds) staffLoad.set(id, (staffLoad.get(id) || 0) + taskDurationMinutes(task));
+  }
+
+  const candidates = mergeTaskSlices(
+    input.scheduledTasks.filter((task) => task.dueDate === input.selectedDate && !task.dueTime && OPEN_SCHEDULE_STATUSES.includes(task.status)),
+    input.unscheduledTasks.slice(0, 8),
+  )
+    .filter((task) => !CLOSED_STATUS.has(task.status))
+    .sort((a, b) => (
+      PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+      compareText(taskPropertyLabel(a), taskPropertyLabel(b)) ||
+      compareText(taskTitle(a), taskTitle(b))
+    ))
+    .slice(0, 12);
+
+  let cursor = 8 * 60;
+  return candidates.map((task) => {
+    const duration = taskDurationMinutes(task);
+    const chosenAssignees = task.assigneeIds.length > 0
+      ? task.assigneeIds
+      : assignable.length > 0
+        ? [[...staffLoad.entries()].sort((a, b) => a[1] - b[1])[0]?.[0]].filter((id): id is string => Boolean(id))
+        : [];
+    chosenAssignees.forEach((id) => staffLoad.set(id, (staffLoad.get(id) || 0) + duration));
+    const dueTime = minutesToTime(cursor);
+    cursor += duration + 15;
+    if (cursor > 18 * 60) cursor = 8 * 60 + 15;
+    return {
+      taskId: task.id,
+      title: taskTitle(task),
+      propertyCode: task.propertyCode || 'No property',
+      dueDate: input.selectedDate,
+      dueTime,
+      assigneeIds: chosenAssignees,
+      reason: task.dueDate
+        ? 'No exact time on the selected day.'
+        : 'Unscheduled open work pulled into the selected day.',
+    };
+  });
 }
 
 function taskAssigneeName(task: Task, assigneeId: string, index: number): string {
@@ -1173,6 +1257,8 @@ function SchedulePage({
     time: string;
     leftPct: number;
   } | null>(null);
+  const [agentPlan, setAgentPlan] = useState<ScheduleAgentSuggestion[]>([]);
+  const [agentApplying, setAgentApplying] = useState(false);
   const [reservations, setReservations] = useState<ScheduleReservation[]>([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reservationsError, setReservationsError] = useState<string | null>(null);
@@ -1397,7 +1483,7 @@ function SchedulePage({
         // for the all_day / before_8 / after_20 edges where finer snap
         // isn't useful.
         const previewTime = dragPreview && dragPreview.bucketId === target.bucketId ? dragPreview.time : null;
-        patch.dueTime = previewTime || bucket?.defaultTime || '';
+        patch.dueTime = target.dueTime ?? previewTime ?? bucket?.defaultTime ?? '';
       }
     }
     if (task.status === 'reported') patch.status = 'scheduled';
@@ -1490,6 +1576,46 @@ function SchedulePage({
     { id: 'all', label: 'All', count: counts.total },
   ];
 
+  const generateAgentPlan = () => {
+    const next = buildScheduleAgentPlan({
+      selectedDate,
+      scheduledTasks: rawScheduleTasks,
+      unscheduledTasks,
+      staffOptions,
+    });
+    setAgentPlan(next);
+    fireToast(next.length > 0 ? `Ask Friday drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No no-time or unscheduled tasks need a draft');
+  };
+
+  const applyAgentPlan = async () => {
+    if (agentPlan.length === 0 || agentApplying) return;
+    setAgentApplying(true);
+    try {
+      for (const item of agentPlan) {
+        const task = allKnownTasks.find((candidate) => candidate.id === item.taskId);
+        if (!task) continue;
+        await updateTask({
+          taskId: task.id,
+          patch: {
+            dueDate: item.dueDate,
+            dueTime: item.dueTime,
+            assigneeIds: task.assigneeIds.length > 0 ? task.assigneeIds : item.assigneeIds,
+            status: task.status === 'reported' ? 'scheduled' : task.status,
+          },
+          actorId: currentUserId,
+        });
+      }
+      fireToast(`Applied ${agentPlan.length} Ask Friday schedule move${agentPlan.length === 1 ? '' : 's'}`);
+      setAgentPlan([]);
+      taskPage.refetch();
+      unscheduledPage.refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Ask Friday schedule apply failed');
+    } finally {
+      setAgentApplying(false);
+    }
+  };
+
   return (
     <div className="ops-schedule" aria-label="Operations task schedule">
       <div className="ops-schedule-toolbar">
@@ -1567,6 +1693,39 @@ function SchedulePage({
         </div>
       )}
 
+      <section className="ops-schedule-backlog" style={{ marginBottom: 12 }}>
+        <div className="ops-schedule-backlog-head">
+          <div>
+            <div className="ops-mobile-kicker">Ask Friday</div>
+            <h3>Draft times for {formatShortDate(selectedDate)}</h3>
+          </div>
+          <span>{agentPlan.length > 0 ? `${agentPlan.length} moves drafted` : 'Roster + schedule assist'}</span>
+        </div>
+        <div style={{ display: 'grid', gap: 10, padding: '0 12px 12px' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn secondary sm" type="button" onClick={generateAgentPlan}>
+              Generate draft
+            </button>
+            <button className="btn primary sm" type="button" disabled={agentPlan.length === 0 || agentApplying} onClick={() => void applyAgentPlan()}>
+              {agentApplying ? 'Applying...' : 'Apply draft'}
+            </button>
+          </div>
+          {agentPlan.length > 0 && (
+            <div className="ops-schedule-backlog-list">
+              {agentPlan.map((item) => (
+                <div className="ops-schedule-backlog-row" key={item.taskId}>
+                  <span>
+                    <strong>{item.dueTime} · {item.title}</strong>
+                    <small>{item.propertyCode} · {item.reason}</small>
+                  </span>
+                  <span>{item.assigneeIds.length > 0 ? 'assigns staff' : 'unassigned'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
       {selectedEditTask && (
         <PlannerEditPanel
           task={selectedEditTask}
@@ -1643,12 +1802,14 @@ function SchedulePage({
                         setDragPreview((prev) => prev?.bucketId === bucket.id ? null : prev);
                       }}
                       onDrop={(event) => {
+                        const preview = computeBucketDragPreview(bucket, event);
                         handleDrop(event, {
                           mode: 'user_day',
                           rowType: 'staff',
                           rowId: row.id,
                           date: selectedDate,
                           bucketId: bucket.id,
+                          dueTime: preview?.time ?? bucket.defaultTime,
                         });
                         setDragPreview(null);
                       }}
@@ -1802,14 +1963,14 @@ function SchedulePage({
             >
               <span>
                 <strong>{task.title}</strong>
-                <small>{task.propertyCode || 'No property'} · {formatTaskDue(task.dueDate, task.dueTime, task.status)} · {STATUS_LABEL[task.status]}</small>
+                <small>{task.propertyCode || 'No property'} · {taskOriginLabel(task)} · {formatTaskDue(task.dueDate, task.dueTime, task.status)} · {STATUS_LABEL[task.status]}</small>
               </span>
               <span onClick={(e) => e.stopPropagation()}>
                 <button className="btn ghost sm" type="button" disabled={savingTaskId === task.id} onClick={() => scheduleToday(task)}>
                   Add to {formatShortDate(selectedDate)}
                 </button>
                 <button className="btn ghost sm" type="button" disabled={savingTaskId === task.id} onClick={() => setEditingTaskId(task.id)}>
-                  Edit
+                  Date/time
                 </button>
               </span>
             </div>
@@ -1957,13 +2118,13 @@ function MobileScheduleTaskRow({
         <span className="ops-mobile-schedule-time">{formatTimeLabel(task.dueTime)}</span>
         <span>
           <strong>{task.title}</strong>
-          <small>{taskPropertyLabel(task)} · {assignee} · {task.priority}</small>
+          <small>{taskPropertyLabel(task)} · {taskOriginLabel(task)} · {assignee} · {task.priority}</small>
         </span>
       </button>
       <span className="ops-mobile-schedule-side">
         <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
         <button className="btn ghost sm" type="button" disabled={saving} onClick={() => onEdit(task.id)}>
-          Edit
+          Date/time
         </button>
       </span>
     </article>
@@ -2003,7 +2164,7 @@ function PlannerTaskCard({
         <span>
           <strong>{task.title}</strong>
           <small>
-            {task.propertyCode || 'No property'} · {taskStatusLabel(task.status)} · {task.reservationId ? 'reservation' : task.department}
+            {task.propertyCode || 'No property'} · {taskOriginLabel(task)} · {taskStatusLabel(task.status)} · {task.reservationId ? 'reservation' : task.department}
           </small>
         </span>
         <em style={{ background: statusSwatch.background, color: statusSwatch.color }}>{STATUS_LABEL[task.status]}</em>
@@ -2011,7 +2172,7 @@ function PlannerTaskCard({
       <div className="ops-schedule-task-controls compact">
         <span>{selectedAssignee ? staffOptions.find((user) => user.id === selectedAssignee)?.name || 'Assigned' : 'Unassigned'}</span>
         <button className="btn ghost sm" type="button" disabled={saving} onClick={() => onEdit(task.id)}>
-          Edit schedule
+          Date/time
         </button>
       </div>
     </div>
@@ -2062,7 +2223,7 @@ function PlannerCompactCell({
         {visibleTasks.map((task) => {
           const statusSwatch = toneStyle(taskStatusTone(task.status));
           const assignee = taskAssigneePeople(task)[0]?.name.split(' ')[0] || 'Unassigned';
-          const meta = [task.dueTime ? formatTimeLabel(task.dueTime) : null, STATUS_LABEL[task.status], assignee].filter(Boolean).join(' · ');
+          const meta = [task.dueTime ? formatTimeLabel(task.dueTime) : null, STATUS_LABEL[task.status], taskOriginLabel(task), assignee].filter(Boolean).join(' · ');
           return (
             <div className="ops-planner-chip-wrap" key={`${dropTarget.rowId}-${dropTarget.date}-${task.id}`}>
               <button
@@ -2070,7 +2231,7 @@ function PlannerCompactCell({
                 className="ops-planner-chip"
                 data-status={task.status}
                 style={{ borderLeftColor: statusSwatch.color }}
-                title={`${task.title} · ${task.propertyCode || 'No property'} · ${STATUS_LABEL[task.status]}`}
+                title={`${task.title} · ${task.propertyCode || 'No property'} · ${taskOriginLabel(task)} · ${STATUS_LABEL[task.status]}`}
                 draggable={dragEnabled && savingTaskId !== task.id}
                 onDragStart={(event) => onDragStart(event, task)}
                 onClick={() => onOpenTask(task.id)}
@@ -2087,7 +2248,7 @@ function PlannerCompactCell({
                 disabled={savingTaskId === task.id}
                 onClick={() => onEdit(task.id)}
               >
-                Edit
+                Date/time
               </button>
             </div>
           );
@@ -2119,7 +2280,7 @@ function PlannerEditPanel({
       <div>
         <div className="ops-mobile-kicker">Selected task</div>
         <strong>{task.title}</strong>
-        <small>{task.propertyCode || 'No property'} · {STATUS_LABEL[task.status]}</small>
+        <small>{task.propertyCode || 'No property'} · {taskOriginLabel(task)} · {STATUS_LABEL[task.status]}</small>
       </div>
       <label>
         <span>Date</span>
@@ -3345,11 +3506,16 @@ function appendTriageNote(task: Task, note: string): string {
 
 function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }) {
   const currentUserId = useCurrentUserId();
+  const { role } = usePermissions();
   const { t } = useT();
-  const reportedTaskFilter = useMemo(() => ({ status: ['reported'] as TaskStatus[] }), []);
+  const isField = role === 'field';
+  const reportedTaskFilter = useMemo(() => ({
+    status: ['reported'] as TaskStatus[],
+    fieldRelated: isField,
+  }), [isField]);
   const linkableTaskFilter = useMemo(() => ({ status: OPEN_SCHEDULE_STATUSES }), []);
   const { tasks: TASKS, loading, error, refetch } = useApiTasks(reportedTaskFilter);
-  const { tasks: linkableTasks, refetch: refetchLinkableTasks } = useApiTasks(linkableTaskFilter);
+  const { tasks: linkableTasks, refetch: refetchLinkableTasks } = useApiTasks(isField ? reportedTaskFilter : linkableTaskFilter);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -3378,11 +3544,12 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
   }, [intakeTasks, selectedId]);
 
   const linkTargets = useMemo(() => (
+    isField ? [] :
     linkableTasks
       .filter((task) => task.id !== selectedTask?.id && !CLOSED_STATUS.has(task.status))
       .sort((a, b) => compareText(taskPropertyLabel(a), taskPropertyLabel(b)) || compareText(a.title, b.title))
       .slice(0, 40)
-  ), [linkableTasks, selectedTask?.id]);
+  ), [isField, linkableTasks, selectedTask?.id]);
 
   const refetchReportedIssues = () => {
     refetch();
@@ -3433,7 +3600,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
     if (!patch.status) return;
     await updateTask({ taskId: task.id, patch, actorId: currentUserId });
     if (!options?.silent) {
-      fireToast(action === 'accept' ? 'Task accepted into schedule' : 'Reported issue triaged');
+      fireToast(action === 'accept' ? 'Task accepted into the unscheduled work queue' : 'Reported issue triaged');
     }
   };
 
@@ -3500,19 +3667,22 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               </div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{intakeTasks.length} {t('operations.issues.title').toLowerCase()}</div>
             </div>
-            <button
-              className="btn ghost sm"
-              type="button"
-              style={{ minHeight: 34 }}
-              onClick={() => {
-                if (selectedIds.length === intakeTasks.length) setSelectedIds([]);
-                else setSelectedIds(intakeTasks.map((task) => task.id));
-              }}
-              disabled={intakeTasks.length === 0}
-            >
-              {selectedIds.length === intakeTasks.length && intakeTasks.length > 0 ? 'Clear' : 'Select all'}
-            </button>
+            {!isField && (
+              <button
+                className="btn ghost sm"
+                type="button"
+                style={{ minHeight: 34 }}
+                onClick={() => {
+                  if (selectedIds.length === intakeTasks.length) setSelectedIds([]);
+                  else setSelectedIds(intakeTasks.map((task) => task.id));
+                }}
+                disabled={intakeTasks.length === 0}
+              >
+                {selectedIds.length === intakeTasks.length && intakeTasks.length > 0 ? 'Clear' : 'Select all'}
+              </button>
+            )}
           </div>
+          {!isField && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button className="btn secondary sm" type="button" style={{ minHeight: 34 }} disabled={selectedIds.length === 0 || Boolean(busyKey)} onClick={() => runBulk('accept')}>
               Accept
@@ -3524,6 +3694,12 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               Stale
             </button>
           </div>
+          )}
+          {isField && (
+            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+              {t('operations.issues.fieldScope', 'Issues you reported, plus open reported issues on properties where you have assigned work.')}
+            </div>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -3538,13 +3714,14 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                 key={task.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '34px minmax(0, 1fr)',
+                  gridTemplateColumns: isField ? 'minmax(0, 1fr)' : '34px minmax(0, 1fr)',
                   gap: 6,
                   padding: '8px 10px',
                   borderBottom: '0.5px solid var(--color-border-tertiary)',
                   background: isSelected ? 'var(--color-background-tertiary)' : 'transparent',
                 }}
               >
+                {!isField && (
                 <label style={{ minHeight: 34, width: 34, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 1, cursor: 'pointer', position: 'relative' }}>
                   <input
                     type="checkbox"
@@ -3572,6 +3749,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                     {selectedIds.includes(task.id) ? '✓' : ''}
                   </span>
                 </label>
+                )}
                 <button
                   type="button"
                   onClick={() => { setSelectedId(task.id); setDetailOpen(true); }}
@@ -3600,7 +3778,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               </div>
             );
           })}
-          {!loading && intakeTasks.length === 0 && <Empty>No reported issues need triage.</Empty>}
+          {!loading && intakeTasks.length === 0 && <Empty>{isField ? t('operations.issues.emptyField', 'No reported issues linked to your work.') : t('operations.issues.empty', 'No reported issues right now.')}</Empty>}
         </div>
       </div>
 
@@ -3671,6 +3849,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
               {selectedTask.description || 'No source summary attached.'}
             </div>
 
+            {!isField && (
             <div className="ops-inbox-ai-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
               <button
                 className="btn primary"
@@ -3679,7 +3858,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                 disabled={Boolean(busyKey)}
                 onClick={() => runSingle(selectedTask, 'accept')}
               >
-                Accept task
+                Accept to unscheduled
               </button>
               <button
                 className="btn ghost"
@@ -3709,7 +3888,9 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                 Dismiss
               </button>
             </div>
+            )}
 
+            {!isField && (
             <div
               style={{
                 display: 'grid',
@@ -3752,6 +3933,7 @@ function ReportedIssuesPage({ onOpenTask }: { onOpenTask: (id: string) => void }
                 Link
               </button>
             </div>
+            )}
           </div>
         ) : (
           <Empty>Select a reported task to triage.</Empty>

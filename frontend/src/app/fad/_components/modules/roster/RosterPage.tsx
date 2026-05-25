@@ -16,10 +16,12 @@ import {
   saveRosterWeek,
   type ApiRosterWeek,
 } from '../../../_data/rosterClient';
+import { useT } from '../../../_i18n/useT';
 import type { Task } from '../../../_data/tasks';
+import { TASK_PROPERTIES_SHIM } from '../../../_data/properties';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../../_data/operationsStaffClient';
 import { useApiTasksPage } from '../../../_data/useApiTasks';
-import { useCurrentUserId, usePermissions } from '../../usePermissions';
+import { useCurrentUserId, useJwtRawUserId, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
 import { IconChevron } from '../../icons';
 
@@ -32,6 +34,17 @@ interface CellOption {
   zone: Zone | null;
 }
 
+interface RosterAgentSuggestion {
+  userId: string;
+  staffId?: string;
+  staffName: string;
+  date: string;
+  availability: Availability;
+  zone: Zone | null;
+  taskCount: number;
+  reason: string;
+}
+
 const CELL_OPTIONS: CellOption[] = [
   { key: 'on-null', label: 'On', availability: 'on', zone: null },
   { key: 'on-north', label: 'North', availability: 'on', zone: 'north' },
@@ -40,6 +53,12 @@ const CELL_OPTIONS: CellOption[] = [
   { key: 'off', label: 'Off', availability: 'off', zone: null },
   { key: 'leave', label: 'Leave', availability: 'leave', zone: null },
 ];
+
+const PROPERTY_ZONE_BY_CODE = new Map(
+  TASK_PROPERTIES_SHIM
+    .filter((property) => property.zone === 'north' || property.zone === 'west')
+    .map((property) => [property.code, property.zone as Zone]),
+);
 
 function todayIso(): string {
   const now = new Date();
@@ -112,9 +131,114 @@ function statusLabel(status?: ApiRosterWeek['status']): string {
   return 'Draft';
 }
 
+function taskZone(task: Task): Zone | null {
+  return task.propertyCode ? PROPERTY_ZONE_BY_CODE.get(task.propertyCode) ?? null : null;
+}
+
+function staffZone(user: OperationsStaffUser): Zone | null {
+  return user.zone === 'north' || user.zone === 'west' ? user.zone : null;
+}
+
+function dominantZone(tasks: Task[], fallback: Zone | null): Zone | null {
+  const counts = tasks.reduce<Record<Zone, number>>((acc, task) => {
+    const zone = taskZone(task);
+    if (zone) acc[zone] += 1;
+    return acc;
+  }, { north: 0, west: 0 });
+  if (counts.north === 0 && counts.west === 0) return fallback;
+  return counts.north >= counts.west ? 'north' : 'west';
+}
+
+function sameRosterCell(a: RosterDay | undefined, b: Pick<RosterDay, 'availability' | 'zone'>): boolean {
+  if (!a) return false;
+  return a.availability === b.availability && (a.zone ?? null) === (b.zone ?? null);
+}
+
+function buildRosterAgentPlan(input: {
+  dates: string[];
+  staff: OperationsStaffUser[];
+  tasks: Task[];
+  currentCells: Map<string, RosterDay>;
+}): RosterAgentSuggestion[] {
+  const weeklyAssignedLoad = new Map<string, number>();
+  for (const user of input.staff) weeklyAssignedLoad.set(staffKey(user), 0);
+  for (const task of input.tasks) {
+    for (const user of input.staff) {
+      const ids = [user.id, user.userId, user.staffId].filter(Boolean);
+      if (ids.some((id) => task.assigneeIds.includes(id as string))) {
+        weeklyAssignedLoad.set(staffKey(user), (weeklyAssignedLoad.get(staffKey(user)) || 0) + 1);
+      }
+    }
+  }
+
+  const suggestions: RosterAgentSuggestion[] = [];
+  for (const date of input.dates) {
+    const dayTasks = input.tasks.filter((task) => task.dueDate === date);
+    const dayZone = dominantZone(dayTasks, null);
+    const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const weekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const neededCoverage = Math.min(
+      input.staff.length,
+      dayTasks.length === 0 ? 0 : Math.max(1, Math.ceil(dayTasks.length / 4)),
+    );
+    const ranked = [...input.staff].sort((a, b) => {
+      const aAssigned = dayTasks.filter((task) => [a.id, a.userId, a.staffId].filter(Boolean).some((id) => task.assigneeIds.includes(id as string))).length;
+      const bAssigned = dayTasks.filter((task) => [b.id, b.userId, b.staffId].filter(Boolean).some((id) => task.assigneeIds.includes(id as string))).length;
+      const aZone = staffZone(a);
+      const bZone = staffZone(b);
+      return (
+        bAssigned - aAssigned ||
+        Number(bZone === dayZone) - Number(aZone === dayZone) ||
+        (weeklyAssignedLoad.get(staffKey(a)) || 0) - (weeklyAssignedLoad.get(staffKey(b)) || 0) ||
+        a.name.localeCompare(b.name)
+      );
+    });
+    const coverage = new Set(ranked.slice(0, neededCoverage).map((user) => staffKey(user)));
+
+    for (const user of input.staff) {
+      const key = staffKey(user);
+      const current = input.currentCells.get(cellKey(key, date));
+      if (current?.availability === 'leave') continue;
+
+      const userTasks = dayTasks.filter((task) => [user.id, user.userId, user.staffId].filter(Boolean).some((id) => task.assigneeIds.includes(id as string)));
+      const userZone = dominantZone(userTasks, staffZone(user) || dayZone);
+      const next: Pick<RosterDay, 'availability' | 'zone'> = userTasks.length > 0
+        ? { availability: 'on', zone: userZone }
+        : coverage.has(key)
+          ? { availability: 'on', zone: staffZone(user) || dayZone }
+          : weekend
+            ? { availability: 'off', zone: null }
+            : { availability: 'on', zone: staffZone(user) };
+
+      if (sameRosterCell(current, next)) continue;
+
+      suggestions.push({
+        userId: key,
+        staffId: user.staffId || user.id,
+        staffName: user.name,
+        date,
+        availability: next.availability,
+        zone: next.zone ?? null,
+        taskCount: userTasks.length,
+        reason: userTasks.length > 0
+          ? `${userTasks.length} assigned task${userTasks.length === 1 ? '' : 's'} on this day.`
+          : coverage.has(key)
+            ? `${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'} need coverage.`
+            : weekend
+              ? 'Weekend with no assigned task load.'
+              : 'Weekday base coverage using staff zone.',
+      });
+    }
+  }
+  return suggestions.slice(0, 80);
+}
+
 export function RosterPage() {
   const { role, can } = usePermissions();
+  const { t } = useT();
   const currentUserId = useCurrentUserId();
+  const rawCurrentUserId = useJwtRawUserId() || currentUserId;
+  const isField = role === 'field';
   const canEdit = can('hr_roster', 'write') || can('hr_roster', 'approve');
   const [weekStart, setWeekStart] = useState(() => mondayFor(todayIso()));
   const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
@@ -126,11 +250,13 @@ export function RosterPage() {
   const [dirty, setDirty] = useState(false);
   const [editing, setEditing] = useState<{ userId: string; date: string } | null>(null);
   const [overrides, setOverrides] = useState<Record<string, RosterDay>>({});
+  const [rosterAgentPlan, setRosterAgentPlan] = useState<RosterAgentSuggestion[]>([]);
   const [mobileDayIdx, setMobileDayIdx] = useState(0);
 
   const dates = useMemo(() => weekDates(weekStart), [weekStart]);
   const weekEnd = dates[6];
   const tasksPage = useApiTasksPage({
+    assignee: role === 'field' ? 'me' : undefined,
     dueAfter: weekStart,
     dueBefore: weekEnd,
     limit: 500,
@@ -163,6 +289,7 @@ export function RosterPage() {
     setRosterLoading(true);
     setRosterError(null);
     setOverrides({});
+    setRosterAgentPlan([]);
     setDirty(false);
     void loadRosterWeek(weekStart)
       .then((week) => {
@@ -182,13 +309,37 @@ export function RosterPage() {
     };
   }, [weekStart]);
 
+  const rosterUsers = useMemo<OperationsStaffUser[]>(() => {
+    const byId = new Map<string, OperationsStaffUser>();
+    for (const day of rosterWeek?.days || []) {
+      const id = day.user_id || day.staff_id;
+      if (!id || byId.has(id)) continue;
+      const name = day.staff_name || (id === rawCurrentUserId || id === currentUserId ? 'Your roster' : 'Roster staff');
+      byId.set(id, {
+        id,
+        userId: day.user_id || undefined,
+        staffId: day.staff_id || undefined,
+        name,
+        role: null,
+        department: null,
+        zone: day.zone || null,
+        status: 'active',
+        canAssign: Boolean(day.user_id),
+        initials: initialsFor(name),
+      });
+    }
+    return [...byId.values()];
+  }, [currentUserId, rawCurrentUserId, rosterWeek]);
+
   const visibleUsers = useMemo(() => {
-    const sorted = [...staffUsers].sort((a, b) => a.name.localeCompare(b.name));
-    if (role === 'field' || role === 'commercial_marketing') {
-      return sorted.filter((user) => user.id === currentUserId || user.userId === currentUserId);
+    const source = staffUsers.length > 0 ? staffUsers : rosterUsers;
+    const sorted = [...source].sort((a, b) => a.name.localeCompare(b.name));
+    if (isField || role === 'commercial_marketing') {
+      const ownRows = sorted.filter((user) => [user.id, user.userId, user.staffId].filter(Boolean).some((id) => id === currentUserId || id === rawCurrentUserId));
+      return ownRows.length > 0 || staffUsers.length > 0 ? ownRows : sorted;
     }
     return sorted;
-  }, [currentUserId, role, staffUsers]);
+  }, [currentUserId, isField, rawCurrentUserId, role, rosterUsers, staffUsers]);
 
   const savedCells = useMemo(() => {
     const next: Record<string, RosterDay> = {};
@@ -227,6 +378,7 @@ export function RosterPage() {
       zone: opt.zone,
     };
     setOverrides((current) => ({ ...current, [cellKey(key, date)]: next }));
+    setRosterAgentPlan([]);
     setDirty(true);
   };
 
@@ -296,6 +448,37 @@ export function RosterPage() {
   const workload = useMemo(() => buildWorkload(tasksPage.tasks, dates, visibleUsers), [dates, tasksPage.tasks, visibleUsers]);
   const safeMobileIdx = Math.min(Math.max(mobileDayIdx, 0), Math.max(dates.length - 1, 0));
   const mobileDate = dates[safeMobileIdx];
+  const generateRosterAgentPlan = () => {
+    const currentCells = new Map(collectWeekDays().map((day) => [cellKey(day.userId, day.date), day]));
+    const next = buildRosterAgentPlan({
+      dates,
+      staff: persistableUsers,
+      tasks: tasksPage.tasks,
+      currentCells,
+    });
+    setRosterAgentPlan(next);
+    fireToast(next.length > 0 ? `Ask Friday drafted ${next.length} roster cell${next.length === 1 ? '' : 's'}` : 'Roster already matches the current task load');
+  };
+
+  const applyRosterAgentPlan = () => {
+    if (!canEdit || rosterAgentPlan.length === 0) return;
+    setOverrides((current) => {
+      const next = { ...current };
+      for (const item of rosterAgentPlan) {
+        next[cellKey(item.userId, item.date)] = {
+          userId: item.userId,
+          staffId: item.staffId || item.userId,
+          date: item.date,
+          availability: item.availability,
+          zone: item.zone,
+        };
+      }
+      return next;
+    });
+    setDirty(true);
+    setRosterAgentPlan([]);
+    fireToast(`Applied ${rosterAgentPlan.length} roster draft cell${rosterAgentPlan.length === 1 ? '' : 's'}`);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -307,54 +490,90 @@ export function RosterPage() {
           onToday={() => setWeekStart(mondayFor(todayIso()))}
         />
         <span className="chip" style={{ fontSize: 11 }}>
-          HR directory · {visibleUsers.length} staff
+          {t('operations.roster.staffCount', { n: visibleUsers.length }, `HR directory · ${visibleUsers.length} staff`)}
         </span>
         <span className="chip" style={{ fontSize: 11 }}>
-          {rosterLoading ? 'Loading roster...' : statusLabel(rosterWeek?.status)}
-          {dirty ? ' · unsaved' : ''}
+          {rosterLoading ? t('operations.roster.loading', 'Loading roster...') : t(`operations.roster.status.${rosterWeek?.status || 'draft'}`, statusLabel(rosterWeek?.status))}
+          {dirty ? ` · ${t('operations.roster.unsaved', 'unsaved')}` : ''}
         </span>
         {rosterWeek?.published_at && (
           <span className="chip" style={{ fontSize: 11 }}>
-            Published {formatShortDate(rosterWeek.published_at.slice(0, 10))}
+            {t('operations.roster.publishedOn', { date: formatShortDate(rosterWeek.published_at.slice(0, 10)) }, `Published ${formatShortDate(rosterWeek.published_at.slice(0, 10))}`)}
           </span>
         )}
         <button
           className="btn ghost sm"
           disabled={!canEdit || saving || !dirty}
-          title={canEdit ? undefined : 'Roster edits are manager-only'}
+          title={canEdit ? undefined : t('operations.roster.managerOnly', 'Roster edits are manager-only')}
           onClick={() => void saveDraft()}
         >
-          {saving ? 'Saving...' : 'Save draft'}
+          {saving ? t('operations.roster.saving', 'Saving...') : t('operations.roster.saveDraft', 'Save draft')}
         </button>
         <button
           className="btn ghost sm"
           disabled={!canEdit || saving || persistableUsers.length === 0}
-          title={canEdit ? undefined : 'Roster publishing is manager-only'}
+          title={canEdit ? undefined : t('operations.roster.publishManagerOnly', 'Roster publishing is manager-only')}
           onClick={() => void publishWeek()}
         >
-          Publish
+          {t('operations.roster.publish', 'Publish')}
         </button>
+        {canEdit && (
+          <>
+            <button
+              className="btn ghost sm"
+              disabled={saving || persistableUsers.length === 0}
+              type="button"
+              onClick={generateRosterAgentPlan}
+            >
+              Generate roster draft
+            </button>
+            <button
+              className="btn secondary sm"
+              disabled={saving || rosterAgentPlan.length === 0}
+              type="button"
+              onClick={applyRosterAgentPlan}
+            >
+              Apply draft
+            </button>
+          </>
+        )}
       </div>
 
-      {(staffError || rosterError || tasksPage.error) && (
+      {((staffError && visibleUsers.length === 0) || rosterError || tasksPage.error) && (
         <div className="ops-roster-warning">
-          {staffError || rosterError || tasksPage.error}
+          {(staffError && visibleUsers.length === 0) || rosterError || tasksPage.error}
+        </div>
+      )}
+
+      {canEdit && rosterAgentPlan.length > 0 && (
+        <div className="ops-roster-warning" style={{ display: 'grid', gap: 8 }}>
+          <strong>Ask Friday roster draft · {rosterAgentPlan.length} suggested changes</strong>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {rosterAgentPlan.slice(0, 10).map((item) => (
+              <span className="chip" key={`${item.userId}-${item.date}`} style={{ fontSize: 11 }}>
+                {formatShortDate(item.date)} · {item.staffName} → {item.zone ? ZONE_LABEL[item.zone] : AVAILABILITY_LABEL[item.availability]}
+              </span>
+            ))}
+            {rosterAgentPlan.length > 10 && <span className="chip" style={{ fontSize: 11 }}>+{rosterAgentPlan.length - 10} more</span>}
+          </div>
         </div>
       )}
 
       <div className="fad-split-pane fad-roster-pane detail-open" style={{ overflow: 'auto' }}>
-        <div className="fad-split-list ops-roster-side">
-          <RosterWorkload
-            weekStart={weekStart}
-            weekEnd={weekEnd}
-            staff={visibleUsers}
-            assignableCount={visibleUsers.filter((user) => user.canAssign).length}
-            workload={workload}
-            loading={tasksPage.loading || rosterLoading}
-            rosterStatus={rosterWeek?.status}
-            dirty={dirty}
-          />
-        </div>
+        {!isField && (
+          <div className="fad-split-list ops-roster-side">
+            <RosterWorkload
+              weekStart={weekStart}
+              weekEnd={weekEnd}
+              staff={visibleUsers}
+              assignableCount={visibleUsers.filter((user) => user.canAssign).length}
+              workload={workload}
+              loading={tasksPage.loading || rosterLoading}
+              rosterStatus={rosterWeek?.status}
+              dirty={dirty}
+            />
+          </div>
+        )}
 
         <div className="fad-split-detail fad-roster-grid-desktop ops-roster-grid">
           <table>
@@ -408,7 +627,9 @@ export function RosterPage() {
           </table>
           {visibleUsers.length === 0 && (
             <div className="ops-roster-empty">
-              {staffUsers.length === 0 ? 'No active HR staff records loaded.' : 'No staff visible for this role.'}
+              {staffUsers.length === 0
+                ? t('operations.roster.emptyStaff', 'No active HR staff records loaded.')
+                : t('operations.roster.emptyRole', 'No staff visible for this role.')}
             </div>
           )}
         </div>
@@ -497,16 +718,20 @@ function RosterCell({
   editable: boolean;
   onClick: () => void;
 }) {
+  const { t } = useT();
   const { label, bg, fg } = describeCell(cell);
+  const translatedLabel = cell.availability === 'on' && cell.zone
+    ? t(`operations.roster.zone.${cell.zone}`, label)
+    : t(`operations.roster.availability.${cell.availability}`, label);
   return (
     <button
       onClick={onClick}
       disabled={!editable}
       className="ops-roster-cell"
       style={{ background: bg, color: fg }}
-      title={editable ? 'Change availability' : undefined}
+      title={editable ? t('operations.roster.changeAvailability', 'Change availability') : undefined}
     >
-      {label}
+      {translatedLabel}
     </button>
   );
 }
@@ -688,18 +913,19 @@ function WeekSelector({
   onNext: () => void;
   onToday: () => void;
 }) {
+  const { t } = useT();
   return (
     <div className="ops-roster-week-selector">
-      <button className="fad-util-btn" onClick={onPrev} title="Previous week">
+      <button className="fad-util-btn" onClick={onPrev} title={t('operations.roster.previousWeek', 'Previous week')}>
         <span style={{ display: 'inline-block', transform: 'rotate(180deg)' }}>
           <IconChevron size={11} />
         </span>
       </button>
       <strong>{formatWeekLabel(weekStart)}</strong>
-      <button className="fad-util-btn" onClick={onNext} title="Next week">
+      <button className="fad-util-btn" onClick={onNext} title={t('operations.roster.nextWeek', 'Next week')}>
         <IconChevron size={11} />
       </button>
-      <button className="btn ghost sm" onClick={onToday}>Today</button>
+      <button className="btn ghost sm" onClick={onToday}>{t('operations.roster.today', 'Today')}</button>
     </div>
   );
 }

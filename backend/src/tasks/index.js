@@ -143,6 +143,30 @@ function appendTaskScheduleFilters(queryParams, filters) {
   }
 }
 
+function appendTaskFieldRelatedFilter(queryParams, filters, params, startIndex, identity) {
+  if (queryParams?.field_related !== 'true') return startIndex;
+  const fieldUserId = identity?.userId;
+  if (!fieldUserId || !UUID_RE.test(fieldUserId)) {
+    filters.push('FALSE');
+    return startIndex;
+  }
+  filters.push(`(
+    t.requester_user_id = $${startIndex}
+    OR (
+      t.property_code IS NOT NULL
+      AND t.property_code IN (
+        SELECT DISTINCT mt.property_code
+        FROM tasks mt
+        WHERE mt.tenant_id = $1
+          AND mt.property_code IS NOT NULL
+          AND $${startIndex}::uuid = ANY(mt.assignee_user_ids)
+      )
+    )
+  )`);
+  params.push(fieldUserId);
+  return startIndex + 1;
+}
+
 // Mig-050-era callers used todo/done. The cutover lifecycle keeps
 // `todo` as a migration alias only.
 function normaliseStatus(s) {
@@ -498,6 +522,7 @@ router.get('/', attachIdentity, async (req, res) => {
         }
       }
     }
+    i = appendTaskFieldRelatedFilter(req.query, filters, params, i, req.identity);
     if (typeof req.query.project === 'string') {
       filters.push(`t.project_id = $${i++}`);
       params.push(req.query.project);
@@ -1260,6 +1285,7 @@ router.delete('/:taskId/supplies/:supplyId', attachIdentity, async (req, res) =>
 
 module.exports = router;
 module.exports._test = {
+  appendTaskFieldRelatedFilter,
   appendTaskScheduleFilters,
   taskOrderBy,
 };
