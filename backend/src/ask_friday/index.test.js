@@ -41,7 +41,7 @@ function userToken() {
     user_id: USER_ID,
     role: 'admin',
     username: 'ishant',
-    display_name: 'Ishant Sagoo',
+    display_name: 'Ishant Ayadassen',
     tenant_id: TENANT_ID,
   }, JWT_SECRET);
 }
@@ -192,7 +192,7 @@ describe('Ask Friday Core router', () => {
           risk_class: 'medium',
           trust_tier: 'surface_evidence',
           review_status: 'approved',
-          reviewer: 'Ishant Sagoo',
+          reviewer: 'Ishant Ayadassen',
           review_note: 'Approved.',
           reviewed_at: new Date('2026-05-23T08:05:00.000Z'),
           approved_snapshot_version: 'kb-2026-05-23',
@@ -229,7 +229,7 @@ describe('Ask Friday Core router', () => {
     expect(review.body.candidate).toMatchObject({
       candidateId: 'cand-1',
       reviewStatus: 'approved',
-      reviewer: 'Ishant Sagoo',
+      reviewer: 'Ishant Ayadassen',
     });
     expect(query.mock.calls[1][1][4]).toBe(TENANT_ID);
   });
@@ -327,7 +327,7 @@ describe('Ask Friday Core router', () => {
           risk_class: 'medium',
           trust_tier: 'surface_evidence',
           review_status: 'approved',
-          reviewer: 'Ishant Sagoo',
+          reviewer: 'Ishant Ayadassen',
         }],
       })
       .mockResolvedValueOnce({ rows: [{ next_version: 5 }] })
@@ -343,7 +343,7 @@ describe('Ask Friday Core router', () => {
           memory_policy: { anonymous: 'session_only' },
           source_snapshot_refs: [{ type: 'kb_candidate', candidateId: 'cand-1' }],
           pack_payload: { compactPrompt: 'Approved context' },
-          approved_by: 'Ishant Sagoo',
+          approved_by: 'Ishant Ayadassen',
           approved_at: new Date('2026-05-23T08:00:00.000Z'),
           published_at: new Date('2026-05-23T08:00:00.000Z'),
         }],
@@ -367,7 +367,7 @@ describe('Ask Friday Core router', () => {
     expect(res.body.contextPack).toMatchObject({
       packId: 'website_ask_friday_fab_v5',
       status: 'published',
-      approvedBy: 'Ishant Sagoo',
+      approvedBy: 'Ishant Ayadassen',
     });
     expect(res.body.approvedCandidates).toHaveLength(1);
     expect(query).toHaveBeenCalledTimes(4);

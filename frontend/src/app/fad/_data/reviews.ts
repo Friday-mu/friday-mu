@@ -193,7 +193,7 @@ export function tagsForReview(reviewId: string): ReviewTag[] {
 }
 
 // ───────────────── Staff attribution fixture ─────────────────
-// Cleaners: Mary, Catherine, Alex. Inspectors: Alex, Catherine, Franny.
+// Cleaners: Catherine, Bryan. Inspectors: Catherine, Bryan, Franny.
 // Each review has up to 1 cleaner + 1 inspector linked via the reservation
 // (in the real Reva integration this comes via Breezeway task IDs).
 

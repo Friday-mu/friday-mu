@@ -154,7 +154,7 @@ Responsive layout:
 Global FAB overlap:
 
 - Some mobile action areas can be affected by global floating controls.
-- This is shared shell/FAB territory and should be handled in the OS Friday FAB convergence work, not by this Ops-only slice.
+- This is shared shell/FAB territory and should be handled in the Ask Friday FAB convergence work, not by this Ops-only slice.
 
 ## Pending Ops Slices
 
@@ -251,5 +251,5 @@ Recommended order:
 1. Recheck remote and live state.
 2. Read this document and the older `docs/handover/2026-05-22-ops-desktop-audit-handover.md`.
 3. Coordinate with the Inbox/FAD session before touching shared shell/FAB/global CSS.
-4. Handle OS Friday FAB, Calendar UX/data audit, and push notifications in the convergence session.
+4. Handle Ask Friday FAB, Calendar UX/data audit, and push notifications in the convergence session.
 5. Continue Ops UI simplification only inside the Ops-owned files unless a coordinated shared change is explicitly listed.

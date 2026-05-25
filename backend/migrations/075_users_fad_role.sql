@@ -36,13 +36,11 @@ ALTER TABLE users
 -- Per-user mapping. Source: frontend/src/app/fad/_data/tasks.ts
 -- (TASK_USERS) — confirmed with Ishant 2026-05-23.
 UPDATE users SET fad_role = 'director'             WHERE LOWER(email) = 'ishant@friday.mu';
-UPDATE users SET fad_role = 'director'             WHERE LOWER(email) = 'judith@friday.mu';
 UPDATE users SET fad_role = 'commercial_marketing' WHERE LOWER(email) = 'mathias@friday.mu';
 UPDATE users SET fad_role = 'ops_manager'          WHERE LOWER(email) = 'franny@friday.mu';
-UPDATE users SET fad_role = 'field'                WHERE LOWER(email) = 'mary@friday.mu';
+UPDATE users SET fad_role = 'commercial_marketing' WHERE LOWER(email) = 'mary@friday.mu';
 UPDATE users SET fad_role = 'field'                WHERE LOWER(email) = 'bryan@friday.mu';
 UPDATE users SET fad_role = 'field'                WHERE LOWER(email) = 'catherine@friday.mu';
-UPDATE users SET fad_role = 'field'                WHERE LOWER(email) = 'alex@friday.mu';
 
 -- Index for filtering staff by FAD role (e.g. assignee dropdowns).
 CREATE INDEX IF NOT EXISTS idx_users_fad_role ON users (fad_role);

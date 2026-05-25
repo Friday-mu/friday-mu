@@ -767,7 +767,7 @@ export const ANNEX_A_DEFAULT: AnnexAConfig = {
   tierThresholds: { tier3MaxMinor: 500_000_00, tier2MaxMinor: 1_500_000_00 },
   // Demo seed — real rates locked during the post-build training-module work.
   internalServiceRates: [
-    { category: 'Internal labour (Bryan, Alex)',         unit: 'per job',      rateMinor: 250_000,                                                                billed: 'billed' },
+    { category: 'Internal labour (Bryan, Catherine)',    unit: 'per job',      rateMinor: 250_000,                                                                billed: 'billed' },
     { category: 'Site supervision',                       unit: '—',         rateMinor: null,                                                                   billed: 'covered_by_pe', note: 'Covered by the procurement & execution fee.' },
     { category: 'Project management',                     unit: '—',         rateMinor: null,                                                                   billed: 'covered_by_pe', note: 'Covered by the procurement & execution fee.' },
     { category: 'Deep cleaning post-renovation',          unit: 'per property', rateMinor: 450_000, rangeMinMinor: 300_000, rangeMaxMinor: 600_000,                billed: 'billed',        note: 'Range varies by property size.' },

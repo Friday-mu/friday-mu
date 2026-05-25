@@ -150,7 +150,7 @@ Known gaps in the prior task backend that still need the Breezeway cutover sprin
 - It lacks access gating fields/events.
 - It lacks requirement/checklist/template tables.
 - It lacks offline queue integration.
-- It uses UUID-only backend users, while current frontend fixtures still use IDs such as `u-judith`; keep the adapter boundary strict until tenant users are fully wired.
+- It uses UUID-only backend users, while current frontend fixtures still use local FAD user IDs; keep the adapter boundary strict until tenant users are fully wired.
 
 ## Feature Mini-Research Rule
 

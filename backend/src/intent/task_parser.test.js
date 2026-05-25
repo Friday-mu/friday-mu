@@ -6,13 +6,13 @@ describe('intent/parse-task helpers', () => {
   describe('sanitizeProperties', () => {
     test('keeps valid entries, drops codeless, caps length', () => {
       const out = _test.sanitizeProperties([
-        { code: 'GBH-C8', name: 'Grand Baie House C8', zone: 'North' },
+        { code: 'GBH-C8', name: 'Grand Baie House C8', zone: 'North', tier: 'medium' },
         { code: '', name: 'oops' },
         { name: 'missing code' },
         ...Array.from({ length: 100 }, (_, i) => ({ code: `T-${i}`, name: 'Test' })),
       ]);
       expect(out.length).toBeLessThanOrEqual(80);
-      expect(out[0]).toEqual({ code: 'GBH-C8', name: 'Grand Baie House C8', zone: 'North' });
+      expect(out[0]).toEqual({ code: 'GBH-C8', name: 'Grand Baie House C8', zone: 'North', tier: 'medium' });
       expect(out.some((p) => !p.code)).toBe(false);
     });
   });
@@ -20,12 +20,12 @@ describe('intent/parse-task helpers', () => {
   describe('sanitizeAssignees', () => {
     test('keeps valid entries, drops nameless/idless', () => {
       const out = _test.sanitizeAssignees([
-        { id: 'u-bryan', name: 'Bryan Lin', role: 'field', skills: ['maintenance', 'plumbing'] },
+        { id: 'u-bryan', name: 'Bryan Henri', role: 'field', skills: ['maintenance', 'plumbing'] },
         { id: '', name: 'no id' },
         { id: 'u-other', name: '' },
       ]);
       expect(out).toEqual([
-        { id: 'u-bryan', name: 'Bryan Lin', role: 'field', skills: ['maintenance', 'plumbing'] },
+        { id: 'u-bryan', name: 'Bryan Henri', role: 'field', skills: ['maintenance', 'plumbing'] },
       ]);
     });
   });

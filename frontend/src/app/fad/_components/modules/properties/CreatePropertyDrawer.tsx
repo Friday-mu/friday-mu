@@ -47,8 +47,8 @@ function regionToZone(region: Cohort): PropertyZone {
 }
 
 function tierFromOccupancy(maxOccupancy: number): PropertyTier {
-  if (maxOccupancy <= 3) return 'small';
-  if (maxOccupancy <= 7) return 'medium';
+  if (maxOccupancy <= 2) return 'small';
+  if (maxOccupancy <= 5) return 'medium';
   return 'big';
 }
 

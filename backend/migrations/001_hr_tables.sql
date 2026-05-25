@@ -59,8 +59,8 @@ CREATE INDEX IF NOT EXISTS idx_hr_timeoff_staff ON hr_time_off_requests(staff_id
 CREATE INDEX IF NOT EXISTS idx_hr_timeoff_status ON hr_time_off_requests(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_hr_timeoff_created ON hr_time_off_requests(tenant_id, created_at DESC);
 
--- Seed: 7 active staff. Runs only when the table is empty so re-deploys
--- are no-ops. Names + roles match user-provided list (Sprint chat 2026-05-12).
+-- Seed: 6 active staff. Runs only when the table is empty so re-deploys
+-- are no-ops. Names + roles match user-provided list (updated 2026-05-26).
 INSERT INTO hr_staff (name, email, role, status)
 SELECT seed.name, seed.email, seed.role, 'active'
 FROM (VALUES
@@ -68,9 +68,8 @@ FROM (VALUES
   ('Mathias Duval',    'mathias@friday.mu',   'commercial'),
   ('Franny Henri',     'franny@friday.mu',    'ops_manager'),
   ('Bryan Henri',      'bryan@friday.mu',     'field'),
-  ('Catherine Henry',  'catherine@friday.mu', 'field'),
-  ('Hans Jowaheer',    'hans@friday.mu',      'field'),
-  ('Mary Oladimeji',   'mary@friday.mu',      'finance')
+  ('Catherine Henri',  'catherine@friday.mu', 'field'),
+  ('Mary Oladimeji',   'mary@friday.mu',      'commercial')
 ) AS seed(name, email, role)
 WHERE NOT EXISTS (SELECT 1 FROM hr_staff LIMIT 1);
 

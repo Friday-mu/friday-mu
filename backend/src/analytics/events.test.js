@@ -27,7 +27,7 @@ function token() {
     user_id: USER_ID,
     role: 'admin',
     username: 'ishant',
-    display_name: 'Ishant Sagoo',
+    display_name: 'Ishant Ayadassen',
     tenant_id: TENANT_ID,
   }, JWT_SECRET);
 }
@@ -62,7 +62,7 @@ describe('analytics events router', () => {
     expect(params[2]).toBe('fad_module_open');
     expect(JSON.parse(params[3])).toEqual({ module: 'inbox' });
     expect(params[4]).toBe('sess-1');
-    expect(params[6]).toBe('Ishant Sagoo');
+    expect(params[6]).toBe('Ishant Ayadassen');
   });
 
   test('rejects invalid event names before writing', async () => {

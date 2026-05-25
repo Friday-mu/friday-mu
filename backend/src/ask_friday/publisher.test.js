@@ -27,7 +27,7 @@ describe('Ask Friday context-pack publisher', () => {
           risk_class: 'medium',
           trust_tier: 'surface_evidence',
           review_status: 'approved',
-          reviewer: 'Ishant Sagoo',
+          reviewer: 'Ishant Ayadassen',
         }],
       })
       .mockResolvedValueOnce({ rows: [{ next_version: 4 }] })
@@ -43,7 +43,7 @@ describe('Ask Friday context-pack publisher', () => {
           memory_policy: { anonymous: 'session_only' },
           source_snapshot_refs: [{ type: 'kb_candidate', candidateId: 'cand-1' }],
           pack_payload: { compactPrompt: 'Approved context' },
-          approved_by: 'Ishant Sagoo',
+          approved_by: 'Ishant Ayadassen',
           approved_at: new Date('2026-05-23T08:00:00.000Z'),
           published_at: new Date('2026-05-23T08:00:00.000Z'),
         }],
@@ -59,7 +59,7 @@ describe('Ask Friday context-pack publisher', () => {
       toolPolicy: { allowedTools: ['search_residences'] },
       memoryPolicy: { anonymous: 'session_only' },
       packPayload: { compactPrompt: 'Approved context' },
-      approvedBy: 'Ishant Sagoo',
+      approvedBy: 'Ishant Ayadassen',
     });
 
     expect(result.contextPack.pack_id).toBe('website_ask_friday_fab_v4');
@@ -79,7 +79,7 @@ describe('Ask Friday context-pack publisher', () => {
       tenantId: TENANT_ID,
       surfaceId: 'website_ask_friday_fab',
       candidateIds: ['cand-missing'],
-      approvedBy: 'Ishant Sagoo',
+      approvedBy: 'Ishant Ayadassen',
     })).rejects.toThrow('candidateIds must all reference approved candidates');
 
     expect(query).toHaveBeenCalledTimes(1);
@@ -89,7 +89,7 @@ describe('Ask Friday context-pack publisher', () => {
     await expect(publishContextPack({
       tenantId: TENANT_ID,
       surfaceId: 'website_ask_friday_fab',
-      approvedBy: 'Ishant Sagoo',
+      approvedBy: 'Ishant Ayadassen',
     })).rejects.toThrow('approved candidateIds or manualApproval:true is required');
 
     expect(query).not.toHaveBeenCalled();

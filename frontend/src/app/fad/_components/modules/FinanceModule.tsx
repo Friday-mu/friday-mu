@@ -2214,7 +2214,7 @@ function SettingsCaps() {
     { user: 'Mathias', role: 'Manager (Tasks 3.2)', cap: 20_000_00, lastUpdated: '2026-03-12 · Ishant' },
     { user: 'Franny', role: 'Contributor', cap: 5_000_00, lastUpdated: '2026-03-12 · Ishant' },
     { user: 'Bryan', role: 'Contributor', cap: 5_000_00, lastUpdated: '2026-03-12 · Ishant' },
-    { user: 'Alex', role: 'Contributor', cap: 5_000_00, lastUpdated: '2026-03-12 · Ishant' },
+    { user: 'Catherine', role: 'Contributor', cap: 5_000_00, lastUpdated: '2026-03-12 · Ishant' },
   ];
   return (
     <div className="card fin-card">

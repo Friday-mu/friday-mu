@@ -141,7 +141,7 @@ function transformGmsMessage(raw: Record<string, unknown>): InboxMessage {
 
   // For outbound, prefer the raw `sent_by` column (the reviewer's
   // actual name) over `sender_name` (which gets concatenated as
-  // "Judith via Friday" by the GMS-side compose path — messy in UI).
+  // "staff via Friday" by the GMS-side compose path — messy in UI).
   // Fall back to sender_name with the " via Friday" suffix stripped,
   // then to a sensible default.
   let name: string;

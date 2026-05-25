@@ -68,7 +68,7 @@ describe('breezeway import preview', () => {
     ].join('\n');
     const payroll = [
       'Department,Task ID,Property,Task title,Assignee,Rate paid,Rate type',
-      'Inspection,12345,GBH-B4,Inspect unit,Alex,50.00,Hour',
+      'Inspection,12345,GBH-B4,Inspect unit,Bryan,50.00,Hour',
     ].join('\n');
     const supplies = [
       'Department,Task ID,Property,Task title,Supply ID,Supply name,Supply quantity,Supply unit cost,Supply unit type,Supply is billable,Supply bill to',

@@ -14,7 +14,6 @@ const FALLBACK_TEAM = [
   { firstName: 'Franny',    email: 'franny@friday.mu' },
   { firstName: 'Mary',      email: 'mary@friday.mu' },
   { firstName: 'Bryan',     email: 'bryan@friday.mu' },
-  { firstName: 'Alexandra', email: 'alexandra@friday.mu' },
   { firstName: 'Catherine', email: 'catherine@friday.mu' },
 ] as const
 

@@ -27,7 +27,7 @@ function token(role = 'admin') {
     user_id: USER_ID,
     role,
     username: 'ishant',
-    display_name: 'Ishant Sagoo',
+    display_name: 'Ishant Ayadassen',
     tenant_id: TENANT_ID,
   }, JWT_SECRET);
 }

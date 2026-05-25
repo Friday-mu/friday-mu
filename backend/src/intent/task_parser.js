@@ -24,7 +24,7 @@
 //       propertyCode?: string,
 //     },
 //     reference?: {
-//       properties?: Array<{ code:string, name?:string, zone?:string }>,
+//       properties?: Array<{ code:string, name?:string, zone?:string, tier?:string }>,
 //       assignees?: Array<{ id:string, name:string, role?:string, skills?:string[] }>,
 //       today?: string,                              // YYYY-MM-DD in Mauritius
 //     },
@@ -92,6 +92,7 @@ function sanitizeProperties(items) {
     code: cleanString(p?.code, 12),
     name: cleanString(p?.name, 80),
     zone: cleanString(p?.zone, 60),
+    tier: cleanString(p?.tier, 20),
   })).filter((p) => p.code);
 }
 
@@ -213,14 +214,14 @@ OUTPUT JSON ONLY, shape:
     "description": "<one to three sentences capturing the user's full ask>",
     "propertyCode": "<code from the reference.properties list — exact match>" | undefined,
     "department": "cleaning" | "inspection" | "maintenance" | "office",
-    "subdepartment": "<one of: standard_clean, deep_clean, turnover, amenities, pre_arrival, post_clean, mid_stay, plumbing, electrical, aircon, garden, pool, structural, appliances, admin, supplies, vendor_coord>",
+    "subdepartment": "<one of: standard_clean, owner_standard_clean, deep_clean, mid_stay, amenities, pre_arrival, arrival_inspection, post_clean, owner_post_clean, plumbing, electrical, carpentry, aircon, ac_servicing, garden, pool, preventative_maintenance, aesthetic_check, lockbox, pest_control, store_cleaning, home_buildout, procurement, quick_reset, admin, guest_services, supplies, vendor_coord>",
     "priority": "urgent" | "high" | "medium" | "low" | "lowest",
     "assigneeIds": ["<id from reference.assignees>"] | undefined,
     "dueDate": "YYYY-MM-DD" | undefined,
     "dueTime": "HH:MM" | undefined,
     "estimatedMinutes": number | undefined,
     "tags": ["owner-billable" | "access" | "arrival" | "follow-up" | "vendor" | ...],
-    "template": "<one of: Deep clean, Standard clean, Inspection follow-up, Post-clean inspection, Preventative maintenance, Amenities form, Vendor coordination, Maintenance follow-up, Guest service follow-up, Manager review> | undefined",
+    "template": "<one of: Deep clean, Standard clean, Owner standard clean, Mid-stay clean, Post-clean inspection, Owner post-clean inspection, Arrival inspection, Preventative maintenance, Amenities form, Aesthetic check, Lockbox code change, Guesty lockbox update, Pest control, Store cleaning, Home buildout, Procurement, Quick maintenance reset, AC servicing, Vendor coordination, Maintenance follow-up, Guest service follow-up, Manager review> | undefined",
     "category": "<element like AC, Pool, Linen, Lock, Shower, Garden — short noun>"
   },
   "clarifyingQuestion": "<single short follow-up question, plain text>" | null,
@@ -231,7 +232,8 @@ OUTPUT JSON ONLY, shape:
 Rules:
 - Pick propertyCode ONLY from reference.properties. If the user typed "GBH-C8" verify it exists; if not, omit propertyCode and ask in clarifyingQuestion.
 - Pick assigneeIds ONLY from reference.assignees, by matching the name the operator mentioned (case-insensitive, first name OK). "Brian" → match "Bryan" if Bryan is the only close match. Multiple matches → ask in clarifyingQuestion.
-- Department/subdepartment must be from the enum lists above. Match the keyword spirit: leak/sink/toilet/shower/drain/water → maintenance/plumbing; AC/aircon/cooling → maintenance/aircon; deep clean → cleaning/deep_clean; pre-arrival inspection → inspection/pre_arrival.
+- Department/subdepartment must be from the enum lists above. Match the keyword spirit: leak/sink/toilet/shower/drain/water → maintenance/plumbing; AC/aircon/cooling → maintenance/aircon; AC servicing → maintenance/ac_servicing; deep clean → cleaning/deep_clean; owner clean → cleaning/owner_standard_clean; mid-stay clean → cleaning/mid_stay; arrival or pre-arrival inspection → inspection/arrival_inspection; owner self-clean check → inspection/owner_post_clean; amenities report → cleaning/amenities; preventative check → maintenance/preventative_maintenance; aesthetic check → inspection/aesthetic_check; lockbox/Guesty code → office/lockbox; procurement/buy supplies → office/procurement; quick reset → maintenance/quick_reset.
+- Duration defaults when useful and property tier is known: standard/owner/mid-stay clean small/medium/big = 90/120/150 minutes; deep clean = 180/240/300; post-clean and owner post-clean = 15/30/45; arrival inspection = 30/30/45; amenities report = 60/75/90; preventative maintenance = 90/120/150; aesthetic check = 15/30/45; home buildout = 60/75/90; lockbox change, Guesty lockbox update, pest control, and quick reset = 15; store cleaning = 60; AC servicing = 60 per AC; procurement = at least 30 plus travel.
 - Priority defaults to "medium" unless cues say otherwise: urgent/now/asap/before guest/before arrival → urgent; today/high/soon → high; low priority/no rush → low.
 - Dates: relative cues use reference.today (Mauritius time). "tomorrow" = today + 1, "next week" = today + 6. If the user gave an absolute YYYY-MM-DD, copy it verbatim.
 - Times: "morning"=09:00, "afternoon"=14:00, "evening"/"end of day"/"EOD"=17:00, "noon"=12:00. "at 9am" → 09:00. "at 14h00"/"at 14:00" → 14:00. Omit if not stated.

@@ -100,7 +100,7 @@ export function Header({
           onClick={onGoHome}
           title="Home · Inbox"
         >
-          <span className="fad-brand-wordmark">fridayOS</span>
+          <span className="fad-brand-wordmark">FAD</span>
         </button>
       </div>
 

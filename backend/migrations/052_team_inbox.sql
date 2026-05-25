@@ -235,7 +235,7 @@ BEGIN
   INSERT INTO team_channels (tenant_id, channel_key, name, purpose, visibility, preserve_upload_quality)
   VALUES
     (fr_tenant_id, 'gm',           'GM',           'Daily good morning check-in', 'public', FALSE),
-    (fr_tenant_id, 'announce',     'Announcements','Company announcements + updates from Judith', 'public', FALSE),
+    (fr_tenant_id, 'announce',     'Announcements','Company announcements + team updates', 'public', FALSE),
     (fr_tenant_id, 'random',       'Random',       'Non-work / miscellaneous', 'public', FALSE),
     (fr_tenant_id, 'ops',          'Ops',          'Operations + guest comms execution', 'public', FALSE),
     (fr_tenant_id, 'reservations', 'Reservations', 'Listings, OTAs, pricing, website, new reservations', 'public', FALSE),

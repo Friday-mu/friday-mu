@@ -14,7 +14,7 @@
 // Why a single hook: the topbar avatar (Header.tsx:155) and the
 // AvatarDropdown both needed the same identity but were each calling
 // `TASK_USER_BY_ID[currentUserId]` directly — so non-FR tenants saw
-// "Judith Friday" / "JF" because Judith is the first director in
+// an outdated fixture director because the first director in
 // the fixture and `currentUserId` defaults to 'u-ishant' which
 // resolves to her in the look-up. This hook centralises the resolver.
 

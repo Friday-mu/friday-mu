@@ -69,7 +69,7 @@ export function PermissionsPage() {
       <div style={{ padding: 48, textAlign: 'center', color: 'var(--color-text-secondary)' }}>
         <h3 style={{ fontSize: 16, marginBottom: 8 }}>Only the Director can manage permissions.</h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-          If you need access to a particular resource, raise it with Ishant or Judith.
+          If you need access to a particular resource, raise it with Ishant or Franny.
         </p>
       </div>
     );
