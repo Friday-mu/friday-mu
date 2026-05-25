@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useT } from '../../_i18n/useT';
@@ -19,11 +19,17 @@ import { fireToast } from '../Toaster';
 import { createTask, fetchTask, updateTask } from '../../_data/tasksClient';
 import { useApiTasks, useApiTasksPage } from '../../_data/useApiTasks';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../_data/operationsStaffClient';
+import {
+  sendOperationsConsultMessage,
+  type OperationsConsultActionSuggestion,
+  type OperationsConsultHistoryMessage,
+  type OperationsConsultPlanItem,
+} from '../../_data/operationsConsultClient';
 import { fetchScheduleReservations, type ScheduleReservation } from '../../_data/reservationsClient';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
-import { IconClose, IconExpand, IconFilter, IconPlus, IconRefresh } from '../icons';
+import { IconClose, IconExpand, IconFilter, IconPlus, IconRefresh, IconSend, IconSparkle } from '../icons';
 import { DAILY_BRIEF_POOL, pickDifferent, pickFromPool } from '../../_data/aiFixtures';
 import { useAITelemetry } from '../ai/useAITelemetry';
 import { AIBadge, AIRegenerateButton } from '../ai/AIComponents';
@@ -1038,6 +1044,37 @@ interface ScheduleUndoEntry {
   tasks: ScheduleUndoTaskState[];
 }
 
+interface OpsConsultMessage extends OperationsConsultHistoryMessage {
+  id: string;
+  actions?: OperationsConsultActionSuggestion[];
+  meta?: string;
+}
+
+interface OpsFridayConsultPanelProps {
+  selectedDate: string;
+  rangeStart: string;
+  rangeEnd: string;
+  plannerMode: SchedulePlannerMode;
+  timelineScale: ScheduleTimelineScale;
+  scheduledTasks: Task[];
+  unscheduledTasks: Task[];
+  staffOptions: OperationsStaffUser[];
+  reservations: ScheduleReservation[];
+  agentPlan: ScheduleAgentSuggestion[];
+  agentApplying: boolean;
+  bulkApplying: boolean;
+  undoApplying: boolean;
+  undoStack: ScheduleUndoEntry[];
+  clearTimeTargetCount: number;
+  clearAllTargetCount: number;
+  onGenerateDraft: () => ScheduleAgentSuggestion[];
+  onApplyDraft: () => Promise<void>;
+  onDiscardDraft: () => void;
+  onClearTimes: () => void;
+  onClearTimesAndAssignees: () => void;
+  onUndo: () => Promise<void>;
+}
+
 const SCHEDULE_TIME_BUCKETS: ScheduleTimeBucket[] = [
   { id: 'all_day', label: 'All day tasks', subLabel: 'No exact time', startHour: null, endHour: null, defaultTime: '' },
   { id: 'before_8', label: 'Before 8am', startHour: 0, endHour: 8, defaultTime: '07:00' },
@@ -1280,6 +1317,268 @@ function buildScheduleUndoEntry(label: string, tasks: Task[]): ScheduleUndoEntry
     label,
     tasks: states,
   };
+}
+
+function OpsFridayConsultPanel({
+  selectedDate,
+  rangeStart,
+  rangeEnd,
+  plannerMode,
+  timelineScale,
+  scheduledTasks,
+  unscheduledTasks,
+  staffOptions,
+  reservations,
+  agentPlan,
+  agentApplying,
+  bulkApplying,
+  undoApplying,
+  undoStack,
+  clearTimeTargetCount,
+  clearAllTargetCount,
+  onGenerateDraft,
+  onApplyDraft,
+  onDiscardDraft,
+  onClearTimes,
+  onClearTimesAndAssignees,
+  onUndo,
+}: OpsFridayConsultPanelProps) {
+  const [messages, setMessages] = useState<OpsConsultMessage[]>([
+    {
+      id: 'welcome',
+      role: 'friday',
+      text: 'I can help draft this schedule, explain roster constraints, clear or undo schedule moves, and flag owner-approval risks before work is assigned.',
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const appendMessage = (message: Omit<OpsConsultMessage, 'id'>) => {
+    setMessages((current) => [
+      ...current,
+      {
+        ...message,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      },
+    ]);
+  };
+
+  const appendFriday = (text: string, extra?: Partial<OpsConsultMessage>) => {
+    appendMessage({ role: 'friday', text, ...extra });
+  };
+
+  const runLocalAction = async (type: OperationsConsultActionSuggestion['type']) => {
+    if (type === 'draft_schedule') {
+      const next = onGenerateDraft();
+      appendFriday(
+        next.length > 0
+          ? `Drafted ${next.length} schedule move${next.length === 1 ? '' : 's'} for ${formatShortDate(selectedDate)}. Review the rows below, then apply when ready.`
+          : 'I did not find any visible no-time or unscheduled tasks that need a draft for this view.',
+      );
+      return;
+    }
+
+    if (type === 'apply_schedule_draft') {
+      if (agentPlan.length === 0) {
+        appendFriday('There is no visible schedule draft to apply yet.');
+        return;
+      }
+      await onApplyDraft();
+      appendFriday(`Applied the visible draft. Undo is available if the result needs to be reverted.`);
+      return;
+    }
+
+    if (type === 'clear_schedule_times') {
+      if (clearTimeTargetCount === 0) {
+        appendFriday('No visible scheduled tasks currently have exact times to clear.');
+        return;
+      }
+      onClearTimes();
+      appendFriday(`Clearing exact times for ${clearTimeTargetCount} visible task${clearTimeTargetCount === 1 ? '' : 's'}.`);
+      return;
+    }
+
+    if (type === 'clear_times_and_assignees') {
+      if (clearAllTargetCount === 0) {
+        appendFriday('No visible scheduled tasks currently have exact times or assignees to clear.');
+        return;
+      }
+      onClearTimesAndAssignees();
+      appendFriday(`Clearing exact times and assignees for ${clearAllTargetCount} visible task${clearAllTargetCount === 1 ? '' : 's'}.`);
+      return;
+    }
+
+    if (type === 'undo_last_schedule_step') {
+      if (undoStack.length === 0) {
+        appendFriday('There is no reversible schedule step in this session yet.');
+        return;
+      }
+      await onUndo();
+      appendFriday('Undid the latest reversible schedule step.');
+      return;
+    }
+
+    const prompt = type === 'request_owner_approval'
+      ? 'Draft the owner approval step needed for the selected Operations issue. Include the approval threshold logic and what evidence we need.'
+      : 'Draft the task we should create from the current Operations context, but do not create it yet.';
+    await submitConsultPrompt(prompt);
+  };
+
+  const submitConsultPrompt = async (promptText: string) => {
+    const text = promptText.trim();
+    if (!text || loading) return;
+    const history = messages
+      .filter((message) => message.id !== 'welcome')
+      .slice(-8)
+      .map(({ role, text: messageText }) => ({ role, text: messageText }));
+
+    appendMessage({ role: 'user', text });
+    setLoading(true);
+    try {
+      const response = await sendOperationsConsultMessage({
+        text,
+        context: 'schedule',
+        selectedDate,
+        rangeStart,
+        rangeEnd,
+        plannerMode,
+        timelineScale,
+        scheduledTasks,
+        unscheduledTasks,
+        staff: staffOptions,
+        reservations,
+        currentPlan: agentPlan as OperationsConsultPlanItem[],
+        history,
+        notes: [
+          `${clearTimeTargetCount} visible tasks have exact times.`,
+          `${clearAllTargetCount} visible tasks have exact times or assignees.`,
+          undoStack.length > 0 ? `Last reversible step: ${undoStack[undoStack.length - 1]?.label}` : 'No reversible schedule step yet.',
+        ].join(' '),
+      });
+      appendFriday(response.response, {
+        actions: response.action_suggestions || [],
+        meta: response.metadata?.tokenEstimate ? `KB context ~${response.metadata.tokenEstimate.toLocaleString()} tokens` : undefined,
+      });
+    } catch (e) {
+      appendFriday(e instanceof Error ? e.message : 'Friday Consult could not read the Operations context.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = input.trim();
+    setInput('');
+    void submitConsultPrompt(text);
+  };
+
+  const disabled = loading || agentApplying || bulkApplying || undoApplying;
+  const quickActions: Array<{
+    type: OperationsConsultActionSuggestion['type'];
+    label: string;
+    disabled?: boolean;
+    title?: string;
+  }> = [
+    { type: 'draft_schedule', label: 'Draft schedule' },
+    { type: 'apply_schedule_draft', label: 'Apply draft', disabled: agentPlan.length === 0 || agentApplying },
+    { type: 'clear_schedule_times', label: 'Clear times', disabled: clearTimeTargetCount === 0 || bulkApplying },
+    { type: 'clear_times_and_assignees', label: 'Clear + assignees', disabled: clearAllTargetCount === 0 || bulkApplying },
+    { type: 'undo_last_schedule_step', label: 'Undo', disabled: undoStack.length === 0 || undoApplying },
+    { type: 'request_owner_approval', label: 'Owner approval' },
+  ];
+
+  return (
+    <section className="ops-consult-panel" aria-label="Friday Consult for Operations">
+      <div className="ops-consult-head">
+        <div>
+          <div className="ops-mobile-kicker">Friday Consult</div>
+          <h3>Ops schedule + roster agent</h3>
+          <small>{plannerMode === 'user_day' ? formatScheduleDate(selectedDate) : formatScheduleRange(rangeStart, rangeEnd)}</small>
+        </div>
+        <span>
+          <IconSparkle size={13} />
+          {agentPlan.length > 0 ? `${agentPlan.length} moves drafted` : 'Knowledge loaded'}
+        </span>
+      </div>
+
+      <div className="ops-consult-actions" aria-label="Friday Consult quick actions">
+        {quickActions.map((action) => (
+          <button
+            key={action.type}
+            className="btn ghost sm"
+            type="button"
+            disabled={disabled || action.disabled}
+            onClick={() => void runLocalAction(action.type)}
+            title={action.title}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="ops-consult-thread" aria-live="polite">
+        {messages.map((message) => (
+          <div className={`ops-consult-message ${message.role}`} key={message.id}>
+            <strong>{message.role === 'user' ? 'You' : 'Friday Consult'}</strong>
+            <p>{message.text}</p>
+            {message.meta && <small>{message.meta}</small>}
+            {message.actions && message.actions.length > 0 && (
+              <div className="ops-consult-action-suggestions">
+                {message.actions.map((action) => (
+                  <button
+                    key={`${message.id}-${action.type}-${action.label}`}
+                    className="btn secondary sm"
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => void runLocalAction(action.type)}
+                    title={action.reason || undefined}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {agentPlan.length > 0 && (
+          <div className="ops-consult-draft">
+            {agentPlan.map((item) => (
+              <div className="ops-schedule-backlog-row" key={item.taskId}>
+                <span>
+                  <strong>{item.dueTime} · {item.title}</strong>
+                  <small>{item.propertyCode} · {item.reason}</small>
+                </span>
+                <span>{item.assigneeIds.length > 0 ? 'assigns staff' : 'unassigned'}</span>
+              </div>
+            ))}
+            <button className="btn ghost sm" type="button" disabled={agentApplying} onClick={onDiscardDraft}>
+              Discard draft
+            </button>
+          </div>
+        )}
+      </div>
+
+      <form className="ops-consult-compose" onSubmit={handleSubmit}>
+        <textarea
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Talk to Friday Consult about this schedule, roster, task timing, owner approval, or what to move next..."
+          rows={2}
+        />
+        <button className="btn primary sm" type="submit" disabled={loading || !input.trim()}>
+          <IconSend size={12} />
+          {loading ? 'Reading...' : 'Send'}
+        </button>
+      </form>
+
+      {undoStack.length > 0 && (
+        <div className="ops-schedule-undo-note">
+          Last reversible step: {undoStack[undoStack.length - 1]?.label} · {undoStack[undoStack.length - 1]?.tasks.length} task{undoStack[undoStack.length - 1]?.tasks.length === 1 ? '' : 's'}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function taskAssigneeName(task: Task, assigneeId: string, index: number): string {
@@ -1838,7 +2137,7 @@ function SchedulePage({
     });
   };
 
-  const generateAgentPlan = () => {
+  const generateAgentPlan = (): ScheduleAgentSuggestion[] => {
     const next = buildScheduleAgentPlan({
       selectedDate,
       scheduledTasks: rawScheduleTasks,
@@ -1846,7 +2145,8 @@ function SchedulePage({
       staffOptions,
     });
     setAgentPlan(next);
-    fireToast(next.length > 0 ? `Ask Friday drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No no-time or unscheduled tasks need a draft');
+    fireToast(next.length > 0 ? `Friday Consult drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No no-time or unscheduled tasks need a draft');
+    return next;
   };
 
   const applyAgentPlan = async () => {
@@ -1869,14 +2169,14 @@ function SchedulePage({
         });
         appliedTasks.push(task);
       }
-      if (appliedTasks.length > 0) pushUndoSnapshot('Ask Friday draft apply', appliedTasks);
-      fireToast(`Applied ${appliedTasks.length} Ask Friday schedule move${appliedTasks.length === 1 ? '' : 's'}`);
+      if (appliedTasks.length > 0) pushUndoSnapshot('Friday Consult draft apply', appliedTasks);
+      fireToast(`Applied ${appliedTasks.length} Friday Consult schedule move${appliedTasks.length === 1 ? '' : 's'}`);
       setAgentPlan([]);
       taskPage.refetch();
       unscheduledPage.refetch();
     } catch (e) {
-      if (appliedTasks.length > 0) pushUndoSnapshot('Ask Friday draft apply', appliedTasks);
-      fireToast(e instanceof Error ? e.message : 'Ask Friday schedule apply failed');
+      if (appliedTasks.length > 0) pushUndoSnapshot('Friday Consult draft apply', appliedTasks);
+      fireToast(e instanceof Error ? e.message : 'Friday Consult schedule apply failed');
       taskPage.refetch();
       unscheduledPage.refetch();
     } finally {
@@ -1971,76 +2271,30 @@ function SchedulePage({
         </div>
       )}
 
-      <section className="ops-schedule-backlog" style={{ marginBottom: 12 }}>
-        <div className="ops-schedule-backlog-head">
-          <div>
-            <div className="ops-mobile-kicker">Ask Friday</div>
-            <h3>Draft times for {formatShortDate(selectedDate)}</h3>
-          </div>
-          <span>{agentPlan.length > 0 ? `${agentPlan.length} moves drafted` : 'Roster + schedule assist'}</span>
-        </div>
-        <div style={{ display: 'grid', gap: 10, padding: '0 12px 12px' }}>
-          <div className="ops-schedule-action-row">
-            <button className="btn secondary sm" type="button" onClick={generateAgentPlan}>
-              Generate draft
-            </button>
-            <button className="btn primary sm" type="button" disabled={agentPlan.length === 0 || agentApplying} onClick={() => void applyAgentPlan()}>
-              {agentApplying ? 'Applying...' : 'Apply draft'}
-            </button>
-            <button className="btn ghost sm" type="button" disabled={agentPlan.length === 0 || agentApplying} onClick={() => setAgentPlan([])}>
-              Discard draft
-            </button>
-            <span className="ops-schedule-action-divider" aria-hidden />
-            <button
-              className="btn ghost sm"
-              type="button"
-              disabled={undoStack.length === 0 || undoApplying || agentApplying || bulkApplying}
-              onClick={() => void restoreLastScheduleSnapshot()}
-              title={undoStack.length > 0 ? `Undo ${undoStack[undoStack.length - 1]?.label}` : 'Nothing to undo'}
-            >
-              <IconRefresh size={12} />
-              {undoApplying ? 'Undoing...' : 'Undo'}
-            </button>
-            <button
-              className="btn ghost sm"
-              type="button"
-              disabled={clearTimeTargets.length === 0 || bulkApplying || agentApplying || undoApplying}
-              onClick={clearVisibleScheduleTimes}
-              title="Move visible scheduled tasks back to all-day by clearing exact times."
-            >
-              <IconClose size={12} />
-              Clear times
-            </button>
-            <button
-              className="btn ghost sm danger"
-              type="button"
-              disabled={clearAllTargets.length === 0 || bulkApplying || agentApplying || undoApplying}
-              onClick={clearVisibleScheduleTimesAndAssignees}
-              title="Clear visible exact times and remove assignees. Undo is available immediately after."
-            >
-              Clear + assignees
-            </button>
-          </div>
-          {undoStack.length > 0 && (
-            <div className="ops-schedule-undo-note">
-              Last reversible step: {undoStack[undoStack.length - 1]?.label} · {undoStack[undoStack.length - 1]?.tasks.length} task{undoStack[undoStack.length - 1]?.tasks.length === 1 ? '' : 's'}
-            </div>
-          )}
-          {agentPlan.length > 0 && (
-            <div className="ops-schedule-backlog-list">
-              {agentPlan.map((item) => (
-                <div className="ops-schedule-backlog-row" key={item.taskId}>
-                  <span>
-                    <strong>{item.dueTime} · {item.title}</strong>
-                    <small>{item.propertyCode} · {item.reason}</small>
-                  </span>
-                  <span>{item.assigneeIds.length > 0 ? 'assigns staff' : 'unassigned'}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+      <OpsFridayConsultPanel
+        selectedDate={selectedDate}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        plannerMode={plannerMode}
+        timelineScale={timelineScale}
+        scheduledTasks={rawScheduleTasks}
+        unscheduledTasks={unscheduledTasks}
+        staffOptions={staffOptions}
+        reservations={reservations}
+        agentPlan={agentPlan}
+        agentApplying={agentApplying}
+        bulkApplying={bulkApplying}
+        undoApplying={undoApplying}
+        undoStack={undoStack}
+        clearTimeTargetCount={clearTimeTargets.length}
+        clearAllTargetCount={clearAllTargets.length}
+        onGenerateDraft={generateAgentPlan}
+        onApplyDraft={applyAgentPlan}
+        onDiscardDraft={() => setAgentPlan([])}
+        onClearTimes={clearVisibleScheduleTimes}
+        onClearTimesAndAssignees={clearVisibleScheduleTimesAndAssignees}
+        onUndo={restoreLastScheduleSnapshot}
+      />
 
       {selectedEditTask && (
         <PlannerEditPanel

@@ -7613,6 +7613,141 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   font-size: 11px;
 }
 
+.ops-consult-panel {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+}
+
+.ops-consult-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ops-consult-head h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.ops-consult-head small {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.ops-consult-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.ops-consult-actions,
+.ops-consult-action-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ops-consult-thread {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.ops-consult-message {
+  max-width: min(760px, 100%);
+  padding: 9px 10px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+}
+
+.ops-consult-message.user {
+  justify-self: end;
+  background: var(--color-brand-accent);
+  color: white;
+  border-color: transparent;
+}
+
+.ops-consult-message strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ops-consult-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ops-consult-message small {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+}
+
+.ops-consult-message.user small {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ops-consult-action-suggestions {
+  margin-top: 8px;
+}
+
+.ops-consult-draft {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 0.5px dashed var(--color-border-secondary);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+}
+
+.ops-consult-draft > .btn {
+  justify-self: start;
+}
+
+.ops-consult-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.ops-consult-compose textarea {
+  min-height: 42px;
+  max-height: 140px;
+  resize: vertical;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 9px 10px;
+}
+
 .ops-schedule-warning {
   margin-top: 10px;
   padding: 10px 12px;
@@ -8543,6 +8678,19 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   .ops-schedule-date-controls,
   .ops-schedule-segment {
     width: 100%;
+  }
+  .ops-consult-head,
+  .ops-consult-compose {
+    grid-template-columns: 1fr;
+  }
+  .ops-consult-head {
+    flex-direction: column;
+  }
+  .ops-consult-head > span {
+    align-self: flex-start;
+  }
+  .ops-consult-compose .btn {
+    justify-self: start;
   }
   .ops-schedule-filters input {
     width: 100%;

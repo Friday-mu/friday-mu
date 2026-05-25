@@ -61,6 +61,24 @@
       "surface_skill": "surfaces/learning-analyzer",
       "lazy_loadable": {},
       "property_card": false
+    },
+    "ops-consult": {
+      "consumer": "backend/src/operations/consult.js",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/ops-consult",
+      "lazy_loadable": {
+        "staff-roster-rules": "always",
+        "task-duration-skill-matrix": "always",
+        "scheduling-methodology": "always",
+        "owner-terms-approval-rules": "always",
+        "turnover-maintenance-quality": "always",
+        "srl-supplies-rules": "always",
+        "learning-and-controls": "always"
+      },
+      "property_card": "optional"
     }
   },
   "compose_context_mapping": {
@@ -72,6 +90,11 @@
     "next_step": "pending-actions",
     "teaching": "inbox-advisory",
     "learning_candidate": "learning-analyzer",
-    "message_review": "inbox-advisory"
+    "message_review": "inbox-advisory",
+    "ops_schedule": "ops-consult",
+    "ops_roster": "ops-consult",
+    "ops_task_triage": "ops-consult",
+    "ops_maintenance": "ops-consult",
+    "ops_cleaning": "ops-consult"
   }
 }

@@ -77,6 +77,17 @@ test('learning-analyzer loads', () => {
   assert(result.system_message.length > 0, 'system_message must be non-empty');
 });
 
+test('ops-consult loads full Operations KB', () => {
+  const result = composer.load('ops-consult', {
+    task_signals: ['schedule roster owner approval cleaning maintenance supplies'],
+  });
+  assert(result.system_message.includes('Friday Consult - Operations'), 'must include ops surface skill');
+  assert(result.system_message.includes('Staff And Roster Rules'), 'must include staff roster rules');
+  assert(result.system_message.includes('Owner Terms, Expense Approval'), 'must include owner approval rules');
+  assert(result.metadata.loaded_skills.includes('staff-roster-rules'), 'staff rules must always load');
+  assert(result.metadata.loaded_skills.includes('srl-supplies-rules'), 'SRL rules must always load');
+});
+
 test('lazy-loadable trigger keyword pulls in fragment', () => {
   // inbox-drafts has discount-bounds lazy-loaded on /discount|deal|promo/i
   const withDiscount = composer.load('inbox-drafts', {
