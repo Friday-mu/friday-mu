@@ -7577,6 +7577,10 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   color: white;
 }
 
+.ops-schedule-segment.compact button {
+  min-width: 72px;
+}
+
 .ops-schedule-warning {
   margin-top: 10px;
   padding: 10px 12px;
@@ -8030,6 +8034,19 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
 .ops-planner-grid.user-day .ops-planner-cell {
   min-height: 58px;
   position: relative;
+  overflow: visible;
+}
+
+.ops-planner-grid.user-day .ops-planner-cell.timeline {
+  padding: 0;
+}
+
+.ops-planner-grid.user-day .ops-planner-cell.has-scheduled {
+  z-index: 2;
+}
+
+.ops-planner-grid.user-day .ops-planner-cell.has-drag-preview {
+  z-index: 3;
 }
 
 /* 2026-05-23 (Ishant): live 15-min snap on the user_day planner.
@@ -8067,6 +8084,46 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   content: '';
   display: block;
   min-height: 30px;
+}
+
+.ops-planner-task-slot {
+  position: absolute;
+  min-width: 0;
+  max-width: none;
+  z-index: 2;
+}
+
+.ops-planner-task-slot[data-scale='readable'] {
+  min-width: 78px;
+}
+
+.ops-planner-task-slot[data-scale='actual'] {
+  min-width: 18px;
+}
+
+.ops-planner-task-slot .ops-schedule-task {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  height: 30px;
+  padding: 4px 5px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.ops-planner-task-slot .ops-schedule-task-main {
+  width: 100%;
+}
+
+.ops-planner-task-slot[data-scale='actual'] .ops-schedule-task {
+  padding-inline: 4px;
+}
+
+.ops-planner-task-slot[data-scale='actual'] .ops-schedule-time {
+  font-size: 9px;
+}
+
+.ops-planner-task-slot[data-scale='actual'] .ops-schedule-task-main strong {
+  font-size: 8px;
 }
 
 .ops-planner-cell.compact {
@@ -8467,6 +8524,9 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   }
   .ops-schedule-segment button {
     flex: 1;
+  }
+  .ops-schedule-segment.timeline-scale {
+    display: none;
   }
   .ops-workbench-counts {
     width: 100%;
