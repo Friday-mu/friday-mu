@@ -23,7 +23,7 @@ import { fetchScheduleReservations, type ScheduleReservation } from '../../_data
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
-import { IconClose, IconExpand, IconFilter, IconPlus } from '../icons';
+import { IconClose, IconExpand, IconFilter, IconPlus, IconRefresh } from '../icons';
 import { DAILY_BRIEF_POOL, pickDifferent, pickFromPool } from '../../_data/aiFixtures';
 import { useAITelemetry } from '../ai/useAITelemetry';
 import { AIBadge, AIRegenerateButton } from '../ai/AIComponents';
@@ -1023,6 +1023,21 @@ interface ScheduleAgentSuggestion {
   reason: string;
 }
 
+interface ScheduleUndoTaskState {
+  taskId: string;
+  title: string;
+  dueDate: string;
+  dueTime: string;
+  assigneeIds: string[];
+  status: TaskStatus;
+}
+
+interface ScheduleUndoEntry {
+  id: string;
+  label: string;
+  tasks: ScheduleUndoTaskState[];
+}
+
 const SCHEDULE_TIME_BUCKETS: ScheduleTimeBucket[] = [
   { id: 'all_day', label: 'All day tasks', subLabel: 'No exact time', startHour: null, endHour: null, defaultTime: '' },
   { id: 'before_8', label: 'Before 8am', startHour: 0, endHour: 8, defaultTime: '07:00' },
@@ -1242,6 +1257,31 @@ function buildScheduleAgentPlan(input: {
   });
 }
 
+function buildScheduleUndoEntry(label: string, tasks: Task[]): ScheduleUndoEntry | null {
+  const seen = new Set<string>();
+  const states = tasks
+    .filter((task) => {
+      if (seen.has(task.id)) return false;
+      seen.add(task.id);
+      return true;
+    })
+    .map((task) => ({
+      taskId: task.id,
+      title: taskTitle(task),
+      dueDate: task.dueDate || '',
+      dueTime: task.dueTime || '',
+      assigneeIds: [...task.assigneeIds],
+      status: task.status,
+    }));
+
+  if (states.length === 0) return null;
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    label,
+    tasks: states,
+  };
+}
+
 function taskAssigneeName(task: Task, assigneeId: string, index: number): string {
   return task.assigneeNames?.[index]
     || TASK_USER_BY_ID[assigneeId]?.name
@@ -1358,6 +1398,9 @@ function SchedulePage({
   } | null>(null);
   const [agentPlan, setAgentPlan] = useState<ScheduleAgentSuggestion[]>([]);
   const [agentApplying, setAgentApplying] = useState(false);
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [undoApplying, setUndoApplying] = useState(false);
+  const [undoStack, setUndoStack] = useState<ScheduleUndoEntry[]>([]);
   const [reservations, setReservations] = useState<ScheduleReservation[]>([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reservationsError, setReservationsError] = useState<string | null>(null);
@@ -1461,6 +1504,24 @@ function SchedulePage({
     [rawScheduleTasks, unscheduledPage.tasks],
   );
 
+  const visibleOpenScheduleTasks = useMemo(() => (
+    rawScheduleTasks.filter((task) => (
+      Boolean(task.dueDate) &&
+      visibleDays.includes(task.dueDate) &&
+      OPEN_SCHEDULE_STATUSES.includes(task.status)
+    ))
+  ), [rawScheduleTasks, visibleDays]);
+
+  const clearTimeTargets = useMemo(
+    () => visibleOpenScheduleTasks.filter((task) => Boolean(task.dueTime)),
+    [visibleOpenScheduleTasks],
+  );
+
+  const clearAllTargets = useMemo(
+    () => visibleOpenScheduleTasks.filter((task) => Boolean(task.dueTime) || task.assigneeIds.length > 0),
+    [visibleOpenScheduleTasks],
+  );
+
   const selectedEditTask = useMemo(
     () => allKnownTasks.find((task) => task.id === editingTaskId) || null,
     [allKnownTasks, editingTaskId],
@@ -1544,10 +1605,50 @@ function SchedulePage({
     return { open, unassigned, active, completed, total: rawScheduleTasks.length };
   }, [rawScheduleTasks]);
 
-  const patchTask = async (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => {
+  const pushUndoSnapshot = (label: string, tasks: Task[]) => {
+    const entry = buildScheduleUndoEntry(label, tasks);
+    if (!entry) return;
+    setUndoStack((stack) => [...stack.slice(-9), entry]);
+  };
+
+  const restoreLastScheduleSnapshot = async () => {
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry || undoApplying) return;
+    setUndoApplying(true);
+    try {
+      for (const state of entry.tasks) {
+        await updateTask({
+          taskId: state.taskId,
+          patch: {
+            dueDate: state.dueDate,
+            dueTime: state.dueTime,
+            assigneeIds: state.assigneeIds,
+            status: state.status,
+          },
+          actorId: currentUserId,
+        });
+      }
+      setUndoStack((stack) => stack.slice(0, -1));
+      fireToast(`Undid ${entry.label}`);
+      taskPage.refetch();
+      unscheduledPage.refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Undo failed');
+    } finally {
+      setUndoApplying(false);
+    }
+  };
+
+  const patchTask = async (
+    task: Task,
+    patch: Parameters<typeof updateTask>[0]['patch'],
+    success: string,
+    undoLabel = 'task edit',
+  ) => {
     setSavingTaskId(task.id);
     try {
       await updateTask({ taskId: task.id, patch, actorId: currentUserId });
+      pushUndoSnapshot(undoLabel, [task]);
       fireToast(success);
       taskPage.refetch();
       unscheduledPage.refetch();
@@ -1559,7 +1660,12 @@ function SchedulePage({
   };
 
   const scheduleToday = (task: Task) => {
-    void patchTask(task, { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status }, 'Task added to schedule');
+    void patchTask(
+      task,
+      { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status },
+      'Task added to schedule',
+      'add task to schedule',
+    );
   };
 
   const patchForDropTarget = (task: Task, target: PlannerDropTarget): Parameters<typeof updateTask>[0]['patch'] | null => {
@@ -1619,7 +1725,7 @@ function SchedulePage({
   const moveTask = (task: Task, target: PlannerDropTarget) => {
     const patch = patchForDropTarget(task, target);
     if (!patch) return;
-    void patchTask(task, patch, 'Task schedule updated');
+    void patchTask(task, patch, 'Task schedule updated', 'schedule move');
   };
 
   const handleDragStart = (event: React.DragEvent<HTMLElement>, task: Task) => {
@@ -1675,6 +1781,63 @@ function SchedulePage({
     { id: 'all', label: 'All', count: counts.total },
   ];
 
+  const applyBulkSchedulePatch = async ({
+    label,
+    tasks,
+    patchForTask,
+    success,
+  }: {
+    label: string;
+    tasks: Task[];
+    patchForTask: (task: Task) => Parameters<typeof updateTask>[0]['patch'];
+    success: string;
+  }) => {
+    if (tasks.length === 0 || bulkApplying) return;
+    setBulkApplying(true);
+    let updatedCount = 0;
+    try {
+      for (const task of tasks) {
+        await updateTask({
+          taskId: task.id,
+          patch: patchForTask(task),
+          actorId: currentUserId,
+        });
+        updatedCount += 1;
+      }
+      if (updatedCount > 0) {
+        pushUndoSnapshot(label, tasks.slice(0, updatedCount));
+        fireToast(success);
+        taskPage.refetch();
+        unscheduledPage.refetch();
+      }
+    } catch (e) {
+      if (updatedCount > 0) pushUndoSnapshot(label, tasks.slice(0, updatedCount));
+      fireToast(e instanceof Error ? e.message : `${label} failed`);
+      taskPage.refetch();
+      unscheduledPage.refetch();
+    } finally {
+      setBulkApplying(false);
+    }
+  };
+
+  const clearVisibleScheduleTimes = () => {
+    void applyBulkSchedulePatch({
+      label: 'clear schedule times',
+      tasks: clearTimeTargets,
+      patchForTask: () => ({ dueTime: '' }),
+      success: `Cleared times for ${clearTimeTargets.length} task${clearTimeTargets.length === 1 ? '' : 's'}`,
+    });
+  };
+
+  const clearVisibleScheduleTimesAndAssignees = () => {
+    void applyBulkSchedulePatch({
+      label: 'clear times and assignees',
+      tasks: clearAllTargets,
+      patchForTask: () => ({ dueTime: '', assigneeIds: [] }),
+      success: `Cleared times and assignees for ${clearAllTargets.length} task${clearAllTargets.length === 1 ? '' : 's'}`,
+    });
+  };
+
   const generateAgentPlan = () => {
     const next = buildScheduleAgentPlan({
       selectedDate,
@@ -1689,6 +1852,7 @@ function SchedulePage({
   const applyAgentPlan = async () => {
     if (agentPlan.length === 0 || agentApplying) return;
     setAgentApplying(true);
+    const appliedTasks: Task[] = [];
     try {
       for (const item of agentPlan) {
         const task = allKnownTasks.find((candidate) => candidate.id === item.taskId);
@@ -1703,13 +1867,18 @@ function SchedulePage({
           },
           actorId: currentUserId,
         });
+        appliedTasks.push(task);
       }
-      fireToast(`Applied ${agentPlan.length} Ask Friday schedule move${agentPlan.length === 1 ? '' : 's'}`);
+      if (appliedTasks.length > 0) pushUndoSnapshot('Ask Friday draft apply', appliedTasks);
+      fireToast(`Applied ${appliedTasks.length} Ask Friday schedule move${appliedTasks.length === 1 ? '' : 's'}`);
       setAgentPlan([]);
       taskPage.refetch();
       unscheduledPage.refetch();
     } catch (e) {
+      if (appliedTasks.length > 0) pushUndoSnapshot('Ask Friday draft apply', appliedTasks);
       fireToast(e instanceof Error ? e.message : 'Ask Friday schedule apply failed');
+      taskPage.refetch();
+      unscheduledPage.refetch();
     } finally {
       setAgentApplying(false);
     }
@@ -1811,14 +1980,52 @@ function SchedulePage({
           <span>{agentPlan.length > 0 ? `${agentPlan.length} moves drafted` : 'Roster + schedule assist'}</span>
         </div>
         <div style={{ display: 'grid', gap: 10, padding: '0 12px 12px' }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="ops-schedule-action-row">
             <button className="btn secondary sm" type="button" onClick={generateAgentPlan}>
               Generate draft
             </button>
             <button className="btn primary sm" type="button" disabled={agentPlan.length === 0 || agentApplying} onClick={() => void applyAgentPlan()}>
               {agentApplying ? 'Applying...' : 'Apply draft'}
             </button>
+            <button className="btn ghost sm" type="button" disabled={agentPlan.length === 0 || agentApplying} onClick={() => setAgentPlan([])}>
+              Discard draft
+            </button>
+            <span className="ops-schedule-action-divider" aria-hidden />
+            <button
+              className="btn ghost sm"
+              type="button"
+              disabled={undoStack.length === 0 || undoApplying || agentApplying || bulkApplying}
+              onClick={() => void restoreLastScheduleSnapshot()}
+              title={undoStack.length > 0 ? `Undo ${undoStack[undoStack.length - 1]?.label}` : 'Nothing to undo'}
+            >
+              <IconRefresh size={12} />
+              {undoApplying ? 'Undoing...' : 'Undo'}
+            </button>
+            <button
+              className="btn ghost sm"
+              type="button"
+              disabled={clearTimeTargets.length === 0 || bulkApplying || agentApplying || undoApplying}
+              onClick={clearVisibleScheduleTimes}
+              title="Move visible scheduled tasks back to all-day by clearing exact times."
+            >
+              <IconClose size={12} />
+              Clear times
+            </button>
+            <button
+              className="btn ghost sm danger"
+              type="button"
+              disabled={clearAllTargets.length === 0 || bulkApplying || agentApplying || undoApplying}
+              onClick={clearVisibleScheduleTimesAndAssignees}
+              title="Clear visible exact times and remove assignees. Undo is available immediately after."
+            >
+              Clear + assignees
+            </button>
           </div>
+          {undoStack.length > 0 && (
+            <div className="ops-schedule-undo-note">
+              Last reversible step: {undoStack[undoStack.length - 1]?.label} · {undoStack[undoStack.length - 1]?.tasks.length} task{undoStack[undoStack.length - 1]?.tasks.length === 1 ? '' : 's'}
+            </div>
+          )}
           {agentPlan.length > 0 && (
             <div className="ops-schedule-backlog-list">
               {agentPlan.map((item) => (

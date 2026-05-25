@@ -7581,6 +7581,38 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   min-width: 72px;
 }
 
+.ops-schedule-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ops-schedule-action-row .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ops-schedule-action-row .btn.danger {
+  color: var(--color-text-danger);
+}
+
+.ops-schedule-action-row .btn.danger:disabled {
+  color: var(--color-text-tertiary);
+}
+
+.ops-schedule-action-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--color-border-tertiary);
+}
+
+.ops-schedule-undo-note {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
 .ops-schedule-warning {
   margin-top: 10px;
   padding: 10px 12px;
