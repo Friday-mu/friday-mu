@@ -116,7 +116,7 @@ export async function reviewKbCandidate(candidateId: string, patch: KbReviewPatc
 
 // ───────────────────────────── Context Packs ─────────────────────────────
 
-export type ContextPackStatus = 'draft' | 'approved' | 'published' | 'retired';
+export type ContextPackStatus = 'draft' | 'published' | 'retired';
 
 export interface ContextPack {
   packId: string;
@@ -218,8 +218,12 @@ export interface PublishContextPackInput {
   memoryPolicy?: Record<string, unknown>;
   sourceSnapshotRefs?: unknown[];
   packPayload?: Record<string, unknown>;
-  /** Approved-candidate IDs to auto-flip to 'approved' as part of publish. */
+  /** Approved-candidate IDs to mark with the published context-pack snapshot. */
+  candidateIds?: string[];
+  /** Backward-compatible alias accepted by the backend publisher. */
   approvedCandidateIds?: string[];
+  manualApproval?: boolean;
+  manualApprovalRationale?: string;
   approvedBy?: string;
 }
 

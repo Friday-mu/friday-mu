@@ -401,6 +401,8 @@ function ContextPacksPanel() {
         memoryPolicy: pack.memoryPolicy,
         sourceSnapshotRefs: pack.sourceSnapshotRefs,
         packPayload: pack.packPayload,
+        manualApproval: true,
+        manualApprovalRationale: 'Published from the Ask Friday review module after staff confirmation.',
       });
       fireToast(`Published v${res.pack.version}${res.approvedCount ? ` · ${res.approvedCount} candidate(s) approved` : ''}`);
       refetch();
@@ -416,7 +418,7 @@ function ContextPacksPanel() {
   return (
     <>
       <div className="fad-tabs" role="tablist" aria-label="Context pack status" style={{ marginTop: 8 }}>
-        {(['all', 'draft', 'approved', 'published', 'retired'] as const).map((s) => (
+        {(['all', 'draft', 'published', 'retired'] as const).map((s) => (
           <button
             key={s}
             role="tab"

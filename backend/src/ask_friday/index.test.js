@@ -373,6 +373,52 @@ describe('Ask Friday Core router', () => {
     expect(query).toHaveBeenCalledTimes(4);
   });
 
+  test('publishes manually approved context pack through staff route', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ next_version: 2 }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          pack_id: 'fad_consult_v2',
+          surface_id: 'fad_consult',
+          version: 2,
+          status: 'published',
+          knowledge_scopes: ['staff_inbox'],
+          behavior_rules: [],
+          tool_policy: {},
+          memory_policy: {},
+          source_snapshot_refs: [{
+            type: 'manual_approval',
+            approvedBy: 'Ishant Sagoo',
+            rationale: 'Published from review module.',
+          }],
+          pack_payload: { compactPrompt: 'Manual staff pack' },
+          approved_by: 'Ishant Sagoo',
+          approved_at: new Date('2026-05-23T08:00:00.000Z'),
+          published_at: new Date('2026-05-23T08:00:00.000Z'),
+        }],
+      });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/context-packs/publish')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        surfaceId: 'fad_consult',
+        manualApproval: true,
+        manualApprovalRationale: 'Published from review module.',
+        knowledgeScopes: ['staff_inbox'],
+        packPayload: { compactPrompt: 'Manual staff pack' },
+      })
+      .expect(201);
+
+    expect(res.body.contextPack).toMatchObject({
+      packId: 'fad_consult_v2',
+      status: 'published',
+      approvedBy: 'Ishant Sagoo',
+    });
+    expect(res.body.approvedCandidates).toHaveLength(0);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
   test('records deterministic eval runs from active eval cases', async () => {
     query
       .mockResolvedValueOnce({

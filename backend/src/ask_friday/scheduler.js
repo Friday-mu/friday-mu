@@ -16,9 +16,9 @@
 //    candidates."
 //
 // Idempotency: runAnalyzer's underlying insertCandidate uses
-//   INSERT ... ON CONFLICT (tenant_id, candidate_id) DO UPDATE
+//   INSERT ... ON CONFLICT (tenant_id, candidate_id) DO NOTHING
 // so re-running over the same event window is safe — existing
-// candidates get refreshed timestamps, not duplicated rows.
+// candidates are not duplicated.
 //
 // Behavior:
 //   - Runs every ASK_FRIDAY_ANALYZER_INTERVAL_MS (default: 30 min)

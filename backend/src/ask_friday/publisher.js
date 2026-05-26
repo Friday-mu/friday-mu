@@ -67,7 +67,12 @@ async function publishContextPack(options) {
   if (!tenantId) throw badRequest('tenantId is required');
   if (!surfaceId) throw badRequest('surfaceId is required');
 
-  const candidateIds = cleanCandidateIds(options.candidateIds);
+  const candidateIds = cleanCandidateIds(
+    options.candidateIds
+    || options.candidate_ids
+    || options.approvedCandidateIds
+    || options.approved_candidate_ids,
+  );
   const manualApproval = options.manualApproval === true;
   if (candidateIds.length === 0 && !manualApproval) {
     throw badRequest('approved candidateIds or manualApproval:true is required');
