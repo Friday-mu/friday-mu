@@ -4,6 +4,10 @@ Date: 2026-05-26
 Status: planning/spec artifact on `codex/ask-friday-autonomous-core-20260526`
 Scope: FAD + Website + Public MCP + internal-agent Ask Friday surfaces
 
+Compaction recovery ledger: `docs/architecture/ask-friday-completion-ledger-2026-05-26.md`.
+
+Use the ledger before continuing implementation. It distinguishes scoped, KB drafted, harness drafted, runtime wired, tested, deployed, and team-useful states so planned module profiles are not mistaken for finished agents.
+
 ## Naming And Ownership
 
 - Ask Friday is the assistant and intelligence layer.

@@ -9,6 +9,14 @@
 
 This branch is not deployed.
 
+## Compaction Recovery
+
+Before continuing after any compaction, interruption, or parallel-session merge, read:
+
+- `docs/architecture/ask-friday-completion-ledger-2026-05-26.md`
+
+That ledger is the current source of truth for what is only scoped versus KB drafted, harness drafted, runtime wired, tested, deployed, and team-useful. Do not treat scoped module profiles as finished agents.
+
 ## Naming
 
 - Assistant/intelligence layer: Ask Friday.
