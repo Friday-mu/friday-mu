@@ -6,6 +6,7 @@ const { attachIdentity } = require('../design/auth');
 const { invokeChat } = require('../ai/chat_proxy');
 const { guestyRequest, listListings } = require('../integrations/guesty');
 const { callTool } = require('../mcp');
+const { recordLearningEvent } = require('../ask_friday/event_writer');
 
 const router = express.Router();
 
@@ -90,6 +91,15 @@ const MODULE_LABELS = {
   properties: 'Properties',
 };
 const ASK_FRIDAY_CONTEXT_MODULES = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+const ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES = {
+  inbox: 'staff_inbox',
+  operations: 'ops_tasks',
+  hr: 'hr_staff',
+  reviews: 'reviews',
+  design: 'design_projects',
+  reservations: 'reservations',
+  properties: 'properties',
+};
 const ASK_FRIDAY_EXCLUDED_DEMO_MODULES = [
   'finance',
   'calendar',
@@ -1110,6 +1120,23 @@ function resultSummary(type, result) {
   return 'Action completed';
 }
 
+function staffIdentityKey(req) {
+  return req.identity?.userId || req.identity?.username || req.identity?.displayName || 'fad-user';
+}
+
+function knowledgeScopesForAskFriday(context, parsed) {
+  const scopes = new Set(['fad_live_context']);
+  for (const moduleName of context?.requestedModules || []) {
+    const scope = ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES[moduleName];
+    if (scope) scopes.add(scope);
+  }
+  for (const source of parsed?.sourcesUsed || []) {
+    const scope = ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES[cleanString(source, 80).toLowerCase()];
+    if (scope) scopes.add(scope);
+  }
+  return [...scopes];
+}
+
 router.post('/actions/execute', attachIdentity, async (req, res) => {
   try {
     const action = cleanAction(req.body?.action || req.body, 0);
@@ -1182,6 +1209,47 @@ router.post('/ask', attachIdentity, async (req, res) => {
     }
     const parsed = parseModelResponse(result.message?.content || '');
     const actions = deterministicActions({ question, context, modelActions: parsed.actions });
+    recordLearningEvent({
+      tenantId: req.tenantId,
+      event: {
+        sourceSystem: 'fad',
+        surfaceId: 'fad_global_ask_friday',
+        identityRef: {
+          identityType: 'staff',
+          identityKey: staffIdentityKey(req),
+          authenticated: true,
+        },
+        intent: scope,
+        userTurnSummary: question,
+        assistantActionSummary: parsed.answer.slice(0, 900),
+        toolsUsed: ['load_fad_context'],
+        knowledgeUsed: knowledgeScopesForAskFriday(context, parsed),
+        confidence: parsed.confidence,
+        outcome: actions.length ? 'action_candidate' : 'answered',
+        handoff: { triggered: false },
+        signals: {
+          actionCount: actions.length,
+          requestedModules: context.requestedModules,
+          sourceStatus: context.sections.map((s) => ({
+            name: s.name,
+            ok: s.ok,
+            source: s.source || null,
+            error: s.error || null,
+          })),
+          fallbackUsed: !!result.fallbackUsed,
+          focus: focus || null,
+        },
+        privacyClass: 'high',
+        redactionStatus: 'partially_redacted',
+        eventPayload: {
+          scope,
+          focus,
+          model: result.model || null,
+        },
+      },
+    }).catch((e) => {
+      console.warn('[fad/friday] learning event write failed:', e.message);
+    });
     return res.json({
       ...parsed,
       actions,
@@ -1227,6 +1295,7 @@ module.exports = {
     buildListingIndex,
     sanitizeFocus,
     parseInboxFocusThreadId,
+    knowledgeScopesForAskFriday,
     ASK_FRIDAY_MODEL,
     ASK_FRIDAY_MAX_TOKENS,
     ASK_FRIDAY_PROVIDER_TIMEOUT_MS,

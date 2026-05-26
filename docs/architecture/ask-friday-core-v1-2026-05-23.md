@@ -1,7 +1,8 @@
 # Ask Friday Core V1 Architecture Recommendation
 
 Date: 2026-05-23
-Status: V1 backend contract scaffold, not deployed
+Last updated: 2026-05-26
+Status: V1 backend contract scaffold is live on `fad-rebuild`; autonomous hardening branch is pushed but not deployed
 Repo/session: FAD only. No Friday Website edits in this branch.
 
 ## Naming
@@ -10,6 +11,8 @@ The user-facing global AI surface is **Ask Friday**.
 
 FridayOS can remain the broader product/system label where already canonical. The AI surface, Website FAB, guest assistant, owner chat, feedback assistant, and staff consult surface should use Ask Friday in product-facing language.
 
+FAD still has staff module labels such as Friday Consult. Treat those as internal/module-mode aliases under Ask Friday, not separate public assistant products or personas. Do not introduce new public-facing assistant names.
+
 ## Sources Read
 
 - Notion: Ask Friday Unified AI Learning Loop - Scope 2026-05-23
@@ -17,6 +20,8 @@ FridayOS can remain the broader product/system label where already canonical. Th
 - Notion: FAD Architecture & Integrations
 - Notion: Friday Knowledge Base - Batch 1 Product AI Ops
 - Notion: Ask Friday Product Register
+- Repo: `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
+- Repo: `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
 - Filesystem: `/Users/judith/Friday Website/docs/ASK-FRIDAY-UNIFIED-AI-LEARNING-LOOP-2026-05-23.md`
 - Filesystem: `/Users/judith/.codex/worktrees/fad-ask-friday-fab-polish-20260523/docs/handover/2026-05-23-fad-convergence-pending-tasks.md`
 
@@ -53,6 +58,16 @@ flowchart TD
   Packs -->|"published snapshot"| Website
   Packs -->|"published snapshot"| FAD
 ```
+
+This diagram is deliberately compact. The closed-loop version is now in `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md` and must be treated as the implementation planning reference for evidence, memory, evals, registry updates, context packs, and human review.
+
+Flow closure rules added on 2026-05-26:
+
+- Evidence refs flow into analyzer/mining, eval generation, audit/debug, and review. Evidence does not flow directly into public prompts or canonical truth.
+- Memory state flows into context assembly only when the surface registry permits it. Session/working memory can be compacted under policy; durable semantic/procedural memory still requires human approval.
+- Eval results flow into publish gates, reviewer queues, and candidate creation. Failed evals must block, require explicit override, or produce/update a candidate.
+- Surface registry flows into context assembly, public route policy, tool/action policy, context-pack publishing, and eval suite selection. Registry changes flow back only through review or explicitly approved staff admin paths.
+- Action requests flow into approval/execution queues and then back into evidence, learning events, and eval cases after approval, rejection, execution, or expiry.
 
 ## V1 Scope
 
@@ -281,6 +296,7 @@ FAD staff routes:
 - `PATCH /action-requests/:actionId`
 - `POST /identity-links`
 - `POST /analyzer/run`
+- `POST /retention/run`
 - `GET /eval-cases`
 - `POST /eval-cases`
 - `GET /eval-runs`
@@ -294,8 +310,10 @@ The current backend includes:
 
 - Manual analyzer endpoint: `POST /api/ask-friday/core/analyzer/run`. It inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
 - Context-pack publisher: `POST /api/ask-friday/core/context-packs/publish`. It requires approved candidate IDs or explicit `manualApproval:true`, then creates a new published context pack version.
+- Publish gate: context-pack publishing requires either a passing eval run via `evalRunId` or explicit `evalGateOverride:true`. Direct draft writes through `POST /context-packs` cannot publish by setting `status:"published"`.
 - Deterministic eval runner: `POST /api/ask-friday/core/eval-runs`. It checks eval case shape, privacy redaction, allowed tools, and required knowledge scopes. Checks that require model output are recorded as skipped, not guessed.
 - Analyzer worker: `npm run ask-friday:analyzer`. The web process does not start the scheduler by default; set `ASK_FRIDAY_ANALYZER_IN_WEB=1` only for controlled single-process deployments.
+- Retention worker: `npm run ask-friday:retention`. It defaults to dry-run and only targets expired evidence refs plus old rejected/expired candidates until retention windows are reviewed.
 
 Initial suites:
 

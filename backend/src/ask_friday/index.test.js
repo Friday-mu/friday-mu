@@ -318,6 +318,48 @@ describe('Ask Friday Core router', () => {
     expect(query.mock.calls[1][1][0]).toBe(TENANT_ID);
   });
 
+  test('records action request lifecycle events after staff review', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          action_id: 'act-1',
+          source_system: 'friday-website',
+          surface_id: 'website_ask_friday_fab',
+          requested_by: { identityType: 'api_client', identityKey: 'friday-website' },
+          action_type: 'request_booking',
+          risk_class: 'approval',
+          payload: { residence: 'GBH-C8' },
+          reason: 'Guest asked to book.',
+          approval_required: true,
+          status: 'approved',
+          approved_by: 'Ishant Ayadassen',
+          approved_at: new Date('2026-05-23T08:00:00.000Z'),
+          review_note: 'Approved.',
+          created_at: new Date('2026-05-23T07:59:00.000Z'),
+          updated_at: new Date('2026-05-23T08:00:00.000Z'),
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evidence-row' }] });
+
+    const res = await request(app())
+      .patch('/api/ask-friday/core/action-requests/act-1')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        status: 'approved',
+        reviewNote: 'Approved.',
+      })
+      .expect(200);
+
+    expect(res.body.actionRequest).toMatchObject({
+      actionId: 'act-1',
+      status: 'approved',
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[1][0]).toContain('INSERT INTO ask_friday_learning_events');
+    expect(query.mock.calls[2][0]).toContain('INSERT INTO ask_friday_evidence_refs');
+  });
+
   test('blocks public action requests against staff surfaces', async () => {
     query.mockResolvedValueOnce({
       rows: [surfaceRow({
@@ -400,13 +442,22 @@ describe('Ask Friday Core router', () => {
           reviewer: 'Ishant Ayadassen',
         }],
       })
-      .mockResolvedValueOnce({ rows: [{ next_version: 5 }] })
       .mockResolvedValueOnce({
         rows: [surfaceRow({
           allowed_knowledge_scopes: ['public_brand'],
           allowed_tools: ['search_residences'],
+          eval_suite_ids: ['website_fab_routing'],
         })],
       })
+      .mockResolvedValueOnce({
+        rows: [{
+          run_id: 'run-pass',
+          suite_id: 'website_fab_routing',
+          status: 'completed',
+          summary: { status: 'passed' },
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ next_version: 5 }] })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'website_ask_friday_fab_v5',
@@ -437,6 +488,7 @@ describe('Ask Friday Core router', () => {
         toolPolicy: { allowedTools: ['search_residences'] },
         memoryPolicy: { anonymous: 'session_only' },
         packPayload: { compactPrompt: 'Approved context' },
+        evalRunId: 'run-pass',
       })
       .expect(201);
 
@@ -446,12 +498,11 @@ describe('Ask Friday Core router', () => {
       approvedBy: 'Ishant Ayadassen',
     });
     expect(res.body.approvedCandidates).toHaveLength(1);
-    expect(query).toHaveBeenCalledTimes(5);
+    expect(query).toHaveBeenCalledTimes(6);
   });
 
   test('publishes manually approved context pack through staff route', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ next_version: 2 }] })
       .mockResolvedValueOnce({
         rows: [surfaceRow({
           surface_id: 'fad_consult',
@@ -460,6 +511,7 @@ describe('Ask Friday Core router', () => {
           allowed_knowledge_scopes: ['staff_inbox'],
         })],
       })
+      .mockResolvedValueOnce({ rows: [{ next_version: 2 }] })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'fad_consult_v2',
@@ -491,6 +543,7 @@ describe('Ask Friday Core router', () => {
         manualApprovalRationale: 'Published from review module.',
         knowledgeScopes: ['staff_inbox'],
         packPayload: { compactPrompt: 'Manual staff pack' },
+        evalGateOverride: true,
       })
       .expect(201);
 
@@ -501,6 +554,20 @@ describe('Ask Friday Core router', () => {
     });
     expect(res.body.approvedCandidates).toHaveLength(0);
     expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  test('rejects direct published context pack writes through draft route', async () => {
+    await request(app())
+      .post('/api/ask-friday/core/context-packs')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        surfaceId: 'website_ask_friday_fab',
+        status: 'published',
+        knowledgeScopes: ['public_brand'],
+      })
+      .expect(400);
+
+    expect(query).not.toHaveBeenCalled();
   });
 
   test('records deterministic eval runs from active eval cases', async () => {
@@ -555,6 +622,30 @@ describe('Ask Friday Core router', () => {
       runId: 'run-1',
       status: 'completed',
       contextPackId: 'website_ask_friday_fab_v5',
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  test('runs retention dry-run through staff route by default', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ count: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ count: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ count: 3 }] });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/retention/run')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({})
+      .expect(200);
+
+    expect(res.body).toMatchObject({
+      dryRun: true,
+      tenantId: TENANT_ID,
+      deleted: {
+        expiredEvidenceRefs: 1,
+        rejectedCandidates: 2,
+        expiredCandidates: 3,
+      },
     });
     expect(query).toHaveBeenCalledTimes(3);
   });

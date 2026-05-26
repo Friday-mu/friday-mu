@@ -61,6 +61,9 @@ function summarizeEvent(row) {
     assistantActionSummary: assistant,
     toolsUsed: Array.isArray(row.tools_used) ? row.tools_used.slice(0, 20) : [],
     knowledgeUsed: Array.isArray(row.knowledge_used) ? row.knowledge_used.slice(0, 20) : [],
+    evidenceRefs: Array.isArray(row.stored_evidence_refs)
+      ? row.stored_evidence_refs.slice(0, 10).map((ref) => safeJson(ref, 20, 1000))
+      : [],
   };
 }
 
@@ -210,23 +213,35 @@ async function runAnalyzer(options) {
   const dryRun = options.dryRun !== false;
   const params = [tenantId, sinceHours];
   const filters = [
-    'tenant_id = $1',
-    "created_at >= NOW() - ($2::int * INTERVAL '1 hour')",
-    "redaction_status IN ('redacted', 'partially_redacted', 'not_required')",
+    'e.tenant_id = $1',
+    "e.created_at >= NOW() - ($2::int * INTERVAL '1 hour')",
+    "e.redaction_status IN ('redacted', 'partially_redacted', 'not_required')",
   ];
   if (surfaceId) {
     params.push(surfaceId);
-    filters.push(`surface_id = $${params.length}`);
+    filters.push(`e.surface_id = $${params.length}`);
   }
 
   const { rows } = await query(
-    `SELECT event_id, created_at, source_system, surface_id, intent,
-            user_turn_summary, assistant_action_summary, tools_used,
-            knowledge_used, confidence, outcome, handoff, signals,
-            privacy_class, redaction_status
-       FROM ask_friday_learning_events
+    `SELECT e.event_id, e.created_at, e.source_system, e.surface_id, e.intent,
+            e.user_turn_summary, e.assistant_action_summary, e.tools_used,
+            e.knowledge_used, e.confidence, e.outcome, e.handoff, e.signals,
+            e.privacy_class, e.redaction_status,
+            COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                'evidenceId', er.evidence_id,
+                'evidenceType', er.evidence_type,
+                'privacyClass', er.privacy_class,
+                'redactionStatus', er.redaction_status,
+                'summary', er.summary
+              ) ORDER BY er.created_at DESC)
+                FROM ask_friday_evidence_refs er
+               WHERE er.tenant_id = e.tenant_id
+                 AND er.event_id = e.event_id
+            ), '[]'::jsonb) AS stored_evidence_refs
+       FROM ask_friday_learning_events e
       WHERE ${filters.join(' AND ')}
-      ORDER BY created_at DESC
+      ORDER BY e.created_at DESC
       LIMIT ${limit}`,
     params,
   );

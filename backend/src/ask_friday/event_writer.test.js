@@ -36,7 +36,7 @@ describe('Ask Friday Core event writer', () => {
       },
     });
 
-    expect(result).toEqual({ eventId: 'evt-1', inserted: true });
+    expect(result).toEqual({ eventId: 'evt-1', inserted: true, evidenceInserted: 0 });
     expect(query).toHaveBeenCalledTimes(1);
     const params = query.mock.calls[0][1];
     expect(params[0]).toBe(TENANT_ID);
@@ -56,6 +56,38 @@ describe('Ask Friday Core event writer', () => {
         privacyClass: 'high',
         redactionStatus: 'partially_redacted',
       },
-    })).resolves.toEqual({ eventId: 'evt-1', inserted: false });
+    })).resolves.toEqual({ eventId: 'evt-1', inserted: false, evidenceInserted: 0 });
+  });
+
+  test('writes evidence refs for staff learning events', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ event_id: 'evt-2' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evidence-row' }] });
+
+    const result = await recordLearningEvent({
+      tenantId: TENANT_ID,
+      event: {
+        eventId: 'evt-2',
+        sourceSystem: 'fad',
+        surfaceId: 'fad_consult',
+        privacyClass: 'high',
+        redactionStatus: 'partially_redacted',
+        evidenceRefs: [{
+          evidenceId: 'evref-1',
+          evidenceType: 'tool_trace',
+          storageRef: 's3://redacted/ref',
+          privacyClass: 'high',
+          redactionStatus: 'partially_redacted',
+          summary: 'Redacted tool trace.',
+        }],
+      },
+    });
+
+    expect(result).toEqual({ eventId: 'evt-2', inserted: true, evidenceInserted: 1 });
+    expect(query).toHaveBeenCalledTimes(2);
+    const evidenceParams = query.mock.calls[1][1];
+    expect(evidenceParams.slice(0, 4)).toEqual([TENANT_ID, 'evref-1', 'evt-2', 'tool_trace']);
+    expect(evidenceParams[5]).toBe('high');
+    expect(evidenceParams[6]).toBe('partially_redacted');
   });
 });

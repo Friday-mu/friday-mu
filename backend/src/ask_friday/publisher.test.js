@@ -43,8 +43,16 @@ describe('Ask Friday context-pack publisher', () => {
           reviewer: 'Ishant Ayadassen',
         }],
       })
+      .mockResolvedValueOnce({ rows: [surfaceRow({ eval_suite_ids: ['website_fab_routing'] })] })
+      .mockResolvedValueOnce({
+        rows: [{
+          run_id: 'run-pass',
+          suite_id: 'website_fab_routing',
+          status: 'completed',
+          summary: { status: 'passed' },
+        }],
+      })
       .mockResolvedValueOnce({ rows: [{ next_version: 4 }] })
-      .mockResolvedValueOnce({ rows: [surfaceRow()] })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'website_ask_friday_fab_v4',
@@ -73,22 +81,23 @@ describe('Ask Friday context-pack publisher', () => {
       toolPolicy: { allowedTools: ['search_residences'] },
       memoryPolicy: { anonymous: 'session_only' },
       packPayload: { compactPrompt: 'Approved context' },
+      evalRunId: 'run-pass',
       approvedBy: 'Ishant Ayadassen',
     });
 
     expect(result.contextPack.pack_id).toBe('website_ask_friday_fab_v4');
     expect(result.approvedCandidates).toHaveLength(1);
-    expect(query).toHaveBeenCalledTimes(5);
-    expect(query.mock.calls[3][0]).toContain('INSERT INTO ask_friday_context_packs');
-    expect(JSON.parse(query.mock.calls[3][1][8])).toEqual([
+    expect(query).toHaveBeenCalledTimes(6);
+    expect(query.mock.calls[4][0]).toContain('INSERT INTO ask_friday_context_packs');
+    expect(JSON.parse(query.mock.calls[4][1][8])).toEqual([
       expect.objectContaining({ type: 'kb_candidate', candidateId: 'cand-1' }),
+      expect.objectContaining({ type: 'eval_run', runId: 'run-pass' }),
     ]);
-    expect(query.mock.calls[4][0]).toContain('UPDATE ask_friday_kb_candidates');
+    expect(query.mock.calls[5][0]).toContain('UPDATE ask_friday_kb_candidates');
   });
 
   test('publishes manually approved context pack without candidates', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ next_version: 2 }] })
       .mockResolvedValueOnce({
         rows: [surfaceRow({
           surface_id: 'fad_consult',
@@ -98,6 +107,7 @@ describe('Ask Friday context-pack publisher', () => {
           allowed_tools: [],
         })],
       })
+      .mockResolvedValueOnce({ rows: [{ next_version: 2 }] })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'fad_consult_v2',
@@ -127,6 +137,7 @@ describe('Ask Friday context-pack publisher', () => {
       manualApprovalRationale: 'Published from review module.',
       knowledgeScopes: ['staff_inbox'],
       packPayload: { compactPrompt: 'Manual staff pack' },
+      evalGateOverride: true,
       approvedBy: 'Ishant Sagoo',
     });
 
@@ -135,6 +146,11 @@ describe('Ask Friday context-pack publisher', () => {
     expect(query).toHaveBeenCalledTimes(3);
     expect(query.mock.calls[2][0]).toContain('INSERT INTO ask_friday_context_packs');
     expect(JSON.parse(query.mock.calls[2][1][8])).toEqual([
+      expect.objectContaining({
+        type: 'eval_gate_override',
+        approvedBy: 'Ishant Sagoo',
+        rationale: 'Published from review module.',
+      }),
       expect.objectContaining({
         type: 'manual_approval',
         approvedBy: 'Ishant Sagoo',
@@ -164,5 +180,19 @@ describe('Ask Friday context-pack publisher', () => {
     })).rejects.toThrow('approved candidateIds or manualApproval:true is required');
 
     expect(query).not.toHaveBeenCalled();
+  });
+
+  test('requires eval gate pass or explicit override before publishing', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [surfaceRow({ eval_suite_ids: ['website_fab_routing'] })] });
+
+    await expect(publishContextPack({
+      tenantId: TENANT_ID,
+      surfaceId: 'website_ask_friday_fab',
+      manualApproval: true,
+      approvedBy: 'Ishant Ayadassen',
+    })).rejects.toThrow('eval gate requires');
+
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

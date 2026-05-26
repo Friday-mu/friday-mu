@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const express = require('express');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
@@ -17,6 +18,7 @@ const {
 } = require('./contracts');
 const { runAnalyzer } = require('./analyzer');
 const { runEvalSuite } = require('./eval_runner');
+const { runRetention } = require('./retention');
 const {
   assertPublicSurface,
   validateContextPackAgainstSurface,
@@ -244,6 +246,85 @@ async function insertEvidenceRefs(tenantId, eventId, refs) {
   return inserted;
 }
 
+function lifecycleId(prefix) {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+async function writeActionLifecycleEvent({ tenantId, action, reviewer, reviewNote }) {
+  if (!action) return;
+  const sourceSystem = cleanString(action.source_system, 80) || 'fad';
+  const publicish = ['friday-website', 'mcp'].includes(sourceSystem);
+  const privacyClass = publicish ? 'medium' : 'high';
+  const eventId = lifecycleId('afae');
+  const evidenceId = lifecycleId('afaev');
+  const summary = `Action request ${action.action_id} moved to ${action.status}.`;
+  await query(
+    `INSERT INTO ask_friday_learning_events (
+       tenant_id, event_id, created_at, source_system, surface_id,
+       identity_ref, session_id, intent, user_turn_summary,
+       assistant_action_summary, tools_used, knowledge_used, confidence,
+       outcome, handoff, signals, privacy_class, redaction_status,
+       evidence_refs, event_payload
+     ) VALUES (
+       $1, $2, NOW(), $3, $4,
+       $5::jsonb, NULL, $6, $7,
+       $8, ARRAY[]::text[], ARRAY[]::text[], 'high',
+       $9, '{}'::jsonb, $10::jsonb, $11, 'partially_redacted',
+       $12::jsonb, $13::jsonb
+     )`,
+    [
+      tenantId,
+      eventId,
+      sourceSystem,
+      cleanString(action.surface_id, 120) || 'unknown_surface',
+      JSON.stringify({
+        identityType: 'staff',
+        identityKey: reviewer || 'ask-friday-reviewer',
+        authenticated: true,
+      }),
+      cleanString(action.action_type, 120) || 'action_request',
+      `Review status changed to ${action.status}.`,
+      summary,
+      `action_${action.status}`,
+      JSON.stringify({
+        actionId: action.action_id,
+        actionType: action.action_type,
+        status: action.status,
+        reviewer,
+        reviewNote: reviewNote || null,
+      }),
+      privacyClass,
+      JSON.stringify([{
+        evidenceId,
+        eventId,
+        evidenceType: 'action_lifecycle',
+        privacyClass,
+        redactionStatus: 'partially_redacted',
+        summary,
+      }]),
+      JSON.stringify({
+        actionId: action.action_id,
+        actionType: action.action_type,
+        riskClass: action.risk_class,
+        status: action.status,
+      }),
+    ],
+  );
+  await insertEvidenceRefs(tenantId, eventId, [{
+    evidenceId,
+    eventId,
+    evidenceType: 'action_lifecycle',
+    privacyClass,
+    redactionStatus: 'partially_redacted',
+    summary,
+    evidencePayload: {
+      actionId: action.action_id,
+      actionType: action.action_type,
+      status: action.status,
+    },
+  }]);
+}
+
 router.get('/surfaces', attachIdentity, async (req, res) => {
   try {
     const status = cleanString(req.query.status, 40) || 'active';
@@ -387,6 +468,12 @@ router.get(
 router.post('/context-packs', attachIdentity, async (req, res) => {
   try {
     const pack = normalizeContextPack(req.body);
+    if (pack.status === 'published') {
+      return res.status(400).json({
+        error: 'context_pack_publish_required',
+        message: 'Use /context-packs/publish with a passing eval run or evalGateOverride:true to publish context packs.',
+      });
+    }
     const surface = await loadSurfaceForPolicy(req.tenantId, pack.surfaceId);
     validateContextPackAgainstSurface(pack, surface);
     const approver = pack.approvedBy || actorName(req);
@@ -803,6 +890,22 @@ router.post('/analyzer/run', attachIdentity, async (req, res) => {
   }
 });
 
+router.post('/retention/run', attachIdentity, async (req, res) => {
+  try {
+    const result = await runRetention({
+      tenantId: req.tenantId,
+      dryRun: req.body?.dryRun !== false && req.body?.dry_run !== false,
+      rejectedCandidateRetentionDays:
+        req.body?.rejectedCandidateRetentionDays || req.body?.rejected_candidate_retention_days,
+      expiredCandidateRetentionDays:
+        req.body?.expiredCandidateRetentionDays || req.body?.expired_candidate_retention_days,
+    });
+    res.json(result);
+  } catch (error) {
+    return respondError(res, error, 'retention_run_failed');
+  }
+});
+
 router.patch('/action-requests/:actionId', attachIdentity, async (req, res) => {
   try {
     const patch = normalizeActionStatusPatch(req.body);
@@ -831,6 +934,14 @@ router.patch('/action-requests/:actionId', attachIdentity, async (req, res) => {
       ],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'action_request_not_found' });
+    await writeActionLifecycleEvent({
+      tenantId: req.tenantId,
+      action: rows[0],
+      reviewer,
+      reviewNote: patch.reviewNote,
+    }).catch((error) => {
+      console.warn('[ask-friday/core] action lifecycle event failed:', error.message);
+    });
     res.json({ actionRequest: shapeActionRequest(rows[0]) });
   } catch (error) {
     return respondError(res, error, 'action_request_review_failed');
@@ -989,5 +1100,6 @@ module.exports = {
     shapeLearningEvent,
     shapeSurface,
     loadSurfaceForPolicy,
+    writeActionLifecycleEvent,
   },
 };

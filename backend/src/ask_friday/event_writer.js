@@ -3,6 +3,39 @@
 const { query } = require('../database/client');
 const { normalizeLearningEvent } = require('./contracts');
 
+async function insertEvidenceRefs(tenantId, eventId, refs) {
+  if (!Array.isArray(refs) || refs.length === 0) return 0;
+  let inserted = 0;
+  for (const ref of refs) {
+    const { rows } = await query(
+      `INSERT INTO ask_friday_evidence_refs (
+         tenant_id, evidence_id, event_id, evidence_type, storage_ref,
+         privacy_class, redaction_status, summary, evidence_payload, expires_at
+       ) VALUES (
+         $1, $2, $3, $4, $5,
+         $6, $7, $8, $9::jsonb,
+         CASE WHEN $10::text IS NULL OR $10::text = '' THEN NULL ELSE $10::timestamptz END
+       )
+       ON CONFLICT (tenant_id, evidence_id) DO NOTHING
+       RETURNING id`,
+      [
+        tenantId,
+        ref.evidenceId,
+        ref.eventId || eventId,
+        ref.evidenceType,
+        ref.storageRef,
+        ref.privacyClass,
+        ref.redactionStatus,
+        ref.summary,
+        JSON.stringify(ref.evidencePayload || {}),
+        ref.expiresAt,
+      ],
+    );
+    if (rows.length > 0) inserted += 1;
+  }
+  return inserted;
+}
+
 async function recordLearningEvent({ tenantId, event }) {
   if (!tenantId) throw new Error('tenantId is required');
   const normalized = normalizeLearningEvent(event);
@@ -47,12 +80,17 @@ async function recordLearningEvent({ tenantId, event }) {
       JSON.stringify(normalized.eventPayload),
     ],
   );
+  const evidenceInserted = await insertEvidenceRefs(tenantId, normalized.eventId, normalized.evidenceRefs);
   return {
     eventId: normalized.eventId,
     inserted: rows.length > 0,
+    evidenceInserted,
   };
 }
 
 module.exports = {
   recordLearningEvent,
+  _test: {
+    insertEvidenceRefs,
+  },
 };

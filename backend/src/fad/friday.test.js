@@ -399,6 +399,21 @@ describe('FAD Ask Friday helpers', () => {
       { role: 'assistant', content: 'previous' },
     ]);
   });
+
+  test('maps global Ask Friday loaded modules to Core knowledge scopes', () => {
+    expect(_test.knowledgeScopesForAskFriday({
+      requestedModules: ['inbox', 'operations', 'reservations', 'properties'],
+    }, {
+      sourcesUsed: ['design'],
+    })).toEqual([
+      'fad_live_context',
+      'staff_inbox',
+      'ops_tasks',
+      'reservations',
+      'properties',
+      'design_projects',
+    ]);
+  });
 });
 
 describe('FAD Ask Friday action execution', () => {
