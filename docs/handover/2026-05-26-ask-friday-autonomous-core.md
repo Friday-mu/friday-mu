@@ -163,6 +163,17 @@ Added `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`.
 
 It turns the planning pack into a repo-owned catalog covering surfaces, knowledge classes, session/memory policy, flow closure, and per-module profiles.
 
+### Ops planning guardrails
+
+Added an Ops-specific fix after Ishant flagged bad planning behavior in the live schedule agent:
+
+- Ops schedule drafts now receive reservation overlays in every planner mode, not only property-week view.
+- Reservation `calendarPricing` is preserved into the compact Ops Consult context so the agent can ground availability/price statements in FAD cache data.
+- The local draft planner filters non-urgent occupied-property work, allows urgent guest-linked work during occupancy, and treats checkout day as schedulable after checkout.
+- Draft application is blocked if a task would remain unassigned and no existing assignee exists.
+- Generated draft rows show named staff assignees.
+- Runtime Ops KB files now record the occupancy, assignment, and lunch-break policy.
+
 ## Files Touched
 
 - `backend/migrations/095_consult_conversation_locks.sql`
@@ -193,9 +204,17 @@ It turns the planning pack into a repo-owned catalog covering surfaces, knowledg
 - `backend/src/inbox/consult_lock.js`
 - `backend/src/inbox/consult_lock.test.js`
 - `backend/src/operations/consult.js`
+- `backend/src/operations/consult.test.js`
+- `backend/knowledge/surfaces/ops-consult/SKILL.md`
+- `backend/knowledge/surfaces/ops-consult/property-data-sources.md`
+- `backend/knowledge/surfaces/ops-consult/scheduling-methodology.md`
+- `backend/knowledge/surfaces/ops-consult/staff-roster-rules.md`
+- `frontend/src/app/fad/_components/modules/OperationsModule.tsx`
+- `frontend/src/app/fad/_data/reservationsClient.ts`
 - `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
 - `docs/architecture/ask-friday-core-v1-2026-05-23.md`
 - `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
+- `docs/operations/2026-05-26-ops-friday-consult-kb.md`
 
 ## Verification
 
@@ -221,6 +240,7 @@ Result:
 
 Good next slices:
 
+- Mirror the new Ops planning policy to the canonical Notion Ops/Ask Friday scope docs after this code branch is reviewed. The repo/runtime KB has been updated first so production behavior and policy stay together.
 - Wire Website learning-event emitters and context-pack consumption in a separate Website worktree.
 - Add concrete eval cases for the new public policy failures, staff event emissions, global FAD Ask Friday, and Ops action safety.
 - Add review UI affordances for staff-private events/candidates using the new public, staff, restricted, owner-private, and internal review lanes.

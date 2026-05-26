@@ -361,6 +361,15 @@ export interface ScheduleReservation {
   checkInDate: string;
   checkOutDate: string;
   guestName: string;
+  calendarPricing?: {
+    nightsCached: number;
+    blockedNights: number;
+    totalMinor: number | null;
+    minPriceMinor: number | null;
+    maxPriceMinor: number | null;
+    currencyCode: string | null;
+    syncedAt: string | null;
+  };
 }
 
 export interface FetchScheduleReservationsInput {
@@ -399,11 +408,20 @@ function transformScheduleReservation(reservation: RawReservation): ScheduleRese
     listingNickname: reservation.listing_nickname || reservation.listing_guesty_id || 'No listing',
     propertyCode: propertyCodeFromReservation(reservation),
     confirmationCode: reservation.confirmation_code || guestyId,
-    status: reservation.status || 'unknown',
+    status: mapStatus(reservation.status),
     channel: reservation.channel || reservation.source || 'reservation',
     checkInDate: dateOnly(reservation.check_in_date),
     checkOutDate: dateOnly(reservation.check_out_date),
     guestName: scheduleGuestName(reservation),
+    calendarPricing: reservation.calendar_pricing ? {
+      nightsCached: Number(reservation.calendar_pricing.nights_cached || 0),
+      blockedNights: Number(reservation.calendar_pricing.blocked_nights || 0),
+      totalMinor: reservation.calendar_pricing.total_minor == null ? null : Number(reservation.calendar_pricing.total_minor),
+      minPriceMinor: reservation.calendar_pricing.min_price_minor == null ? null : Number(reservation.calendar_pricing.min_price_minor),
+      maxPriceMinor: reservation.calendar_pricing.max_price_minor == null ? null : Number(reservation.calendar_pricing.max_price_minor),
+      currencyCode: reservation.calendar_pricing.currency_code || null,
+      syncedAt: reservation.calendar_pricing.synced_at || null,
+    } : undefined,
   };
 }
 

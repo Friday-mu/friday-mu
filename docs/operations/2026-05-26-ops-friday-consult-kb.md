@@ -58,6 +58,25 @@ Captured from Ishant on 2026-05-26:
 - Internal work by Bryan needs a maintenance charge matrix before owner-visible charges can be automated.
 - Internal maintenance charges are draft-only for now. Ops Manager/Director must validate after task completion before charges are billed or shown to owners.
 
+## Ops Planning Policy Update
+
+Captured from Ishant on 2026-05-26:
+
+- Ops Friday Consult must know property occupancy, availability, and prices from FAD reservation overlays and cached calendar-pricing fields where present.
+- A confirmed/checked-in/reserved/booked stay blocks non-urgent property work from check-in through the day before checkout.
+- Checkout day is schedulable after checkout for turnover, cleaning, inspection, and reset work unless a late checkout or other block is visible.
+- Urgent guest-requested work can happen while occupied only when it cannot safely wait for checkout.
+- Schedule drafts should not leave tasks unassigned when staff records are loaded. Draft assignments should use real staff names, match skills first, and then balance workload/fairness.
+- Every staff member needs a one-hour lunch break. Prefer 12:00-13:00, then 11:00-12:00 or 13:00-14:00 if operations require it.
+- Head-office/admin staff lunches should be staggered so guest/admin channels are not completely uncovered.
+
+Runtime changes from this branch:
+
+- Schedule reservation overlays now load for all schedule planner modes, not only property-week view.
+- Reservation cache `calendarPricing` is passed into Ops Consult context for grounding.
+- The local draft planner filters non-urgent occupied-property work, protects a lunch window, and blocks applying drafts that would leave a task unassigned.
+- Draft rows now show named assignees instead of generic "assigns staff" copy.
+
 ## Property Metadata Preview
 
 Added preview-only tooling:

@@ -25,6 +25,7 @@ import {
   type OperationsConsultPlanItem,
 } from '../../_data/operationsConsultClient';
 import { fetchScheduleReservations, type ScheduleReservation } from '../../_data/reservationsClient';
+import { OPS_STAFF_POLICY } from '../../_data/opsPolicy';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
@@ -1089,6 +1090,15 @@ const SCHEDULE_TIME_BUCKETS: ScheduleTimeBucket[] = [
 const COMPACT_CELL_LIMIT = 6;
 const SCHEDULE_TIMELINE_LANE_HEIGHT = 34;
 const READABLE_TASK_DURATION_MINUTES = 120;
+const SCHEDULE_DAY_START_MINUTES = 8 * 60;
+const SCHEDULE_DAY_END_MINUTES = 17 * 60;
+const SCHEDULE_TASK_GAP_MINUTES = 15;
+const STAFF_LUNCH_WINDOWS = [
+  { label: '12:00-13:00', start: 12 * 60, end: 13 * 60 },
+  { label: '11:00-12:00', start: 11 * 60, end: 12 * 60 },
+  { label: '13:00-14:00', start: 13 * 60, end: 14 * 60 },
+] as const;
+type StaffLunchWindow = (typeof STAFF_LUNCH_WINDOWS)[number];
 
 interface UserDayTimelineModel {
   laneByTaskId: Map<string, number>;
@@ -1164,6 +1174,139 @@ function taskDurationMinutes(task: Task): number {
   const raw = Number(task.estimatedMinutes || 60);
   if (!Number.isFinite(raw) || raw <= 0) return 60;
   return Math.min(480, Math.max(15, Math.ceil(raw / 15) * 15));
+}
+
+function intervalOverlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+function reservationStatusBlocksOps(status: string | null | undefined): boolean {
+  return ['confirmed', 'checked_in', 'reserved', 'booked'].includes(textValue(status).toLowerCase());
+}
+
+function reservationOccupiesDay(reservation: ScheduleReservation, day: string): boolean {
+  if (!reservationStatusBlocksOps(reservation.status)) return false;
+  if (!reservation.checkInDate || !reservation.checkOutDate || !day) return false;
+  return reservation.checkInDate <= day && day < reservation.checkOutDate;
+}
+
+function isGuestUrgentTask(task: Task): boolean {
+  const text = `${task.title} ${task.description ?? ''}`.toLowerCase();
+  const guestLinked = Boolean(task.reservationId)
+    || ['reported_issue', 'inbox_ai', 'reservation_trigger', 'guesty'].includes(task.source)
+    || taskRiskFlags(task).some((flag) => /guest|reservation|access|blocked/i.test(flag))
+    || /guest|client|arrival|blocked|leak|no water|no power|lock|access/.test(text);
+  return guestLinked && (task.priority === 'urgent' || task.priority === 'high');
+}
+
+function propertyOccupiedOnDate(propertyCode: string | null | undefined, day: string, reservations: ScheduleReservation[]): ScheduleReservation | null {
+  const code = normalizeScheduleProperty(propertyCode || '');
+  if (!code || code === 'No property') return null;
+  return reservations.find((reservation) =>
+    normalizeScheduleProperty(reservation.propertyCode) === code && reservationOccupiesDay(reservation, day),
+  ) || null;
+}
+
+function taskFitsOccupancyPolicy(task: Task, day: string, reservations: ScheduleReservation[]): boolean {
+  const occupied = propertyOccupiedOnDate(task.propertyCode, day, reservations);
+  return !occupied || isGuestUrgentTask(task);
+}
+
+function opsPolicyForUser(user: OperationsStaffUser) {
+  return OPS_STAFF_POLICY.find((item) =>
+    item.id === user.id || item.fullName.toLowerCase() === textValue(user.name).toLowerCase(),
+  );
+}
+
+function taskSkillScore(task: Task, user: OperationsStaffUser): number {
+  const role = `${user.role || ''} ${user.department || ''}`.toLowerCase();
+  const policy = opsPolicyForUser(user);
+  const policyRoles = [
+    ...(policy?.primaryRoles || []),
+    ...(policy?.backupRoles || []),
+  ].join(' ').toLowerCase();
+  const avoidRoles = (policy?.avoidRoles || []).join(' ').toLowerCase();
+  const text = `${task.department} ${task.subdepartment || ''} ${task.title} ${task.description || ''}`.toLowerCase();
+  let score = 0;
+
+  if (/maintenance|repair|fix|aircon|a\/c|\bac\b|plumb|leak|lock|electrical|wifi/.test(text)) {
+    if (/maintenance|quick_maintenance_reset|electrical|plumb|lockbox/.test(policyRoles)) score += 30;
+    if (/director|escalations|west_backup|procurement_with_car/.test(policyRoles)) score += 10;
+    if (/maintenance|ops|field/.test(role)) score += 10;
+    if (/maintenance|field_work|routine_field_work/.test(avoidRoles)) score -= 25;
+  }
+
+  if (/clean|inspection|post-clean|arrival|turnover|amenit|welcome/.test(text)) {
+    if (/cleaning|inspection|amenities_report|aesthetic_check|home_buildout/.test(policyRoles)) score += 24;
+    if (/field/.test(role)) score += 8;
+    if (/field_cleaning|field_work|routine_field_work/.test(avoidRoles)) score -= 18;
+  }
+
+  if (/owner|approval|admin|guest|reservation|message|follow/.test(text)) {
+    if (/ops_manager|owner_comms|guest_services|reservations|admin_follow_up/.test(policyRoles)) score += 22;
+    if (/director|escalations/.test(policyRoles)) score += 8;
+  }
+
+  if (/field|clean|ops|maintenance/.test(role)) score += 5;
+  return score;
+}
+
+function isOfficeRosterStaff(user: OperationsStaffUser): boolean {
+  const policy = opsPolicyForUser(user);
+  const roles = [
+    user.role || '',
+    user.department || '',
+    ...(policy?.primaryRoles || []),
+  ].join(' ').toLowerCase();
+  return /admin|guest_services|reservations|marketing|owner_comms|ops_manager|director|night_shift/.test(roles)
+    && !/field|cleaning|maintenance/.test(roles);
+}
+
+function buildLunchPreferences(staff: OperationsStaffUser[]): Map<string, StaffLunchWindow> {
+  const officeStaff = staff
+    .filter(isOfficeRosterStaff)
+    .sort((a, b) => compareText(a.name, b.name));
+  const officeLunchById = new Map<string, StaffLunchWindow>();
+  officeStaff.forEach((user, index) => {
+    officeLunchById.set(user.id, STAFF_LUNCH_WINDOWS[index % STAFF_LUNCH_WINDOWS.length]);
+  });
+  return new Map(staff.map((user) => [user.id, officeLunchById.get(user.id) || STAFF_LUNCH_WINDOWS[0]]));
+}
+
+function chooseLunchWindow(
+  intervals: Array<{ start: number; end: number }>,
+  preferredWindow: StaffLunchWindow,
+): StaffLunchWindow | null {
+  const ordered = [
+    preferredWindow,
+    ...STAFF_LUNCH_WINDOWS.filter((window) => window.label !== preferredWindow.label),
+  ];
+  return ordered.find((window) =>
+    intervals.every((interval) => !intervalOverlaps(interval.start, interval.end, window.start, window.end)),
+  ) || null;
+}
+
+function nextAvailableStart(
+  intervals: Array<{ start: number; end: number }>,
+  earliestStart: number,
+  duration: number,
+  preferredLunchWindow: StaffLunchWindow,
+): number | null {
+  let cursor = Math.max(SCHEDULE_DAY_START_MINUTES, earliestStart);
+  const lunch = chooseLunchWindow(intervals, preferredLunchWindow);
+  if (!lunch) return null;
+  while (cursor + duration <= SCHEDULE_DAY_END_MINUTES) {
+    const end = cursor + duration;
+    const hitsTask = intervals.some((interval) => intervalOverlaps(cursor, end, interval.start, interval.end));
+    const hitsLunch = intervalOverlaps(cursor, end, lunch.start, lunch.end);
+    if (!hitsTask && !hitsLunch) return cursor;
+    cursor += 15;
+  }
+  return null;
+}
+
+function staffDisplayName(staffOptions: OperationsStaffUser[], id: string): string {
+  return staffOptions.find((user) => user.id === id)?.name || TASK_USER_BY_ID[id]?.name || 'Assigned staff';
 }
 
 function visualTaskDurationMinutes(task: Task, scale: ScheduleTimelineScale): number {
@@ -1248,11 +1391,22 @@ function buildScheduleAgentPlan(input: {
   scheduledTasks: Task[];
   unscheduledTasks: Task[];
   staffOptions: OperationsStaffUser[];
+  reservations: ScheduleReservation[];
 }): ScheduleAgentSuggestion[] {
   const assignable = input.staffOptions.filter((user) => user.canAssign);
+  if (assignable.length === 0) return [];
   const staffLoad = new Map(assignable.map((user) => [user.id, 0]));
+  const staffIntervals = new Map(assignable.map((user) => [user.id, [] as Array<{ start: number; end: number }>]));
+  const staffLunchPreferences = buildLunchPreferences(assignable);
   for (const task of input.scheduledTasks) {
-    for (const id of task.assigneeIds) staffLoad.set(id, (staffLoad.get(id) || 0) + taskDurationMinutes(task));
+    const duration = taskDurationMinutes(task);
+    const start = task.dueDate === input.selectedDate ? timeToMinutes(task.dueTime) : null;
+    for (const id of task.assigneeIds) {
+      staffLoad.set(id, (staffLoad.get(id) || 0) + duration);
+      if (start != null && staffIntervals.has(id)) {
+        staffIntervals.get(id)?.push({ start, end: start + duration });
+      }
+    }
   }
 
   const candidates = mergeTaskSlices(
@@ -1260,6 +1414,7 @@ function buildScheduleAgentPlan(input: {
     input.unscheduledTasks.slice(0, 8),
   )
     .filter((task) => !CLOSED_STATUS.has(task.status))
+    .filter((task) => taskFitsOccupancyPolicy(task, input.selectedDate, input.reservations))
     .sort((a, b) => (
       PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
       compareText(taskPropertyLabel(a), taskPropertyLabel(b)) ||
@@ -1267,29 +1422,46 @@ function buildScheduleAgentPlan(input: {
     ))
     .slice(0, 12);
 
-  let cursor = 8 * 60;
-  return candidates.map((task) => {
+  return candidates.flatMap((task) => {
     const duration = taskDurationMinutes(task);
     const chosenAssignees = task.assigneeIds.length > 0
       ? task.assigneeIds
       : assignable.length > 0
-        ? [[...staffLoad.entries()].sort((a, b) => a[1] - b[1])[0]?.[0]].filter((id): id is string => Boolean(id))
+        ? [assignable
+          .map((user) => ({
+            id: user.id,
+            score: taskSkillScore(task, user),
+            load: staffLoad.get(user.id) || 0,
+          }))
+          .sort((a, b) => (
+            b.score - a.score ||
+            a.load - b.load ||
+            compareText(staffDisplayName(input.staffOptions, a.id), staffDisplayName(input.staffOptions, b.id))
+          ))[0]?.id].filter((id): id is string => Boolean(id))
         : [];
+    const primaryAssigneeId = chosenAssignees[0];
+    const intervals = primaryAssigneeId ? (staffIntervals.get(primaryAssigneeId) || []) : [];
+    const earliest = intervals.length > 0 ? Math.max(...intervals.map((item) => item.end + SCHEDULE_TASK_GAP_MINUTES)) : SCHEDULE_DAY_START_MINUTES;
+    const lunchWindow = primaryAssigneeId ? staffLunchPreferences.get(primaryAssigneeId) || STAFF_LUNCH_WINDOWS[0] : STAFF_LUNCH_WINDOWS[0];
+    const start = nextAvailableStart(intervals, earliest, duration, lunchWindow);
+    if (start == null) return [];
     chosenAssignees.forEach((id) => staffLoad.set(id, (staffLoad.get(id) || 0) + duration));
-    const dueTime = minutesToTime(cursor);
-    cursor += duration + 15;
-    if (cursor > 18 * 60) cursor = 8 * 60 + 15;
-    return {
+    if (primaryAssigneeId) intervals.push({ start, end: start + duration });
+    const occupied = propertyOccupiedOnDate(task.propertyCode, input.selectedDate, input.reservations);
+    return [{
       taskId: task.id,
       title: taskTitle(task),
       propertyCode: task.propertyCode || 'No property',
       dueDate: input.selectedDate,
-      dueTime,
+      dueTime: minutesToTime(start),
       assigneeIds: chosenAssignees,
-      reason: task.dueDate
-        ? 'No exact time on the selected day.'
-        : 'Unscheduled open work pulled into the selected day.',
-    };
+      reason: [
+        task.dueDate ? 'No exact time on the selected day.' : 'Unscheduled open work pulled into the selected day.',
+        chosenAssignees.length > 0 ? `Assigned to ${chosenAssignees.map((id) => staffDisplayName(input.staffOptions, id)).join(', ')}.` : 'No eligible staff loaded.',
+        `Lunch protected outside the task window (${lunchWindow.label} preferred).`,
+        occupied ? `Allowed during occupancy because this is urgent guest-linked work for ${occupied.guestName}.` : null,
+      ].filter(Boolean).join(' '),
+    }];
   });
 }
 
@@ -1372,7 +1544,7 @@ function OpsFridayConsultPanel({
       appendFriday(
         next.length > 0
           ? `Drafted ${next.length} schedule move${next.length === 1 ? '' : 's'} for ${formatShortDate(selectedDate)}. Review the rows below, then apply when ready.`
-          : 'I did not find any visible no-time or unscheduled tasks that need a draft for this view.',
+          : 'I did not find any visible no-time or unscheduled tasks that fit the current staff, occupancy, and lunch constraints.',
       );
       return;
     }
@@ -1548,7 +1720,11 @@ function OpsFridayConsultPanel({
                   <strong>{item.dueTime} · {item.title}</strong>
                   <small>{item.propertyCode} · {item.reason}</small>
                 </span>
-                <span>{item.assigneeIds.length > 0 ? 'assigns staff' : 'unassigned'}</span>
+                <span>
+                  {item.assigneeIds.length > 0
+                    ? item.assigneeIds.map((id) => staffDisplayName(staffOptions, id)).join(', ')
+                    : 'unassigned'}
+                </span>
               </div>
             ))}
             <button className="btn ghost sm" type="button" disabled={agentApplying} onClick={onDiscardDraft}>
@@ -1755,7 +1931,6 @@ function SchedulePage({
   }, []);
 
   useEffect(() => {
-    if (plannerMode !== 'property_week') return;
     let cancelled = false;
     setReservationsLoading(true);
     setReservationsError(null);
@@ -1775,7 +1950,7 @@ function SchedulePage({
     return () => {
       cancelled = true;
     };
-  }, [plannerMode, rangeEnd, rangeStart]);
+  }, [rangeEnd, rangeStart]);
 
   const rawScheduleTasks = taskPage.tasks;
   const scheduleTasks = useMemo(() => (
@@ -2142,14 +2317,23 @@ function SchedulePage({
       scheduledTasks: rawScheduleTasks,
       unscheduledTasks,
       staffOptions,
+      reservations,
     });
     setAgentPlan(next);
-    fireToast(next.length > 0 ? `Friday Consult drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No no-time or unscheduled tasks need a draft');
+    fireToast(next.length > 0 ? `Friday Consult drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No draftable tasks fit the staff, occupancy, and lunch constraints');
     return next;
   };
 
   const applyAgentPlan = async () => {
     if (agentPlan.length === 0 || agentApplying) return;
+    const unassignedDraft = agentPlan.find((item) => {
+      const task = allKnownTasks.find((candidate) => candidate.id === item.taskId);
+      return !(task?.assigneeIds.length) && item.assigneeIds.length === 0;
+    });
+    if (unassignedDraft) {
+      fireToast(`Friday Consult draft still has unassigned work: ${unassignedDraft.title}. Load staff or assign it manually first.`);
+      return;
+    }
     setAgentApplying(true);
     const appliedTasks: Task[] = [];
     try {
@@ -2261,7 +2445,7 @@ function SchedulePage({
       {taskPage.error && (
         <div className="ops-schedule-warning">Schedule tasks could not load: {taskPage.error}</div>
       )}
-      {reservationsError && plannerMode === 'property_week' && (
+      {reservationsError && (
         <div className="ops-schedule-warning">Reservation overlays could not load: {reservationsError}</div>
       )}
       {taskPage.total > taskPage.tasks.length && (
@@ -2312,14 +2496,14 @@ function SchedulePage({
         propertyRows={propertyRows}
         visibleDays={visibleDays}
         staffOptions={staffOptions}
-        loading={taskPage.loading || (plannerMode === 'property_week' && reservationsLoading)}
+        loading={taskPage.loading || reservationsLoading}
         savingTaskId={savingTaskId}
         onOpenTask={onOpenTask}
         onEdit={setEditingTaskId}
       />
 
       {plannerMode === 'user_day' ? (
-        <div className="ops-planner-scroll" aria-busy={taskPage.loading}>
+        <div className="ops-planner-scroll" aria-busy={taskPage.loading || reservationsLoading}>
           <div className="ops-planner-grid user-day" role="grid" aria-label="User day planner">
             <div className="ops-planner-corner" role="columnheader">Users</div>
             {SCHEDULE_TIME_BUCKETS.map((bucket) => (

@@ -21,6 +21,7 @@ Optimize in this order:
 - Recurring monthly/quarterly/semiannual tasks.
 - Staff availability, leave, sick days, standby/off days, location, skills, and transport.
 - Property occupancy, owner blocks, and late check-in/check-out where available.
+- Reservation overlays and cached calendar-pricing data for availability/price grounding.
 
 ## Drafting A Schedule
 
@@ -33,6 +34,16 @@ Optimize in this order:
 7. Place exact times in 15-minute increments and keep the visual schedule aligned to exact start time.
 8. Keep all-day tasks when time is not known. Do not force fake times.
 9. Flag unresolved constraints rather than hiding them.
+
+## Hard Scheduling Constraints
+
+- Do not leave a drafted task unassigned when the staff directory is available. If no eligible staff can do it, mark the draft blocked instead of applying it.
+- Do not schedule non-urgent work at an occupied property. Occupancy blocks property work from check-in through the day before checkout.
+- Checkout day is available for turnover work after checkout unless a late checkout or owner block says otherwise.
+- Urgent guest-requested work can break the occupancy block only when waiting until checkout would harm safety, access, hygiene, guest comfort, review risk, or platform-dispute risk.
+- Give every staff member a one-hour lunch. Prefer 12:00-13:00, then 11:00-12:00 or 13:00-14:00 if the day requires movement.
+- Stagger office/admin lunches so head office is not completely uncovered.
+- Use FAD reservation/cache data for availability and pricing; never invent availability, nightly rates, owner blocks, or guest presence.
 
 ## Travel Rules
 
