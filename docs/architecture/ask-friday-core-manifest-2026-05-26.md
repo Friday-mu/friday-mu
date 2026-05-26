@@ -60,6 +60,42 @@ Read these first, in order:
 5. `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
    - Research synthesis for agent architecture, memory, evals, MCP authorization, and safety.
 
+## Master Plan And Subplans
+
+The original master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
+
+Read these after the canonical repo recovery docs when reconstructing the wider plan:
+
+1. Planning Pack Index
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-planning-pack-index-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca88492819b82bbefdb25c62140`
+2. Claude Code Handover
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-claude-code-handover-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca8849281baa862dacca0591bb0`
+3. Master Architecture Plan
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-intelligence-master-plan-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca884928123bc72ceb547efe1a2`
+4. Surface And Harness Catalog
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-surface-harness-catalog-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca8849281c2aa94e27ebef4dfef`
+5. Learning Mining Eval Risk Plan
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-learning-mining-eval-risk-plan-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca8849281ab9f48dc3721688c3e`
+6. Contract Drafts
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-contract-drafts-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca8849281aaa4aefb9cee93660b`
+7. Implementation Prompts
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-implementation-prompts-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca8849281438e48ffc97f860823`
+8. Planning Pack Consistency Audit
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-doc-consistency-audit-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca8849281c290bdf3e62443263b`
+9. FAD Ops And Inbox Integration Audit
+   - Local: `/Users/judith/.openclaw/workspace/tmp/ask-friday-fad-ops-inbox-integration-audit-2026-05-26.md`
+   - Notion: `https://www.notion.so/36c43ca884928132b781e5213b2e4730`
+
+These are planning artifacts, not proof of runtime readiness. Use the completion ledger to decide what is actually built, tested, deployed, and team-useful.
+
 ## Plan 1 Runtime Docs
 
 These are the high-priority production-useful surfaces.
@@ -158,10 +194,18 @@ Use Notion as mirror/collaboration layer, but keep runtime source in repo for co
   - `https://www.notion.so/36c43ca88492819b82bbefdb25c62140`
 - Ask Friday Intelligence Master Plan:
   - `https://www.notion.so/36c43ca884928123bc72ceb547efe1a2`
+- Ask Friday Surface And Harness Catalog:
+  - `https://www.notion.so/36c43ca8849281c2aa94e27ebef4dfef`
+- Ask Friday Learning Mining Eval Risk Plan:
+  - `https://www.notion.so/36c43ca8849281ab9f48dc3721688c3e`
 - Ask Friday Contract Drafts:
   - `https://www.notion.so/36c43ca8849281aaa4aefb9cee93660b`
 - Ask Friday Implementation Prompts:
   - `https://www.notion.so/36c43ca8849281438e48ffc97f860823`
+- Ask Friday Planning Pack Consistency Audit:
+  - `https://www.notion.so/36c43ca8849281c290bdf3e62443263b`
+- Ask Friday FAD Ops And Inbox Integration Audit:
+  - `https://www.notion.so/36c43ca884928132b781e5213b2e4730`
 - FAD Ops Scheduling, Roster and Task Policy:
   - `https://www.notion.so/36b43ca8849281b0b1b3db967c4a2b73`
 - Ask Friday Unified AI Learning Loop - Scope 2026-05-23:
