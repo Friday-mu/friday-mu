@@ -23,6 +23,7 @@ Current branch adds the first hardening layer on top of the deployed Core scaffo
 - Inbox/Friday Consult emits compact staff-private events to `fad_consult`.
 - Ops Friday Consult emits compact staff-private events to `fad_ops_assistant`.
 - Global FAD Ask Friday emits compact staff-private events to `fad_global_ask_friday`.
+- Staff event emitters validate the surface registry before writing, including active status, source-system match, knowledge/tool policy, and redaction requirement for high/restricted events.
 - Staff learning-event writes now populate dedicated evidence-ref rows when evidence refs are provided.
 - Action-request review updates write lifecycle learning/evidence records.
 - Inbox/Friday Consult now uses a database-visible lease around same-conversation turns.

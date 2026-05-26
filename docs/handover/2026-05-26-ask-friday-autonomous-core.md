@@ -118,6 +118,13 @@ Active staff surfaces now emit compact, staff-private Core events:
 
 These writes are best-effort and non-canonical. Failures log warnings and do not block the staff response.
 
+Staff event intake now validates the registered surface before writing:
+
+- `surfaceId` must exist and be active,
+- `sourceSystem` must match the surface registry,
+- `knowledgeUsed` and `toolsUsed` must be allowed by the surface policy,
+- high/restricted privacy events cannot be written as `unredacted`.
+
 Staff event writes now also populate dedicated `ask_friday_evidence_refs` rows when an event includes evidence refs.
 
 ### Retention and action lifecycle
