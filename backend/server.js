@@ -1105,13 +1105,16 @@ require('./src/inbox/draft_reaper').start();
 // same cadence; the GMS cron is disabled via GMS_FOLLOWUP_SCANNER_DISABLED.
 require('./src/inbox/followup_scanner').start();
 
-// Ask Friday Core analyzer — every 30 min, cluster the last 24h of
-// learning events into KB candidates + eval cases. Candidates land in
-// the review queue (Director-only Ask Friday review module) with
-// status='pending'. Slice 4 of the Core operationalization plan;
-// previously only the manual POST /api/ask-friday/core/analyzer/run
-// path existed. Idempotent via the candidate UPSERT.
-require('./src/ask_friday/scheduler').start();
+// Ask Friday Core analyzer is intentionally not enabled in the live API
+// process by default. Run it through `npm run ask-friday:analyzer` or set
+// ASK_FRIDAY_ANALYZER_IN_WEB=1 for controlled single-process deployments.
+// The analyzer can be model/heavy as the learning loop grows; keeping it
+// off the web request path preserves guest/staff chat latency.
+if (process.env.ASK_FRIDAY_ANALYZER_IN_WEB === '1') {
+  require('./src/ask_friday/scheduler').start();
+} else {
+  console.log('[ask-friday/analyzer] web-process scheduler disabled; run ask-friday:analyzer worker if needed');
+}
 
 // ─── Unified outbound abstraction ─────────────────────────────────
 // POST /api/outbound/send federates per-channel send paths under one

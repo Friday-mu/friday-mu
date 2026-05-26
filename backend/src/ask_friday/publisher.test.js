@@ -9,6 +9,19 @@ const { publishContextPack } = require('./publisher');
 
 const TENANT_ID = '11111111-1111-4111-8111-111111111111';
 
+function surfaceRow(overrides = {}) {
+  return {
+    surface_id: 'website_ask_friday_fab',
+    source_system: 'friday-website',
+    access_class: 'public',
+    allowed_knowledge_scopes: ['public_brand'],
+    allowed_tools: ['search_residences'],
+    allowed_actions: ['request_booking'],
+    status: 'active',
+    ...overrides,
+  };
+}
+
 describe('Ask Friday context-pack publisher', () => {
   beforeEach(() => {
     query.mockReset();
@@ -31,6 +44,7 @@ describe('Ask Friday context-pack publisher', () => {
         }],
       })
       .mockResolvedValueOnce({ rows: [{ next_version: 4 }] })
+      .mockResolvedValueOnce({ rows: [surfaceRow()] })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'website_ask_friday_fab_v4',
@@ -64,17 +78,26 @@ describe('Ask Friday context-pack publisher', () => {
 
     expect(result.contextPack.pack_id).toBe('website_ask_friday_fab_v4');
     expect(result.approvedCandidates).toHaveLength(1);
-    expect(query).toHaveBeenCalledTimes(4);
-    expect(query.mock.calls[2][0]).toContain('INSERT INTO ask_friday_context_packs');
-    expect(JSON.parse(query.mock.calls[2][1][8])).toEqual([
+    expect(query).toHaveBeenCalledTimes(5);
+    expect(query.mock.calls[3][0]).toContain('INSERT INTO ask_friday_context_packs');
+    expect(JSON.parse(query.mock.calls[3][1][8])).toEqual([
       expect.objectContaining({ type: 'kb_candidate', candidateId: 'cand-1' }),
     ]);
-    expect(query.mock.calls[3][0]).toContain('UPDATE ask_friday_kb_candidates');
+    expect(query.mock.calls[4][0]).toContain('UPDATE ask_friday_kb_candidates');
   });
 
   test('publishes manually approved context pack without candidates', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ next_version: 2 }] })
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          surface_id: 'fad_consult',
+          source_system: 'fad',
+          access_class: 'staff',
+          allowed_knowledge_scopes: ['staff_inbox'],
+          allowed_tools: [],
+        })],
+      })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'fad_consult_v2',
@@ -109,9 +132,9 @@ describe('Ask Friday context-pack publisher', () => {
 
     expect(result.contextPack.pack_id).toBe('fad_consult_v2');
     expect(result.approvedCandidates).toHaveLength(0);
-    expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[1][0]).toContain('INSERT INTO ask_friday_context_packs');
-    expect(JSON.parse(query.mock.calls[1][1][8])).toEqual([
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[2][0]).toContain('INSERT INTO ask_friday_context_packs');
+    expect(JSON.parse(query.mock.calls[2][1][8])).toEqual([
       expect.objectContaining({
         type: 'manual_approval',
         approvedBy: 'Ishant Sagoo',

@@ -46,6 +46,21 @@ function userToken() {
   }, JWT_SECRET);
 }
 
+function surfaceRow(overrides = {}) {
+  return {
+    surface_id: 'website_ask_friday_fab',
+    display_name: 'Ask Friday FAB',
+    audience: 'public_mixed',
+    source_system: 'friday-website',
+    access_class: 'public',
+    allowed_knowledge_scopes: ['public_brand', 'public_residences'],
+    allowed_tools: ['listings', 'search_residences'],
+    allowed_actions: ['request_booking', 'request_handoff'],
+    status: 'active',
+    ...overrides,
+  };
+}
+
 describe('Ask Friday Core router', () => {
   beforeEach(() => {
     process.env.JWT_SECRET = JWT_SECRET;
@@ -55,6 +70,9 @@ describe('Ask Friday Core router', () => {
 
   test('stores public learning events with redaction and evidence refs', async () => {
     query
+      .mockResolvedValueOnce({
+        rows: [surfaceRow()],
+      })
       .mockResolvedValueOnce({
         rows: [{
           event_id: 'evt-1',
@@ -101,14 +119,19 @@ describe('Ask Friday Core router', () => {
         outcome: 'continued',
         privacyClass: 'medium',
         redactionStatus: 'redacted',
-        evidenceRefs: [{ evidenceType: 'screenshot', storageRef: 'blob://screenshot-1' }],
+        evidenceRefs: [{
+          evidenceType: 'screenshot',
+          storageRef: 'blob://screenshot-1',
+          privacyClass: 'medium',
+          redactionStatus: 'redacted',
+        }],
       })
       .expect(201);
 
     expect(res.body.ok).toBe(true);
     expect(res.body.evidenceInserted).toBe(1);
-    expect(query).toHaveBeenCalledTimes(2);
-    const insertParams = query.mock.calls[0][1];
+    expect(query).toHaveBeenCalledTimes(3);
+    const insertParams = query.mock.calls[1][1];
     expect(insertParams[0]).toBe(TENANT_ID);
     expect(insertParams[1]).toBe('evt-1');
     expect(insertParams[10]).toBe('Asked for July. [REDACTED]');
@@ -131,24 +154,26 @@ describe('Ask Friday Core router', () => {
   });
 
   test('returns latest published context pack to public API clients', async () => {
-    query.mockResolvedValueOnce({
-      rows: [{
-        pack_id: 'website_ask_friday_fab_v3',
-        surface_id: 'website_ask_friday_fab',
-        version: 3,
-        status: 'published',
-        knowledge_scopes: ['public_brand'],
-        behavior_rules: [{ id: 'ask_one_followup' }],
-        tool_policy: { web_search: 'restricted' },
-        memory_policy: { anonymous: 'session_only' },
-        source_snapshot_refs: [{ type: 'kb', version: '2026-05-23' }],
-        pack_payload: { summary: 'Approved context' },
-        approved_by: 'Ishant',
-        approved_at: new Date('2026-05-23T08:00:00.000Z'),
-        published_at: new Date('2026-05-23T08:01:00.000Z'),
-        updated_at: new Date('2026-05-23T08:01:00.000Z'),
-      }],
-    });
+    query
+      .mockResolvedValueOnce({ rows: [surfaceRow()] })
+      .mockResolvedValueOnce({
+        rows: [{
+          pack_id: 'website_ask_friday_fab_v3',
+          surface_id: 'website_ask_friday_fab',
+          version: 3,
+          status: 'published',
+          knowledge_scopes: ['public_brand'],
+          behavior_rules: [{ id: 'ask_one_followup' }],
+          tool_policy: { web_search: 'restricted' },
+          memory_policy: { anonymous: 'session_only' },
+          source_snapshot_refs: [{ type: 'kb', version: '2026-05-23' }],
+          pack_payload: { summary: 'Approved context' },
+          approved_by: 'Ishant',
+          approved_at: new Date('2026-05-23T08:00:00.000Z'),
+          published_at: new Date('2026-05-23T08:01:00.000Z'),
+          updated_at: new Date('2026-05-23T08:01:00.000Z'),
+        }],
+      });
 
     const res = await request(app())
       .get('/api/ask-friday/core/context-packs/website_ask_friday_fab')
@@ -161,7 +186,25 @@ describe('Ask Friday Core router', () => {
       status: 'published',
       approvedBy: 'Ishant',
     });
-    expect(query.mock.calls[0][1]).toEqual([TENANT_ID, 'website_ask_friday_fab']);
+    expect(query.mock.calls[1][1]).toEqual([TENANT_ID, 'website_ask_friday_fab']);
+  });
+
+  test('blocks public context-pack reads for staff surfaces', async () => {
+    query.mockResolvedValueOnce({
+      rows: [surfaceRow({
+        surface_id: 'fad_consult',
+        source_system: 'fad',
+        access_class: 'staff',
+        allowed_knowledge_scopes: ['staff_inbox'],
+      })],
+    });
+
+    await request(app())
+      .get('/api/ask-friday/core/context-packs/fad_consult')
+      .set('Authorization', `Bearer ${apiToken(['ask-friday:context:read'])}`)
+      .expect(403);
+
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   test('creates and reviews KB candidates through staff auth only', async () => {
@@ -235,22 +278,24 @@ describe('Ask Friday Core router', () => {
   });
 
   test('queues public action requests instead of executing them', async () => {
-    query.mockResolvedValueOnce({
-      rows: [{
-        action_id: 'act-1',
-        source_system: 'friday-website',
-        surface_id: 'website_ask_friday_fab',
-        requested_by: { identityType: 'api_client', identityKey: 'friday-website', authenticated: true },
-        action_type: 'request_booking',
-        risk_class: 'approval',
-        payload: { residence: 'GBH-C8' },
-        reason: 'Guest asked to book.',
-        approval_required: true,
-        status: 'pending',
-        created_at: new Date('2026-05-23T08:00:00.000Z'),
-        updated_at: new Date('2026-05-23T08:00:00.000Z'),
-      }],
-    });
+    query
+      .mockResolvedValueOnce({ rows: [surfaceRow()] })
+      .mockResolvedValueOnce({
+        rows: [{
+          action_id: 'act-1',
+          source_system: 'friday-website',
+          surface_id: 'website_ask_friday_fab',
+          requested_by: { identityType: 'api_client', identityKey: 'friday-website', authenticated: true },
+          action_type: 'request_booking',
+          risk_class: 'approval',
+          payload: { residence: 'GBH-C8' },
+          reason: 'Guest asked to book.',
+          approval_required: true,
+          status: 'pending',
+          created_at: new Date('2026-05-23T08:00:00.000Z'),
+          updated_at: new Date('2026-05-23T08:00:00.000Z'),
+        }],
+      });
 
     const res = await request(app())
       .post('/api/ask-friday/core/action-requests/public')
@@ -270,11 +315,36 @@ describe('Ask Friday Core router', () => {
       status: 'pending',
       approvalRequired: true,
     });
-    expect(query.mock.calls[0][1][0]).toBe(TENANT_ID);
+    expect(query.mock.calls[1][1][0]).toBe(TENANT_ID);
+  });
+
+  test('blocks public action requests against staff surfaces', async () => {
+    query.mockResolvedValueOnce({
+      rows: [surfaceRow({
+        surface_id: 'fad_consult',
+        source_system: 'fad',
+        access_class: 'staff',
+        allowed_actions: ['create_task'],
+      })],
+    });
+
+    await request(app())
+      .post('/api/ask-friday/core/action-requests/public')
+      .set('Authorization', `Bearer ${apiToken(['ask-friday:actions:write'])}`)
+      .send({
+        sourceSystem: 'fad',
+        surfaceId: 'fad_consult',
+        actionType: 'create_task',
+        payload: { title: 'Do this' },
+      })
+      .expect(403);
+
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   test('records public consent-backed identity links for durable memory', async () => {
     query
+      .mockResolvedValueOnce({ rows: [surfaceRow()] })
       .mockResolvedValueOnce({
         rows: [{
           identity_key: 'guest:stay-token-hash',
@@ -309,9 +379,9 @@ describe('Ask Friday Core router', () => {
       durableMemoryAllowed: true,
       consentStatus: 'granted',
     });
-    expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[0][1][0]).toBe(TENANT_ID);
-    expect(query.mock.calls[1][1][3]).toBe('friday-website');
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[1][1][0]).toBe(TENANT_ID);
+    expect(query.mock.calls[2][1][3]).toBe('friday-website');
   });
 
   test('publishes context packs from approved KB candidates through staff route', async () => {
@@ -331,6 +401,12 @@ describe('Ask Friday Core router', () => {
         }],
       })
       .mockResolvedValueOnce({ rows: [{ next_version: 5 }] })
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          allowed_knowledge_scopes: ['public_brand'],
+          allowed_tools: ['search_residences'],
+        })],
+      })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'website_ask_friday_fab_v5',
@@ -370,12 +446,20 @@ describe('Ask Friday Core router', () => {
       approvedBy: 'Ishant Ayadassen',
     });
     expect(res.body.approvedCandidates).toHaveLength(1);
-    expect(query).toHaveBeenCalledTimes(4);
+    expect(query).toHaveBeenCalledTimes(5);
   });
 
   test('publishes manually approved context pack through staff route', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ next_version: 2 }] })
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          surface_id: 'fad_consult',
+          source_system: 'fad',
+          access_class: 'staff',
+          allowed_knowledge_scopes: ['staff_inbox'],
+        })],
+      })
       .mockResolvedValueOnce({
         rows: [{
           pack_id: 'fad_consult_v2',
@@ -416,7 +500,7 @@ describe('Ask Friday Core router', () => {
       approvedBy: 'Ishant Sagoo',
     });
     expect(res.body.approvedCandidates).toHaveLength(0);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   test('records deterministic eval runs from active eval cases', async () => {

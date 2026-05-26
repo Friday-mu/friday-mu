@@ -17,6 +17,13 @@ const {
 } = require('./contracts');
 const { runAnalyzer } = require('./analyzer');
 const { runEvalSuite } = require('./eval_runner');
+const {
+  assertPublicSurface,
+  validateContextPackAgainstSurface,
+  validatePublicActionRequest,
+  validatePublicIdentityLink,
+  validatePublicLearningEvent,
+} = require('./policy');
 const { publishContextPack } = require('./publisher');
 
 const router = express.Router();
@@ -186,6 +193,24 @@ function shapeIdentityLink(row) {
   };
 }
 
+async function loadSurfaceForPolicy(tenantId, surfaceId) {
+  const id = cleanString(surfaceId, 120);
+  if (!id) {
+    const err = new Error('surfaceId is required');
+    err.status = 400;
+    throw err;
+  }
+  const { rows } = await query(
+    `SELECT *
+       FROM ask_friday_surfaces
+      WHERE tenant_id = $1
+        AND surface_id = $2
+      LIMIT 1`,
+    [tenantId, id],
+  );
+  return rows[0] || null;
+}
+
 async function insertEvidenceRefs(tenantId, eventId, refs) {
   if (!Array.isArray(refs) || refs.length === 0) return 0;
   let inserted = 0;
@@ -339,6 +364,8 @@ router.get(
     try {
       const tenantId = publicTenantId(req);
       const surfaceId = cleanString(req.params.surfaceId, 120);
+      const surface = await loadSurfaceForPolicy(tenantId, surfaceId);
+      assertPublicSurface(surface, surfaceId);
       const { rows } = await query(
         `SELECT *
            FROM ask_friday_context_packs
@@ -360,6 +387,8 @@ router.get(
 router.post('/context-packs', attachIdentity, async (req, res) => {
   try {
     const pack = normalizeContextPack(req.body);
+    const surface = await loadSurfaceForPolicy(req.tenantId, pack.surfaceId);
+    validateContextPackAgainstSurface(pack, surface);
     const approver = pack.approvedBy || actorName(req);
     const { rows } = await query(
       `INSERT INTO ask_friday_context_packs (
@@ -434,6 +463,8 @@ router.post(
     try {
       const tenantId = publicTenantId(req);
       const event = normalizeLearningEvent(req.body);
+      const surface = await loadSurfaceForPolicy(tenantId, event.surfaceId);
+      validatePublicLearningEvent(event, surface);
       const { rows } = await query(
         `INSERT INTO ask_friday_learning_events (
            tenant_id, event_id, created_at, source_system, surface_id,
@@ -594,6 +625,11 @@ router.patch('/kb-candidates/:candidateId', attachIdentity, async (req, res) => 
 async function createActionRequest(req, res, sourceDefaults = {}) {
   try {
     const action = normalizeActionRequest(req.body, sourceDefaults);
+    if (sourceDefaults.public) {
+      const tenantId = req.tenantId || publicTenantId(req);
+      const surface = await loadSurfaceForPolicy(tenantId, action.surfaceId);
+      validatePublicActionRequest(action, surface);
+    }
     const { rows } = await query(
       `INSERT INTO ask_friday_action_requests (
          tenant_id, action_id, source_system, surface_id, requested_by,
@@ -672,6 +708,7 @@ router.post(
   attachApiClient,
   requireScope('ask-friday:actions:write'),
   (req, res) => createActionRequest(req, res, {
+    public: true,
     sourceSystem: 'friday-website',
     requestedBy: {
       identityType: 'api_client',
@@ -692,6 +729,11 @@ async function upsertIdentityLink(req, res, sourceDefaults = {}) {
     const durableMemoryAllowed = Boolean(body.durableMemoryAllowed || body.durable_memory_allowed);
     const subjectRef = safeJson(body.subjectRef || body.subject_ref, 80, 4000);
     const tenantId = req.tenantId || publicTenantId(req);
+    if (sourceDefaults.public) {
+      const surfaceId = cleanString(body.surfaceId || body.surface_id || sourceDefaults.surfaceId, 120);
+      const surface = await loadSurfaceForPolicy(tenantId, surfaceId);
+      validatePublicIdentityLink({ ...body, surfaceId }, surface);
+    }
     const { rows } = await query(
       `INSERT INTO ask_friday_identity_links (
          tenant_id, identity_key, identity_type, subject_ref,
@@ -742,7 +784,7 @@ router.post(
   '/identity-links/public',
   attachApiClient,
   requireScope('ask-friday:identity:write'),
-  (req, res) => upsertIdentityLink(req, res, { sourceSystem: 'friday-website' }),
+  (req, res) => upsertIdentityLink(req, res, { public: true, sourceSystem: 'friday-website' }),
 );
 
 router.post('/analyzer/run', attachIdentity, async (req, res) => {
@@ -946,5 +988,6 @@ module.exports = {
     shapeKbCandidate,
     shapeLearningEvent,
     shapeSurface,
+    loadSurfaceForPolicy,
   },
 };

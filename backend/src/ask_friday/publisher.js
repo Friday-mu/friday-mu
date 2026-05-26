@@ -2,6 +2,7 @@
 
 const { query } = require('../database/client');
 const { cleanArray, cleanString, safeJson } = require('./contracts');
+const { validateContextPackAgainstSurface } = require('./policy');
 
 function badRequest(message) {
   const err = new Error(message);
@@ -49,6 +50,18 @@ async function nextPackVersion(tenantId, surfaceId) {
   return Number(rows[0]?.next_version) || 1;
 }
 
+async function loadSurface(tenantId, surfaceId) {
+  const { rows } = await query(
+    `SELECT *
+       FROM ask_friday_surfaces
+      WHERE tenant_id = $1
+        AND surface_id = $2
+      LIMIT 1`,
+    [tenantId, surfaceId],
+  );
+  return rows[0] || null;
+}
+
 function candidateSnapshotRefs(candidates) {
   return candidates.map((candidate) => ({
     type: 'kb_candidate',
@@ -93,6 +106,21 @@ async function publishContextPack(options) {
       rationale: cleanString(options.manualApprovalRationale || options.manual_approval_rationale, 1000) || null,
     }] : []),
   ];
+  const knowledgeScopes = cleanArray(options.knowledgeScopes || options.knowledge_scopes, 100, 160);
+  const behaviorRules = cleanJsonArray(options.behaviorRules || options.behavior_rules, 100);
+  const toolPolicy = safeJson(options.toolPolicy || options.tool_policy, 120, 8000);
+  const memoryPolicy = safeJson(options.memoryPolicy || options.memory_policy, 120, 8000);
+  const packPayload = safeJson(options.packPayload || options.pack_payload || {}, 160, 12000);
+  const surface = await loadSurface(tenantId, surfaceId);
+  validateContextPackAgainstSurface({
+    surfaceId,
+    knowledgeScopes,
+    behaviorRules,
+    toolPolicy,
+    memoryPolicy,
+    sourceSnapshotRefs,
+    packPayload,
+  }, surface);
 
   const { rows } = await query(
     `INSERT INTO ask_friday_context_packs (
@@ -123,12 +151,12 @@ async function publishContextPack(options) {
       packId,
       surfaceId,
       version,
-      cleanArray(options.knowledgeScopes || options.knowledge_scopes, 100, 160),
-      JSON.stringify(cleanJsonArray(options.behaviorRules || options.behavior_rules, 100)),
-      JSON.stringify(safeJson(options.toolPolicy || options.tool_policy, 120, 8000)),
-      JSON.stringify(safeJson(options.memoryPolicy || options.memory_policy, 120, 8000)),
+      knowledgeScopes,
+      JSON.stringify(behaviorRules),
+      JSON.stringify(toolPolicy),
+      JSON.stringify(memoryPolicy),
       JSON.stringify(sourceSnapshotRefs),
-      JSON.stringify(safeJson(options.packPayload || options.pack_payload || {}, 160, 12000)),
+      JSON.stringify(packPayload),
       approvedBy,
     ],
   );
@@ -157,5 +185,6 @@ module.exports = {
     candidateSnapshotRefs,
     cleanCandidateIds,
     cleanJsonArray,
+    loadSurface,
   },
 };

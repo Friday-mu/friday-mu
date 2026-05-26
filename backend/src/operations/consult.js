@@ -4,6 +4,7 @@ const express = require('express');
 const { attachIdentity } = require('../design/auth');
 const { defaultComposer } = require('../knowledge/composer');
 const { generateDraftReply, DRAFT_MODEL } = require('../ai/kimi_draft');
+const { recordLearningEvent } = require('../ask_friday/event_writer');
 
 const router = express.Router();
 
@@ -217,6 +218,13 @@ Current Operations context: ${context}.
 ${composed.system_message}`;
 }
 
+function confidenceBand(value) {
+  if (value >= 0.75) return 'high';
+  if (value >= 0.5) return 'medium';
+  if (value > 0) return 'low';
+  return 'unknown';
+}
+
 router.post('/consult', attachIdentity, async (req, res) => {
   try {
     const instruction = cleanString(req.body?.text || req.body?.instruction, 10_000);
@@ -263,13 +271,57 @@ router.post('/consult', attachIdentity, async (req, res) => {
     }
 
     const actionSuggestions = parseOpsActionSuggestions(result.text);
+    const confidence = actionSuggestions.some((item) => item.confidence != null)
+      ? Math.max(...actionSuggestions.map((item) => item.confidence || 0))
+      : 0.78;
+    const responseText = stripOpsProtocolTags(result.text) || 'I reviewed the Operations context.';
+
+    recordLearningEvent({
+      tenantId: req.tenantId,
+      event: {
+        sourceSystem: 'fad',
+        surfaceId: 'fad_ops_assistant',
+        identityRef: {
+          identityType: 'staff',
+          identityKey: req.identity?.userId || req.identity?.username || 'fad-user',
+          authenticated: true,
+        },
+        intent: context,
+        userTurnSummary: instruction.slice(0, 900),
+        assistantActionSummary: responseText.slice(0, 900),
+        toolsUsed: [],
+        knowledgeUsed: [
+          'ops_tasks',
+          'reservations',
+          'properties',
+          'staff_runbooks',
+          'ops-consult',
+        ],
+        confidence: confidenceBand(confidence),
+        outcome: actionSuggestions.length ? 'action_candidate' : 'answered',
+        handoff: { triggered: false },
+        signals: {
+          actionSuggestionCount: actionSuggestions.length,
+          context,
+        },
+        privacyClass: 'high',
+        redactionStatus: 'partially_redacted',
+        eventPayload: {
+          context,
+          propertyCode: composed.metadata.property_code || null,
+          knowledgeSurface: composed.metadata.surface,
+          module: 'operations',
+        },
+      },
+    }).catch((e) => {
+      console.warn('[operations/consult] learning event write failed:', e.message);
+    });
+
     res.json({
-      response: stripOpsProtocolTags(result.text) || 'I reviewed the Operations context.',
+      response: responseText,
       model: result.model || DRAFT_MODEL,
       action_suggestions: actionSuggestions,
-      confidence: actionSuggestions.some((item) => item.confidence != null)
-        ? Math.max(...actionSuggestions.map((item) => item.confidence || 0))
-        : 0.78,
+      confidence,
       metadata: {
         surface: composed.metadata.surface,
         loadedSkills: composed.metadata.loaded_skills,
@@ -292,6 +344,7 @@ module.exports = router;
 
 module.exports._test = {
   buildOpsModuleContext,
+  confidenceBand,
   parseOpsActionSuggestions,
   stripOpsProtocolTags,
   taskSignalsForContext,

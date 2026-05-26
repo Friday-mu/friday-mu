@@ -258,6 +258,15 @@ Public API client routes:
 - `POST /action-requests/public` with `ask-friday:actions:write`
 - `POST /identity-links/public` with `ask-friday:identity:write`
 
+Public route policy:
+
+- Public API scopes are necessary but not sufficient. Each public route also validates the target `surfaceId` against `ask_friday_surfaces`.
+- Public context-pack reads are allowed only for active public/public-api/public-feedback surface classes.
+- Public learning events must be redacted or explicitly `not_required`, and may use only the registered surface's allowed knowledge scopes and tools.
+- Public action requests must use the registered surface's allowed actions, must start `pending`, and must keep `approvalRequired=true`.
+- Public identity links can enable durable memory only when consent is explicitly `granted`.
+- Staff/private surfaces such as `fad_consult`, Ops, finance, legal/admin, owner-private, and internal-agent surfaces are blocked from public Core routes even if a public API token has a broad Ask Friday scope.
+
 FAD staff routes:
 
 - `GET /surfaces`
@@ -286,6 +295,7 @@ The current backend includes:
 - Manual analyzer endpoint: `POST /api/ask-friday/core/analyzer/run`. It inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
 - Context-pack publisher: `POST /api/ask-friday/core/context-packs/publish`. It requires approved candidate IDs or explicit `manualApproval:true`, then creates a new published context pack version.
 - Deterministic eval runner: `POST /api/ask-friday/core/eval-runs`. It checks eval case shape, privacy redaction, allowed tools, and required knowledge scopes. Checks that require model output are recorded as skipped, not guessed.
+- Analyzer worker: `npm run ask-friday:analyzer`. The web process does not start the scheduler by default; set `ASK_FRIDAY_ANALYZER_IN_WEB=1` only for controlled single-process deployments.
 
 Initial suites:
 
@@ -325,7 +335,11 @@ Mitigations in V1:
 - Redaction at event normalization and emitter level.
 - Tenant-scoped tables.
 - Public routes gated by OAuth client-credentials JWT scopes.
+- Public routes additionally enforce surface-registry policy for allowed surface class, source system, knowledge scopes, tools, actions, privacy class, and redaction status.
 - Separate approved context packs from raw learning events.
+- Context-pack publishing validates requested scopes and allowed tools against the target surface before publishing.
+- FAD Consult same-conversation turns use a database-visible lease lock with expiry/heartbeat, plus the local process queue, so duplicate Consult work is not only protected by a Node process-local `Map`.
+- Analyzer/mining work is kept out of the live web process by default and should run as a worker.
 - Public MCP marked planned, not active.
 - Evidence stored by reference and expiry metadata, not as unlimited raw content.
 
