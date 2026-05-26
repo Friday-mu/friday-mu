@@ -312,6 +312,7 @@ The current backend includes:
 - Context-pack publisher: `POST /api/ask-friday/core/context-packs/publish`. It requires approved candidate IDs or explicit `manualApproval:true`, then creates a new published context pack version.
 - Publish gate: context-pack publishing requires either a passing eval run via `evalRunId` or explicit `evalGateOverride:true`. Direct draft writes through `POST /context-packs` cannot publish by setting `status:"published"`.
 - Deterministic eval runner: `POST /api/ask-friday/core/eval-runs`. It checks eval case shape, privacy redaction, allowed tools, and required knowledge scopes. Checks that require model output are recorded as skipped, not guessed.
+- Initial deterministic eval seed cases live in `097_ask_friday_seed_eval_cases.sql`.
 - Analyzer worker: `npm run ask-friday:analyzer`. The web process does not start the scheduler by default; set `ASK_FRIDAY_ANALYZER_IN_WEB=1` only for controlled single-process deployments.
 - Retention worker: `npm run ask-friday:retention`. It defaults to dry-run and only targets expired evidence refs plus old rejected/expired candidates until retention windows are reviewed.
 

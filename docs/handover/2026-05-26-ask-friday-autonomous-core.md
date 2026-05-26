@@ -55,6 +55,23 @@ It adds/aligns registry profiles for:
 
 Important: `fad_ops_assistant` now records `runtimeKnowledgeAlias:"ops-consult"` so the live Ops KB key is treated as a governed alias, not renamed casually.
 
+### Eval seed cases
+
+Added `backend/migrations/097_ask_friday_seed_eval_cases.sql`.
+
+It seeds deterministic eval cases for:
+
+- `website_guest_grounding`
+- `website_fab_routing`
+- `owner_scope`
+- `feedback_repro_quality`
+- `fad_consult_grounding`
+- `ops_task_safety`
+- `fad_global_grounding`
+- `public_mcp_safety`
+- `finance_privacy`
+- `internal_agent_privacy`
+
 ### Durable Consult turn locks
 
 Added migration `095_consult_conversation_locks.sql` and helper `backend/src/inbox/consult_lock.js`.
@@ -126,6 +143,7 @@ It turns the planning pack into a repo-owned catalog covering surfaces, knowledg
 
 - `backend/migrations/095_consult_conversation_locks.sql`
 - `backend/migrations/096_ask_friday_surface_registry_v02.sql`
+- `backend/migrations/097_ask_friday_seed_eval_cases.sql`
 - `backend/package.json`
 - `backend/scripts/ask-friday-analyzer-worker.js`
 - `backend/scripts/ask-friday-retention-worker.js`
@@ -193,5 +211,5 @@ This branch contains two new migrations and changes analyzer/retention process b
 1. Review PM2/process plan for `npm run ask-friday:analyzer`.
 2. Decide whether `npm run ask-friday:retention` should run manual-only or scheduled, and keep dry-run default until retention windows are reviewed.
 3. Confirm whether production should run the analyzer worker now or leave it manual.
-4. Apply migrations `095_consult_conversation_locks.sql` and `096_ask_friday_surface_registry_v02.sql`.
+4. Apply migrations `095_consult_conversation_locks.sql`, `096_ask_friday_surface_registry_v02.sql`, and `097_ask_friday_seed_eval_cases.sql`.
 5. Smoke `/api/ask-friday/core/surfaces`, public context-pack denial for `fad_consult`, eval-gated context-pack publishing, Inbox/Friday Consult, Ops Consult, and global FAD Ask Friday.

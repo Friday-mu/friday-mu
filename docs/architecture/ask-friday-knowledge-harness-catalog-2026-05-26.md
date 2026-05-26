@@ -29,6 +29,7 @@ Current branch adds the first hardening layer on top of the deployed Core scaffo
 - Analyzer/mining is worker-first. It does not start in the web process unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
 - Surface registry v0.2 seeds planned module profiles and records the active `ops-consult` runtime knowledge alias for `fad_ops_assistant`.
 - Retention worker is available as a dry-run-by-default staff route and CLI. It deletes only expired evidence refs and old rejected/expired candidates when explicitly run with `dryRun:false`.
+- Initial deterministic eval cases are seeded for public, staff, Ops, finance, MCP, and internal-agent safety suites.
 
 The branch is pushed but not deployed. Production currently remains on the previously deployed `fad-rebuild` code until this branch is merged/deployed.
 
@@ -468,7 +469,7 @@ Proceeding assumptions, to be reviewed later:
 2. Add formal registry/profile rows or aliases for active FAD module surfaces, especially `ops-consult` -> `fad_ops_assistant`.
    - Status: covered by migration `096_ask_friday_surface_registry_v02.sql` in this branch.
 3. Add eval cases for public policy blocks, staff event emission, Consult locks, Ops action safety, and context-pack publish gates.
-   - Status: publish gate now requires a passing eval run or explicit override; more eval cases still need to be authored.
+   - Status: publish gate now requires a passing eval run or explicit override; initial deterministic eval cases are seeded in migration `097_ask_friday_seed_eval_cases.sql`.
 4. Add retention/redaction worker for events/evidence/candidates.
    - Status: dry-run-by-default retention route/CLI exists in this branch for expired evidence refs and old rejected/expired candidates only.
 5. Add Core learning-event emission for global FAD staff Ask Friday.
