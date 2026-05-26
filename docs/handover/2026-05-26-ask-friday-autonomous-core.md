@@ -142,6 +142,8 @@ Action-request review updates now create compact lifecycle learning/evidence rec
 
 Global FAD Ask Friday action suggestions and staff-click executions are now mirrored into Core `ask_friday_action_requests` through `backend/src/ask_friday/action_writer.js`. Navigation actions stay UI-only; `create_task`, `send_team_message`, and `request_approval` receive stable Core action IDs, surface-policy validation, pending status when suggested, and executed status when staff clicks the action.
 
+Staff-created Core action requests through `/api/ask-friday/core/action-requests` now also validate the surface registry before writing. This keeps public, staff, mirrored, and manually-created action requests on the same policy rail.
+
 ### Research note
 
 Added `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`.

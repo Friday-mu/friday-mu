@@ -25,6 +25,7 @@ const {
   validatePublicActionRequest,
   validatePublicIdentityLink,
   validatePublicLearningEvent,
+  validateStaffActionRequest,
 } = require('./policy');
 const { publishContextPack } = require('./publisher');
 
@@ -735,6 +736,9 @@ async function createActionRequest(req, res, sourceDefaults = {}) {
       const tenantId = req.tenantId || publicTenantId(req);
       const surface = await loadSurfaceForPolicy(tenantId, action.surfaceId);
       validatePublicActionRequest(action, surface);
+    } else {
+      const surface = await loadSurfaceForPolicy(req.tenantId, action.surfaceId);
+      validateStaffActionRequest(action, surface);
     }
     const { rows } = await query(
       `INSERT INTO ask_friday_action_requests (

@@ -194,6 +194,19 @@ function validatePublicActionRequest(action, surface) {
   return action;
 }
 
+function validateStaffActionRequest(action, surface) {
+  if (!surface) throw policyError(`surfaceId is not registered: ${action.surfaceId}`, 404);
+  if (surfaceStatus(surface) !== 'active') {
+    throw policyError(`surfaceId is not active: ${action.surfaceId}`, 403);
+  }
+  if (action.sourceSystem !== surfaceSourceSystem(surface)) {
+    throw policyError(`sourceSystem does not match registered surface: ${action.sourceSystem}`, 403);
+  }
+  assertAllowedValues([action.actionType], surfaceAllowedActions(surface), 'actionType');
+  assertNoSecretLikeContent({ payload: action.payload, reason: action.reason }, 'action_request');
+  return action;
+}
+
 function validatePublicIdentityLink(body, surface) {
   assertPublicSurface(surface, body.surfaceId || body.surface_id);
   const sourceSystem = cleanString(body.sourceSystem || body.source_system, 80).toLowerCase();
@@ -240,6 +253,7 @@ module.exports = {
   validatePublicActionRequest,
   validatePublicIdentityLink,
   validatePublicLearningEvent,
+  validateStaffActionRequest,
   _test: {
     blockedPublicValue,
     policyError,

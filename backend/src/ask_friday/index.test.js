@@ -342,6 +342,57 @@ describe('Ask Friday Core router', () => {
     expect(query.mock.calls[1][1][0]).toBe(TENANT_ID);
   });
 
+  test('validates staff action requests against registered surface policy', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          surface_id: 'fad_global_ask_friday',
+          source_system: 'fad',
+          access_class: 'staff',
+          allowed_actions: ['create_task'],
+        })],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          action_id: 'act-staff-1',
+          source_system: 'fad',
+          surface_id: 'fad_global_ask_friday',
+          requested_by: { identityType: 'staff', identityKey: 'Ishant Ayadassen', authenticated: true },
+          action_type: 'create_task',
+          risk_class: 'low',
+          payload: { title: 'Check AC' },
+          reason: 'Staff asked Ask Friday.',
+          approval_required: false,
+          status: 'pending',
+          created_at: new Date('2026-05-23T08:00:00.000Z'),
+          updated_at: new Date('2026-05-23T08:00:00.000Z'),
+        }],
+      });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/action-requests')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        actionId: 'act-staff-1',
+        surfaceId: 'fad_global_ask_friday',
+        actionType: 'create_task',
+        riskClass: 'low',
+        payload: { title: 'Check AC' },
+        reason: 'Staff asked Ask Friday.',
+        approvalRequired: false,
+      })
+      .expect(201);
+
+    expect(res.body.actionRequest).toMatchObject({
+      actionId: 'act-staff-1',
+      surfaceId: 'fad_global_ask_friday',
+      actionType: 'create_task',
+      status: 'pending',
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1][0]).toContain('INSERT INTO ask_friday_action_requests');
+  });
+
   test('records action request lifecycle events after staff review', async () => {
     query
       .mockResolvedValueOnce({
