@@ -67,6 +67,7 @@ function shapeMergedReservation(row) {
   if (!row) return null;
   const financials = inferReservationFinancials(row.raw);
   const inferredTotalMinor = majorToMinor(financials.total);
+  const status = effectiveReservationStatus(row);
   const o = row.overlay_id ? {
     id: row.overlay_id,
     status: row.overlay_status,
@@ -97,7 +98,7 @@ function shapeMergedReservation(row) {
     listing_nickname: row.listing_nickname,
     property_id: o?.property_id || null,
     confirmation_code: row.confirmation_code,
-    status: o?.status || row.status,
+    status,
     source: row.source,
     channel: o?.channel || row.channel,
     check_in_date: row.check_in_date,
@@ -234,6 +235,19 @@ async function resolveReservationId(tenantId, idOrGuestyId) {
 // keeps the freeform channel via the joined guesty row.
 const FAD_CHANNEL_ENUM = new Set(['airbnb', 'booking', 'direct', 'vrbo', 'email', 'owner']);
 const FAD_STATUS_ENUM = new Set(['confirmed', 'checked_in', 'checked_out', 'cancelled', 'hold', 'draft']);
+const CANCELLED_RESERVATION_STATUSES = new Set(['canceled', 'cancelled', 'expired', 'closed', 'denied', 'voided']);
+const HOLD_RESERVATION_STATUSES = new Set(['hold', 'pending', 'tentative', 'awaiting_payment']);
+const INQUIRY_RESERVATION_STATUSES = new Set([
+  'inquiry',
+  'pending_quote',
+  'request',
+  'requested',
+  'quote',
+  'preapproved',
+  'pre_approved',
+  'unconfirmed',
+]);
+
 function sanitizeOverlayChannel(raw) {
   if (!raw) return null;
   const v = String(raw).toLowerCase();
@@ -244,6 +258,34 @@ function sanitizeOverlayChannel(raw) {
   if (v.includes('owner')) return 'owner';
   return null;
 }
+
+function normalizeReservationStatus(raw) {
+  const v = String(raw ?? '').trim().toLowerCase();
+  if (!v) return 'inquiry';
+  if (v === 'confirmed' || v === 'reserved' || v === 'booked') return 'confirmed';
+  if (v === 'checked_in' || v === 'checked-in') return 'checked_in';
+  if (v === 'checked_out' || v === 'checked-out') return 'checked_out';
+  if (CANCELLED_RESERVATION_STATUSES.has(v)) return 'cancelled';
+  if (HOLD_RESERVATION_STATUSES.has(v)) return 'hold';
+  if (INQUIRY_RESERVATION_STATUSES.has(v)) return 'inquiry';
+  return 'inquiry';
+}
+
+function overlayStatusCanOverrideGuesty(row) {
+  if (!row?.overlay_id || !row.overlay_status) return false;
+  if (row.overlay_cancelled_at) return true;
+  const sourceKind = String(row.overlay_source_kind || '').toLowerCase();
+  if (!row.guesty_id) return true;
+  return sourceKind !== 'guesty_pull';
+}
+
+function effectiveReservationStatus(row) {
+  if (overlayStatusCanOverrideGuesty(row)) {
+    return normalizeReservationStatus(row.overlay_status);
+  }
+  return normalizeReservationStatus(row?.status);
+}
+
 function sanitizeOverlayStatus(raw) {
   if (!raw) return null;
   const v = String(raw).toLowerCase();
@@ -1094,5 +1136,8 @@ router.get('/:id/activity', attachIdentity, async (req, res) => {
 module.exports = router;
 module.exports._test = {
   appendReservationDateFilters,
+  effectiveReservationStatus,
+  normalizeReservationStatus,
+  overlayStatusCanOverrideGuesty,
   reservationDedupePartitionSql,
 };

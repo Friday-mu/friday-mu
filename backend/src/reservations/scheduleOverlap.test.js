@@ -52,3 +52,65 @@ describe('reservation schedule overlap filters', () => {
     expect(params).toEqual(['tenant-1', '2026-05-18', '2026-05-24']);
   });
 });
+
+describe('reservation status normalization', () => {
+  test('treats missing Guesty cache status as inquiry instead of confirmed', () => {
+    const normalize = reservationsRouter._test.normalizeReservationStatus;
+
+    expect(normalize(null)).toBe('inquiry');
+    expect(normalize(undefined)).toBe('inquiry');
+    expect(normalize('')).toBe('inquiry');
+  });
+
+  test('maps stale inquiry placeholders out of the confirmed calendar path', () => {
+    const normalize = reservationsRouter._test.normalizeReservationStatus;
+
+    expect(normalize('expired')).toBe('cancelled');
+    expect(normalize('closed')).toBe('cancelled');
+    expect(normalize('denied')).toBe('cancelled');
+    expect(normalize('voided')).toBe('cancelled');
+    expect(normalize('pending_quote')).toBe('inquiry');
+    expect(normalize('requested')).toBe('inquiry');
+  });
+
+  test('ignores passive guesty_pull overlay status when cache status is newer or empty', () => {
+    const effective = reservationsRouter._test.effectiveReservationStatus;
+
+    expect(effective({
+      guesty_id: 'guesty-1',
+      status: null,
+      overlay_id: 'overlay-1',
+      overlay_status: 'confirmed',
+      overlay_source_kind: 'guesty_pull',
+    })).toBe('inquiry');
+
+    expect(effective({
+      guesty_id: 'guesty-1',
+      status: 'cancelled',
+      overlay_id: 'overlay-1',
+      overlay_status: 'confirmed',
+      overlay_source_kind: 'guesty_pull',
+    })).toBe('cancelled');
+  });
+
+  test('keeps intentional FAD overlay status overrides', () => {
+    const effective = reservationsRouter._test.effectiveReservationStatus;
+
+    expect(effective({
+      guesty_id: 'guesty-1',
+      status: 'confirmed',
+      overlay_id: 'overlay-1',
+      overlay_status: 'cancelled',
+      overlay_source_kind: 'guesty_pull',
+      overlay_cancelled_at: '2026-05-26T08:00:00.000Z',
+    })).toBe('cancelled');
+
+    expect(effective({
+      guesty_id: null,
+      status: null,
+      overlay_id: 'overlay-1',
+      overlay_status: 'confirmed',
+      overlay_source_kind: 'manual',
+    })).toBe('confirmed');
+  });
+});

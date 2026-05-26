@@ -25,8 +25,9 @@ import { RESERVATIONS, type Reservation } from '../../../_data/reservations';
 import { useLiveReservations } from '../../../_data/reservationsClient';
 import { usePropertyCards, updatePropertyTranslations, type PropertyTranslations } from '../../../_data/propertiesClient';
 import { useCalendarGrid, blockDates, unblockDates } from '../../../_data/calendarGridClient';
-import { BLOCK_REASON_LABEL, MultiCalendarGrid, type BlockReason, type CellPrice } from './../calendar/MultiCalendarGrid';
+import { BLOCK_REASON_LABEL, type BlockReason, type CellPrice } from './../calendar/MultiCalendarGrid';
 import { useApiTasks } from '../../../_data/useApiTasks';
+import type { Task } from '../../../_data/tasks';
 import { useOwnersByGuestyId } from '../../../_data/ownersClient';
 import { usePropertySummary, formatMinor } from '../../../_data/financeClient';
 import { liveOnlyMode } from '../../../_data/demoMode';
@@ -790,15 +791,10 @@ function FinancialTab({ property, role }: { property: Property; role: string }) 
 
 // ───────────────── Tab: Calendar (per-property) ─────────────────
 //
-// Per-property timeline showing reservations + tasks + blocks + prices
-// in one view. Reuses MultiCalendarGrid with a single-property array
-// so the band/chip/cell rendering matches the cross-property surface
-// in CalendarModule exactly. The 90-day window matches Reservations
-// scope locked in §5.3 (active + future 90 days + past 12 months
-// searchable; default window = active + 90d).
-//
-// Cross-link: clicking a property in CalendarModule's MultiCalendarGrid
-// opens PropertyDetail with `?tab=calendar` so users land here directly.
+// Per-property month-style calendar showing reservations + tasks + blocks
+// + prices in one view. This intentionally differs from CalendarModule's
+// cross-property horizontal timeline: property detail should fit the
+// available width and read like a normal calendar.
 function PropertyCalendarTab({ property }: { property: Property }) {
   const windowStart = useMemo(() => new Date(), []);
   const windowDays = 90;
@@ -830,23 +826,22 @@ function PropertyCalendarTab({ property }: { property: Property }) {
   // Live tasks for this property, in-window.
   const taskFilter = useMemo(() => ({ property: property.code, from, to }), [property.code, from, to]);
   const { tasks: liveTasks } = useApiTasks(taskFilter);
-  const tasksByPropertyCode = useMemo(() => {
-    const map = new Map<string, typeof liveTasks>();
-    if (liveTasks) map.set(property.code, liveTasks);
-    return map;
-  }, [liveTasks, property.code]);
+  const calendarDays = useMemo(() => {
+    const priceMap = pricesByListing.get(property.id) || {};
+    return Array.from({ length: windowDays }, (_, i) => {
+      const d = new Date(windowStart.getTime() + i * 86400000);
+      const iso = d.toISOString().slice(0, 10);
+      return {
+        iso,
+        date: d,
+        cell: priceMap[iso] || null,
+        reservations: reservations.filter((r) => iso >= r.checkIn.slice(0, 10) && iso < r.checkOut.slice(0, 10)),
+        tasks: liveTasks.filter((t) => String(t.dueDate || '').slice(0, 10) === iso),
+      };
+    });
+  }, [liveTasks, pricesByListing, property.id, reservations, windowDays, windowStart]);
 
-  // MultiCalendarGrid expects a Property[]-shaped list. Pass a one-item
-  // array sourced from the PropertyDetail's loaded property. The shape
-  // already matches (lifecycleStatus / code / name / heroPhotoUrl /
-  // id = guestyId).
-  const singleProperty = useMemo(() => [{
-    id: property.id, // guesty_id when present (the listing key)
-    code: property.code,
-    name: property.name,
-    lifecycleStatus: property.lifecycleStatus,
-    heroPhotoUrl: property.heroPhotoUrl,
-  }], [property]);
+  const months = useMemo(() => buildPropertyCalendarMonths(calendarDays), [calendarDays]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -863,28 +858,204 @@ function PropertyCalendarTab({ property }: { property: Property }) {
         </label>
       </div>
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-        Reservations (bands) · tasks (chips) · blocks (overlay) · prices in empty cells. Tap a date to block; tap a reservation to open.
+        Reservations, tasks, blocks, and prices. Empty dates can be quick-blocked; reservation and task chips open their source records.
       </div>
-      <MultiCalendarGrid
-        properties={singleProperty as never}
-        reservations={reservations}
-        pricesByListing={pricesByListing}
-        tasksByPropertyCode={tasksByPropertyCode}
-        windowStart={windowStart}
-        windowDays={windowDays}
+      <PropertyOccupancyCalendarGrid
+        months={months}
+        listingGuestyId={property.id}
         todayIso={todayIso}
-        onBlocksChanged={refetchGrid}
-        onReservationClick={(rsv) => {
-          if (typeof window !== 'undefined') {
-            window.location.href = `/fad?m=reservations&sub=overview&rsv=${rsv.id}`;
-          }
-        }}
-        onTaskClick={(task) => {
-          if (typeof window !== 'undefined') {
-            window.location.href = `/fad?m=operations&sub=all&task=${task.id}`;
-          }
-        }}
+        onChanged={refetchGrid}
       />
+    </div>
+  );
+}
+
+type PropertyCalendarDay = {
+  iso: string;
+  date: Date;
+  cell: CellPrice | null;
+  reservations: Reservation[];
+  tasks: Task[];
+};
+
+type PropertyCalendarMonth = {
+  label: string;
+  weeks: Array<Array<PropertyCalendarDay | null>>;
+};
+
+function buildPropertyCalendarMonths(days: PropertyCalendarDay[]): PropertyCalendarMonth[] {
+  const monthLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const grouped = new Map<string, PropertyCalendarDay[]>();
+  for (const day of days) {
+    const label = monthLabel(day.date);
+    grouped.set(label, [...(grouped.get(label) || []), day]);
+  }
+  return Array.from(grouped.entries()).map(([label, monthDays]) => {
+    const first = monthDays[0];
+    const padStart = first ? (first.date.getDay() + 6) % 7 : 0;
+    const cells: Array<PropertyCalendarDay | null> = [
+      ...Array(padStart).fill(null),
+      ...monthDays,
+    ];
+    const weeks: Array<Array<PropertyCalendarDay | null>> = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      const week = cells.slice(i, i + 7);
+      while (week.length < 7) week.push(null);
+      weeks.push(week);
+    }
+    return { label, weeks };
+  });
+}
+
+function calendarPriceText(cell: CellPrice | null): string | null {
+  if (cell?.price_minor == null) return null;
+  const sym = cell.currency === 'EUR' ? '€' : cell.currency === 'MUR' ? 'Rs' : cell.currency === 'USD' ? '$' : '';
+  return `${sym}${Math.round(cell.price_minor / 100)}`;
+}
+
+function PropertyOccupancyCalendarGrid({
+  months,
+  listingGuestyId,
+  todayIso,
+  onChanged,
+}: {
+  months: PropertyCalendarMonth[];
+  listingGuestyId: string;
+  todayIso: string;
+  onChanged: () => void;
+}) {
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return (
+    <div className="property-calendar-grid" data-qa="property-detail-calendar">
+      {months.map((month) => (
+        <section key={month.label} className="property-calendar-month">
+          <div className="property-calendar-month-title">{month.label}</div>
+          <div className="property-calendar-dow-row">
+            {DOW.map((d) => (
+              <div key={d}>{d}</div>
+            ))}
+          </div>
+          {month.weeks.map((week, wi) => (
+            <div key={`${month.label}-${wi}`} className="property-calendar-week-row">
+              {week.map((entry, di) => (
+                <PropertyOccupancyCalendarCell
+                  key={entry?.iso || `${month.label}-${wi}-${di}`}
+                  entry={entry}
+                  listingGuestyId={listingGuestyId}
+                  todayIso={todayIso}
+                  onChanged={onChanged}
+                />
+              ))}
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function PropertyOccupancyCalendarCell({
+  entry,
+  listingGuestyId,
+  todayIso,
+  onChanged,
+}: {
+  entry: PropertyCalendarDay | null;
+  listingGuestyId: string;
+  todayIso: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!entry) return <div className="property-calendar-cell property-calendar-cell-empty" />;
+  const day = entry.date.getDate();
+  const isToday = entry.iso === todayIso;
+  const isWeekend = entry.date.getDay() === 0 || entry.date.getDay() === 6;
+  const isBlocked = !!entry.cell?.blocked;
+  const hasReservation = entry.reservations.length > 0;
+  const priceText = calendarPriceText(entry.cell);
+
+  const handleQuickBlock = async () => {
+    if (busy || hasReservation) return;
+    setBusy(true);
+    try {
+      if (isBlocked) {
+        await unblockDates(listingGuestyId, [entry.iso]);
+      } else {
+        await blockDates({ listingGuestyId, dates: [entry.iso], reason: 'maintenance' });
+      }
+      onChanged();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Calendar update failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className={
+        'property-calendar-cell' +
+        (isToday ? ' property-calendar-cell-today' : '') +
+        (isWeekend ? ' property-calendar-cell-weekend' : '') +
+        (isBlocked ? ' property-calendar-cell-blocked' : '')
+      }
+      title={`${entry.iso}${isBlocked ? ' · blocked' : ''}${priceText ? ` · ${priceText}` : ''}`}
+      onClick={handleQuickBlock}
+      role={!hasReservation ? 'button' : undefined}
+      tabIndex={!hasReservation ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (!hasReservation && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          void handleQuickBlock();
+        }
+      }}
+    >
+      <div className="property-calendar-cell-top">
+        <span className="mono">{day}</span>
+        {priceText && <span className="mono">{priceText}</span>}
+      </div>
+      <div className="property-calendar-cell-items">
+        {entry.reservations.slice(0, 2).map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            className={'property-calendar-pill property-calendar-pill-' + r.status}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (typeof window !== 'undefined') {
+                window.location.href = `/fad?m=reservations&sub=overview&rsv=${r.id}`;
+              }
+            }}
+          >
+            {r.guestName}
+          </button>
+        ))}
+        {entry.reservations.length > 2 && (
+          <span className="property-calendar-more">+{entry.reservations.length - 2} stays</span>
+        )}
+        {entry.tasks.slice(0, 2).map((task) => (
+          <button
+            key={task.id}
+            type="button"
+            className={'property-calendar-pill property-calendar-task-prio-' + task.priority}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (typeof window !== 'undefined') {
+                window.location.href = `/fad?m=operations&sub=all&task=${task.id}`;
+              }
+            }}
+          >
+            {task.title}
+          </button>
+        ))}
+        {entry.tasks.length > 2 && (
+          <span className="property-calendar-more">+{entry.tasks.length - 2} tasks</span>
+        )}
+      </div>
+      <div className="property-calendar-cell-footer">
+        {isBlocked && <span>Blocked</span>}
+        {!isBlocked && !hasReservation && <span>{busy ? 'Saving' : 'Available'}</span>}
+      </div>
     </div>
   );
 }

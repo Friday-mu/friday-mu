@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useT } from '../../_i18n/useT';
 import {
@@ -1077,6 +1077,33 @@ function timeBucketForTask(task: Task): ScheduleBucketId {
   return bucket?.id || 'all_day';
 }
 
+function minutesFromDueTime(time?: string): number | null {
+  const match = String(time || '').match(/^(\d{2}):(\d{2})/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+}
+
+function taskTimelineStyle(task: Task, bucket: ScheduleTimeBucket): CSSProperties | undefined {
+  if (bucket.startHour == null || bucket.endHour == null) return undefined;
+  const startMinute = minutesFromDueTime(task.dueTime);
+  if (startMinute == null) return undefined;
+  const bucketStart = bucket.startHour * 60;
+  const bucketEnd = bucket.endHour * 60;
+  const bucketSpan = Math.max(1, bucketEnd - bucketStart);
+  const offset = Math.max(0, Math.min(bucketSpan, startMinute - bucketStart));
+  const leftPct = (offset / bucketSpan) * 100;
+  const estimate = Math.max(15, Math.min(bucketSpan, task.estimatedMinutes || 45));
+  const naturalWidthPct = (estimate / bucketSpan) * 100;
+  const widthPct = Math.min(Math.max(0, 100 - leftPct), Math.max(16, naturalWidthPct));
+  return {
+    marginLeft: `${leftPct}%`,
+    width: `${widthPct}%`,
+  };
+}
+
 function taskTimeSortKey(task: Task): string {
   return `${task.dueTime || '99:99'}-${PRIORITY_ORDER[task.priority] ?? 99}-${textValue(task.title, 'Untitled task')}`;
 }
@@ -1815,16 +1842,21 @@ function SchedulePage({
                       }}
                     >
                       {cellTasks.map((task) => (
-                        <PlannerTaskCard
+                        <div
                           key={`${row.id}-${bucket.id}-${task.id}`}
-                          task={task}
-                          staffOptions={staffOptions}
-                          saving={savingTaskId === task.id}
-                          dragEnabled={dragEnabled}
-                          onDragStart={handleDragStart}
-                          onOpenTask={onOpenTask}
-                          onEdit={setEditingTaskId}
-                        />
+                          className="ops-timeline-card-slot"
+                          style={taskTimelineStyle(task, bucket)}
+                        >
+                          <PlannerTaskCard
+                            task={task}
+                            staffOptions={staffOptions}
+                            saving={savingTaskId === task.id}
+                            dragEnabled={dragEnabled}
+                            onDragStart={handleDragStart}
+                            onOpenTask={onOpenTask}
+                            onEdit={setEditingTaskId}
+                          />
+                        </div>
                       ))}
                       {showPreview && dragPreview && (
                         <>
