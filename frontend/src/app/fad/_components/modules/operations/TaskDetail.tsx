@@ -350,6 +350,15 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     });
   };
 
+  const setSchedule = async (patch: Pick<Parameters<typeof updateTask>[0]['patch'], 'dueDate' | 'dueTime'>) => {
+    await runApiMutation('schedule', async () => {
+      const nextPatch: Parameters<typeof updateTask>[0]['patch'] = { ...patch };
+      if (patch.dueDate && task.status === 'reported') nextPatch.status = 'scheduled';
+      await updateTask({ taskId: task.id, patch: nextPatch, actorId: currentUserId });
+      onBumpRev();
+    });
+  };
+
   const setStatus = async (status: Task['status']) => {
     setCloseArmed(false);
     // 2026-05-23 — requirements UI is hidden (see SHOW_TASK_REQUIREMENTS).
@@ -497,6 +506,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           expensesLoading={expensesLoading}
           staffUsers={staffUsers}
           onUpdateAssignees={setAssigneeIds}
+          onUpdateSchedule={setSchedule}
         />
         <Comments
           task={task}
@@ -854,6 +864,7 @@ function Body({
   expensesLoading,
   staffUsers,
   onUpdateAssignees,
+  onUpdateSchedule,
 }: {
   task: Task;
   role: NonNullable<ReturnType<typeof usePermissions>['role']>;
@@ -891,6 +902,7 @@ function Body({
   expensesLoading: boolean;
   staffUsers: OperationsStaffUser[];
   onUpdateAssignees: (nextIds: string[]) => void;
+  onUpdateSchedule: (patch: Pick<Parameters<typeof updateTask>[0]['patch'], 'dueDate' | 'dueTime'>) => Promise<void>;
 }) {
   const assignees = taskAssigneePeople(task);
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
@@ -942,6 +954,7 @@ function Body({
         elapsedSeconds={elapsedSeconds}
         onOpenAssigneePicker={() => setAssigneePickerOpen(true)}
         onUpdateAssignees={onUpdateAssignees}
+        onUpdateSchedule={onUpdateSchedule}
       />
 
       {task.description && (
@@ -2428,6 +2441,7 @@ function TaskMetaGrid({
   elapsedSeconds,
   onOpenAssigneePicker,
   onUpdateAssignees,
+  onUpdateSchedule,
 }: {
   task: Task;
   assignees: Array<{ id: string; name: string; initials: string; avatarColor: string }>;
@@ -2436,6 +2450,7 @@ function TaskMetaGrid({
   elapsedSeconds: number;
   onOpenAssigneePicker: () => void;
   onUpdateAssignees: (next: string[]) => void;
+  onUpdateSchedule: (patch: Pick<Parameters<typeof updateTask>[0]['patch'], 'dueDate' | 'dueTime'>) => Promise<void>;
 }) {
   const due = formatDue(task);
   const propertyLabel = task.propertyCode || 'No property';
@@ -2449,7 +2464,25 @@ function TaskMetaGrid({
     <div className="ops-meta-grid">
       <div className="ops-meta-row">
         <span className="ops-meta-label">Date</span>
-        <span className={`ops-meta-value${due === 'Not scheduled' ? ' muted' : ''}`}>{due}</span>
+        {canManageTasks ? (
+          <span className="ops-meta-value ops-meta-schedule-edit">
+            <input
+              type="date"
+              value={task.dueDate || ''}
+              aria-label="Task due date"
+              onChange={(e) => void onUpdateSchedule({ dueDate: e.target.value })}
+            />
+            <input
+              type="time"
+              value={task.dueTime?.slice(0, 5) || ''}
+              aria-label="Task due time"
+              onChange={(e) => void onUpdateSchedule({ dueTime: e.target.value })}
+            />
+            <span className={due === 'Not scheduled' ? 'muted' : ''}>{due}</span>
+          </span>
+        ) : (
+          <span className={`ops-meta-value${due === 'Not scheduled' ? ' muted' : ''}`}>{due}</span>
+        )}
         <span className="ops-meta-action" />
       </div>
 

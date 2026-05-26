@@ -276,7 +276,7 @@ export function MultiCalendarGrid({
   }, [properties]);
 
   return (
-    <div className="mcal-root">
+    <div className="mcal-root" data-qa="multi-calendar-grid">
       <div className="mcal-scroller">
         {/* Header row */}
         <div className="mcal-header-row" style={{ gridTemplateColumns }}>
@@ -310,14 +310,29 @@ export function MultiCalendarGrid({
         {/* Property rows */}
         {sortedProperties.map((p) => {
           const positions = positioned.get(p.code) || [];
+          const propertyTasks = tasksByPropertyCode?.get(p.code) || [];
+          const hasDatedTasks = propertyTasks.some((t) => {
+            if (!t.dueDate) return false;
+            const dueIso = String(t.dueDate).slice(0, 10);
+            return columns.some((c) => c.iso === dueIso);
+          });
           // v0.4 — row height grows with lane stack (28px per lane).
+          // v0.7 — reserve bottom space when task chips share the row so
+          // live-data loads do not visually push/overlap calendar lanes.
           const lanes = Math.max(1, maxLanesByProperty.get(p.code) ?? 1);
-          const rowHeight = Math.max(56, 16 + lanes * 30);
+          const rowHeight = Math.max(64, 18 + lanes * 30 + (hasDatedTasks ? 24 : 0));
           return (
             <div
               key={p.id}
               className="mcal-property-row"
-              style={{ gridTemplateColumns, gridAutoRows: `${rowHeight}px` }}
+              data-qa="multi-calendar-property-row"
+              data-property-code={p.code}
+              style={{
+                gridTemplateColumns,
+                gridAutoRows: `${rowHeight}px`,
+                height: rowHeight,
+                minHeight: rowHeight,
+              }}
             >
               <button
                 type="button"
@@ -440,8 +455,7 @@ export function MultiCalendarGrid({
 
               {/* Task chips overlay (v0.2) — per-cell + property */}
               {tasksByPropertyCode && (() => {
-                const tasks = tasksByPropertyCode.get(p.code) || [];
-                return tasks
+                return propertyTasks
                   .filter((t) => t.dueDate)
                   .map((t) => {
                     const dueIso = String(t.dueDate).slice(0, 10);

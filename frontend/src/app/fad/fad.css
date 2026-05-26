@@ -8032,6 +8032,15 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   position: relative;
 }
 
+.ops-timeline-card-slot {
+  min-width: 36px;
+  max-width: 100%;
+}
+
+.ops-planner-grid.user-day .ops-timeline-card-slot + .ops-timeline-card-slot {
+  margin-top: 4px;
+}
+
 /* 2026-05-23 (Ishant): live 15-min snap on the user_day planner.
    Vertical tick + floating label render at the cursor's x-position so
    the operator sees the exact drop time before releasing. */
@@ -9781,6 +9790,20 @@ html.fad-dark .fin-friday-flag-tag { background: rgba(0,0,0,0.25); }
   min-width: 0;
 }
 .ops-meta-row > .ops-meta-value.muted {
+  color: var(--color-text-tertiary);
+}
+.ops-meta-schedule-edit input {
+  width: auto;
+  min-height: 30px;
+  font-size: 12px;
+}
+.ops-meta-schedule-edit input[type="date"] {
+  min-width: 132px;
+}
+.ops-meta-schedule-edit input[type="time"] {
+  min-width: 94px;
+}
+.ops-meta-schedule-edit .muted {
   color: var(--color-text-tertiary);
 }
 .ops-meta-row > .ops-meta-action {
@@ -11980,12 +12003,17 @@ body:has(.ops-create-drawer) .bug-fab {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
 }
 
 .mcal-scroller {
   overflow: auto;
   max-height: calc(100vh - 280px);
   position: relative;
+  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable both-edges;
 }
 
 /* Each row (header + property rows) is its own grid so bands can overlay
@@ -12097,6 +12125,7 @@ body:has(.ops-create-drawer) .bug-fab {
   border-color: transparent;
   border-right-color: var(--color-border-secondary);
   border-width: 0.5px;
+  min-height: 100%;
 }
 
 .mcal-property-cell:hover {
@@ -12166,6 +12195,7 @@ body:has(.ops-create-drawer) .bug-fab {
   background: transparent;
   cursor: default;
   min-height: 56px;
+  height: 100%;
 }
 
 /* Reservation band: overlays day cells via shared grid-row + higher z */
@@ -12273,6 +12303,139 @@ body:has(.ops-create-drawer) .bug-fab {
   align-items: center;
   gap: 12px;
   background: var(--color-background-secondary);
+}
+
+/* Property detail calendar — responsive month grid, no horizontal timeline */
+.property-calendar-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.property-calendar-month-title {
+  margin-bottom: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.property-calendar-dow-row,
+.property-calendar-week-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.property-calendar-dow-row {
+  margin-bottom: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  text-align: center;
+}
+
+.property-calendar-week-row {
+  margin-bottom: 4px;
+}
+
+.property-calendar-cell {
+  min-height: 104px;
+  padding: 6px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--radius-sm);
+  background: var(--color-background-primary);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.property-calendar-cell-empty {
+  cursor: default;
+  background: transparent;
+  border-color: transparent;
+}
+
+.property-calendar-cell-weekend {
+  background: rgba(150, 150, 150, 0.05);
+}
+
+.property-calendar-cell-today {
+  border-color: var(--color-brand-accent);
+}
+
+.property-calendar-cell-blocked {
+  background: var(--color-bg-warning, rgba(245, 158, 11, 0.12));
+}
+
+.property-calendar-cell-top,
+.property-calendar-cell-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+}
+
+.property-calendar-cell-items {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.property-calendar-pill {
+  width: 100%;
+  min-height: 20px;
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: #fff;
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.property-calendar-pill-confirmed,
+.property-calendar-pill-checked_in,
+.property-calendar-pill-checked_out {
+  background: rgb(53, 122, 189);
+}
+
+.property-calendar-pill-hold {
+  background: rgb(220, 165, 60);
+  color: #1a1a1a;
+}
+
+.property-calendar-pill-inquiry {
+  background: rgb(140, 140, 140);
+}
+
+.property-calendar-task-prio-urgent,
+.property-calendar-task-prio-high {
+  background: rgb(196, 74, 74);
+}
+
+.property-calendar-task-prio-medium {
+  background: rgb(72, 123, 174);
+}
+
+.property-calendar-task-prio-low,
+.property-calendar-task-prio-lowest {
+  background: rgb(110, 145, 120);
+}
+
+.property-calendar-more {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
 }
 
 .mcal-legend {

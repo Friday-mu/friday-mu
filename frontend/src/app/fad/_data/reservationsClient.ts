@@ -170,14 +170,12 @@ function dedupeRawReservations(rows: RawReservation[]): RawReservation[] {
 }
 
 function mapStatus(s?: string | null): ReservationStatus {
-  const v = String(s ?? '').toLowerCase();
-  // Empty/null status → 'confirmed'. ~96% of prod guesty_reservations rows
-  // come through with status=null today (Guesty webhook doesn't always set
-  // the field, or the column was added after the row was first synced). For
-  // those, the realistic default is "confirmed booking" — they wouldn't be
-  // in the cache otherwise. Defaulting to 'inquiry' broke the calendar.
-  if (!v) return 'confirmed';
-  if (v === 'confirmed' || v === 'reserved') return 'confirmed';
+  const v = String(s ?? '').trim().toLowerCase();
+  // 2026-05-26: a null Guesty status is not enough evidence to render a
+  // confirmed stay. Treat it as inquiry/unconfirmed so it is hidden by
+  // default and visible only with the inquiries toggle.
+  if (!v) return 'inquiry';
+  if (v === 'confirmed' || v === 'reserved' || v === 'booked') return 'confirmed';
   if (v === 'checked_in') return 'checked_in';
   if (v === 'checked_out') return 'checked_out';
   if (v === 'canceled' || v === 'cancelled') return 'cancelled';
@@ -191,11 +189,9 @@ function mapStatus(s?: string | null): ReservationStatus {
   // them. They stay in the DB for audit / Reservations list "all"
   // tabs where useful.
   if (v === 'expired' || v === 'closed' || v === 'denied' || v === 'voided') return 'cancelled';
-  if (v === 'hold' || v === 'tentative' || v === 'pending') return 'hold';
-  if (v === 'inquiry' || v === 'pending_quote' || v === 'request') return 'inquiry';
-  // Truly-unknown non-empty value: surface as 'confirmed' so it doesn't get
-  // silently hidden from the calendar.
-  return 'confirmed';
+  if (v === 'hold' || v === 'tentative' || v === 'pending' || v === 'awaiting_payment') return 'hold';
+  if (v === 'inquiry' || v === 'pending_quote' || v === 'request' || v === 'requested' || v === 'quote' || v === 'preapproved' || v === 'pre_approved' || v === 'unconfirmed') return 'inquiry';
+  return 'inquiry';
 }
 
 function mapChannel(c?: string | null, source?: string | null): ReservationChannel {
