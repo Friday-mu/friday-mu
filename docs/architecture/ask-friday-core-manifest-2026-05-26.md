@@ -43,6 +43,7 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - Base branch: `origin/fad-rebuild`
 - Latest pushed ledger commit when this manifest was created: `2b3d96f0 docs(ask-friday): add completion ledger`
 - Previous code commit: `8b01fb2c fix(fad): enforce ops scheduling constraints`
+- Draft PR: `https://github.com/Friday-mu/friday-mu/pull/9`
 - Deployment status: not deployed from this branch at manifest creation time.
 
 ## Canonical Recovery Docs

@@ -210,4 +210,8 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 Continue with Plan 1.
 
-The branch has pushed but not deployed Ask Friday Core hardening plus Ops constraints. The next safe action is coordinated FAD merge/deploy/smoke for Inbox and Ops only, then patch any production-blocking defects before Plan 2 research/buildout.
+The branch has pushed but not deployed Ask Friday Core hardening plus Ops constraints.
+
+Draft PR: `https://github.com/Friday-mu/friday-mu/pull/9`
+
+The next safe action is coordinated FAD review/merge/deploy/smoke for Inbox and Ops only, then patch any production-blocking defects before Plan 2 research/buildout.
