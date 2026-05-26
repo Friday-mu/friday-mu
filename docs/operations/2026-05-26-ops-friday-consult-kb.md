@@ -6,7 +6,7 @@ This document mirrors the first Operations-specific Friday Consult KB shipped in
 
 - Surface key: `ops-consult`
 - Backend route: `POST /api/operations/consult`
-- UI surface: Operations > Schedule > Friday Consult panel
+- UI surface: Operations > Schedule and Operations > Roster Friday Consult panels
 - User-facing module name: Friday Consult
 - Mutation rule: draft first, apply only after staff action, keep undo for reversible schedule operations.
 
@@ -93,6 +93,15 @@ Added a server-side Google Routes adapter for Ops scheduling:
 - Config: `GOOGLE_ROUTES_API_KEY` with optional `GOOGLE_ROUTES_URL` override. If the key is missing, the endpoint returns `google_routes_not_configured` with `configured:false`.
 - Scope: server-only scaffold. It does not expose a browser key and it does not schedule tasks by itself.
 
+## Roster Friday Consult Panel
+
+Operations > Roster now uses the same Ops Consult backend route as Schedule with `context: "roster"` and `plannerMode: "roster_week"`.
+
+- The panel is conversational: Franny can ask about coverage, weekend fairness, zones, standby/off days, night coverage, and task load before taking action.
+- Quick actions expose draft/apply/discard for roster suggestions, while preserving the rule that AI changes are local drafts until staff explicitly applies them.
+- The prompt context includes the visible week, current roster cells, task workload, staff list, and any visible roster draft.
+- Durable backend mutation history, audit trail, and deeper roster undo remain a follow-up after schedule draft/clear/undo is stable.
+
 ## External Research Summaries
 
 - Workforce scheduling should model demand, skills, days off, requests/preferences, and fairness together. This supports the Ops agent's monthly -> weekly -> daily method.
@@ -115,4 +124,4 @@ References:
 - Vendor live availability and exact prices are still not available. Lead times are planning assumptions.
 - Exact staff addresses are approximated by area only.
 - Google travel-time API scaffold is wired at `POST /api/operations/travel-time/estimate`, but live estimates require `GOOGLE_ROUTES_API_KEY` and exact staff/property pins.
-- The current apply path supports schedule draft application, clear, and undo. Full roster mutation/application remains future work.
+- The current apply path supports schedule draft application, clear, undo, and local roster draft/apply. Durable roster mutation history and audit trails remain future work.

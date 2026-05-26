@@ -1,5 +1,6 @@
 'use client';
 
+import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AVAILABILITY_COLOR,
@@ -20,10 +21,15 @@ import { useT } from '../../../_i18n/useT';
 import type { Task } from '../../../_data/tasks';
 import { TASK_PROPERTIES_SHIM } from '../../../_data/properties';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../../_data/operationsStaffClient';
+import {
+  sendOperationsConsultMessage,
+  type OperationsConsultActionSuggestion,
+  type OperationsConsultHistoryMessage,
+} from '../../../_data/operationsConsultClient';
 import { useApiTasksPage } from '../../../_data/useApiTasks';
 import { useCurrentUserId, useJwtRawUserId, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
-import { IconChevron } from '../../icons';
+import { IconChevron, IconSend, IconSparkle } from '../../icons';
 
 const DAY_LABEL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -43,6 +49,12 @@ interface RosterAgentSuggestion {
   zone: Zone | null;
   taskCount: number;
   reason: string;
+}
+
+interface RosterConsultMessage extends OperationsConsultHistoryMessage {
+  id: string;
+  actions?: OperationsConsultActionSuggestion[];
+  meta?: string;
 }
 
 const CELL_OPTIONS: CellOption[] = [
@@ -233,6 +245,263 @@ function buildRosterAgentPlan(input: {
   return suggestions.slice(0, 80);
 }
 
+function rosterConsultNotes(input: {
+  weekStart: string;
+  weekEnd: string;
+  dirty: boolean;
+  rosterStatus?: ApiRosterWeek['status'];
+  staff: OperationsStaffUser[];
+  dates: string[];
+  currentCells: Map<string, RosterDay>;
+  draft: RosterAgentSuggestion[];
+  workload: WorkloadSummary;
+}): string {
+  const staffRows = input.staff.slice(0, 10).map((user) => {
+    const key = staffKey(user);
+    const days = input.dates.map((date) => {
+      const cell = input.currentCells.get(cellKey(key, date));
+      if (!cell) return `${date.slice(5)}:missing`;
+      const zone = cell.zone ? `/${cell.zone}` : '';
+      return `${date.slice(5)}:${cell.availability}${zone}`;
+    }).join(', ');
+    return `${user.name}: ${days}`;
+  });
+  const draftRows = input.draft.slice(0, 12).map((item) => (
+    `${item.date}: ${item.staffName} -> ${item.availability}${item.zone ? `/${item.zone}` : ''} (${item.reason})`
+  ));
+  return [
+    `Roster week ${input.weekStart} to ${input.weekEnd}.`,
+    `Roster status: ${input.rosterStatus || 'draft'}; unsaved edits: ${input.dirty ? 'yes' : 'no'}.`,
+    `Workload: ${input.workload.total} tasks, ${input.workload.unassignedCount} unassigned, ${input.workload.priorityCount} urgent/high.`,
+    `Current roster cells: ${staffRows.join(' | ') || 'none loaded'}.`,
+    `Visible roster draft: ${draftRows.join(' | ') || 'none'}.`,
+  ].join(' ');
+}
+
+function RosterFridayConsultPanel({
+  weekStart,
+  weekEnd,
+  dates,
+  staff,
+  tasks,
+  workload,
+  currentCells,
+  rosterStatus,
+  dirty,
+  saving,
+  canEdit,
+  rosterAgentPlan,
+  onGenerateDraft,
+  onApplyDraft,
+  onDiscardDraft,
+}: {
+  weekStart: string;
+  weekEnd: string;
+  dates: string[];
+  staff: OperationsStaffUser[];
+  tasks: Task[];
+  workload: WorkloadSummary;
+  currentCells: Map<string, RosterDay>;
+  rosterStatus?: ApiRosterWeek['status'];
+  dirty: boolean;
+  saving: boolean;
+  canEdit: boolean;
+  rosterAgentPlan: RosterAgentSuggestion[];
+  onGenerateDraft: () => RosterAgentSuggestion[];
+  onApplyDraft: () => void;
+  onDiscardDraft: () => void;
+}) {
+  const [messages, setMessages] = useState<RosterConsultMessage[]>([
+    {
+      id: 'welcome',
+      role: 'friday',
+      text: 'I can help review this roster against weekly task load, coverage, zone fit, weekend fairness, standby/off days, and night-shift constraints.',
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const appendMessage = (message: Omit<RosterConsultMessage, 'id'>) => {
+    setMessages((current) => [
+      ...current,
+      {
+        ...message,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      },
+    ]);
+  };
+
+  const appendFriday = (text: string, extra?: Partial<RosterConsultMessage>) => {
+    appendMessage({ role: 'friday', text, ...extra });
+  };
+
+  const runDraft = () => {
+    const next = onGenerateDraft();
+    appendFriday(
+      next.length > 0
+        ? `Drafted ${next.length} roster cell${next.length === 1 ? '' : 's'} for ${formatWeekLabel(weekStart)}. Review before applying.`
+        : 'The roster already matches the visible weekly task load closely enough for this pass.',
+    );
+  };
+
+  const runApply = () => {
+    if (rosterAgentPlan.length === 0) {
+      appendFriday('There is no roster draft to apply yet.');
+      return;
+    }
+    onApplyDraft();
+    appendFriday('Applied the visible roster draft as unsaved edits. Save draft or publish when ready.');
+  };
+
+  const runSuggestedAction = async (type: OperationsConsultActionSuggestion['type']) => {
+    if (type === 'draft_schedule') {
+      runDraft();
+      return;
+    }
+    if (type === 'apply_schedule_draft') {
+      runApply();
+      return;
+    }
+    const prompt = type === 'request_owner_approval'
+      ? 'Check whether any roster decision here implies owner approval or guest-impact risk.'
+      : 'Review this roster week and suggest the next manual edit. Do not apply anything.';
+    await submitConsultPrompt(prompt);
+  };
+
+  const submitConsultPrompt = async (promptText: string) => {
+    const text = promptText.trim();
+    if (!text || loading) return;
+    const history = messages
+      .filter((message) => message.id !== 'welcome')
+      .slice(-8)
+      .map(({ role, text: messageText }) => ({ role, text: messageText }));
+
+    appendMessage({ role: 'user', text });
+    setLoading(true);
+    try {
+      const response = await sendOperationsConsultMessage({
+        text,
+        context: 'roster',
+        rangeStart: weekStart,
+        rangeEnd: weekEnd,
+        plannerMode: 'roster_week',
+        scheduledTasks: tasks,
+        staff,
+        history,
+        notes: rosterConsultNotes({
+          weekStart,
+          weekEnd,
+          dates,
+          dirty,
+          rosterStatus,
+          staff,
+          currentCells,
+          draft: rosterAgentPlan,
+          workload,
+        }),
+      });
+      appendFriday(response.response, {
+        actions: response.action_suggestions || [],
+        meta: response.metadata?.tokenEstimate ? `KB context ~${response.metadata.tokenEstimate.toLocaleString()} tokens` : undefined,
+      });
+    } catch (e) {
+      appendFriday(e instanceof Error ? e.message : 'Friday Consult could not read the roster context.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = input.trim();
+    setInput('');
+    void submitConsultPrompt(text);
+  };
+
+  return (
+    <section className="ops-consult-panel" aria-label="Friday Consult for roster planning">
+      <div className="ops-consult-head">
+        <div>
+          <div className="ops-mobile-kicker">Friday Consult</div>
+          <h3>Roster coverage agent</h3>
+          <small>{formatWeekLabel(weekStart)}</small>
+        </div>
+        <span>
+          <IconSparkle size={13} />
+          {rosterAgentPlan.length > 0 ? `${rosterAgentPlan.length} cells drafted` : 'Knowledge loaded'}
+        </span>
+      </div>
+
+      <div className="ops-consult-actions" aria-label="Friday Consult roster quick actions">
+        <button className="btn ghost sm" type="button" disabled={!canEdit || saving || staff.length === 0} onClick={runDraft}>
+          Draft roster
+        </button>
+        <button className="btn secondary sm" type="button" disabled={!canEdit || saving || rosterAgentPlan.length === 0} onClick={runApply}>
+          Apply draft
+        </button>
+        <button className="btn ghost sm" type="button" disabled={!canEdit || saving || rosterAgentPlan.length === 0} onClick={onDiscardDraft}>
+          Discard draft
+        </button>
+      </div>
+
+      <div className="ops-consult-thread" aria-live="polite">
+        {messages.map((message) => (
+          <div className={`ops-consult-message ${message.role}`} key={message.id}>
+            <strong>{message.role === 'user' ? 'You' : 'Friday Consult'}</strong>
+            <p>{message.text}</p>
+            {message.meta && <small>{message.meta}</small>}
+            {message.actions && message.actions.length > 0 && (
+              <div className="ops-consult-action-suggestions">
+                {message.actions.map((action) => (
+                  <button
+                    key={`${message.id}-${action.type}-${action.label}`}
+                    className="btn secondary sm"
+                    type="button"
+                    disabled={loading || saving}
+                    onClick={() => void runSuggestedAction(action.type)}
+                    title={action.reason || undefined}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {rosterAgentPlan.length > 0 && (
+          <div className="ops-consult-draft">
+            {rosterAgentPlan.slice(0, 8).map((item) => (
+              <div className="ops-schedule-backlog-row" key={`${item.userId}-${item.date}`}>
+                <span>
+                  <strong>{formatShortDate(item.date)} · {item.staffName}</strong>
+                  <small>{item.availability}{item.zone ? ` · ${ZONE_LABEL[item.zone]}` : ''} · {item.reason}</small>
+                </span>
+                <span>{item.taskCount} task{item.taskCount === 1 ? '' : 's'}</span>
+              </div>
+            ))}
+            {rosterAgentPlan.length > 8 && (
+              <small>+{rosterAgentPlan.length - 8} more roster cell{rosterAgentPlan.length - 8 === 1 ? '' : 's'}</small>
+            )}
+          </div>
+        )}
+      </div>
+
+      <form className="ops-consult-compose" onSubmit={handleSubmit}>
+        <textarea
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Talk to Friday Consult about coverage, weekend fairness, zones, standby days, or who should be off..."
+          rows={2}
+        />
+        <button className="btn primary sm" type="submit" disabled={loading || !input.trim()}>
+          <IconSend size={12} />
+          {loading ? 'Reading...' : 'Send'}
+        </button>
+      </form>
+    </section>
+  );
+}
+
 export function RosterPage() {
   const { role, can } = usePermissions();
   const { t } = useT();
@@ -394,6 +663,7 @@ export function RosterPage() {
         };
       }),
     );
+  const currentRosterCells = new Map(collectWeekDays().map((day) => [cellKey(day.userId, day.date), day]));
 
   const saveDraft = async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!canEdit || saving) return rosterWeek;
@@ -449,15 +719,15 @@ export function RosterPage() {
   const safeMobileIdx = Math.min(Math.max(mobileDayIdx, 0), Math.max(dates.length - 1, 0));
   const mobileDate = dates[safeMobileIdx];
   const generateRosterAgentPlan = () => {
-    const currentCells = new Map(collectWeekDays().map((day) => [cellKey(day.userId, day.date), day]));
     const next = buildRosterAgentPlan({
       dates,
       staff: persistableUsers,
       tasks: tasksPage.tasks,
-      currentCells,
+      currentCells: currentRosterCells,
     });
     setRosterAgentPlan(next);
-    fireToast(next.length > 0 ? `Ask Friday drafted ${next.length} roster cell${next.length === 1 ? '' : 's'}` : 'Roster already matches the current task load');
+    fireToast(next.length > 0 ? `Friday Consult drafted ${next.length} roster cell${next.length === 1 ? '' : 's'}` : 'Roster already matches the current task load');
+    return next;
   };
 
   const applyRosterAgentPlan = () => {
@@ -477,7 +747,12 @@ export function RosterPage() {
     });
     setDirty(true);
     setRosterAgentPlan([]);
-    fireToast(`Applied ${rosterAgentPlan.length} roster draft cell${rosterAgentPlan.length === 1 ? '' : 's'}`);
+    fireToast(`Applied ${rosterAgentPlan.length} Friday Consult roster cell${rosterAgentPlan.length === 1 ? '' : 's'}`);
+  };
+
+  const discardRosterAgentPlan = () => {
+    setRosterAgentPlan([]);
+    fireToast('Friday Consult roster draft discarded');
   };
 
   return (
@@ -517,26 +792,6 @@ export function RosterPage() {
         >
           {t('operations.roster.publish', 'Publish')}
         </button>
-        {canEdit && (
-          <>
-            <button
-              className="btn ghost sm"
-              disabled={saving || persistableUsers.length === 0}
-              type="button"
-              onClick={generateRosterAgentPlan}
-            >
-              Generate roster draft
-            </button>
-            <button
-              className="btn secondary sm"
-              disabled={saving || rosterAgentPlan.length === 0}
-              type="button"
-              onClick={applyRosterAgentPlan}
-            >
-              Apply draft
-            </button>
-          </>
-        )}
       </div>
 
       {((staffError && visibleUsers.length === 0) || rosterError || tasksPage.error) && (
@@ -545,9 +800,29 @@ export function RosterPage() {
         </div>
       )}
 
+      {canEdit && (
+        <RosterFridayConsultPanel
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+          dates={dates}
+          staff={persistableUsers}
+          tasks={tasksPage.tasks}
+          workload={workload}
+          currentCells={currentRosterCells}
+          rosterStatus={rosterWeek?.status}
+          dirty={dirty}
+          saving={saving}
+          canEdit={canEdit}
+          rosterAgentPlan={rosterAgentPlan}
+          onGenerateDraft={generateRosterAgentPlan}
+          onApplyDraft={applyRosterAgentPlan}
+          onDiscardDraft={discardRosterAgentPlan}
+        />
+      )}
+
       {canEdit && rosterAgentPlan.length > 0 && (
         <div className="ops-roster-warning" style={{ display: 'grid', gap: 8 }}>
-          <strong>Ask Friday roster draft · {rosterAgentPlan.length} suggested changes</strong>
+          <strong>Friday Consult roster draft · {rosterAgentPlan.length} suggested changes</strong>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {rosterAgentPlan.slice(0, 10).map((item) => (
               <span className="chip" key={`${item.userId}-${item.date}`} style={{ fontSize: 11 }}>
