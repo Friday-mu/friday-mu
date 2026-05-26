@@ -7,6 +7,8 @@ Use the FAD property layer as the unified read model. When explaining data prove
 - Guesty is the commercial/listing/reservation source for listing identity, bedrooms, bathrooms, accommodates/max guests, property type, amenities, booking dates, owner blocks, and guest-facing listing fields.
 - Breezeway is the operational/property-task source for historical task property identity, Breezeway home IDs, operational property grouping, coordinates, and historical task/service evidence.
 - FAD-owned overlays are authoritative for Friday-specific operations policy: property code, region/zone, size override, combo parent-child mapping, staff-facing notes, owner caps/financial overrides, and any manually reviewed corrections.
+- Runtime Ops agent context should come through FAD/FridayOS API/cache surfaces (`/api/properties`, `/api/reservations`, `/api/tasks`) rather than direct external API calls.
+- Direct Guesty/Breezeway API pulls are allowed for diagnostics, preview-only metadata audits, one-time backfills, and cache-coverage checks. They should not become the normal scheduling/planning path.
 
 ## Latest Metadata Preview
 
@@ -21,6 +23,20 @@ Preview-only pull run from FAD tooling on 2026-05-26:
 - Unmapped Breezeway rows: `Grand Baie Heights` and `Office / Store / Admin`; treat these as non-unit/admin-style rows for Ops scheduling.
 - Report mirror: `docs/operations/2026-05-26-ops-property-metadata-preview.json`.
 - Tool: `backend/scripts/ops-property-metadata-preview.js`.
+- Refreshed with keychain credentials on 2026-05-26T00:36:00Z; counts and sanitized merged data were unchanged except for the generated timestamp.
+
+## FAD API Cache Coverage
+
+Use `backend/scripts/fad-api-cache-coverage-report.js` to check whether the FAD/FridayOS cached runtime path exposes enough data for planning.
+
+The script is read-only and checks:
+
+- `guesty_listings` cache field coverage;
+- `fad_properties` overlay field coverage;
+- `guesty_reservations` freshness and field coverage;
+- `source=breezeway` task enrichment, comments, costs, supplies, dates, assignees, and weak placeholder titles.
+
+If `DATABASE_URL` is unavailable in the local environment, do not fake the result. Report that the runtime-cache coverage check is blocked and keep using the committed metadata preview only as source-API coverage evidence.
 
 ## Field Availability
 

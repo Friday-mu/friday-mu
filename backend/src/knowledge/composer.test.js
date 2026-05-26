@@ -85,11 +85,13 @@ test('ops-consult loads full Operations KB', () => {
   assert(result.system_message.includes('Staff And Roster Rules'), 'must include staff roster rules');
   assert(result.system_message.includes('Property Data Sources For Operations'), 'must include property data source rules');
   assert(result.system_message.includes('Property Ops Metadata'), 'must include property ops metadata');
+  assert(result.system_message.includes('Field Location And Live Dispatch'), 'must include field location dispatch rules');
   assert(result.system_message.includes('Owner Terms, Expense Approval'), 'must include owner approval rules');
   assert(result.system_message.includes('Vendors, Maintenance Escalation'), 'must include vendor maintenance rules');
   assert(result.metadata.loaded_skills.includes('staff-roster-rules'), 'staff rules must always load');
   assert(result.metadata.loaded_skills.includes('property-data-sources'), 'property data rules must always load');
   assert(result.metadata.loaded_skills.includes('property-ops-metadata'), 'property ops metadata must always load');
+  assert(result.metadata.loaded_skills.includes('field-location-dispatch'), 'field dispatch rules must always load');
   assert(result.metadata.loaded_skills.includes('srl-supplies-rules'), 'SRL rules must always load');
   assert(result.metadata.loaded_skills.includes('vendors-maintenance-pricing'), 'vendor rules must always load');
 });

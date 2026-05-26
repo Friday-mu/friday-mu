@@ -43,7 +43,9 @@ Default principle: assign internal capability first when timing and urgency allo
 - Multi-Maintenance Limited and Faiz are high-side vendors.
 - Rodney and Joe are average-price vendors.
 - Bryan is internal; his work needs an owner-charge matrix.
-- Until the matrix exists, Friday Consult should produce draft charge guidance, not final owner invoices.
+- Until the matrix exists, Friday Consult should produce draft internal charge guidance, not final owner invoices.
+- Internal maintenance charges are not owner-visible by default yet. After task completion, Ops Manager/Director review must validate the draft charge before anything is billed or shown to owners.
+- Future automation may make charges owner-visible immediately, but only after the matrix has enough evidence and the approval thresholds are encoded.
 
 ## Future Pricing Matrix Inputs
 

@@ -2,6 +2,7 @@
 
 > Status: DRAFT for Ishant review.
 > Authored: 2026-05-24 (Ishant + Claude).
+> 2026-05-26 update: narrowed to dispatch-first, foreground/on-duty collection for web/PWA V1. Do not rely on service-worker geolocation or app-closed background tracking without a native wrapper decision.
 > Canonical on Notion: [`36943ca884928170897edda4660ee133`](https://www.notion.so/36943ca884928170897edda4660ee133) (FAD Scoping zone).
 > This file is the runtime mirror — sync on edit.
 > Tracked as: **T4.37** in [`docs/FAD_BACKLOG.md`](../FAD_BACKLOG.md).
@@ -30,15 +31,15 @@ Capture who's on FAD, when, what they're doing, for how long. Useful in the abst
 
 | # | Question | Default lean |
 |---|---|---|
-| 1 | **Opt-in model** — per-user toggle, mandatory during shift, or always-on? | Per-user toggle with shift-time auto-on. Field staff opt-in once, location active during scheduled shift hours only |
-| 2 | **Accuracy** — IP geolocation (low), browser geolocation API (medium, GPS-when-available), native PWA GPS (high, requires PWA install) | PWA-install required for field staff. They get the FAD PWA + grant always-on location during shifts. Other users see no location request |
-| 3 | **Update frequency** — continuous (battery cost), every N minutes, on-demand only | Every 5 minutes during shift hours. Coarse polling balances battery + freshness. On-demand "refresh location" button for urgent ops |
-| 4 | **Storage** — current location only, or location history? Retention? | Current + 24h history. Beyond 24h, only daily summary (last known per hour) for 30 days. Then purged |
+| 1 | **Opt-in model** — per-user toggle, mandatory during shift, or always-on? | Explicit consent plus visible sharing state. V1 starts sharing only while on duty or while a field task is active/open. |
+| 2 | **Accuracy** — IP geolocation (low), browser geolocation API (medium, GPS-when-available), native PWA GPS (high, requires PWA install) | Browser/PWA geolocation in foreground for V1. Native wrapper/background-location permission is a separate V2 decision. |
+| 3 | **Update frequency** — continuous (battery cost), every N minutes, on-demand only | Every 3-5 minutes while foreground/on-duty/active-task, plus on-demand refresh for urgent dispatch. |
+| 4 | **Storage** — current location only, or location history? Retention? | Current + short task-linked pings. Precise trails should purge after operational need unless a written policy approves longer retention. |
 | 5 | **Display** — Ops module map sub-page, Roster live overlay, or both? | Both. Roster gets a "live now" toggle to see current positions overlaid on the schedule. Ops gets a dedicated "field map" sub-page for live ops |
 | 6 | **Geographic scope** — full map of Mauritius, just Friday property cluster zones, or both? | Full Mauritius with property markers + field-staff markers overlaid. Clustering when zoomed out |
-| 7 | **Privacy & consent** — written policy, audit log of who viewed location, blackout zones (home address)? | Written policy required before launch. Audit log of admin views. Blackout: location auto-pauses outside shift hours (covered by opt-in model) |
+| 7 | **Privacy & consent** — written policy, audit log of who viewed location, blackout zones (home address)? | Written policy required before launch. Audit log of admin views. No exact staff home pins in normal UI. Location auto-pauses outside on-duty/active-task windows. |
 | 8 | **Use cases priority** — view-only first, or auto-suggest closest staff for new tasks too? | View-only V1. Auto-suggest in V2 (after Roster Phase 2 ships) |
-| 9 | **Field staff side UX** — do they see their own location? Do they see other staff? | Yes both. Builds trust ("I see the same info as Mathias") + supports peer coordination ("Sarah is already at LB-2, I'll head to PT-3") |
+| 9 | **Field staff side UX** — do they see their own location? Do they see other staff? | V1: own sharing status and last point only. Peer location visibility needs a separate policy decision. |
 | 10 | **Offline behavior** — what if field staff loses signal in a property without wifi? | Cache last position client-side, mark "last known: 12 min ago" on the map. Re-sync on reconnect |
 | 11 | **Map provider** — Mapbox (paid, polished), OpenStreetMap + Leaflet (free, less polished), Google Maps (paid, polished)? | Mapbox. Already in use by Friday Website for property locations; reuse setup |
 | 12 | **Integration with task assignment** — when assigning a task, show distance-to-property next to each candidate assignee? | V2. V1 = map view only |
@@ -46,16 +47,16 @@ Capture who's on FAD, when, what they're doing, for how long. Useful in the abst
 ### Architecture sketch (not locked)
 
 ```
-[Field staff PWA on phone]
-       ↓ geolocation API on 5min interval (in PWA service worker)
+[Field staff FAD/PWA foreground session]
+       ↓ geolocation API on 3-5min interval while on duty / active task
    FAD /api/location/heartbeat
        ↓
-   analytics_events (event_type='location_heartbeat', payload={lat,lng,accuracy,ts})
+   staff_location_pings (short-retention precise pings)
        ↓ SSE LISTEN/NOTIFY
    FAD Ops Field Map UI (live view)
        +
        ↓
-   user_location_current materialized view (last heartbeat per user_id, refreshed on each heartbeat)
+   staff_presence_status (last live/last-known point per user_id)
 ```
 
 Reuses:
@@ -63,20 +64,26 @@ Reuses:
 - VAPID push notifications (working as of 2026-05-23) for "your shift is starting — please open the app" reminder
 - Existing PWA infrastructure (manifest, service worker)
 - SSE LISTEN/NOTIFY for live updates (already powers other FAD live surfaces)
+- Google Routes travel-time endpoint for ETA from current/last-known point to urgent property
 
 New:
-- `user_location_current` table or view
+- `staff_location_pings` short-retention table
+- `staff_presence_status` table or view
+- `staff_location_view_audit` table
 - Heartbeat endpoint with rate-limit + tenant guard
 - Map UI on Ops module (Mapbox)
 - Privacy policy doc + consent capture UI
 - Shift-aware activation logic (only collect during scheduled shifts per HR roster)
+
+Important correction: service workers can help with sync/push/offline behavior, but V1 must not assume they can reliably read GPS in the background or after the app is closed.
 
 ### Effort estimate (rough)
 
 - Backend: heartbeat endpoint + storage + view: **S** (1 day)
 - Frontend: Ops map sub-page with Mapbox: **M** (2-3 days)
 - Frontend: Roster live overlay: **S** (1 day)
-- PWA: geolocation collection in service worker: **M** (2-3 days — service workers are fiddly)
+- PWA/web: foreground geolocation sharing loop + offline retry: **S/M** (1-2 days)
+- Native/background location wrapper, if later approved: **M/L** (separate project; requires platform permissions and stronger policy)
 - Privacy policy + consent UI + shift-aware activation: **M** (2-3 days)
 - Testing on actual field staff phones: **S** (1 day)
 
@@ -147,3 +154,18 @@ Soft dependencies:
 - Privacy policy: who drafts? Legal review needed?
 - Field-staff onboarding: do we explain WHY they should opt-in, or just default-on with opt-out?
 - Should non-field staff (Mathias, Mary, Ishant) also share location during work hours? (My recommendation: no — only roles where location is operationally useful)
+
+## 8. 2026-05-26 Web/PWA Research Notes
+
+- Browser geolocation requires HTTPS/secure context and user permission. The API supports current-position and watch-position flows while the page context is alive.
+- The W3C geolocation spec treats location as sensitive and says recipients should request it only when necessary, use it only for the task it was provided for, dispose of it after that task unless retention is expressly permitted, and disclose collection purpose/retention/security clearly.
+- Service workers can run for sync/push/offline events, but their lifecycle is browser-controlled and they can be terminated. They are not a reliable place to promise continuous GPS collection.
+- Google Routes API supports `computeRoutes` / `computeRouteMatrix`; route duration can account for traffic when traffic-aware routing is requested.
+
+References:
+
+- https://developer.mozilla.org/en-US/docs/Web/API/Geolocation_API
+- https://www.w3.org/TR/geolocation/
+- https://web.dev/learn/pwa/service-workers
+- https://learn.microsoft.com/en-gb/microsoft-edge/progressive-web-apps/how-to/background-syncs
+- https://developers.google.com/maps/documentation/routes/reference/rest
