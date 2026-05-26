@@ -220,6 +220,10 @@ describe('Ask Friday Core router', () => {
           risk_class: 'medium',
           trust_tier: 'surface_evidence',
           review_status: 'pending',
+          review_lane: 'public',
+          reviewer_domain: 'product',
+          allowed_surface_ids: ['website_ask_friday_fab'],
+          target_privacy_class: 'medium',
           created_at: new Date('2026-05-23T08:00:00.000Z'),
           updated_at: new Date('2026-05-23T08:00:00.000Z'),
         }],
@@ -235,6 +239,10 @@ describe('Ask Friday Core router', () => {
           risk_class: 'medium',
           trust_tier: 'surface_evidence',
           review_status: 'approved',
+          review_lane: 'public',
+          reviewer_domain: 'product',
+          allowed_surface_ids: ['website_ask_friday_fab'],
+          target_privacy_class: 'medium',
           reviewer: 'Ishant Ayadassen',
           review_note: 'Approved.',
           reviewed_at: new Date('2026-05-23T08:05:00.000Z'),
@@ -254,10 +262,26 @@ describe('Ask Friday Core router', () => {
         proposedChange: { add: 'Ask one follow-up at a time.' },
         sourceEventIds: ['evt-1'],
         evidenceSummary: 'Repeated feedback issue.',
+        reviewLane: 'public',
+        reviewerDomain: 'product',
+        allowedSurfaceIds: ['website_ask_friday_fab'],
+        targetPrivacyClass: 'medium',
       })
       .expect(201);
 
     expect(create.body.candidate.reviewStatus).toBe('pending');
+    expect(create.body.candidate).toMatchObject({
+      reviewLane: 'public',
+      reviewerDomain: 'product',
+      allowedSurfaceIds: ['website_ask_friday_fab'],
+      targetPrivacyClass: 'medium',
+    });
+    expect(query.mock.calls[0][1]).toEqual(expect.arrayContaining([
+      'public',
+      'product',
+      ['website_ask_friday_fab'],
+      'medium',
+    ]));
 
     const review = await request(app())
       .patch('/api/ask-friday/core/kb-candidates/cand-1')

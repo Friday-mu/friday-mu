@@ -7,6 +7,14 @@ const { cleanString, redactText, safeJson } = require('./contracts');
 const LOW_CONFIDENCE = new Set(['low', 'unknown']);
 const GAP_OUTCOMES = new Set(['failed', 'abandoned', 'needs_info', 'low_confidence', 'no_answer']);
 const MAX_EVENTS = 500;
+const PRIVACY_WEIGHT = {
+  public: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  restricted: 4,
+  unknown: -1,
+};
 
 function stableId(prefix, parts) {
   const hash = crypto.createHash('sha256').update(parts.filter(Boolean).join('|')).digest('hex');
@@ -61,10 +69,50 @@ function summarizeEvent(row) {
     assistantActionSummary: assistant,
     toolsUsed: Array.isArray(row.tools_used) ? row.tools_used.slice(0, 20) : [],
     knowledgeUsed: Array.isArray(row.knowledge_used) ? row.knowledge_used.slice(0, 20) : [],
+    privacyClass: cleanString(row.privacy_class, 40).toLowerCase() || 'unknown',
     evidenceRefs: Array.isArray(row.stored_evidence_refs)
       ? row.stored_evidence_refs.slice(0, 10).map((ref) => safeJson(ref, 20, 1000))
       : [],
   };
+}
+
+function highestPrivacyClass(events) {
+  let selected = 'unknown';
+  for (const event of events || []) {
+    const privacyClass = cleanString(event.privacyClass, 40).toLowerCase() || 'unknown';
+    if ((PRIVACY_WEIGHT[privacyClass] ?? 2) > (PRIVACY_WEIGHT[selected] ?? 2)) {
+      selected = privacyClass;
+    }
+  }
+  return selected;
+}
+
+function reviewProfileForCluster(cluster, riskClass) {
+  const surfaceId = cleanString(cluster.surfaceId, 120).toLowerCase();
+  const targetPrivacyClass = riskClass === 'restricted' ? 'restricted' : highestPrivacyClass(cluster.events);
+
+  if (surfaceId.includes('finance')) {
+    return { reviewLane: 'restricted_finance', reviewerDomain: 'finance', targetPrivacyClass: 'restricted' };
+  }
+  if (surfaceId.includes('legal')) {
+    return { reviewLane: 'restricted_legal', reviewerDomain: 'legal', targetPrivacyClass: 'restricted' };
+  }
+  if (surfaceId.includes('owner')) {
+    return { reviewLane: 'owner_private', reviewerDomain: 'owner_relations', targetPrivacyClass: 'high' };
+  }
+  if (surfaceId.startsWith('website_') || surfaceId.startsWith('guest_portal_') || surfaceId === 'public_mcp') {
+    return { reviewLane: 'public', reviewerDomain: 'product', targetPrivacyClass };
+  }
+  if (surfaceId.includes('internal_agent') || surfaceId.includes('memory')) {
+    return { reviewLane: 'internal', reviewerDomain: 'engineering', targetPrivacyClass };
+  }
+  if (surfaceId.startsWith('fad_') || surfaceId.includes('consult') || surfaceId.includes('inbox')) {
+    return { reviewLane: 'staff_ops', reviewerDomain: 'ops', targetPrivacyClass };
+  }
+  if (riskClass === 'restricted') {
+    return { reviewLane: 'restricted_general', reviewerDomain: 'ops', targetPrivacyClass: 'restricted' };
+  }
+  return { reviewLane: 'general', reviewerDomain: null, targetPrivacyClass };
 }
 
 function buildClusters(rows, options = {}) {
@@ -96,6 +144,7 @@ function candidateFromCluster(cluster) {
   const candidateId = stableId('afc', [cluster.key, ...eventIds]);
   const targetLayer = cluster.signal === 'low_confidence' ? 'canonical_or_surface_knowledge' : 'surface_behavior';
   const riskClass = cluster.surfaceId.includes('finance') ? 'high' : 'medium';
+  const reviewProfile = reviewProfileForCluster(cluster, riskClass);
   return {
     candidateId,
     candidateType: cluster.signal === 'negative_feedback' ? 'behavior_rule' : 'knowledge_gap',
@@ -118,6 +167,10 @@ function candidateFromCluster(cluster) {
     riskClass,
     trustTier: 'production_event_cluster',
     reviewStatus: 'pending',
+    reviewLane: reviewProfile.reviewLane,
+    reviewerDomain: reviewProfile.reviewerDomain,
+    allowedSurfaceIds: [cluster.surfaceId].filter(Boolean),
+    targetPrivacyClass: reviewProfile.targetPrivacyClass,
   };
 }
 
@@ -155,10 +208,12 @@ async function insertCandidate(tenantId, candidate) {
   const { rows } = await query(
     `INSERT INTO ask_friday_kb_candidates (
        tenant_id, candidate_id, candidate_type, target_layer, proposed_change,
-       source_event_ids, evidence_summary, risk_class, trust_tier, review_status, updated_at
+       source_event_ids, evidence_summary, risk_class, trust_tier, review_status,
+       review_lane, reviewer_domain, allowed_surface_ids, target_privacy_class, updated_at
      ) VALUES (
        $1, $2, $3, $4, $5::jsonb,
-       $6, $7, $8, $9, $10, NOW()
+       $6, $7, $8, $9, $10,
+       $11, $12, $13, $14, NOW()
      )
      ON CONFLICT (tenant_id, candidate_id) DO NOTHING
      RETURNING candidate_id`,
@@ -173,6 +228,10 @@ async function insertCandidate(tenantId, candidate) {
       candidate.riskClass,
       candidate.trustTier,
       candidate.reviewStatus,
+      candidate.reviewLane,
+      candidate.reviewerDomain,
+      candidate.allowedSurfaceIds,
+      candidate.targetPrivacyClass,
     ],
   );
   return rows.length > 0;
@@ -281,6 +340,8 @@ module.exports = {
     cleanLimit,
     evalCaseFromCluster,
     eventSignal,
+    highestPrivacyClass,
+    reviewProfileForCluster,
     stableId,
     summarizeEvent,
   },

@@ -135,6 +135,10 @@ function shapeKbCandidate(row) {
     riskClass: row.risk_class,
     trustTier: row.trust_tier,
     reviewStatus: row.review_status,
+    reviewLane: row.review_lane || 'general',
+    reviewerDomain: row.reviewer_domain || null,
+    allowedSurfaceIds: row.allowed_surface_ids || [],
+    targetPrivacyClass: row.target_privacy_class || 'unknown',
     reviewer: row.reviewer,
     reviewNote: row.review_note,
     reviewedAt: row.reviewed_at,
@@ -612,6 +616,7 @@ router.get('/kb-candidates', attachIdentity, async (req, res) => {
   try {
     const status = cleanString(req.query.status, 40) || 'pending';
     const targetLayer = cleanString(req.query.targetLayer || req.query.target_layer, 80);
+    const reviewLane = cleanString(req.query.reviewLane || req.query.review_lane, 120);
     const limit = parseLimit(req.query.limit);
     const params = [req.tenantId];
     const filters = ['tenant_id = $1'];
@@ -622,6 +627,10 @@ router.get('/kb-candidates', attachIdentity, async (req, res) => {
     if (targetLayer) {
       params.push(targetLayer);
       filters.push(`target_layer = $${params.length}`);
+    }
+    if (reviewLane) {
+      params.push(reviewLane);
+      filters.push(`review_lane = $${params.length}`);
     }
     const { rows } = await query(
       `SELECT *
@@ -643,10 +652,12 @@ router.post('/kb-candidates', attachIdentity, async (req, res) => {
     const { rows } = await query(
       `INSERT INTO ask_friday_kb_candidates (
          tenant_id, candidate_id, candidate_type, target_layer, proposed_change,
-         source_event_ids, evidence_summary, risk_class, trust_tier, review_status, updated_at
+         source_event_ids, evidence_summary, risk_class, trust_tier, review_status,
+         review_lane, reviewer_domain, allowed_surface_ids, target_privacy_class, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5::jsonb,
-         $6, $7, $8, $9, $10, NOW()
+         $6, $7, $8, $9, $10,
+         $11, $12, $13, $14, NOW()
        )
        ON CONFLICT (tenant_id, candidate_id) DO UPDATE SET
          candidate_type = EXCLUDED.candidate_type,
@@ -657,6 +668,10 @@ router.post('/kb-candidates', attachIdentity, async (req, res) => {
          risk_class = EXCLUDED.risk_class,
          trust_tier = EXCLUDED.trust_tier,
          review_status = EXCLUDED.review_status,
+         review_lane = EXCLUDED.review_lane,
+         reviewer_domain = EXCLUDED.reviewer_domain,
+         allowed_surface_ids = EXCLUDED.allowed_surface_ids,
+         target_privacy_class = EXCLUDED.target_privacy_class,
          updated_at = NOW()
        RETURNING *`,
       [
@@ -670,6 +685,10 @@ router.post('/kb-candidates', attachIdentity, async (req, res) => {
         candidate.riskClass,
         candidate.trustTier,
         candidate.reviewStatus,
+        candidate.reviewLane,
+        candidate.reviewerDomain,
+        candidate.allowedSurfaceIds,
+        candidate.targetPrivacyClass,
       ],
     );
     res.status(201).json({ candidate: shapeKbCandidate(rows[0]) });

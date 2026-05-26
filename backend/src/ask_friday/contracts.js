@@ -253,6 +253,14 @@ function normalizeKbCandidate(raw) {
     riskClass: cleanEnum(raw.riskClass || raw.risk_class, RISK_CLASSES, 'medium'),
     trustTier: cleanString(raw.trustTier || raw.trust_tier, 80) || 'surface_evidence',
     reviewStatus: cleanEnum(raw.reviewStatus || raw.review_status, REVIEW_STATUSES, 'pending'),
+    reviewLane: cleanString(raw.reviewLane || raw.review_lane, 120) || 'general',
+    reviewerDomain: cleanString(raw.reviewerDomain || raw.reviewer_domain, 120) || null,
+    allowedSurfaceIds: cleanArray(raw.allowedSurfaceIds || raw.allowed_surface_ids, 80, 160),
+    targetPrivacyClass: cleanEnum(
+      raw.targetPrivacyClass || raw.target_privacy_class,
+      PRIVACY_CLASSES,
+      'unknown',
+    ),
   };
 }
 

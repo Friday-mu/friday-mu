@@ -104,6 +104,10 @@ describe('Ask Friday Core contracts', () => {
       proposedChange: { add: 'Ask one follow-up at a time.' },
       riskClass: 'high',
       sourceEventIds: ['evt-1', 'evt-1'],
+      reviewLane: 'public',
+      reviewerDomain: 'product',
+      allowedSurfaceIds: ['website_ask_friday_fab', 'website_ask_friday_fab'],
+      targetPrivacyClass: 'medium',
     });
     const action = normalizeActionRequest({
       sourceSystem: 'fad',
@@ -115,6 +119,9 @@ describe('Ask Friday Core contracts', () => {
 
     expect(candidate.sourceEventIds).toEqual(['evt-1']);
     expect(candidate.reviewStatus).toBe('pending');
+    expect(candidate.reviewLane).toBe('public');
+    expect(candidate.allowedSurfaceIds).toEqual(['website_ask_friday_fab']);
+    expect(candidate.targetPrivacyClass).toBe('medium');
     expect(action.approvalRequired).toBe(true);
     expect(action.status).toBe('pending');
   });

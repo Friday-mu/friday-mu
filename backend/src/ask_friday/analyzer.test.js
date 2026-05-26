@@ -56,6 +56,10 @@ describe('Ask Friday learning analyzer', () => {
       targetLayer: 'canonical_or_surface_knowledge',
       trustTier: 'production_event_cluster',
       reviewStatus: 'pending',
+      reviewLane: 'public',
+      reviewerDomain: 'product',
+      allowedSurfaceIds: ['website_ask_friday_fab'],
+      targetPrivacyClass: 'medium',
     });
     expect(candidate.evidenceSummary).not.toMatch(/token=hidden/);
     expect(evalCase.suiteId).toBe('website_ask_friday_fab_regression');
@@ -116,5 +120,11 @@ describe('Ask Friday learning analyzer', () => {
     expect(query.mock.calls[1][0]).toContain('INSERT INTO ask_friday_kb_candidates');
     expect(query.mock.calls[2][0]).toContain('INSERT INTO ask_friday_eval_cases');
     expect(query.mock.calls[1][0]).not.toContain('ask_friday_context_packs');
+    expect(query.mock.calls[1][1]).toEqual(expect.arrayContaining([
+      'public',
+      'product',
+      ['website_ask_friday_fab'],
+      'medium',
+    ]));
   });
 });

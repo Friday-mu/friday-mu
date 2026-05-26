@@ -30,6 +30,7 @@ Current branch adds the first hardening layer on top of the deployed Core scaffo
 - Surface registry v0.2 seeds planned module profiles and records the active `ops-consult` runtime knowledge alias for `fad_ops_assistant`.
 - Retention worker is available as a dry-run-by-default staff route and CLI. It deletes only expired evidence refs and old rejected/expired candidates when explicitly run with `dryRun:false`.
 - Initial deterministic eval cases are seeded for public, staff, Ops, finance, MCP, and internal-agent safety suites.
+- KB candidates carry review-lane metadata so public, staff ops, restricted finance/legal, owner-private, internal, and general candidates can be reviewed separately before canonical publishing.
 
 The branch is pushed but not deployed. Production currently remains on the previously deployed `fad-rebuild` code until this branch is merged/deployed.
 
@@ -475,6 +476,7 @@ Proceeding assumptions, to be reviewed later:
 5. Add Core learning-event emission for global FAD staff Ask Friday.
    - Status: covered in this branch.
 6. Add review-lane metadata so Ishant can separate public, staff, restricted, and internal candidates.
+   - Status: covered by migration `098_ask_friday_candidate_review_lanes.sql`; analyzer-created candidates now set lane/domain/surface/privacy metadata.
 7. Coordinate a Website branch for event emission and context-pack consumption.
 8. After Website and FAD loops are stable, design/implement Public MCP V1.
 9. Only then expand into finance/legal/owner-private module KB ingestion.

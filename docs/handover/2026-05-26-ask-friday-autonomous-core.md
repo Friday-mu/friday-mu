@@ -72,6 +72,19 @@ It seeds deterministic eval cases for:
 - `finance_privacy`
 - `internal_agent_privacy`
 
+### Candidate review lanes
+
+Added `backend/migrations/098_ask_friday_candidate_review_lanes.sql`.
+
+KB candidates now carry review metadata before any UI polish:
+
+- `review_lane` separates public, staff ops, owner-private, restricted finance/legal, internal, and general queues.
+- `reviewer_domain` records the expected reviewer domain.
+- `allowed_surface_ids` records where a candidate is allowed to apply.
+- `target_privacy_class` records the highest intended privacy class before approval.
+
+Analyzer-created candidates now set those fields from their source surface and privacy signal, and staff can filter `/api/ask-friday/core/kb-candidates` by `reviewLane`.
+
 ### Durable Consult turn locks
 
 Added migration `095_consult_conversation_locks.sql` and helper `backend/src/inbox/consult_lock.js`.
@@ -144,6 +157,7 @@ It turns the planning pack into a repo-owned catalog covering surfaces, knowledg
 - `backend/migrations/095_consult_conversation_locks.sql`
 - `backend/migrations/096_ask_friday_surface_registry_v02.sql`
 - `backend/migrations/097_ask_friday_seed_eval_cases.sql`
+- `backend/migrations/098_ask_friday_candidate_review_lanes.sql`
 - `backend/package.json`
 - `backend/scripts/ask-friday-analyzer-worker.js`
 - `backend/scripts/ask-friday-retention-worker.js`
@@ -196,7 +210,7 @@ Good next slices:
 
 - Wire Website learning-event emitters and context-pack consumption in a separate Website worktree.
 - Add concrete eval cases for the new public policy failures, staff event emissions, global FAD Ask Friday, and Ops action safety.
-- Add review UI affordances for staff-private events/candidates so Ishant can distinguish public, staff, and restricted review lanes.
+- Add review UI affordances for staff-private events/candidates using the new public, staff, restricted, owner-private, and internal review lanes.
 - Review retention windows before enabling deletion in production.
 - Add model-backed evals after deterministic eval coverage is stable.
 - Keep finance/legal/owner-private module KBs design-only until redaction/access rules are locked.
@@ -211,5 +225,5 @@ This branch contains two new migrations and changes analyzer/retention process b
 1. Review PM2/process plan for `npm run ask-friday:analyzer`.
 2. Decide whether `npm run ask-friday:retention` should run manual-only or scheduled, and keep dry-run default until retention windows are reviewed.
 3. Confirm whether production should run the analyzer worker now or leave it manual.
-4. Apply migrations `095_consult_conversation_locks.sql`, `096_ask_friday_surface_registry_v02.sql`, and `097_ask_friday_seed_eval_cases.sql`.
+4. Apply migrations `095_consult_conversation_locks.sql`, `096_ask_friday_surface_registry_v02.sql`, `097_ask_friday_seed_eval_cases.sql`, and `098_ask_friday_candidate_review_lanes.sql`.
 5. Smoke `/api/ask-friday/core/surfaces`, public context-pack denial for `fad_consult`, eval-gated context-pack publishing, Inbox/Friday Consult, Ops Consult, and global FAD Ask Friday.
