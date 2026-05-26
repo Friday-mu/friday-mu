@@ -31,6 +31,7 @@ If you write something demo-only or fake-backend, add a `// @demo:*` comment in 
 | `@demo:state` | Frontend-only persisted state (localStorage) that needs server sync | Add backend mirror + sync layer |
 | `@demo:auth` | Anything that bypasses real authentication / authorization | Wire real auth + replace permission checks with backend gating |
 | `@demo:ui` | UI surfaces that exist only because we're showcasing | Remove or hide behind feature flag |
+| `@demo:config` | Tenant/business policy held in frontend config | Replace with backend policy/config API |
 
 ---
 
@@ -71,7 +72,7 @@ If you write something demo-only or fake-backend, add a `// @demo:*` comment in 
 | PROD-DATA-34 | `frontend/src/app/fad/_data/finance.ts:520` `FIN_TOURIST_TOTALS.ownerOverRefundDueEur/Count` | Hardcoded illustrative roll-up for tourist-tax over-refund hero block (1294 EUR / 23 reservations) | `GET /api/finance/tourist-tax/totals` returning roll-up across all months |
 | PROD-DATA-35 | `frontend/src/app/fad/_components/modules/FinanceModule.tsx:1255` "Reservations included 14" | Hardcoded reservation count in tourist-tax filing summary | Compute from `FIN_TOURIST_TAX[period].reservationsIncluded` once that field exists, OR derive from a future `GET /api/finance/tourist-tax/period/:id` |
 | PROD-DATA-37 | `frontend/src/app/fad/_data/timeOff.ts:23` `TIME_OFF_REQUESTS` | 6 hardcoded leave requests with named staff (Mary, Bryan, Catherine etc.). The request data is demo; the type/status labels in this file remain config | `GET /api/hr/time-off-requests` |
-| PROD-DATA-38 | `frontend/src/app/fad/_data/tasks.ts:101` `TASK_USERS` | 9 hardcoded staff records (Judith, Ishant, Mathias, Franny, Mary, Bryan, Alex, Catherine + Oracle Cleaning Co). Drives HR Staff, role-switcher, mentions, assignee picker, FridayDrawer greeting | `GET /api/users/team`. Role-switcher (PROD-AUTH-3) goes away when real auth lands; `useCurrentUser()` reads from JWT |
+| PROD-DATA-38 | `frontend/src/app/fad/_data/tasks.ts:101` `TASK_USERS` | 6 hardcoded active staff records (Ishant, Mathias, Franny, Mary, Bryan, Catherine) plus Oracle Cleaning Co as an external vendor. Drives HR Staff, role-switcher, mentions, assignee picker, FridayDrawer greeting | `GET /api/users/team`. Role-switcher (PROD-AUTH-3) goes away when real auth lands; `useCurrentUser()` reads from JWT |
 | PROD-DATA-39 | `frontend/src/app/fad/_data/roster.ts:71` `ROSTER_USERS_ORDER` | Hardcoded 7-user list driving old fixture roster grids | **Replaced for Operations Roster page 2026-05-22:** grid staff now comes from `GET /api/hr/staff?status=active`; constant remains only for fixture consumers |
 | PROD-DATA-40 | `frontend/src/app/fad/_data/roster.ts:255` `WORKLOAD_THIS_WEEK` + `ROSTER_THIS_WEEK.aiNotes`/`aiConstraintWarnings` | Pre-aggregated workload preview (by zone × department, by day) plus AI-generated notes referencing Bryan / Mary / Catherine / specific properties | **Partly replaced 2026-05-22:** Operations Roster workload now computes from live `/api/tasks` in the page; AI roster suggestions/constraint notes still need a future backend suggestion endpoint |
 | ~~PROD-DATA-41~~ | `frontend/src/app/fad/_data/reservations.ts:628` ~~`INQUIRIES`~~ | ~~5 inquiry records~~ | **Closed 2026-05-24:** legacy `Inquiry` / `InquiryStatus` / `INQUIRIES` / `INQUIRY_STATUS_LABEL` exports removed (verified no consumers). Backend at `/api/reservations/inquiries` (mig 078) + typed client wrappers in `reservationsClient.ts` (`InquiryRecord`, `loadInquiries`, `createInquiry`, `patchInquiry`, `convertInquiry`) ready for the Mathias quote-builder UI when v0.2 §9 ships. `InquiriesPage` continues to read `useWebsiteInquiryThreads` from `websiteInboxClient.ts` (separate concept). |
@@ -183,6 +184,7 @@ Hardcoded values that are not fake data but will become tenant-configurable once
 | ~~PROD-CONFIG-8~~ | `app/fad/_components/modules/reservations/ReservationDetail.tsx` | ~~Airbnb URL hardcoded~~ | **Closed 2026-05-24 (W1):** replaced with channel-aware `resolutionCenterUrl(channel)` + `resolutionCenterLabel(channel)` helpers in `reservationsClient.ts`. Airbnb / Booking.com / VRBO each route to their host-dashboard reservations list. Direct/email/owner channels show a toast. Per-reservation deep links (channel-side IDs) still Phase 3. |
 | PROD-CONFIG-9 | `app/fad/_components/modules/OperationsModule.tsx:1254, 1311` `r.currency ?? 'MUR'` (×2) | 'MUR' hardcoded as fallback currency in spend-request display (list item + detail view). | Replace with `defaultCurrency` from `GET /api/tenant/config` |
 | PROD-CONFIG-10 | `app/fad/_components/modules/OperationsModule.tsx` `SETTINGS_TEMPLATES` / booking policies / recurring rules | Operations settings displays hardcoded template and automation policy labels while the backend policy/config API is not wired. | `GET /api/operations/settings` returning task templates, booking-trigger rules, recurring schedules, and live/paused state per tenant |
+| PROD-CONFIG-11 | `app/fad/_data/opsPolicy.ts` | Friday Ops scheduling policy: exact staff roster, skill/transport constraints, combo-property child splits, task-duration defaults, max-guest rule, and SRL/welcome-pack quantities. | `GET /api/operations/policy` returning tenant-scoped staff capabilities, duration matrix, property split rules, and supply loadout policy |
 
 ## Notes for backend wiring
 
@@ -203,7 +205,7 @@ After Apr 29 2026 config audit extension:
 - **6 localStorage-state buckets** to either sync or delete (PROD-STATE-1..6)
 - **13 logic patterns** to move to backend or fix (PROD-LOGIC-1..13)
 - **4 demo UI surfaces** to remove or feature-flag (PROD-UI-1..4)
-- **9 business constants / policy values** to move to config endpoints (PROD-CONFIG-1..9)
+- **11 business constants / policy values** to move to config endpoints (PROD-CONFIG-1..11)
 - **1 architectural note** — Approvals duplication (Operations vs Finance)
 
 **Total: ~86 `// @demo:*` tags across the codebase.** Grep `// @demo:` to confirm count.

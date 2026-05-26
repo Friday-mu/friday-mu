@@ -35,11 +35,11 @@ function app() {
 function user(overrides = {}) {
   return {
     id: 'user-1',
-    username: 'judith',
-    email: 'judith@friday.mu',
+    username: 'ishant',
+    email: 'ishant@friday.mu',
     password_hash: bcrypt.hashSync('Friday2026!', 10),
     role: 'admin',
-    display_name: 'Judith Friday',
+    display_name: 'Ishant Ayadassen',
     tenant_id: 'tenant-1',
     is_active: true,
     must_change_password: false,
@@ -57,11 +57,11 @@ describe('FAD-native session auth', () => {
 
     const res = await request(app())
       .post('/api/auth/login')
-      .send({ username: 'judith@friday.mu', password: 'Friday2026!' });
+      .send({ username: 'ishant@friday.mu', password: 'Friday2026!' });
 
     expect(res.status).toBe(200);
     expect(res.body.token).toBeTruthy();
-    expect(res.body.username).toBe('judith@friday.mu');
+    expect(res.body.username).toBe('ishant@friday.mu');
     const payload = jwt.verify(res.body.token, 'test-secret');
     expect(payload.user_id).toBe('user-1');
     expect(payload.tenant_id).toBe('tenant-1');
@@ -72,7 +72,7 @@ describe('FAD-native session auth', () => {
 
     const res = await request(app())
       .post('/api/auth/login')
-      .send({ username: 'judith@friday.mu', password: 'wrong' });
+      .send({ username: 'ishant@friday.mu', password: 'wrong' });
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('Invalid email or password');
@@ -80,15 +80,15 @@ describe('FAD-native session auth', () => {
 
   test('auth/me verifies the JWT locally and refreshes the user row', async () => {
     const token = jwt.sign({ user_id: 'user-1' }, 'test-secret');
-    query.mockResolvedValueOnce({ rows: [user({ display_name: 'Judith Updated' })] });
+    query.mockResolvedValueOnce({ rows: [user({ display_name: 'Ishant Updated' })] });
 
     const res = await request(app())
       .get('/api/auth/me')
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.display_name).toBe('Judith Updated');
-    expect(res.body.email).toBe('judith@friday.mu');
+    expect(res.body.display_name).toBe('Ishant Updated');
+    expect(res.body.email).toBe('ishant@friday.mu');
   });
 
   test('JWT carries the FAD-specific fad_role claim (drives PermissionsProvider)', async () => {
@@ -129,6 +129,6 @@ describe('FAD-native session auth', () => {
 
     expect(res.status).toBe(200);
     expect(query.mock.calls[1][0]).toContain('reset_token');
-    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'judith@friday.mu' }));
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'ishant@friday.mu' }));
   });
 });

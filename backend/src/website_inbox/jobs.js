@@ -2,14 +2,17 @@
 
 // Background worker draining inbox_guesty_jobs. Two job types:
 //
-//   create_reservation  — fired by booking.proof_uploaded webhook.
+//   create_reservation  — fired by explicit staff-approved action after
+//                         proof is received / bank verification begins.
 //                         Calls Guesty createReservation; on success
 //                         stamps the thread with guesty_reservation_id
 //                         + status + expiration.
 //
 //   confirm_reservation — fired by /threads/:id/mark-paid. Calls
-//                         Guesty confirmReservation; on success queues
-//                         the Resend confirmation email.
+//                         Guesty confirmReservation. FAD sends a
+//                         confirmation email only when the explicit
+//                         job payload opts in; current Guesty path
+//                         avoids duplicate final confirmations.
 //
 // Runs on a setInterval inside the fad-backend process. Cheap (poll
 // every 15s when idle, immediate on enqueue would be nicer but not
@@ -120,9 +123,9 @@ async function runConfirmReservation(job) {
 
   const result = await confirmReservation({ reservationId: p.reservation_id });
 
-  // Sync the thread's reservation status, then fire the guest email.
-  // Email failure shouldn't roll back the Guesty confirm — log + carry
-  // on; ops can resend manually if needed.
+  // Sync the thread's reservation status. On the current Guesty path,
+  // FAD only sends a confirmation email when the job explicitly opts in,
+  // so we do not duplicate Guesty's own final confirmation.
   await query(
     `UPDATE inbox_threads
      SET guesty_reservation_status = $1, guesty_expiration_at = NULL, updated_at = NOW()
@@ -140,17 +143,19 @@ async function runConfirmReservation(job) {
   );
   const bp = lastBookingEvt.rows[0]?.payload || {};
 
-  try {
-    await sendBookingConfirmation({
-      toEmail: p.email_payload?.toEmail || t.guest_email_raw || t.guest_email,
-      toName: p.email_payload?.toName || t.guest_name,
-      residenceName: bp.residence_name || bp.residenceName || bp.listing_name || bp.residence_slug || null,
-      checkInDate: bp.check_in || bp.checkIn || null,
-      checkOutDate: bp.check_out || bp.checkOut || null,
-      reference: bp.reference || null,
-    });
-  } catch (emailErr) {
-    console.warn('[website_inbox/jobs] confirmation email failed (Guesty ok):', emailErr.message);
+  if (p.send_fad_confirmation === true) {
+    try {
+      await sendBookingConfirmation({
+        toEmail: p.email_payload?.toEmail || t.guest_email_raw || t.guest_email,
+        toName: p.email_payload?.toName || t.guest_name,
+        residenceName: bp.residence_name || bp.residenceName || bp.listing_name || bp.residence_slug || null,
+        checkInDate: bp.check_in || bp.checkIn || null,
+        checkOutDate: bp.check_out || bp.checkOut || null,
+        reference: bp.reference || null,
+      });
+    } catch (emailErr) {
+      console.warn('[website_inbox/jobs] confirmation email failed (Guesty ok):', emailErr.message);
+    }
   }
 
   await query(

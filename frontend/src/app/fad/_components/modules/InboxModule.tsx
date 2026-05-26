@@ -9,6 +9,7 @@ import {
   type InboxThread,
   type InternalNote,
   type StayStatus,
+  type WebsiteBookingEvent,
 } from '../../_data/fixtures';
 import { useLiveConversations, useThreadDetail } from '../../_data/inboxClient';
 import { sentDraftHasMatchingOutbound } from '../../_data/inboxTimeline';
@@ -1332,7 +1333,13 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
               has a fad_portal_booking_requests row (silent for normal
               guest threads). Lets ops set payment terms / mark funds /
               decline / reset, which feeds the public portal resolver. */}
-          <BookingRequestPanel threadId={thread?.id} />
+          <BookingRequestPanel
+            threadId={thread?.id}
+            onReminderDraft={() => {
+              setConsultOpen(true);
+              setPendingConsultQuery('Draft a concise reminder that the guest can upload payment proof in the portal. Do not say funds are received or the booking is confirmed.');
+            }}
+          />
 
           <div className="inbox-thread-body" ref={threadBodyRef}>
             {/* Render full message thread when available (live data path). Falls
@@ -1772,6 +1779,84 @@ function SentDraftBubble({
   );
 }
 
+function money(value: number | undefined, currency: string | undefined): string | null {
+  if (value == null) return null;
+  const sym = currency === 'EUR' ? '€' : currency === 'MUR' ? 'Rs ' : currency === 'USD' ? '$' : '';
+  return `${sym}${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}${sym ? '' : currency ? ` ${currency}` : ''}`;
+}
+
+function WebsiteBookingEventCard({ event }: { event: WebsiteBookingEvent }) {
+  const isProof = event.kind === 'payment_proof';
+  const statusLabel = isProof ? 'Proof received · verifying funds' : 'Website booking request';
+  const total = money(event.quote?.total, event.quote?.currency);
+  const party = event.stay?.partySize || event.stay?.adults
+    ? [
+        event.stay?.partySize ? `${event.stay.partySize} guests` : null,
+        event.stay?.adults ? `${event.stay.adults} adults` : null,
+        event.stay?.children ? `${event.stay.children} children` : null,
+        event.stay?.infants ? `${event.stay.infants} infants` : null,
+      ].filter(Boolean).join(' · ')
+    : null;
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: 8,
+        padding: 10,
+        borderRadius: 'var(--radius-md)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        background: 'var(--color-background-secondary)',
+        whiteSpace: 'normal',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <strong>{statusLabel}</strong>
+        {event.reference && <span className="chip sm mono">{event.reference}</span>}
+        {event.legacyNormalized && <span className="chip sm">legacy normalized</span>}
+      </div>
+      <div style={{ display: 'grid', gap: 4, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+        {event.guest?.name || event.guest?.email ? (
+          <span><strong>Guest:</strong> {[event.guest?.name, event.guest?.email, event.guest?.phone, event.guest?.country].filter(Boolean).join(' · ')}</span>
+        ) : null}
+        {event.residence?.name || event.residence?.slug ? (
+          <span><strong>Residence:</strong> {[event.residence?.name, event.residence?.slug, event.residence?.guestyListingId].filter(Boolean).join(' · ')}</span>
+        ) : null}
+        {event.stay?.checkIn || event.stay?.checkOut || party ? (
+          <span><strong>Stay:</strong> {[event.stay?.checkIn && event.stay?.checkOut ? `${event.stay.checkIn} -> ${event.stay.checkOut}` : null, event.stay?.nights ? `${event.stay.nights}n` : null, party].filter(Boolean).join(' · ')}</span>
+        ) : null}
+        {total && <span><strong>Quote:</strong> {total}</span>}
+        {event.message && <span><strong>Message:</strong> {event.message}</span>}
+        {event.specialRequests && <span><strong>Special requests:</strong> {event.specialRequests}</span>}
+        {event.flightNumber && <span><strong>Flight:</strong> {event.flightNumber}</span>}
+        {isProof && (
+          <span>
+            <strong>Proof:</strong>{' '}
+            {[event.proof?.fileName, event.proof?.fileSize ? `${Math.round(event.proof.fileSize / 1024).toLocaleString()} KB` : null, event.proof?.uploadedAt].filter(Boolean).join(' · ') || 'Uploaded'}
+            {(event.proof?.viewerUrl || event.proof?.proofUrl) && (
+              <>
+                {' · '}
+                <a href={event.proof.viewerUrl || event.proof.proofUrl} target="_blank" rel="noreferrer">Open proof</a>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+      {(event.links?.portalUrl || event.links?.proceedUrl || event.links?.residenceUrl || event.missingCriticalFields?.length) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11 }}>
+          {event.links?.portalUrl && <a href={event.links.portalUrl} target="_blank" rel="noreferrer">Portal</a>}
+          {event.links?.proceedUrl && <a href={event.links.proceedUrl} target="_blank" rel="noreferrer">Proceed link</a>}
+          {event.links?.residenceUrl && <a href={event.links.residenceUrl} target="_blank" rel="noreferrer">Residence</a>}
+          {event.missingCriticalFields && event.missingCriticalFields.length > 0 && (
+            <span style={{ color: 'var(--color-text-warning)' }}>
+              Missing: {event.missingCriticalFields.join(', ')}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: string }) {
   const [showOriginal, setShowOriginal] = useState(false);
   const hasTranslation = !!(m.bodyOriginal && m.bodyOriginal !== m.body);
@@ -1787,7 +1872,9 @@ function MessageBubble({ m, threadGuest }: { m: InboxMessage; threadGuest: strin
         {m.viaSystem && <span className="msg-provenance-chip">{m.viaSystem}</span>}
         {(m.viaChannel || m.via) && <span className="msg-provenance-chip">{m.viaChannel || m.via}</span>}
       </div>
-      <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>{body}</div>
+      <div className="msg-body" style={{ whiteSpace: 'pre-wrap' }}>
+        {m.websiteBookingEvent ? <WebsiteBookingEventCard event={m.websiteBookingEvent} /> : body}
+      </div>
       {hasTranslation && (
         <button
           type="button"

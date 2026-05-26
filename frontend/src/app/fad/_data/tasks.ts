@@ -7,17 +7,32 @@ export type Department = 'cleaning' | 'inspection' | 'maintenance' | 'office';
 
 export type Subdepartment =
   | 'standard_clean'
+  | 'owner_standard_clean'
   | 'deep_clean'
+  | 'mid_stay'
   | 'linen'
   | 'pre_arrival'
+  | 'arrival_inspection'
   | 'post_clean'
+  | 'owner_post_clean'
   | 'plumbing'
   | 'electrical'
   | 'carpentry'
   | 'aircon'
+  | 'ac_servicing'
   | 'pool'
   | 'garden'
   | 'amenities'
+  | 'preventative_maintenance'
+  | 'aesthetic_check'
+  | 'lockbox'
+  | 'pest_control'
+  | 'store_cleaning'
+  | 'home_buildout'
+  | 'procurement'
+  | 'quick_reset'
+  | 'vendor_coord'
+  | 'supplies'
   | 'admin'
   | 'guest_services';
 
@@ -98,17 +113,6 @@ export interface TaskUser {
 // @demo:data — Tag: PROD-DATA-38 — see frontend/DEMO_CRUFT.md
 export const TASK_USERS: TaskUser[] = [
   {
-    id: 'u-judith',
-    name: 'Judith Friday',
-    initials: 'JF',
-    email: 'judith@friday.mu',
-    role: 'director',
-    notificationChannel: 'fad_inbox',
-    startDate: '2024-01-01',
-    active: true,
-    avatarColor: '#7c3aed',
-  },
-  {
     id: 'u-ishant',
     name: 'Ishant Ayadassen',
     initials: 'IA',
@@ -121,11 +125,12 @@ export const TASK_USERS: TaskUser[] = [
   },
   {
     id: 'u-mathias',
-    name: 'Mathias David',
+    name: 'Mathias Duval',
     initials: 'MD',
     email: 'mathias@friday.mu',
     role: 'commercial_marketing',
-    skills: ['marketing', 'guest_services', 'maintenance'],
+    homeZone: 'north',
+    skills: ['marketing', 'guest_services', 'reservations', 'admin', 'guesty_update'],
     weeklyConstraints: {
       neverWorks: ['saturday', 'sunday'],
     },
@@ -148,12 +153,12 @@ export const TASK_USERS: TaskUser[] = [
   },
   {
     id: 'u-mary',
-    name: 'Mary Cluthwise',
-    initials: 'MC',
+    name: 'Mary Oladimeji',
+    initials: 'MO',
     email: 'mary@friday.mu',
-    role: 'field',
-    skills: ['admin', 'cleaning'],
-    notificationChannel: 'whatsapp',
+    role: 'commercial_marketing',
+    skills: ['guest_services', 'admin', 'night_shift'],
+    notificationChannel: 'fad_inbox',
     startDate: '2024-04-01',
     endDate: '2026-05-31', // departure announced
     active: true,
@@ -166,24 +171,11 @@ export const TASK_USERS: TaskUser[] = [
     email: 'bryan@friday.mu',
     role: 'field',
     homeZone: 'north',
-    skills: ['maintenance', 'plumbing', 'electrical', 'carpentry'],
+    skills: ['maintenance', 'plumbing', 'electrical', 'carpentry', 'cleaning', 'inspection', 'procurement', 'lockbox'],
     notificationChannel: 'whatsapp',
     startDate: '2024-05-15',
     active: true,
     avatarColor: '#ef4444',
-  },
-  {
-    id: 'u-alex',
-    name: 'Alex Legentil',
-    initials: 'AL',
-    email: 'alex@friday.mu',
-    role: 'field',
-    homeZone: 'west',
-    skills: ['cleaning', 'inspection', 'amenities'],
-    notificationChannel: 'whatsapp',
-    startDate: '2024-06-01',
-    active: true,
-    avatarColor: '#f59e0b',
   },
   {
     id: 'u-catherine',
@@ -192,7 +184,7 @@ export const TASK_USERS: TaskUser[] = [
     email: 'catherine@friday.mu',
     role: 'field',
     homeZone: 'north',
-    skills: ['cleaning', 'inspection'],
+    skills: ['cleaning', 'inspection', 'amenities', 'aesthetic_check', 'home_buildout', 'lockbox'],
     weeklyConstraints: {
       neverWorks: ['sunday'],
     },
@@ -235,26 +227,41 @@ export const TASK_PROPERTIES: TaskProperty[] = TASK_PROPERTIES_SHIM;
 
 export const SUBDEPT_LABEL: Record<Subdepartment, string> = {
   standard_clean: 'Standard clean',
+  owner_standard_clean: 'Owner standard clean',
   deep_clean: 'Deep clean',
+  mid_stay: 'Mid-stay clean',
   linen: 'Linen service',
   pre_arrival: 'Pre-arrival',
+  arrival_inspection: 'Arrival inspection',
   post_clean: 'Post-clean inspection',
+  owner_post_clean: 'Owner post-clean inspection',
   plumbing: 'Plumbing',
   electrical: 'Electrical',
   carpentry: 'Carpentry',
   aircon: 'A/C',
+  ac_servicing: 'A/C servicing',
   pool: 'Pool',
   garden: 'Garden',
   amenities: 'Amenities',
+  preventative_maintenance: 'Preventative maintenance',
+  aesthetic_check: 'Aesthetic check',
+  lockbox: 'Lockbox',
+  pest_control: 'Pest control',
+  store_cleaning: 'Store cleaning',
+  home_buildout: 'Home build-out',
+  procurement: 'Procurement',
+  quick_reset: 'Quick reset',
+  vendor_coord: 'Vendor coordination',
+  supplies: 'Supplies',
   admin: 'Admin',
   guest_services: 'Guest services',
 };
 
 export const SUBDEPT_BY_DEPT: Record<Department, Subdepartment[]> = {
-  cleaning: ['standard_clean', 'deep_clean', 'linen', 'pre_arrival', 'amenities'],
-  inspection: ['post_clean', 'pre_arrival'],
-  maintenance: ['plumbing', 'electrical', 'carpentry', 'aircon', 'pool', 'garden'],
-  office: ['admin', 'guest_services'],
+  cleaning: ['standard_clean', 'owner_standard_clean', 'mid_stay', 'deep_clean', 'linen', 'amenities', 'store_cleaning'],
+  inspection: ['post_clean', 'owner_post_clean', 'arrival_inspection', 'pre_arrival', 'aesthetic_check'],
+  maintenance: ['plumbing', 'electrical', 'carpentry', 'aircon', 'ac_servicing', 'pool', 'garden', 'preventative_maintenance', 'pest_control', 'home_buildout', 'quick_reset'],
+  office: ['admin', 'guest_services', 'lockbox', 'procurement', 'vendor_coord', 'supplies'],
 };
 
 // ───────────────── Inner shapes ─────────────────

@@ -84,7 +84,7 @@ export const TEAM_LOAD = [
   { name: 'Franny', role: 'Manager · Ops/GS', tasks: 28, messages: 412, reviews: 14, leads: 0 },
   { name: 'Mary', role: 'Manager · Admin', tasks: 14, messages: 94, reviews: 0, leads: 2 },
   { name: 'Bryan', role: 'Contributor · Ops', tasks: 22, messages: 48, reviews: 0, leads: 0 },
-  { name: 'Alex', role: 'Contributor · Ops', tasks: 19, messages: 12, reviews: 0, leads: 0 },
+  { name: 'Catherine', role: 'Contributor · Ops', tasks: 19, messages: 12, reviews: 0, leads: 0 },
 ];
 
 export const MARGIN_BREAKDOWN = [

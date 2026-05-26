@@ -79,7 +79,6 @@ export const ROSTER_USERS_ORDER = [
   'u-mary',
   'u-bryan',
   'u-franny',
-  'u-alex',
   'u-catherine',
 ];
 
@@ -132,7 +131,6 @@ const lastWeekMatrix: Record<string, CellSpec[]> = {
   'u-mary':      ['on', 'on', 'on', 'off', 'on', 'on', 'on'],
   'u-bryan':     ['off', { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'west' }, 'standby', { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }],
   'u-franny':    ['on', 'on', 'on', 'on', 'on', 'off', 'on'],
-  'u-alex':      ['standby', { availability: 'on', zone: 'west' }, 'off', { availability: 'on', zone: 'west' }, 'on', 'on', { availability: 'on', zone: 'west' }],
   // Catherine never works Sundays per weeklyConstraints — last week respected
   'u-catherine': [{ availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, 'off'],
 };
@@ -170,7 +168,6 @@ const thisWeekMatrix: Record<string, CellSpec[]> = {
   'u-mary':      ['on', 'on', 'off', 'on', 'on', 'on', 'on'],
   'u-bryan':     [{ availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, 'standby', { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, 'off'],
   'u-franny':    ['on', 'on', 'on', 'on', 'on', 'on', 'off'],
-  'u-alex':      [{ availability: 'on', zone: 'west' }, { availability: 'on', zone: 'west' }, { availability: 'on', zone: 'west' }, { availability: 'on', zone: 'west' }, 'on', 'standby', 'off'],
   // Catherine never Sundays — she's on Mon and off Sun. Pending PTO May 4 (Mon next week).
   'u-catherine': [{ availability: 'on', zone: 'north' }, 'off', { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, { availability: 'on', zone: 'north' }, 'off'],
 };
@@ -184,10 +181,10 @@ export const ROSTER_THIS_WEEK: RosterWeek = buildWeek(
     aiSuggested: true,
     aiSuggestedAt: '2026-04-26T18:00:00',
     aiNotes:
-      'Suggested based on: 12 cleaning tasks Mon-Wed (5 north, 4 west, 3 admin), 4 maintenance jobs at LB-2 + LV-10 (west zone, Mathias has both), Catherine off Tue (PTO request approved Apr 23). Bryan kept on north zone — has 7 tasks at GBH-* + PT-3 this week. Mary off Wed (childcare day per recurring pattern).',
+      'Suggested based on: 12 cleaning tasks Mon-Wed (5 north, 4 west, 3 admin), 4 maintenance jobs at LB-2 + LV-10, Catherine off Tue (PTO request approved Apr 23). Bryan covers maintenance first; Catherine can cover inspections with checklists; Mary covers night/admin handover.',
     aiConstraintWarnings: [
       'Bryan only has 1 standby day (Wed) — within 5+1+1 spec.',
-      'West zone gap on Sat: Alex on standby, no other west body. Consider on-call protocol.',
+      'West zone gap on Sat: Ishant is the current west backup until a dedicated west cleaner is hired.',
     ],
   },
   THIS_WEEK_DATES,
@@ -212,7 +209,6 @@ const nextWeekMatrix: Record<string, CellSpec[]> = {
   'u-mary':      ['on', 'on', 'on', 'on', 'on', 'on', 'on'],
   'u-bryan':     ['on', 'on', 'on', 'on', 'on', 'on', 'on'],
   'u-franny':    ['on', 'on', 'on', 'on', 'on', 'on', 'on'],
-  'u-alex':      ['on', 'on', 'on', 'on', 'on', 'on', 'on'],
   'u-catherine': ['on', 'on', 'on', 'on', 'on', 'on', 'on'],
 };
 
@@ -302,19 +298,19 @@ export interface ScheduleBlock {
 }
 
 export const SCHEDULE_BLOCKS: ScheduleBlock[] = [
-  // Alex — pre-arrival inspection + runner
-  { id: 'sb-1', userId: 'u-alex', taskId: 't-003', date: '2026-04-27', startTime: '10:00', endTime: '11:30', title: 'Pre-arrival inspection', propertyCode: 'RC-15', department: 'inspection', status: 'in_progress' },
-  { id: 'sb-2', userId: 'u-alex', taskId: 't-011', date: '2026-04-27', startTime: '12:00', endTime: '12:45', title: 'Runner — store→VV-47→SD-10', propertyCode: 'OFFICE', department: 'office', status: 'todo' },
-  { id: 'sb-3', userId: 'u-alex', taskId: 't-007', date: '2026-04-27', startTime: '13:00', endTime: '15:00', title: 'Replace table glass', propertyCode: 'LB-2', department: 'maintenance', status: 'todo' },
+  // Catherine / Ishant — west backup until a dedicated west cleaner is hired
+  { id: 'sb-1', userId: 'u-catherine', taskId: 't-003', date: '2026-04-27', startTime: '10:00', endTime: '11:30', title: 'Pre-arrival inspection', propertyCode: 'RC-15', department: 'inspection', status: 'in_progress' },
+  { id: 'sb-2', userId: 'u-ishant', taskId: 't-011', date: '2026-04-27', startTime: '12:00', endTime: '12:45', title: 'Procurement run — store→VV-47→SD-10', propertyCode: 'OFFICE', department: 'office', status: 'todo' },
+  { id: 'sb-3', userId: 'u-ishant', taskId: 't-007', date: '2026-04-27', startTime: '13:00', endTime: '15:00', title: 'Replace table glass', propertyCode: 'LB-2', department: 'maintenance', status: 'todo' },
 
   // Bryan — turnover at GBH-C8 + amenities at VV-47
-  { id: 'sb-4', userId: 'u-bryan', taskId: 't-004', date: '2026-04-27', startTime: '11:00', endTime: '14:00', title: 'Standard clean — turnover', propertyCode: 'GBH-C8', department: 'cleaning', status: 'todo' },
-  { id: 'sb-5', userId: 'u-bryan', taskId: 't-012', date: '2026-04-27', startTime: '14:30', endTime: '15:30', title: 'Buy missing amenities', propertyCode: 'VV-47', department: 'cleaning', status: 'in_progress' },
-  { id: 'sb-6', userId: 'u-bryan', taskId: 't-013', date: '2026-04-27', startTime: '16:00', endTime: '16:30', title: 'Collect Rs 38,000 from Li Da', propertyCode: 'GBH-C3', department: 'office', status: 'in_progress' },
+  { id: 'sb-4', userId: 'u-bryan', taskId: 't-004', date: '2026-04-27', startTime: '11:00', endTime: '13:00', title: 'Standard clean — turnover', propertyCode: 'GBH-C8', department: 'cleaning', status: 'todo' },
+  { id: 'sb-5', userId: 'u-bryan', taskId: 't-012', date: '2026-04-27', startTime: '13:15', endTime: '14:00', title: 'Buy missing amenities', propertyCode: 'VV-47', department: 'cleaning', status: 'in_progress' },
+  { id: 'sb-6', userId: 'u-ishant', taskId: 't-013', date: '2026-04-27', startTime: '16:00', endTime: '16:30', title: 'Collect Rs 38,000 from Li Da', propertyCode: 'GBH-C3', department: 'office', status: 'in_progress' },
 
-  // Mathias — A/C urgent + admin
-  { id: 'sb-7', userId: 'u-mathias', taskId: 't-006', date: '2026-04-27', startTime: '08:30', endTime: '10:00', title: 'A/C — site visit', propertyCode: 'LB-2', department: 'maintenance', status: 'in_progress' },
-  { id: 'sb-8', userId: 'u-mathias', taskId: 't-006', date: '2026-04-27', startTime: '14:00', endTime: '16:30', title: 'A/C — install + test', propertyCode: 'LB-2', department: 'maintenance', status: 'todo' },
+  // Bryan — A/C urgent
+  { id: 'sb-7', userId: 'u-bryan', taskId: 't-006', date: '2026-04-27', startTime: '08:30', endTime: '10:00', title: 'A/C — site visit', propertyCode: 'LB-2', department: 'maintenance', status: 'in_progress' },
+  { id: 'sb-8', userId: 'u-bryan', taskId: 't-006', date: '2026-04-27', startTime: '14:00', endTime: '15:00', title: 'A/C — install + test', propertyCode: 'LB-2', department: 'maintenance', status: 'todo' },
 
   // Mary — admin + linen
   { id: 'sb-9', userId: 'u-mary', taskId: 't-016', date: '2026-04-27', startTime: '09:00', endTime: '12:00', title: 'Setup Linen Service Area', propertyCode: 'OFFICE', department: 'office', status: 'todo' },

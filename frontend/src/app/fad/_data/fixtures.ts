@@ -11,6 +11,61 @@ export interface InboxMessage {
   via?: string;
   viaSystem?: 'FAD' | 'Guesty' | string;
   viaChannel?: string;
+  websiteBookingEvent?: WebsiteBookingEvent;
+}
+
+export interface WebsiteBookingEvent {
+  kind: 'booking_request' | 'payment_proof';
+  eventVersion?: string;
+  reference?: string;
+  bookingRequestId?: string;
+  threadId?: string;
+  guest?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    country?: string;
+  };
+  residence?: {
+    name?: string;
+    slug?: string;
+    guestyListingId?: string;
+    residenceUrl?: string;
+  };
+  stay?: {
+    checkIn?: string;
+    checkOut?: string;
+    nights?: number;
+    partySize?: number;
+    adults?: number;
+    children?: number;
+    infants?: number;
+  };
+  quote?: {
+    currency?: string;
+    subtotal?: number;
+    cleaning?: number;
+    total?: number;
+  };
+  links?: {
+    portalUrl?: string;
+    proceedUrl?: string;
+    residenceUrl?: string;
+  };
+  proof?: {
+    proofUrl?: string;
+    viewerUrl?: string;
+    fileName?: string;
+    fileType?: string;
+    fileSize?: number;
+    uploadedAt?: string;
+    nextAction?: string;
+  };
+  message?: string;
+  specialRequests?: string;
+  flightNumber?: string;
+  legacyNormalized?: boolean;
+  missingCriticalFields?: string[];
 }
 
 export type InboxEntity = 'guest' | 'owner' | 'vendor' | 'unclassified';
@@ -342,7 +397,7 @@ export const INBOX_THREADS: InboxThread[] = [
     channel: 'WhatsApp', time: '09:30', property: 'Reflet de Corail 15 · Flic en Flac',
     language: 'EN',
     triageStatus: 'open', stayStatus: 'currently_staying',
-    summary: 'Welcome basket missing chocolates · Alex on-site (pre-arrival inspection) · drop chocolates 15 min.',
+    summary: 'Welcome basket missing chocolates · Catherine on-site (pre-arrival inspection) · drop chocolates 15 min.',
     sentiment: 'neutral',
     whatsappWindow: { open: true, expiresInMinutes: 1410 },
     messages: [
@@ -355,8 +410,8 @@ export const INBOX_INTERNAL_NOTES: InternalNote[] = [
   {
     id: 'note-001',
     threadId: 't1',
-    authorId: 'u-judith',
-    authorName: 'Judith Friday',
+    authorId: 'u-ishant',
+    authorName: 'Ishant Ayadassen',
     body: '@Bryan Henri — please confirm Ravi has the Friday sign + flight number before 9am. The guest is anxious because of the kids.',
     mentions: ['u-bryan'],
     createdAt: '2026-04-26T18:30:00',
@@ -366,7 +421,7 @@ export const INBOX_INTERNAL_NOTES: InternalNote[] = [
     threadId: 't5',
     authorId: 'u-franny',
     authorName: 'Franny Henri',
-    body: '@Mathias David Coolbreeze parts ETA 14:00 — can you do the install or should I send Bryan?',
+    body: '@Mathias Duval Coolbreeze parts ETA 14:00 — can you do the install or should I send Bryan?',
     mentions: ['u-mathias'],
     createdAt: '2026-04-26T23:25:00',
   },
@@ -405,7 +460,7 @@ export interface Task {
 export const TASKS: Task[] = [
   { id: 'k1', status: 'overdue', urgency: 'red', title: 'Confirm transfer driver for Marchand arrival Thu 15:20', property: 'Villa Azur', assignee: 'Bryan', due: 'Yesterday', source: 'Inbox' },
   { id: 'k2', status: 'progress', urgency: 'amber', title: 'Refund €180 tourist tax overcharge — Fonseca booking', property: 'Sable Noir', assignee: 'Mary', due: 'Today', source: 'Finance' },
-  { id: 'k3', status: 'todo', urgency: 'amber', title: 'Pool pump replacement — parts arriving Wed', property: 'Blue Bay House', assignee: 'Alex', due: 'Today', source: 'Breezeway' },
+  { id: 'k3', status: 'todo', urgency: 'amber', title: 'Pool pump replacement — parts arriving Wed', property: 'Blue Bay House', assignee: 'Bryan', due: 'Today', source: 'Breezeway' },
   { id: 'k4', status: 'todo', urgency: 'neutral', title: 'Draft Airbnb reply for Linde chef menu question', property: 'Blue Bay House', assignee: 'Franny', due: 'Today', source: 'Inbox' },
   { id: 'k5', status: 'progress', urgency: 'neutral', title: 'Update owner statement template — May run', property: 'All', assignee: 'Mary', due: 'Tomorrow', source: 'Finance' },
   { id: 'k6', status: 'todo', urgency: 'neutral', title: 'Quarterly Breezeway cleaner rate review', property: 'All', assignee: 'Franny', due: 'Fri', source: 'Ops' },
@@ -609,8 +664,8 @@ export const OPS_ROSTER = [
   { name: 'Priya', role: 'Housekeeping lead', props: ['VAZ', 'LCA'], today: 2, week: 9, status: 'on-duty' },
   { name: 'Renuka', role: 'Housekeeping', props: ['BBH', 'SRT'], today: 1, week: 8, status: 'on-duty' },
   { name: 'Vimla', role: 'Housekeeping', props: ['SBN', 'DMT'], today: 1, week: 7, status: 'on-duty' },
-  { name: 'Alex', role: 'Maintenance', props: ['All'], today: 2, week: 6, status: 'on-duty' },
-  { name: 'Bryan', role: 'Field ops', props: ['All'], today: 3, week: 14, status: 'on-duty' },
+  { name: 'Bryan', role: 'Maintenance', props: ['All'], today: 2, week: 6, status: 'on-duty' },
+  { name: 'Catherine', role: 'Field ops', props: ['North', 'West scheduled'], today: 3, week: 14, status: 'on-duty' },
   { name: 'Chef Aarav', role: 'Private chef (on-call)', props: ['BBH', 'VAZ'], today: 0, week: 2, status: 'off' },
   { name: 'Ravi', role: 'Driver (on-call)', props: ['All'], today: 1, week: 4, status: 'on-duty' },
 ];

@@ -453,7 +453,7 @@ export const RESERVATION_NOTES: ReservationNote[] = [
     reservationId: 'rsv-rc15-thomas',
     authorId: 'u-franny',
     authorName: 'Franny Henri',
-    body: 'Welcome basket needs the chocolates Alex flagged — handed off to Catherine for tomorrow morning.',
+    body: 'Welcome basket needs the chocolates Catherine flagged — handed off to Catherine for tomorrow morning.',
     mentions: ['u-catherine'],
     createdAt: '2026-04-26T09:14:00',
   },
@@ -567,7 +567,7 @@ export interface ReservationActivity {
 export const RESERVATION_ACTIVITY: ReservationActivity[] = [
   // rsv-rc15-thomas
   { id: 'rsva-001', reservationId: 'rsv-rc15-thomas', ts: '2026-03-12T14:22:00', kind: 'created', detail: 'Reservation created from Airbnb webhook', actorId: 'system' },
-  { id: 'rsva-002', reservationId: 'rsv-rc15-thomas', ts: '2026-04-23T18:00:00', kind: 'special_request_added', detail: 'Welcome basket + chocolates flagged by Alex', actorId: 'u-alex' },
+  { id: 'rsva-002', reservationId: 'rsv-rc15-thomas', ts: '2026-04-23T18:00:00', kind: 'special_request_added', detail: 'Welcome basket + chocolates flagged by Catherine', actorId: 'u-catherine' },
   { id: 'rsva-003', reservationId: 'rsv-rc15-thomas', ts: '2026-04-26T09:14:00', kind: 'note_added', detail: 'Note from Franny @Catherine — chocolates handoff', actorId: 'u-franny' },
   { id: 'rsva-004', reservationId: 'rsv-rc15-thomas', ts: '2026-04-26T11:00:00', kind: 'driver_assigned', detail: 'Bryan assigned for arrival pickup', actorId: 'u-franny' },
 

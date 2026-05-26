@@ -20,12 +20,11 @@
 // Response contract:
 //   200  — event accepted (new or duplicate). friday.mu can stop retrying.
 //   4xx  — malformed payload / bad signature. friday.mu should NOT retry.
-//   5xx  — our DB / Guesty is down. friday.mu retries.
+//   5xx  — our DB is down. friday.mu retries.
 
 const crypto = require('node:crypto');
 const { query } = require('../database/client');
 const { publishFadEvent } = require('../realtime');
-const { listingIdForSlug } = require('./property-map');
 const { shouldAutoDraftWebsiteEvent, triggerWebsiteDraftGeneration } = require('./drafts');
 
 // 5-minute replay window. Slightly generous to absorb clock drift +
@@ -94,23 +93,29 @@ function extractGuest(payload) {
   };
 }
 
-// Upsert thread (by lower-cased email) + insert the event row. Returns
-// { threadId, eventId, isDuplicate }. Idempotency: the unique index on
-// (reference, event_type) makes the INSERT throw a conflict on retry,
-// which we catch and treat as success.
-async function recordEvent({
-  guest,
-  eventType,
-  source,
-  reference,
-  payload,
-  signature,
-  signedAt,
-}) {
-  // 1. Upsert the thread. T3.7 v0.2 — explicit tenant_id matches the
-  // new unique index `idx_inbox_threads_tenant_email_unique` from
-  // mig 087. Pre-fix this conflict path errored with "no unique or
-  // exclusion constraint matching the ON CONFLICT specification".
+function bookingRequestId(payload) {
+  return payload?.booking_request_id || payload?.request_id || payload?.reference || null;
+}
+
+function stableEventReference(eventType, payload) {
+  const ref = bookingRequestId(payload);
+  if (eventType !== 'booking.proof_uploaded') return ref;
+  const uploadKey = [
+    payload?.uploaded_at,
+    payload?.file_name,
+    payload?.file_size,
+    payload?.proof_viewer_url,
+    payload?.proof_url,
+  ].filter(Boolean).join(':');
+  const fallback = crypto
+    .createHash('sha1')
+    .update(JSON.stringify(payload || {}))
+    .digest('hex')
+    .slice(0, 12);
+  return `proof:${ref || 'unknown'}:${uploadKey || fallback}`;
+}
+
+async function upsertThreadForGuest({ guest, eventType, tenantId }) {
   const threadRes = await query(
     `
     INSERT INTO inbox_threads (
@@ -129,9 +134,205 @@ async function recordEvent({
       updated_at        = NOW()
     RETURNING id
     `,
-    [guest.email, guest.raw, guest.name, guest.phone, eventType, FR_TENANT_ID],
+    [guest.email, guest.raw, guest.name, guest.phone, eventType, tenantId],
   );
-  const threadId = threadRes.rows[0].id;
+  return threadRes.rows[0].id;
+}
+
+async function findThreadByPayload({ payload, tenantId }) {
+  const explicitThreadId = payload?.thread_id || payload?.threadId;
+  if (explicitThreadId) {
+    const { rows } = await query(
+      `SELECT id FROM inbox_threads WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+      [explicitThreadId, tenantId],
+    );
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  const requestId = bookingRequestId(payload);
+  if (!requestId) return null;
+
+  const sidecar = await query(
+    `SELECT thread_id
+       FROM fad_portal_booking_requests
+      WHERE tenant_id = $1 AND request_id = $2
+      LIMIT 1`,
+    [tenantId, requestId],
+  );
+  if (sidecar.rows[0]?.thread_id) return sidecar.rows[0].thread_id;
+
+  const event = await query(
+    `SELECT thread_id
+       FROM inbox_events
+      WHERE tenant_id = $1
+        AND event_type = 'booking.request_submitted'
+        AND (
+          reference = $2
+          OR payload->>'reference' = $2
+          OR payload->>'booking_request_id' = $2
+          OR payload->>'request_id' = $2
+        )
+      ORDER BY created_at DESC, id::text DESC
+      LIMIT 1`,
+    [tenantId, requestId],
+  );
+  return event.rows[0]?.thread_id || null;
+}
+
+async function resolveThreadId({ guest, eventType, payload, tenantId }) {
+  const existingThreadId = await findThreadByPayload({ payload, tenantId });
+  if (existingThreadId) return existingThreadId;
+  if (guest.email) {
+    return upsertThreadForGuest({ guest, eventType, tenantId });
+  }
+  if (eventType === 'booking.proof_uploaded') {
+    const err = new Error('proof_upload_link_required');
+    err.status = 400;
+    err.publicMessage = 'Proof upload must include thread_id, booking_request_id, reference, or guest.email.';
+    throw err;
+  }
+  const err = new Error('guest_email_required');
+  err.status = 400;
+  err.publicMessage = 'guest email is required (data.guest.email or data.email)';
+  throw err;
+}
+
+function dateOrNull(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : value;
+}
+
+function amountMinor(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+}
+
+async function ensureBookingRequestSidecar({ tenantId, threadId, payload }) {
+  const requestId = bookingRequestId(payload);
+  if (!requestId) return null;
+  const party = payload?.party_size_detail || {};
+  const quote = payload?.quote || {};
+  const { rows } = await query(
+    `
+    INSERT INTO fad_portal_booking_requests (
+      tenant_id, thread_id, request_id,
+      listing_slug, listing_title,
+      check_in, check_out, nights,
+      party_adults, party_children, party_infants,
+      quoted_total_amount_minor, quoted_total_currency,
+      status
+    ) VALUES (
+      $1::uuid, $2::uuid, $3,
+      $4, $5,
+      $6, $7, $8,
+      $9, $10, $11,
+      $12, $13,
+      'awaiting_payment'
+    )
+    ON CONFLICT (tenant_id, request_id) DO UPDATE SET
+      thread_id = COALESCE(fad_portal_booking_requests.thread_id, EXCLUDED.thread_id),
+      listing_slug = COALESCE(EXCLUDED.listing_slug, fad_portal_booking_requests.listing_slug),
+      listing_title = COALESCE(EXCLUDED.listing_title, fad_portal_booking_requests.listing_title),
+      check_in = COALESCE(EXCLUDED.check_in, fad_portal_booking_requests.check_in),
+      check_out = COALESCE(EXCLUDED.check_out, fad_portal_booking_requests.check_out),
+      nights = COALESCE(EXCLUDED.nights, fad_portal_booking_requests.nights),
+      party_adults = COALESCE(EXCLUDED.party_adults, fad_portal_booking_requests.party_adults),
+      party_children = COALESCE(EXCLUDED.party_children, fad_portal_booking_requests.party_children),
+      party_infants = COALESCE(EXCLUDED.party_infants, fad_portal_booking_requests.party_infants),
+      quoted_total_amount_minor = COALESCE(EXCLUDED.quoted_total_amount_minor, fad_portal_booking_requests.quoted_total_amount_minor),
+      quoted_total_currency = COALESCE(EXCLUDED.quoted_total_currency, fad_portal_booking_requests.quoted_total_currency),
+      status = CASE
+        WHEN fad_portal_booking_requests.status = 'pending_review' THEN 'awaiting_payment'
+        ELSE fad_portal_booking_requests.status
+      END,
+      updated_at = NOW()
+    RETURNING id
+    `,
+    [
+      tenantId,
+      threadId,
+      requestId,
+      payload?.residence_slug || payload?.residenceSlug || null,
+      payload?.residence_name || payload?.residenceName || null,
+      dateOrNull(payload?.check_in || payload?.checkIn),
+      dateOrNull(payload?.check_out || payload?.checkOut),
+      Number.isFinite(Number(payload?.nights)) ? Number(payload.nights) : null,
+      Number.isFinite(Number(party.adults)) ? Number(party.adults) : null,
+      Number.isFinite(Number(party.children)) ? Number(party.children) : null,
+      Number.isFinite(Number(party.infants)) ? Number(party.infants) : null,
+      amountMinor(quote.total),
+      ['EUR', 'MUR', 'USD'].includes(quote.currency) ? quote.currency : null,
+    ],
+  );
+  return rows[0]?.id || null;
+}
+
+async function markProofReceived({ tenantId, threadId, eventId, payload }) {
+  const requestId = bookingRequestId(payload);
+  if (requestId) {
+    await ensureBookingRequestSidecar({ tenantId, threadId, payload });
+  }
+  const proofReceivedAt = payload?.uploaded_at ? new Date(payload.uploaded_at) : new Date();
+  const safeProofReceivedAt = Number.isNaN(proofReceivedAt.getTime()) ? new Date() : proofReceivedAt;
+  const { rows } = await query(
+    `
+    UPDATE fad_portal_booking_requests
+       SET status = CASE
+             WHEN status IN ('confirmed', 'declined') THEN status
+             ELSE 'proof_received'
+           END,
+           proof_url = COALESCE($1, proof_url),
+           proof_viewer_url = COALESCE($2, proof_viewer_url),
+           proof_file_name = COALESCE($3, proof_file_name),
+           proof_file_type = COALESCE($4, proof_file_type),
+           proof_file_size = COALESCE($5, proof_file_size),
+           proof_received_at = COALESCE($6, proof_received_at, NOW()),
+           proof_source = COALESCE($7, proof_source, 'website'),
+           proof_event_id = COALESCE($8::uuid, proof_event_id),
+           last_status_change_at = NOW(),
+           updated_at = NOW()
+     WHERE tenant_id = $9
+       AND (
+         thread_id = $10
+         OR request_id = $11
+       )
+     RETURNING id
+    `,
+    [
+      payload?.proof_url || payload?.proofUrl || null,
+      payload?.proof_viewer_url || payload?.proofViewerUrl || null,
+      payload?.file_name || payload?.fileName || null,
+      payload?.file_type || payload?.fileType || null,
+      Number.isFinite(Number(payload?.file_size || payload?.fileSize)) ? Number(payload?.file_size || payload?.fileSize) : null,
+      safeProofReceivedAt,
+      payload?.proof_source || payload?.source || 'website',
+      eventId || null,
+      tenantId,
+      threadId,
+      requestId,
+    ],
+  );
+  return rows[0]?.id || null;
+}
+
+// Resolve thread + insert the event row. Returns
+// { threadId, eventId, isDuplicate }. Idempotency: the unique index on
+// (reference, event_type) makes the INSERT throw a conflict on retry,
+// which we catch and treat as success. Proof uploads use a stable
+// per-upload reference so multiple proof files can coexist.
+async function recordEvent({
+  guest,
+  eventType,
+  source,
+  reference,
+  payload,
+  signature,
+  signedAt,
+  tenantId = FR_TENANT_ID,
+}) {
+  const threadId = await resolveThreadId({ guest, eventType, payload, tenantId });
 
   // 2. Insert the event. On unique-violation (reference, event_type) we
   // treat as a successful duplicate.
@@ -179,51 +380,6 @@ async function recordEvent({
   }
 }
 
-// Queue a Guesty create_reservation job. We don't call Guesty
-// synchronously — webhook response stays fast + we get retry
-// semantics for free.
-async function queueCreateReservationJob({ threadId, eventId, payload }) {
-  // Resolve listing ID from residence slug. If unmapped, mark the job
-  // dead immediately so it surfaces in the DLQ panel — but still
-  // record it so ops can see WHY no reservation was created.
-  const slug = payload?.residence_slug || payload?.residenceSlug || payload?.slug;
-  const listingId = listingIdForSlug(slug);
-
-  const guestyPayload = {
-    listingId,
-    slug,
-    checkInDate: payload?.check_in || payload?.checkIn || null,
-    checkOutDate: payload?.check_out || payload?.checkOut || null,
-    guestsCount: payload?.party_size || payload?.partySize || payload?.guests || 1,
-    reference: payload?.reference || null,
-    proofUrl: payload?.proof_url || payload?.proofUrl || payload?.blob_url || payload?.blobUrl || null,
-    guest: payload?.guest || payload,
-  };
-
-  await query(
-    `
-    INSERT INTO inbox_guesty_jobs (thread_id, event_id, job_type, status, payload, last_error)
-    VALUES ($1, $2, 'create_reservation', $3, $4::jsonb, $5)
-    `,
-    [
-      threadId,
-      eventId,
-      listingId ? 'pending' : 'dead',
-      JSON.stringify(guestyPayload),
-      listingId ? null : `Unmapped residence slug: ${slug || '(none)'}. Add it to property-map.json.`,
-    ],
-  );
-
-  // Also stamp the thread with the listing ID we'll use, so the UI can
-  // show it before the job runs.
-  if (listingId) {
-    await query(
-      `UPDATE inbox_threads SET guesty_listing_id = $1, updated_at = NOW() WHERE id = $2`,
-      [listingId, threadId],
-    );
-  }
-}
-
 function mountWebhook(router) {
   router.post('/friday-website', async (req, res) => {
     // express.raw on this route gives us the body as a Buffer so HMAC
@@ -260,21 +416,34 @@ function mountWebhook(router) {
 
     const data = payload?.data || payload;
     const guest = extractGuest(data);
-    if (!guest.email) {
-      return res.status(400).json({ error: 'guest email is required (data.guest.email or data.email)' });
-    }
 
     try {
+      const eventReference = stableEventReference(eventType, data);
       const recorded = await recordEvent({
         guest,
         eventType,
         source: payload?.source || 'website',
-        reference: data?.reference || null,
+        reference: eventReference,
         payload: data,
         signature: req.header('X-Friday-Inbox-Signature'),
         signedAt: req.header('X-Friday-Inbox-Timestamp'),
       });
       if (recorded.isDuplicate) {
+        if (eventType === 'booking.request_submitted') {
+          await ensureBookingRequestSidecar({
+            tenantId: FR_TENANT_ID,
+            threadId: recorded.threadId,
+            payload: data,
+          });
+        }
+        if (eventType === 'booking.proof_uploaded') {
+          await markProofReceived({
+            tenantId: FR_TENANT_ID,
+            threadId: recorded.threadId,
+            eventId: recorded.eventId,
+            payload: data,
+          });
+        }
         if (recorded.eventId && shouldAutoDraftWebsiteEvent(eventType)) {
           triggerWebsiteDraftGeneration(recorded.threadId, recorded.eventId).catch((e) => {
             console.error(`[website_inbox/webhook] duplicate draft recovery failed for ${recorded.eventId}:`, e.message);
@@ -284,8 +453,17 @@ function mountWebhook(router) {
       }
 
       // Side effects per event type.
+      if (eventType === 'booking.request_submitted') {
+        await ensureBookingRequestSidecar({
+          tenantId: FR_TENANT_ID,
+          threadId: recorded.threadId,
+          payload: data,
+        });
+      }
+
       if (eventType === 'booking.proof_uploaded') {
-        await queueCreateReservationJob({
+        await markProofReceived({
+          tenantId: FR_TENANT_ID,
           threadId: recorded.threadId,
           eventId: recorded.eventId,
           payload: data,
@@ -310,7 +488,10 @@ function mountWebhook(router) {
         event_id: recorded.eventId,
       });
     } catch (err) {
-      // 5xx so friday.mu retries — DB or Guesty job queue failed.
+      if (err.status && err.status < 500) {
+        return res.status(err.status).json({ error: err.message, message: err.publicMessage || err.message });
+      }
+      // 5xx so friday.mu retries — DB write failed.
       console.error('[website_inbox/webhook] persist error:', err.message);
       return res.status(500).json({ error: 'persist failed', detail: err.message });
     }

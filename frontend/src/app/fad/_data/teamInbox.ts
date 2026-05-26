@@ -40,7 +40,7 @@ export const TEAM_CHANNELS: TeamChannel[] = [
     key: 'general',
     name: '#general',
     purpose: 'Whole-team announcements + watercooler.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny', 'u-mathias', 'u-mary', 'u-bryan', 'u-alex', 'u-catherine'],
+    memberIds: ['u-ishant', 'u-franny', 'u-mathias', 'u-mary', 'u-bryan', 'u-catherine'],
     unread: 1,
   },
   {
@@ -48,7 +48,7 @@ export const TEAM_CHANNELS: TeamChannel[] = [
     key: 'ops',
     name: '#ops',
     purpose: 'Daily ops coordination · roster posts · field-PM updates.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny', 'u-mary', 'u-bryan', 'u-alex', 'u-catherine'],
+    memberIds: ['u-ishant', 'u-franny', 'u-mary', 'u-bryan', 'u-catherine'],
     unread: 3,
   },
   {
@@ -56,21 +56,21 @@ export const TEAM_CHANNELS: TeamChannel[] = [
     key: 'finance',
     name: '#finance',
     purpose: 'Period close · approvals · reconciliation.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny', 'u-mathias', 'u-mary'],
+    memberIds: ['u-ishant', 'u-franny', 'u-mathias', 'u-mary'],
   },
   {
     id: 'tc-syndic',
     key: 'syndic',
     name: '#syndic',
     purpose: 'GBH building syndic matters.',
-    memberIds: ['u-judith', 'u-ishant', 'u-franny'],
+    memberIds: ['u-ishant', 'u-franny'],
   },
   {
     id: 'tc-marketing',
     key: 'marketing',
     name: '#marketing',
     purpose: 'Listings · campaigns · brand work.',
-    memberIds: ['u-judith', 'u-ishant', 'u-mathias'],
+    memberIds: ['u-ishant', 'u-mathias'],
   },
 ];
 
@@ -81,11 +81,11 @@ export interface TeamDM {
 }
 
 export const TEAM_DMS: TeamDM[] = [
-  { id: 'dm-judith-franny', participantIds: ['u-judith', 'u-franny'], unread: 1 },
-  { id: 'dm-judith-ishant', participantIds: ['u-judith', 'u-ishant'] },
+  { id: 'dm-ishant-franny', participantIds: ['u-ishant', 'u-franny'], unread: 1 },
+  { id: 'dm-ishant-mathias', participantIds: ['u-ishant', 'u-mathias'] },
   { id: 'dm-franny-bryan', participantIds: ['u-franny', 'u-bryan'] },
-  { id: 'dm-franny-alex', participantIds: ['u-franny', 'u-alex'] },
-  { id: 'dm-judith-franny-ishant', participantIds: ['u-judith', 'u-franny', 'u-ishant'], unread: 2 },
+  { id: 'dm-franny-catherine', participantIds: ['u-franny', 'u-catherine'] },
+  { id: 'dm-ishant-franny-bryan', participantIds: ['u-ishant', 'u-franny', 'u-bryan'], unread: 2 },
 ];
 
 export type TeamMessageKind = 'text' | 'system' | 'call_scheduled' | 'task_link' | 'roster_publish' | 'finance_escalation';
@@ -173,7 +173,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
   {
     id: 'tm-001',
     channelKey: 'general',
-    authorId: 'u-judith',
+    authorId: 'u-ishant',
     text: 'New FAD modules landing this week — HR, Team Inbox, Tasks rebuild. Ping if anything looks off.',
     ts: '2026-04-27T08:30:00',
     kind: 'text',
@@ -192,7 +192,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
     id: 'tm-010',
     channelKey: 'ops',
     authorId: 'u-bryan',
-    text: 'A/C at LB-2 is dead — guest reported overnight. @Mathias David heading there now, parts ETA from Coolbreeze 14:00.',
+    text: 'A/C at LB-2 is dead — guest reported overnight. @Mathias Duval coordinating parts ETA from Coolbreeze 14:00.',
     ts: '2026-04-27T08:15:00',
     mentions: ['u-mathias'],
     kind: 'text',
@@ -209,7 +209,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
   {
     id: 'tm-012',
     channelKey: 'ops',
-    authorId: 'u-alex',
+    authorId: 'u-catherine',
     text: 'Welcome basket missing chocolates at RC-15. Drop now or wait for Kanarski check-in?',
     ts: '2026-04-27T09:38:00',
     kind: 'text',
@@ -236,7 +236,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
   {
     id: 'tm-021',
     channelKey: 'finance',
-    authorId: 'u-judith',
+    authorId: 'u-ishant',
     text: 'LC-9 roof: Rs 22.5k pending owner approval. Marchand replied "je regarde demain matin" — should land in inbox today.',
     ts: '2026-04-27T08:10:00',
     kind: 'text',
@@ -266,7 +266,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
   // DM samples
   {
     id: 'tm-100',
-    dmId: 'dm-judith-franny',
+    dmId: 'dm-ishant-franny',
     authorId: 'u-franny',
     text: 'Catherine submitted PTO for May 4 — single day. Approving.',
     ts: '2026-04-27T07:55:00',
@@ -274,15 +274,15 @@ export const TEAM_MESSAGES: TeamMessage[] = [
   },
   {
     id: 'tm-101',
-    dmId: 'dm-judith-franny',
-    authorId: 'u-judith',
+    dmId: 'dm-ishant-franny',
+    authorId: 'u-ishant',
     text: '👍',
     ts: '2026-04-27T07:56:00',
     kind: 'text',
   },
   {
     id: 'tm-110',
-    dmId: 'dm-franny-alex',
+    dmId: 'dm-franny-catherine',
     authorId: 'u-franny',
     text: 'Glass quote for LB-2 looks fine — pushing approval through.',
     ts: '2026-04-26T16:30:00',
@@ -290,7 +290,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
   },
   {
     id: 'tm-120',
-    dmId: 'dm-judith-franny-ishant',
+    dmId: 'dm-ishant-franny-bryan',
     authorId: 'u-ishant',
     text: 'Owner walkthrough VV-47 Saturday 10am. Confirmed with Smith.',
     ts: '2026-04-26T11:00:00',
@@ -298,7 +298,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
   },
   {
     id: 'tm-121',
-    dmId: 'dm-judith-franny-ishant',
+    dmId: 'dm-ishant-franny-bryan',
     authorId: 'u-franny',
     text: 'Will pull together garden + pool service log beforehand.',
     ts: '2026-04-26T11:05:00',
@@ -318,7 +318,7 @@ export const TEAM_MESSAGES: TeamMessage[] = [
       title: 'Weekly ops sync',
       startAt: '2026-04-27T09:00:00',
       meetUrl: 'https://meet.google.com/fixture-abc-defg',
-      inviteeIds: ['u-judith', 'u-franny', 'u-ishant', 'u-bryan', 'u-alex'],
+      inviteeIds: ['u-franny', 'u-ishant', 'u-bryan', 'u-catherine'],
       organizerId: 'u-franny',
     },
   },

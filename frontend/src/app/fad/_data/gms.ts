@@ -206,7 +206,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     id: 'k4',
     title: 'Breezeway escalation ladder',
     category: 'Vendor',
-    body: 'Routine ticket: Alex within 4h. Urgent (guest-impacting): Franny + Alex within 30m. Safety issue: Ishant + 999/Police.',
+    body: 'Routine ticket: Bryan or Catherine within 4h. Urgent (guest-impacting): Franny + field lead within 30m. Safety issue: Ishant + 999/Police.',
     lastUpdated: 'Mar 14 · Franny',
     maintainer: 'Franny',
   },

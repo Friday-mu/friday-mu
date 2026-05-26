@@ -5,8 +5,9 @@
 // GET    /threads                 list with status + type filters
 // GET    /threads/:id             detail + all events (chronological)
 // PATCH  /threads/:id             update status / notes
-// POST   /threads/:id/mark-paid   flip Guesty status to confirmed +
-//                                 queue Resend email
+// POST   /threads/:id/mark-paid   staff-approved funds-received path;
+//                                 can queue Guesty confirmation without
+//                                 sending duplicate FAD confirmation email
 //
 // `requireAuth` here is the existing FAD auth middleware (Authorization
 // header → GMS-issued JWT). attachIdentity isn't strictly needed for
@@ -18,6 +19,7 @@ const { publishFadEvent } = require('../realtime');
 const { attachIdentity } = require('../design/auth');
 const { confirmReservation } = require('./guesty');
 const { sendEmail } = require('./resend');
+const { listingIdForSlug } = require('./property-map');
 const {
   getVisibleDraftsForThread,
   triggerWebsiteDraftGeneration,
@@ -26,6 +28,86 @@ const {
   rejectWebsiteDraft,
 } = require('./drafts');
 const { recordAiTakeoverForThread } = require('./ai_handoff');
+
+function bookingRequestIdFromRecord(record) {
+  return record?.request_id || record?.reference || null;
+}
+
+function normalizeProofPayload(body, request, identity) {
+  const now = new Date().toISOString();
+  return {
+    event_version: '2026-05-26',
+    reference: bookingRequestIdFromRecord(request),
+    thread_id: request.thread_id,
+    booking_request_id: bookingRequestIdFromRecord(request),
+    residence_name: request.listing_title || null,
+    residence_slug: request.listing_slug || null,
+    check_in: request.check_in || null,
+    check_out: request.check_out || null,
+    nights: request.nights || null,
+    quote: {
+      currency: request.quoted_total_currency || request.payment_currency || null,
+      total: request.quoted_total_amount_minor != null ? Number(request.quoted_total_amount_minor) / 100 : null,
+    },
+    proof_url: body.proof_url || body.proofUrl || null,
+    proof_viewer_url: body.proof_viewer_url || body.proofViewerUrl || body.proof_url || body.proofUrl || null,
+    file_name: body.file_name || body.fileName || null,
+    file_type: body.file_type || body.fileType || null,
+    file_size: Number.isFinite(Number(body.file_size || body.fileSize)) ? Number(body.file_size || body.fileSize) : null,
+    uploaded_at: body.uploaded_at || body.uploadedAt || now,
+    proof_source: body.proof_source || body.proofSource || 'staff_upload',
+    next_action: 'verify_bank_funds_before_confirming',
+    notes: body.notes ? String(body.notes).slice(0, 2000) : null,
+    uploaded_by: {
+      user_id: identity?.userId || null,
+      display_name: identity?.displayName || identity?.username || null,
+    },
+  };
+}
+
+async function applyProofToBookingRequest({ threadId, tenantId, requestId, eventId, payload, actorId }) {
+  const proofReceivedAt = payload?.uploaded_at ? new Date(payload.uploaded_at) : new Date();
+  const safeProofReceivedAt = Number.isNaN(proofReceivedAt.getTime()) ? new Date() : proofReceivedAt;
+  const { rows } = await query(
+    `UPDATE fad_portal_booking_requests
+        SET status = CASE
+              WHEN status IN ('confirmed', 'declined') THEN status
+              ELSE 'proof_received'
+            END,
+            proof_url = COALESCE($1, proof_url),
+            proof_viewer_url = COALESCE($2, proof_viewer_url),
+            proof_file_name = COALESCE($3, proof_file_name),
+            proof_file_type = COALESCE($4, proof_file_type),
+            proof_file_size = COALESCE($5, proof_file_size),
+            proof_received_at = COALESCE($6, proof_received_at, NOW()),
+            proof_source = COALESCE($7, proof_source, 'website'),
+            proof_event_id = COALESCE($8::uuid, proof_event_id),
+            last_status_actor_id = COALESCE($9::uuid, last_status_actor_id),
+            last_status_change_at = NOW(),
+            updated_at = NOW()
+      WHERE tenant_id = $10
+        AND (
+          thread_id = $11
+          OR request_id = $12
+        )
+      RETURNING *`,
+    [
+      payload?.proof_url || payload?.proofUrl || null,
+      payload?.proof_viewer_url || payload?.proofViewerUrl || null,
+      payload?.file_name || payload?.fileName || null,
+      payload?.file_type || payload?.fileType || null,
+      Number.isFinite(Number(payload?.file_size || payload?.fileSize)) ? Number(payload?.file_size || payload?.fileSize) : null,
+      safeProofReceivedAt,
+      payload?.proof_source || payload?.source || 'website',
+      eventId || null,
+      actorId || null,
+      tenantId,
+      threadId,
+      requestId,
+    ],
+  );
+  return rows[0] || null;
+}
 
 function mountThreads(router) {
   // ── LIST ──────────────────────────────────────────────────────
@@ -461,9 +543,10 @@ function mountThreads(router) {
   });
 
   // ── MARK PAID ─────────────────────────────────────────────────
-  // Flip Guesty status to confirmed (via DLQ for retry safety) and
-  // queue the Resend confirmation email. The actual API calls run in
-  // the worker; this endpoint is fast + idempotent.
+  // Staff-approved funds-received path. If a Guesty reservation is
+  // already linked, queue Guesty confirmation via DLQ. The worker does
+  // not send a duplicate FAD confirmation email unless explicitly
+  // requested in the job payload.
   router.post('/threads/:id/mark-paid', attachIdentity, async (req, res) => {
     try {
       if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
@@ -489,7 +572,7 @@ function mountThreads(router) {
       }
 
       // Queue a confirm_reservation job. The worker handles the Guesty
-      // PUT + on success queues the Resend email. We DO mark the
+      // PUT. We DO mark the
       // thread paid immediately so the inbox reflects ops intent even
       // if Guesty is slow.
       await query(
@@ -501,6 +584,7 @@ function mountThreads(router) {
             toEmail: t.guest_email_raw || t.guest_email,
             toName: t.guest_name,
           },
+          send_fad_confirmation: false,
         })],
       );
 
@@ -545,6 +629,9 @@ function mountThreads(router) {
                 quoted_total_amount_minor, quoted_total_currency,
                 status, payment_choice, payment_currency,
                 paid_amount_minor, confirmation_deadline,
+                proof_url, proof_viewer_url, proof_file_name,
+                proof_file_type, proof_file_size, proof_received_at,
+                proof_source, proof_event_id,
                 converted_to_reservation_id,
                 declined_at, declined_reason,
                 last_status_actor_id, last_status_change_at,
@@ -568,12 +655,15 @@ function mountThreads(router) {
     try {
       if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
       const action = String(req.body?.action || '').trim();
-      if (!['set_payment_terms', 'mark_funds_received', 'decline', 'reset_to_review'].includes(action)) {
-        return res.status(400).json({ error: 'invalid_action', message: 'action must be set_payment_terms | mark_funds_received | decline | reset_to_review' });
+      if (!['set_payment_terms', 'mark_proof_received', 'upload_proof_elsewhere', 'mark_funds_received', 'queue_guesty_reservation_create', 'decline', 'reset_to_review'].includes(action)) {
+        return res.status(400).json({
+          error: 'invalid_action',
+          message: 'action must be set_payment_terms | mark_proof_received | upload_proof_elsewhere | mark_funds_received | queue_guesty_reservation_create | decline | reset_to_review',
+        });
       }
       // Confirm the sidecar exists for this thread + tenant.
       const lookup = await query(
-        `SELECT id, status FROM fad_portal_booking_requests
+        `SELECT * FROM fad_portal_booking_requests
           WHERE thread_id = $1 AND tenant_id = $2 LIMIT 1`,
         [req.params.id, req.tenantId],
       );
@@ -604,7 +694,10 @@ function mountThreads(router) {
           deadline = d.toISOString();
         }
         updateSql = `UPDATE fad_portal_booking_requests
-                        SET status = 'awaiting_payment',
+                        SET status = CASE
+                              WHEN status IN ('proof_received', 'confirmed', 'declined') THEN status
+                              ELSE 'awaiting_payment'
+                            END,
                             payment_choice = $1,
                             payment_currency = $2,
                             confirmation_deadline = $3,
@@ -614,6 +707,50 @@ function mountThreads(router) {
                       WHERE thread_id = $5 AND tenant_id = $6
                       RETURNING *`;
         updateParams = [choice, currency, deadline, actorId, req.params.id, req.tenantId];
+      } else if (action === 'mark_proof_received' || action === 'upload_proof_elsewhere') {
+        const request = lookup.rows[0];
+        const payload = normalizeProofPayload(req.body || {}, request, req.identity);
+        let eventId = null;
+        if (action === 'upload_proof_elsewhere') {
+          if (!payload.proof_url && !payload.proof_viewer_url && !payload.file_name && !payload.notes) {
+            return res.status(400).json({ error: 'proof_evidence_required', message: 'Provide a proof URL, viewer URL, file name, or note.' });
+          }
+          const eventRes = await query(
+            `INSERT INTO inbox_events (tenant_id, thread_id, reference, event_type, source, payload)
+             VALUES ($1, $2, $3, 'booking.proof_uploaded', 'fad', $4::jsonb)
+             RETURNING id`,
+            [
+              req.tenantId,
+              req.params.id,
+              `staff-proof:${request.request_id}:${Date.now()}`,
+              JSON.stringify(payload),
+            ],
+          );
+          eventId = eventRes.rows[0]?.id || null;
+        }
+        const updated = await applyProofToBookingRequest({
+          threadId: req.params.id,
+          tenantId: req.tenantId,
+          requestId: request.request_id,
+          eventId,
+          payload,
+          actorId,
+        });
+        if (!updated) return res.status(404).json({ error: 'booking_request_not_found' });
+        await query(
+          `UPDATE inbox_threads
+              SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+                  last_event_type = CASE WHEN $1::uuid IS NULL THEN last_event_type ELSE 'booking.proof_uploaded' END,
+                  last_event_at = CASE WHEN $1::uuid IS NULL THEN last_event_at ELSE NOW() END,
+                  updated_at = NOW()
+            WHERE id = $2 AND tenant_id = $3`,
+          [eventId, req.params.id, req.tenantId],
+        );
+        await publishFadEvent({
+          type: 'website_inbox.thread_updated',
+          payload: { threadId: req.params.id, eventId, eventType: 'booking.proof_uploaded' },
+        }).catch(() => {});
+        return res.json(updated);
       } else if (action === 'mark_funds_received') {
         const paidAmountMajor = req.body?.paid_amount;
         const reservationId = req.body?.reservation_id || null;
@@ -643,6 +780,52 @@ function mountThreads(router) {
                       WHERE thread_id = $4 AND tenant_id = $5
                       RETURNING *`;
         updateParams = [paidMinor, reservationId, actorId, req.params.id, req.tenantId];
+      } else if (action === 'queue_guesty_reservation_create') {
+        const request = lookup.rows[0];
+        if (!['proof_received', 'confirmed'].includes(request.status)) {
+          return res.status(409).json({
+            error: 'proof_not_verified',
+            message: 'Queue Guesty reservation creation only after proof is received or funds are confirmed.',
+          });
+        }
+        const listingId = listingIdForSlug(request.listing_slug);
+        if (!listingId) {
+          return res.status(409).json({
+            error: 'unmapped_residence_slug',
+            message: `No Guesty listing mapping found for ${request.listing_slug || '(missing slug)'}.`,
+          });
+        }
+        const eventRes = await query(
+          `SELECT payload FROM inbox_events
+            WHERE tenant_id = $1
+              AND thread_id = $2
+              AND event_type IN ('booking.request_submitted', 'booking.proof_uploaded')
+            ORDER BY created_at DESC, id::text DESC
+            LIMIT 1`,
+          [req.tenantId, req.params.id],
+        );
+        const latestPayload = eventRes.rows[0]?.payload || {};
+        await query(
+          `INSERT INTO inbox_guesty_jobs (tenant_id, thread_id, job_type, status, payload)
+           VALUES ($1, $2, 'create_reservation', 'pending', $3::jsonb)`,
+          [req.tenantId, req.params.id, JSON.stringify({
+            listingId,
+            slug: request.listing_slug,
+            checkInDate: request.check_in,
+            checkOutDate: request.check_out,
+            guestsCount: Number(request.party_adults || 0) + Number(request.party_children || 0) || 1,
+            reference: request.request_id,
+            proofUrl: request.proof_viewer_url || request.proof_url || latestPayload.proof_viewer_url || latestPayload.proof_url || null,
+            guest: latestPayload.guest || {},
+            requested_by_user_id: actorId,
+            explicit_staff_action: true,
+          })],
+        );
+        await publishFadEvent({
+          type: 'website_inbox.thread_updated',
+          payload: { threadId: req.params.id, eventType: 'booking.reservation_create_queued' },
+        }).catch(() => {});
+        return res.json({ ...request, guesty_create_queued: true });
       } else if (action === 'decline') {
         const reason = req.body?.reason ? String(req.body.reason).slice(0, 2000) : null;
         updateSql = `UPDATE fad_portal_booking_requests

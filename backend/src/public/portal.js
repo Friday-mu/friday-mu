@@ -158,7 +158,7 @@ async function ensureBookingRequestSidecar({ tenantId, threadId, requestId, cont
       $6, $7, $8,
       $9, $10, $11,
       $12, $13,
-      'pending_review'
+      'awaiting_payment'
     )
     ON CONFLICT (tenant_id, request_id) DO UPDATE SET
       thread_id     = COALESCE(fad_portal_booking_requests.thread_id, EXCLUDED.thread_id),
@@ -172,6 +172,10 @@ async function ensureBookingRequestSidecar({ tenantId, threadId, requestId, cont
       party_infants  = COALESCE(EXCLUDED.party_infants, fad_portal_booking_requests.party_infants),
       quoted_total_amount_minor = COALESCE(EXCLUDED.quoted_total_amount_minor, fad_portal_booking_requests.quoted_total_amount_minor),
       quoted_total_currency     = COALESCE(EXCLUDED.quoted_total_currency, fad_portal_booking_requests.quoted_total_currency),
+      status = CASE
+        WHEN fad_portal_booking_requests.status = 'pending_review' THEN 'awaiting_payment'
+        ELSE fad_portal_booking_requests.status
+      END,
       updated_at = NOW()
     RETURNING id
     `,

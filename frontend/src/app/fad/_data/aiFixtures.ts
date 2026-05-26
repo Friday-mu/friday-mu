@@ -9,8 +9,8 @@
 export const DAILY_BRIEF_POOL: string[] = [
   '4 urgent today, 2 escalating. RC-15 cleaning at risk because guest checks in at 14:00 and access code is missing. LB-2 AC fix tracking on schedule (parts ETA 14:00).',
   'Quiet morning. 1 overdue maintenance at LB-2 needs Bryan\'s attention. 3 cleans on schedule. Owner walkthrough VV-47 confirmed for Saturday.',
-  'Heavy day ahead — 12 tasks queued. Bryan covering north (4 maintenance jobs, 1 inspection). Alex covering west (5 cleans, 2 inspections). Mary on linen station setup.',
-  'Reservation churn: 3 checkouts today, 2 check-ins tomorrow. Cleaning + inspection scheduled, all on track. RC-15 welcome basket missing chocolates — Alex flagged.',
+  'Heavy day ahead — 12 tasks queued. Bryan covering north (4 maintenance jobs, 1 inspection). Catherine covering scheduled cleans with Ishant as west backup. Mary on linen station setup.',
+  'Reservation churn: 3 checkouts today, 2 check-ins tomorrow. Cleaning + inspection scheduled, all on track. RC-15 welcome basket missing chocolates — Catherine flagged.',
   'Issue spike from inbox: 4 reports received in last 6 hours. 2 auto-triaged to maintenance, 2 awaiting your review in Reported Issues. LV-10 sulphur smell looks like dry trap, easy fix.',
 ];
 
@@ -29,7 +29,7 @@ export const RISK_FLAG_EXPLANATIONS: Record<string, string[]> = {
     'Field PM noted gate keypad battery dead. Replacement scheduled, but task currently un-actionable until fix complete.',
   ],
   over_time: [
-    'Spent 144 min vs estimated 30 min — 4.8× over estimate. Likely a chase scenario (e.g., collecting payment, vendor follow-up). Consider adding @Judith for escalation.',
+    'Spent 144 min vs estimated 30 min — 4.8× over estimate. Likely a chase scenario (e.g., collecting payment, vendor follow-up). Consider adding @Ishant for escalation.',
     'Time-tracking shows 220 min on a task budgeted at 90. Worth reviewing requirements list — scope may have grown silently.',
   ],
   unassigned: [
@@ -43,9 +43,9 @@ export const RISK_FLAG_EXPLANATIONS: Record<string, string[]> = {
 };
 
 export const ROSTER_DRAFT_RATIONALES: string[] = [
-  'Bryan kept on north zone all week — 7 maintenance jobs at GBH-* + PT-3 this week. Alex on west Mon-Thu (8 cleans queued), standby Fri to absorb west overflow. Catherine off Tue (approved leave). Mathias Mon-Fri only (no weekends per contract).',
-  'Heavy west week — Alex anchored Mon-Fri, with Catherine flexed in on Wed for north backfill. Mary off Wed (childcare day). Bryan single standby Wed when work mix is lightest.',
-  'Quiet week for cleans, heavier on inspections. Catherine + Alex paired for inspections cluster; Bryan covers maintenance on north. Mathias focused on guest-facing tasks Mon-Fri.',
+  'Bryan kept maintenance-first this week — 7 maintenance jobs at GBH-* + PT-3. Catherine handles cleaning/inspection blocks with Ishant as west backup. Mathias Mon-Fri only (no weekends per contract).',
+  'Heavy west week — Catherine is flexed into scheduled cleans, with Ishant covering car/procurement gaps and Mary off Wed (childcare day). Bryan single standby Wed when work mix is lightest.',
+  'Quiet week for cleans, heavier on inspections. Catherine + Bryan cover inspections cluster; Bryan covers maintenance on north. Mathias focused on guest-facing tasks Mon-Fri.',
 ];
 
 /** Hour-of-day deterministic pool selector. Same hour → same pick. */

@@ -1112,7 +1112,7 @@ export function OperationsModule() {
                   <div className="row-meta">
                     <span>{t.prop}</span>
                     <span className="sep">·</span>
-                    <span>Alex</span>
+                    <span>Catherine</span>
                     <span className="sep">·</span>
                     <span>opened 2d ago</span>
                   </div>

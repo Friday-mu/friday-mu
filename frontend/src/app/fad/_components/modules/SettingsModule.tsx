@@ -2,7 +2,7 @@
 
 // @demo:data + @demo:auth — Tag: PROD-DATA-20 — see frontend/DEMO_CRUFT.md
 // SettingsModule has multiple inline demo blocks:
-//   - Hardcoded user "Ishant Sagoo" / "ishant@friday.mu" (replace with auth context)
+//   - Hardcoded user "Ishant Ayadassen" / "ishant@friday.mu" (replace with auth context)
 //   - Inline team roster of 6 names (lines ~131-136) → GET /api/users/team
 //   - Hardcoded integrations list (lines ~171-178) → GET /api/integrations
 //   - Feedback inbox is live; screenshots + fix evidence load from /api/feedback
@@ -214,12 +214,12 @@ function Team() {
         Role-scoped visibility, multi-team membership.
       </p>
       {[
-        { name: 'Ishant Sagoo', role: 'Admin', teams: ['all'] },
-        { name: 'Franny Reyes', role: 'Manager', teams: ['ops', 'gs'] },
-        { name: 'Mathias Chen', role: 'Manager', teams: ['gs', 'ops'] },
-        { name: 'Mary Nunes', role: 'Manager · until May', teams: ['admin'] },
-        { name: 'Bryan Patel', role: 'Contributor', teams: ['ops'] },
-        { name: 'Alex Rivera', role: 'Contributor', teams: ['ops'] },
+        { name: 'Ishant Ayadassen', role: 'Admin', teams: ['all'] },
+        { name: 'Franny Henri', role: 'Ops manager', teams: ['ops', 'gs'] },
+        { name: 'Mathias Duval', role: 'Manager', teams: ['gs', 'ops'] },
+        { name: 'Mary Oladimeji', role: 'Manager · until May', teams: ['admin'] },
+        { name: 'Bryan Henri', role: 'Contributor', teams: ['ops'] },
+        { name: 'Catherine Henri', role: 'Contributor', teams: ['ops'] },
       ].map((p, i) => (
         <div key={i} className="settings-row">
           <div>

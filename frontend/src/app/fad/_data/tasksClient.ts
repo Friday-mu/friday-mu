@@ -276,10 +276,10 @@ function mapTask(s: ServerTask): Task {
 
 // ─── UUID safety ─────────────────────────────────────────────────
 //
-// Components still pass fixture user ids like 'u-judith' / 'u-ishant'
+// Components still pass fixture user ids like 'u-ishant' / 'u-bryan'
 // from the TASK_USERS demo data (deeper refactor — see avatar-fix
 // handover). The backend's users + tasks tables expect real UUIDs;
-// passing 'u-judith' as `requester_user_id` or in
+// passing 'u-ishant' as `requester_user_id` or in
 // `assignee_user_ids` blows up with `invalid input syntax for type
 // uuid`. Filter to UUIDs only on the wire; the fixture-id case
 // silently drops to null/[] which renders cleanly.

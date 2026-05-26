@@ -58,16 +58,6 @@ export const TIME_OFF_REQUESTS: TimeOffRequest[] = [
     createdAt: '2026-04-14T09:30:00',
   },
   {
-    id: 'to-004',
-    userId: 'u-alex',
-    startDate: '2026-05-22',
-    endDate: '2026-05-26',
-    type: 'annual',
-    reason: 'Long weekend',
-    status: 'pending',
-    createdAt: '2026-04-25T18:00:00',
-  },
-  {
     id: 'to-005',
     userId: 'u-mathias',
     startDate: '2026-04-20',

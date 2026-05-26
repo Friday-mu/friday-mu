@@ -18,6 +18,10 @@ import {
   initialRequirementState,
   requirementsForTemplate,
 } from '../../../_data/taskRequirements';
+import {
+  comboChildCodesForProperty,
+  suggestedMinutesForTask,
+} from '../../../_data/opsPolicy';
 import { useHydratePropertiesFromGuesty } from '../../../_data/propertiesClient';
 import {
   parseTaskIntent,
@@ -67,12 +71,26 @@ const PRIORITIES: TaskPriority[] = ['urgent', 'high', 'medium', 'low', 'lowest']
 const TEMPLATE_OPTIONS = [
   '',
   ...CORE_TASK_TEMPLATE_OPTIONS,
+  'Owner standard clean',
+  'Mid-stay clean',
+  'Owner post-clean inspection',
+  'Arrival inspection',
+  'Amenities report',
+  'Aesthetic check',
+  'Lockbox code change',
+  'Guesty lockbox update',
+  'Pest control',
+  'Store cleaning',
+  'Home buildout',
+  'Procurement',
+  'Quick maintenance reset',
+  'AC servicing',
   'Maintenance follow-up',
   'Inspection follow-up',
   'Cleaning correction',
   'Guest service follow-up',
   'Manager review',
-];
+].filter((item, index, items) => items.indexOf(item) === index);
 
 type SaveState = 'idle' | 'saving' | 'queued' | 'failed';
 
@@ -229,6 +247,7 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [estimatedMinutes, setEstimatedMinutes] = useState('');
+  const [estimatedMinutesAuto, setEstimatedMinutesAuto] = useState(true);
   const [template, setTemplate] = useState('');
   const [element, setElement] = useState('');
   const [tagText, setTagText] = useState('');
@@ -263,6 +282,7 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     );
     setDueTime(resolvedMode === 'manager_schedule' ? prefill?.dueTime ?? sourceTask?.dueTime ?? '' : '');
     setEstimatedMinutes(prefill?.estimatedMinutes ? String(prefill.estimatedMinutes) : '');
+    setEstimatedMinutesAuto(!prefill?.estimatedMinutes);
     setTemplate(prefill?.template ?? '');
     setElement(prefill?.category ?? '');
     setTagText(prefill?.tags?.join(', ') ?? '');
@@ -274,6 +294,18 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
 
   const subOptions = SUBDEPT_BY_DEPT[department];
   const selectedProperty = TASK_PROPERTIES.find((p) => p.code === propertyCode);
+  const comboChildren = useMemo(() => comboChildCodesForProperty(propertyCode), [propertyCode]);
+  const suggestedMinutes = useMemo(() => (
+    propertyCode
+      ? suggestedMinutesForTask({
+        template,
+        department,
+        subdepartment,
+        propertyCode,
+        propertyTier: selectedProperty?.tier,
+      })
+      : null
+  ), [department, propertyCode, selectedProperty?.tier, subdepartment, template]);
   const candidateAssignees = useMemo(
     () => TASK_USERS.filter((u) => u.role !== 'external' && u.active),
     [],
@@ -294,6 +326,11 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     })).filter((group) => group.users.length > 0)
   ), [candidateAssignees]);
   const currentUser = TASK_USER_BY_ID[currentUserId];
+
+  useEffect(() => {
+    if (!open || !isManagerMode || !estimatedMinutesAuto || !suggestedMinutes) return;
+    setEstimatedMinutes(String(suggestedMinutes));
+  }, [estimatedMinutesAuto, isManagerMode, open, suggestedMinutes]);
 
   // Apply a structured proposal to the form. Each field is independent
   // — operator hand-edits between turns will survive unless the model
@@ -326,6 +363,7 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     if (proposed.dueTime) setDueTime(proposed.dueTime);
     if (typeof proposed.estimatedMinutes === 'number') {
       setEstimatedMinutes(String(proposed.estimatedMinutes));
+      setEstimatedMinutesAuto(false);
     }
     if (proposed.template) setTemplate(proposed.template);
     if (proposed.category) setElement(proposed.category);
@@ -360,7 +398,7 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
       // relative dates ("tomorrow", "next week").
       const reference = {
         today: TODAY,
-        properties: TASK_PROPERTIES.map((p) => ({ code: p.code, name: p.name, zone: p.zone })),
+        properties: TASK_PROPERTIES.map((p) => ({ code: p.code, name: p.name, zone: p.zone, tier: p.tier })),
         assignees: TASK_USERS
           .filter((u) => u.active && u.role !== 'external')
           .map((u) => ({ id: u.id, name: u.name, role: u.role, skills: u.skills })),
@@ -475,44 +513,70 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
     setSaveState('saving');
     setSaveError(null);
     try {
-      const tags = tagText
+      const baseTags = tagText
         .split(',')
         .map((tag) => tag.trim())
         .filter(Boolean);
       const requirements = isReportIntent ? [] : requirementsForTemplate(template, department, subdepartment);
-      const task = await createTask({
-        title: title.trim(),
-        description: buildDescription(),
-        propertyCode,
-        department,
-        subdepartment,
-        priority,
-        source: isReportIntent
-          ? (prefill?.source ?? 'reported_issue')
-          : (prefill?.source ?? 'manual'),
-        status: isReportIntent ? 'reported' : 'scheduled',
-        visibility: isReportIntent ? 'team' : 'all',
-        assigneeIds: isReportIntent ? [] : assigneeIds,
-        requesterId: requesterId || currentUserId,
-        dueDate: isReportIntent ? dueDate || undefined : dueDate || TODAY,
-        dueTime: isReportIntent ? undefined : dueTime || undefined,
-        estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : undefined,
-        reservationId: isAssignedIssue
-          ? sourceTask?.reservationId
-          : resolvedMode === 'field_standalone_issue'
-            ? undefined
-            : prefill?.reservationId,
-        inboxThreadId: prefill?.inboxThreadId,
-        groupEmailId: prefill?.groupEmailId,
-        tags,
-        category: element.trim() || undefined,
-        template: template || undefined,
-        externalRef: prefill?.externalRef,
-        requirements: requirements.length > 0 ? requirements : undefined,
-        requirementState: requirements.length > 0 ? initialRequirementState() : undefined,
-      });
-      onCreated(task);
-      fireToast(isReportIntent ? 'Issue reported for manager triage' : 'Task scheduled');
+      const splitPropertyCodes = !isReportIntent && comboChildren.length > 0 ? comboChildren : [propertyCode];
+      const createdTasks: Task[] = [];
+      for (const code of splitPropertyCodes) {
+        const childProperty = TASK_PROPERTIES.find((p) => p.code === code);
+        const splitMinutes = splitPropertyCodes.length > 1
+          ? suggestedMinutesForTask({
+            template,
+            department,
+            subdepartment,
+            propertyCode: code,
+            propertyTier: childProperty?.tier,
+          })
+          : null;
+        const tags = splitPropertyCodes.length > 1
+          ? Array.from(new Set([...baseTags, `parent:${propertyCode}`]))
+          : baseTags;
+        const task = await createTask({
+          title: title.trim(),
+          description: buildDescription(),
+          propertyCode: code,
+          department,
+          subdepartment,
+          priority,
+          source: isReportIntent
+            ? (prefill?.source ?? 'reported_issue')
+            : (prefill?.source ?? 'manual'),
+          status: isReportIntent ? 'reported' : 'scheduled',
+          visibility: isReportIntent ? 'team' : 'all',
+          assigneeIds: isReportIntent ? [] : assigneeIds,
+          requesterId: requesterId || currentUserId,
+          dueDate: isReportIntent ? dueDate || undefined : dueDate || TODAY,
+          dueTime: isReportIntent ? undefined : dueTime || undefined,
+          estimatedMinutes: splitMinutes ?? (estimatedMinutes ? Number(estimatedMinutes) : undefined),
+          reservationId: isAssignedIssue
+            ? sourceTask?.reservationId
+            : resolvedMode === 'field_standalone_issue'
+              ? undefined
+              : prefill?.reservationId,
+          inboxThreadId: prefill?.inboxThreadId,
+          groupEmailId: prefill?.groupEmailId,
+          tags,
+          category: element.trim() || undefined,
+          template: template || undefined,
+          externalRef: splitPropertyCodes.length > 1 && prefill?.externalRef
+            ? `${prefill.externalRef}:${code}`
+            : prefill?.externalRef,
+          requirements: requirements.length > 0 ? requirements : undefined,
+          requirementState: requirements.length > 0 ? initialRequirementState() : undefined,
+        });
+        createdTasks.push(task);
+        onCreated(task);
+      }
+      fireToast(
+        isReportIntent
+          ? 'Issue reported for manager triage'
+          : splitPropertyCodes.length > 1
+            ? `${createdTasks.length} child tasks scheduled for ${propertyCode}`
+            : 'Task scheduled',
+      );
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Task save failed';
       setSaveState('failed');
@@ -789,11 +853,21 @@ export function CreateTaskDrawer({ open, onClose, onCreated, mode, sourceTask, p
                       step="15"
                       inputMode="numeric"
                       value={estimatedMinutes}
-                      onChange={(e) => setEstimatedMinutes(e.target.value)}
+                      onChange={(e) => {
+                        setEstimatedMinutesAuto(false);
+                        setEstimatedMinutes(e.target.value);
+                      }}
                       placeholder="60"
                     />
                   </Field>
                 </div>
+                {suggestedMinutes && (
+                  <div className="ops-form-alert neutral">
+                    Suggested {suggestedMinutes} min from Ops policy
+                    {comboChildren.length > 0 ? ` · split ${propertyCode} into ${comboChildren.join(', ')}` : ''}
+                    {!estimatedMinutesAuto ? ' · manually overridden' : ''}
+                  </div>
+                )}
               </section>
 
               <section className="ops-form-section">

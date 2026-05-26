@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
 import { useT } from '../../_i18n/useT';
 import {
@@ -18,11 +18,17 @@ import { fireToast } from '../Toaster';
 import { createTask, fetchTask, updateTask } from '../../_data/tasksClient';
 import { useApiTasks, useApiTasksPage } from '../../_data/useApiTasks';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../_data/operationsStaffClient';
+import {
+  sendOperationsConsultMessage,
+  type OperationsConsultActionSuggestion,
+  type OperationsConsultHistoryMessage,
+  type OperationsConsultPlanItem,
+} from '../../_data/operationsConsultClient';
 import { fetchScheduleReservations, type ScheduleReservation } from '../../_data/reservationsClient';
 import { TaskDetail } from './operations/TaskDetail';
 import { CreateTaskDrawer, type CreateTaskMode, type CreateTaskPrefill } from './operations/CreateTaskDrawer';
 import { RosterPage } from './roster/RosterPage';
-import { IconClose, IconExpand, IconFilter, IconPlus } from '../icons';
+import { IconClose, IconExpand, IconFilter, IconPlus, IconRefresh, IconSend, IconSparkle } from '../icons';
 import { DAILY_BRIEF_POOL, pickDifferent, pickFromPool } from '../../_data/aiFixtures';
 import { useAITelemetry } from '../ai/useAITelemetry';
 import { AIBadge, AIRegenerateButton } from '../ai/AIComponents';
@@ -975,6 +981,7 @@ function WorkbenchEmpty({ children }: { children: React.ReactNode }) {
 // ───────────────── Schedule ─────────────────
 
 type ScheduleBucketId = 'all_day' | 'before_8' | '8_10' | '10_12' | '12_14' | '14_16' | '16_18' | '18_20' | 'after_20';
+type ScheduleTimelineScale = 'readable' | 'actual';
 
 interface ScheduleTimeBucket {
   id: ScheduleBucketId;
@@ -1021,6 +1028,52 @@ interface ScheduleAgentSuggestion {
   reason: string;
 }
 
+interface ScheduleUndoTaskState {
+  taskId: string;
+  title: string;
+  dueDate: string;
+  dueTime: string;
+  assigneeIds: string[];
+  status: TaskStatus;
+}
+
+interface ScheduleUndoEntry {
+  id: string;
+  label: string;
+  tasks: ScheduleUndoTaskState[];
+}
+
+interface OpsConsultMessage extends OperationsConsultHistoryMessage {
+  id: string;
+  actions?: OperationsConsultActionSuggestion[];
+  meta?: string;
+}
+
+interface OpsFridayConsultPanelProps {
+  selectedDate: string;
+  rangeStart: string;
+  rangeEnd: string;
+  plannerMode: SchedulePlannerMode;
+  timelineScale: ScheduleTimelineScale;
+  scheduledTasks: Task[];
+  unscheduledTasks: Task[];
+  staffOptions: OperationsStaffUser[];
+  reservations: ScheduleReservation[];
+  agentPlan: ScheduleAgentSuggestion[];
+  agentApplying: boolean;
+  bulkApplying: boolean;
+  undoApplying: boolean;
+  undoStack: ScheduleUndoEntry[];
+  clearTimeTargetCount: number;
+  clearAllTargetCount: number;
+  onGenerateDraft: () => ScheduleAgentSuggestion[];
+  onApplyDraft: () => Promise<void>;
+  onDiscardDraft: () => void;
+  onClearTimes: () => void;
+  onClearTimesAndAssignees: () => void;
+  onUndo: () => Promise<void>;
+}
+
 const SCHEDULE_TIME_BUCKETS: ScheduleTimeBucket[] = [
   { id: 'all_day', label: 'All day tasks', subLabel: 'No exact time', startHour: null, endHour: null, defaultTime: '' },
   { id: 'before_8', label: 'Before 8am', startHour: 0, endHour: 8, defaultTime: '07:00' },
@@ -1034,6 +1087,14 @@ const SCHEDULE_TIME_BUCKETS: ScheduleTimeBucket[] = [
 ];
 
 const COMPACT_CELL_LIMIT = 6;
+const SCHEDULE_TIMELINE_LANE_HEIGHT = 34;
+const READABLE_TASK_DURATION_MINUTES = 120;
+
+interface UserDayTimelineModel {
+  laneByTaskId: Map<string, number>;
+  laneCount: number;
+  rowMinHeight: number;
+}
 
 function initialsForName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -1077,35 +1138,19 @@ function timeBucketForTask(task: Task): ScheduleBucketId {
   return bucket?.id || 'all_day';
 }
 
-function minutesFromDueTime(time?: string): number | null {
-  const match = String(time || '').match(/^(\d{2}):(\d{2})/);
+function taskTimeSortKey(task: Task): string {
+  return `${task.dueTime || '99:99'}-${PRIORITY_ORDER[task.priority] ?? 99}-${textValue(task.title, 'Untitled task')}`;
+}
+
+function timeToMinutes(time?: string | null): number | null {
+  if (!time) return null;
+  const match = time.match(/^(\d{2}):(\d{2})/);
   if (!match) return null;
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
   return hour * 60 + minute;
-}
-
-function taskTimelineStyle(task: Task, bucket: ScheduleTimeBucket): CSSProperties | undefined {
-  if (bucket.startHour == null || bucket.endHour == null) return undefined;
-  const startMinute = minutesFromDueTime(task.dueTime);
-  if (startMinute == null) return undefined;
-  const bucketStart = bucket.startHour * 60;
-  const bucketEnd = bucket.endHour * 60;
-  const bucketSpan = Math.max(1, bucketEnd - bucketStart);
-  const offset = Math.max(0, Math.min(bucketSpan, startMinute - bucketStart));
-  const leftPct = (offset / bucketSpan) * 100;
-  const estimate = Math.max(15, Math.min(bucketSpan, task.estimatedMinutes || 45));
-  const naturalWidthPct = (estimate / bucketSpan) * 100;
-  const widthPct = Math.min(Math.max(0, 100 - leftPct), Math.max(16, naturalWidthPct));
-  return {
-    marginLeft: `${leftPct}%`,
-    width: `${widthPct}%`,
-  };
-}
-
-function taskTimeSortKey(task: Task): string {
-  return `${task.dueTime || '99:99'}-${PRIORITY_ORDER[task.priority] ?? 99}-${textValue(task.title, 'Untitled task')}`;
 }
 
 function minutesToTime(totalMinutes: number): string {
@@ -1118,7 +1163,84 @@ function minutesToTime(totalMinutes: number): string {
 function taskDurationMinutes(task: Task): number {
   const raw = Number(task.estimatedMinutes || 60);
   if (!Number.isFinite(raw) || raw <= 0) return 60;
-  return Math.min(180, Math.max(30, Math.ceil(raw / 15) * 15));
+  return Math.min(480, Math.max(15, Math.ceil(raw / 15) * 15));
+}
+
+function visualTaskDurationMinutes(task: Task, scale: ScheduleTimelineScale): number {
+  return scale === 'readable' ? READABLE_TASK_DURATION_MINUTES : taskDurationMinutes(task);
+}
+
+function buildUserDayTimelineModel(tasks: Task[], scale: ScheduleTimelineScale): UserDayTimelineModel {
+  const laneByTaskId = new Map<string, number>();
+  const allDayTasks = tasks
+    .filter((task) => timeToMinutes(task.dueTime) == null)
+    .sort((a, b) => compareText(taskTimeSortKey(a), taskTimeSortKey(b)));
+  allDayTasks.forEach((task, index) => laneByTaskId.set(task.id, index));
+
+  const laneEnds: number[] = [];
+  tasks
+    .map((task) => ({ task, start: timeToMinutes(task.dueTime) }))
+    .filter((item): item is { task: Task; start: number } => item.start != null)
+    .sort((a, b) => (
+      a.start - b.start ||
+      PRIORITY_ORDER[a.task.priority] - PRIORITY_ORDER[b.task.priority] ||
+      compareText(taskTitle(a.task), taskTitle(b.task))
+    ))
+    .forEach(({ task, start }) => {
+      const end = start + visualTaskDurationMinutes(task, scale);
+      let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
+      if (lane < 0) {
+        lane = laneEnds.length;
+        laneEnds.push(end);
+      } else {
+        laneEnds[lane] = end;
+      }
+      laneByTaskId.set(task.id, lane);
+    });
+
+  const laneCount = Math.max(1, allDayTasks.length, laneEnds.length);
+  return {
+    laneByTaskId,
+    laneCount,
+    rowMinHeight: Math.max(58, laneCount * SCHEDULE_TIMELINE_LANE_HEIGHT + 8),
+  };
+}
+
+function taskOffsetPctInBucket(task: Task, bucket: ScheduleTimeBucket): number {
+  if (bucket.startHour == null || bucket.endHour == null) return 0;
+  const start = timeToMinutes(task.dueTime);
+  if (start == null) return 0;
+  const bucketStart = bucket.startHour * 60;
+  const bucketMinutes = Math.max(1, (bucket.endHour - bucket.startHour) * 60);
+  return Math.max(0, Math.min(100, ((start - bucketStart) / bucketMinutes) * 100));
+}
+
+function taskWidthPctInBucket(task: Task, bucket: ScheduleTimeBucket, scale: ScheduleTimelineScale): number {
+  if (bucket.startHour == null || bucket.endHour == null) return 100;
+  const bucketMinutes = Math.max(1, (bucket.endHour - bucket.startHour) * 60);
+  return (visualTaskDurationMinutes(task, scale) / bucketMinutes) * 100;
+}
+
+function userDayTaskSlotStyle(
+  task: Task,
+  bucket: ScheduleTimeBucket,
+  scale: ScheduleTimelineScale,
+  timeline: UserDayTimelineModel,
+): CSSProperties {
+  const lane = timeline.laneByTaskId.get(task.id) || 0;
+  const top = 4 + lane * SCHEDULE_TIMELINE_LANE_HEIGHT;
+  if (bucket.startHour == null || bucket.endHour == null || !task.dueTime) {
+    return {
+      top,
+      left: 4,
+      width: 'calc(100% - 8px)',
+    };
+  }
+  return {
+    top,
+    left: `calc(${taskOffsetPctInBucket(task, bucket)}% + 2px)`,
+    width: `calc(${taskWidthPctInBucket(task, bucket, scale)}% - 4px)`,
+  };
 }
 
 function buildScheduleAgentPlan(input: {
@@ -1169,6 +1291,293 @@ function buildScheduleAgentPlan(input: {
         : 'Unscheduled open work pulled into the selected day.',
     };
   });
+}
+
+function buildScheduleUndoEntry(label: string, tasks: Task[]): ScheduleUndoEntry | null {
+  const seen = new Set<string>();
+  const states = tasks
+    .filter((task) => {
+      if (seen.has(task.id)) return false;
+      seen.add(task.id);
+      return true;
+    })
+    .map((task) => ({
+      taskId: task.id,
+      title: taskTitle(task),
+      dueDate: task.dueDate || '',
+      dueTime: task.dueTime || '',
+      assigneeIds: [...task.assigneeIds],
+      status: task.status,
+    }));
+
+  if (states.length === 0) return null;
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    label,
+    tasks: states,
+  };
+}
+
+function OpsFridayConsultPanel({
+  selectedDate,
+  rangeStart,
+  rangeEnd,
+  plannerMode,
+  timelineScale,
+  scheduledTasks,
+  unscheduledTasks,
+  staffOptions,
+  reservations,
+  agentPlan,
+  agentApplying,
+  bulkApplying,
+  undoApplying,
+  undoStack,
+  clearTimeTargetCount,
+  clearAllTargetCount,
+  onGenerateDraft,
+  onApplyDraft,
+  onDiscardDraft,
+  onClearTimes,
+  onClearTimesAndAssignees,
+  onUndo,
+}: OpsFridayConsultPanelProps) {
+  const [messages, setMessages] = useState<OpsConsultMessage[]>([
+    {
+      id: 'welcome',
+      role: 'friday',
+      text: 'I can help draft this schedule, explain roster constraints, clear or undo schedule moves, and flag owner-approval risks before work is assigned.',
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const appendMessage = (message: Omit<OpsConsultMessage, 'id'>) => {
+    setMessages((current) => [
+      ...current,
+      {
+        ...message,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      },
+    ]);
+  };
+
+  const appendFriday = (text: string, extra?: Partial<OpsConsultMessage>) => {
+    appendMessage({ role: 'friday', text, ...extra });
+  };
+
+  const runLocalAction = async (type: OperationsConsultActionSuggestion['type']) => {
+    if (type === 'draft_schedule') {
+      const next = onGenerateDraft();
+      appendFriday(
+        next.length > 0
+          ? `Drafted ${next.length} schedule move${next.length === 1 ? '' : 's'} for ${formatShortDate(selectedDate)}. Review the rows below, then apply when ready.`
+          : 'I did not find any visible no-time or unscheduled tasks that need a draft for this view.',
+      );
+      return;
+    }
+
+    if (type === 'apply_schedule_draft') {
+      if (agentPlan.length === 0) {
+        appendFriday('There is no visible schedule draft to apply yet.');
+        return;
+      }
+      await onApplyDraft();
+      appendFriday(`Applied the visible draft. Undo is available if the result needs to be reverted.`);
+      return;
+    }
+
+    if (type === 'clear_schedule_times') {
+      if (clearTimeTargetCount === 0) {
+        appendFriday('No visible scheduled tasks currently have exact times to clear.');
+        return;
+      }
+      onClearTimes();
+      appendFriday(`Clearing exact times for ${clearTimeTargetCount} visible task${clearTimeTargetCount === 1 ? '' : 's'}.`);
+      return;
+    }
+
+    if (type === 'clear_times_and_assignees') {
+      if (clearAllTargetCount === 0) {
+        appendFriday('No visible scheduled tasks currently have exact times or assignees to clear.');
+        return;
+      }
+      onClearTimesAndAssignees();
+      appendFriday(`Clearing exact times and assignees for ${clearAllTargetCount} visible task${clearAllTargetCount === 1 ? '' : 's'}.`);
+      return;
+    }
+
+    if (type === 'undo_last_schedule_step') {
+      if (undoStack.length === 0) {
+        appendFriday('There is no reversible schedule step in this session yet.');
+        return;
+      }
+      await onUndo();
+      appendFriday('Undid the latest reversible schedule step.');
+      return;
+    }
+
+    const prompt = type === 'request_owner_approval'
+      ? 'Draft the owner approval step needed for the selected Operations issue. Include the approval threshold logic and what evidence we need.'
+      : 'Draft the task we should create from the current Operations context, but do not create it yet.';
+    await submitConsultPrompt(prompt);
+  };
+
+  const submitConsultPrompt = async (promptText: string) => {
+    const text = promptText.trim();
+    if (!text || loading) return;
+    const history = messages
+      .filter((message) => message.id !== 'welcome')
+      .slice(-8)
+      .map(({ role, text: messageText }) => ({ role, text: messageText }));
+
+    appendMessage({ role: 'user', text });
+    setLoading(true);
+    try {
+      const response = await sendOperationsConsultMessage({
+        text,
+        context: 'schedule',
+        selectedDate,
+        rangeStart,
+        rangeEnd,
+        plannerMode,
+        timelineScale,
+        scheduledTasks,
+        unscheduledTasks,
+        staff: staffOptions,
+        reservations,
+        currentPlan: agentPlan as OperationsConsultPlanItem[],
+        history,
+        notes: [
+          `${clearTimeTargetCount} visible tasks have exact times.`,
+          `${clearAllTargetCount} visible tasks have exact times or assignees.`,
+          undoStack.length > 0 ? `Last reversible step: ${undoStack[undoStack.length - 1]?.label}` : 'No reversible schedule step yet.',
+        ].join(' '),
+      });
+      appendFriday(response.response, {
+        actions: response.action_suggestions || [],
+        meta: response.metadata?.tokenEstimate ? `KB context ~${response.metadata.tokenEstimate.toLocaleString()} tokens` : undefined,
+      });
+    } catch (e) {
+      appendFriday(e instanceof Error ? e.message : 'Friday Consult could not read the Operations context.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = input.trim();
+    setInput('');
+    void submitConsultPrompt(text);
+  };
+
+  const disabled = loading || agentApplying || bulkApplying || undoApplying;
+  const quickActions: Array<{
+    type: OperationsConsultActionSuggestion['type'];
+    label: string;
+    disabled?: boolean;
+    title?: string;
+  }> = [
+    { type: 'draft_schedule', label: 'Draft schedule' },
+    { type: 'apply_schedule_draft', label: 'Apply draft', disabled: agentPlan.length === 0 || agentApplying },
+    { type: 'clear_schedule_times', label: 'Clear times', disabled: clearTimeTargetCount === 0 || bulkApplying },
+    { type: 'clear_times_and_assignees', label: 'Clear + assignees', disabled: clearAllTargetCount === 0 || bulkApplying },
+    { type: 'undo_last_schedule_step', label: 'Undo', disabled: undoStack.length === 0 || undoApplying },
+    { type: 'request_owner_approval', label: 'Owner approval' },
+  ];
+
+  return (
+    <section className="ops-consult-panel" aria-label="Friday Consult for Operations">
+      <div className="ops-consult-head">
+        <div>
+          <div className="ops-mobile-kicker">Friday Consult</div>
+          <h3>Ops schedule + roster agent</h3>
+          <small>{plannerMode === 'user_day' ? formatScheduleDate(selectedDate) : formatScheduleRange(rangeStart, rangeEnd)}</small>
+        </div>
+        <span>
+          <IconSparkle size={13} />
+          {agentPlan.length > 0 ? `${agentPlan.length} moves drafted` : 'Knowledge loaded'}
+        </span>
+      </div>
+
+      <div className="ops-consult-actions" aria-label="Friday Consult quick actions">
+        {quickActions.map((action) => (
+          <button
+            key={action.type}
+            className="btn ghost sm"
+            type="button"
+            disabled={disabled || action.disabled}
+            onClick={() => void runLocalAction(action.type)}
+            title={action.title}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="ops-consult-thread" aria-live="polite">
+        {messages.map((message) => (
+          <div className={`ops-consult-message ${message.role}`} key={message.id}>
+            <strong>{message.role === 'user' ? 'You' : 'Friday Consult'}</strong>
+            <p>{message.text}</p>
+            {message.meta && <small>{message.meta}</small>}
+            {message.actions && message.actions.length > 0 && (
+              <div className="ops-consult-action-suggestions">
+                {message.actions.map((action) => (
+                  <button
+                    key={`${message.id}-${action.type}-${action.label}`}
+                    className="btn secondary sm"
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => void runLocalAction(action.type)}
+                    title={action.reason || undefined}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {agentPlan.length > 0 && (
+          <div className="ops-consult-draft">
+            {agentPlan.map((item) => (
+              <div className="ops-schedule-backlog-row" key={item.taskId}>
+                <span>
+                  <strong>{item.dueTime} · {item.title}</strong>
+                  <small>{item.propertyCode} · {item.reason}</small>
+                </span>
+                <span>{item.assigneeIds.length > 0 ? 'assigns staff' : 'unassigned'}</span>
+              </div>
+            ))}
+            <button className="btn ghost sm" type="button" disabled={agentApplying} onClick={onDiscardDraft}>
+              Discard draft
+            </button>
+          </div>
+        )}
+      </div>
+
+      <form className="ops-consult-compose" onSubmit={handleSubmit}>
+        <textarea
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Talk to Friday Consult about this schedule, roster, task timing, owner approval, or what to move next..."
+          rows={2}
+        />
+        <button className="btn primary sm" type="submit" disabled={loading || !input.trim()}>
+          <IconSend size={12} />
+          {loading ? 'Reading...' : 'Send'}
+        </button>
+      </form>
+
+      {undoStack.length > 0 && (
+        <div className="ops-schedule-undo-note">
+          Last reversible step: {undoStack[undoStack.length - 1]?.label} · {undoStack[undoStack.length - 1]?.tasks.length} task{undoStack[undoStack.length - 1]?.tasks.length === 1 ? '' : 's'}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function taskAssigneeName(task: Task, assigneeId: string, index: number): string {
@@ -1268,6 +1677,7 @@ function SchedulePage({
   const [selectedDate, setSelectedDate] = useState(TODAY);
   const [statusFilter, setStatusFilter] = useState<ScheduleStatusFilter>('all');
   const [plannerMode, setPlannerMode] = useState<SchedulePlannerMode>('user_day');
+  const [timelineScale, setTimelineScale] = useState<ScheduleTimelineScale>('readable');
   const [search, setSearch] = useState('');
   const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
   const [staffError, setStaffError] = useState<string | null>(null);
@@ -1286,6 +1696,9 @@ function SchedulePage({
   } | null>(null);
   const [agentPlan, setAgentPlan] = useState<ScheduleAgentSuggestion[]>([]);
   const [agentApplying, setAgentApplying] = useState(false);
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [undoApplying, setUndoApplying] = useState(false);
+  const [undoStack, setUndoStack] = useState<ScheduleUndoEntry[]>([]);
   const [reservations, setReservations] = useState<ScheduleReservation[]>([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reservationsError, setReservationsError] = useState<string | null>(null);
@@ -1389,6 +1802,24 @@ function SchedulePage({
     [rawScheduleTasks, unscheduledPage.tasks],
   );
 
+  const visibleOpenScheduleTasks = useMemo(() => (
+    rawScheduleTasks.filter((task) => (
+      Boolean(task.dueDate) &&
+      visibleDays.includes(task.dueDate) &&
+      OPEN_SCHEDULE_STATUSES.includes(task.status)
+    ))
+  ), [rawScheduleTasks, visibleDays]);
+
+  const clearTimeTargets = useMemo(
+    () => visibleOpenScheduleTasks.filter((task) => Boolean(task.dueTime)),
+    [visibleOpenScheduleTasks],
+  );
+
+  const clearAllTargets = useMemo(
+    () => visibleOpenScheduleTasks.filter((task) => Boolean(task.dueTime) || task.assigneeIds.length > 0),
+    [visibleOpenScheduleTasks],
+  );
+
   const selectedEditTask = useMemo(
     () => allKnownTasks.find((task) => task.id === editingTaskId) || null,
     [allKnownTasks, editingTaskId],
@@ -1472,10 +1903,50 @@ function SchedulePage({
     return { open, unassigned, active, completed, total: rawScheduleTasks.length };
   }, [rawScheduleTasks]);
 
-  const patchTask = async (task: Task, patch: Parameters<typeof updateTask>[0]['patch'], success: string) => {
+  const pushUndoSnapshot = (label: string, tasks: Task[]) => {
+    const entry = buildScheduleUndoEntry(label, tasks);
+    if (!entry) return;
+    setUndoStack((stack) => [...stack.slice(-9), entry]);
+  };
+
+  const restoreLastScheduleSnapshot = async () => {
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry || undoApplying) return;
+    setUndoApplying(true);
+    try {
+      for (const state of entry.tasks) {
+        await updateTask({
+          taskId: state.taskId,
+          patch: {
+            dueDate: state.dueDate,
+            dueTime: state.dueTime,
+            assigneeIds: state.assigneeIds,
+            status: state.status,
+          },
+          actorId: currentUserId,
+        });
+      }
+      setUndoStack((stack) => stack.slice(0, -1));
+      fireToast(`Undid ${entry.label}`);
+      taskPage.refetch();
+      unscheduledPage.refetch();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Undo failed');
+    } finally {
+      setUndoApplying(false);
+    }
+  };
+
+  const patchTask = async (
+    task: Task,
+    patch: Parameters<typeof updateTask>[0]['patch'],
+    success: string,
+    undoLabel = 'task edit',
+  ) => {
     setSavingTaskId(task.id);
     try {
       await updateTask({ taskId: task.id, patch, actorId: currentUserId });
+      pushUndoSnapshot(undoLabel, [task]);
       fireToast(success);
       taskPage.refetch();
       unscheduledPage.refetch();
@@ -1487,7 +1958,12 @@ function SchedulePage({
   };
 
   const scheduleToday = (task: Task) => {
-    void patchTask(task, { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status }, 'Task added to schedule');
+    void patchTask(
+      task,
+      { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status },
+      'Task added to schedule',
+      'add task to schedule',
+    );
   };
 
   const patchForDropTarget = (task: Task, target: PlannerDropTarget): Parameters<typeof updateTask>[0]['patch'] | null => {
@@ -1547,7 +2023,7 @@ function SchedulePage({
   const moveTask = (task: Task, target: PlannerDropTarget) => {
     const patch = patchForDropTarget(task, target);
     if (!patch) return;
-    void patchTask(task, patch, 'Task schedule updated');
+    void patchTask(task, patch, 'Task schedule updated', 'schedule move');
   };
 
   const handleDragStart = (event: React.DragEvent<HTMLElement>, task: Task) => {
@@ -1603,7 +2079,64 @@ function SchedulePage({
     { id: 'all', label: 'All', count: counts.total },
   ];
 
-  const generateAgentPlan = () => {
+  const applyBulkSchedulePatch = async ({
+    label,
+    tasks,
+    patchForTask,
+    success,
+  }: {
+    label: string;
+    tasks: Task[];
+    patchForTask: (task: Task) => Parameters<typeof updateTask>[0]['patch'];
+    success: string;
+  }) => {
+    if (tasks.length === 0 || bulkApplying) return;
+    setBulkApplying(true);
+    let updatedCount = 0;
+    try {
+      for (const task of tasks) {
+        await updateTask({
+          taskId: task.id,
+          patch: patchForTask(task),
+          actorId: currentUserId,
+        });
+        updatedCount += 1;
+      }
+      if (updatedCount > 0) {
+        pushUndoSnapshot(label, tasks.slice(0, updatedCount));
+        fireToast(success);
+        taskPage.refetch();
+        unscheduledPage.refetch();
+      }
+    } catch (e) {
+      if (updatedCount > 0) pushUndoSnapshot(label, tasks.slice(0, updatedCount));
+      fireToast(e instanceof Error ? e.message : `${label} failed`);
+      taskPage.refetch();
+      unscheduledPage.refetch();
+    } finally {
+      setBulkApplying(false);
+    }
+  };
+
+  const clearVisibleScheduleTimes = () => {
+    void applyBulkSchedulePatch({
+      label: 'clear schedule times',
+      tasks: clearTimeTargets,
+      patchForTask: () => ({ dueTime: '' }),
+      success: `Cleared times for ${clearTimeTargets.length} task${clearTimeTargets.length === 1 ? '' : 's'}`,
+    });
+  };
+
+  const clearVisibleScheduleTimesAndAssignees = () => {
+    void applyBulkSchedulePatch({
+      label: 'clear times and assignees',
+      tasks: clearAllTargets,
+      patchForTask: () => ({ dueTime: '', assigneeIds: [] }),
+      success: `Cleared times and assignees for ${clearAllTargets.length} task${clearAllTargets.length === 1 ? '' : 's'}`,
+    });
+  };
+
+  const generateAgentPlan = (): ScheduleAgentSuggestion[] => {
     const next = buildScheduleAgentPlan({
       selectedDate,
       scheduledTasks: rawScheduleTasks,
@@ -1611,12 +2144,14 @@ function SchedulePage({
       staffOptions,
     });
     setAgentPlan(next);
-    fireToast(next.length > 0 ? `Ask Friday drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No no-time or unscheduled tasks need a draft');
+    fireToast(next.length > 0 ? `Friday Consult drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No no-time or unscheduled tasks need a draft');
+    return next;
   };
 
   const applyAgentPlan = async () => {
     if (agentPlan.length === 0 || agentApplying) return;
     setAgentApplying(true);
+    const appliedTasks: Task[] = [];
     try {
       for (const item of agentPlan) {
         const task = allKnownTasks.find((candidate) => candidate.id === item.taskId);
@@ -1631,13 +2166,18 @@ function SchedulePage({
           },
           actorId: currentUserId,
         });
+        appliedTasks.push(task);
       }
-      fireToast(`Applied ${agentPlan.length} Ask Friday schedule move${agentPlan.length === 1 ? '' : 's'}`);
+      if (appliedTasks.length > 0) pushUndoSnapshot('Friday Consult draft apply', appliedTasks);
+      fireToast(`Applied ${appliedTasks.length} Friday Consult schedule move${appliedTasks.length === 1 ? '' : 's'}`);
       setAgentPlan([]);
       taskPage.refetch();
       unscheduledPage.refetch();
     } catch (e) {
-      fireToast(e instanceof Error ? e.message : 'Ask Friday schedule apply failed');
+      if (appliedTasks.length > 0) pushUndoSnapshot('Friday Consult draft apply', appliedTasks);
+      fireToast(e instanceof Error ? e.message : 'Friday Consult schedule apply failed');
+      taskPage.refetch();
+      unscheduledPage.refetch();
     } finally {
       setAgentApplying(false);
     }
@@ -1687,6 +2227,16 @@ function SchedulePage({
             Property week
           </button>
         </div>
+        {plannerMode === 'user_day' && (
+          <div className="ops-schedule-segment compact timeline-scale" role="group" aria-label="User day time scale">
+            <button type="button" className={timelineScale === 'readable' ? 'active' : ''} onClick={() => setTimelineScale('readable')}>
+              Readable
+            </button>
+            <button type="button" className={timelineScale === 'actual' ? 'active' : ''} onClick={() => setTimelineScale('actual')}>
+              Actual
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="ops-status-strip" aria-label="Schedule status filters">
@@ -1720,38 +2270,30 @@ function SchedulePage({
         </div>
       )}
 
-      <section className="ops-schedule-backlog" style={{ marginBottom: 12 }}>
-        <div className="ops-schedule-backlog-head">
-          <div>
-            <div className="ops-mobile-kicker">Ask Friday</div>
-            <h3>Draft times for {formatShortDate(selectedDate)}</h3>
-          </div>
-          <span>{agentPlan.length > 0 ? `${agentPlan.length} moves drafted` : 'Roster + schedule assist'}</span>
-        </div>
-        <div style={{ display: 'grid', gap: 10, padding: '0 12px 12px' }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn secondary sm" type="button" onClick={generateAgentPlan}>
-              Generate draft
-            </button>
-            <button className="btn primary sm" type="button" disabled={agentPlan.length === 0 || agentApplying} onClick={() => void applyAgentPlan()}>
-              {agentApplying ? 'Applying...' : 'Apply draft'}
-            </button>
-          </div>
-          {agentPlan.length > 0 && (
-            <div className="ops-schedule-backlog-list">
-              {agentPlan.map((item) => (
-                <div className="ops-schedule-backlog-row" key={item.taskId}>
-                  <span>
-                    <strong>{item.dueTime} · {item.title}</strong>
-                    <small>{item.propertyCode} · {item.reason}</small>
-                  </span>
-                  <span>{item.assigneeIds.length > 0 ? 'assigns staff' : 'unassigned'}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+      <OpsFridayConsultPanel
+        selectedDate={selectedDate}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        plannerMode={plannerMode}
+        timelineScale={timelineScale}
+        scheduledTasks={rawScheduleTasks}
+        unscheduledTasks={unscheduledTasks}
+        staffOptions={staffOptions}
+        reservations={reservations}
+        agentPlan={agentPlan}
+        agentApplying={agentApplying}
+        bulkApplying={bulkApplying}
+        undoApplying={undoApplying}
+        undoStack={undoStack}
+        clearTimeTargetCount={clearTimeTargets.length}
+        clearAllTargetCount={clearAllTargets.length}
+        onGenerateDraft={generateAgentPlan}
+        onApplyDraft={applyAgentPlan}
+        onDiscardDraft={() => setAgentPlan([])}
+        onClearTimes={clearVisibleScheduleTimes}
+        onClearTimesAndAssignees={clearVisibleScheduleTimesAndAssignees}
+        onUndo={restoreLastScheduleSnapshot}
+      />
 
       {selectedEditTask && (
         <PlannerEditPanel
@@ -1786,98 +2328,103 @@ function SchedulePage({
                 {bucket.subLabel && <small>{bucket.subLabel}</small>}
               </div>
             ))}
-            {staffRows.map((row) => (
-              <div className="ops-planner-row-fragment" role="row" key={row.id}>
-                <div className="ops-planner-row-head" role="rowheader">
-                  <span className="ops-schedule-avatar">{row.initials}</span>
-                  <span>
-                    <strong>{row.name}</strong>
-                    <small>{row.role || (row.id === UNASSIGNED_SCHEDULE_ID ? 'Needs owner' : 'Staff')}</small>
-                  </span>
-                  <em>{row.tasks.length}</em>
-                </div>
-                {SCHEDULE_TIME_BUCKETS.map((bucket) => {
-                  const cellTasks = row.tasks.filter((task) => timeBucketForTask(task) === bucket.id);
-                  const showPreview = !!dragTaskId
-                    && dragPreview?.bucketId === bucket.id;
-                  return (
-                    <div
-                      className={'ops-planner-cell' + (showPreview ? ' has-drag-preview' : '')}
-                      role="gridcell"
-                      key={`${row.id}-${bucket.id}`}
-                      onDragOver={(event) => {
-                        allowDrop(event);
-                        // 2026-05-23 (Ishant): live 15-min snap. Update
-                        // dragPreview with the cursor position so the
-                        // overlay tick + label render at the drop spot.
-                        if (!dragTaskId) return;
-                        const preview = computeBucketDragPreview(bucket, event);
-                        if (preview) {
-                          setDragPreview({
+            {staffRows.map((row) => {
+              const rowTimeline = buildUserDayTimelineModel(row.tasks, timelineScale);
+              return (
+                <div className="ops-planner-row-fragment" role="row" key={row.id}>
+                  <div className="ops-planner-row-head" role="rowheader" style={{ minHeight: rowTimeline.rowMinHeight }}>
+                    <span className="ops-schedule-avatar">{row.initials}</span>
+                    <span>
+                      <strong>{row.name}</strong>
+                      <small>{row.role || (row.id === UNASSIGNED_SCHEDULE_ID ? 'Needs owner' : 'Staff')}</small>
+                    </span>
+                    <em>{row.tasks.length}</em>
+                  </div>
+                  {SCHEDULE_TIME_BUCKETS.map((bucket) => {
+                    const cellTasks = row.tasks.filter((task) => timeBucketForTask(task) === bucket.id);
+                    const showPreview = !!dragTaskId
+                      && dragPreview?.bucketId === bucket.id;
+                    return (
+                      <div
+                        className={'ops-planner-cell timeline' + (cellTasks.length > 0 ? ' has-scheduled' : '') + (showPreview ? ' has-drag-preview' : '')}
+                        role="gridcell"
+                        key={`${row.id}-${bucket.id}`}
+                        style={{ minHeight: rowTimeline.rowMinHeight }}
+                        onDragOver={(event) => {
+                          allowDrop(event);
+                          // 2026-05-23 (Ishant): live 15-min snap. Update
+                          // dragPreview with the cursor position so the
+                          // overlay tick + label render at the drop spot.
+                          if (!dragTaskId) return;
+                          const preview = computeBucketDragPreview(bucket, event);
+                          if (preview) {
+                            setDragPreview({
+                              bucketId: bucket.id,
+                              time: preview.time,
+                              leftPct: preview.leftPct,
+                            });
+                          } else {
+                            setDragPreview(null);
+                          }
+                        }}
+                        onDragLeave={(event) => {
+                          // Only clear if leaving the cell entirely (not
+                          // a child element).
+                          if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+                          setDragPreview((prev) => prev?.bucketId === bucket.id ? null : prev);
+                        }}
+                        onDrop={(event) => {
+                          const preview = computeBucketDragPreview(bucket, event);
+                          handleDrop(event, {
+                            mode: 'user_day',
+                            rowType: 'staff',
+                            rowId: row.id,
+                            date: selectedDate,
                             bucketId: bucket.id,
-                            time: preview.time,
-                            leftPct: preview.leftPct,
+                            dueTime: preview?.time ?? bucket.defaultTime,
                           });
-                        } else {
                           setDragPreview(null);
-                        }
-                      }}
-                      onDragLeave={(event) => {
-                        // Only clear if leaving the cell entirely (not
-                        // a child element).
-                        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-                        setDragPreview((prev) => prev?.bucketId === bucket.id ? null : prev);
-                      }}
-                      onDrop={(event) => {
-                        const preview = computeBucketDragPreview(bucket, event);
-                        handleDrop(event, {
-                          mode: 'user_day',
-                          rowType: 'staff',
-                          rowId: row.id,
-                          date: selectedDate,
-                          bucketId: bucket.id,
-                          dueTime: preview?.time ?? bucket.defaultTime,
-                        });
-                        setDragPreview(null);
-                      }}
-                    >
-                      {cellTasks.map((task) => (
-                        <div
-                          key={`${row.id}-${bucket.id}-${task.id}`}
-                          className="ops-timeline-card-slot"
-                          style={taskTimelineStyle(task, bucket)}
-                        >
-                          <PlannerTaskCard
-                            task={task}
-                            staffOptions={staffOptions}
-                            saving={savingTaskId === task.id}
-                            dragEnabled={dragEnabled}
-                            onDragStart={handleDragStart}
-                            onOpenTask={onOpenTask}
-                            onEdit={setEditingTaskId}
-                          />
-                        </div>
-                      ))}
-                      {showPreview && dragPreview && (
-                        <>
+                        }}
+                      >
+                        {cellTasks.map((task) => (
                           <div
-                            className="ops-planner-drop-tick"
-                            style={{ left: `${dragPreview.leftPct}%` }}
-                            aria-hidden
-                          />
-                          <div
-                            className="ops-planner-drop-label"
-                            style={{ left: `${dragPreview.leftPct}%` }}
+                            className="ops-planner-task-slot"
+                            data-scale={timelineScale}
+                            key={`${row.id}-${bucket.id}-${task.id}`}
+                            style={userDayTaskSlotStyle(task, bucket, timelineScale, rowTimeline)}
                           >
-                            Drop at {dragPreview.time}
+                            <PlannerTaskCard
+                              task={task}
+                              staffOptions={staffOptions}
+                              saving={savingTaskId === task.id}
+                              dragEnabled={dragEnabled}
+                              onDragStart={handleDragStart}
+                              onOpenTask={onOpenTask}
+                              onEdit={setEditingTaskId}
+                            />
                           </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                        ))}
+                        {showPreview && dragPreview && (
+                          <>
+                            <div
+                              className="ops-planner-drop-tick"
+                              style={{ left: `${dragPreview.leftPct}%` }}
+                              aria-hidden
+                            />
+                            <div
+                              className="ops-planner-drop-label"
+                              style={{ left: `${dragPreview.leftPct}%` }}
+                            >
+                              Drop at {dragPreview.time}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
           {staffRows.every((row) => row.tasks.length === 0) && <div className="ops-schedule-empty">No scheduled tasks match this day.</div>}
         </div>
