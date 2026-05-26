@@ -25,6 +25,9 @@ Use this with:
 
 - `docs/architecture/ask-friday-core-manifest-2026-05-26.md`
 - `docs/architecture/ask-friday-completion-ledger-2026-05-26.md`
+- `docs/architecture/ask-friday-surface-subplans-2026-05-26.md`
+- `docs/architecture/ask-friday-kb-research-factory-2026-05-26.md`
+- `docs/architecture/ask-friday-eval-mining-adr-plan-2026-05-26.md`
 - `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
 - `/Users/judith/.openclaw/workspace/tmp/ask-friday-intelligence-master-plan-2026-05-26.md`
 

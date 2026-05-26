@@ -41,7 +41,7 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 | Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired on branch | backend green | not deployed | not directly user-facing | merge/deploy candidate, not finished platform |
 | FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease on branch | backend green | not deployed from this branch | likely improves after deploy, but needs live smoke | Plan 1 priority |
 | FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints on branch | backend/frontend green | not deployed from this branch | not proven live for Franny yet | Plan 1 priority |
-| FAD global Ask Friday | scoped and partly wired | module context only | existing FAB/action harness | events + action mirroring on branch | backend green | not deployed from this branch | not the main Plan 1 target | later smoke after merge |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring on branch | backend green | not deployed from this branch | not the main Plan 1 target | later smoke after merge |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
@@ -213,5 +213,18 @@ Continue with Plan 1.
 The branch has pushed but not deployed Ask Friday Core hardening plus Ops constraints.
 
 Draft PR: `https://github.com/Friday-mu/friday-mu/pull/9`
+
+New execution-planning artifacts on this branch:
+
+- `docs/architecture/ask-friday-master-plan-v02-2026-05-26.md`
+- `docs/architecture/ask-friday-surface-subplans-2026-05-26.md`
+- `docs/architecture/ask-friday-kb-research-factory-2026-05-26.md`
+- `docs/architecture/ask-friday-eval-mining-adr-plan-2026-05-26.md`
+
+Current autonomous execution note:
+
+- Judith/OpenClaw was pulled in for a read-only critique of the execution pack, but the gateway returned a Gemini quota `429`. That critique is parked; do not treat it as completed external review.
+- Local repo evidence has been folded into the execution pack: FAD shared-integration ownership, existing critical rules, business-config pricing/payment rules, Inbox/Consult session behavior, Ops owner-approval rules, and seed eval coverage.
+- The surface subplans now explicitly include the FAD global Ask Friday command surface and an "absorbed module" policy for modules that do not yet justify independent agents.
 
 The next safe action is coordinated FAD review/merge/deploy/smoke for Inbox and Ops only, then patch any production-blocking defects before Plan 2 research/buildout.

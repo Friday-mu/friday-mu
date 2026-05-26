@@ -54,13 +54,19 @@ Read these first, in order:
    - Source of truth for what is scoped, KB drafted, harness drafted, runtime wired, tested, deployed, and team-useful.
 2. `docs/architecture/ask-friday-master-plan-v02-2026-05-26.md`
    - Current execution-grade master plan anchor: doctrine, phase map, subplan template, execution tree, and research basis.
-3. `docs/handover/2026-05-26-ask-friday-autonomous-core.md`
+3. `docs/architecture/ask-friday-surface-subplans-2026-05-26.md`
+   - Execution subplans for Inbox, Ops, reservations/calendar, properties, Website, owner, feedback, guest portal, restricted modules, MCP, and internal agents.
+4. `docs/architecture/ask-friday-kb-research-factory-2026-05-26.md`
+   - Source-matrix method, trust tiers, privacy classes, first research waves, and initial KB rows.
+5. `docs/architecture/ask-friday-eval-mining-adr-plan-2026-05-26.md`
+   - Eval matrix, conversation-mining runbook, candidate review lanes, and ADR backlog.
+6. `docs/handover/2026-05-26-ask-friday-autonomous-core.md`
    - Branch handover and implementation summary.
-4. `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
+7. `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
    - Surface catalog, knowledge classes, memory/session policy, and Plan 2 profiles.
-5. `docs/architecture/ask-friday-core-v1-2026-05-23.md`
+8. `docs/architecture/ask-friday-core-v1-2026-05-23.md`
    - V1 architecture recommendation, contracts, API paths, eval plan, and implementation split.
-6. `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
+9. `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
    - Research synthesis for agent architecture, memory, evals, MCP authorization, and safety.
 
 ## Master Plan And Subplans
@@ -69,6 +75,15 @@ The current execution-grade master plan anchor is repo-owned:
 
 - Local: `docs/architecture/ask-friday-master-plan-v02-2026-05-26.md`
 - Notion: `https://www.notion.so/36c43ca88492815d9644e44b14a297d0`
+
+The repo-owned execution pack under the master plan is:
+
+- `docs/architecture/ask-friday-surface-subplans-2026-05-26.md`
+  - Notion: `https://www.notion.so/36c43ca8849281eea0e4da1ce36ca4cb`
+- `docs/architecture/ask-friday-kb-research-factory-2026-05-26.md`
+  - Notion: `https://www.notion.so/36c43ca8849281ed9593d4f16f96931b`
+- `docs/architecture/ask-friday-eval-mining-adr-plan-2026-05-26.md`
+  - Notion: `https://www.notion.so/36c43ca8849281cfa226f0102cabdf6a`
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
 
@@ -202,6 +217,12 @@ Use Notion as mirror/collaboration layer, but keep runtime source in repo for co
   - `https://www.notion.so/36c43ca88492819b82bbefdb25c62140`
 - Ask Friday Master Plan v0.2 - Execution Tree:
   - `https://www.notion.so/36c43ca88492815d9644e44b14a297d0`
+- Ask Friday Surface Subplans - 2026-05-26:
+  - `https://www.notion.so/36c43ca8849281eea0e4da1ce36ca4cb`
+- Ask Friday KB Research Factory - 2026-05-26:
+  - `https://www.notion.so/36c43ca8849281ed9593d4f16f96931b`
+- Ask Friday Eval Mining ADR Plan - 2026-05-26:
+  - `https://www.notion.so/36c43ca8849281cfa226f0102cabdf6a`
 - Ask Friday Intelligence Master Plan:
   - `https://www.notion.so/36c43ca884928123bc72ceb547efe1a2`
 - Ask Friday Surface And Harness Catalog:
