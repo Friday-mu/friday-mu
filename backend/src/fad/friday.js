@@ -1,11 +1,13 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const express = require('express');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { invokeChat } = require('../ai/chat_proxy');
 const { guestyRequest, listListings } = require('../integrations/guesty');
 const { callTool } = require('../mcp');
+const { recordActionRequest } = require('../ask_friday/action_writer');
 const { recordLearningEvent } = require('../ask_friday/event_writer');
 
 const router = express.Router();
@@ -1124,6 +1126,74 @@ function staffIdentityKey(req) {
   return req.identity?.userId || req.identity?.username || req.identity?.displayName || 'fad-user';
 }
 
+function stableActionRequestId(action) {
+  const snapshot = JSON.stringify({
+    id: action.id || null,
+    type: action.type,
+    label: action.label || null,
+    module: action.module || null,
+    summary: action.summary || null,
+    payload: action.payload || {},
+  });
+  const hash = crypto.createHash('sha256').update(snapshot).digest('hex').slice(0, 24);
+  return `fadask_${hash}`;
+}
+
+function coreRiskClassForAction(action) {
+  return action.risk === 'approval' ? 'approval' : 'low';
+}
+
+function actionResultRef(result) {
+  if (!result || typeof result !== 'object') return null;
+  if (result.task?.id) return { type: 'task', id: result.task.id };
+  if (result.request?.id) return { type: 'approval_request', id: result.request.id };
+  if (result.message?.id) return { type: 'team_message', id: result.message.id };
+  return null;
+}
+
+function mirrorCoreActionRequest({ req, action, reason, status = 'pending', result = null }) {
+  if (!action || action.type === 'navigate') return Promise.resolve(null);
+  return Promise.resolve(recordActionRequest({
+    tenantId: req.tenantId,
+    action: {
+      actionId: stableActionRequestId(action),
+      sourceSystem: 'fad',
+      surfaceId: 'fad_global_ask_friday',
+      requestedBy: {
+        identityType: 'staff',
+        identityKey: staffIdentityKey(req),
+        authenticated: true,
+      },
+      actionType: action.type,
+      riskClass: coreRiskClassForAction(action),
+      payload: {
+        action: {
+          id: action.id,
+          type: action.type,
+          label: action.label,
+          module: action.module,
+          summary: action.summary,
+          payload: action.payload,
+        },
+        resultRef: actionResultRef(result),
+        resultSummary: result ? resultSummary(action.type, result) : null,
+      },
+      reason,
+      approvalRequired: action.risk === 'approval',
+      status,
+    },
+  }));
+}
+
+function mirrorCoreActionRequests({ req, actions, reason }) {
+  return Promise.all((actions || []).map((action) =>
+    mirrorCoreActionRequest({ req, action, reason }).catch((error) => {
+      console.warn('[fad/friday] action request mirror failed:', error.message);
+      return null;
+    }),
+  ));
+}
+
 function knowledgeScopesForAskFriday(context, parsed) {
   const scopes = new Set(['fad_live_context']);
   for (const moduleName of context?.requestedModules || []) {
@@ -1164,6 +1234,15 @@ router.post('/actions/execute', attachIdentity, async (req, res) => {
     }
 
     const result = await callTool(ctx, toolName, args);
+    mirrorCoreActionRequest({
+      req,
+      action,
+      status: 'executed',
+      result,
+      reason: 'Staff executed an Ask Friday action from the global FAD command surface.',
+    }).catch((error) => {
+      console.warn('[fad/friday] executed action mirror failed:', error.message);
+    });
     return res.json({
       ok: true,
       action,
@@ -1209,6 +1288,13 @@ router.post('/ask', attachIdentity, async (req, res) => {
     }
     const parsed = parseModelResponse(result.message?.content || '');
     const actions = deterministicActions({ question, context, modelActions: parsed.actions });
+    mirrorCoreActionRequests({
+      req,
+      actions,
+      reason: `Ask Friday suggested actions after staff asked: ${question}`,
+    }).catch((e) => {
+      console.warn('[fad/friday] suggested actions mirror failed:', e.message);
+    });
     recordLearningEvent({
       tenantId: req.tenantId,
       event: {
@@ -1296,6 +1382,7 @@ module.exports = {
     sanitizeFocus,
     parseInboxFocusThreadId,
     knowledgeScopesForAskFriday,
+    stableActionRequestId,
     ASK_FRIDAY_MODEL,
     ASK_FRIDAY_MAX_TOKENS,
     ASK_FRIDAY_PROVIDER_TIMEOUT_MS,

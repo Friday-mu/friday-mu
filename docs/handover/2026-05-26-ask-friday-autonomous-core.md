@@ -140,6 +140,8 @@ It only targets expired evidence refs and old rejected/expired candidates. It de
 
 Action-request review updates now create compact lifecycle learning/evidence records, so approval/rejection/execution state can feed mining and audit instead of becoming a dead-end status change.
 
+Global FAD Ask Friday action suggestions and staff-click executions are now mirrored into Core `ask_friday_action_requests` through `backend/src/ask_friday/action_writer.js`. Navigation actions stay UI-only; `create_task`, `send_team_message`, and `request_approval` receive stable Core action IDs, surface-policy validation, pending status when suggested, and executed status when staff clicks the action.
+
 ### Research note
 
 Added `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`.
@@ -171,6 +173,8 @@ It turns the planning pack into a repo-owned catalog covering surfaces, knowledg
 - `backend/server.js`
 - `backend/src/ask_friday/analyzer.js`
 - `backend/src/ask_friday/analyzer.test.js`
+- `backend/src/ask_friday/action_writer.js`
+- `backend/src/ask_friday/action_writer.test.js`
 - `backend/src/ask_friday/event_writer.js`
 - `backend/src/ask_friday/event_writer.test.js`
 - `backend/src/ask_friday/index.js`

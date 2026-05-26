@@ -26,6 +26,7 @@ Current branch adds the first hardening layer on top of the deployed Core scaffo
 - Staff event emitters validate the surface registry before writing, including active status, source-system match, knowledge/tool policy, and redaction requirement for high/restricted events.
 - Staff learning-event writes now populate dedicated evidence-ref rows when evidence refs are provided.
 - Action-request review updates write lifecycle learning/evidence records.
+- Global FAD Ask Friday mirrors non-navigation suggested and executed staff actions into Core action requests, so staff-click workflows become reviewable learning/audit signals.
 - Inbox/Friday Consult now uses a database-visible lease around same-conversation turns.
 - Analyzer/mining is worker-first. It does not start in the web process unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
 - Surface registry v0.2 seeds planned module profiles and records the active `ops-consult` runtime knowledge alias for `fad_ops_assistant`.
