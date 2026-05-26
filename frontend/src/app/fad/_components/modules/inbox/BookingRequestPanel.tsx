@@ -7,12 +7,11 @@
 // booking-request threads.
 //
 // Actions:
-//   - Pending review → "Set payment terms" (choice / currency / deadline)
-//                      → flips to awaiting_payment
-//                      OR "Decline" → flips to declined
-//   - Awaiting payment → "Mark funds received" (paid_amount, optional
-//                        reservation_id) → flips to confirmed
-//                        OR "Edit terms" / "Decline" / "Back to review"
+//   - Awaiting proof → resend/remind, upload proof received elsewhere,
+//                      mark proof received / verifying funds, decline.
+//   - Proof received → bank verification, then mark funds received
+//                      (paid_amount, optional reservation_id) or queue
+//                      an explicit Guesty reservation create.
 //   - Confirmed → read-only summary, "Back to review" escape hatch
 //   - Declined → read-only summary, "Back to review" escape hatch
 //
@@ -24,7 +23,10 @@ import { useState } from 'react';
 import {
   useBookingRequest,
   setPaymentTerms,
+  markProofReceived,
+  uploadProofReceivedElsewhere,
   markFundsReceived,
+  queueGuestyReservationCreate,
   declineBookingRequest,
   resetBookingRequestToReview,
   STATUS_LABEL,
@@ -37,26 +39,29 @@ import { fireToast } from '../../Toaster';
 
 interface Props {
   threadId: string | null | undefined;
+  onReminderDraft?: () => void;
 }
 
-export function BookingRequestPanel({ threadId }: Props) {
+export function BookingRequestPanel({ threadId, onReminderDraft }: Props) {
   const { record, loading, error, refetch } = useBookingRequest(threadId);
   if (!threadId) return null;
   if (loading && !record) return null; // silent until first load
   if (!record) return null; // not a booking_request thread
-  return <PanelInner record={record} onChanged={refetch} loadError={error} />;
+  return <PanelInner record={record} onChanged={refetch} loadError={error} onReminderDraft={onReminderDraft} />;
 }
 
 function PanelInner({
   record,
   onChanged,
   loadError,
+  onReminderDraft,
 }: {
   record: BookingRequestRecord;
   onChanged: () => void;
   loadError: string | null;
+  onReminderDraft?: () => void;
 }) {
-  const [pane, setPane] = useState<'idle' | 'terms' | 'received' | 'decline'>('idle');
+  const [pane, setPane] = useState<'idle' | 'terms' | 'proof' | 'received' | 'decline'>('idle');
   const status = record.status;
   const isTerminal = status === 'confirmed' || status === 'declined';
 
@@ -115,8 +120,8 @@ function PanelInner({
         )}
       </div>
 
-      {/* Current terms summary (awaiting_payment + later) */}
-      {(status === 'awaiting_payment' || status === 'confirmed') && (
+      {/* Current payment summary */}
+      {(status === 'awaiting_payment' || status === 'proof_received' || status === 'confirmed') && (
         <div style={{ marginTop: 8, padding: '6px 10px', background: 'var(--color-background-primary)', borderRadius: 4, fontSize: 11 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
             {record.payment_choice && (
@@ -127,6 +132,25 @@ function PanelInner({
             )}
             {record.paid_amount_minor != null && (
               <span>Received: <strong>{formatBookingMoney(record.paid_amount_minor, record.payment_currency)}</strong></span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {(record.proof_received_at || record.proof_viewer_url || record.proof_url || record.proof_file_name) && (
+        <div style={{ marginTop: 8, padding: '8px 10px', background: 'var(--color-background-primary)', borderRadius: 4, fontSize: 11, display: 'grid', gap: 4 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <strong>Proof received · verify bank funds</strong>
+            {record.proof_received_at && <span>{new Date(record.proof_received_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+            {record.proof_source && <span className="chip sm">{record.proof_source}</span>}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, color: 'var(--color-text-secondary)' }}>
+            {record.proof_file_name && <span>{record.proof_file_name}</span>}
+            {record.proof_file_size != null && <span>{Math.round(record.proof_file_size / 1024).toLocaleString()} KB</span>}
+            {(record.proof_viewer_url || record.proof_url) && (
+              <a href={record.proof_viewer_url || record.proof_url || '#'} target="_blank" rel="noreferrer">
+                Open proof
+              </a>
             )}
           </div>
         </div>
@@ -145,16 +169,50 @@ function PanelInner({
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-        {status === 'pending_review' && pane === 'idle' && (
+        {(status === 'pending_review' || status === 'awaiting_payment') && pane === 'idle' && (
           <>
-            <button className="btn primary sm" onClick={() => setPane('terms')}>Set payment terms</button>
+            <button className="btn primary sm" onClick={() => setPane('proof')}>Upload proof received elsewhere</button>
+            {onReminderDraft && (
+              <button className="btn secondary sm" onClick={onReminderDraft}>Draft proof reminder</button>
+            )}
+            <button
+              className="btn secondary sm"
+              onClick={async () => {
+                try {
+                  await markProofReceived(record.thread_id);
+                  fireToast('Proof marked received · verify bank funds');
+                  onChanged();
+                } catch (e) {
+                  fireToast((e as Error)?.message || 'Mark proof failed');
+                }
+              }}
+            >
+              Mark proof received
+            </button>
+            <button className="btn ghost sm" onClick={() => setPane('terms')}>Edit payment tracking</button>
             <button className="btn sm" onClick={() => setPane('decline')} style={{ color: 'var(--color-text-danger)' }}>Decline</button>
           </>
         )}
-        {status === 'awaiting_payment' && pane === 'idle' && (
+        {status === 'proof_received' && pane === 'idle' && (
           <>
-            <button className="btn primary sm" onClick={() => setPane('received')}>Mark funds received</button>
+            <button className="btn primary sm" onClick={() => setPane('received')}>Funds visible in bank</button>
+            <button
+              className="btn secondary sm"
+              onClick={async () => {
+                try {
+                  await queueGuestyReservationCreate(record.thread_id);
+                  fireToast('Guesty reservation create queued');
+                  onChanged();
+                } catch (e) {
+                  fireToast((e as Error)?.message || 'Guesty queue failed');
+                }
+              }}
+              title="Explicit staff action only. Proof upload alone never creates a reservation."
+            >
+              Create Guesty reservation
+            </button>
             <button className="btn ghost sm" onClick={() => setPane('terms')}>Edit terms</button>
+            <button className="btn ghost sm" onClick={() => setPane('proof')}>Replace proof</button>
             <button className="btn sm" onClick={() => setPane('decline')} style={{ color: 'var(--color-text-danger)' }}>Decline</button>
           </>
         )}
@@ -193,6 +251,21 @@ function PanelInner({
               onChanged();
             } catch (e) {
               fireToast((e as Error)?.message || 'Save failed');
+            }
+          }}
+        />
+      )}
+      {pane === 'proof' && (
+        <ProofUploadForm
+          onCancel={() => setPane('idle')}
+          onSubmit={async (values) => {
+            try {
+              await uploadProofReceivedElsewhere(record.thread_id, values);
+              fireToast('Proof attached · verify bank funds');
+              setPane('idle');
+              onChanged();
+            } catch (e) {
+              fireToast((e as Error)?.message || 'Proof attach failed');
             }
           }}
         />
@@ -242,7 +315,7 @@ function suggestedAmount(record: BookingRequestRecord): number {
 
 function statusToneClass(status: BookingRequestRecord['status']): string {
   if (status === 'confirmed') return 'success';
-  if (status === 'awaiting_payment') return 'warn';
+  if (status === 'awaiting_payment' || status === 'proof_received') return 'warn';
   if (status === 'declined') return 'danger';
   return '';
 }
@@ -288,7 +361,7 @@ function PaymentTermsForm({
         </label>
       </div>
       <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block' }}>
-        Confirmation deadline (guest sees countdown)
+        Verification deadline / reminder timestamp
         <input
           type="datetime-local"
           value={deadline}
@@ -312,7 +385,96 @@ function PaymentTermsForm({
             setBusy(false);
           }}
         >
-          {busy ? 'Saving…' : 'Set terms · notify guest'}
+          {busy ? 'Saving…' : 'Save payment tracking'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ProofUploadForm({
+  onCancel,
+  onSubmit,
+}: {
+  onCancel: () => void;
+  onSubmit: (values: { proofUrl?: string; proofViewerUrl?: string; fileName?: string; fileType?: string; fileSize?: number; notes?: string }) => Promise<void>;
+}) {
+  const [proofUrl, setProofUrl] = useState('');
+  const [viewerUrl, setViewerUrl] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [fileType, setFileType] = useState('');
+  const [fileSize, setFileSize] = useState('');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div style={{ marginTop: 10, padding: 10, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 4, background: 'var(--color-background-primary)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Proof URL
+          <input
+            type="url"
+            value={proofUrl}
+            onChange={(e) => setProofUrl(e.target.value)}
+            placeholder="Bank app / email / storage URL"
+            disabled={busy}
+            style={inputStyle}
+          />
+        </label>
+        <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          Viewer URL
+          <input
+            type="url"
+            value={viewerUrl}
+            onChange={(e) => setViewerUrl(e.target.value)}
+            placeholder="Signed viewer URL if available"
+            disabled={busy}
+            style={inputStyle}
+          />
+        </label>
+        <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          File name
+          <input value={fileName} onChange={(e) => setFileName(e.target.value)} disabled={busy} style={inputStyle} />
+        </label>
+        <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          File type
+          <input value={fileType} onChange={(e) => setFileType(e.target.value)} placeholder="image/png, application/pdf" disabled={busy} style={inputStyle} />
+        </label>
+        <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          File size bytes
+          <input type="number" min={0} value={fileSize} onChange={(e) => setFileSize(e.target.value)} disabled={busy} style={inputStyle} />
+        </label>
+      </div>
+      <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block' }}>
+        Notes
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Where the proof came from. Do not mark funds received until bank funds are visible."
+          disabled={busy}
+          rows={2}
+          style={{ ...inputStyle, resize: 'vertical' }}
+        />
+      </label>
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 10 }}>
+        <button className="btn ghost sm" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button
+          className="btn primary sm"
+          disabled={busy || !(proofUrl.trim() || viewerUrl.trim() || fileName.trim() || notes.trim())}
+          onClick={async () => {
+            setBusy(true);
+            await onSubmit({
+              proofUrl: proofUrl.trim() || undefined,
+              proofViewerUrl: viewerUrl.trim() || proofUrl.trim() || undefined,
+              fileName: fileName.trim() || undefined,
+              fileType: fileType.trim() || undefined,
+              fileSize: fileSize ? Number(fileSize) : undefined,
+              notes: notes.trim() || undefined,
+            });
+            setBusy(false);
+          }}
+        >
+          {busy ? 'Saving…' : 'Attach proof · verify funds'}
         </button>
       </div>
     </div>
@@ -362,7 +524,7 @@ function FundsReceivedForm({
         </label>
       </div>
       <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '4px 0 0' }}>
-        If reservation UUID is set, the guest&apos;s portal will switch from booking-request mode to full reservation mode at the same URL on the next refresh.
+        Only use this after the money is visible in the bank. If reservation UUID is set, the guest&apos;s portal will switch from booking-request mode to full reservation mode at the same URL on the next refresh.
       </p>
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 10 }}>
         <button className="btn ghost sm" onClick={onCancel} disabled={busy}>Cancel</button>
@@ -378,7 +540,7 @@ function FundsReceivedForm({
             setBusy(false);
           }}
         >
-          {busy ? 'Saving…' : 'Mark received · confirm'}
+          {busy ? 'Saving…' : 'Funds received · confirm'}
         </button>
       </div>
     </div>

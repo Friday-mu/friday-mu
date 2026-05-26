@@ -11,6 +11,61 @@ export interface InboxMessage {
   via?: string;
   viaSystem?: 'FAD' | 'Guesty' | string;
   viaChannel?: string;
+  websiteBookingEvent?: WebsiteBookingEvent;
+}
+
+export interface WebsiteBookingEvent {
+  kind: 'booking_request' | 'payment_proof';
+  eventVersion?: string;
+  reference?: string;
+  bookingRequestId?: string;
+  threadId?: string;
+  guest?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    country?: string;
+  };
+  residence?: {
+    name?: string;
+    slug?: string;
+    guestyListingId?: string;
+    residenceUrl?: string;
+  };
+  stay?: {
+    checkIn?: string;
+    checkOut?: string;
+    nights?: number;
+    partySize?: number;
+    adults?: number;
+    children?: number;
+    infants?: number;
+  };
+  quote?: {
+    currency?: string;
+    subtotal?: number;
+    cleaning?: number;
+    total?: number;
+  };
+  links?: {
+    portalUrl?: string;
+    proceedUrl?: string;
+    residenceUrl?: string;
+  };
+  proof?: {
+    proofUrl?: string;
+    viewerUrl?: string;
+    fileName?: string;
+    fileType?: string;
+    fileSize?: number;
+    uploadedAt?: string;
+    nextAction?: string;
+  };
+  message?: string;
+  specialRequests?: string;
+  flightNumber?: string;
+  legacyNormalized?: boolean;
+  missingCriticalFields?: string[];
 }
 
 export type InboxEntity = 'guest' | 'owner' | 'vendor' | 'unclassified';

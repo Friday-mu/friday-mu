@@ -6,7 +6,9 @@
 // Backend routes (admin auth, not the public-Bearer flow):
 //   GET   /api/inbox/threads/:threadId/booking-request
 //   PATCH /api/inbox/threads/:threadId/booking-request   action ∈ {
-//     set_payment_terms | mark_funds_received | decline | reset_to_review
+//     set_payment_terms | mark_proof_received | upload_proof_elsewhere |
+//     mark_funds_received | queue_guesty_reservation_create |
+//     decline | reset_to_review
 //   }
 //
 // Mutating status here is what drives the website portal's
@@ -19,6 +21,7 @@ import { apiFetch } from '../../../components/types';
 export type BookingRequestStatus =
   | 'pending_review'
   | 'awaiting_payment'
+  | 'proof_received'
   | 'confirmed'
   | 'declined';
 
@@ -44,6 +47,14 @@ export interface BookingRequestRecord {
   payment_currency: PaymentCurrency | null;
   paid_amount_minor: number | null;
   confirmation_deadline: string | null;
+  proof_url: string | null;
+  proof_viewer_url: string | null;
+  proof_file_name: string | null;
+  proof_file_type: string | null;
+  proof_file_size: number | null;
+  proof_received_at: string | null;
+  proof_source: string | null;
+  proof_event_id: string | null;
   converted_to_reservation_id: string | null;
   declined_at: string | null;
   declined_reason: string | null;
@@ -62,6 +73,15 @@ export interface SetPaymentTermsInput {
 export interface MarkFundsReceivedInput {
   paidAmount: number;          // major units
   reservationId?: string;      // optional — triggers kind-switch on next resolve
+}
+
+export interface UploadProofInput {
+  proofUrl?: string;
+  proofViewerUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+  notes?: string;
 }
 
 async function loadBookingRequest(threadId: string): Promise<BookingRequestRecord | null> {
@@ -135,6 +155,38 @@ export async function markFundsReceived(
   })) as BookingRequestRecord;
 }
 
+export async function markProofReceived(threadId: string): Promise<BookingRequestRecord> {
+  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+    method: 'PATCH',
+    body: JSON.stringify({ action: 'mark_proof_received' }),
+  })) as BookingRequestRecord;
+}
+
+export async function uploadProofReceivedElsewhere(
+  threadId: string,
+  input: UploadProofInput,
+): Promise<BookingRequestRecord> {
+  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      action: 'upload_proof_elsewhere',
+      proof_url: input.proofUrl || null,
+      proof_viewer_url: input.proofViewerUrl || input.proofUrl || null,
+      file_name: input.fileName || null,
+      file_type: input.fileType || null,
+      file_size: input.fileSize || null,
+      notes: input.notes || null,
+    }),
+  })) as BookingRequestRecord;
+}
+
+export async function queueGuestyReservationCreate(threadId: string): Promise<BookingRequestRecord & { guesty_create_queued?: boolean }> {
+  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+    method: 'PATCH',
+    body: JSON.stringify({ action: 'queue_guesty_reservation_create' }),
+  })) as BookingRequestRecord & { guesty_create_queued?: boolean };
+}
+
 export async function declineBookingRequest(
   threadId: string,
   reason?: string,
@@ -157,7 +209,8 @@ export async function resetBookingRequestToReview(threadId: string): Promise<Boo
 
 export const STATUS_LABEL: Record<BookingRequestStatus, string> = {
   pending_review: 'Pending review',
-  awaiting_payment: 'Awaiting payment',
+  awaiting_payment: 'Awaiting proof',
+  proof_received: 'Proof received · verifying funds',
   confirmed: 'Confirmed',
   declined: 'Declined',
 };

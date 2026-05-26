@@ -123,4 +123,46 @@ describe('website inbox threads', () => {
     expect(res.body.error).toBe('website_ai_handoff_reply_requires_website_channel');
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  test('lets staff attach proof received elsewhere without confirming funds', async () => {
+    const threadId = '11111111-1111-4111-8111-111111111111';
+    const eventId = '44444444-4444-4444-8444-444444444444';
+    const bookingRequest = {
+      id: 'br-1',
+      thread_id: threadId,
+      request_id: 'FBR-TEST-1',
+      listing_slug: 'villa-demo',
+      listing_title: 'Villa Demo',
+      check_in: '2026-06-01',
+      check_out: '2026-06-05',
+      nights: 4,
+      quoted_total_amount_minor: 128000,
+      quoted_total_currency: 'EUR',
+      status: 'awaiting_payment',
+    };
+    query
+      .mockResolvedValueOnce({ rows: [bookingRequest] })
+      .mockResolvedValueOnce({ rows: [{ id: eventId }] })
+      .mockResolvedValueOnce({ rows: [{ ...bookingRequest, status: 'proof_received', proof_viewer_url: 'https://proof.example/view' }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app())
+      .patch(`/threads/${threadId}/booking-request`)
+      .send({
+        action: 'upload_proof_elsewhere',
+        proof_viewer_url: 'https://proof.example/view',
+        file_name: 'whatsapp-proof.png',
+        notes: 'Received on WhatsApp. Bank funds still need verification.',
+      })
+      .expect(200);
+
+    expect(res.body).toMatchObject({ status: 'proof_received', proof_viewer_url: 'https://proof.example/view' });
+    expect(query.mock.calls[1][0]).toContain("booking.proof_uploaded");
+    expect(JSON.parse(query.mock.calls[1][1][3])).toMatchObject({
+      booking_request_id: 'FBR-TEST-1',
+      next_action: 'verify_bank_funds_before_confirming',
+      proof_viewer_url: 'https://proof.example/view',
+    });
+    expect(query.mock.calls.some((call) => String(call[0]).includes('paid_at = NOW()'))).toBe(false);
+  });
 });

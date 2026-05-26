@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE, apiFetch, formatConfidencePercent, getToken } from '../../../components/types';
-import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState, WebsiteAIHandoff } from './fixtures';
+import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDraft, DraftState, WebsiteAIHandoff, WebsiteBookingEvent } from './fixtures';
 
 // ───────── enum mappers ─────────
 
@@ -449,6 +449,123 @@ function websiteEventBody(eventType: string, payload?: Record<string, unknown>):
   return `${eventType}\n${JSON.stringify(payload, null, 2).slice(0, 400)}`;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function normalizeWebsiteBookingEvent(eventType: string, payload?: Record<string, unknown>): WebsiteBookingEvent | undefined {
+  if (!payload) return undefined;
+  const guest = asRecord(payload.guest);
+  const quote = asRecord(payload.quote);
+  const links = asRecord(payload.links);
+  const party = asRecord(payload.party_size_detail || payload.partySizeDetail);
+  const missing: string[] = [];
+
+  const reference = asString(payload.reference) || asString(payload.booking_request_id) || asString(payload.request_id);
+  const residenceName = asString(payload.residence_name) || asString(payload.residenceName) || asString(payload.listing_name);
+  const residenceSlug = asString(payload.residence_slug) || asString(payload.residenceSlug) || asString(payload.listing_slug);
+  const checkIn = asString(payload.check_in) || asString(payload.checkIn);
+  const checkOut = asString(payload.check_out) || asString(payload.checkOut);
+  const total = asNumber(quote.total ?? payload.total ?? payload.quoted_total);
+  const currency = asString(quote.currency) || asString(payload.currency);
+
+  if (eventType === 'booking.request_submitted') {
+    if (!reference) missing.push('reference');
+    if (!residenceName && !residenceSlug) missing.push('residence');
+    if (!checkIn || !checkOut) missing.push('dates');
+    return {
+      kind: 'booking_request',
+      eventVersion: asString(payload.event_version),
+      reference,
+      bookingRequestId: asString(payload.booking_request_id) || reference,
+      threadId: asString(payload.thread_id),
+      guest: {
+        name: asString(guest.name) || asString(payload.name),
+        email: asString(guest.email) || asString(payload.email),
+        phone: asString(guest.phone) || asString(payload.phone),
+        country: asString(guest.country) || asString(payload.country),
+      },
+      residence: {
+        name: residenceName,
+        slug: residenceSlug,
+        guestyListingId: asString(payload.guesty_listing_id) || asString(payload.guestyListingId),
+        residenceUrl: asString(links.residence_url) || asString(links.residenceUrl),
+      },
+      stay: {
+        checkIn,
+        checkOut,
+        nights: asNumber(payload.nights),
+        partySize: asNumber(payload.party_size) || asNumber(payload.partySize) || asNumber(party.total),
+        adults: asNumber(party.adults),
+        children: asNumber(party.children),
+        infants: asNumber(party.infants),
+      },
+      quote: {
+        currency,
+        subtotal: asNumber(quote.subtotal),
+        cleaning: asNumber(quote.cleaning),
+        total,
+      },
+      links: {
+        portalUrl: asString(links.portal_url) || asString(links.portalUrl),
+        proceedUrl: asString(links.proceed_url) || asString(links.proceedUrl),
+        residenceUrl: asString(links.residence_url) || asString(links.residenceUrl),
+      },
+      message: asString(payload.message),
+      specialRequests: asString(payload.special_requests) || asString(payload.specialRequests),
+      flightNumber: asString(payload.flight_number) || asString(payload.flightNumber),
+      legacyNormalized: payload.event_version !== '2026-05-26',
+      missingCriticalFields: missing,
+    };
+  }
+
+  if (eventType === 'booking.proof_uploaded') {
+    if (!reference) missing.push('reference');
+    if (!asString(payload.proof_viewer_url) && !asString(payload.proof_url)) missing.push('proof link');
+    return {
+      kind: 'payment_proof',
+      eventVersion: asString(payload.event_version),
+      reference,
+      bookingRequestId: asString(payload.booking_request_id) || reference,
+      threadId: asString(payload.thread_id),
+      guest: {
+        name: asString(guest.name),
+        email: asString(guest.email),
+      },
+      residence: {
+        name: residenceName,
+        slug: residenceSlug,
+        guestyListingId: asString(payload.guesty_listing_id) || asString(payload.guestyListingId),
+      },
+      stay: { checkIn, checkOut, nights: asNumber(payload.nights), partySize: asNumber(payload.party_size) || asNumber(payload.partySize) || asNumber(party.total) },
+      quote: { currency, total },
+      proof: {
+        proofUrl: asString(payload.proof_url) || asString(payload.proofUrl),
+        viewerUrl: asString(payload.proof_viewer_url) || asString(payload.proofViewerUrl),
+        fileName: asString(payload.file_name) || asString(payload.fileName),
+        fileType: asString(payload.file_type) || asString(payload.fileType),
+        fileSize: asNumber(payload.file_size) || asNumber(payload.fileSize),
+        uploadedAt: asString(payload.uploaded_at) || asString(payload.uploadedAt),
+        nextAction: asString(payload.next_action) || 'verify_bank_funds_before_confirming',
+      },
+      legacyNormalized: payload.event_version !== '2026-05-26',
+      missingCriticalFields: missing,
+    };
+  }
+
+  return undefined;
+}
+
 function aiHandoffFromEvents(events: Array<{
   event_type?: string;
   type?: string;
@@ -543,6 +660,7 @@ export async function loadThreadDetail(id: string): Promise<InboxThread> {
         name: fromUs ? 'Friday' : (fromWebsiteAi ? 'Website AI' : guest),
         time: e.created_at || e.ts || new Date().toISOString(),
         body: websiteEventBody(eventType, e.payload),
+        websiteBookingEvent: normalizeWebsiteBookingEvent(eventType, e.payload),
         via: fromUs ? sentChannel : (fromWebsiteAi ? 'AI handoff' : 'Website'),
         viaSystem: fromUs ? 'FAD' : (fromWebsiteAi ? 'Website AI' : 'Website'),
         viaChannel: fromUs ? sentChannel : (fromWebsiteAi ? 'AI handoff' : 'Website'),
