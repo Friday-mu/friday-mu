@@ -8,6 +8,8 @@ Branch: `codex/ask-friday-autonomous-core-20260526`
 
 This ledger exists to prevent a repeat of the compaction failure where scoped/planned work was treated as completed work.
 
+Primary recovery manifest: `docs/architecture/ask-friday-core-manifest-2026-05-26.md`.
+
 Use this file after every compaction, handover, interruption, or parallel-session merge. A surface is not "done" unless it has explicit status across plan, knowledge, harness, wiring, verification, deployment, and team usefulness.
 
 ## Naming
