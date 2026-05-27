@@ -12390,6 +12390,7 @@ body:has(.ops-create-drawer) .bug-fab {
   border-color: transparent;
   border-right-color: var(--color-border-tertiary);
   border-width: 0.5px;
+  min-width: 0;
 }
 
 .mcal-date-dow {
@@ -12502,6 +12503,7 @@ body:has(.ops-create-drawer) .bug-fab {
   background: transparent;
   cursor: default;
   min-height: 56px;
+  min-width: 0;
   height: 100%;
 }
 
@@ -12510,6 +12512,8 @@ body:has(.ops-create-drawer) .bug-fab {
   align-self: center;
   margin: 6px 2px;
   min-height: 32px;
+  min-width: 0;
+  box-sizing: border-box;
   border-radius: 5px;
   padding: 0 8px;
   display: flex;
@@ -12537,6 +12541,8 @@ body:has(.ops-create-drawer) .bug-fab {
 .mcal-band-guest {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
   flex: 1;
 }
 
@@ -12966,6 +12972,7 @@ body:has(.ops-create-drawer) .bug-fab {
   background: transparent;
   color: inherit;
   font-family: inherit;
+  min-width: 0;
 }
 
 .mcal-day-cell:hover {
@@ -12992,6 +12999,7 @@ body:has(.ops-create-drawer) .bug-fab {
 
 .mcal-task-chip {
   align-self: center;
+  justify-self: stretch;
   margin: 2px;
   height: 18px;
   border-radius: 3px;
@@ -13002,6 +13010,10 @@ body:has(.ops-create-drawer) .bug-fab {
   cursor: pointer;
   overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: calc(100% - 4px);
+  box-sizing: border-box;
   z-index: 3;
   background: rgba(60, 100, 180, 0.85);
   color: white;

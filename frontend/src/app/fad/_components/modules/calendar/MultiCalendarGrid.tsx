@@ -263,7 +263,10 @@ export function MultiCalendarGrid({
     y: number;
   } | null>(null);
 
-  const gridTemplateColumns = `${PROPERTY_COL_PX}px repeat(${windowDays}, minmax(${DAY_COL_PX}px, 1fr))`;
+  // Date columns must stay fixed; task chips and reservation bands are overlays,
+  // not column sizing inputs.
+  const gridWidthPx = PROPERTY_COL_PX + windowDays * DAY_COL_PX;
+  const gridTemplateColumns = `${PROPERTY_COL_PX}px repeat(${windowDays}, ${DAY_COL_PX}px)`;
 
   const sortedProperties = useMemo(() => {
     const liveOrder = (p: Property) =>
@@ -279,7 +282,10 @@ export function MultiCalendarGrid({
     <div className="mcal-root" data-qa="multi-calendar-grid">
       <div className="mcal-scroller">
         {/* Header row */}
-        <div className="mcal-header-row" style={{ gridTemplateColumns }}>
+        <div
+          className="mcal-header-row"
+          style={{ gridTemplateColumns, width: gridWidthPx, minWidth: gridWidthPx }}
+        >
           <div className="mcal-header-property">
             <span>Property</span>
             <span className="mcal-header-count">{sortedProperties.length}</span>
@@ -329,6 +335,8 @@ export function MultiCalendarGrid({
               data-property-code={p.code}
               style={{
                 gridTemplateColumns,
+                width: gridWidthPx,
+                minWidth: gridWidthPx,
                 gridAutoRows: `${rowHeight}px`,
                 height: rowHeight,
                 minHeight: rowHeight,
@@ -474,6 +482,8 @@ export function MultiCalendarGrid({
                           gridColumn: colIdx + 2,
                           gridRow: 1,
                           alignSelf: hasReservation ? 'flex-start' : 'flex-end',
+                          justifySelf: 'stretch',
+                          minWidth: 0,
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
