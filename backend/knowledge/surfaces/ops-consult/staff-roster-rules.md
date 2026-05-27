@@ -12,6 +12,8 @@
 ## Normal Working Pattern
 
 - Normal day work: generally 09:00-17:00.
+- Lunch: protect one hour per staff member, ideally 12:00-13:00. If the schedule cannot support that, use 11:00-12:00 or 13:00-14:00 and explain the tradeoff.
+- Head-office/admin staff should not all take lunch at the same time. Stagger Mathias, Franny, Mary, and Ishant coverage where they are scheduled so at least one person can watch guest/admin channels.
 - Bryan west day: plan as 08:00-15:00 due bus constraint.
 - Night coverage target: until midnight. After Mary leaves, rotate primarily between Ishant, Franny, and Mathias.
 - Standby/off structure: each staff member generally has five work days, one standby day, and one off day weekly.
@@ -26,6 +28,7 @@
 4. Place high-impact guest tasks before recurring non-urgent tasks.
 5. Allocate days off and standby only after demand is visible, then rebalance for fairness.
 6. Use Ishant and Franny as backups, not routine fill, unless the task is urgent or owner/guest escalation requires them.
+7. Before finalizing a day, verify every planned task has at least one named assignee and every assigned staff member still has a lunch break.
 
 ## Fairness And Burnout Controls
 

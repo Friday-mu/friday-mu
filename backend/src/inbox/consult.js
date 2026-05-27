@@ -24,6 +24,8 @@ const {
 } = require('./reservation_context');
 const { safeConversationSummary } = require('./summary_quality');
 const { publishFadEvent } = require('../realtime');
+const { withConsultConversationLease } = require('./consult_lock');
+const { recordLearningEvent } = require('../ask_friday/event_writer');
 
 const router = express.Router();
 // 2026-05-23 — timeouts bumped 90s → 8 min (primary) / 45s → 5 min
@@ -268,7 +270,7 @@ function websiteConversationFromThread(thread, events, conversationId) {
   };
 }
 
-function withConversationLock(conversationId, fn) {
+function withProcessConversationLock(conversationId, fn) {
   const key = conversationId || '__global__';
   const prev = conversationLocks.get(key) || Promise.resolve();
   let release;
@@ -280,6 +282,16 @@ function withConversationLock(conversationId, fn) {
   });
 }
 
+function withConversationLock(conversationId, tenantId, fn, metadata = {}) {
+  const key = conversationId || '__global__';
+  return withProcessConversationLock(key, () => withConsultConversationLease({
+    tenantId,
+    conversationId: key,
+    holderRef: metadata.actorId || metadata.actorName || null,
+    metadata,
+  }, fn));
+}
+
 function actorName(req) {
   return req.identity?.displayName
     || req.identity?.username
@@ -289,6 +301,13 @@ function actorName(req) {
 
 function actorId(req) {
   return req.identity?.userId || req.identity?.username || null;
+}
+
+function confidenceBand(value) {
+  if (value >= 0.75) return 'high';
+  if (value >= 0.5) return 'medium';
+  if (value > 0) return 'low';
+  return 'unknown';
 }
 
 function cleanInstruction(value) {
@@ -1230,6 +1249,55 @@ router.post('/', attachIdentity, async (req, res) => {
       else confidence = 0.78;
       if (statusUpdateSafetyApplied) confidence = Math.min(confidence, 0.55);
 
+      recordLearningEvent({
+        tenantId: req.tenantId,
+        event: {
+          sourceSystem: 'fad',
+          surfaceId: 'fad_consult',
+          identityRef: {
+            identityType: 'staff',
+            identityKey: actorId(req) || actorName(req),
+            authenticated: true,
+          },
+          sessionId: activeSessionId,
+          intent: context,
+          userTurnSummary: stripFullThreadEnvelope(instruction).slice(0, 900),
+          assistantActionSummary: responseTextForClient.slice(0, 900),
+          toolsUsed: [],
+          knowledgeUsed: [
+            'staff_inbox',
+            'property_cards',
+            'teachings',
+            composed.metadata.surface,
+          ].filter(Boolean),
+          confidence: confidenceBand(confidence),
+          outcome: degraded
+            ? 'degraded'
+            : (draftUpdate ? 'drafted' : (teachingActions.length ? 'teaching_candidate' : (taskSuggestions.length ? 'task_candidate' : 'answered'))),
+          handoff: { triggered: false },
+          signals: {
+            fallbackUsed,
+            degraded,
+            modelTimeout,
+            missingKnowledge: Boolean(composed.missingKnowledge),
+            statusUpdateSafetyApplied,
+            teachingActionCount: teachingActions.length,
+            taskSuggestionCount: taskSuggestions.length,
+          },
+          privacyClass: 'high',
+          redactionStatus: 'partially_redacted',
+          eventPayload: {
+            conversationId,
+            draftId,
+            context,
+            propertyCode: composed.metadata.property_code || null,
+            knowledgeSurface: composed.metadata.surface,
+          },
+        },
+      }).catch((e) => {
+        console.warn('[consult] learning event write failed:', e.message);
+      });
+
       res.json({
         response: responseTextForClient,
         model: result.model || DRAFT_MODEL,
@@ -1255,7 +1323,11 @@ router.post('/', attachIdentity, async (req, res) => {
     };
 
     if (conversationId) {
-      await withConversationLock(conversationId, processTurn);
+      await withConversationLock(conversationId, req.tenantId, processTurn, {
+        context,
+        actorId: actorId(req),
+        actorName: actorName(req),
+      });
     } else {
       await processTurn();
     }
@@ -1411,5 +1483,8 @@ module.exports._test = {
   composeSystemPrompt,
   stripFullThreadEnvelope,
   sanitizeConsultHistory,
+  withConversationLock,
+  withProcessConversationLock,
+  confidenceBand,
   CONSULT_FALLBACK_MODEL,
 };

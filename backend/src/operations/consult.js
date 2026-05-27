@@ -4,6 +4,7 @@ const express = require('express');
 const { attachIdentity } = require('../design/auth');
 const { defaultComposer } = require('../knowledge/composer');
 const { generateDraftReply, DRAFT_MODEL } = require('../ai/kimi_draft');
+const { recordLearningEvent } = require('../ask_friday/event_writer');
 
 const router = express.Router();
 
@@ -84,6 +85,7 @@ function compactStaff(user) {
 
 function compactReservation(reservation) {
   if (!reservation || typeof reservation !== 'object') return null;
+  const pricing = reservation.calendarPricing || reservation.calendar_pricing || null;
   return {
     id: reservation.id || reservation.guestyId || reservation.guesty_id || null,
     propertyCode: reservation.propertyCode || reservation.property_code || null,
@@ -93,6 +95,15 @@ function compactReservation(reservation) {
     checkOutDate: reservation.checkOutDate || reservation.check_out_date || null,
     status: reservation.status || null,
     channel: reservation.channel || null,
+    calendarPricing: pricing && typeof pricing === 'object' ? {
+      nightsCached: Number(pricing.nightsCached ?? pricing.nights_cached ?? 0),
+      blockedNights: Number(pricing.blockedNights ?? pricing.blocked_nights ?? 0),
+      totalMinor: pricing.totalMinor ?? pricing.total_minor ?? null,
+      minPriceMinor: pricing.minPriceMinor ?? pricing.min_price_minor ?? null,
+      maxPriceMinor: pricing.maxPriceMinor ?? pricing.max_price_minor ?? null,
+      currencyCode: pricing.currencyCode || pricing.currency_code || null,
+      syncedAt: pricing.syncedAt || pricing.synced_at || null,
+    } : null,
   };
 }
 
@@ -127,6 +138,104 @@ function summarizeCounts({ scheduledTasks, unscheduledTasks, staff, reservations
   };
 }
 
+function dateOnly(value) {
+  const match = String(value || '').match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : '';
+}
+
+function daysInRange(startValue, endValue) {
+  const start = dateOnly(startValue);
+  const end = dateOnly(endValue);
+  if (!start || !end || start > end) return [];
+  const days = [];
+  const cursor = new Date(`${start}T00:00:00.000Z`);
+  const endDate = new Date(`${end}T00:00:00.000Z`);
+  while (cursor <= endDate && days.length < 45) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return days;
+}
+
+function reservationBlocksOps(reservation, day) {
+  const status = cleanString(reservation?.status, 80).toLowerCase();
+  if (!['confirmed', 'checked_in', 'reserved', 'booked'].includes(status)) return false;
+  const checkIn = dateOnly(reservation.checkInDate);
+  const checkOut = dateOnly(reservation.checkOutDate);
+  if (!checkIn || !checkOut || !day) return false;
+  return checkIn <= day && day < checkOut;
+}
+
+function guestUrgentTask(task) {
+  const priority = cleanString(task?.priority, 80).toLowerCase();
+  const source = cleanString(task?.source, 80).toLowerCase();
+  const text = `${task?.title || ''} ${task?.description || ''}`.toLowerCase();
+  return (priority === 'urgent' || priority === 'high')
+    && (
+      Boolean(task?.reservationId)
+      || ['reported_issue', 'inbox_ai', 'reservation_trigger', 'guesty'].includes(source)
+      || text.includes('guest')
+      || text.includes('blocked')
+      || text.includes('leak')
+      || text.includes('no water')
+      || text.includes('no power')
+      || text.includes('lock')
+      || text.includes('access')
+    );
+}
+
+function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, reservations, currentPlan, selectedDate, rangeStart, rangeEnd }) {
+  const daySet = new Set([
+    ...daysInRange(rangeStart || selectedDate, rangeEnd || selectedDate),
+    dateOnly(selectedDate),
+  ].filter(Boolean));
+  const days = Array.from(daySet).sort();
+  const selected = dateOnly(selectedDate) || days[0] || null;
+  const occupiedPropertyDays = [];
+  for (const reservation of reservations) {
+    for (const day of days) {
+      if (reservationBlocksOps(reservation, day)) {
+        occupiedPropertyDays.push({
+          propertyCode: reservation.propertyCode,
+          day,
+          reservationId: reservation.id,
+          guestName: reservation.guestName,
+          status: reservation.status,
+        });
+      }
+    }
+  }
+  const occupiedSelectedProperties = new Set(
+    occupiedPropertyDays
+      .filter((item) => item.day === selected)
+      .map((item) => item.propertyCode),
+  );
+  const nonUrgentOccupiedTaskIds = scheduledTasks
+    .filter((task) => selected && task.dueDate === selected)
+    .filter((task) => occupiedSelectedProperties.has(task.propertyCode))
+    .filter((task) => !guestUrgentTask(task))
+    .map((task) => task.id)
+    .filter(Boolean);
+  return {
+    assignmentPolicy: 'Every drafted scheduled task must have at least one eligible assignee; do not leave work unassigned unless the staff directory is unavailable.',
+    occupancyPolicy: 'Do not schedule non-urgent non-guest-requested property work while occupied. Checkout day is available after checkout for turnover work. Urgent guest-requested issues may be handled during occupancy.',
+    lunchPolicy: 'Protect one hour lunch for every staff member; prefer 12:00-13:00, fallback 11:00-12:00 or 13:00-14:00. Stagger office staff so someone remains available.',
+    availabilityPricingSource: 'Use reservation overlays and calendarPricing from the FAD reservation cache when present; do not invent availability or prices if cache fields are missing.',
+    unassignedOpenTaskIds: scheduledTasks.concat(unscheduledTasks)
+      .filter((task) => task.assigneeIds.length === 0)
+      .map((task) => task.id)
+      .filter(Boolean)
+      .slice(0, 60),
+    occupiedPropertyDays: occupiedPropertyDays.slice(0, 80),
+    nonUrgentOccupiedTaskIds: nonUrgentOccupiedTaskIds.slice(0, 60),
+    currentDraftUnassignedTaskIds: currentPlan
+      .filter((item) => !Array.isArray(item.assigneeIds) || item.assigneeIds.length === 0)
+      .map((item) => item.taskId)
+      .filter(Boolean)
+      .slice(0, 60),
+  };
+}
+
 function buildOpsModuleContext(body) {
   const scheduledTasks = safeArray(body.scheduledTasks || body.tasks, 220).map(compactTask).filter(Boolean);
   const unscheduledTasks = safeArray(body.unscheduledTasks, 120).map(compactTask).filter(Boolean);
@@ -144,6 +253,16 @@ function buildOpsModuleContext(body) {
     plannerMode: body.plannerMode || null,
     timelineScale: body.timelineScale || null,
     counts: summarizeCounts({ scheduledTasks, unscheduledTasks, staff, reservations, currentPlan }),
+    planningConstraints: buildPlanningConstraints({
+      scheduledTasks,
+      unscheduledTasks,
+      staff,
+      reservations,
+      currentPlan,
+      selectedDate: body.selectedDate,
+      rangeStart: body.rangeStart,
+      rangeEnd: body.rangeEnd,
+    }),
     staff,
     scheduledTasks,
     unscheduledTasks,
@@ -217,6 +336,13 @@ Current Operations context: ${context}.
 ${composed.system_message}`;
 }
 
+function confidenceBand(value) {
+  if (value >= 0.75) return 'high';
+  if (value >= 0.5) return 'medium';
+  if (value > 0) return 'low';
+  return 'unknown';
+}
+
 router.post('/consult', attachIdentity, async (req, res) => {
   try {
     const instruction = cleanString(req.body?.text || req.body?.instruction, 10_000);
@@ -263,13 +389,57 @@ router.post('/consult', attachIdentity, async (req, res) => {
     }
 
     const actionSuggestions = parseOpsActionSuggestions(result.text);
+    const confidence = actionSuggestions.some((item) => item.confidence != null)
+      ? Math.max(...actionSuggestions.map((item) => item.confidence || 0))
+      : 0.78;
+    const responseText = stripOpsProtocolTags(result.text) || 'I reviewed the Operations context.';
+
+    recordLearningEvent({
+      tenantId: req.tenantId,
+      event: {
+        sourceSystem: 'fad',
+        surfaceId: 'fad_ops_assistant',
+        identityRef: {
+          identityType: 'staff',
+          identityKey: req.identity?.userId || req.identity?.username || 'fad-user',
+          authenticated: true,
+        },
+        intent: context,
+        userTurnSummary: instruction.slice(0, 900),
+        assistantActionSummary: responseText.slice(0, 900),
+        toolsUsed: [],
+        knowledgeUsed: [
+          'ops_tasks',
+          'reservations',
+          'properties',
+          'staff_runbooks',
+          'ops-consult',
+        ],
+        confidence: confidenceBand(confidence),
+        outcome: actionSuggestions.length ? 'action_candidate' : 'answered',
+        handoff: { triggered: false },
+        signals: {
+          actionSuggestionCount: actionSuggestions.length,
+          context,
+        },
+        privacyClass: 'high',
+        redactionStatus: 'partially_redacted',
+        eventPayload: {
+          context,
+          propertyCode: composed.metadata.property_code || null,
+          knowledgeSurface: composed.metadata.surface,
+          module: 'operations',
+        },
+      },
+    }).catch((e) => {
+      console.warn('[operations/consult] learning event write failed:', e.message);
+    });
+
     res.json({
-      response: stripOpsProtocolTags(result.text) || 'I reviewed the Operations context.',
+      response: responseText,
       model: result.model || DRAFT_MODEL,
       action_suggestions: actionSuggestions,
-      confidence: actionSuggestions.some((item) => item.confidence != null)
-        ? Math.max(...actionSuggestions.map((item) => item.confidence || 0))
-        : 0.78,
+      confidence,
       metadata: {
         surface: composed.metadata.surface,
         loadedSkills: composed.metadata.loaded_skills,
@@ -292,7 +462,11 @@ module.exports = router;
 
 module.exports._test = {
   buildOpsModuleContext,
+  buildPlanningConstraints,
+  confidenceBand,
+  guestUrgentTask,
   parseOpsActionSuggestions,
+  reservationBlocksOps,
   stripOpsProtocolTags,
   taskSignalsForContext,
 };

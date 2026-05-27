@@ -2,7 +2,10 @@
 
 const {
   buildOpsModuleContext,
+  buildPlanningConstraints,
+  guestUrgentTask,
   parseOpsActionSuggestions,
+  reservationBlocksOps,
   stripOpsProtocolTags,
   taskSignalsForContext,
 } = require('./consult')._test;
@@ -26,6 +29,23 @@ describe('Operations Friday Consult helpers', () => {
         estimatedMinutes: 30,
         assigneeIds: [],
       }],
+      reservations: [{
+        id: 'rsv-1',
+        propertyCode: 'VA-1',
+        guestName: 'Guest One',
+        checkInDate: '2026-05-26',
+        checkOutDate: '2026-05-28',
+        status: 'confirmed',
+        calendarPricing: {
+          nightsCached: 2,
+          blockedNights: 0,
+          totalMinor: 34000,
+          minPriceMinor: 16000,
+          maxPriceMinor: 18000,
+          currencyCode: 'MUR',
+          syncedAt: '2026-05-26T08:00:00.000Z',
+        },
+      }],
       unscheduledTasks: [{
         id: 'task-2',
         title: 'Fix AC drain leak',
@@ -42,8 +62,65 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"consultSurface": "Friday Consult"');
     expect(context).toContain('"selectedDate": "2026-05-27"');
     expect(context).toContain('"scheduledTasks": 1');
+    expect(context).toContain('"planningConstraints"');
+    expect(context).toContain('"nonUrgentOccupiedTaskIds"');
+    expect(context).toContain('"totalMinor": 34000');
     expect(context).toContain('Fix AC drain leak');
     expect(context).toContain('Bryan Henri');
+  });
+
+  test('treats checkout day as schedulable after checkout for occupancy rules', () => {
+    const reservation = {
+      propertyCode: 'VA-1',
+      checkInDate: '2026-05-26',
+      checkOutDate: '2026-05-28',
+      status: 'confirmed',
+    };
+
+    expect(reservationBlocksOps(reservation, '2026-05-27')).toBe(true);
+    expect(reservationBlocksOps(reservation, '2026-05-28')).toBe(false);
+  });
+
+  test('includes middle days in weekly occupancy planning constraints', () => {
+    const constraints = buildPlanningConstraints({
+      selectedDate: '2026-05-25',
+      rangeStart: '2026-05-25',
+      rangeEnd: '2026-05-31',
+      currentPlan: [],
+      scheduledTasks: [],
+      unscheduledTasks: [],
+      reservations: [{
+        id: 'rsv-week',
+        propertyCode: 'GBH-C3',
+        guestName: 'Guest Week',
+        checkInDate: '2026-05-27',
+        checkOutDate: '2026-05-29',
+        status: 'confirmed',
+      }],
+    });
+
+    expect(constraints.occupiedPropertyDays).toEqual(expect.arrayContaining([
+      expect.objectContaining({ propertyCode: 'GBH-C3', day: '2026-05-27' }),
+      expect.objectContaining({ propertyCode: 'GBH-C3', day: '2026-05-28' }),
+    ]));
+    expect(constraints.occupiedPropertyDays).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ propertyCode: 'GBH-C3', day: '2026-05-29' }),
+    ]));
+  });
+
+  test('classifies urgent guest access work as occupancy-eligible', () => {
+    expect(guestUrgentTask({
+      priority: 'high',
+      source: 'reported_issue',
+      title: 'Guest lock access blocked',
+      description: 'Guest cannot enter the apartment.',
+    })).toBe(true);
+
+    expect(guestUrgentTask({
+      priority: 'normal',
+      source: 'manual',
+      title: 'Monthly aesthetic check',
+    })).toBe(false);
   });
 
   test('parses allowed ops action suggestions and strips protocol tags', () => {

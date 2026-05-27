@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const express = require('express');
 const { query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
@@ -17,6 +18,15 @@ const {
 } = require('./contracts');
 const { runAnalyzer } = require('./analyzer');
 const { runEvalSuite } = require('./eval_runner');
+const { runRetention } = require('./retention');
+const {
+  assertPublicSurface,
+  validateContextPackAgainstSurface,
+  validatePublicActionRequest,
+  validatePublicIdentityLink,
+  validatePublicLearningEvent,
+  validateStaffActionRequest,
+} = require('./policy');
 const { publishContextPack } = require('./publisher');
 
 const router = express.Router();
@@ -126,6 +136,10 @@ function shapeKbCandidate(row) {
     riskClass: row.risk_class,
     trustTier: row.trust_tier,
     reviewStatus: row.review_status,
+    reviewLane: row.review_lane || 'general',
+    reviewerDomain: row.reviewer_domain || null,
+    allowedSurfaceIds: row.allowed_surface_ids || [],
+    targetPrivacyClass: row.target_privacy_class || 'unknown',
     reviewer: row.reviewer,
     reviewNote: row.review_note,
     reviewedAt: row.reviewed_at,
@@ -186,6 +200,24 @@ function shapeIdentityLink(row) {
   };
 }
 
+async function loadSurfaceForPolicy(tenantId, surfaceId) {
+  const id = cleanString(surfaceId, 120);
+  if (!id) {
+    const err = new Error('surfaceId is required');
+    err.status = 400;
+    throw err;
+  }
+  const { rows } = await query(
+    `SELECT *
+       FROM ask_friday_surfaces
+      WHERE tenant_id = $1
+        AND surface_id = $2
+      LIMIT 1`,
+    [tenantId, id],
+  );
+  return rows[0] || null;
+}
+
 async function insertEvidenceRefs(tenantId, eventId, refs) {
   if (!Array.isArray(refs) || refs.length === 0) return 0;
   let inserted = 0;
@@ -217,6 +249,85 @@ async function insertEvidenceRefs(tenantId, eventId, refs) {
     if (rows.length > 0) inserted += 1;
   }
   return inserted;
+}
+
+function lifecycleId(prefix) {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+async function writeActionLifecycleEvent({ tenantId, action, reviewer, reviewNote }) {
+  if (!action) return;
+  const sourceSystem = cleanString(action.source_system, 80) || 'fad';
+  const publicish = ['friday-website', 'mcp'].includes(sourceSystem);
+  const privacyClass = publicish ? 'medium' : 'high';
+  const eventId = lifecycleId('afae');
+  const evidenceId = lifecycleId('afaev');
+  const summary = `Action request ${action.action_id} moved to ${action.status}.`;
+  await query(
+    `INSERT INTO ask_friday_learning_events (
+       tenant_id, event_id, created_at, source_system, surface_id,
+       identity_ref, session_id, intent, user_turn_summary,
+       assistant_action_summary, tools_used, knowledge_used, confidence,
+       outcome, handoff, signals, privacy_class, redaction_status,
+       evidence_refs, event_payload
+     ) VALUES (
+       $1, $2, NOW(), $3, $4,
+       $5::jsonb, NULL, $6, $7,
+       $8, ARRAY[]::text[], ARRAY[]::text[], 'high',
+       $9, '{}'::jsonb, $10::jsonb, $11, 'partially_redacted',
+       $12::jsonb, $13::jsonb
+     )`,
+    [
+      tenantId,
+      eventId,
+      sourceSystem,
+      cleanString(action.surface_id, 120) || 'unknown_surface',
+      JSON.stringify({
+        identityType: 'staff',
+        identityKey: reviewer || 'ask-friday-reviewer',
+        authenticated: true,
+      }),
+      cleanString(action.action_type, 120) || 'action_request',
+      `Review status changed to ${action.status}.`,
+      summary,
+      `action_${action.status}`,
+      JSON.stringify({
+        actionId: action.action_id,
+        actionType: action.action_type,
+        status: action.status,
+        reviewer,
+        reviewNote: reviewNote || null,
+      }),
+      privacyClass,
+      JSON.stringify([{
+        evidenceId,
+        eventId,
+        evidenceType: 'action_lifecycle',
+        privacyClass,
+        redactionStatus: 'partially_redacted',
+        summary,
+      }]),
+      JSON.stringify({
+        actionId: action.action_id,
+        actionType: action.action_type,
+        riskClass: action.risk_class,
+        status: action.status,
+      }),
+    ],
+  );
+  await insertEvidenceRefs(tenantId, eventId, [{
+    evidenceId,
+    eventId,
+    evidenceType: 'action_lifecycle',
+    privacyClass,
+    redactionStatus: 'partially_redacted',
+    summary,
+    evidencePayload: {
+      actionId: action.action_id,
+      actionType: action.action_type,
+      status: action.status,
+    },
+  }]);
 }
 
 router.get('/surfaces', attachIdentity, async (req, res) => {
@@ -339,6 +450,8 @@ router.get(
     try {
       const tenantId = publicTenantId(req);
       const surfaceId = cleanString(req.params.surfaceId, 120);
+      const surface = await loadSurfaceForPolicy(tenantId, surfaceId);
+      assertPublicSurface(surface, surfaceId);
       const { rows } = await query(
         `SELECT *
            FROM ask_friday_context_packs
@@ -360,6 +473,14 @@ router.get(
 router.post('/context-packs', attachIdentity, async (req, res) => {
   try {
     const pack = normalizeContextPack(req.body);
+    if (pack.status === 'published') {
+      return res.status(400).json({
+        error: 'context_pack_publish_required',
+        message: 'Use /context-packs/publish with a passing eval run or evalGateOverride:true to publish context packs.',
+      });
+    }
+    const surface = await loadSurfaceForPolicy(req.tenantId, pack.surfaceId);
+    validateContextPackAgainstSurface(pack, surface);
     const approver = pack.approvedBy || actorName(req);
     const { rows } = await query(
       `INSERT INTO ask_friday_context_packs (
@@ -434,6 +555,8 @@ router.post(
     try {
       const tenantId = publicTenantId(req);
       const event = normalizeLearningEvent(req.body);
+      const surface = await loadSurfaceForPolicy(tenantId, event.surfaceId);
+      validatePublicLearningEvent(event, surface);
       const { rows } = await query(
         `INSERT INTO ask_friday_learning_events (
            tenant_id, event_id, created_at, source_system, surface_id,
@@ -494,6 +617,7 @@ router.get('/kb-candidates', attachIdentity, async (req, res) => {
   try {
     const status = cleanString(req.query.status, 40) || 'pending';
     const targetLayer = cleanString(req.query.targetLayer || req.query.target_layer, 80);
+    const reviewLane = cleanString(req.query.reviewLane || req.query.review_lane, 120);
     const limit = parseLimit(req.query.limit);
     const params = [req.tenantId];
     const filters = ['tenant_id = $1'];
@@ -504,6 +628,10 @@ router.get('/kb-candidates', attachIdentity, async (req, res) => {
     if (targetLayer) {
       params.push(targetLayer);
       filters.push(`target_layer = $${params.length}`);
+    }
+    if (reviewLane) {
+      params.push(reviewLane);
+      filters.push(`review_lane = $${params.length}`);
     }
     const { rows } = await query(
       `SELECT *
@@ -525,10 +653,12 @@ router.post('/kb-candidates', attachIdentity, async (req, res) => {
     const { rows } = await query(
       `INSERT INTO ask_friday_kb_candidates (
          tenant_id, candidate_id, candidate_type, target_layer, proposed_change,
-         source_event_ids, evidence_summary, risk_class, trust_tier, review_status, updated_at
+         source_event_ids, evidence_summary, risk_class, trust_tier, review_status,
+         review_lane, reviewer_domain, allowed_surface_ids, target_privacy_class, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5::jsonb,
-         $6, $7, $8, $9, $10, NOW()
+         $6, $7, $8, $9, $10,
+         $11, $12, $13, $14, NOW()
        )
        ON CONFLICT (tenant_id, candidate_id) DO UPDATE SET
          candidate_type = EXCLUDED.candidate_type,
@@ -539,6 +669,10 @@ router.post('/kb-candidates', attachIdentity, async (req, res) => {
          risk_class = EXCLUDED.risk_class,
          trust_tier = EXCLUDED.trust_tier,
          review_status = EXCLUDED.review_status,
+         review_lane = EXCLUDED.review_lane,
+         reviewer_domain = EXCLUDED.reviewer_domain,
+         allowed_surface_ids = EXCLUDED.allowed_surface_ids,
+         target_privacy_class = EXCLUDED.target_privacy_class,
          updated_at = NOW()
        RETURNING *`,
       [
@@ -552,6 +686,10 @@ router.post('/kb-candidates', attachIdentity, async (req, res) => {
         candidate.riskClass,
         candidate.trustTier,
         candidate.reviewStatus,
+        candidate.reviewLane,
+        candidate.reviewerDomain,
+        candidate.allowedSurfaceIds,
+        candidate.targetPrivacyClass,
       ],
     );
     res.status(201).json({ candidate: shapeKbCandidate(rows[0]) });
@@ -594,6 +732,14 @@ router.patch('/kb-candidates/:candidateId', attachIdentity, async (req, res) => 
 async function createActionRequest(req, res, sourceDefaults = {}) {
   try {
     const action = normalizeActionRequest(req.body, sourceDefaults);
+    if (sourceDefaults.public) {
+      const tenantId = req.tenantId || publicTenantId(req);
+      const surface = await loadSurfaceForPolicy(tenantId, action.surfaceId);
+      validatePublicActionRequest(action, surface);
+    } else {
+      const surface = await loadSurfaceForPolicy(req.tenantId, action.surfaceId);
+      validateStaffActionRequest(action, surface);
+    }
     const { rows } = await query(
       `INSERT INTO ask_friday_action_requests (
          tenant_id, action_id, source_system, surface_id, requested_by,
@@ -672,6 +818,7 @@ router.post(
   attachApiClient,
   requireScope('ask-friday:actions:write'),
   (req, res) => createActionRequest(req, res, {
+    public: true,
     sourceSystem: 'friday-website',
     requestedBy: {
       identityType: 'api_client',
@@ -692,6 +839,11 @@ async function upsertIdentityLink(req, res, sourceDefaults = {}) {
     const durableMemoryAllowed = Boolean(body.durableMemoryAllowed || body.durable_memory_allowed);
     const subjectRef = safeJson(body.subjectRef || body.subject_ref, 80, 4000);
     const tenantId = req.tenantId || publicTenantId(req);
+    if (sourceDefaults.public) {
+      const surfaceId = cleanString(body.surfaceId || body.surface_id || sourceDefaults.surfaceId, 120);
+      const surface = await loadSurfaceForPolicy(tenantId, surfaceId);
+      validatePublicIdentityLink({ ...body, surfaceId }, surface);
+    }
     const { rows } = await query(
       `INSERT INTO ask_friday_identity_links (
          tenant_id, identity_key, identity_type, subject_ref,
@@ -742,7 +894,7 @@ router.post(
   '/identity-links/public',
   attachApiClient,
   requireScope('ask-friday:identity:write'),
-  (req, res) => upsertIdentityLink(req, res, { sourceSystem: 'friday-website' }),
+  (req, res) => upsertIdentityLink(req, res, { public: true, sourceSystem: 'friday-website' }),
 );
 
 router.post('/analyzer/run', attachIdentity, async (req, res) => {
@@ -758,6 +910,22 @@ router.post('/analyzer/run', attachIdentity, async (req, res) => {
     res.json(result);
   } catch (error) {
     return respondError(res, error, 'analyzer_run_failed');
+  }
+});
+
+router.post('/retention/run', attachIdentity, async (req, res) => {
+  try {
+    const result = await runRetention({
+      tenantId: req.tenantId,
+      dryRun: req.body?.dryRun !== false && req.body?.dry_run !== false,
+      rejectedCandidateRetentionDays:
+        req.body?.rejectedCandidateRetentionDays || req.body?.rejected_candidate_retention_days,
+      expiredCandidateRetentionDays:
+        req.body?.expiredCandidateRetentionDays || req.body?.expired_candidate_retention_days,
+    });
+    res.json(result);
+  } catch (error) {
+    return respondError(res, error, 'retention_run_failed');
   }
 });
 
@@ -789,6 +957,14 @@ router.patch('/action-requests/:actionId', attachIdentity, async (req, res) => {
       ],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'action_request_not_found' });
+    await writeActionLifecycleEvent({
+      tenantId: req.tenantId,
+      action: rows[0],
+      reviewer,
+      reviewNote: patch.reviewNote,
+    }).catch((error) => {
+      console.warn('[ask-friday/core] action lifecycle event failed:', error.message);
+    });
     res.json({ actionRequest: shapeActionRequest(rows[0]) });
   } catch (error) {
     return respondError(res, error, 'action_request_review_failed');
@@ -946,5 +1122,7 @@ module.exports = {
     shapeKbCandidate,
     shapeLearningEvent,
     shapeSurface,
+    loadSurfaceForPolicy,
+    writeActionLifecycleEvent,
   },
 };

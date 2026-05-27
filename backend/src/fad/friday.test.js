@@ -16,8 +16,10 @@ jest.mock('../design/auth', () => ({
   },
 }));
 jest.mock('../mcp', () => ({ callTool: jest.fn() }));
+jest.mock('../ask_friday/action_writer', () => ({ recordActionRequest: jest.fn() }));
 
 const { callTool } = require('../mcp');
+const { recordActionRequest } = require('../ask_friday/action_writer');
 const { router, _test } = require('./friday');
 
 function app() {
@@ -30,6 +32,7 @@ function app() {
 describe('FAD Ask Friday helpers', () => {
   beforeEach(() => {
     callTool.mockReset();
+    recordActionRequest.mockReset();
   });
 
   test('builds an action-aware staff assistant system prompt', () => {
@@ -399,11 +402,27 @@ describe('FAD Ask Friday helpers', () => {
       { role: 'assistant', content: 'previous' },
     ]);
   });
+
+  test('maps global Ask Friday loaded modules to Core knowledge scopes', () => {
+    expect(_test.knowledgeScopesForAskFriday({
+      requestedModules: ['inbox', 'operations', 'reservations', 'properties'],
+    }, {
+      sourcesUsed: ['design'],
+    })).toEqual([
+      'fad_live_context',
+      'staff_inbox',
+      'ops_tasks',
+      'reservations',
+      'properties',
+      'design_projects',
+    ]);
+  });
 });
 
 describe('FAD Ask Friday action execution', () => {
   beforeEach(() => {
     callTool.mockReset();
+    recordActionRequest.mockReset();
   });
 
   test('executes a create-task action through the MCP task tool', async () => {
@@ -444,6 +463,17 @@ describe('FAD Ask Friday action execution', () => {
       tool: 'tasks.create',
       summary: 'Task created: Check the AC',
     });
+    expect(recordActionRequest).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: '00000000-0000-0000-0000-000000000001',
+      action: expect.objectContaining({
+        sourceSystem: 'fad',
+        surfaceId: 'fad_global_ask_friday',
+        actionType: 'create_task',
+        riskClass: 'low',
+        status: 'executed',
+        approvalRequired: false,
+      }),
+    }));
   });
 
   test('routes approval actions through the MCP approval ledger instead of executing directly', async () => {

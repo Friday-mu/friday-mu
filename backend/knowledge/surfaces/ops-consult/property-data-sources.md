@@ -9,6 +9,8 @@ Use the FAD property layer as the unified read model. When explaining data prove
 - FAD-owned overlays are authoritative for Friday-specific operations policy: property code, region/zone, size override, combo parent-child mapping, staff-facing notes, owner caps/financial overrides, and any manually reviewed corrections.
 - Runtime Ops agent context should come through FAD/FridayOS API/cache surfaces (`/api/properties`, `/api/reservations`, `/api/tasks`) rather than direct external API calls.
 - Direct Guesty/Breezeway API pulls are allowed for diagnostics, preview-only metadata audits, one-time backfills, and cache-coverage checks. They should not become the normal scheduling/planning path.
+- Reservation overlays are the runtime source for occupancy. Calendar-pricing/cache fields are the runtime source for availability and price grounding when present.
+- Missing `calendarPricing` does not mean a property is available or unpriced. It means the agent must say that pricing/availability is not currently proved by the cache.
 
 ## Latest Metadata Preview
 
@@ -48,6 +50,7 @@ Guesty listing payloads expose useful scheduling fields:
 - default check-in/check-out time;
 - prices/currency and financial fields;
 - full raw key shape in the FAD cache for later schema extension.
+- reservation date/status overlays and cached calendar pricing where synced into FAD.
 
 Breezeway property payloads expose useful operations fields:
 

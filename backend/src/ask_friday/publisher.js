@@ -2,6 +2,7 @@
 
 const { query } = require('../database/client');
 const { cleanArray, cleanString, safeJson } = require('./contracts');
+const { validateContextPackAgainstSurface } = require('./policy');
 
 function badRequest(message) {
   const err = new Error(message);
@@ -16,6 +17,11 @@ function cleanCandidateIds(value) {
 function cleanJsonArray(value, maxItems = 100) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, maxItems).map((item) => safeJson(item, 120, 8000));
+}
+
+function trueish(value) {
+  if (value === true) return true;
+  return ['1', 'true', 'yes'].includes(String(value || '').toLowerCase());
 }
 
 async function loadApprovedCandidates(tenantId, candidateIds) {
@@ -49,6 +55,93 @@ async function nextPackVersion(tenantId, surfaceId) {
   return Number(rows[0]?.next_version) || 1;
 }
 
+async function loadSurface(tenantId, surfaceId) {
+  const { rows } = await query(
+    `SELECT *
+       FROM ask_friday_surfaces
+      WHERE tenant_id = $1
+        AND surface_id = $2
+      LIMIT 1`,
+    [tenantId, surfaceId],
+  );
+  return rows[0] || null;
+}
+
+async function loadEvalRun(tenantId, runId) {
+  if (!runId) return null;
+  const { rows } = await query(
+    `SELECT run_id, suite_id, context_pack_id, context_pack_version,
+            status, summary, completed_at
+       FROM ask_friday_eval_runs
+      WHERE tenant_id = $1
+        AND run_id = $2
+      LIMIT 1`,
+    [tenantId, runId],
+  );
+  return rows[0] || null;
+}
+
+function evalSuiteIds(surface) {
+  return Array.isArray(surface?.eval_suite_ids)
+    ? surface.eval_suite_ids.map((id) => cleanString(id, 160)).filter(Boolean)
+    : [];
+}
+
+function evalRunPassed(run, surface) {
+  if (!run) return false;
+  if (run.status !== 'completed') return false;
+  const summaryStatus = cleanString(run.summary?.status, 40).toLowerCase();
+  if (summaryStatus && summaryStatus !== 'passed') return false;
+  const suites = evalSuiteIds(surface);
+  return suites.length === 0 || suites.includes(run.suite_id);
+}
+
+async function resolveEvalGate({ tenantId, surface, options, approvedBy }) {
+  const evalRunId = cleanString(options.evalRunId || options.eval_run_id, 160);
+  const override = trueish(options.evalGateOverride || options.eval_gate_override);
+  const rationale = cleanString(options.evalGateRationale || options.eval_gate_rationale, 1000)
+    || cleanString(options.manualApprovalRationale || options.manual_approval_rationale, 1000)
+    || null;
+
+  if (evalRunId) {
+    const run = await loadEvalRun(tenantId, evalRunId);
+    if (evalRunPassed(run, surface)) {
+      return {
+        refs: [{
+          type: 'eval_run',
+          runId: run.run_id,
+          suiteId: run.suite_id,
+          status: run.status,
+          summaryStatus: cleanString(run.summary?.status, 40) || null,
+        }],
+      };
+    }
+    if (!override) {
+      throw badRequest(`evalRunId must reference a completed passing eval run for this surface: ${evalRunId}`);
+    }
+    return {
+      refs: [{
+        type: 'eval_gate_override',
+        approvedBy,
+        rationale,
+        failedEvalRunId: evalRunId,
+      }],
+    };
+  }
+
+  if (override) {
+    return {
+      refs: [{
+        type: 'eval_gate_override',
+        approvedBy,
+        rationale,
+      }],
+    };
+  }
+
+  throw badRequest('eval gate requires evalRunId for a passing eval run or evalGateOverride:true');
+}
+
 function candidateSnapshotRefs(candidates) {
   return candidates.map((candidate) => ({
     type: 'kb_candidate',
@@ -80,6 +173,9 @@ async function publishContextPack(options) {
 
   const approvedBy = cleanString(options.approvedBy, 160) || 'ask-friday-reviewer';
   const candidates = await loadApprovedCandidates(tenantId, candidateIds);
+  const surface = await loadSurface(tenantId, surfaceId);
+  if (!surface) throw badRequest(`surfaceId is not registered: ${surfaceId}`);
+  const evalGate = await resolveEvalGate({ tenantId, surface, options, approvedBy });
   const version = options.version
     ? Math.max(1, Number.parseInt(options.version, 10) || 1)
     : await nextPackVersion(tenantId, surfaceId);
@@ -87,12 +183,27 @@ async function publishContextPack(options) {
   const sourceSnapshotRefs = [
     ...candidateSnapshotRefs(candidates),
     ...cleanJsonArray(options.sourceSnapshotRefs || options.source_snapshot_refs, 100),
+    ...evalGate.refs,
     ...(manualApproval ? [{
       type: 'manual_approval',
       approvedBy,
       rationale: cleanString(options.manualApprovalRationale || options.manual_approval_rationale, 1000) || null,
     }] : []),
   ];
+  const knowledgeScopes = cleanArray(options.knowledgeScopes || options.knowledge_scopes, 100, 160);
+  const behaviorRules = cleanJsonArray(options.behaviorRules || options.behavior_rules, 100);
+  const toolPolicy = safeJson(options.toolPolicy || options.tool_policy, 120, 8000);
+  const memoryPolicy = safeJson(options.memoryPolicy || options.memory_policy, 120, 8000);
+  const packPayload = safeJson(options.packPayload || options.pack_payload || {}, 160, 12000);
+  validateContextPackAgainstSurface({
+    surfaceId,
+    knowledgeScopes,
+    behaviorRules,
+    toolPolicy,
+    memoryPolicy,
+    sourceSnapshotRefs,
+    packPayload,
+  }, surface);
 
   const { rows } = await query(
     `INSERT INTO ask_friday_context_packs (
@@ -123,12 +234,12 @@ async function publishContextPack(options) {
       packId,
       surfaceId,
       version,
-      cleanArray(options.knowledgeScopes || options.knowledge_scopes, 100, 160),
-      JSON.stringify(cleanJsonArray(options.behaviorRules || options.behavior_rules, 100)),
-      JSON.stringify(safeJson(options.toolPolicy || options.tool_policy, 120, 8000)),
-      JSON.stringify(safeJson(options.memoryPolicy || options.memory_policy, 120, 8000)),
+      knowledgeScopes,
+      JSON.stringify(behaviorRules),
+      JSON.stringify(toolPolicy),
+      JSON.stringify(memoryPolicy),
       JSON.stringify(sourceSnapshotRefs),
-      JSON.stringify(safeJson(options.packPayload || options.pack_payload || {}, 160, 12000)),
+      JSON.stringify(packPayload),
       approvedBy,
     ],
   );
@@ -157,5 +268,8 @@ module.exports = {
     candidateSnapshotRefs,
     cleanCandidateIds,
     cleanJsonArray,
+    evalRunPassed,
+    resolveEvalGate,
+    loadSurface,
   },
 };

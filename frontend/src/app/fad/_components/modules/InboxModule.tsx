@@ -178,6 +178,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   const [stayFilter, setStayFilter] = useState<StayFilter>('all');
   const [mentionsOnly, setMentionsOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [chipMoreOpen, setChipMoreOpen] = useState(false);
 
   const [selected, setSelected] = useState(initialSelectedThreadId);
   // Compose mode — 'reply' goes to the guest, 'note' is internal-only.
@@ -758,12 +759,23 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   // cases without adding new state.
   const threadBodyRef = useRef<HTMLDivElement>(null);
   const lastScrolledThreadIdRef = useRef<string | null>(null);
+  const scrollThreadToBottom = (behavior: ScrollBehavior = 'auto') => {
+    const el = threadBodyRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const latest = threadBodyRef.current;
+        if (!latest) return;
+        latest.scrollTo({ top: latest.scrollHeight, behavior });
+      });
+    });
+  };
   useEffect(() => {
     const el = threadBodyRef.current;
     if (!el) return;
     const switchedThread = lastScrolledThreadIdRef.current !== (thread?.id ?? null);
     if (switchedThread) {
-      el.scrollTop = el.scrollHeight;
+      scrollThreadToBottom('auto');
       lastScrolledThreadIdRef.current = thread?.id ?? null;
       return;
     }
@@ -771,7 +783,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     // already near it; otherwise respect the user's scroll position.
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 80) {
-      el.scrollTop = el.scrollHeight;
+      scrollThreadToBottom('auto');
     }
   }, [selected, thread?.id, thread?.messages?.length]);
   const unread = sourceThreads.filter((t) => t.unread).length;
@@ -809,6 +821,9 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     { key: 'vendor', label: 'Vendor', count: counts.byEntity.vendor },
     { key: 'unclassified', label: 'Others', count: counts.byEntity.unclassified || 0 },
   ];
+  const primaryExternalChips = externalChips.filter((c) => c.key === 'all' || c.key === 'guest');
+  const secondaryExternalChips = externalChips.filter((c) => c.key !== 'all' && c.key !== 'guest');
+  const secondaryChipActive = secondaryExternalChips.some((c) => entityFilter === c.key);
 
   const teamUnread =
     (liveTeamChannels ?? []).reduce((acc, c) => acc + (c.unread ?? 0), 0) +
@@ -816,11 +831,29 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
 
   const chipsRow = (
     <div className="inbox-chips-row">
-      {canSeeGuest && externalChips.map((c) => (
+      {canSeeGuest && primaryExternalChips.map((c) => (
         <button
           key={c.key}
           className={'inbox-chip' + (entityFilter === c.key ? ' active' : '')}
-          onClick={() => setEntityFilter(c.key)}
+          onClick={() => {
+            setEntityFilter(c.key);
+            setChipMoreOpen(false);
+          }}
+        >
+          {c.label}{' '}
+          <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>
+            {c.count}
+          </span>
+        </button>
+      ))}
+      {canSeeGuest && secondaryExternalChips.map((c) => (
+        <button
+          key={c.key}
+          className={'inbox-chip inbox-chip-secondary' + (entityFilter === c.key ? ' active' : '')}
+          onClick={() => {
+            setEntityFilter(c.key);
+            setChipMoreOpen(false);
+          }}
         >
           {c.label}{' '}
           <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>
@@ -858,7 +891,10 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
       {canSeeTeam && (
         <button
           className={'inbox-chip' + (onTeam ? ' active' : '')}
-          onClick={() => setEntityFilter('team')}
+          onClick={() => {
+            setEntityFilter('team');
+            setChipMoreOpen(false);
+          }}
           title="Internal team channels and DMs"
         >
           Team{' '}
@@ -866,6 +902,46 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
             {teamUnread}
           </span>
         </button>
+      )}
+      {canSeeGuest && secondaryExternalChips.length > 0 && (
+        <div className="inbox-chip-more-wrap">
+          <button
+            type="button"
+            className={'inbox-chip' + (secondaryChipActive || chipMoreOpen ? ' active' : '')}
+            onClick={(e) => {
+              e.stopPropagation();
+              setChipMoreOpen((v) => !v);
+            }}
+            aria-expanded={chipMoreOpen}
+            title="More inbox filters"
+          >
+            More
+            <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>▾</span>
+          </button>
+          {chipMoreOpen && (
+            <>
+              <div className="inbox-chip-more-backdrop" onClick={() => setChipMoreOpen(false)} />
+              <div className="inbox-chip-more-menu">
+                {secondaryExternalChips.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    className={'inbox-chip' + (entityFilter === c.key ? ' active' : '')}
+                    onClick={() => {
+                      setEntityFilter(c.key);
+                      setChipMoreOpen(false);
+                    }}
+                  >
+                    {c.label}
+                    <span className="mono" style={{ fontSize: 10, marginLeft: 'auto', opacity: 0.8 }}>
+                      {c.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
       <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
         {onTeam ? 'Channels · DMs · calls' : `${unread} unread across all channels`}

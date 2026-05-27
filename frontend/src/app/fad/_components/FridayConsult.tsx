@@ -337,13 +337,21 @@ export function FridayConsult({
   const FC_HEIGHT_STORAGE_KEY = 'fad:fc:height';
   const FC_HEIGHT_MIN = 120;
   const FC_HEIGHT_MAX = 700;
+  const consultHeightMax = () => {
+    if (typeof window === 'undefined') return FC_HEIGHT_MAX;
+    if (window.innerWidth <= 768) {
+      return Math.min(FC_HEIGHT_MAX, Math.max(260, Math.round(window.innerHeight * 0.46)));
+    }
+    return FC_HEIGHT_MAX;
+  };
   // null = auto (wrap content); number = explicit pixel height.
   const [fcHeight, setFcHeight] = useState<number | null>(() => {
     if (typeof window === 'undefined') return null;
     const raw = window.localStorage.getItem(FC_HEIGHT_STORAGE_KEY);
     if (!raw || raw === 'auto') return null;
     const parsed = Number(raw);
-    if (Number.isFinite(parsed) && parsed >= FC_HEIGHT_MIN && parsed <= FC_HEIGHT_MAX) return parsed;
+    const max = consultHeightMax();
+    if (Number.isFinite(parsed) && parsed >= FC_HEIGHT_MIN) return Math.min(parsed, max);
     return null;
   });
   const dragStartRef = useRef<{ y: number; h: number } | null>(null);
@@ -359,7 +367,7 @@ export function FridayConsult({
   const onDragMove = (e: React.PointerEvent) => {
     const start = dragStartRef.current;
     if (!start) return;
-    const next = Math.max(FC_HEIGHT_MIN, Math.min(FC_HEIGHT_MAX, start.h - (e.clientY - start.y)));
+    const next = Math.max(FC_HEIGHT_MIN, Math.min(consultHeightMax(), start.h - (e.clientY - start.y)));
     setFcHeight(next);
   };
   const onDragEnd = (e: React.PointerEvent) => {
@@ -376,13 +384,17 @@ export function FridayConsult({
     try { window.localStorage.setItem(FC_HEIGHT_STORAGE_KEY, 'auto'); } catch { /* ignore */ }
   };
 
-  // Auto-scroll on new messages / thinking / a draft appearing or
-  // changing — so the Approve & send button is in view when Friday
-  // produces a draft, not below the fold.
+  // Auto-scroll only when the transcript receives a new turn or draft.
+  // Do not depend on workingBody: editing the draft should not pull the
+  // operator back to the bottom while they are reading earlier context.
   useEffect(() => {
     const el = transcriptRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [msgs, thinking, currentDraft?.id, currentDraft?.body, workingBody]);
+    if (!el) return;
+    requestAnimationFrame(() => {
+      const latest = transcriptRef.current;
+      if (latest) latest.scrollTop = latest.scrollHeight;
+    });
+  }, [msgs.length, thinking, currentDraft?.id]);
 
   // Seed an initial 'draft' chat message when the conversation arrives
   // with an active Inbox draft. Drafts flow into the chat history like
@@ -742,13 +754,12 @@ export function FridayConsult({
     <div
       className="friday-consult"
       style={{
-        position: 'sticky',
-        bottom: 0,
+        position: 'relative',
         zIndex: 5,
         // Auto mode: wrap content up to 50vh. Explicit mode: fixed
         // pixel height set by drag. Per Ishant 2026-05-17.
         ...(fcHeight !== null
-          ? { height: fcHeight }
+          ? { height: Math.min(fcHeight, consultHeightMax()) }
           : { minHeight: hasConsultContent ? 'clamp(260px, 36vh, 460px)' : undefined, maxHeight: '60vh' }),
         flex: '0 0 auto',
         display: 'flex',
@@ -1005,6 +1016,7 @@ function AskFridayInput({
   };
   return (
     <div
+      className="friday-consult-askbar"
       style={{
         padding: '6px 10px 8px',
         borderTop: '0.5px solid var(--color-border-tertiary)',
@@ -1016,6 +1028,7 @@ function AskFridayInput({
     >
       <button
         type="button"
+        className="friday-consult-context-toggle"
         onClick={onToggleFullThread}
         title={useFullThread
           ? 'On — Friday loads the full thread for your next question. Click to turn off.'
