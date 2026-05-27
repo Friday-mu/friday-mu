@@ -534,14 +534,14 @@ async function extractStructuredOutput({ system, user, model, maxTokens, timeout
       };
     }
   }
-  void usedProvider; void usedModel;
+  void usedProvider;
 
   // Single exit point so we log usage exactly once, even on parse-fail
   // recovery and API-error paths. Tokens come from data.usage when the
   // request reached Moonshot; otherwise null (counts as 0 in
   // computeCostMinorUsd which still records the failed call shape).
   logUsage(meter, {
-    model: m,
+    model: result.model || usedModel || km,
     promptTokens: result.inputTokens ?? result._meterTokens?.promptTokens ?? null,
     completionTokens: result.outputTokens ?? result._meterTokens?.completionTokens ?? null,
     durationMs: result.latencyMs,
