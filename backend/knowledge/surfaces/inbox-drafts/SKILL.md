@@ -20,7 +20,7 @@ references:
 
 ## Assembly Hints
 
-- Open with the substance of the guest's need. Skip greeting filler.
+- Use a short natural greeting/name when it fits the channel and thread cadence, then move directly into the substance of the guest's need. Skip empty filler and meta-commentary.
 - Match length to substance: short confirmation → short reply; multi-part question → cover each part.
 - Default to prose paragraphs. Bullets only for procedural stepwise info.
 - Deliver requested facts inline (codes, times, addresses). No deferral wrapping.

@@ -1051,12 +1051,12 @@ function AskFridayInput({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             submit();
           }
         }}
-        placeholder={`Ask Friday about ${threadGuest}…`}
+        placeholder={`Ask Friday about ${threadGuest}… (⌘/Ctrl+Enter)`}
         disabled={disabled}
         style={{
           flex: 1,
@@ -1330,12 +1330,6 @@ function DraftMessageActive({
       <textarea
         value={workingBody}
         onChange={(e) => setWorkingBody(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            if (!sendDisabled) onApprove();
-          }
-        }}
         placeholder="Draft body…"
         rows={3}
         style={{
@@ -1374,7 +1368,7 @@ function DraftMessageActive({
             cursor: sendDisabled ? 'not-allowed' : 'pointer',
             opacity: sendDisabled ? 0.5 : 1,
           }}
-          title="Cmd/Ctrl+Enter also sends"
+          title="Approve and send this draft"
         >
           <IconSend size={11} /> {isPersistedDraft ? 'Approve & send' : 'Send'}
         </button>
@@ -1525,21 +1519,12 @@ function EmbeddedDraftCard({
         )}
       </div>
 
-      {/* Editable body — Enter is for editing (newline). Sending to
-          the GUEST is the careful action and takes the modifier:
-          Cmd/Ctrl+Enter sends. Plain Enter is reserved for the Ask
-          Friday input below (chat with FC, high frequency).
-          Per Ishant 2026-05-17. */}
+      {/* Editable body. Sending to the guest stays a deliberate click;
+          Cmd/Ctrl+Enter belongs to the Ask Friday input below. */}
       <textarea
         value={workingBody}
         onChange={(e) => setWorkingBody(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            if (!sendDisabled && !rejecting) onApprove();
-          }
-        }}
-        placeholder="Draft will appear here when Friday writes one, or type your own… (⌘/Ctrl+Enter sends to guest)"
+        placeholder="Draft will appear here when Friday writes one, or type your own…"
         rows={4}
         style={{
           width: '100%',

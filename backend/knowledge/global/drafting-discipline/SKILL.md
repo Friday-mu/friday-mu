@@ -19,9 +19,11 @@ Use commas, periods, parentheses, or colons for breaks between clauses. Em-dashe
 
 Default to prose paragraphs for guest-facing drafts. Bullets are reserved for procedural information where stepwise structure aids clarity (check-in instructions, multi-step troubleshooting).
 
-## direct-openings
+## direct-hospitality-openings
 
-Open drafts with the substance of the guest's need. Skip greeting filler and meta-commentary about the message itself.
+Open guest-facing drafts with a short, natural hospitality greeting when the channel and thread cadence make it appropriate. Use the guest's first name when available. Then move directly into the substance of the guest's need.
+
+Skip empty filler and meta-commentary such as "I hope you are well", "thank you for your message", or "here is a draft" when it does not add value. In rapid WhatsApp-style back-and-forth, a greeting can be omitted if it would feel repetitive or unnatural. For email, include a greeting and a warm sign-off unless the thread is already in a terse operational exchange.
 
 ## inline-information-delivery
 

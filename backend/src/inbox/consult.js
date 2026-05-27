@@ -23,6 +23,7 @@ const {
   formatReservationContextForPrompt,
 } = require('./reservation_context');
 const { safeConversationSummary } = require('./summary_quality');
+const { buildLiveExchangeRateBlock } = require('./exchange_rates');
 const { publishFadEvent } = require('../realtime');
 const { withConsultConversationLease } = require('./consult_lock');
 const { recordLearningEvent } = require('../ask_friday/event_writer');
@@ -465,6 +466,7 @@ function buildConsultUserMessage({
   conversation,
   messages,
   draftBody,
+  liveExchangeRateBlock,
   sessionHistory,
   currentSessionSummary,
   fullThread = false,
@@ -497,6 +499,9 @@ function buildConsultUserMessage({
   if (draftBody) {
     parts.push(`[Current working draft]\n${draftBody}`);
   }
+  if (liveExchangeRateBlock) {
+    parts.push(liveExchangeRateBlock);
+  }
   const latestInbound = latestInboundMessage(messages);
   const updateGuard = statusUpdateSafetyInstruction({
     message: latestInbound,
@@ -525,6 +530,7 @@ function buildCompactConsultUserMessage({
   conversation,
   messages,
   draftBody,
+  liveExchangeRateBlock,
   sessionHistory,
   currentSessionSummary,
 }) {
@@ -558,6 +564,9 @@ function buildCompactConsultUserMessage({
   }
   if (draftBody) {
     parts.push(`[Current working draft]\n${truncateText(draftBody, 1800)}`);
+  }
+  if (liveExchangeRateBlock) {
+    parts.push(truncateText(liveExchangeRateBlock, 1800));
   }
   const latestInbound = latestInboundMessage(messages);
   const updateGuard = statusUpdateSafetyInstruction({
@@ -606,6 +615,7 @@ function composeSystemPrompt({
   draftBody,
   conversation,
   messages,
+  liveExchangeRateBlock,
   activeTeachingBlock,
   actionFeedbackBlock,
 }) {
@@ -669,6 +679,11 @@ TASK SUGGESTION PROTOCOL:
 [TASK]{"title":"Restock welcome amenities at LB-3 before tomorrow's arrival","department":"cleaning","priority":"high","property_code":"LB-3","description":"Standard arrival pack: water, coffee, snacks."}[/TASK]
 
 Be concise. Surface missing knowledge honestly. Do not invent prices, availability, property features, refunds, or operational commitments.`;
+  const liveRateProtocol = liveExchangeRateBlock ? `
+LIVE EXCHANGE-RATE PROTOCOL:
+- If the operator asks for currency conversion or exchange rates, use only the live exchange-rate context in the user message.
+- Do not answer exchange-rate questions from memory or historical/training data.
+- If the live lookup is unavailable, say that plainly and ask the operator to verify the live rate or try again.` : '';
   const confidenceGates = `
 CONFIDENCE GATES:
 - High confidence: answer or draft directly from provided context.
@@ -681,7 +696,7 @@ CONFIDENCE GATES:
   });
 
   return {
-    systemPrompt: `${protocol}${confidenceGates}\n\n${composed.system_message}${runtimeKnowledgeBlock}${activeTeachingBlock || ''}${actionFeedbackBlock || ''}`,
+    systemPrompt: `${protocol}${liveRateProtocol}${confidenceGates}\n\n${composed.system_message}${runtimeKnowledgeBlock}${activeTeachingBlock || ''}${actionFeedbackBlock || ''}`,
     missingKnowledge,
     metadata: composed.metadata,
     composerSystemMessage: composed.system_message,
@@ -1074,6 +1089,11 @@ router.post('/', attachIdentity, async (req, res) => {
         loadTeachingBlockWithIds(req.tenantId, propertyCode),
         loadActionFeedbackBlock(req.tenantId),
       ]);
+      const liveExchangeRateBlock = await buildLiveExchangeRateBlock({
+        instruction,
+        draftBody,
+        messages,
+      });
 
       const composed = composeSystemPrompt({
         context,
@@ -1082,6 +1102,7 @@ router.post('/', attachIdentity, async (req, res) => {
         draftBody,
         conversation,
         messages,
+        liveExchangeRateBlock,
         activeTeachingBlock: teachingsBlock,
         actionFeedbackBlock,
       });
@@ -1092,6 +1113,7 @@ router.post('/', attachIdentity, async (req, res) => {
         conversation,
         messages,
         draftBody,
+        liveExchangeRateBlock,
         sessionHistory,
         currentSessionSummary: session.running_summary || session.summary || null,
         fullThread,
@@ -1126,6 +1148,7 @@ router.post('/', attachIdentity, async (req, res) => {
           conversation,
           messages,
           draftBody,
+          liveExchangeRateBlock,
           sessionHistory,
           currentSessionSummary: session.running_summary || session.summary || null,
         });
