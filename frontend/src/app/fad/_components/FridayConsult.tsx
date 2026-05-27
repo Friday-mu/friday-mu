@@ -270,6 +270,7 @@ export function FridayConsult({
   const [missingKnowledge, setMissingKnowledge] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptStickToBottomRef = useRef(true);
+  const activeRequestControllerRef = useRef<AbortController | null>(null);
   const sessionScopeKey = `${conversationId || 'none'}:${context}:${currentDraft?.id || 'manual'}`;
   const previousSessionScopeRef = useRef(sessionScopeKey);
   const defaultFullThread = context === 'draft_review' || String(conversationId || '').startsWith('web-');
@@ -494,6 +495,7 @@ export function FridayConsult({
     scrollTranscriptToBottom();
 
     const controller = new AbortController();
+    activeRequestControllerRef.current = controller;
     const timeoutId = globalThis.setTimeout(() => controller.abort(), CONSULT_CLIENT_TIMEOUT_MS);
     try {
       const body: Record<string, unknown> = {
@@ -595,8 +597,12 @@ export function FridayConsult({
       setError(msg);
     } finally {
       globalThis.clearTimeout(timeoutId);
+      if (activeRequestControllerRef.current === controller) activeRequestControllerRef.current = null;
       setThinking(false);
     }
+  };
+  const cancelThinking = () => {
+    activeRequestControllerRef.current?.abort();
   };
 
   // ─── Draft actions (inline within the consult panel) ─────────────────
@@ -1016,7 +1022,9 @@ export function FridayConsult({
           (drafts, polish, KB lookups, teaching). Enter submits. */}
       <AskFridayInput
         onSubmit={(q) => submit(q)}
-        disabled={thinking || sendBusy}
+        disabled={sendBusy}
+        busy={thinking}
+        onCancel={cancelThinking}
         threadGuest={threadScope}
         useFullThread={useFullThread}
         onToggleFullThread={() => setUseFullThread((v) => !v)}
@@ -1028,12 +1036,16 @@ export function FridayConsult({
 function AskFridayInput({
   onSubmit,
   disabled,
+  busy,
+  onCancel,
   threadGuest,
   useFullThread,
   onToggleFullThread,
 }: {
   onSubmit: (q: string) => void;
   disabled: boolean;
+  busy: boolean;
+  onCancel: () => void;
   threadGuest: string;
   useFullThread: boolean;
   onToggleFullThread: () => void;
@@ -1041,7 +1053,7 @@ function AskFridayInput({
   const [text, setText] = useState('');
   const submit = () => {
     const q = text.trim();
-    if (!q || disabled) return;
+    if (!q || disabled || busy) return;
     setText('');
     onSubmit(q);
   };
@@ -1086,13 +1098,13 @@ function AskFridayInput({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          if (e.key === 'Enter') {
             e.preventDefault();
             submit();
           }
         }}
-        placeholder={`Ask Friday about ${threadGuest}… (⌘/Ctrl+Enter)`}
-        disabled={disabled}
+        placeholder={`Ask Friday about ${threadGuest}…`}
+        disabled={disabled || busy}
         style={{
           flex: 1,
           minWidth: 0,
@@ -1110,8 +1122,8 @@ function AskFridayInput({
       <button
         type="button"
         className="friday-consult-send-button"
-        onClick={submit}
-        disabled={disabled || !text.trim()}
+        onClick={busy ? onCancel : submit}
+        disabled={disabled || (!busy && !text.trim())}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -1120,17 +1132,17 @@ function AskFridayInput({
           fontSize: 11,
           fontWeight: 600,
           color: '#fff',
-          background: 'var(--color-brand-accent)',
+          background: busy ? 'var(--color-text-danger)' : 'var(--color-brand-accent)',
           border: 'none',
           borderRadius: 'var(--radius-sm)',
-          cursor: disabled || !text.trim() ? 'not-allowed' : 'pointer',
-          opacity: disabled || !text.trim() ? 0.5 : 1,
+          cursor: disabled || (!busy && !text.trim()) ? 'not-allowed' : 'pointer',
+          opacity: disabled || (!busy && !text.trim()) ? 0.5 : 1,
           flex: '0 0 auto',
           whiteSpace: 'nowrap',
         }}
       >
-        <IconSend size={12} />
-        <span className="friday-consult-send-label">Ask</span>
+        {busy ? <IconClose size={12} /> : <IconSend size={12} />}
+        <span className="friday-consult-send-label">{busy ? 'Stop' : 'Ask'}</span>
       </button>
     </div>
   );
@@ -1179,7 +1191,7 @@ function MessageRow({
       // The active draft — operator can edit + send. Body comes from
       // workingBody (live), not m.text (frozen snapshot).
       return (
-        <div style={{ margin: '8px 12px' }}>
+        <div style={{ margin: '8px 12px', minWidth: 0, maxWidth: '100%' }}>
           <DraftMessageActive
             workingBody={workingBody}
             setWorkingBody={setWorkingBody}
@@ -1196,7 +1208,7 @@ function MessageRow({
     }
     // Older draft — read-only, frozen.
     return (
-      <div style={{ margin: '6px 12px' }}>
+      <div style={{ margin: '6px 12px', minWidth: 0, maxWidth: '100%' }}>
         <DraftMessageHistory body={m.text} revisionNumber={m.draftRev} />
       </div>
     );
@@ -1204,7 +1216,7 @@ function MessageRow({
 
   const isUser = m.role === 'user';
   return (
-    <div style={{ margin: '4px 12px' }}>
+    <div style={{ margin: '4px 12px', minWidth: 0, maxWidth: '100%' }}>
       <div
         style={{
           display: 'flex',
@@ -1214,10 +1226,12 @@ function MessageRow({
         <div
           style={{
             maxWidth: '85%',
+            minWidth: 0,
             padding: '5px 9px',
             fontSize: 12,
             lineHeight: 1.4,
             whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
             color: 'var(--color-text-primary)',
             background: isUser
               ? 'var(--color-brand-accent)'
@@ -1252,7 +1266,7 @@ function MessageRow({
         />
       ))}
       {m.taskSuggestions && m.taskSuggestions.map((ts, ti) => (
-        <div key={`task-${ti}`} style={{ maxWidth: '85%', marginTop: 6 }}>
+        <div key={`task-${ti}`} style={{ maxWidth: '85%', minWidth: 0, marginTop: 6 }}>
           <TaskSuggestionCard
             suggestion={ts}
             dismissed={(m.taskSuggestionStates && m.taskSuggestionStates[ti]) !== 'pending'}
@@ -1272,9 +1286,10 @@ function MessageRow({
 function DraftMessageHistory({ body, revisionNumber }: { body: string; revisionNumber?: number }) {
   return (
     <div
-      className="fcard fcard-block"
+      className="fcard fcard-block friday-draft-card friday-draft-card-history"
       style={{
         maxWidth: '85%',
+        minWidth: 0,
         opacity: 0.65,
         whiteSpace: 'pre-wrap',
         lineHeight: 1.45,
@@ -1327,7 +1342,7 @@ function DraftMessageActive({
   const waOpen = waState.open;
   const waLeft = waState.expiresInMinutes;
   return (
-    <div className="fcard" style={{ padding: '8px 10px' }}>
+    <div className="fcard friday-draft-card friday-draft-card-active" style={{ padding: '8px 10px', minWidth: 0, maxWidth: '100%' }}>
       <div className="fcard-kicker" style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <span style={{ color: 'var(--color-brand-accent)' }}>
           <IconSparkle size={10} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''}

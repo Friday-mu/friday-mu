@@ -760,6 +760,15 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   const threadBodyRef = useRef<HTMLDivElement>(null);
   const lastScrolledThreadIdRef = useRef<string | null>(null);
   const forceBottomThreadIdRef = useRef<string | null>(null);
+  const [threadAwayFromBottom, setThreadAwayFromBottom] = useState(false);
+  const updateThreadScrollAffordance = () => {
+    const el = threadBodyRef.current;
+    if (!el) {
+      setThreadAwayFromBottom(false);
+      return;
+    }
+    setThreadAwayFromBottom(el.scrollHeight - el.scrollTop - el.clientHeight > 140);
+  };
   const scrollThreadToBottom = (behavior: ScrollBehavior = 'auto') => {
     const el = threadBodyRef.current;
     if (!el) return;
@@ -767,6 +776,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
       const latest = threadBodyRef.current;
       if (!latest) return;
       latest.scrollTo({ top: latest.scrollHeight, behavior });
+      setThreadAwayFromBottom(false);
     };
     requestAnimationFrame(() => requestAnimationFrame(run));
     window.setTimeout(run, 80);
@@ -1431,7 +1441,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
             }}
           />
 
-          <div className="inbox-thread-body" ref={threadBodyRef}>
+          <div className="inbox-thread-body" ref={threadBodyRef} onScroll={updateThreadScrollAffordance}>
             {/* Render full message thread when available (live data path). Falls
                 back to a single preview bubble for fixture/empty states.
                 Sent drafts merged inline as outbound bubbles with reviewer
@@ -1459,6 +1469,16 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
 	                user was actually drafting; the compose textarea below
 	                already exposes the draft surface. */}
 	          </div>
+          {threadAwayFromBottom && (
+            <button
+              type="button"
+              className="inbox-scroll-bottom"
+              onClick={() => scrollThreadToBottom('smooth')}
+              title="Jump to the latest message"
+            >
+              Latest ↓
+            </button>
+          )}
 	          {draftingDraft && !activeDraft && (
 	            <div
 	              style={{

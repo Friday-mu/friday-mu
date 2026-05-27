@@ -1029,6 +1029,7 @@ html.fad-dark .send-split-main { color: #0b0d14; }
   border-right: 0.5px solid var(--color-border-tertiary);
   overflow: hidden;
   min-width: 0;
+  position: relative;
 }
 .inbox-thread-header {
   padding: 16px 24px;
@@ -1086,6 +1087,25 @@ html.fad-dark .send-split-main { color: #0b0d14; }
   overscroll-behavior: contain;
   overflow-anchor: none;
   scrollbar-gutter: stable;
+}
+.inbox-scroll-bottom {
+  position: absolute;
+  right: 24px;
+  bottom: 156px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 650;
+  color: #fff;
+  background: var(--color-brand-accent);
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 20px rgba(15, 24, 54, 0.18);
+  cursor: pointer;
 }
 
 .msg-bubble {
@@ -2736,6 +2756,10 @@ html.fad-dark .fad-feedback-tab.is-active {
   .inbox-ai-summary-label { font-size: 8px; margin-bottom: 2px; }
 
   .inbox-thread-body { padding: 12px 14px; }
+  .inbox-scroll-bottom {
+    right: 14px;
+    bottom: 86px;
+  }
   .msg-bubble { margin-bottom: 10px; max-width: 92%; }
   .msg-bubble .msg-body { padding: 8px 12px; font-size: 13px; }
   .msg-meta { font-size: 10px; margin-bottom: 3px; }
@@ -4078,6 +4102,19 @@ html.fad-dark .fad-modal-overlay { background: rgba(0,0,0,0.6); }
 }
 .friday-consult-body .friday-msg { font-size: 12px; }
 .friday-consult-body .friday-msg-user { margin-left: 24px; font-size: 12px; }
+.friday-consult-body,
+.friday-consult-body * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.friday-draft-card {
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+}
+.friday-draft-card textarea {
+  max-height: 128px !important;
+  overflow-y: auto;
+}
 .friday-consult-input {
   padding: 8px 16px;
   display: flex; gap: 6px;
@@ -4112,11 +4149,19 @@ html.fad-dark .fad-modal-overlay { background: rgba(0,0,0,0.6); }
 
 @media (max-width: 768px) {
   .friday-consult {
-    max-height: 46dvh !important;
+    max-height: 44dvh !important;
   }
   .friday-consult-body {
-    min-height: 112px;
+    min-height: 0;
     padding: 8px 10px;
+  }
+  .friday-draft-card {
+    padding: 7px 8px !important;
+  }
+  .friday-draft-card textarea {
+    min-height: 52px !important;
+    max-height: 32dvh !important;
+    font-size: 12px !important;
   }
   .friday-consult-askbar {
     padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
@@ -12643,6 +12688,7 @@ body:has(.ops-create-drawer) .bug-fab {
   z-index: 2;
   position: relative;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  contain: layout paint;
 }
 
 .mcal-band-channel {
@@ -13126,9 +13172,11 @@ body:has(.ops-create-drawer) .bug-fab {
   white-space: nowrap;
   text-overflow: ellipsis;
   min-width: 0;
+  width: calc(100% - 4px);
   max-width: calc(100% - 4px);
   box-sizing: border-box;
   z-index: 3;
+  contain: layout paint;
   background: rgba(60, 100, 180, 0.85);
   color: white;
   letter-spacing: -0.01em;

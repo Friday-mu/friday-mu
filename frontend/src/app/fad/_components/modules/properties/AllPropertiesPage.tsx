@@ -35,6 +35,11 @@ export function AllPropertiesPage({ onOpen }: Props) {
   // to the FIN_OWNERS fixture for legacy demo rows, then the raw id.
   const ownerName = (p: Property) =>
     p.primaryOwnerName ?? FIN_OWNERS.find((o) => o.id === p.primaryOwnerId)?.name ?? p.primaryOwnerId;
+  const layoutSummary = (p: Property) => {
+    const beds = p.bedrooms === 0 ? 'Studio' : `${p.bedrooms} bd`;
+    const baths = typeof p.bathrooms === 'number' ? `${p.bathrooms} ba` : '— ba';
+    return `${beds} · ${baths} · ${p.maxOccupancy} pax`;
+  };
 
   const filtered = useMemo(() => {
     let rows: Property[] = PROPERTIES.slice();
@@ -156,7 +161,7 @@ export function AllPropertiesPage({ onOpen }: Props) {
               <SortHeader k="name" sort={sort} onToggle={toggleSort}>Name</SortHeader>
               <SortHeader k="lifecycle" sort={sort} onToggle={toggleSort}>Status</SortHeader>
               <SortHeader k="region" sort={sort} onToggle={toggleSort}>Region</SortHeader>
-              <SortHeader k="bedrooms" sort={sort} onToggle={toggleSort}>Beds</SortHeader>
+              <SortHeader k="bedrooms" sort={sort} onToggle={toggleSort}>Layout</SortHeader>
               <th>Owner</th>
               <th>Channels</th>
               <SortHeader k="occ" sort={sort} onToggle={toggleSort}>Occ 90d</SortHeader>
@@ -183,7 +188,7 @@ export function AllPropertiesPage({ onOpen }: Props) {
                   <td><strong>{p.name}</strong>{p.buildingName && <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{p.buildingName}</div>}</td>
                   <td><span className={`chip sm ${badge.tone === 'success' ? 'info' : badge.tone === 'warning' ? 'warn' : ''}`}>{badge.label}</span></td>
                   <td>{COHORT_LABEL[p.region]}</td>
-                  <td>{p.bedrooms === 0 ? 'Studio' : p.bedrooms}</td>
+                  <td style={{ fontSize: 12 }}>{layoutSummary(p)}</td>
                   <td>{ownerName(p)}</td>
                   <td style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{channels}</td>
                   <td>{p.occupancy90d > 0 ? `${Math.round(p.occupancy90d * 100)}%` : '—'}</td>
@@ -228,7 +233,7 @@ export function AllPropertiesPage({ onOpen }: Props) {
               </div>
               <div className="prop-mobile-meta">
                 <span>{COHORT_LABEL[p.region]}</span>
-                <span>{p.bedrooms === 0 ? 'Studio' : `${p.bedrooms} bed`}</span>
+                <span>{layoutSummary(p)}</span>
                 <span>{ownerName(p)}</span>
               </div>
               <div className="prop-mobile-stats">

@@ -266,7 +266,7 @@ export function MultiCalendarGrid({
   // Date columns must stay fixed; task chips and reservation bands are overlays,
   // not column sizing inputs.
   const gridWidthPx = PROPERTY_COL_PX + windowDays * DAY_COL_PX;
-  const gridTemplateColumns = `${PROPERTY_COL_PX}px repeat(${windowDays}, ${DAY_COL_PX}px)`;
+  const gridTemplateColumns = `${PROPERTY_COL_PX}px repeat(${windowDays}, minmax(${DAY_COL_PX}px, ${DAY_COL_PX}px))`;
 
   const sortedProperties = useMemo(() => {
     const liveOrder = (p: Property) =>
@@ -483,6 +483,8 @@ export function MultiCalendarGrid({
                           gridRow: 1,
                           alignSelf: hasReservation ? 'flex-start' : 'flex-end',
                           justifySelf: 'stretch',
+                          width: DAY_COL_PX - 4,
+                          maxWidth: DAY_COL_PX - 4,
                           minWidth: 0,
                         }}
                         onClick={(e) => {

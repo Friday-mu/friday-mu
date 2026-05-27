@@ -102,8 +102,8 @@ router.post('/subscribe', attachIdentity, async (req, res) => {
 
 async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fad', tag = undefined, data = {} }) {
   const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
-  if (!tenantId || ids.length === 0) return { sent: 0, skipped: true, reason: 'no_targets' };
-  if (!configureWebPush()) return { sent: 0, skipped: true, reason: 'not_configured' };
+  if (!tenantId || ids.length === 0) return { sent: 0, pruned: 0, failed: 0, subscriptions: 0, skipped: true, reason: 'no_targets' };
+  if (!configureWebPush()) return { sent: 0, pruned: 0, failed: 0, subscriptions: 0, skipped: true, reason: 'not_configured' };
   const { rows } = await query(
     `SELECT id, endpoint, subscription
        FROM push_subscriptions
@@ -112,8 +112,12 @@ async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fa
         AND subscription IS NOT NULL`,
     [tenantId, ids],
   );
+  if (rows.length === 0) {
+    return { sent: 0, pruned: 0, failed: 0, subscriptions: 0, skipped: false, reason: 'no_subscriptions' };
+  }
   let sent = 0;
   let pruned = 0;
+  let failed = 0;
   await Promise.all(rows.map(async (row) => {
     if (!isValidSubscription(row.subscription)) {
       pruned += 1;
@@ -137,11 +141,12 @@ async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fa
         pruned += 1;
         await query(`DELETE FROM push_subscriptions WHERE id = $1`, [row.id]).catch(() => {});
       } else {
+        failed += 1;
         console.warn('[push] delivery failed:', e.statusCode || '', e.message);
       }
     }
   }));
-  return { sent, pruned, skipped: false };
+  return { sent, pruned, failed, subscriptions: rows.length, skipped: false };
 }
 
 module.exports = { router, sendPushToUsers, _test: { isValidSubscription, pushConfigStatus } };
