@@ -64,6 +64,7 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"scheduledTasks": 1');
     expect(context).toContain('"planningConstraints"');
     expect(context).toContain('"nonUrgentOccupiedTaskIds"');
+    expect(context).toContain('"calendarPricingSignals"');
     expect(context).toContain('"totalMinor": 34000');
     expect(context).toContain('Fix AC drain leak');
     expect(context).toContain('Bryan Henri');

@@ -184,6 +184,22 @@ function guestUrgentTask(task) {
     );
 }
 
+function formatPricingSignal(reservation) {
+  const pricing = reservation?.calendarPricing;
+  if (!pricing || typeof pricing !== 'object') return null;
+  return {
+    reservationId: reservation.id || null,
+    propertyCode: reservation.propertyCode || null,
+    checkInDate: reservation.checkInDate || null,
+    checkOutDate: reservation.checkOutDate || null,
+    totalMinor: pricing.totalMinor ?? null,
+    minPriceMinor: pricing.minPriceMinor ?? null,
+    maxPriceMinor: pricing.maxPriceMinor ?? null,
+    currencyCode: pricing.currencyCode || null,
+    syncedAt: pricing.syncedAt || null,
+  };
+}
+
 function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, reservations, currentPlan, selectedDate, rangeStart, rangeEnd }) {
   const daySet = new Set([
     ...daysInRange(rangeStart || selectedDate, rangeEnd || selectedDate),
@@ -221,6 +237,10 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, reservatio
     occupancyPolicy: 'Do not schedule non-urgent non-guest-requested property work while occupied. Checkout day is available after checkout for turnover work. Urgent guest-requested issues may be handled during occupancy.',
     lunchPolicy: 'Protect one hour lunch for every staff member; prefer 12:00-13:00, fallback 11:00-12:00 or 13:00-14:00. Stagger office staff so someone remains available.',
     availabilityPricingSource: 'Use reservation overlays and calendarPricing from the FAD reservation cache when present; do not invent availability or prices if cache fields are missing.',
+    calendarPricingSignals: reservations
+      .map(formatPricingSignal)
+      .filter(Boolean)
+      .slice(0, 60),
     unassignedOpenTaskIds: scheduledTasks.concat(unscheduledTasks)
       .filter((task) => task.assigneeIds.length === 0)
       .map((task) => task.id)

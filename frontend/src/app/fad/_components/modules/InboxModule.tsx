@@ -785,7 +785,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     if (distanceFromBottom < 80) {
       scrollThreadToBottom('auto');
     }
-  }, [selected, thread?.id, thread?.messages?.length]);
+  }, [thread?.id, thread?.messages?.length]);
   const unread = sourceThreads.filter((t) => t.unread).length;
 
   const activeFilterCount =

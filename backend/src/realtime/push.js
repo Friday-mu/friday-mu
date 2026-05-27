@@ -32,9 +32,33 @@ function configureWebPush() {
   }
 }
 
+function pushConfigStatus() {
+  const hasPublicKey = Boolean(vapidPublicKey());
+  const hasPrivateKey = Boolean(vapidPrivateKey());
+  return {
+    hasPublicKey,
+    configured: hasPublicKey && hasPrivateKey,
+  };
+}
+
+function isValidSubscription(subscription) {
+  return Boolean(
+    subscription
+    && typeof subscription.endpoint === 'string'
+    && subscription.endpoint.length > 0
+    && subscription.keys
+    && typeof subscription.keys.p256dh === 'string'
+    && subscription.keys.p256dh.length > 0
+    && typeof subscription.keys.auth === 'string'
+    && subscription.keys.auth.length > 0,
+  );
+}
+
 router.get('/vapid-key', (_req, res) => {
+  const status = pushConfigStatus();
   res.json({
     publicKey: vapidPublicKey(),
+    configured: status.configured,
   });
 });
 
@@ -42,8 +66,8 @@ router.post('/subscribe', attachIdentity, async (req, res) => {
   const subscription = req.body?.subscription || req.body;
   const endpoint = typeof subscription?.endpoint === 'string' ? subscription.endpoint : '';
   const keys = subscription?.keys || {};
-  if (!endpoint) {
-    return res.status(400).json({ error: 'subscription.endpoint required' });
+  if (!isValidSubscription(subscription)) {
+    return res.status(400).json({ error: 'valid push subscription endpoint and keys required' });
   }
   try {
     const { rows } = await query(
@@ -78,7 +102,8 @@ router.post('/subscribe', attachIdentity, async (req, res) => {
 
 async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fad', tag = undefined, data = {} }) {
   const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
-  if (!tenantId || ids.length === 0 || !configureWebPush()) return { sent: 0, skipped: true };
+  if (!tenantId || ids.length === 0) return { sent: 0, skipped: true, reason: 'no_targets' };
+  if (!configureWebPush()) return { sent: 0, skipped: true, reason: 'not_configured' };
   const { rows } = await query(
     `SELECT id, endpoint, subscription
        FROM push_subscriptions
@@ -88,7 +113,13 @@ async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fa
     [tenantId, ids],
   );
   let sent = 0;
+  let pruned = 0;
   await Promise.all(rows.map(async (row) => {
+    if (!isValidSubscription(row.subscription)) {
+      pruned += 1;
+      await query(`DELETE FROM push_subscriptions WHERE id = $1`, [row.id]).catch(() => {});
+      return;
+    }
     const payload = JSON.stringify({
       title,
       body,
@@ -102,14 +133,15 @@ async function sendPushToUsers({ tenantId, userIds, title, body = '', url = '/fa
       await webpush.sendNotification(row.subscription, payload, { TTL: 60 * 60 * 6 });
       sent += 1;
     } catch (e) {
-      if (e.statusCode === 404 || e.statusCode === 410) {
+      if (e.statusCode === 400 || e.statusCode === 404 || e.statusCode === 410) {
+        pruned += 1;
         await query(`DELETE FROM push_subscriptions WHERE id = $1`, [row.id]).catch(() => {});
       } else {
         console.warn('[push] delivery failed:', e.statusCode || '', e.message);
       }
     }
   }));
-  return { sent, skipped: false };
+  return { sent, pruned, skipped: false };
 }
 
-module.exports = { router, sendPushToUsers };
+module.exports = { router, sendPushToUsers, _test: { isValidSubscription, pushConfigStatus } };

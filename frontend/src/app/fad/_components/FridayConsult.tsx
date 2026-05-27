@@ -1024,6 +1024,9 @@ function AskFridayInput({
         display: 'flex',
         gap: 4,
         alignItems: 'center',
+        width: '100%',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
       }}
     >
       <button
@@ -1042,6 +1045,7 @@ function AskFridayInput({
           borderRadius: 'var(--radius-sm)',
           cursor: 'pointer',
           flex: '0 0 auto',
+          whiteSpace: 'nowrap',
         }}
       >
         {useFullThread ? '✓ Full' : '∞'}
@@ -1060,6 +1064,9 @@ function AskFridayInput({
         disabled={disabled}
         style={{
           flex: 1,
+          minWidth: 0,
+          width: '100%',
+          boxSizing: 'border-box',
           padding: '6px 9px',
           fontSize: 12,
           color: 'var(--color-text-primary)',
@@ -1071,6 +1078,7 @@ function AskFridayInput({
       />
       <button
         type="button"
+        className="friday-consult-send-button"
         onClick={submit}
         disabled={disabled || !text.trim()}
         style={{
@@ -1086,9 +1094,12 @@ function AskFridayInput({
           borderRadius: 'var(--radius-sm)',
           cursor: disabled || !text.trim() ? 'not-allowed' : 'pointer',
           opacity: disabled || !text.trim() ? 0.5 : 1,
+          flex: '0 0 auto',
+          whiteSpace: 'nowrap',
         }}
       >
-        <IconSend size={12} /> Ask
+        <IconSend size={12} />
+        <span className="friday-consult-send-label">Ask</span>
       </button>
     </div>
   );

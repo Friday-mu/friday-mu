@@ -71,7 +71,7 @@ const SOURCE_LABEL: Record<TaskSource, string> = {
 };
 
 function taskOriginLabel(task: Task): string {
-  if (task.source === 'breezeway') return task.bzId ? `Breezeway #${task.bzId}` : 'Breezeway import';
+  if (task.source === 'breezeway') return task.bzId ? `Imported #${task.bzId}` : 'Imported task';
   if (task.source === 'reported_issue') return 'Reported issue';
   if (task.source === 'inbox_ai') return 'Inbox proposal';
   if (task.source === 'reservation_trigger') return 'Reservation task';
@@ -1093,6 +1093,7 @@ const READABLE_TASK_DURATION_MINUTES = 120;
 const SCHEDULE_DAY_START_MINUTES = 8 * 60;
 const SCHEDULE_DAY_END_MINUTES = 17 * 60;
 const SCHEDULE_TASK_GAP_MINUTES = 15;
+const SCHEDULE_AGENT_MAX_DRAFT_TASKS = 30;
 const STAFF_LUNCH_WINDOWS = [
   { label: '12:00-13:00', start: 12 * 60, end: 13 * 60 },
   { label: '11:00-12:00', start: 11 * 60, end: 12 * 60 },
@@ -1210,6 +1211,44 @@ function propertyOccupiedOnDate(propertyCode: string | null | undefined, day: st
 function taskFitsOccupancyPolicy(task: Task, day: string, reservations: ScheduleReservation[]): boolean {
   const occupied = propertyOccupiedOnDate(task.propertyCode, day, reservations);
   return !occupied || isGuestUrgentTask(task);
+}
+
+function formatMinorAmount(minor: number | null | undefined, currencyCode?: string | null): string | null {
+  if (minor == null || !Number.isFinite(Number(minor))) return null;
+  const currency = currencyCode || 'MUR';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(Number(minor) / 100);
+}
+
+function reservationPricingSummary(reservation: ScheduleReservation): string | null {
+  const pricing = reservation.calendarPricing;
+  if (!pricing) return null;
+  const total = formatMinorAmount(pricing.totalMinor, pricing.currencyCode);
+  const min = formatMinorAmount(pricing.minPriceMinor, pricing.currencyCode);
+  const max = formatMinorAmount(pricing.maxPriceMinor, pricing.currencyCode);
+  const nightly = min && max && min !== max ? `${min}-${max}/night` : (min || max ? `${min || max}/night` : null);
+  return [total ? `${total} stay` : null, nightly, pricing.syncedAt ? `synced ${pricing.syncedAt.slice(0, 10)}` : null]
+    .filter(Boolean)
+    .join(', ') || null;
+}
+
+function reservationOverlayNoteForTask(task: Task, day: string, reservations: ScheduleReservation[]): string | null {
+  const code = normalizeScheduleProperty(task.propertyCode || taskPropertyLabel(task));
+  if (!code || code === 'No property') return null;
+  const matching = reservations.filter((reservation) => (
+    normalizeScheduleProperty(reservation.propertyCode) === code && reservationOverlapsDay(reservation, day)
+  ));
+  if (matching.length === 0) return null;
+  const occupied = matching.find((reservation) => reservationOccupiesDay(reservation, day)) || null;
+  const priced = matching.find((reservation) => reservationPricingSummary(reservation)) || null;
+  const priceSummary = priced ? reservationPricingSummary(priced) : null;
+  if (occupied && priceSummary) return `Reservation/price overlay: ${occupied.guestName} in-house; ${priceSummary}.`;
+  if (occupied) return `Reservation overlay: ${occupied.guestName} in-house; price cache not loaded.`;
+  if (priceSummary) return `Calendar price cache visible: ${priceSummary}.`;
+  return null;
 }
 
 function opsPolicyForUser(user: OperationsStaffUser) {
@@ -1396,6 +1435,7 @@ function buildScheduleAgentPlan(input: {
   const assignable = input.staffOptions.filter((user) => user.canAssign);
   if (assignable.length === 0) return [];
   const staffLoad = new Map(assignable.map((user) => [user.id, 0]));
+  const staffTaskCount = new Map(assignable.map((user) => [user.id, 0]));
   const staffIntervals = new Map(assignable.map((user) => [user.id, [] as Array<{ start: number; end: number }>]));
   const staffLunchPreferences = buildLunchPreferences(assignable);
   for (const task of input.scheduledTasks) {
@@ -1403,6 +1443,7 @@ function buildScheduleAgentPlan(input: {
     const start = task.dueDate === input.selectedDate ? timeToMinutes(task.dueTime) : null;
     for (const id of task.assigneeIds) {
       staffLoad.set(id, (staffLoad.get(id) || 0) + duration);
+      staffTaskCount.set(id, (staffTaskCount.get(id) || 0) + 1);
       if (start != null && staffIntervals.has(id)) {
         staffIntervals.get(id)?.push({ start, end: start + duration });
       }
@@ -1410,8 +1451,12 @@ function buildScheduleAgentPlan(input: {
   }
 
   const candidates = mergeTaskSlices(
-    input.scheduledTasks.filter((task) => task.dueDate === input.selectedDate && !task.dueTime && OPEN_SCHEDULE_STATUSES.includes(task.status)),
-    input.unscheduledTasks.slice(0, 8),
+    input.scheduledTasks.filter((task) => (
+      task.dueDate === input.selectedDate
+      && OPEN_SCHEDULE_STATUSES.includes(task.status)
+      && (!task.dueTime || task.assigneeIds.length === 0)
+    )),
+    input.unscheduledTasks.filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status)),
   )
     .filter((task) => !CLOSED_STATUS.has(task.status))
     .filter((task) => taskFitsOccupancyPolicy(task, input.selectedDate, input.reservations))
@@ -1420,34 +1465,93 @@ function buildScheduleAgentPlan(input: {
       compareText(taskPropertyLabel(a), taskPropertyLabel(b)) ||
       compareText(taskTitle(a), taskTitle(b))
     ))
-    .slice(0, 12);
+    .slice(0, SCHEDULE_AGENT_MAX_DRAFT_TASKS);
 
   return candidates.flatMap((task) => {
     const duration = taskDurationMinutes(task);
-    const chosenAssignees = task.assigneeIds.length > 0
-      ? task.assigneeIds
-      : assignable.length > 0
-        ? [assignable
-          .map((user) => ({
+    const existingPrimaryId = task.assigneeIds.find((id) => staffIntervals.has(id)) || task.assigneeIds[0] || null;
+    const existingIntervals = existingPrimaryId ? (staffIntervals.get(existingPrimaryId) || []) : [];
+    const existingLunchWindow = existingPrimaryId ? staffLunchPreferences.get(existingPrimaryId) || STAFF_LUNCH_WINDOWS[0] : STAFF_LUNCH_WINDOWS[0];
+    const existingRequestedStart = timeToMinutes(task.dueTime);
+    const existingLunch = chooseLunchWindow(existingIntervals, existingLunchWindow);
+    const existingCanKeepRequestedStart = existingPrimaryId && existingRequestedStart != null
+      && existingRequestedStart >= SCHEDULE_DAY_START_MINUTES
+      && existingRequestedStart + duration <= SCHEDULE_DAY_END_MINUTES
+      && existingLunch
+      && !existingIntervals.some((interval) => intervalOverlaps(existingRequestedStart, existingRequestedStart + duration, interval.start, interval.end))
+      && !intervalOverlaps(existingRequestedStart, existingRequestedStart + duration, existingLunch.start, existingLunch.end);
+    const existingEarliest = existingIntervals.length > 0
+      ? Math.max(...existingIntervals.map((item) => item.end + SCHEDULE_TASK_GAP_MINUTES))
+      : SCHEDULE_DAY_START_MINUTES;
+    const existingStart = existingPrimaryId
+      ? existingCanKeepRequestedStart
+        ? existingRequestedStart
+        : nextAvailableStart(existingIntervals, existingEarliest, duration, existingLunchWindow)
+      : null;
+
+    const bestCandidate = task.assigneeIds.length > 0 && existingPrimaryId && existingStart != null
+      ? {
+        id: existingPrimaryId,
+        start: existingStart,
+        lunchWindow: existingLunchWindow,
+        rank: 999,
+      }
+      : assignable
+        .map((user) => {
+          const intervals = staffIntervals.get(user.id) || [];
+          const lunchWindow = staffLunchPreferences.get(user.id) || STAFF_LUNCH_WINDOWS[0];
+          const requestedStart = timeToMinutes(task.dueTime);
+          const lunch = chooseLunchWindow(intervals, lunchWindow);
+          const canKeepRequestedStart = requestedStart != null
+            && requestedStart >= SCHEDULE_DAY_START_MINUTES
+            && requestedStart + duration <= SCHEDULE_DAY_END_MINUTES
+            && lunch
+            && !intervals.some((interval) => intervalOverlaps(requestedStart, requestedStart + duration, interval.start, interval.end))
+            && !intervalOverlaps(requestedStart, requestedStart + duration, lunch.start, lunch.end);
+          const earliest = intervals.length > 0 ? Math.max(...intervals.map((item) => item.end + SCHEDULE_TASK_GAP_MINUTES)) : SCHEDULE_DAY_START_MINUTES;
+          const start = canKeepRequestedStart
+            ? requestedStart
+            : nextAvailableStart(intervals, earliest, duration, lunchWindow);
+          const load = staffLoad.get(user.id) || 0;
+          const count = staffTaskCount.get(user.id) || 0;
+          return {
             id: user.id,
-            score: taskSkillScore(task, user),
-            load: staffLoad.get(user.id) || 0,
-          }))
-          .sort((a, b) => (
-            b.score - a.score ||
-            a.load - b.load ||
-            compareText(staffDisplayName(input.staffOptions, a.id), staffDisplayName(input.staffOptions, b.id))
-          ))[0]?.id].filter((id): id is string => Boolean(id))
-        : [];
-    const primaryAssigneeId = chosenAssignees[0];
-    const intervals = primaryAssigneeId ? (staffIntervals.get(primaryAssigneeId) || []) : [];
-    const earliest = intervals.length > 0 ? Math.max(...intervals.map((item) => item.end + SCHEDULE_TASK_GAP_MINUTES)) : SCHEDULE_DAY_START_MINUTES;
-    const lunchWindow = primaryAssigneeId ? staffLunchPreferences.get(primaryAssigneeId) || STAFF_LUNCH_WINDOWS[0] : STAFF_LUNCH_WINDOWS[0];
-    const start = nextAvailableStart(intervals, earliest, duration, lunchWindow);
+            start,
+            lunchWindow,
+            rank: taskSkillScore(task, user) - (load / 45) - (count * 4),
+            load,
+            count,
+          };
+        })
+        .filter((item): item is {
+          id: string;
+          start: number;
+          lunchWindow: StaffLunchWindow;
+          rank: number;
+          load: number;
+          count: number;
+        } => item.start != null)
+        .sort((a, b) => (
+          b.rank - a.rank ||
+          a.load - b.load ||
+          a.count - b.count ||
+          compareText(staffDisplayName(input.staffOptions, a.id), staffDisplayName(input.staffOptions, b.id))
+        ))[0] || null;
+
+    if (!bestCandidate) return [];
+    const chosenAssignees = task.assigneeIds.length > 0 ? task.assigneeIds : [bestCandidate.id];
+    const primaryAssigneeId = bestCandidate.id;
+    const intervals = staffIntervals.get(primaryAssigneeId) || [];
+    const lunchWindow = bestCandidate.lunchWindow;
+    const start = bestCandidate.start;
     if (start == null) return [];
-    chosenAssignees.forEach((id) => staffLoad.set(id, (staffLoad.get(id) || 0) + duration));
-    if (primaryAssigneeId) intervals.push({ start, end: start + duration });
+    chosenAssignees.forEach((id) => {
+      staffLoad.set(id, (staffLoad.get(id) || 0) + duration);
+      staffTaskCount.set(id, (staffTaskCount.get(id) || 0) + 1);
+    });
+    intervals.push({ start, end: start + duration });
     const occupied = propertyOccupiedOnDate(task.propertyCode, input.selectedDate, input.reservations);
+    const overlayNote = reservationOverlayNoteForTask(task, input.selectedDate, input.reservations);
     return [{
       taskId: task.id,
       title: taskTitle(task),
@@ -1456,10 +1560,15 @@ function buildScheduleAgentPlan(input: {
       dueTime: minutesToTime(start),
       assigneeIds: chosenAssignees,
       reason: [
-        task.dueDate ? 'No exact time on the selected day.' : 'Unscheduled open work pulled into the selected day.',
+        task.dueDate
+          ? task.dueTime
+            ? 'Already timed on the selected day; assigning feasible staff.'
+            : 'No exact time on the selected day.'
+          : 'Unscheduled open work pulled into the selected day.',
         chosenAssignees.length > 0 ? `Assigned to ${chosenAssignees.map((id) => staffDisplayName(input.staffOptions, id)).join(', ')}.` : 'No eligible staff loaded.',
         `Lunch protected outside the task window (${lunchWindow.label} preferred).`,
         occupied ? `Allowed during occupancy because this is urgent guest-linked work for ${occupied.guestName}.` : null,
+        overlayNote,
       ].filter(Boolean).join(' '),
     }];
   });
@@ -1623,6 +1732,9 @@ function OpsFridayConsultPanel({
         notes: [
           `${clearTimeTargetCount} visible tasks have exact times.`,
           `${clearAllTargetCount} visible tasks have exact times or assignees.`,
+          `Assignable staff loaded: ${staffOptions.filter((user) => user.canAssign).map((user) => user.name).join(', ') || 'none'}.`,
+          `${scheduledTasks.concat(unscheduledTasks).filter((task) => OPEN_SCHEDULE_STATUSES.includes(task.status) && task.assigneeIds.length === 0).length} visible open tasks are currently unassigned.`,
+          `${reservations.filter((reservation) => reservation.calendarPricing).length} reservation overlays include cached calendar pricing; missing pricing means availability/price is not proved.`,
           undoStack.length > 0 ? `Last reversible step: ${undoStack[undoStack.length - 1]?.label}` : 'No reversible schedule step yet.',
         ].join(' '),
       });
@@ -1971,6 +2083,10 @@ function SchedulePage({
     () => mergeScheduleStaff(staffUsers, [...rawScheduleTasks, ...unscheduledPage.tasks]),
     [rawScheduleTasks, staffUsers, unscheduledPage.tasks],
   );
+  const plannerLunchPreferences = useMemo(
+    () => buildLunchPreferences(staffOptions.filter((user) => user.canAssign)),
+    [staffOptions],
+  );
 
   const allKnownTasks = useMemo(
     () => mergeTaskSlices(rawScheduleTasks, unscheduledPage.tasks),
@@ -2133,6 +2249,11 @@ function SchedulePage({
   };
 
   const scheduleToday = (task: Task) => {
+    const occupied = propertyOccupiedOnDate(task.propertyCode, selectedDate, reservations);
+    if (occupied && !isGuestUrgentTask(task)) {
+      fireToast(`${taskPropertyLabel(task)} is occupied by ${occupied.guestName}; schedule non-urgent work after checkout.`);
+      return;
+    }
     void patchTask(
       task,
       { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status },
@@ -2142,6 +2263,11 @@ function SchedulePage({
   };
 
   const patchForDropTarget = (task: Task, target: PlannerDropTarget): Parameters<typeof updateTask>[0]['patch'] | null => {
+    const occupied = propertyOccupiedOnDate(task.propertyCode, target.date, reservations);
+    if (occupied && !isGuestUrgentTask(task)) {
+      fireToast(`${taskPropertyLabel(task)} is occupied by ${occupied.guestName}; schedule non-urgent work after checkout.`);
+      return null;
+    }
     const patch: Parameters<typeof updateTask>[0]['patch'] = {};
     if (target.rowType === 'property') {
       const taskProperty = normalizeScheduleProperty(taskPropertyLabel(task));
@@ -2162,6 +2288,14 @@ function SchedulePage({
         // isn't useful.
         const previewTime = dragPreview && dragPreview.bucketId === target.bucketId ? dragPreview.time : null;
         patch.dueTime = target.dueTime ?? previewTime ?? bucket?.defaultTime ?? '';
+      }
+      if (target.rowId !== UNASSIGNED_SCHEDULE_ID) {
+        const start = timeToMinutes(patch.dueTime);
+        const lunchWindow = plannerLunchPreferences.get(target.rowId) || STAFF_LUNCH_WINDOWS[0];
+        if (start != null && intervalOverlaps(start, start + taskDurationMinutes(task), lunchWindow.start, lunchWindow.end)) {
+          fireToast(`${staffDisplayName(staffOptions, target.rowId)} needs lunch around ${lunchWindow.label}. Move this task outside that hour.`);
+          return null;
+        }
       }
     }
     if (task.status === 'reported') patch.status = 'scheduled';

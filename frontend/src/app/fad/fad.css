@@ -1058,6 +1058,8 @@ html.fad-dark .send-split-main { color: #0b0d14; }
    * to the document and causing the whole module to twitch on
    * touchpads / momentum-scrolling. */
   overscroll-behavior: contain;
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
 }
 
 .msg-bubble { margin-bottom: 16px; max-width: 78%; }
@@ -3995,12 +3997,18 @@ html.fad-dark .fad-modal-overlay { background: rgba(0,0,0,0.6); }
 .friday-consult-askbar {
   flex: 0 0 auto;
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 .friday-consult-context-toggle {
   display: inline-flex;
   align-items: center;
   min-width: 58px;
   justify-content: center;
+  box-sizing: border-box;
+}
+.friday-consult-send-button {
+  box-sizing: border-box;
 }
 
 @media (max-width: 768px) {
@@ -4016,6 +4024,13 @@ html.fad-dark .fad-modal-overlay { background: rgba(0,0,0,0.6); }
   }
   .friday-consult-context-toggle {
     min-width: 44px;
+  }
+  .friday-consult-send-button {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  .friday-consult-send-label {
+    display: none;
   }
 }
 
