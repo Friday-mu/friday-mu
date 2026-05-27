@@ -69,6 +69,30 @@ describe('feedback router', () => {
     expect(params).toEqual([TENANT_ID, 'bug', 'new']);
   });
 
+  test('lists recent feedback before the id route catches recent as an id', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{
+        id: 'fb-1',
+        type: 'bug',
+        description: 'Broken',
+        status: 'new',
+        has_screenshot: false,
+      }],
+    });
+
+    const res = await request(app())
+      .get('/api/feedback/recent?limit=3')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(200);
+
+    expect(res.body.results).toHaveLength(1);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('WHERE tenant_id = $1');
+    expect(sql).toContain('ORDER BY created_at DESC');
+    expect(sql).toContain('LIMIT $2');
+    expect(params).toEqual([TENANT_ID, 3]);
+  });
+
   test('loads one tenant-scoped feedback row with the full screenshot', async () => {
     query.mockResolvedValueOnce({
       rows: [{

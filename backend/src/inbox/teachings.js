@@ -108,9 +108,9 @@ router.post('/', attachIdentity, async (req, res) => {
          evidence_count, confidence, polarity
        )
        VALUES (
-         $1, $2, $3, $4, $5,
-         $6, 'active', $7, NOW(), NOW(), $7,
-         1, 1, $8
+         $1::uuid, $2::text, $3::text, $4::text, $5::text[],
+         $6::text, 'active', $7::text, NOW(), NOW(), $8::text,
+         1, 1, $9::text
        )
        RETURNING id, instruction, scope, property_code, property_codes, source,
                  status, taught_by, taught_at, approved_at, approved_by,
@@ -122,6 +122,7 @@ router.post('/', attachIdentity, async (req, res) => {
         propertyCode,
         propertyCodes,
         source,
+        actor,
         actor,
         polarity,
       ],

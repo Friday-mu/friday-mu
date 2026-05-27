@@ -350,6 +350,16 @@ function selectFeedbackFields({ includeScreenshot = false } = {}) {
   `;
 }
 
+function canManageFeedback(req) {
+  return req.identity.userRole === 'admin' || req.identity.userRole === 'director';
+}
+
+function normalizeRecentLimit(value) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed)) return 15;
+  return Math.max(1, Math.min(parsed, 100));
+}
+
 // ─── Push + email + in-app notification fan-out ─────────────────────
 // On every new feedback submission, notify every admin/director in the
 // tenant via the standard FAD notifications pipeline (DB row + SSE
@@ -603,7 +613,7 @@ router.post('/', attachIdentity, async (req, res) => {
 });
 
 router.get('/', attachIdentity, async (req, res) => {
-  if (req.identity.userRole !== 'admin' && req.identity.userRole !== 'director') {
+  if (!canManageFeedback(req)) {
     return res.status(403).json({ error: 'Forbidden — admin/director only' });
   }
   try {
@@ -638,8 +648,29 @@ router.get('/', attachIdentity, async (req, res) => {
   }
 });
 
+router.get('/recent', attachIdentity, async (req, res) => {
+  if (!canManageFeedback(req)) {
+    return res.status(403).json({ error: 'Forbidden — admin/director only' });
+  }
+  try {
+    const limit = normalizeRecentLimit(req.query.limit);
+    const { rows } = await query(
+      `SELECT ${selectFeedbackFields()}
+       FROM feedback
+       WHERE tenant_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [req.tenantId, limit],
+    );
+    res.json({ results: rows });
+  } catch (err) {
+    console.error('[feedback] GET recent error:', err.message);
+    res.status(500).json({ error: 'Failed to list recent feedback' });
+  }
+});
+
 router.get('/:id', attachIdentity, async (req, res) => {
-  if (req.identity.userRole !== 'admin' && req.identity.userRole !== 'director') {
+  if (!canManageFeedback(req)) {
     return res.status(403).json({ error: 'Forbidden — admin/director only' });
   }
   try {
@@ -661,7 +692,7 @@ router.get('/:id', attachIdentity, async (req, res) => {
 // PATCH /api/feedback/:id — admin/director only. Used by the future
 // Settings → Feedback inbox to triage status + add resolution notes.
 router.patch('/:id', attachIdentity, async (req, res) => {
-  if (req.identity.userRole !== 'admin' && req.identity.userRole !== 'director') {
+  if (!canManageFeedback(req)) {
     return res.status(403).json({ error: 'Forbidden — admin/director only' });
   }
   try {
