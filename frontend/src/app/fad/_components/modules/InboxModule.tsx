@@ -1229,31 +1229,30 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
         ) : (
         <div className="inbox-thread">
           <div className="inbox-thread-header">
-            <button
-              className="btn ghost sm inbox-mobile-back"
-              onClick={() => setMobileThreadOpen(false)}
-              style={{ marginBottom: 8 }}
-            >
-              ← Back to inbox
-            </button>
+            <div className="inbox-thread-toolbar">
+              <button
+                className="btn ghost sm inbox-mobile-back"
+                onClick={() => setMobileThreadOpen(false)}
+              >
+                ← Inbox
+              </button>
             {/* Conversation 'subject' line stripped 2026-05-17 per Ishant —
                 the AI summary or first-line preview was big + redundant.
                 Start with the meta row: name, property, channel, dates,
                 guests, price — everything you need to triage at a glance. */}
             {isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+              <div className="inbox-thread-mobile-details">
                 <button
                   type="button"
                   className={'btn ghost sm' + (mobileDetailsOpen ? ' active' : '')}
                   onClick={() => setMobileDetailsOpen((v) => !v)}
-                  style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
                   aria-expanded={mobileDetailsOpen}
                 >
-                  {mobileDetailsOpen ? 'Hide details ▴' : 'Details ▾'}
+                  {mobileDetailsOpen ? 'Hide' : 'Details'}
                 </button>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6, gap: 6, flexWrap: 'wrap' }}>
+            <div className="inbox-thread-actions">
               {/* Narrow-viewport (≤1180px) Reservation button — the inline
                   right panel is hidden by CSS below that breakpoint, so
                   this drawer is the only way to see financials / payment
@@ -1265,10 +1264,9 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                   className={'btn ghost sm' + (rightDrawerOpen ? ' active' : '')}
                   onClick={() => setRightDrawerOpen(true)}
                   title="Show reservation context, financials, and guest details"
-                  style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
                   aria-expanded={rightDrawerOpen}
                 >
-                  <IconPin size={10} /> Reservation
+                  <IconPin size={10} /> <span className="inbox-thread-action-label">Reservation</span>
                 </button>
               )}
               <button
@@ -1277,9 +1275,9 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                 onClick={handleMarkUnread}
                 disabled={thread.unread}
                 title={thread.unread ? 'This thread is already unread' : 'Put this thread back in the unread queue'}
-                style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
               >
-                Mark unread
+                <span className="inbox-thread-action-label">Mark unread</span>
+                <span className="inbox-thread-action-short">Unread</span>
               </button>
               {/* Inter-module link (2026-05-25): "+ Task" creates an Ops
                   task with the inbox thread + reservation + property
@@ -1287,7 +1285,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                   request?" gap. */}
               <button
                 type="button"
-                className="btn ghost sm"
+                className="btn ghost sm inbox-thread-task-btn"
                 onClick={() => {
                   // Prefer the subject as the task title; fall back to a
                   // formatted "Follow up · <guest>". Drop the preview into
@@ -1304,10 +1302,10 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                   });
                 }}
                 title="Create an Ops task linked to this thread + reservation"
-                style={{ fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
               >
                 + Task
               </button>
+            </div>
             </div>
             <div className={'inbox-thread-details' + (isMobile && !mobileDetailsOpen ? ' mobile-hidden' : '')}>
             <div className="inbox-thread-meta" style={{ marginBottom: 8, flexWrap: 'wrap' }}>

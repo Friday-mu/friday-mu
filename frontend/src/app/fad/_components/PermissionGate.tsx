@@ -78,6 +78,14 @@ const ROLES: Array<{ id: TaskUser['role']; label: string; example: string }> = [
   { id: 'field', label: 'Field', example: 'Bryan' },
 ];
 
+const ROLE_SHORT_LABEL: Record<TaskUser['role'], string> = {
+  director: 'Dir',
+  commercial_marketing: 'CM',
+  ops_manager: 'Ops',
+  field: 'Fld',
+  external: 'Ext',
+};
+
 /**
  * Small inline dropdown for switching the acting role. Renders in the Header.
  * Gated to real-role=director so non-directors using FAD for real never see it.
@@ -94,9 +102,9 @@ export function RoleSwitcher() {
   const isViewingAsOther = role !== realRole;
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="fad-role-switcher-wrap" style={{ position: 'relative' }}>
       <button
-        className="fad-util-btn"
+        className="fad-util-btn fad-role-switcher-btn"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
@@ -112,7 +120,8 @@ export function RoleSwitcher() {
           color: isViewingAsOther ? 'var(--color-brand-accent)' : undefined,
         }}
       >
-        View as · {current?.label ?? role}
+        <span className="fad-role-switcher-full">View as · {current?.label ?? role}</span>
+        <span className="fad-role-switcher-short">{ROLE_SHORT_LABEL[role] ?? 'Role'}</span>
       </button>
       {open && (
         <>

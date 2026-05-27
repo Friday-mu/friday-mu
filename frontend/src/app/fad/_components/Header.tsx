@@ -100,7 +100,10 @@ export function Header({
           onClick={onGoHome}
           title="Home · Inbox"
         >
-          <span className="fad-brand-wordmark">FAD</span>
+          <span className="fad-brand-wordmark">
+            <span className="fad-brand-wordmark-full">FAD</span>
+            <span className="fad-brand-wordmark-short">F</span>
+          </span>
         </button>
       </div>
 
@@ -117,7 +120,7 @@ export function Header({
       <div className="fad-utilities">
         <RoleSwitcher />
         <button
-          className={'fad-util-btn' + (fridayOpen ? ' active' : '')}
+          className={'fad-util-btn fad-friday-btn' + (fridayOpen ? ' active' : '')}
           onClick={onOpenFriday}
           title="Ask Friday  ⌘/"
         >
@@ -125,7 +128,7 @@ export function Header({
         </button>
         <div style={{ position: 'relative' }}>
           <button
-            className={'fad-util-btn' + (bellOpen ? ' active' : '')}
+            className={'fad-util-btn fad-bell-btn' + (bellOpen ? ' active' : '')}
             onClick={onOpenBell}
             title={counts.total > 0 ? `Notifications · ${counts.total} unread${counts.urgent > 0 ? ` · ${counts.urgent} urgent` : ''}` : 'Notifications'}
           >
@@ -150,7 +153,7 @@ export function Header({
         </div>
         <div style={{ position: 'relative' }}>
           <button
-            className={'fad-util-btn' + (helpOpen ? ' active' : '')}
+            className={'fad-util-btn fad-help-btn' + (helpOpen ? ' active' : '')}
             onClick={onOpenHelp}
             title="Help"
           >
@@ -159,7 +162,7 @@ export function Header({
           {helpOpen && <HelpDropdown />}
         </div>
         <button
-          className="fad-util-btn"
+          className="fad-util-btn fad-theme-btn"
           onClick={onToggleTheme}
           title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
         >

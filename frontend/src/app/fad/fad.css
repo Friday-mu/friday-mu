@@ -225,6 +225,7 @@ html.fad-dark .fad-brand-name { color: #e8e9ec; }
   padding: 2px 4px 2px 2px;
 }
 html.fad-dark .fad-brand-wordmark { color: #f3f4f7; }
+.fad-brand-wordmark-short { display: none; }
 
 .fad-ask-wrap { flex: 1; display: flex; justify-content: center; }
 .fad-ask-pill {
@@ -279,6 +280,7 @@ html.fad-dark .fad-brand-wordmark { color: #f3f4f7; }
   margin-left: 4px;
 }
 html.fad-dark .fad-avatar { background: #5680CA; color: #0F1836; }
+.fad-role-switcher-short { display: none; }
 
 .fad-dropdown {
   position: absolute;
@@ -1032,6 +1034,28 @@ html.fad-dark .send-split-main { color: #0b0d14; }
   padding: 16px 24px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
 }
+.inbox-thread-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+.inbox-thread-mobile-details { display: flex; }
+.inbox-thread-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.inbox-thread-toolbar .btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.inbox-thread-action-short { display: none; }
 .inbox-thread-subject {
   font-size: 16px;
   font-weight: 500;
@@ -2478,7 +2502,7 @@ html.fad-dark .fad-feedback-tab.is-active {
    * detail / task drawer open should slide over them, not behind. */
   .fad-sidebar {
     position: fixed;
-    top: 48px;
+    top: calc(48px + env(safe-area-inset-top, 0px));
     left: 0;
     bottom: 0;
     width: 260px;
@@ -2500,7 +2524,7 @@ html.fad-dark .fad-feedback-tab.is-active {
   html.fad-dark .fad-sidebar { box-shadow: 4px 0 16px rgba(0, 0, 0, 0.4); }
   .fad-sidebar-backdrop {
     position: fixed;
-    top: 48px;
+    top: calc(48px + env(safe-area-inset-top, 0px));
     left: 0;
     right: 0;
     bottom: 0;
@@ -2514,26 +2538,59 @@ html.fad-dark .fad-feedback-tab.is-active {
   html.fad-dark .fad-sidebar-backdrop { background: rgba(0, 0, 0, 0.6); }
 
   /* Header */
-  .fad-header { padding: 0 10px; gap: 6px; }
-  .fad-brand { min-width: 0; gap: 6px; }
-  .fad-brand span { display: none; }
-  .fad-brand .fad-brand-wordmark { display: inline-block; font-size: 18px; }
-  .fad-ask-pill {
-    min-width: 0;
-    padding: 6px 10px;
+  .fad-header {
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    flex-basis: calc(48px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 10px 0;
+    gap: 5px;
   }
-  .fad-ask-pill .ask-label { display: none; }
-  .fad-ask-pill .kbd { display: none; }
-  .fad-utilities { gap: 2px; }
+  .fad-brand { min-width: 0; gap: 5px; flex: 0 0 auto; }
+  .fad-brand span { display: none; }
+  .fad-brand .fad-brand-wordmark {
+    display: inline-block;
+    width: 18px;
+    padding: 0;
+    font-size: 16px;
+    text-align: center;
+  }
+  .fad-brand-wordmark-full { display: none; }
+  .fad-brand-wordmark-short { display: inline !important; }
+  .fad-brand-link { padding: 2px; margin: 0; }
+  .fad-ask-wrap { display: none; }
+  .fad-utilities { gap: 2px; margin-left: auto; min-width: 0; }
   .fad-brand .fad-util-btn,
   .fad-utilities .fad-util-btn {
-    flex: 0 0 44px;
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
+    flex: 0 0 34px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    border-radius: 7px;
   }
-  .fad-utilities .fad-util-btn[title="Help"],
-  .fad-utilities .fad-util-btn[title="Notifications"] { display: none; }
+  .fad-help-btn,
+  .fad-theme-btn { display: none !important; }
+  .fad-role-switcher-btn {
+    width: 34px !important;
+    min-width: 34px !important;
+    flex-basis: 34px !important;
+    padding: 0 !important;
+    font-size: 9px !important;
+    line-height: 1 !important;
+  }
+  .fad-role-switcher-full { display: none; }
+  .fad-role-switcher-short { display: inline; }
+  .fad-avatar {
+    width: 30px;
+    height: 30px;
+    margin-left: 0;
+    font-size: 10px;
+  }
+  .fad-bell-count {
+    top: -3px;
+    right: -3px;
+    min-width: 17px;
+    height: 15px;
+    font-size: 8px;
+  }
 
   /* Module header — column-stack on mobile so title is always on top, then
      tabs / actions in clean rows below. Avoids overlap when actions wrap. */
@@ -2630,7 +2687,27 @@ html.fad-dark .fad-feedback-tab.is-active {
   .inbox-thread-open-mobile .inbox-chips-row { display: none; }
 
   /* Mobile thread header — compact */
-  .inbox-thread-header { padding: 10px 14px; }
+  .inbox-thread-header { padding: 8px 10px; }
+  .inbox-thread-toolbar {
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+  .inbox-thread-actions {
+    flex: 0 1 auto;
+    gap: 4px;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+  .inbox-thread-toolbar .btn {
+    min-height: 30px;
+    padding: 3px 6px !important;
+    font-size: 10px !important;
+  }
+  .inbox-thread-action-label { display: none; }
+  .inbox-thread-action-short { display: inline; }
+  .inbox-thread-task-btn { display: none !important; }
   .inbox-thread-subject { font-size: 14px; margin-bottom: 2px; line-height: 1.3; }
   .inbox-thread-meta {
     font-size: 11px;
@@ -2638,9 +2715,7 @@ html.fad-dark .fad-feedback-tab.is-active {
     gap: 4px 8px;
   }
   .inbox-mobile-back {
-    padding: 4px 8px !important;
     font-size: 11px !important;
-    margin-bottom: 6px !important;
   }
 
   /* Mobile AI toolbar — collapsed by default */
@@ -2704,7 +2779,7 @@ html.fad-dark .fad-feedback-tab.is-active {
   .inbox-compose-toolbar { margin-bottom: 6px; font-size: 10px; flex-wrap: wrap; }
   .inbox-compose-textarea { min-height: 60px; font-size: 13px; }
   .inbox-compose-actions { margin-top: 6px; flex-wrap: wrap; }
-  .inbox-thread-header { padding: 12px 16px; }
+  .inbox-thread-header { padding: 8px 10px; }
   .inbox-thread-subject { font-size: 15px; }
   .inbox-thread-body { padding: 12px 16px; }
   .inbox-compose { padding: 10px 16px 14px; }
