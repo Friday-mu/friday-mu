@@ -759,24 +759,38 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
   // cases without adding new state.
   const threadBodyRef = useRef<HTMLDivElement>(null);
   const lastScrolledThreadIdRef = useRef<string | null>(null);
+  const forceBottomThreadIdRef = useRef<string | null>(null);
   const scrollThreadToBottom = (behavior: ScrollBehavior = 'auto') => {
     const el = threadBodyRef.current;
     if (!el) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const latest = threadBodyRef.current;
-        if (!latest) return;
-        latest.scrollTo({ top: latest.scrollHeight, behavior });
-      });
-    });
+    const run = () => {
+      const latest = threadBodyRef.current;
+      if (!latest) return;
+      latest.scrollTo({ top: latest.scrollHeight, behavior });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(run));
+    window.setTimeout(run, 80);
+    window.setTimeout(run, 240);
   };
   useEffect(() => {
+    const threadId = thread?.id ?? null;
+    const switchedThread = lastScrolledThreadIdRef.current !== threadId;
+    if (switchedThread) {
+      forceBottomThreadIdRef.current = threadId;
+      lastScrolledThreadIdRef.current = threadId;
+    }
     const el = threadBodyRef.current;
-    if (!el) return;
-    const switchedThread = lastScrolledThreadIdRef.current !== (thread?.id ?? null);
+    if (!el) {
+      if (switchedThread) window.setTimeout(() => scrollThreadToBottom('auto'), 0);
+      return;
+    }
     if (switchedThread) {
       scrollThreadToBottom('auto');
-      lastScrolledThreadIdRef.current = thread?.id ?? null;
+      return;
+    }
+    if (forceBottomThreadIdRef.current === threadId) {
+      scrollThreadToBottom('auto');
+      forceBottomThreadIdRef.current = null;
       return;
     }
     // Same thread, message-count change. Stick to bottom only if we were
@@ -785,7 +799,7 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
     if (distanceFromBottom < 80) {
       scrollThreadToBottom('auto');
     }
-  }, [thread?.id, thread?.messages?.length]);
+  }, [thread?.id, thread?.messages?.length, mobileThreadOpen, consultOpen]);
   const unread = sourceThreads.filter((t) => t.unread).length;
 
   const activeFilterCount =
@@ -1067,6 +1081,8 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
                 setSelected(t.id);
                 syncSelectedThreadUrl(t.id);
                 setMobileThreadOpen(true);
+                forceBottomThreadIdRef.current = t.id;
+                window.setTimeout(() => scrollThreadToBottom('auto'), 300);
               }}
               style={{
                 display: 'grid',

@@ -147,6 +147,12 @@ const CHIP_INSTRUCTIONS: Record<string, string> = {
   'What does the guest want?': 'Identify what the guest wants, what we know, and the next best reply.',
 };
 
+const CONSULT_CLIENT_TIMEOUT_MS = 90_000;
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 interface Props {
   threadScope: string;
   /** Conversation id — required for live LLM context loading. When
@@ -263,6 +269,7 @@ export function FridayConsult({
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [missingKnowledge, setMissingKnowledge] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const transcriptStickToBottomRef = useRef(true);
   const sessionScopeKey = `${conversationId || 'none'}:${context}:${currentDraft?.id || 'manual'}`;
   const previousSessionScopeRef = useRef(sessionScopeKey);
   const defaultFullThread = context === 'draft_review' || String(conversationId || '').startsWith('web-');
@@ -384,16 +391,25 @@ export function FridayConsult({
     try { window.localStorage.setItem(FC_HEIGHT_STORAGE_KEY, 'auto'); } catch { /* ignore */ }
   };
 
-  // Auto-scroll only when the transcript receives a new turn or draft.
-  // Do not depend on workingBody: editing the draft should not pull the
-  // operator back to the bottom while they are reading earlier context.
-  useEffect(() => {
+  const updateTranscriptStickiness = () => {
     const el = transcriptRef.current;
     if (!el) return;
+    transcriptStickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  };
+
+  const scrollTranscriptToBottom = () => {
     requestAnimationFrame(() => {
       const latest = transcriptRef.current;
       if (latest) latest.scrollTop = latest.scrollHeight;
     });
+  };
+
+  // Auto-scroll only while the operator is already reading the bottom
+  // or after they submit a new Ask Friday turn. This prevents the panel
+  // from pulling them down while they scroll older Consult context.
+  useEffect(() => {
+    if (!transcriptStickToBottomRef.current) return;
+    scrollTranscriptToBottom();
   }, [msgs.length, thinking, currentDraft?.id]);
 
   // Seed an initial 'draft' chat message when the conversation arrives
@@ -439,11 +455,12 @@ export function FridayConsult({
   // so the parent can null it out (avoids a re-fire loop).
   useEffect(() => {
     if (!pendingQuery) return;
+    if (thinking) return;
     const q = pendingQuery;
     onPendingQueryConsumed?.();
     void submit(q);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingQuery]);
+  }, [pendingQuery, thinking]);
 
   useEffect(() => {
     if (previousSessionScopeRef.current === sessionScopeKey) return;
@@ -454,6 +471,7 @@ export function FridayConsult({
       }).catch(() => {});
     }
     previousSessionScopeRef.current = sessionScopeKey;
+    transcriptStickToBottomRef.current = true;
     setUseFullThread(defaultFullThread);
     setSessionId(undefined);
     seededDraftIdRef.current = currentDraft?.id || null;
@@ -469,10 +487,14 @@ export function FridayConsult({
     const q = text.trim();
     if (!q || thinking) return;
 
+    transcriptStickToBottomRef.current = true;
     setError(null);
     setMsgs((m) => [...m, { role: 'user', text: q }]);
     setThinking(true);
+    scrollTranscriptToBottom();
 
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), CONSULT_CLIENT_TIMEOUT_MS);
     try {
       const body: Record<string, unknown> = {
         text: q,
@@ -491,6 +513,7 @@ export function FridayConsult({
       const data = await apiFetch('/api/inbox/consult', {
         method: 'POST',
         body: JSON.stringify(body),
+        signal: controller.signal,
       }) as ConsultResponse;
 
       // Adoption tracking — every consult query, with response signals:
@@ -563,12 +586,15 @@ export function FridayConsult({
         setError('Friday went quiet — try rephrasing.');
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Friday is unreachable right now.';
+      const msg = isAbortError(e)
+        ? 'Friday is taking too long on this ask. Nothing changed; retry with a narrower question or turn off full thread.'
+        : e instanceof Error ? e.message : 'Friday is unreachable right now.';
       if (msg.includes('draft_stale') || msg.includes('invalid_draft_state')) {
         onRefreshThread?.();
       }
       setError(msg);
     } finally {
+      globalThis.clearTimeout(timeoutId);
       setThinking(false);
     }
   };
@@ -752,7 +778,7 @@ export function FridayConsult({
   // 2026-05-17.
   return (
     <div
-      className="friday-consult"
+      className={'friday-consult' + (fcHeight !== null ? ' is-explicit-height' : '')}
       style={{
         position: 'relative',
         zIndex: 5,
@@ -866,7 +892,12 @@ export function FridayConsult({
         <div
           className="friday-consult-body"
           ref={transcriptRef}
-          style={{ flex: '1 1 auto', minHeight: hasConsultContent ? 'clamp(160px, 24vh, 300px)' : 0, maxHeight: 'none' }}
+          onScroll={updateTranscriptStickiness}
+          style={{
+            flex: '1 1 auto',
+            minHeight: fcHeight !== null ? 0 : hasConsultContent ? 'clamp(160px, 24vh, 300px)' : 0,
+            maxHeight: 'none',
+          }}
         >
           {(() => {
             // Latest draft msg is the editable one; older drafts are
@@ -1461,19 +1492,19 @@ function EmbeddedDraftCard({
   return (
     <div
       style={{
-        margin: '4px 12px 8px',
-        padding: 10,
-        background: 'var(--color-background-accent-soft, rgba(56, 132, 255, 0.06))',
-        border: '0.5px solid var(--color-border-accent, rgba(56, 132, 255, 0.3))',
-        borderRadius: 'var(--radius-md)',
+        margin: '4px 8px 6px',
+        padding: 8,
+        background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
       }}
     >
       {/* Header: source label + confidence + revision number + WA timer */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
         <span style={{
           fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: 0.5,
+          fontWeight: 600,
+          letterSpacing: 0,
           textTransform: 'uppercase',
           color: 'var(--color-text-tertiary)',
         }}>
@@ -1536,14 +1567,14 @@ function EmbeddedDraftCard({
         value={workingBody}
         onChange={(e) => setWorkingBody(e.target.value)}
         placeholder="Draft will appear here when Friday writes one, or type your own…"
-        rows={4}
+        rows={3}
         style={{
           width: '100%',
-          minHeight: 72,
-          maxHeight: 160,
-          padding: 8,
-          fontSize: 13,
-          lineHeight: 1.45,
+          minHeight: 58,
+          maxHeight: 126,
+          padding: 7,
+          fontSize: 12,
+          lineHeight: 1.42,
           fontFamily: 'inherit',
           color: 'var(--color-text-primary)',
           background: 'var(--color-background-primary)',
