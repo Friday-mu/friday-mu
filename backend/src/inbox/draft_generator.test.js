@@ -21,6 +21,8 @@ const {
   applyStatusUpdateSafety,
   ACTIONABLE_DRAFT_STATES_SQL,
   DRAFT_FALLBACK_MODEL,
+  ensureFriendlyOpening,
+  hasRecentFridayReplyBeforeTrigger,
 } = require('./draft_generator');
 
 describe('draft generator language policy', () => {
@@ -184,6 +186,39 @@ describe('draft generator latest guest turn handling', () => {
     ];
 
     expect(latestGuestTurnMessages(messages, 'm-3').map((m) => m.id)).toEqual(['m-3']);
+  });
+});
+
+describe('draft generator guest-facing opening guard', () => {
+  test('adds a greeting to first-turn drafts that start too abruptly', () => {
+    const result = ensureFriendlyOpening('To get an accurate quote, could you let us know how many adults and children will join?', {
+      conversation: { guest_name: 'Julien Melendez' },
+      messages: [
+        { id: 'm-1', direction: 'inbound', body: 'Hello, I am interested in renting.', created_at: '2026-05-25T10:00:00Z' },
+      ],
+      triggeringMessageId: 'm-1',
+    });
+
+    expect(result).toBe('Hi Julien,\n\nTo get an accurate quote, could you let us know how many adults and children will join?');
+  });
+
+  test('keeps natural openings and rapid back-and-forth replies unchanged', () => {
+    expect(ensureFriendlyOpening('Thanks, we will check and come back to you shortly.', {
+      conversation: { guest_name: 'Julien Melendez' },
+      messages: [],
+      triggeringMessageId: 'm-1',
+    })).toBe('Thanks, we will check and come back to you shortly.');
+
+    const messages = [
+      { id: 'm-1', direction: 'outbound', body: 'We can arrange that.', created_at: '2026-05-25T10:00:00Z' },
+      { id: 'm-2', direction: 'inbound', body: 'How much?', created_at: '2026-05-25T10:05:00Z' },
+    ];
+    expect(hasRecentFridayReplyBeforeTrigger(messages, 'm-2')).toBe(true);
+    expect(ensureFriendlyOpening('It would be €30 for the transfer.', {
+      conversation: { guest_name: 'Julien Melendez' },
+      messages,
+      triggeringMessageId: 'm-2',
+    })).toBe('It would be €30 for the transfer.');
   });
 });
 

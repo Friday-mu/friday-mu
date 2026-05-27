@@ -129,6 +129,7 @@ const GREETINGS = [
   'hi ', 'hello ', 'dear ', 'bonjour ', 'hey ', 'hi,', 'hello,', 'dear,', 'bonjour,', 'hey,',
   'thank you', 'thanks', 'welcome', 'good morning', 'good afternoon', 'good evening',
 ];
+const RAPID_BACK_AND_FORTH_GREETING_SKIP_MS = 30 * 60 * 1000;
 
 const STATUS_UPDATE_REQUEST_RE = /\b(?:any\s+(?:news|updates?)|do\s+you\s+have\s+(?:any\s+)?(?:news|updates?)|what(?:'s| is)\s+the\s+latest|status\s+update|latest\s+update|nouveau(?:x)?|nouvelles?|avez[-\s]?vous\s+du\s+nouveau|du\s+nouveau|des\s+nouvelles|mise\s+[àa]\s+jour|avancement|où\s+en\s+est|ou\s+en\s+est)\b/i;
 const OPS_INCIDENT_RE = /\b(?:water|eau|hot\s*water|chauffe[-\s]?eau|ballon\s+d['’]?eau|toilet|toilettes?|flush|plumbing|pump|pompe|supply|alimentation|syndic|building\s+(?:management|manager|supply)|gestion\s+de\s+l['’]?immeuble|incident|issue|problem|probl[eè]me|refund|remboursement|repair|r[eé]paration|restored?|r[eé]tabli|r[eè]gl[ée])\b/i;
@@ -204,6 +205,45 @@ function guestFirstName(conversation) {
   const raw = String(conversation?.guest_name || '').trim();
   if (!raw) return '';
   return raw.split(/\s+/)[0].replace(/[^\p{L}'’-]/gu, '');
+}
+
+function hasFriendlyOpening(draftBody) {
+  const firstLine = String(draftBody || '').trim().split(/\n/)[0]?.trim().toLowerCase() || '';
+  if (!firstLine) return false;
+  return GREETINGS.some((greeting) => firstLine.startsWith(greeting));
+}
+
+function hasRecentFridayReplyBeforeTrigger(messages, triggeringMessageId) {
+  if (!Array.isArray(messages) || messages.length === 0) return false;
+  const triggerIndex = triggeringMessageId
+    ? messages.findIndex((msg) => String(msg.id) === String(triggeringMessageId))
+    : messages.length - 1;
+  if (triggerIndex < 0) return false;
+
+  const triggerTime = new Date(messages[triggerIndex]?.created_at || 0).getTime();
+  if (!Number.isFinite(triggerTime) || triggerTime <= 0) return false;
+
+  for (let i = triggerIndex - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg) continue;
+    if (msg.direction === 'inbound') continue;
+    if (msg.is_auto_response) continue;
+    const outboundTime = new Date(msg.created_at || 0).getTime();
+    if (!Number.isFinite(outboundTime) || outboundTime <= 0) continue;
+    return triggerTime - outboundTime >= 0
+      && triggerTime - outboundTime <= RAPID_BACK_AND_FORTH_GREETING_SKIP_MS;
+  }
+  return false;
+}
+
+function ensureFriendlyOpening(draftBody, { conversation, messages, triggeringMessageId } = {}) {
+  const body = String(draftBody || '').trim();
+  if (!body || hasFriendlyOpening(body)) return body;
+  if (hasRecentFridayReplyBeforeTrigger(messages, triggeringMessageId)) return body;
+
+  const name = guestFirstName(conversation);
+  const greeting = name ? `Hi ${name},` : 'Hello,';
+  return `${greeting}\n\n${body}`;
 }
 
 function buildSafeStatusUpdateDraft({ message, messages, conversation }) {
@@ -306,6 +346,7 @@ Rules:
 - Reply only to the latest guest message.
 - Prefer the current reservation/property context shown in the prompt.
 - Be concise, warm, operationally precise, and do not invent prices, availability, refunds, access instructions, or commitments.
+- For first/new guest turns, open with a short greeting using the guest's first name when available. Only omit the greeting in rapid back-and-forth after a recent Friday reply.
 - If key operational facts are missing, write a useful reply that says the team will verify and come back.
 - Output the reply text only. No preamble or commentary.
 
@@ -645,6 +686,8 @@ Rewrite the draft to address the revision instruction above. Preserve everything
 
 Messages labeled [Automated reply already sent] or [System notification] indicate actions already taken — do NOT repeat information that was already sent to the guest.
 
+For email, Airbnb, booking-platform, or first/new guest turns, begin with a short natural greeting using the guest's first name when available. Only omit the greeting if this is a rapid back-and-forth after a recent Friday reply.
+
 Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
   }
 
@@ -740,6 +783,13 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
       messages: allMessages,
     });
   if (safety.applied) draftBody = safety.draftBody;
+  if (!revisionInstruction && !safety.applied) {
+    draftBody = ensureFriendlyOpening(draftBody, {
+      conversation,
+      messages: allMessages,
+      triggeringMessageId: message.id,
+    });
+  }
 
   // 7. Confidence scoring.
   let confidence = calculateConfidence({
@@ -1012,6 +1062,9 @@ module.exports = {
   statusUpdateSafetyInstruction,
   buildSafeStatusUpdateDraft,
   guestFirstName,
+  hasFriendlyOpening,
+  hasRecentFridayReplyBeforeTrigger,
+  ensureFriendlyOpening,
   applyStatusUpdateSafety,
   OPERATOR_DRAFT_LANGUAGE_CONTRACT,
   ACTIONABLE_DRAFT_STATES_SQL,
