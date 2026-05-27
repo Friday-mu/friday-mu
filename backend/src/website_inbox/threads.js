@@ -33,6 +33,11 @@ function bookingRequestIdFromRecord(record) {
   return record?.request_id || record?.reference || null;
 }
 
+function normalizeWebsiteThreadRouteId(value) {
+  const raw = String(value || '').trim();
+  return raw.startsWith('web-') ? raw.slice(4) : raw;
+}
+
 function normalizeProofPayload(body, request, identity) {
   const now = new Date().toISOString();
   return {
@@ -622,6 +627,7 @@ function mountThreads(router) {
   router.get('/threads/:id/booking-request', attachIdentity, async (req, res) => {
     try {
       if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
+      const threadId = normalizeWebsiteThreadRouteId(req.params.id);
       const { rows } = await query(
         `SELECT id, thread_id, request_id, listing_slug, listing_title,
                 check_in, check_out, nights,
@@ -639,7 +645,7 @@ function mountThreads(router) {
            FROM fad_portal_booking_requests
           WHERE thread_id = $1 AND tenant_id = $2
           LIMIT 1`,
-        [req.params.id, req.tenantId],
+        [threadId, req.tenantId],
       );
       if (rows.length === 0) {
         return res.status(404).json({ error: 'booking_request_not_found' });
@@ -654,6 +660,7 @@ function mountThreads(router) {
   router.patch('/threads/:id/booking-request', attachIdentity, async (req, res) => {
     try {
       if (!req.tenantId) return res.status(401).json({ error: 'tenant context required' });
+      const threadId = normalizeWebsiteThreadRouteId(req.params.id);
       const action = String(req.body?.action || '').trim();
       if (!['set_payment_terms', 'mark_proof_received', 'upload_proof_elsewhere', 'mark_funds_received', 'queue_guesty_reservation_create', 'decline', 'reset_to_review'].includes(action)) {
         return res.status(400).json({
@@ -665,7 +672,7 @@ function mountThreads(router) {
       const lookup = await query(
         `SELECT * FROM fad_portal_booking_requests
           WHERE thread_id = $1 AND tenant_id = $2 LIMIT 1`,
-        [req.params.id, req.tenantId],
+        [threadId, req.tenantId],
       );
       if (lookup.rows.length === 0) {
         return res.status(404).json({ error: 'booking_request_not_found' });
@@ -706,7 +713,7 @@ function mountThreads(router) {
                             updated_at = NOW()
                       WHERE thread_id = $5 AND tenant_id = $6
                       RETURNING *`;
-        updateParams = [choice, currency, deadline, actorId, req.params.id, req.tenantId];
+        updateParams = [choice, currency, deadline, actorId, threadId, req.tenantId];
       } else if (action === 'mark_proof_received' || action === 'upload_proof_elsewhere') {
         const request = lookup.rows[0];
         const payload = normalizeProofPayload(req.body || {}, request, req.identity);
@@ -721,7 +728,7 @@ function mountThreads(router) {
              RETURNING id`,
             [
               req.tenantId,
-              req.params.id,
+              threadId,
               `staff-proof:${request.request_id}:${Date.now()}`,
               JSON.stringify(payload),
             ],
@@ -729,7 +736,7 @@ function mountThreads(router) {
           eventId = eventRes.rows[0]?.id || null;
         }
         const updated = await applyProofToBookingRequest({
-          threadId: req.params.id,
+          threadId,
           tenantId: req.tenantId,
           requestId: request.request_id,
           eventId,
@@ -744,11 +751,11 @@ function mountThreads(router) {
                   last_event_at = CASE WHEN $1::uuid IS NULL THEN last_event_at ELSE NOW() END,
                   updated_at = NOW()
             WHERE id = $2 AND tenant_id = $3`,
-          [eventId, req.params.id, req.tenantId],
+          [eventId, threadId, req.tenantId],
         );
         await publishFadEvent({
           type: 'website_inbox.thread_updated',
-          payload: { threadId: req.params.id, eventId, eventType: 'booking.proof_uploaded' },
+          payload: { threadId, eventId, eventType: 'booking.proof_uploaded' },
         }).catch(() => {});
         return res.json(updated);
       } else if (action === 'mark_funds_received') {
@@ -779,7 +786,7 @@ function mountThreads(router) {
                             updated_at = NOW()
                       WHERE thread_id = $4 AND tenant_id = $5
                       RETURNING *`;
-        updateParams = [paidMinor, reservationId, actorId, req.params.id, req.tenantId];
+        updateParams = [paidMinor, reservationId, actorId, threadId, req.tenantId];
       } else if (action === 'queue_guesty_reservation_create') {
         const request = lookup.rows[0];
         if (!['proof_received', 'confirmed'].includes(request.status)) {
@@ -802,13 +809,13 @@ function mountThreads(router) {
               AND event_type IN ('booking.request_submitted', 'booking.proof_uploaded')
             ORDER BY created_at DESC, id::text DESC
             LIMIT 1`,
-          [req.tenantId, req.params.id],
+          [req.tenantId, threadId],
         );
         const latestPayload = eventRes.rows[0]?.payload || {};
         await query(
           `INSERT INTO inbox_guesty_jobs (tenant_id, thread_id, job_type, status, payload)
            VALUES ($1, $2, 'create_reservation', 'pending', $3::jsonb)`,
-          [req.tenantId, req.params.id, JSON.stringify({
+          [req.tenantId, threadId, JSON.stringify({
             listingId,
             slug: request.listing_slug,
             checkInDate: request.check_in,
@@ -823,7 +830,7 @@ function mountThreads(router) {
         );
         await publishFadEvent({
           type: 'website_inbox.thread_updated',
-          payload: { threadId: req.params.id, eventType: 'booking.reservation_create_queued' },
+          payload: { threadId, eventType: 'booking.reservation_create_queued' },
         }).catch(() => {});
         return res.json({ ...request, guesty_create_queued: true });
       } else if (action === 'decline') {
@@ -837,7 +844,7 @@ function mountThreads(router) {
                             updated_at = NOW()
                       WHERE thread_id = $3 AND tenant_id = $4
                       RETURNING *`;
-        updateParams = [reason, actorId, req.params.id, req.tenantId];
+        updateParams = [reason, actorId, threadId, req.tenantId];
       } else if (action === 'reset_to_review') {
         // Escape hatch: ops mis-clicked, bring it back to pending_review.
         // Clears the payment terms + declined fields but PRESERVES
@@ -856,7 +863,7 @@ function mountThreads(router) {
                             updated_at = NOW()
                       WHERE thread_id = $2 AND tenant_id = $3
                       RETURNING *`;
-        updateParams = [actorId, req.params.id, req.tenantId];
+        updateParams = [actorId, threadId, req.tenantId];
       }
 
       const result = await query(updateSql, updateParams);
