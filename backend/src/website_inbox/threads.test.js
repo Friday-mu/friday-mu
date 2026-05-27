@@ -124,6 +124,31 @@ describe('website inbox threads', () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
+  test('loads booking requests when the UI sends a web-prefixed thread id', async () => {
+    const threadId = '11111111-1111-4111-8111-111111111111';
+    const bookingRequest = {
+      id: 'br-1',
+      thread_id: threadId,
+      request_id: 'FBR-TEST-1',
+      listing_slug: 'villa-demo',
+      listing_title: 'Villa Demo',
+      check_in: '2026-06-01',
+      check_out: '2026-06-05',
+      nights: 4,
+      quoted_total_amount_minor: 128000,
+      quoted_total_currency: 'EUR',
+      status: 'awaiting_payment',
+    };
+    query.mockResolvedValueOnce({ rows: [bookingRequest] });
+
+    const res = await request(app())
+      .get(`/threads/web-${threadId}/booking-request`)
+      .expect(200);
+
+    expect(res.body).toMatchObject({ thread_id: threadId, request_id: 'FBR-TEST-1' });
+    expect(query.mock.calls[0][1]).toEqual([threadId, '00000000-0000-0000-0000-000000000001']);
+  });
+
   test('lets staff attach proof received elsewhere without confirming funds', async () => {
     const threadId = '11111111-1111-4111-8111-111111111111';
     const eventId = '44444444-4444-4444-8444-444444444444';
@@ -147,7 +172,7 @@ describe('website inbox threads', () => {
       .mockResolvedValueOnce({ rows: [] });
 
     const res = await request(app())
-      .patch(`/threads/${threadId}/booking-request`)
+      .patch(`/threads/web-${threadId}/booking-request`)
       .send({
         action: 'upload_proof_elsewhere',
         proof_viewer_url: 'https://proof.example/view',
@@ -157,6 +182,9 @@ describe('website inbox threads', () => {
       .expect(200);
 
     expect(res.body).toMatchObject({ status: 'proof_received', proof_viewer_url: 'https://proof.example/view' });
+    expect(query.mock.calls[0][1]).toEqual([threadId, '00000000-0000-0000-0000-000000000001']);
+    expect(query.mock.calls[1][1][1]).toBe(threadId);
+    expect(query.mock.calls[3][1][1]).toBe(threadId);
     expect(query.mock.calls[1][0]).toContain("booking.proof_uploaded");
     expect(JSON.parse(query.mock.calls[1][1][3])).toMatchObject({
       booking_request_id: 'FBR-TEST-1',

@@ -4,8 +4,8 @@
 // fad_portal_booking_requests sidecar.
 //
 // Backend routes (admin auth, not the public-Bearer flow):
-//   GET   /api/inbox/threads/:threadId/booking-request
-//   PATCH /api/inbox/threads/:threadId/booking-request   action ∈ {
+//   GET   /api/inbox/website/threads/:threadId/booking-request
+//   PATCH /api/inbox/website/threads/:threadId/booking-request   action ∈ {
 //     set_payment_terms | mark_proof_received | upload_proof_elsewhere |
 //     mark_funds_received | queue_guesty_reservation_create |
 //     decline | reset_to_review
@@ -84,11 +84,14 @@ export interface UploadProofInput {
   notes?: string;
 }
 
+function bookingRequestPath(threadId: string): string {
+  const rawThreadId = threadId.startsWith('web-') ? threadId.slice(4) : threadId;
+  return `/api/inbox/website/threads/${encodeURIComponent(rawThreadId)}/booking-request`;
+}
+
 async function loadBookingRequest(threadId: string): Promise<BookingRequestRecord | null> {
   try {
-    return (await apiFetch(
-      `/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`,
-    )) as BookingRequestRecord;
+    return (await apiFetch(bookingRequestPath(threadId))) as BookingRequestRecord;
   } catch (e) {
     // 404 = not a booking_request thread; treat as null.
     if (e instanceof Error && /404|not.?found/i.test(e.message)) return null;
@@ -130,7 +133,7 @@ export async function setPaymentTerms(
   threadId: string,
   input: SetPaymentTermsInput,
 ): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(bookingRequestPath(threadId), {
     method: 'PATCH',
     body: JSON.stringify({
       action: 'set_payment_terms',
@@ -145,7 +148,7 @@ export async function markFundsReceived(
   threadId: string,
   input: MarkFundsReceivedInput,
 ): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(bookingRequestPath(threadId), {
     method: 'PATCH',
     body: JSON.stringify({
       action: 'mark_funds_received',
@@ -156,7 +159,7 @@ export async function markFundsReceived(
 }
 
 export async function markProofReceived(threadId: string): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(bookingRequestPath(threadId), {
     method: 'PATCH',
     body: JSON.stringify({ action: 'mark_proof_received' }),
   })) as BookingRequestRecord;
@@ -166,7 +169,7 @@ export async function uploadProofReceivedElsewhere(
   threadId: string,
   input: UploadProofInput,
 ): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(bookingRequestPath(threadId), {
     method: 'PATCH',
     body: JSON.stringify({
       action: 'upload_proof_elsewhere',
@@ -181,7 +184,7 @@ export async function uploadProofReceivedElsewhere(
 }
 
 export async function queueGuestyReservationCreate(threadId: string): Promise<BookingRequestRecord & { guesty_create_queued?: boolean }> {
-  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(bookingRequestPath(threadId), {
     method: 'PATCH',
     body: JSON.stringify({ action: 'queue_guesty_reservation_create' }),
   })) as BookingRequestRecord & { guesty_create_queued?: boolean };
@@ -191,7 +194,7 @@ export async function declineBookingRequest(
   threadId: string,
   reason?: string,
 ): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(bookingRequestPath(threadId), {
     method: 'PATCH',
     body: JSON.stringify({
       action: 'decline',
@@ -201,7 +204,7 @@ export async function declineBookingRequest(
 }
 
 export async function resetBookingRequestToReview(threadId: string): Promise<BookingRequestRecord> {
-  return (await apiFetch(`/api/inbox/website/threads/${encodeURIComponent(threadId)}/booking-request`, {
+  return (await apiFetch(bookingRequestPath(threadId), {
     method: 'PATCH',
     body: JSON.stringify({ action: 'reset_to_review' }),
   })) as BookingRequestRecord;
