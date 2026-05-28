@@ -139,6 +139,7 @@ Plan 3 source-mapping progress:
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md` now source-maps Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning. These are scoped only, not runtime wired. Key gaps carried forward: public property-field policy, owner package/competitor wording, owner-data retention/consent, feedback evidence retention/redaction, and Website/FAD event/context-pack contracts.
 - Branch migration `102_ask_friday_public_owner_feedback_evals.sql` seeds deterministic eval scaffolding for Website public handoff/privacy, owner safety/privacy/compliance, and feedback evidence/candidate safety. This is not deployed.
 - `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md` now drafts the Website context-pack request, Website learning event, owner lead capsule, feedback evidence capsule, and handoff/takeover alignment contracts. This is planning/contract work only; Website is not wired to consume Core packs or emit Core events yet.
+- `backend/src/ask_friday/policy.test.js` now pins the public/owner/feedback contract boundaries: valid Website public context-pack/event shapes, owner lead event summaries, feedback evidence refs, and rejection of owner-private scopes or restricted unredacted evidence on public routes. Focused Core verification passed on 2026-05-28: `src/ask_friday/policy.test.js`, `contracts.test.js`, and `index.test.js` all green.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
