@@ -1307,7 +1307,7 @@ function ExecutionButtons({
       {canWork && (
         <button className="btn primary sm" onClick={() => onSetStatus('completed')}>Complete</button>
       )}
-      {canCloseReopen && task.status === 'completed' && (
+      {canCloseReopen && !terminal && (
         closeArmed ? (
           <button className="btn primary sm" onClick={() => onSetStatus('closed')}>Confirm close</button>
         ) : (

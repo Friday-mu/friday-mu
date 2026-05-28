@@ -299,6 +299,14 @@ async function notifyUsers({ tenantId, userIds, type, title, body = null, url = 
     url: url || '/fad',
     tag: type,
     data: { source, sourceId, type, ...data },
+  }).then((result) => {
+    if (result?.skipped || result?.reason === 'no_subscriptions' || result?.failed > 0) {
+      console.info('[realtime] push fan-out status:', {
+        type,
+        targets: ids.length,
+        ...result,
+      });
+    }
   }).catch((e) => {
     console.warn('[realtime] push fan-out failed:', e.message);
   });
@@ -348,7 +356,8 @@ async function sendEmailNotifications({ tenantId, userIds, type, title, body = '
     [tenantId, userIds],
   );
   let sent = 0;
-  const onlineIds = process.env.FAD_EMAIL_NOTIFY_ONLINE_USERS === 'true'
+  const notifyOnlineUsers = process.env.FAD_EMAIL_NOTIFY_ONLINE_USERS === 'true' || data.emailNotifyOnline === true;
+  const onlineIds = notifyOnlineUsers
     ? new Set()
     : new Set(activePresenceSnapshotForTenant(tenantId).userIds.map(String));
   const offlineRows = rows.filter((user) => !onlineIds.has(String(user.id)));

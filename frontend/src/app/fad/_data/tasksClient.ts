@@ -209,10 +209,26 @@ function fallbackId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function taskTitle(value: string | null | undefined): string {
+function importedTaskLabel(sourcePayload?: Task['sourcePayload'] | null, bzId?: string | null): string {
+  const taskId = sourcePayload?.taskId || bzId || sourcePayload?.externalRef || '';
+  const property = sourcePayload?.property?.resolvedCode || sourcePayload?.property?.name || '';
+  const status = typeof sourcePayload?.raw?.Status === 'string'
+    ? sourcePayload.raw.Status.trim()
+    : '';
+  const parts = [
+    taskId ? `#${taskId}` : '',
+    property,
+    status,
+  ].filter(Boolean);
+  return parts.length > 0
+    ? `Breezeway task ${parts.join(' · ')}`
+    : 'Breezeway imported task';
+}
+
+function taskTitle(value: string | null | undefined, sourcePayload?: Task['sourcePayload'] | null, bzId?: string | null): string {
   const title = (value || '').trim() || 'Untitled task';
-  if (title.includes('[redacted: sensitive operational detail]')) {
-    return 'Imported task (details restricted)';
+  if (title.includes('[redacted: sensitive operational detail]') || /^imported task$/i.test(title)) {
+    return `${importedTaskLabel(sourcePayload, bzId)} · details restricted`;
   }
   return title
     .replace(/^Breezeway\s+Added:\s*/i, '')
@@ -225,7 +241,7 @@ function mapTask(s: ServerTask): Task {
     id: s.id || fallbackId('task'),
     bzId: s.bz_id || undefined,
     externalRef: s.external_ref || undefined,
-    title: taskTitle(s.title),
+    title: taskTitle(s.title, s.source_payload, s.bz_id),
     description: s.description || undefined,
     propertyCode: s.property_code || '',
     department: (s.department as Department) || 'office',

@@ -138,6 +138,8 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
 
 function PropertyCardMini({ property, ownerName, onOpen }: { property: Property; ownerName: string; onOpen: () => void }) {
   const badge = lifecycleBadge(property);
+  const beds = property.bedrooms === 0 ? 'Studio' : `${property.bedrooms} bd`;
+  const baths = typeof property.bathrooms === 'number' ? `${property.bathrooms} ba` : '— ba';
   return (
     <button
       onClick={onOpen}
@@ -159,7 +161,10 @@ function PropertyCardMini({ property, ownerName, onOpen }: { property: Property;
       <div style={{ padding: '12px 14px' }}>
         <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{property.name}</div>
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>{property.area} · {ownerName}</div>
-        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--color-text-secondary)' }}>
+        <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--color-text-secondary)', flexWrap: 'wrap' }}>
+          <span>{beds}</span>
+          <span>{baths}</span>
+          <span>{property.maxOccupancy} pax</span>
           <span>Occ <strong>{Math.round(property.occupancy90d * 100)}%</strong></span>
           <span>ADR <strong>€{property.adr}</strong></span>
           {property.rating > 0 && <span>★ <strong>{property.rating.toFixed(2)}</strong></span>}

@@ -126,7 +126,7 @@ describe('push router', () => {
       title: 'New notification',
     });
 
-    expect(result).toEqual({ sent: 0, pruned: 1, skipped: false });
+    expect(result).toEqual({ sent: 0, pruned: 1, failed: 0, subscriptions: 1, skipped: false });
     expect(webpush.sendNotification).not.toHaveBeenCalled();
     expect(query.mock.calls[1][0]).toContain('DELETE FROM push_subscriptions');
     expect(query.mock.calls[1][1]).toEqual(['bad-sub']);
@@ -148,7 +148,7 @@ describe('push router', () => {
       title: 'New notification',
     });
 
-    expect(result).toEqual({ sent: 0, pruned: 1, skipped: false });
+    expect(result).toEqual({ sent: 0, pruned: 1, failed: 0, subscriptions: 1, skipped: false });
     expect(query.mock.calls[1][0]).toContain('DELETE FROM push_subscriptions');
     expect(query.mock.calls[1][1]).toEqual(['stale-sub']);
   });

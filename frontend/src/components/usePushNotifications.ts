@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { API_BASE } from './types'
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -51,16 +51,24 @@ function subscriptionUsesVapidKey(subscription: PushSubscription, vapidKey: stri
 export function usePushNotifications() {
   const [permission, setPermission] = useState<NotificationPermission>('default')
   const [subscription, setSubscription] = useState<PushSubscription | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const autoSyncStartedRef = useRef(false)
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) return
     setPermission(Notification.permission)
+    const refreshPermission = () => setPermission(Notification.permission)
+    window.addEventListener('focus', refreshPermission)
+    return () => window.removeEventListener('focus', refreshPermission)
   }, [])
 
-  const requestPermission = async (): Promise<boolean> => {
+  const syncPushSubscription = useCallback(async (requestBrowserPermission: boolean): Promise<boolean> => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) return false
 
-    const result = await Notification.requestPermission()
+    const result = requestBrowserPermission
+      ? await Notification.requestPermission()
+      : Notification.permission
     setPermission(result)
 
     if (result !== 'granted') return false
@@ -71,10 +79,11 @@ export function usePushNotifications() {
       return false
     }
 
-    // Fetch VAPID public key from backend. Missing delivery config must fail
-    // visibly; otherwise the UI says push is enabled while delivery is inert.
-    let vapidKey = ''
+    setError(null)
+    setSyncing(true)
     try {
+      // Fetch VAPID public key from backend. Missing delivery config must fail
+      // visibly; otherwise the UI says push is enabled while delivery is inert.
       const resp = await fetch(`${API_BASE}/api/push/vapid-key`)
       if (!resp.ok) {
         throw new Error(`VAPID key request failed (${resp.status})`)
@@ -83,43 +92,66 @@ export function usePushNotifications() {
       if (data.configured === false) {
         throw new Error('Push delivery is not configured on the backend')
       }
-      vapidKey = typeof data.publicKey === 'string' ? data.publicKey : ''
-    } catch (err) {
-      console.error('[Push] Failed to fetch VAPID key:', err)
-      return false
-    }
+      const vapidKey = typeof data.publicKey === 'string' ? data.publicKey : ''
+      if (!vapidKey) {
+        throw new Error('Push delivery is missing a VAPID public key')
+      }
 
-    if (!vapidKey) return false
+      const registration = await ensureServiceWorkerRegistration()
+      let sub = await registration.pushManager.getSubscription()
+      if (sub && !subscriptionUsesVapidKey(sub, vapidKey)) {
+        await sub.unsubscribe().catch(() => false)
+        sub = null
+      }
+      if (!sub) {
+        sub = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
+        })
+      }
+      setSubscription(sub)
 
-    const registration = await ensureServiceWorkerRegistration()
-    let sub = await registration.pushManager.getSubscription()
-    if (sub && !subscriptionUsesVapidKey(sub, vapidKey)) {
-      await sub.unsubscribe().catch(() => false)
-      sub = null
-    }
-    if (!sub) {
-      sub = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
+      const saveResp = await fetch(`${API_BASE}/api/push/subscribe`, {
+        method: 'POST',
+        body: JSON.stringify(sub),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       })
-    }
-    setSubscription(sub)
+      if (!saveResp.ok) {
+        const saveData = await saveResp.json().catch(() => ({}))
+        throw new Error(saveData?.error || `Push subscription save failed (${saveResp.status})`)
+      }
 
-    const resp = await fetch(`${API_BASE}/api/push/subscribe`, {
-      method: 'POST',
-      body: JSON.stringify(sub),
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    })
-    if (!resp.ok) {
-      const data = await resp.json().catch(() => ({}))
-      throw new Error(data?.error || `Push subscription save failed (${resp.status})`)
+      return true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Push subscription failed'
+      setError(message)
+      console.error('[Push] Subscription sync failed:', err)
+      return false
+    } finally {
+      setSyncing(false)
     }
+  }, [])
 
-    return true
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (permission !== 'granted') return
+    if (autoSyncStartedRef.current) return
+    autoSyncStartedRef.current = true
+    void syncPushSubscription(false)
+  }, [permission, syncPushSubscription])
+
+  const requestPermission = async (): Promise<boolean> => syncPushSubscription(true)
+
+  return {
+    permission,
+    subscription,
+    requestPermission,
+    refreshSubscription: () => syncPushSubscription(false),
+    deliveryReady: permission === 'granted' && Boolean(subscription) && !error,
+    syncing,
+    error,
   }
-
-  return { permission, subscription, requestPermission }
 }

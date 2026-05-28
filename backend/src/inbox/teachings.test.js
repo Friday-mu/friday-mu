@@ -78,4 +78,11 @@ describe('inbox teachings router', () => {
       'positive',
     ]);
   });
+
+  test('normalises unknown teaching sources to direct but preserves Friday Consult', () => {
+    expect(teachingsRouter._test.normaliseSource('friday_consult')).toBe('friday_consult');
+    expect(teachingsRouter._test.normaliseSource(' manual ')).toBe('manual');
+    expect(teachingsRouter._test.normaliseSource('random-ui-source')).toBe('direct');
+    expect(teachingsRouter._test.normaliseSource(null)).toBe('direct');
+  });
 });

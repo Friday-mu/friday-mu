@@ -123,6 +123,31 @@ describe('FAD realtime email notifications', () => {
     expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'offline@friday.mu' }));
   });
 
+  test('can force email delivery to an online feedback owner', async () => {
+    realtime._test.clients.set('online', {
+      tenantId: TENANT_ID,
+      userId: USER_ID,
+      connectedAt: '2026-05-22T08:00:00.000Z',
+    });
+    query.mockResolvedValueOnce({
+      rows: [{ id: USER_ID, email: 'ishant@friday.mu', display_name: 'Ishant Ayadassen' }],
+    });
+    sendEmail.mockResolvedValue({ id: 'email-1' });
+
+    const result = await realtime._test.sendEmailNotifications({
+      tenantId: TENANT_ID,
+      userIds: [USER_ID],
+      type: 'feedback_bug',
+      title: 'New bug',
+      body: 'Bug details',
+      url: '/fad?m=settings',
+      data: { emailNotification: true, emailNotifyOnline: true },
+    });
+
+    expect(result).toMatchObject({ sent: 1, skippedOnline: 0 });
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'ishant@friday.mu' }));
+  });
+
   test('backs off email fan-out after provider rate limits', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     query.mockResolvedValueOnce({

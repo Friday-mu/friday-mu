@@ -56,6 +56,10 @@ export function NotificationsModule() {
   const {
     permission: pushPermission,
     requestPermission: requestPushPermission,
+    refreshSubscription: refreshPushSubscription,
+    deliveryReady: pushDeliveryReady,
+    syncing: pushSyncing,
+    error: pushError,
   } = usePushNotifications();
 
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
@@ -173,6 +177,15 @@ export function NotificationsModule() {
         fireToast(e instanceof Error ? `Push setup failed: ${e.message}` : 'Push setup failed');
       });
   };
+  const handleRepairPush = () => {
+    void refreshPushSubscription()
+      .then((ok) => {
+        fireToast(ok ? 'Push subscription refreshed' : 'Push subscription still needs attention');
+      })
+      .catch((e) => {
+        fireToast(e instanceof Error ? `Push refresh failed: ${e.message}` : 'Push refresh failed');
+      });
+  };
   const clearFilters = () => {
     setModuleFilter(new Set());
     setSeverityFilter(new Set());
@@ -201,6 +214,11 @@ export function NotificationsModule() {
             {pushPermission === 'default' && (
               <button className="btn ghost sm notif-header-action" onClick={handleEnablePush}>
                 Enable push
+              </button>
+            )}
+            {pushPermission === 'granted' && (
+              <button className="btn ghost sm notif-header-action" onClick={handleRepairPush} disabled={pushSyncing} title={pushError || (pushDeliveryReady ? 'Push delivery is registered on this device' : 'Refresh this device push subscription')}>
+                {pushSyncing ? 'Checking push' : pushDeliveryReady ? 'Push ready' : 'Repair push'}
               </button>
             )}
             {pushPermission === 'denied' && (

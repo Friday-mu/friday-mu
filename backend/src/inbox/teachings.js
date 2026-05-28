@@ -6,9 +6,10 @@ const { attachIdentity } = require('../design/auth');
 
 const router = express.Router();
 
-const VALID_STATUSES = new Set(['active', 'draft', 'revoked', 'retired', 'rejected']);
+const VALID_STATUSES = new Set(['active', 'draft', 'revoked', 'retired', 'rejected', 'pending_review', 'expired', 'paused']);
 const VALID_SCOPES = new Set(['global', 'property']);
 const VALID_POLARITY = new Set(['positive', 'negative']);
+const VALID_SOURCES = new Set(['manual', 'auto_pattern', 'direct', 'friday_consult']);
 
 function actorName(req) {
   return req.identity?.displayName
@@ -32,6 +33,11 @@ function normalisePropertyCodes(value) {
     .map((v) => v.trim())
     .filter(Boolean))];
   return codes.length > 0 ? codes : null;
+}
+
+function normaliseSource(value) {
+  const source = typeof value === 'string' ? value.trim() : '';
+  return VALID_SOURCES.has(source) ? source : 'direct';
 }
 
 function shapeTeaching(row) {
@@ -96,9 +102,7 @@ router.post('/', attachIdentity, async (req, res) => {
     }
 
     const polarity = VALID_POLARITY.has(req.body?.polarity) ? req.body.polarity : 'positive';
-    const source = typeof req.body?.source === 'string' && req.body.source.trim()
-      ? req.body.source.trim()
-      : 'direct';
+    const source = normaliseSource(req.body?.source);
     const actor = actorName(req);
 
     const { rows } = await query(
@@ -222,4 +226,5 @@ module.exports._test = {
   normaliseInstruction,
   normaliseScope,
   normalisePropertyCodes,
+  normaliseSource,
 };
