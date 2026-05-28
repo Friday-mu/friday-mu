@@ -143,6 +143,7 @@ The immediate goal is to define what these surfaces may know, where that knowled
 
 1. Seed deterministic eval cases for Website public handoff/privacy, owner lead safety, and feedback evidence privacy.
    - Branch migration: `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`.
+   - Contract-specific branch migration: `backend/migrations/103_ask_friday_public_contract_evals.sql`.
 2. Draft contracts for:
    - Website public context-pack consumption;
    - Website redacted learning event emission;

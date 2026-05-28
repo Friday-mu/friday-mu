@@ -386,6 +386,8 @@ Current Plan 3 packet:
   - This packet is not implementation proof. It defines the payload shapes and runtime boundaries for a future Website worktree and future FAD/Core API hardening.
 - `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
   - Branch-only deterministic eval scaffolding for those scoped risks. It is not deployed.
+- `backend/migrations/103_ask_friday_public_contract_evals.sql`
+  - Branch-only contract-specific eval scaffolding for missing context-pack fallback, ready owner lead capsules, feedback evidence/action requests, and restricted evidence rejection. It is not deployed.
 
 Exit criteria for each surface:
 

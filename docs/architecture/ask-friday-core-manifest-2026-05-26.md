@@ -212,6 +212,7 @@ Ask Friday Core migrations:
 - `backend/migrations/098_ask_friday_candidate_review_lanes.sql`
 - `backend/migrations/101_ask_friday_context_tools.sql`
 - `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
+- `backend/migrations/103_ask_friday_public_contract_evals.sql`
 
 Plan 1 surface code:
 
