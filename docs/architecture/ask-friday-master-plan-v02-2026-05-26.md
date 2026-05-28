@@ -744,9 +744,9 @@ Current safe next moves:
 2. Patch only production-blocking defects.
 3. Update completion ledger from live team-usefulness evidence.
 4. Continue Reservations/Calendar and Properties from `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`:
-   - add eval cases from the packet;
-   - define property public/guest/staff/restricted field policy before public context packs.
-   - implement only read-only context tools first, using `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`;
+   - read-only context tools and deterministic eval seeds now exist on the continuation branch, not deployed;
+   - live-smoke those routes after merge/deploy;
+   - define property public/guest/staff/restricted field policy before public context packs;
    - keep reservation/channel writes as approval-routed action requests.
 5. Start KB research factory for public guest, owner, Ops, and local Mauritius context.
 

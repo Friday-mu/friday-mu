@@ -28,8 +28,11 @@ const {
   validateStaffActionRequest,
 } = require('./policy');
 const { publishContextPack } = require('./publisher');
+const contextTools = require('./context_tools');
 
 const router = express.Router();
+
+router.use('/context-tools', contextTools.router);
 
 function actorName(req) {
   return req.identity?.displayName

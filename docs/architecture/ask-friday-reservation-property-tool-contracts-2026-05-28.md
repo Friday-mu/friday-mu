@@ -1,14 +1,14 @@
 # Ask Friday Reservation And Property Tool Contracts
 
 Date: 2026-05-28
-Status: design-only contract draft
+Status: contract draft with initial staff-only branch implementation
 Scope: Plan 3 read-only context tools and approval-routed reservation actions.
 
 ## Purpose
 
 This draft converts the Reservations/Calendar and Properties source matrix into concrete tool boundaries for Ask Friday Core.
 
-It does not implement the tools. It defines what the tools should return, what privacy class each response carries, and which write-like requests must become `action_request` records instead of direct mutations.
+Initial branch implementation exists for the read-only tools at `/api/ask-friday/core/context-tools/*`. The write-like reservation action remains an approval-routed `action_request` contract, not a direct Guesty/OTA executor.
 
 ## Rules
 

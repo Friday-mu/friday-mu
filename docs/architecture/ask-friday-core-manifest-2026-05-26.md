@@ -180,6 +180,7 @@ Ask Friday Core backend:
 
 - `backend/src/ask_friday/index.js`
 - `backend/src/ask_friday/contracts.js`
+- `backend/src/ask_friday/context_tools.js`
 - `backend/src/ask_friday/policy.js`
 - `backend/src/ask_friday/publisher.js`
 - `backend/src/ask_friday/analyzer.js`
@@ -196,6 +197,7 @@ Ask Friday Core migrations:
 - `backend/migrations/096_ask_friday_surface_registry_v02.sql`
 - `backend/migrations/097_ask_friday_seed_eval_cases.sql`
 - `backend/migrations/098_ask_friday_candidate_review_lanes.sql`
+- `backend/migrations/101_ask_friday_context_tools.sql`
 
 Plan 1 surface code:
 
