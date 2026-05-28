@@ -69,6 +69,8 @@ Read these first, in order:
    - V1 architecture recommendation, contracts, API paths, eval plan, and implementation split.
 9. `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
    - Research synthesis for agent architecture, memory, evals, MCP authorization, and safety.
+10. `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+   - Current Plan 3 source-truth packet for Reservations/Calendar and Properties: FAD API paths, Guesty/FAD/Breezeway ownership, harness implications, gaps, and first tool contracts.
 
 ## Master Plan And Subplans
 
@@ -85,6 +87,8 @@ The repo-owned execution pack under the master plan is:
   - Notion: `https://www.notion.so/36c43ca8849281ed9593d4f16f96931b`
 - `docs/architecture/ask-friday-eval-mining-adr-plan-2026-05-26.md`
   - Notion: `https://www.notion.so/36c43ca8849281cfa226f0102cabdf6a`
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
 
@@ -290,6 +294,14 @@ Do not load competitor/industry/local context globally. Scope it per surface:
 - Ops: STR, field-service, turnover, maintenance practices;
 - finance/legal: source-dated and reviewed compliance context only;
 - internal strategy: staff/internal only.
+
+Current Plan 3 source-truth packet:
+
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Reservations/Calendar and Properties are source-mapped but not built as dedicated agents.
+  - Availability/rates stay live lookup or source-dated context.
+  - FAD-local calendar blocks do not imply Guesty/OTA reflection until a verified write-through contract exists.
+  - Property cards need richer privacy/access classification before public context-pack use.
 
 ## Maintenance Rule
 

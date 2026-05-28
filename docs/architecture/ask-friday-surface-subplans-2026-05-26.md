@@ -265,7 +265,7 @@ Ishant review:
 
 ## Reservations / Calendar
 
-Status: scoped, not built as an agent.
+Status: source-mapped, not built as an agent.
 
 Mission:
 
@@ -284,6 +284,7 @@ Source truth:
 - Payment-proof and inquiry/confirmed semantics.
 - Channel manager/PMS state where available.
 - Manual FAD overrides with provenance.
+- Current source matrix: `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`.
 
 Knowledge scopes:
 
@@ -326,7 +327,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- Create source-of-truth matrix and eval cases before runtime agent work.
+- Design read-only reservation/calendar context tool contracts and add eval cases from the 2026-05-28 source matrix before runtime agent work.
 
 Ishant review:
 
@@ -336,7 +337,7 @@ Ishant review:
 
 ## Properties
 
-Status: scoped, not built as an agent.
+Status: source-mapped, not built as an agent.
 
 Mission:
 
@@ -356,6 +357,7 @@ Source truth:
 - Owner terms and property exceptions.
 - Maintenance/issue history.
 - Staff-reviewed corrections.
+- Current source matrix: `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`.
 
 Knowledge split:
 
@@ -391,7 +393,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- Build property public/private source matrix and freshness rules.
+- Convert the 2026-05-28 source matrix into a public/guest/staff/restricted field policy and read-only property context tool contract.
 
 Ishant review:
 

@@ -369,6 +369,13 @@ Reasoning:
 - Website surfaces become safer after public/private property and reservation facts are clean.
 - Finance/legal stay later because privacy/access and source-reviewed compliance matter more than speed.
 
+Current Plan 3 packet:
+
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Reservations/Calendar and Properties are now source-mapped against current FAD runtime paths and Guesty docs.
+  - This packet is planning/research proof only. It does not mean either surface is built as a dedicated agent.
+  - It defines first tool contracts to design later: reservation context, calendar context, property context, and approval-routed reservation actions.
+
 Exit criteria for each surface:
 
 - surface profile complete;
@@ -734,7 +741,10 @@ Current safe next moves:
 1. Browser-test live Inbox/Friday Consult and Ops/Friday Consult with real workflow scenarios.
 2. Patch only production-blocking defects.
 3. Update completion ledger from live team-usefulness evidence.
-4. Start reservations/calendar and properties subplans because they are upstream of Ops, Inbox, guest, and owner surfaces.
+4. Continue Reservations/Calendar and Properties from `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`:
+   - design read-only context tool contracts;
+   - add eval cases from the packet;
+   - define property public/guest/staff/restricted field policy before public context packs.
 5. Start KB research factory for public guest, owner, Ops, and local Mauritius context.
 
 ## Sources
