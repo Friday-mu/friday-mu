@@ -375,6 +375,8 @@ Current Plan 3 packet:
   - Reservations/Calendar and Properties are now source-mapped against current FAD runtime paths and Guesty docs.
   - This packet is planning/research proof only. It does not mean either surface is built as a dedicated agent.
   - It defines first tool contracts to design later: reservation context, calendar context, property context, and approval-routed reservation actions.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Design-only contract draft for those first tools. Use it before implementation or eval seeding.
 
 Exit criteria for each surface:
 
@@ -742,9 +744,10 @@ Current safe next moves:
 2. Patch only production-blocking defects.
 3. Update completion ledger from live team-usefulness evidence.
 4. Continue Reservations/Calendar and Properties from `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`:
-   - design read-only context tool contracts;
    - add eval cases from the packet;
    - define property public/guest/staff/restricted field policy before public context packs.
+   - implement only read-only context tools first, using `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`;
+   - keep reservation/channel writes as approval-routed action requests.
 5. Start KB research factory for public guest, owner, Ops, and local Mauritius context.
 
 ## Sources

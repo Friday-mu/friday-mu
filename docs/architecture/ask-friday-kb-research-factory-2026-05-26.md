@@ -117,6 +117,8 @@ Current packet:
 - `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
   - Use this as the current Wave A source matrix before agent/tool implementation.
   - It confirms availability/rates are live/source-dated facts, FAD calendar blocks are FAD-local today, and Guesty/OTA-impacting writes require a separate approval-routed tool contract.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Use this as the current Wave A contract draft for read-only reservation/calendar context and approval-routed reservation actions.
 
 Initial source matrix:
 
@@ -153,6 +155,8 @@ Current packet:
 - `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
   - Use this as the current Wave B source matrix before property context-pack implementation.
   - It confirms Guesty listing cache plus FAD overlays are the read model, `fad_property_cards` is a future AI knowledge surface, and public/private/stay-scoped/staff/restricted classification still needs Ishant review.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Use this as the current Wave B contract draft for role/surface-aware property context loading.
 
 Initial source matrix:
 

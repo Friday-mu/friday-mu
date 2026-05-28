@@ -71,6 +71,8 @@ Read these first, in order:
    - Research synthesis for agent architecture, memory, evals, MCP authorization, and safety.
 10. `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
    - Current Plan 3 source-truth packet for Reservations/Calendar and Properties: FAD API paths, Guesty/FAD/Breezeway ownership, harness implications, gaps, and first tool contracts.
+11. `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+   - Design-only read-tool/action-request contracts for reservation, calendar, and property context.
 
 ## Master Plan And Subplans
 
@@ -88,6 +90,8 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-eval-mining-adr-plan-2026-05-26.md`
   - Notion: `https://www.notion.so/36c43ca8849281cfa226f0102cabdf6a`
 - `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
@@ -302,6 +306,8 @@ Current Plan 3 source-truth packet:
   - Availability/rates stay live lookup or source-dated context.
   - FAD-local calendar blocks do not imply Guesty/OTA reflection until a verified write-through contract exists.
   - Property cards need richer privacy/access classification before public context-pack use.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Design-only contracts for `load_reservation_context`, `load_calendar_context`, `load_property_context`, and `request_reservation_action`.
 
 ## Maintenance Rule
 

@@ -63,7 +63,7 @@ Key runtime paths:
 
 ## First Tool Contracts To Design Later
 
-These are not implemented by this packet.
+These are not implemented by this packet. The design-only contract draft is now in `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`.
 
 1. `load_reservation_context`
    - Inputs: date window, property/listing id/code, reservation id/confirmation code, guest scope, purpose.

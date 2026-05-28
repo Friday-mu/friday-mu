@@ -48,8 +48,8 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
 | Website feedback | scoped | feedback skeleton only | existing Website FAB/chat | not wired to Core | no | no | no | Plan 2 |
 | Guest portal Ask Friday | scoped | not built | not built | not wired | no | no | no | later |
-| Reservations/calendar agent | source-mapped, not built | source matrix drafted | not built as agent | registry/eval seed only | no workflow test | no | no | Plan 3 packet exists; next is read-only context tool contract |
-| Properties agent | source-mapped, not built | public/private split drafted | not built as agent | registry only | no | no | no | Plan 3 packet exists; privacy field policy still needs review |
+| Reservations/calendar agent | source-mapped, not built | source matrix drafted | read-tool contract drafted | registry/eval seed only | no workflow test | no | no | Plan 3 packet exists; next is eval seed/read-only implementation slice |
+| Properties agent | source-mapped, not built | public/private split drafted | read-tool contract drafted | registry only | no | no | no | Plan 3 packet exists; privacy field policy still needs review |
 | Owners agent | scoped | design-only | not built | registry/eval seed only | no | no | no | later until owner-private rules locked |
 | Finance agent | scoped | design-only | not built | registry/eval seed only | deterministic privacy seed only | no | no | later until access/redaction locked |
 | Legal/admin agent | scoped | design-only | not built | registry only | no | no | no | later until legal review rules locked |
@@ -131,6 +131,7 @@ Plan 3 source-mapping progress:
 
 - `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md` maps Reservations/Calendar and Properties against current FAD runtime paths, Guesty docs, and known gaps.
 - It confirms these surfaces are not yet dedicated agents. It only closes the source-truth planning gap enough to design read-only context tools and evals.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md` drafts the first read-only context contracts and the approval-routed reservation action contract.
 - Key gaps carried forward: Guesty/OTA write-through contract, quote validity policy, public price fields, property public/guest/staff/restricted classification, and richer privacy enforcement for `fad_property_cards`.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout

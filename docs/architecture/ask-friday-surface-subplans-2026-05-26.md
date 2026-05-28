@@ -285,6 +285,7 @@ Source truth:
 - Channel manager/PMS state where available.
 - Manual FAD overrides with provenance.
 - Current source matrix: `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`.
+- Current tool contract draft: `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`.
 
 Knowledge scopes:
 
@@ -327,7 +328,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- Design read-only reservation/calendar context tool contracts and add eval cases from the 2026-05-28 source matrix before runtime agent work.
+- Seed eval cases from the 2026-05-28 contracts, then implement read-only reservation/calendar context tools before runtime agent work.
 
 Ishant review:
 
@@ -358,6 +359,7 @@ Source truth:
 - Maintenance/issue history.
 - Staff-reviewed corrections.
 - Current source matrix: `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`.
+- Current tool contract draft: `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`.
 
 Knowledge split:
 
@@ -393,7 +395,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- Convert the 2026-05-28 source matrix into a public/guest/staff/restricted field policy and read-only property context tool contract.
+- Convert the 2026-05-28 source matrix and tool contract into a public/guest/staff/restricted field policy, then implement read-only property context tools.
 
 Ishant review:
 
