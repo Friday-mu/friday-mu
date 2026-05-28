@@ -340,7 +340,7 @@ async function callWithRetry(opts) {
 // call (success or fail) logs to ai_usage. Examples of `feature`
 // values: 'inbox_draft', 'inbox_followup_draft'. tenantId defaults
 // to FR when omitted.
-async function generateDraftReply({ system, user, meter, timeoutMs, maxRetries, maxTokens, model, temperature }) {
+async function generateDraftReply({ system, user, meter, timeoutMs, maxRetries, maxTokens, model, temperature, responseJson }) {
   // Caller-explicit Kimi pin only happens when `model` is passed AND starts
   // with kimi/moonshot. Default routing (no model arg) goes Gemini-first per
   // the 2026-05-23 AI hierarchy.
@@ -355,6 +355,7 @@ async function generateDraftReply({ system, user, meter, timeoutMs, maxRetries, 
     temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : DRAFT_TEMPERATURE,
     timeoutMs: timeoutMs || DRAFT_TIMEOUT_MS,
     maxRetries,
+    responseJson,
   });
   logUsage(meter, {
     model: result.model || model || DRAFT_MODEL,

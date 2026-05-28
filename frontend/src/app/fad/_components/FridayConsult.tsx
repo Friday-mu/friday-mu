@@ -10,10 +10,9 @@
 //      without an active draft).
 //   2. The DraftPanel's "Ask Friday" affordance — `context:
 //      'draft_review'` (operator wants Friday to polish/shorten/etc
-//      the active draft). The AI may emit a [DRAFT_UPDATE]…[/DRAFT_UPDATE]
-//      block, parsed server-side and returned as `draft_update`. We
-//      surface it to the parent via `onDraftUpdate` so DraftPanel can
-//      swap into edit mode with the rewritten body.
+//      the active draft). The backend returns structured draft updates;
+//      each one is rendered as a draft message so revisions stay in the
+//      chat flow instead of leaking as plain assistant text.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, formatConfidencePercent } from '../../../components/types';
@@ -24,7 +23,7 @@ import { fireToast } from './Toaster';
 import { IconCheck, IconClose, IconRefresh, IconSend, IconSparkle } from './icons';
 import TaskSuggestionCard, { type TaskSuggestion } from '../../../components/TaskSuggestionCard';
 
-/** Structured teaching proposal emitted by FAD's [TEACH] tag parser.
+/** Structured teaching proposal emitted by the FAD Consult parser.
  *  One per assistant turn at most. */
 interface TeachingAction {
   /** create  — net-new rule; just confirm to insert.
@@ -50,12 +49,14 @@ interface ConsultMessage {
    *  onDraftUpdate(draftUpdate) in the parent. */
   draftUpdate?: string;
   /** Revision number for 'draft' role — sequentially increments each
-   *  time Friday produces a new draft via DRAFT_UPDATE or via a fresh
+   *  time Friday produces a structured draft update or via a fresh
    *  persisted draft. Latest revision is the active/editable one. */
   draftRev?: number;
-  /** Inbox draft id for 'draft' role when sourced from a persisted draft (vs
-   *  produced inline via DRAFT_UPDATE in a consult turn). */
+  /** Inbox draft id for 'draft' role when sourced from a persisted draft. */
   draftId?: string;
+  draftRecipientLabel?: string | null;
+  draftChannel?: string | null;
+  draftTargetHint?: string | null;
   /** When non-empty, render TeachingCards under the message. Each card
    *  closes the learning loop: operator confirms → POST /api/inbox/teachings,
    *  FAD stores it, every future draft prompt includes it. */
@@ -71,6 +72,22 @@ interface ConsultMessage {
   source?: string;
 }
 
+interface ConsultDraftUpdate {
+  body?: string;
+  draft_body?: string;
+  draftBody?: string;
+  text?: string;
+  message?: string;
+  recipient_label?: string | null;
+  recipientLabel?: string | null;
+  recipient?: string | null;
+  to?: string | null;
+  channel?: string | null;
+  target_hint?: string | null;
+  targetHint?: string | null;
+  target?: string | null;
+}
+
 interface ConsultResponse {
   response: string;
   model?: string;
@@ -80,6 +97,7 @@ interface ConsultResponse {
    *  backend heuristic for v1; model self-report later. */
   confidence?: number;
   draft_update?: string;
+  draft_updates?: ConsultDraftUpdate[];
   teaching_actions?: TeachingAction[];
   task_suggestions?: TaskSuggestion[];
   sessionId?: string;
@@ -91,6 +109,8 @@ interface ConsultResponse {
     modelTimeout?: boolean;
     fullThread?: boolean;
     messageCount?: number;
+    draftUpdateCount?: number;
+    structuredEnvelope?: boolean;
   };
 }
 
@@ -107,6 +127,31 @@ type WhatsAppWindow = { open: boolean; expiresInMinutes?: number; expiresAt?: st
 function confidenceRatio(value: unknown): number | null {
   const percent = formatConfidencePercent(value as number | string | null | undefined);
   return percent == null ? null : percent / 100;
+}
+
+function normalizeConsultDraftUpdates(data: ConsultResponse | null | undefined): Array<{
+  body: string;
+  recipientLabel: string | null;
+  channel: string | null;
+  targetHint: string | null;
+}> {
+  const rawUpdates = Array.isArray(data?.draft_updates)
+    ? data!.draft_updates!
+    : (data?.draft_update ? [{ body: data.draft_update }] : []);
+  return rawUpdates
+    .map((item) => {
+      const body = String(item?.body || item?.draft_body || item?.draftBody || item?.text || item?.message || '').trim();
+      if (!body) return null;
+      const recipientLabel = item.recipient_label || item.recipientLabel || item.recipient || item.to || null;
+      const targetHint = item.target_hint || item.targetHint || item.target || null;
+      return {
+        body,
+        recipientLabel: recipientLabel ? String(recipientLabel) : null,
+        channel: item.channel ? String(item.channel) : null,
+        targetHint: targetHint ? String(targetHint) : null,
+      };
+    })
+    .filter((item): item is { body: string; recipientLabel: string | null; channel: string | null; targetHint: string | null } => Boolean(item));
 }
 
 function useWhatsAppWindow(windowInfo?: WhatsAppWindow) {
@@ -163,7 +208,7 @@ interface Props {
   conversationId?: string;
   /** The active Inbox draft (if any) for this conversation. When present,
    *  its body seeds the embedded DraftCard. Friday can revise/replace
-   *  it via [DRAFT_UPDATE]; operator can edit inline + Approve/Reject
+   *  it via a structured draft update; operator can edit inline + Approve/Reject
    *  without leaving the panel. */
   currentDraft?: InboxDraft | null;
   /** Operator's in-progress compose text. Lets Friday refine work that
@@ -234,11 +279,15 @@ export function FridayConsult({
 }: Props) {
   // The "working draft body" is what the operator will eventually send.
   // Seeded from the active Inbox draft if any, else the in-progress
-  // compose text. Mutated by inline edits, by [DRAFT_UPDATE] from Friday,
+  // compose text. Mutated by inline edits, by structured drafts from Friday,
   // and by quick-chip rewrites. Tracks the source of truth across the
   // whole chat session.
   const seed = currentDraft?.body ?? initialBody ?? '';
   const [workingBody, setWorkingBody] = useState<string>(seed);
+  const onBodyChangedRef = useRef(onBodyChanged);
+  useEffect(() => {
+    onBodyChangedRef.current = onBodyChanged;
+  }, [onBodyChanged]);
   // Reset when the active draft swaps (next conversation, or revise
   // landed a new draft id).
   useEffect(() => {
@@ -248,8 +297,8 @@ export function FridayConsult({
   // Push body changes up to the parent so it stays in sync with the
   // compose box when the user closes consult.
   useEffect(() => {
-    onBodyChanged?.(workingBody);
-  }, [workingBody, onBodyChanged]);
+    onBodyChangedRef.current?.(workingBody);
+  }, [workingBody]);
 
   // Live confidence on the most recent consult turn. Surfaces in the
   // DraftCard header so the operator can see how confident Friday is
@@ -549,7 +598,7 @@ export function FridayConsult({
           duration_ms: Date.now() - t0,
           missing_knowledge: !!data?.missingKnowledge,
           has_teach_blocks: Array.isArray(data?.teaching_actions) && data.teaching_actions.length > 0,
-          has_draft_update: !!data?.draft_update,
+          has_draft_update: Boolean(data?.draft_update) || Number(data?.metadata?.draftUpdateCount || 0) > 0,
           model: data?.model,
         });
       } catch { /* ignore */ }
@@ -564,14 +613,13 @@ export function FridayConsult({
       const nextConfidence = confidenceRatio(data?.confidence);
       if (nextConfidence !== null) setLatestConfidence(nextConfidence);
 
-      // Friday rewrote the draft — push it as a NEW draft chat msg.
-      // Older drafts stay in the transcript as read-only history;
-      // only the latest is editable + sendable. Per Ishant 2026-05-17:
-      // drafts behave like tool-call results in the chat flow, not a
-      // singleton pinned panel.
-      const newDraftBody = data?.draft_update?.trim() || '';
-      if (newDraftBody.length > 0) {
-        setWorkingBody(newDraftBody);
+      // Friday rewrote or composed draft(s) — push each one as a draft chat
+      // message. Older cards can be restored into the active editor if the
+      // operator wants to send a previous separate draft.
+      const draftUpdates = normalizeConsultDraftUpdates(data);
+      const latestDraftBody = draftUpdates[draftUpdates.length - 1]?.body || '';
+      if (latestDraftBody.length > 0) {
+        setWorkingBody(latestDraftBody);
       }
 
       const teachings = Array.isArray(data?.teaching_actions) ? data!.teaching_actions! : [];
@@ -579,7 +627,7 @@ export function FridayConsult({
       const aiMsg: ConsultMessage = {
         role: 'friday',
         text: (data?.response || '').trim(),
-        draftUpdate: data?.draft_update,
+        draftUpdate: draftUpdates[0]?.body || data?.draft_update,
         teachingActions: teachings.length > 0 ? teachings : undefined,
         teachingStates: teachings.length > 0 ? teachings.map(() => 'pending' as const) : undefined,
         taskSuggestions: taskSuggs.length > 0 ? taskSuggs : undefined,
@@ -591,20 +639,25 @@ export function FridayConsult({
         if (aiMsg.text.length > 0 || teachings.length > 0 || taskSuggs.length > 0) {
           next.push(aiMsg);
         }
-        if (newDraftBody.length > 0) {
+        if (draftUpdates.length > 0) {
           const lastDraftRev = next.reduce(
             (max, x) => (x.role === 'draft' && (x.draftRev ?? 0) > max ? x.draftRev! : max),
             0,
           );
-          next.push({
-            role: 'draft',
-            text: newDraftBody,
-            draftRev: lastDraftRev + 1,
+          draftUpdates.forEach((draft, index) => {
+            next.push({
+              role: 'draft',
+              text: draft.body,
+              draftRev: lastDraftRev + index + 1,
+              draftRecipientLabel: draft.recipientLabel,
+              draftChannel: draft.channel,
+              draftTargetHint: draft.targetHint,
+            });
           });
         }
         return next;
       });
-      if (aiMsg.text.length === 0 && !newDraftBody && teachings.length === 0) {
+      if (aiMsg.text.length === 0 && draftUpdates.length === 0 && teachings.length === 0) {
         setError('Friday went quiet — try rephrasing.');
       }
     } catch (e) {
@@ -1049,7 +1102,8 @@ export function FridayConsult({
       {/* Ask Friday input — restored 2026-05-17 per Ishant: FridayConsult
           is the single compose surface. The reply body lives in the
           EmbeddedDraftCard above; THIS input is for chatting with Friday
-          (drafts, polish, KB lookups, teaching). Enter submits. */}
+          (drafts, polish, KB lookups, teaching). Cmd/Ctrl+Enter submits;
+          Enter and Shift+Enter create new lines. */}
       <AskFridayInput
         onSubmit={(q) => submit(q)}
         disabled={sendBusy}
@@ -1123,30 +1177,35 @@ function AskFridayInput({
       >
         {useFullThread ? '✓ Full' : '∞'}
       </button>
-      <input
-        type="text"
+      <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
             e.preventDefault();
             submit();
           }
         }}
         placeholder={`Ask Friday about ${threadGuest}…`}
         disabled={disabled || busy}
+        rows={1}
         style={{
           flex: 1,
           minWidth: 0,
           width: '100%',
           boxSizing: 'border-box',
-          padding: '6px 9px',
+          minHeight: 32,
+          maxHeight: 72,
+          padding: '7px 9px',
           fontSize: 12,
+          lineHeight: 1.35,
+          fontFamily: 'inherit',
           color: 'var(--color-text-primary)',
           background: 'var(--color-background-secondary)',
           border: '0.5px solid var(--color-border-tertiary)',
           borderRadius: 'var(--radius-sm)',
           outline: 'none',
+          resize: 'none',
         }}
       />
       <button
@@ -1226,6 +1285,8 @@ function MessageRow({
             workingBody={workingBody}
             setWorkingBody={setWorkingBody}
             revisionNumber={m.draftRev}
+            recipientLabel={m.draftRecipientLabel}
+            draftChannel={m.draftChannel}
             liveConfidence={liveConfidence}
             channelLabel={channelLabel}
             whatsappWindow={whatsappWindow}
@@ -1239,7 +1300,13 @@ function MessageRow({
     // Older draft — read-only, frozen.
     return (
       <div style={{ margin: '6px 12px', minWidth: 0, maxWidth: '100%' }}>
-        <DraftMessageHistory body={m.text} revisionNumber={m.draftRev} />
+        <DraftMessageHistory
+          body={m.text}
+          revisionNumber={m.draftRev}
+          recipientLabel={m.draftRecipientLabel}
+          channel={m.draftChannel}
+          onUseDraft={() => setWorkingBody(m.text)}
+        />
       </div>
     );
   }
@@ -1313,21 +1380,45 @@ function MessageRow({
 // system (.fcard / .fcard-kicker / .fcard-block) so the look matches
 // the rest of the dashboard rather than the legacy GMS-style heavy-
 // accent treatment. Per Ishant 2026-05-17.
-function DraftMessageHistory({ body, revisionNumber }: { body: string; revisionNumber?: number }) {
+function DraftMessageHistory({
+  body,
+  revisionNumber,
+  recipientLabel,
+  channel,
+  onUseDraft,
+}: {
+  body: string;
+  revisionNumber?: number;
+  recipientLabel?: string | null;
+  channel?: string | null;
+  onUseDraft?: () => void;
+}) {
   return (
     <div
-      className="fcard fcard-block friday-draft-card friday-draft-card-history"
+      className="friday-draft-card friday-draft-card-history"
       style={{
         maxWidth: '85%',
         minWidth: 0,
-        opacity: 0.65,
+        padding: '7px 8px',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--radius-sm)',
+        background: 'var(--color-background-primary)',
         whiteSpace: 'pre-wrap',
         lineHeight: 1.45,
         color: 'var(--color-text-secondary)',
       }}
     >
-      <div className="fcard-kicker" style={{ marginBottom: 6 }}>
-        <IconSparkle size={9} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''} · superseded
+      <div style={{ marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0 }}>
+          Draft{typeof revisionNumber === 'number' ? ` ${revisionNumber}` : ''} · previous
+        </span>
+        {recipientLabel && <span className="friday-draft-chip">{recipientLabel}</span>}
+        {channel && <span className="friday-draft-chip">{channel}</span>}
+        {onUseDraft && (
+          <button type="button" className="friday-draft-use-btn" onClick={onUseDraft}>
+            Use
+          </button>
+        )}
       </div>
       {body}
     </div>
@@ -1342,6 +1433,8 @@ function DraftMessageActive({
   workingBody,
   setWorkingBody,
   revisionNumber,
+  recipientLabel,
+  draftChannel,
   liveConfidence,
   channelLabel,
   whatsappWindow,
@@ -1352,6 +1445,8 @@ function DraftMessageActive({
   workingBody: string;
   setWorkingBody: (s: string) => void;
   revisionNumber?: number;
+  recipientLabel?: string | null;
+  draftChannel?: string | null;
   liveConfidence?: number | null;
   channelLabel?: string;
   whatsappWindow?: WhatsAppWindow;
@@ -1372,11 +1467,13 @@ function DraftMessageActive({
   const waOpen = waState.open;
   const waLeft = waState.expiresInMinutes;
   return (
-    <div className="fcard friday-draft-card friday-draft-card-active" style={{ padding: '8px 10px', minWidth: 0, maxWidth: '100%' }}>
-      <div className="fcard-kicker" style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+    <div className="friday-draft-card friday-draft-card-active" style={{ padding: '7px 8px', minWidth: 0, maxWidth: '100%' }}>
+      <div style={{ marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <span style={{ color: 'var(--color-brand-accent)' }}>
           <IconSparkle size={10} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''}
         </span>
+        {recipientLabel && <span className="friday-draft-chip">{recipientLabel}</span>}
+        {draftChannel && <span className="friday-draft-chip">{draftChannel}</span>}
         {confLabel && (
           <span
             style={{

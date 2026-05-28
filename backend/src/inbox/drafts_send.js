@@ -34,6 +34,7 @@ const { detectActions } = require('./action_detector');
 const { checkAutoResolve } = require('./auto_resolve');
 const { publishFadEvent, notifyUsers, resolveGmWatchers } = require('../realtime');
 const { triggerDraftGeneration } = require('./draft_generator');
+const { isWithinWhatsAppWindow, loadLastInboundWhatsAppAt } = require('./whatsapp_window');
 
 // Feature flag — set FAD_ACTION_DETECTOR_DISABLED=true on the backend
 // env to stop post-send commitment detection. Rollback handle for
@@ -47,8 +48,6 @@ const AUTO_RESOLVE_DISABLED = process.env.FAD_AUTO_RESOLVE_DISABLED === 'true';
 const router = express.Router();
 
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
-const WA_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 // Guesty's per-channel module names. Mirrors friday-gms's mapping in
 // services/guesty.ts so module_type stays consistent across both
 // senders during the cutover window.
@@ -158,9 +157,8 @@ router.post('/:id/approve', attachIdentity, async (req, res) => {
   // the frontend uses to surface the "use a template" toast — the
   // template browser-fallback (Stage 2.2) is a separate endpoint.
   if (channel === 'whatsapp') {
-    const lastInbound = draftRow.last_inbound_at;
-    const windowOpen = lastInbound
-      && (Date.now() - new Date(lastInbound).getTime()) < WA_WINDOW_MS;
+    const lastInbound = await loadLastInboundWhatsAppAt(draftRow.conversation_id);
+    const windowOpen = isWithinWhatsAppWindow(lastInbound);
     if (!windowOpen) {
       return res.status(409).json({
         error: 'whatsapp_window_expired',
@@ -688,8 +686,8 @@ router.post('/:id/retry', attachIdentity, async (req, res) => {
 
     // WhatsApp window check — same gating as the approve path.
     if (channel === 'whatsapp') {
-      const windowOpen = draft.last_inbound_at
-        && (Date.now() - new Date(draft.last_inbound_at).getTime()) < WA_WINDOW_MS;
+      const lastInbound = await loadLastInboundWhatsAppAt(draft.conversation_id);
+      const windowOpen = isWithinWhatsAppWindow(lastInbound);
       if (!windowOpen) {
         // Revert to send_failed so the user can try again after the
         // guest replies (or via template).

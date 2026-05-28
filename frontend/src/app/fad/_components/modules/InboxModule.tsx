@@ -480,7 +480,6 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
       .then(() => {
         fireToast('Sent ✓');
         setReplyBody('');
-        setConsultOpen(false);
         refetchDetail();
         refetchConversations();
       })

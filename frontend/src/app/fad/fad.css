@@ -4274,10 +4274,42 @@ html.fad-dark .fad-modal-overlay { background: rgba(0,0,0,0.6); }
 .friday-draft-card {
   border-radius: var(--radius-sm) !important;
   box-shadow: none !important;
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
 }
 .friday-draft-card textarea {
   max-height: 128px !important;
   overflow-y: auto;
+}
+.friday-draft-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-background-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friday-draft-use-btn {
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.friday-draft-use-btn:hover {
+  color: var(--color-brand-accent);
+  border-color: var(--color-brand-accent);
 }
 .friday-consult-input {
   padding: 8px 16px;

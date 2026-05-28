@@ -4,7 +4,12 @@ const { DRAFT_MODEL } = require('../ai/kimi_draft');
 const {
   stripProtocolTags,
   parseDraftUpdate,
+  parseConsultEnvelope,
+  normalizeConsultDrafts,
+  extractUntaggedDraftUpdate,
   parseTeachingActions,
+  filterDuplicateTaskSuggestions,
+  formatExistingWorkForPrompt,
   selectConsultSurface,
   buildConsultUserMessage,
   buildCompactConsultUserMessage,
@@ -29,6 +34,90 @@ describe('FAD-native Consult helpers', () => {
     const raw = 'Done.\n[DRAFT_UPDATE]Hello guest\nThanks[/DRAFT_UPDATE]\n[TEACH]{"action":"create","instruction":"Keep it short"}[/TEACH]';
     expect(parseDraftUpdate(raw)).toBe('Hello guest\nThanks');
     expect(stripProtocolTags(raw)).toBe('Done.');
+  });
+
+  test('recovers untagged guest-facing drafts in draft contexts', () => {
+    const raw = [
+      'Sure, here is the email:',
+      '',
+      'hi Volodymyr,',
+      '',
+      'Thank you for your message. We will come back to you shortly.',
+      '',
+      'Best regards,',
+      'Friday Retreats',
+    ].join('\n');
+    expect(extractUntaggedDraftUpdate(raw, 'compose')).toContain('Hi Volodymyr,');
+    expect(extractUntaggedDraftUpdate(raw, 'message_review')).toBeNull();
+  });
+
+  test('parses structured Consult envelopes with multiple separate drafts', () => {
+    const envelope = JSON.stringify({
+      response_text: 'I prepared two separate replies.',
+      drafts: [
+        {
+          recipient_label: 'Maria',
+          channel: 'email',
+          body: 'hi Maria,\n\nThank you for your message.\n\nBest regards,\nFriday Retreats',
+        },
+        {
+          recipient_label: 'Volodymyr',
+          channel: 'email',
+          body: 'Hello Volodymyr,\n\nThank you for the update.\n\nBest regards,\nFriday Retreats',
+        },
+      ],
+      teaching_actions: [
+        { action: 'create', instruction: 'Keep owner cc replies separate by recipient.', scope: 'global' },
+      ],
+      task_suggestions: [
+        { title: 'Follow up with Maria about documents', department: 'office', priority: 'medium' },
+      ],
+    });
+
+    const parsed = parseConsultEnvelope(envelope, 'compose');
+    expect(parsed.responseText).toBe('I prepared two separate replies.');
+    expect(parsed.drafts).toHaveLength(2);
+    expect(parsed.drafts[0]).toMatchObject({
+      recipientLabel: 'Maria',
+      channel: 'email',
+      body: expect.stringContaining('Hi Maria,'),
+    });
+    expect(parsed.drafts[1]).toMatchObject({
+      recipientLabel: 'Volodymyr',
+      body: expect.stringContaining('Hello Volodymyr,'),
+    });
+    expect(parsed.teachingActions).toHaveLength(1);
+    expect(parsed.taskSuggestions).toHaveLength(1);
+  });
+
+  test('normalizes draft_update compatibility into structured draft objects', () => {
+    expect(normalizeConsultDrafts({ draft_update: 'hello Guest,\n\nThanks.' })).toEqual([
+      { body: 'Hello Guest,\n\nThanks.', recipientLabel: null, channel: null, targetHint: null },
+    ]);
+  });
+
+  test('filters duplicate task suggestions against existing thread work', () => {
+    const suggestions = [
+      {
+        title: 'Fix the toilet leak at GBH-C8',
+        description: 'Guest reports flooding in the bathroom.',
+      },
+      {
+        title: 'Restock coffee capsules at GBH-C8',
+        description: 'Add capsules before arrival.',
+      },
+    ];
+    const existingWork = [
+      {
+        kind: 'pending_action',
+        action_text: 'Fix toilet leak at GBH-C8 after guest reported bathroom flooding',
+        status: 'open',
+      },
+    ];
+
+    const filtered = filterDuplicateTaskSuggestions(suggestions, existingWork);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].title).toContain('Restock coffee');
   });
 
   test('parses teaching JSON and resolves T-number references to UUIDs', () => {
@@ -162,6 +251,12 @@ describe('FAD-native Consult helpers', () => {
       draftBody: 'Long draft',
       sessionHistory: [{ role: 'user', content: 'Earlier ask', sender: 'Ishant' }],
       currentSessionSummary: 'Prior decision',
+      existingWork: [{
+        kind: 'ops_task',
+        title: 'Fix toilet leak at BS-1',
+        status: 'scheduled',
+        due_date: '2026-06-02',
+      }],
     });
     expect(message).toContain('Guest: Guest A');
     expect(message).toContain('Reservation / Financial / Availability Context');
@@ -170,7 +265,20 @@ describe('FAD-native Consult helpers', () => {
     expect(message).toContain('[Current working draft]');
     expect(message).toContain('Long draft');
     expect(message).toContain('Prior decision');
+    expect(message).toContain('[Existing open work for this thread]');
+    expect(message).toContain('Fix toilet leak at BS-1');
+    expect(message).toContain('Do not propose a duplicate task');
     expect(message).toContain('Make it shorter');
+  });
+
+  test('formats existing work blocks for Consult prompt context', () => {
+    const block = formatExistingWorkForPrompt([
+      { kind: 'pending_action', action_text: 'Ask owner about late checkout', status: 'open', owner: 'Mary' },
+      { kind: 'ops_task', title: 'Schedule inspection at MV-1', status: 'ready', due_date: '2026-06-01' },
+    ]);
+    expect(block).toContain('Pending action: Ask owner about late checkout');
+    expect(block).toContain('Ops task: Schedule inspection at MV-1');
+    expect(block).toContain('suggest updating the existing item');
   });
 
   test('adds the latest status update guard to Consult prompts for incident update requests', () => {
@@ -287,6 +395,22 @@ describe('FAD-native Consult helpers', () => {
     expect(JSON.stringify(sanitized)).not.toContain('Please make me a realistic offer');
   });
 
+  test('compacts structured JSON envelopes before reusing Consult history', () => {
+    const envelope = JSON.stringify({
+      response_text: 'Prepared two separate drafts.',
+      drafts: [
+        { recipient_label: 'Maria', body: 'Hello Maria,\n\nFirst draft body.' },
+        { recipient_label: 'Volodymyr', body: 'Hello Volodymyr,\n\nSecond draft body.' },
+      ],
+    });
+
+    const sanitized = sanitizeConsultHistory([{ role: 'assistant', content: envelope }]);
+    expect(sanitized[0].content).toContain('Prepared two separate drafts.');
+    expect(sanitized[0].content).toContain('Draft 1 for Maria');
+    expect(sanitized[0].content).toContain('Draft 2 for Volodymyr');
+    expect(sanitized[0].content).not.toContain('response_text');
+  });
+
   test('compact fallback system prompt preserves Consult draft protocol', () => {
     const prompt = compactConsultSystemPrompt({
       context: 'compose',
@@ -294,7 +418,8 @@ describe('FAD-native Consult helpers', () => {
       compactKnowledgeAppendix: '\n\n[Compact KB + Learning Context]\nT1: Keep operational promises verified.',
     });
     expect(prompt).toContain('Respond in English');
-    expect(prompt).toContain('[DRAFT_UPDATE]');
+    expect(prompt).toContain('Return only valid JSON');
+    expect(prompt).toContain('drafts[].body');
     expect(prompt).toContain('Use confidence gates');
     expect(prompt).toContain('Property code: BS-1');
     expect(prompt).toContain('Compact KB + Learning Context');
