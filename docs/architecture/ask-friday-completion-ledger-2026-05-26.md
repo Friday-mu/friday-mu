@@ -111,6 +111,7 @@ Current reconciliation as of 2026-05-28:
   - Ops Friday Consult synthetic schedule: loaded `ops-consult` KB, used `gemini-3.5-flash`, deferred non-urgent occupied work, allowed urgent guest lock issue, named assignee, mentioned lunch, returned `draft_schedule` suggestion only.
   - Inbox Friday Consult synthetic teaching review: loaded `inbox-advisory`, used `gemini-3.5-flash`, no draft mutation, no automatic teaching creation, session created.
   - Global FAD Ask Friday synthetic command: routed website AI handoffs to Inbox, returned navigation-only action, no direct mutation.
+- Browser snapshot smoke loaded live Operations > Schedule and showed the Friday Consult panel plus live task queues. Multi-step browser click/type QA is parked because the local bridge repeatedly released/closed the claimed tab between commands; this is a tooling blocker, not a product result.
 - PM2 log watch after smoke showed no new Ask Friday route errors. It did show pre-existing AI classifier/extraction warnings and push fan-out with `subscriptions: 0`; keep that in the notification bug lane, not as an Ask Friday Core blocker.
 
 Remaining Plan 1 tasks:
