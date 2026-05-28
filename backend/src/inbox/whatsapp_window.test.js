@@ -23,14 +23,15 @@ describe('WhatsApp window helpers', () => {
     expect(isWithinWhatsAppWindow(null, now)).toBe(false);
   });
 
-  test('loads last inbound WhatsApp timestamp from per-message channel markers', async () => {
+  test('loads last inbound WhatsApp timestamp from message or conversation channel markers', async () => {
     const queryFn = jest.fn(async () => ({
       rows: [{ last_whatsapp_inbound_at: '2026-05-29T10:00:00.000Z' }],
     }));
 
     await expect(loadLastInboundWhatsAppAt('conversation-1', queryFn)).resolves.toBe('2026-05-29T10:00:00.000Z');
-    expect(queryFn.mock.calls[0][0]).toContain('module_type');
-    expect(queryFn.mock.calls[0][0]).toContain('communication_channel');
+    expect(queryFn.mock.calls[0][0]).toContain('m.module_type');
+    expect(queryFn.mock.calls[0][0]).toContain('c.communication_channel');
+    expect(queryFn.mock.calls[0][0]).not.toContain('m.communication_channel');
     expect(queryFn.mock.calls[0][1]).toEqual(['conversation-1']);
   });
 

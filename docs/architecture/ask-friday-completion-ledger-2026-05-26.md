@@ -1,9 +1,9 @@
 # Ask Friday Completion Ledger
 
 Date: 2026-05-26
-Last reconciled: 2026-05-28
+Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current continuation branch: `codex/ask-friday-continuation-20260528`
+Current continuation branch: `codex/ask-friday-plan1-qa-20260529`
 
 ## Purpose
 
@@ -39,10 +39,10 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `7caf6576` | not directly user-facing | deployed control plane, not finished platform |
-| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live synthetic Consult smoke passed | deployed at `7caf6576` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed | deployed at `7caf6576` | needs Franny real schedule/roster proof | Plan 1 browser/workflow priority |
-| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `7caf6576` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `c55e94c0` | not directly user-facing | deployed control plane, not finished platform |
+| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed | deployed at `c55e94c0` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed | deployed at `c55e94c0` | needs Franny real schedule/roster proof | Plan 1 browser/workflow priority |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `c55e94c0` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
@@ -96,11 +96,12 @@ Core should help define:
 
 ### Plan 1 Tasks
 
-Current reconciliation as of 2026-05-28:
+Current reconciliation as of 2026-05-29:
 
 - PR #9 was merged on 2026-05-27 as `da67c7be`.
 - Later PR #13 was merged and deployed on 2026-05-28 as `7caf6576f0030a6935b9f13342c52cbce10e6d6f`.
-- Live frontend and backend both report `7caf6576`.
+- PR #15 was merged and deployed on 2026-05-29 as `c55e94c08691b977ebf8995f3c86f22742e4ea3a`.
+- Live frontend and backend both report `c55e94c0`.
 - Migrations through `100_feedback_multi_screenshots.sql` have been applied in production; startup logs showed `095` through `100` available/applied and migration 100 applied during the feedback deploy.
 - Analyzer remains out of the web request path by default; production logs show the web-process scheduler disabled unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
 - Live authenticated smoke passed for `/api/ask-friday/core/surfaces`, seeded eval cases, KB-candidate list, and unauthenticated staff-route denial.
@@ -115,6 +116,12 @@ Current reconciliation as of 2026-05-28:
 - PM2 log watch after smoke showed no new Ask Friday route errors. It did show pre-existing AI classifier/extraction warnings and push fan-out with `subscriptions: 0`; keep that in the notification bug lane, not as an Ask Friday Core blocker.
 - 2026-05-28 continuation branch runtime patch pushed as `0a65333d`: Roster Friday Consult now receives weekly reservation overlays and cached calendar-pricing signals; the local roster draft uses arrivals/checkouts/in-house stays as demand; Ops consult open-work constraints ignore completed/closed tasks; Inbox Friday Consult browser timeout is aligned with the backend long-context budget.
 - Focused local verification for that runtime patch passed before full regression: `src/operations/consult.test.js` = 7 tests, Inbox consult/draft/reservation context tests = 46 tests, frontend TypeScript passed.
+- 2026-05-29 bugfix release `c55e94c0` hardened Inbox/Friday Consult structured draft output: model calls now request JSON envelopes, API returns `draft_updates[]` while preserving `draft_update`, and the frontend renders multiple lightweight draft cards without sending guest messages.
+- 2026-05-29 deploy verification passed: frontend build, backend build, backend syntax checks, `/version.json`, `/api/version`, authenticated `/api/auth/me`, Inbox conversation list, and Consult active-session read.
+- 2026-05-29 live non-destructive Plan 1 smoke passed:
+  - Inbox Friday Consult returned a structured JSON envelope through `gemini-3.5-flash` with `draftUpdateCount=1`, `structuredEnvelope=true`, `degraded=false`, and `fallbackUsed=false`.
+  - Ops Friday Consult returned through `gemini-3.5-flash`, suggested only reversible `draft_schedule`, and referenced occupancy, lunch/breaks, and named staff assignees for the synthetic occupied-property schedule scenario.
+  - PM2 stayed online; startup logs showed migrations complete with 107 already applied. Recent error log entries were pre-existing classifier/extraction warnings from before the `c55e94c0` deploy.
 
 Remaining Plan 1 tasks:
 
@@ -231,9 +238,9 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 ## Immediate Next Step
 
-Continue with Plan 1 smoke and usefulness verification.
+Continue with Plan 1 browser/workflow usefulness verification.
 
-PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `7caf6576`, which includes PR #9 plus later bugfixes and the Feedback FAB evidence-flow work.
+PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `c55e94c0`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, and the Inbox/Consult structured-draft bugfix release.
 
 New execution-planning artifacts on this branch:
 
@@ -248,4 +255,4 @@ Current autonomous execution note:
 - Local repo evidence has been folded into the execution pack: FAD shared-integration ownership, existing critical rules, business-config pricing/payment rules, Inbox/Consult session behavior, Ops owner-approval rules, and seed eval coverage.
 - The surface subplans now explicitly include the FAD global Ask Friday command surface and an "absorbed module" policy for modules that do not yet justify independent agents.
 
-The next safe action is production smoke for Inbox and Ops, then patch any production-blocking defects before Plan 2 research/buildout. If smoke passes, start reservations/calendar and properties subplans because they are upstream of Ops, Inbox, guest, owner, and Website surfaces.
+The next safe action is browser/workflow proof for Inbox and Ops using real staff-shaped flows, then patch only production-blocking defects. If browser/workflow proof passes, start reservations/calendar and properties subplans because they are upstream of Ops, Inbox, guest, owner, and Website surfaces.

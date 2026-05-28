@@ -19,13 +19,14 @@ function isWithinWhatsAppWindow(value, now = Date.now()) {
 async function loadLastInboundWhatsAppAt(conversationId, queryFn = query) {
   if (!conversationId) return null;
   const { rows } = await queryFn(
-    `SELECT MAX(created_at) AS last_whatsapp_inbound_at
-       FROM messages
-      WHERE conversation_id = $1
-        AND direction = 'inbound'
+    `SELECT MAX(m.created_at) AS last_whatsapp_inbound_at
+       FROM messages m
+       LEFT JOIN conversations c ON c.id = m.conversation_id
+      WHERE m.conversation_id = $1
+        AND m.direction = 'inbound'
         AND (
-          LOWER(COALESCE(module_type, '')) LIKE '%whatsapp%'
-          OR LOWER(COALESCE(communication_channel, '')) LIKE '%whatsapp%'
+          LOWER(COALESCE(m.module_type, '')) LIKE '%whatsapp%'
+          OR LOWER(COALESCE(c.communication_channel, c.channel, '')) LIKE '%whatsapp%'
         )`,
     [conversationId],
   );
