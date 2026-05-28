@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Branch: `codex/ask-friday-autonomous-core-20260526`
+Current continuation branch: `codex/ask-friday-continuation-20260528`
 
 ## Purpose
 
@@ -38,13 +38,19 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/ask-friday-autonomous-core-20260526`
-- Branch: `codex/ask-friday-autonomous-core-20260526`
+- Worktree: `/Users/judith/.codex/worktrees/ask-friday-continuation-20260528`
+- Branch: `codex/ask-friday-continuation-20260528`
 - Base branch: `origin/fad-rebuild`
-- Latest pushed ledger commit when this manifest was created: `2b3d96f0 docs(ask-friday): add completion ledger`
-- Previous code commit: `8b01fb2c fix(fad): enforce ops scheduling constraints`
-- Draft PR: `https://github.com/Friday-mu/friday-mu/pull/9`
-- Deployment status: not deployed from this branch at manifest creation time.
+- Base/live SHA when this continuation branch was created: `7caf6576f0030a6935b9f13342c52cbce10e6d6f`
+- PR #9: merged on 2026-05-27 as `da67c7be`.
+- PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
+- Deployment status: live frontend and backend both reported `7caf6576` during the 2026-05-28 recovery pass.
+- Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
+- Latest pushed continuation commits include:
+  - `a496b217 docs(ask-friday): map public owner feedback surfaces`
+  - `0a65333d feat(fad): strengthen ops roster consult context`
+  - `9d48ab0f fix(fad): restore push setup and owner alert routing`
+  - `03c08858 fix(fad): harden Ask Friday inbox flows`
 
 ## Canonical Recovery Docs
 
@@ -62,12 +68,21 @@ Read these first, in order:
    - Eval matrix, conversation-mining runbook, candidate review lanes, and ADR backlog.
 6. `docs/handover/2026-05-26-ask-friday-autonomous-core.md`
    - Branch handover and implementation summary.
+   - Current Website public wiring prompt: `docs/handover/2026-05-28-ask-friday-website-public-wiring-prompt.md`.
 7. `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
    - Surface catalog, knowledge classes, memory/session policy, and Plan 2 profiles.
 8. `docs/architecture/ask-friday-core-v1-2026-05-23.md`
    - V1 architecture recommendation, contracts, API paths, eval plan, and implementation split.
 9. `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
    - Research synthesis for agent architecture, memory, evals, MCP authorization, and safety.
+10. `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+   - Current Plan 3 source-truth packet for Reservations/Calendar and Properties: FAD API paths, Guesty/FAD/Breezeway ownership, harness implications, gaps, and first tool contracts.
+11. `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+   - Design-only read-tool/action-request contracts for reservation, calendar, and property context.
+12. `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+   - Current Plan 3 source-truth packet for Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning surfaces.
+13. `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+   - Contract draft for Website context-pack consumption, Website learning-event emission, owner lead capsules, feedback evidence capsules, and takeover alignment.
 
 ## Master Plan And Subplans
 
@@ -84,6 +99,14 @@ The repo-owned execution pack under the master plan is:
   - Notion: `https://www.notion.so/36c43ca8849281ed9593d4f16f96931b`
 - `docs/architecture/ask-friday-eval-mining-adr-plan-2026-05-26.md`
   - Notion: `https://www.notion.so/36c43ca8849281cfa226f0102cabdf6a`
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Notion: `https://www.notion.so/36e43ca8849281e39565c1d18a057827`
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
 
@@ -171,6 +194,7 @@ Ask Friday Core backend:
 
 - `backend/src/ask_friday/index.js`
 - `backend/src/ask_friday/contracts.js`
+- `backend/src/ask_friday/context_tools.js`
 - `backend/src/ask_friday/policy.js`
 - `backend/src/ask_friday/publisher.js`
 - `backend/src/ask_friday/analyzer.js`
@@ -187,6 +211,9 @@ Ask Friday Core migrations:
 - `backend/migrations/096_ask_friday_surface_registry_v02.sql`
 - `backend/migrations/097_ask_friday_seed_eval_cases.sql`
 - `backend/migrations/098_ask_friday_candidate_review_lanes.sql`
+- `backend/migrations/101_ask_friday_context_tools.sql`
+- `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
+- `backend/migrations/103_ask_friday_public_contract_evals.sql`
 
 Plan 1 surface code:
 
@@ -250,20 +277,20 @@ Use Notion as mirror/collaboration layer, but keep runtime source in repo for co
 
 ## Plan 1 Readiness Checklist
 
-Do not deploy Plan 1 until these are checked:
+Plan 1 has been deployed. Use this checklist to avoid confusing deployment with team-usefulness:
 
 - Branch is based on latest `origin/fad-rebuild` or explicitly reconciled.
 - No dirty generated artifacts are staged.
 - Naming scan passes.
-- Backend tests pass.
-- Backend build passes.
-- Frontend typecheck passes.
-- Frontend build passes.
-- Migrations `095` through `098` are reviewed for production.
-- Analyzer process mode is decided:
+- Backend tests pass before code changes.
+- Backend build passes before code changes.
+- Frontend typecheck passes before frontend changes.
+- Frontend build passes before frontend changes.
+- Migrations `095` through `098` are live; production logs also showed migration `100` applied during the feedback deploy.
+- Analyzer process mode remains decided:
   - default safe posture: keep analyzer out of web process unless PM2 worker is explicitly configured.
-- Inbox smoke confirms no user-facing harness regression.
-- Ops smoke confirms Franny can draft daily/weekly/monthly schedule or roster with useful constraints.
+- Inbox smoke must confirm no user-facing harness regression after the live deploy.
+- Ops smoke must confirm Franny can draft daily/weekly/monthly schedule or roster with useful constraints.
 - No deploy happens without backend and frontend deploy coordination.
 
 ## Plan 2 Research/KB Rules
@@ -289,6 +316,21 @@ Do not load competitor/industry/local context globally. Scope it per surface:
 - Ops: STR, field-service, turnover, maintenance practices;
 - finance/legal: source-dated and reviewed compliance context only;
 - internal strategy: staff/internal only.
+
+Current Plan 3 source-truth packet:
+
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Reservations/Calendar and Properties are source-mapped but not built as dedicated agents.
+  - Availability/rates stay live lookup or source-dated context.
+  - FAD-local calendar blocks do not imply Guesty/OTA reflection until a verified write-through contract exists.
+  - Property cards need richer privacy/access classification before public context-pack use.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Design-only contracts for `load_reservation_context`, `load_calendar_context`, `load_property_context`, and `request_reservation_action`.
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are source-mapped but not wired to Core runtime in this branch.
+  - Public and owner-facing context needs Ishant review before published KB/context-pack use.
+  - Feedback evidence needs retention/redaction policy before raw screenshots or diagnostics are mined.
+  - Branch migration `102_ask_friday_public_owner_feedback_evals.sql` seeds deterministic eval scaffolding for these scoped risks. This is not deployed.
 
 ## Maintenance Rule
 

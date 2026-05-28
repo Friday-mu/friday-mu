@@ -129,6 +129,8 @@ const GREETINGS = [
   'hi ', 'hello ', 'dear ', 'bonjour ', 'hey ', 'hi,', 'hello,', 'dear,', 'bonjour,', 'hey,',
   'thank you', 'thanks', 'welcome', 'good morning', 'good afternoon', 'good evening',
 ];
+const GREETING_FALLBACK_RE = /(^|[\n\r]|[:.!?]\s+|-\s*)((?:hi|hello|dear|bonjour|hey)\b[,\s]|(?:thank\s+you|thanks|welcome|good\s+morning|good\s+afternoon|good\s+evening)\b)/gi;
+const PREAMBLE_META_RE = /\b(?:draft|reply|response|message|version|suggestion|write|written|send|use|here|below|course|sure|certainly|absolutely)\b/i;
 const RAPID_BACK_AND_FORTH_GREETING_SKIP_MS = 30 * 60 * 1000;
 
 const STATUS_UPDATE_REQUEST_RE = /\b(?:any\s+(?:news|updates?)|do\s+you\s+have\s+(?:any\s+)?(?:news|updates?)|what(?:'s| is)\s+the\s+latest|status\s+update|latest\s+update|nouveau(?:x)?|nouvelles?|avez[-\s]?vous\s+du\s+nouveau|du\s+nouveau|des\s+nouvelles|mise\s+[àa]\s+jour|avancement|où\s+en\s+est|ou\s+en\s+est)\b/i;
@@ -289,20 +291,38 @@ function stripAIPreamble(text) {
     }
   }
 
-  // Second pass: if the text still has obvious meta-talk before a
-  // greeting, drop everything before the greeting. Only triggers when
-  // there's actually content before the greeting (i.e. preamble) AND
-  // the greeting appears within the first ~250 chars.
-  const lowered = out.toLowerCase();
-  for (const g of GREETINGS) {
-    const idx = lowered.indexOf(g);
-    if (idx > 0 && idx < 250) {
-      out = out.slice(idx).trim();
-      break;
-    }
-  }
+  const greetingStart = findGreetingStartAfterPreamble(out);
+  if (greetingStart > 0) out = out.slice(greetingStart).trim();
 
   return out;
+}
+
+function findGreetingStartAfterPreamble(text) {
+  const window = String(text || '').slice(0, 250);
+  GREETING_FALLBACK_RE.lastIndex = 0;
+  let match;
+  while ((match = GREETING_FALLBACK_RE.exec(window)) !== null) {
+    const prefix = window.slice(0, match.index + match[1].length);
+    const idx = prefix.length;
+    if (idx <= 0) continue;
+    if (looksLikeAIPreamblePrefix(prefix)) return idx;
+  }
+  return -1;
+}
+
+function looksLikeAIPreamblePrefix(prefix) {
+  const text = String(prefix || '').trim();
+  if (!text) return false;
+  if (text.length > 220) return false;
+  if (/:\s*$/.test(text)) return true;
+  return PREAMBLE_META_RE.test(text);
+}
+
+function capitalizeDraftOpening(text) {
+  if (!text || typeof text !== 'string') return text || '';
+  return String(text).replace(/^(\s*["'(\[]*)([a-z])/, (_match, prefix, letter) => (
+    `${prefix}${letter.toUpperCase()}`
+  ));
 }
 
 function truncateText(value, maxLength) {
@@ -774,7 +794,7 @@ Output the reply text only. No preamble, no "Here's a draft:", no commentary.`;
     message,
     conversation,
   });
-  let draftBody = correctCurrencyFormatting(operatorEnglishBody);
+  let draftBody = capitalizeDraftOpening(correctCurrencyFormatting(operatorEnglishBody));
   const safety = revisionInstruction
     ? { applied: false, confidenceCeiling: null }
     : applyStatusUpdateSafety(draftBody, {
@@ -1041,6 +1061,9 @@ module.exports = {
   generateDraft,
   // Exposed for tests + the reaper.
   stripAIPreamble,
+  findGreetingStartAfterPreamble,
+  looksLikeAIPreamblePrefix,
+  capitalizeDraftOpening,
   correctCurrencyFormatting,
   calculateConfidence,
   shouldSuppressDraft,

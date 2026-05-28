@@ -112,6 +112,14 @@ Goal:
 
 - Build source truth for availability, reservation status, pricing/quote context, inquiry/confirmed semantics, and follow-up rules.
 
+Current packet:
+
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Use this as the current Wave A source matrix before agent/tool implementation.
+  - It confirms availability/rates are live/source-dated facts, FAD calendar blocks are FAD-local today, and Guesty/OTA-impacting writes require a separate approval-routed tool contract.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Use this as the current Wave A contract draft for read-only reservation/calendar context and approval-routed reservation actions.
+
 Initial source matrix:
 
 | fact_or_rule | source | source_type | trust_tier | privacy_class | allowed_surfaces | freshness_rule | candidate_action | ishant_review |
@@ -142,6 +150,14 @@ Goal:
 
 - Split public property facts from private ops/owner/security facts and assign freshness owners.
 
+Current packet:
+
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
+  - Use this as the current Wave B source matrix before property context-pack implementation.
+  - It confirms Guesty listing cache plus FAD overlays are the read model, `fad_property_cards` is a future AI knowledge surface, and public/private/stay-scoped/staff/restricted classification still needs Ishant review.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Use this as the current Wave B contract draft for role/surface-aware property context loading.
+
 Initial source matrix:
 
 | fact_or_rule | source | source_type | trust_tier | privacy_class | allowed_surfaces | freshness_rule | candidate_action | ishant_review |
@@ -170,6 +186,14 @@ Goal:
 
 - Public answer quality without private leakage or broken handoff.
 
+Current packet:
+
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Use this as the current Wave C source matrix before Website event/context-pack implementation.
+  - It expands handoff, public context-pack, privacy, hospitality assistant, prompt-injection, and escalation eval requirements.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Use this as the current Wave C contract draft for Website context-pack requests, compact redacted learning events, and takeover-state event mapping.
+
 Initial source matrix:
 
 | fact_or_rule | source | source_type | trust_tier | privacy_class | allowed_surfaces | freshness_rule | candidate_action | ishant_review |
@@ -197,6 +221,14 @@ Goal:
 
 - Support owner lead qualification and Friday positioning without unsupported guarantees.
 
+Current packet:
+
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Use this as the current Wave D source matrix before owner lead-capsule or FAD owners assistant implementation.
+  - It adds Website owner-enquiry inheritance, competitor/market context, Mauritius TAC/tourist-fee notes, and owner-data privacy questions.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Use this as the current Wave D contract draft for owner lead capsules and owner-scoped learning-event redaction.
+
 Initial source matrix:
 
 | fact_or_rule | source | source_type | trust_tier | privacy_class | allowed_surfaces | freshness_rule | candidate_action | ishant_review |
@@ -217,6 +249,14 @@ Open questions:
 Goal:
 
 - Convert feedback into useful bugs/product candidates with safe evidence retention.
+
+Current packet:
+
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Use this as the current Wave E source matrix before feedback evidence/candidate implementation.
+  - It expands screenshot/diagnostic handling, redaction, retention, bug-cluster learning, and prompt-injection poisoning eval requirements.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Use this as the current Wave E contract draft for feedback evidence capsules, multiple screenshot refs, and redacted learning-event pointers.
 
 Initial source matrix:
 

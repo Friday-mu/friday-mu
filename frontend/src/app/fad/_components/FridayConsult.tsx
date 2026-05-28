@@ -147,7 +147,9 @@ const CHIP_INSTRUCTIONS: Record<string, string> = {
   'What does the guest want?': 'Identify what the guest wants, what we know, and the next best reply.',
 };
 
-const CONSULT_CLIENT_TIMEOUT_MS = 90_000;
+// Keep the browser budget aligned with the backend/nginx long-context path.
+// The panel has a Stop control, so operators can still cancel manually.
+const CONSULT_CLIENT_TIMEOUT_MS = 590_000;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
@@ -271,9 +273,18 @@ export function FridayConsult({
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptStickToBottomRef = useRef(true);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
+  const manualCancelRef = useRef(false);
+  const requestSeqRef = useRef(0);
   const sessionScopeKey = `${conversationId || 'none'}:${context}:${currentDraft?.id || 'manual'}`;
   const previousSessionScopeRef = useRef(sessionScopeKey);
   const defaultFullThread = context === 'draft_review' || String(conversationId || '').startsWith('web-');
+
+  useEffect(() => () => {
+    requestSeqRef.current += 1;
+    manualCancelRef.current = true;
+    activeRequestControllerRef.current?.abort();
+    activeRequestControllerRef.current = null;
+  }, []);
 
   // Past consult sessions for this conversation. Fetched on demand
   // when the operator opens the history panel. Endpoint already exists
@@ -465,6 +476,11 @@ export function FridayConsult({
 
   useEffect(() => {
     if (previousSessionScopeRef.current === sessionScopeKey) return;
+    requestSeqRef.current += 1;
+    manualCancelRef.current = true;
+    activeRequestControllerRef.current?.abort();
+    activeRequestControllerRef.current = null;
+    setThinking(false);
     if (sessionId) {
       apiFetch('/api/inbox/consult/session/end', {
         method: 'POST',
@@ -495,6 +511,9 @@ export function FridayConsult({
     scrollTranscriptToBottom();
 
     const controller = new AbortController();
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    manualCancelRef.current = false;
     activeRequestControllerRef.current = controller;
     const timeoutId = globalThis.setTimeout(() => controller.abort(), CONSULT_CLIENT_TIMEOUT_MS);
     try {
@@ -517,6 +536,7 @@ export function FridayConsult({
         body: JSON.stringify(body),
         signal: controller.signal,
       }) as ConsultResponse;
+      if (requestSeq !== requestSeqRef.current) return;
 
       // Adoption tracking — every consult query, with response signals:
       // missing-knowledge, has-teach, has-draft-update. Lets us see what
@@ -588,6 +608,8 @@ export function FridayConsult({
         setError('Friday went quiet — try rephrasing.');
       }
     } catch (e) {
+      if (requestSeq !== requestSeqRef.current) return;
+      if (isAbortError(e) && manualCancelRef.current) return;
       const msg = isAbortError(e)
         ? 'Friday is taking too long on this ask. Nothing changed; retry with a narrower question or turn off full thread.'
         : e instanceof Error ? e.message : 'Friday is unreachable right now.';
@@ -597,12 +619,20 @@ export function FridayConsult({
       setError(msg);
     } finally {
       globalThis.clearTimeout(timeoutId);
-      if (activeRequestControllerRef.current === controller) activeRequestControllerRef.current = null;
-      setThinking(false);
+      if (requestSeq === requestSeqRef.current) {
+        if (activeRequestControllerRef.current === controller) activeRequestControllerRef.current = null;
+        if (manualCancelRef.current) manualCancelRef.current = false;
+        setThinking(false);
+      }
     }
   };
   const cancelThinking = () => {
-    activeRequestControllerRef.current?.abort();
+    if (!activeRequestControllerRef.current) return;
+    requestSeqRef.current += 1;
+    manualCancelRef.current = true;
+    activeRequestControllerRef.current.abort();
+    activeRequestControllerRef.current = null;
+    setThinking(false);
   };
 
   // ─── Draft actions (inline within the consult panel) ─────────────────

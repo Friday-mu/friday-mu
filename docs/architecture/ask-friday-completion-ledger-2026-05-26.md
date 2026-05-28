@@ -1,8 +1,9 @@
 # Ask Friday Completion Ledger
 
 Date: 2026-05-26
+Last reconciled: 2026-05-28
 Status: recovery ledger and execution plan
-Branch: `codex/ask-friday-autonomous-core-20260526`
+Current continuation branch: `codex/ask-friday-continuation-20260528`
 
 ## Purpose
 
@@ -38,17 +39,17 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired on branch | backend green | not deployed | not directly user-facing | merge/deploy candidate, not finished platform |
-| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease on branch | backend green | not deployed from this branch | likely improves after deploy, but needs live smoke | Plan 1 priority |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints on branch | backend/frontend green | not deployed from this branch | not proven live for Franny yet | Plan 1 priority |
-| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring on branch | backend green | not deployed from this branch | not the main Plan 1 target | later smoke after merge |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `7caf6576` | not directly user-facing | deployed control plane, not finished platform |
+| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live synthetic Consult smoke passed | deployed at `7caf6576` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed | deployed at `7caf6576` | needs Franny real schedule/roster proof | Plan 1 browser/workflow priority |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `7caf6576` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
 | Website feedback | scoped | feedback skeleton only | existing Website FAB/chat | not wired to Core | no | no | no | Plan 2 |
 | Guest portal Ask Friday | scoped | not built | not built | not wired | no | no | no | later |
-| Reservations/calendar agent | scoped | not complete | not built as agent | registry/eval seed only | no workflow test | no | no | Plan 2 |
-| Properties agent | scoped | property source split partial | not built as agent | registry only | no | no | no | Plan 2 |
+| Reservations/calendar agent | source-mapped, not full agent | source matrix drafted | read-tool contract drafted | branch has staff-only read context route + eval seeds | focused tests green locally | no | no | read-only context implemented on branch; not merged/deployed/live-smoked |
+| Properties agent | source-mapped, not full agent | public/private split drafted | read-tool contract drafted | branch has staff-only read context route + eval seeds | focused tests green locally | no | no | privacy field policy still needs Ishant review before public use |
 | Owners agent | scoped | design-only | not built | registry/eval seed only | no | no | no | later until owner-private rules locked |
 | Finance agent | scoped | design-only | not built | registry/eval seed only | deterministic privacy seed only | no | no | later until access/redaction locked |
 | Legal/admin agent | scoped | design-only | not built | registry only | no | no | no | later until legal review rules locked |
@@ -95,22 +96,29 @@ Core should help define:
 
 ### Plan 1 Tasks
 
-1. Verify branch ancestry and current live production before merge.
-2. Merge/push current Ask Friday Core + Ops constraint branch through the FAD canonical path.
-3. Apply migrations `095` through `098` if not already applied in production.
-4. Decide analyzer process mode before deploy:
-   - default: keep analyzer manual/off in web process;
-   - run worker only if PM2/process plan is explicit.
-5. Deploy backend and frontend together; no frontend-only deploy if backend changed.
-6. Smoke production:
-   - `/api/version`;
-   - `/api/ask-friday/core/surfaces`;
-   - public routes reject private surfaces;
-   - Inbox/Friday Consult draft/consult;
-   - Ops Schedule Friday Consult draft/apply/undo;
-   - Ops Roster Friday Consult conversation/draft;
-   - global FAD Ask Friday harmless action suggestion.
-7. Run live workflow QA with staff-shaped scenarios:
+Current reconciliation as of 2026-05-28:
+
+- PR #9 was merged on 2026-05-27 as `da67c7be`.
+- Later PR #13 was merged and deployed on 2026-05-28 as `7caf6576f0030a6935b9f13342c52cbce10e6d6f`.
+- Live frontend and backend both report `7caf6576`.
+- Migrations through `100_feedback_multi_screenshots.sql` have been applied in production; startup logs showed `095` through `100` available/applied and migration 100 applied during the feedback deploy.
+- Analyzer remains out of the web request path by default; production logs show the web-process scheduler disabled unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
+- Live authenticated smoke passed for `/api/ask-friday/core/surfaces`, seeded eval cases, KB-candidate list, and unauthenticated staff-route denial.
+- 2026-05-28 continuation branch `283c6796` reconciled stale planning docs against live truth.
+- Focused backend tests passed locally after dependency install: `src/operations/consult.test.js`, `src/inbox/consult.test.js`, `src/ask_friday/index.test.js`, `src/ask_friday/policy.test.js`, `src/ask_friday/contracts.test.js`, `src/ask_friday/eval_runner.test.js` = 6 suites, 49 tests.
+- Live non-destructive API/model smoke passed:
+  - Core staff routes: auth/me, active surfaces = 9, active eval cases = 10, KB candidates = 0, unauth/private route denial = 401.
+  - Ops Friday Consult synthetic schedule: loaded `ops-consult` KB, used `gemini-3.5-flash`, deferred non-urgent occupied work, allowed urgent guest lock issue, named assignee, mentioned lunch, returned `draft_schedule` suggestion only.
+  - Inbox Friday Consult synthetic teaching review: loaded `inbox-advisory`, used `gemini-3.5-flash`, no draft mutation, no automatic teaching creation, session created.
+  - Global FAD Ask Friday synthetic command: routed website AI handoffs to Inbox, returned navigation-only action, no direct mutation.
+- Browser snapshot smoke loaded live Operations > Schedule and showed the Friday Consult panel plus live task queues. Multi-step browser click/type QA is parked because the local bridge repeatedly released/closed the claimed tab between commands; this is a tooling blocker, not a product result.
+- PM2 log watch after smoke showed no new Ask Friday route errors. It did show pre-existing AI classifier/extraction warnings and push fan-out with `subscriptions: 0`; keep that in the notification bug lane, not as an Ask Friday Core blocker.
+- 2026-05-28 continuation branch runtime patch pushed as `0a65333d`: Roster Friday Consult now receives weekly reservation overlays and cached calendar-pricing signals; the local roster draft uses arrivals/checkouts/in-house stays as demand; Ops consult open-work constraints ignore completed/closed tasks; Inbox Friday Consult browser timeout is aligned with the backend long-context budget.
+- Focused local verification for that runtime patch passed before full regression: `src/operations/consult.test.js` = 7 tests, Inbox consult/draft/reservation context tests = 46 tests, frontend TypeScript passed.
+
+Remaining Plan 1 tasks:
+
+1. Run browser/live workflow QA with real staff-shaped scenarios:
    - Inbox guest complaint draft with latest guest turn;
    - Inbox property/reservation-grounded reply;
    - Inbox teaching/action feedback still included;
@@ -118,8 +126,23 @@ Core should help define:
    - Ops weekly schedule with checkout and arrival pressure;
    - Ops roster with lunch/coverage/fairness;
    - Ops urgent guest issue during occupancy.
-8. Patch only blocking defects.
-9. Record what is actually live in this ledger and Notion.
+2. Patch only blocking defects from that browser/workflow QA.
+3. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
+
+Plan 3 source-mapping progress:
+
+- `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md` maps Reservations/Calendar and Properties against current FAD runtime paths, Guesty docs, and known gaps.
+- It confirms these surfaces are not yet dedicated agents. It only closes the source-truth planning gap enough to design read-only context tools and evals.
+- `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md` drafts the first read-only context contracts and the approval-routed reservation action contract.
+- Branch implementation added staff-only `/api/ask-friday/core/context-tools/load-reservation-context`, `/load-calendar-context`, and `/load-property-context`, plus migration `101_ask_friday_context_tools.sql` for registry/eval seeds. This is not deployed.
+- Key gaps carried forward: Guesty/OTA write-through contract, quote validity policy, public price fields, property public/guest/staff/restricted classification, and richer privacy enforcement for `fad_property_cards`.
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md` now source-maps Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning. These are scoped only, not runtime wired. Key gaps carried forward: public property-field policy, owner package/competitor wording, owner-data retention/consent, feedback evidence retention/redaction, and Website/FAD event/context-pack contracts.
+- Branch migration `102_ask_friday_public_owner_feedback_evals.sql` seeds deterministic eval scaffolding for Website public handoff/privacy, owner safety/privacy/compliance, and feedback evidence/candidate safety. This is not deployed.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md` now drafts the Website context-pack request, Website learning event, owner lead capsule, feedback evidence capsule, and handoff/takeover alignment contracts. It is mirrored in Notion at `https://www.notion.so/36e43ca8849281e39565c1d18a057827`. This is planning/contract work only; Website is not wired to consume Core packs or emit Core events yet.
+- `backend/src/ask_friday/policy.test.js` now pins the public/owner/feedback contract boundaries: valid Website public context-pack/event shapes, owner lead event summaries, feedback evidence refs, and rejection of owner-private scopes or restricted unredacted evidence on public routes. Focused Core verification passed on 2026-05-28: `src/ask_friday/policy.test.js`, `contracts.test.js`, and `index.test.js` all green.
+- `backend/src/ask_friday/index.test.js` now covers public owner follow-up and feedback issue action requests. This confirms `request_owner_followup` and `create_feedback_issue` queue as approval-routed pending action requests under public surface policy; they do not execute directly.
+- Branch migration `103_ask_friday_public_contract_evals.sql` adds contract-specific eval seeds for missing context-pack fallback, ready owner lead capsules, feedback evidence/action requests, and restricted evidence rejection. This is not deployed.
+- `docs/handover/2026-05-28-ask-friday-website-public-wiring-prompt.md` is a paste-ready Website-session prompt for implementing public context-pack consumption, redacted learning-event emission, owner lead capsules, feedback evidence capsules, and takeover preservation from a separate Website worktree.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
@@ -208,11 +231,9 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 ## Immediate Next Step
 
-Continue with Plan 1.
+Continue with Plan 1 smoke and usefulness verification.
 
-The branch has pushed but not deployed Ask Friday Core hardening plus Ops constraints.
-
-Draft PR: `https://github.com/Friday-mu/friday-mu/pull/9`
+PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `7caf6576`, which includes PR #9 plus later bugfixes and the Feedback FAB evidence-flow work.
 
 New execution-planning artifacts on this branch:
 
@@ -227,4 +248,4 @@ Current autonomous execution note:
 - Local repo evidence has been folded into the execution pack: FAD shared-integration ownership, existing critical rules, business-config pricing/payment rules, Inbox/Consult session behavior, Ops owner-approval rules, and seed eval coverage.
 - The surface subplans now explicitly include the FAD global Ask Friday command surface and an "absorbed module" policy for modules that do not yet justify independent agents.
 
-The next safe action is coordinated FAD review/merge/deploy/smoke for Inbox and Ops only, then patch any production-blocking defects before Plan 2 research/buildout.
+The next safe action is production smoke for Inbox and Ops, then patch any production-blocking defects before Plan 2 research/buildout. If smoke passes, start reservations/calendar and properties subplans because they are upstream of Ops, Inbox, guest, owner, and Website surfaces.

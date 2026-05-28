@@ -342,6 +342,115 @@ describe('Ask Friday Core router', () => {
     expect(query.mock.calls[1][1][0]).toBe(TENANT_ID);
   });
 
+  test('queues owner follow-up and feedback public action requests under surface policy', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          surface_id: 'website_owner_enquiry',
+          allowed_knowledge_scopes: ['public_owner_overview', 'owner_qualification'],
+          allowed_tools: ['extract_owner_fields', 'prepare_owner_followup'],
+          allowed_actions: ['request_owner_followup', 'request_handoff'],
+        })],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          action_id: 'act-owner-1',
+          source_system: 'friday-website',
+          surface_id: 'website_owner_enquiry',
+          requested_by: { identityType: 'api_client', identityKey: 'friday-website', authenticated: true },
+          action_type: 'request_owner_followup',
+          risk_class: 'approval',
+          payload: {
+            ownerLeadCapsule: {
+              readiness: { status: 'ready_for_staff_followup' },
+              constraints: { noRevenueGuarantee: true },
+            },
+          },
+          reason: 'Owner asked for Friday follow-up.',
+          approval_required: true,
+          status: 'pending',
+          created_at: new Date('2026-05-28T08:00:00.000Z'),
+          updated_at: new Date('2026-05-28T08:00:00.000Z'),
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          surface_id: 'website_feedback_bug',
+          access_class: 'public_diagnostic',
+          allowed_knowledge_scopes: ['feedback_diagnostics', 'public_site_context'],
+          allowed_tools: ['inspect_feedback_context'],
+          allowed_actions: ['create_feedback_issue'],
+        })],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          action_id: 'act-feedback-1',
+          source_system: 'friday-website',
+          surface_id: 'website_feedback_bug',
+          requested_by: { identityType: 'api_client', identityKey: 'friday-website', authenticated: true },
+          action_type: 'create_feedback_issue',
+          risk_class: 'approval',
+          payload: {
+            feedbackEvidenceRef: 'afev_screenshot_01',
+            report: { summary: 'Mobile submit button is hidden.' },
+          },
+          reason: 'Bug report captured from Website feedback.',
+          approval_required: true,
+          status: 'pending',
+          created_at: new Date('2026-05-28T08:01:00.000Z'),
+          updated_at: new Date('2026-05-28T08:01:00.000Z'),
+        }],
+      });
+
+    const owner = await request(app())
+      .post('/api/ask-friday/core/action-requests/public')
+      .set('Authorization', `Bearer ${apiToken(['ask-friday:actions:write'])}`)
+      .send({
+        actionId: 'act-owner-1',
+        sourceSystem: 'friday-website',
+        surfaceId: 'website_owner_enquiry',
+        actionType: 'request_owner_followup',
+        payload: {
+          ownerLeadCapsule: {
+            readiness: { status: 'ready_for_staff_followup' },
+            constraints: { noRevenueGuarantee: true },
+          },
+        },
+        reason: 'Owner asked for Friday follow-up.',
+      })
+      .expect(201);
+
+    const feedback = await request(app())
+      .post('/api/ask-friday/core/action-requests/public')
+      .set('Authorization', `Bearer ${apiToken(['ask-friday:actions:write'])}`)
+      .send({
+        actionId: 'act-feedback-1',
+        sourceSystem: 'friday-website',
+        surfaceId: 'website_feedback_bug',
+        actionType: 'create_feedback_issue',
+        payload: {
+          feedbackEvidenceRef: 'afev_screenshot_01',
+          report: { summary: 'Mobile submit button is hidden.' },
+        },
+        reason: 'Bug report captured from Website feedback.',
+      })
+      .expect(201);
+
+    expect(owner.body.actionRequest).toMatchObject({
+      actionId: 'act-owner-1',
+      actionType: 'request_owner_followup',
+      approvalRequired: true,
+      status: 'pending',
+    });
+    expect(feedback.body.actionRequest).toMatchObject({
+      actionId: 'act-feedback-1',
+      actionType: 'create_feedback_issue',
+      approvalRequired: true,
+      status: 'pending',
+    });
+    expect(query).toHaveBeenCalledTimes(4);
+  });
+
   test('validates staff action requests against registered surface policy', async () => {
     query
       .mockResolvedValueOnce({

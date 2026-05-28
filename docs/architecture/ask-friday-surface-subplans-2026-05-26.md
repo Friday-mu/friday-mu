@@ -3,8 +3,8 @@
 Date: 2026-05-26
 Status: execution subplans, not implementation proof
 Anchor: `docs/architecture/ask-friday-master-plan-v02-2026-05-26.md`
-Branch: `codex/ask-friday-autonomous-core-20260526`
-PR: `https://github.com/Friday-mu/friday-mu/pull/9`
+Current continuation branch: `codex/ask-friday-continuation-20260528`
+Historical PR: `https://github.com/Friday-mu/friday-mu/pull/9` merged as `da67c7be`; production later advanced to `7caf6576`
 
 ## Purpose
 
@@ -191,7 +191,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- PR #9 Plan 1 deploy/smoke, then live mining design against recent Inbox Consult conversations.
+- Live workflow smoke and team-usefulness proof, then live mining design against recent Inbox Consult conversations.
 
 Ishant review:
 
@@ -255,7 +255,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- PR #9 Plan 1 deploy/smoke, then live Ops scenario QA.
+- Live Ops scenario QA and team-usefulness proof.
 
 Ishant review:
 
@@ -265,7 +265,7 @@ Ishant review:
 
 ## Reservations / Calendar
 
-Status: scoped, not built as an agent.
+Status: source-mapped, not built as an agent.
 
 Mission:
 
@@ -284,6 +284,8 @@ Source truth:
 - Payment-proof and inquiry/confirmed semantics.
 - Channel manager/PMS state where available.
 - Manual FAD overrides with provenance.
+- Current source matrix: `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`.
+- Current tool contract draft: `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`.
 
 Knowledge scopes:
 
@@ -326,7 +328,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- Create source-of-truth matrix and eval cases before runtime agent work.
+- Seed eval cases from the 2026-05-28 contracts, then implement read-only reservation/calendar context tools before runtime agent work.
 
 Ishant review:
 
@@ -336,7 +338,7 @@ Ishant review:
 
 ## Properties
 
-Status: scoped, not built as an agent.
+Status: source-mapped, not built as an agent.
 
 Mission:
 
@@ -356,6 +358,8 @@ Source truth:
 - Owner terms and property exceptions.
 - Maintenance/issue history.
 - Staff-reviewed corrections.
+- Current source matrix: `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`.
+- Current tool contract draft: `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`.
 
 Knowledge split:
 
@@ -391,7 +395,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- Build property public/private source matrix and freshness rules.
+- Convert the 2026-05-28 source matrix and tool contract into a public/guest/staff/restricted field policy, then implement read-only property context tools.
 
 Ishant review:
 

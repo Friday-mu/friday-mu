@@ -23,6 +23,9 @@ const {
   DRAFT_FALLBACK_MODEL,
   ensureFriendlyOpening,
   hasRecentFridayReplyBeforeTrigger,
+  stripAIPreamble,
+  findGreetingStartAfterPreamble,
+  capitalizeDraftOpening,
 } = require('./draft_generator');
 
 describe('draft generator language policy', () => {
@@ -190,6 +193,31 @@ describe('draft generator latest guest turn handling', () => {
 });
 
 describe('draft generator guest-facing opening guard', () => {
+  test('does not mistake hey inside they for a greeting when stripping preambles', () => {
+    const knowDraft = 'This helps our team so they know exactly what to look for. Please let us know your preferred time ranges.';
+    const inspectDraft = 'This means they can inspect it directly. As a reminder, we will coordinate with the team.';
+
+    expect(stripAIPreamble(knowDraft)).toBe(knowDraft);
+    expect(stripAIPreamble(inspectDraft)).toBe(inspectDraft);
+    expect(findGreetingStartAfterPreamble(knowDraft)).toBe(-1);
+  });
+
+  test('strips real model preamble only before a boundary-safe greeting', () => {
+    expect(stripAIPreamble('Suggested reply: Hi Maria, we can arrange that for you.')).toBe(
+      'Hi Maria, we can arrange that for you.',
+    );
+  });
+
+  test('capitalizes lowercase draft openings without changing existing capitals', () => {
+    expect(capitalizeDraftOpening('thank you for the update. We will check.')).toBe(
+      'Thank you for the update. We will check.',
+    );
+    expect(capitalizeDraftOpening('welcome. Have a pleasant evening.')).toBe(
+      'Welcome. Have a pleasant evening.',
+    );
+    expect(capitalizeDraftOpening('Thanks, we will check.')).toBe('Thanks, we will check.');
+  });
+
   test('adds a greeting to first-turn drafts that start too abruptly', () => {
     const result = ensureFriendlyOpening('To get an accurate quote, could you let us know how many adults and children will join?', {
       conversation: { guest_name: 'Julien Melendez' },

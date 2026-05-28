@@ -636,7 +636,7 @@ async function loadFocusedGuestyThread(tenantId, conversationId) {
   const [convRes, msgRes, draftRes] = await Promise.all([
     query(
       `SELECT id, guest_name, property_name, status, communication_channel,
-              last_message_at, updated_at, guest_phone, guesty_id
+              last_message_at, updated_at, guesty_id
          FROM conversations
         WHERE tenant_id = $1 AND id = $2`,
       [tenantId, conversationId],
@@ -1381,6 +1381,7 @@ module.exports = {
     buildListingIndex,
     sanitizeFocus,
     parseInboxFocusThreadId,
+    loadFocusedGuestyThread,
     knowledgeScopesForAskFriday,
     stableActionRequestId,
     ASK_FRIDAY_MODEL,

@@ -34,6 +34,8 @@ const VALID_ACTIONS = new Set([
   'request_owner_approval',
 ]);
 
+const OPEN_PLANNING_STATUSES = new Set(['reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked']);
+
 function cleanString(value, maxLength = 4000) {
   const text = typeof value === 'string' ? value.trim() : '';
   return text.length > maxLength ? text.slice(0, maxLength).trimEnd() : text;
@@ -184,6 +186,10 @@ function guestUrgentTask(task) {
     );
 }
 
+function isOpenPlanningTask(task) {
+  return OPEN_PLANNING_STATUSES.has(cleanString(task?.status, 80).toLowerCase());
+}
+
 function formatPricingSignal(reservation) {
   const pricing = reservation?.calendarPricing;
   if (!pricing || typeof pricing !== 'object') return null;
@@ -227,6 +233,7 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, reservatio
       .map((item) => item.propertyCode),
   );
   const nonUrgentOccupiedTaskIds = scheduledTasks
+    .filter(isOpenPlanningTask)
     .filter((task) => selected && task.dueDate === selected)
     .filter((task) => occupiedSelectedProperties.has(task.propertyCode))
     .filter((task) => !guestUrgentTask(task))
@@ -242,6 +249,7 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, reservatio
       .filter(Boolean)
       .slice(0, 60),
     unassignedOpenTaskIds: scheduledTasks.concat(unscheduledTasks)
+      .filter(isOpenPlanningTask)
       .filter((task) => task.assigneeIds.length === 0)
       .map((task) => task.id)
       .filter(Boolean)

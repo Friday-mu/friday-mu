@@ -520,7 +520,7 @@ router.post('/:id/revise', attachIdentity, async (req, res) => {
         `INSERT INTO teachings (
            tenant_id, instruction, scope, property_code, source,
            source_revision_ids, taught_by, taught_at
-         ) VALUES ($1, $2, $3, $4, 'revision', $5::uuid[], $6, NOW())`,
+         ) VALUES ($1::uuid, $2::text, $3::text, $4::text, 'friday_consult', $5::uuid[], $6::text, NOW())`,
         [tenantId, instruction, scope, propertyCode, [draftId], reviewedBy],
       ).catch((e) => console.warn('[drafts/revise] teaching insert failed:', e.message));
       await query(

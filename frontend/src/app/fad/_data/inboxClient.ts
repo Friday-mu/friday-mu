@@ -17,6 +17,8 @@ import type { InboxThread, InboxMessage, InboxChannel, InboxReservation, InboxDr
 
 function mapChannelKey(channel: unknown): InboxChannel {
   const s = String(channel ?? '').toLowerCase();
+  if (s.includes('owner') && (s.includes('whatsapp') || s === 'owner_wa')) return 'owner_whatsapp';
+  if (s.includes('owner')) return 'owner_email';
   if (s.includes('airbnb')) return 'airbnb';
   if (s.includes('booking') || s === 'bdc' || s === 'bookingcom') return 'booking';
   if (s.includes('whatsapp') || s === 'wa') return 'whatsapp';
@@ -71,6 +73,25 @@ function channelLabel(key: InboxChannel): string {
     vendor_driver: 'Driver',
     vendor_chef: 'Chef',
   }[key];
+}
+
+function isOwnerBookingAlertText(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.toLowerCase() : '';
+  if (!text) return false;
+  if (!text.includes('new booking alert')) return false;
+  return text.includes('owner') || text.includes('owner portal') || text.includes("owner's name");
+}
+
+function extractOwnerAlertProperty(value: unknown): string | undefined {
+  const text = typeof value === 'string' ? value : '';
+  const match = text.match(/\bproperty:\s*(.+?)(?:\s+(?:dates?|check-?in|guest\s+name|owner'?s\s+name):|$)/i);
+  return match?.[1]?.trim().replace(/[.;,\s]+$/g, '') || undefined;
+}
+
+function extractOwnerAlertName(value: unknown): string | undefined {
+  const text = typeof value === 'string' ? value : '';
+  const match = text.match(/\bowner'?s\s+name:\s*(.+?)(?:\s+owner\s+portal(?:\s+link)?:|[.;\n]|$)/i);
+  return match?.[1]?.trim().replace(/[.;,\s]+$/g, '') || undefined;
 }
 
 function confidenceRatio(value: unknown): number | undefined {
@@ -292,7 +313,7 @@ export function transformGmsConversation(
   availableChannels?: string[],
   recommendedChannel?: string,
 ): InboxThread {
-  const channelKey = mapChannelKey(raw.channel ?? raw.communication_channel);
+  const baseChannelKey = mapChannelKey(raw.communication_channel ?? raw.channel);
   const status = raw.status;
   const sentiment = raw.sentiment;
   const confidence = confidenceRatio(raw.latest_draft_confidence);
@@ -302,6 +323,17 @@ export function transformGmsConversation(
 
   const summary = usableConversationSummary(raw.conversation_summary);
   const preview = String(raw.last_message_body || summary || '').slice(0, 200);
+  const ownerBookingAlert =
+    baseChannelKey === 'owner_email'
+    || baseChannelKey === 'owner_whatsapp'
+    || isOwnerBookingAlertText(raw.last_message_body)
+    || isOwnerBookingAlertText(summary);
+  const channelKey = ownerBookingAlert && baseChannelKey === 'email'
+    ? 'owner_email'
+    : baseChannelKey;
+  const entity: InboxThread['entity'] = channelKey === 'owner_email' || channelKey === 'owner_whatsapp' || ownerBookingAlert
+    ? 'owner'
+    : 'guest';
   // GMS has no subject field — guests just send messages. Use summary as
   // "subject line" when present; fall back to first 80 chars of preview.
   const subject = summary
@@ -341,13 +373,15 @@ export function transformGmsConversation(
     id: String(raw.id || `conv-${Math.random().toString(36).slice(2, 9)}`),
     unread: Boolean(raw.is_unread),
     urgent: mapUrgent(sentiment, draftUrgency),
-    guest: String(raw.guest_name || 'Guest'),
+    guest: ownerBookingAlert
+      ? (extractOwnerAlertName(raw.last_message_body) || String(raw.guest_name || 'Owner'))
+      : String(raw.guest_name || 'Guest'),
     subject,
     preview,
     channel: channelLabel(channelKey),
-    entity: 'guest',
+    entity,
     channelKey,
-    property: String(raw.property_name || ''),
+    property: String(raw.property_name || extractOwnerAlertProperty(raw.last_message_body) || ''),
     time: String(raw.last_message_at || raw.updated_at || raw.created_at || new Date().toISOString()),
     triageStatus: mapTriage(status),
     stayStatus: undefined, // could derive from reservation.check_in/out_date in detail view
@@ -364,8 +398,8 @@ export function transformGmsConversation(
     drafts,
     availableChannels,
     recommendedChannel,
-    latestDraftState: raw.latest_draft_state ? (String(raw.latest_draft_state) as DraftState) : undefined,
-    latestDraftConfidence: confidenceRatio(raw.latest_draft_confidence),
+    latestDraftState: ownerBookingAlert ? undefined : (raw.latest_draft_state ? (String(raw.latest_draft_state) as DraftState) : undefined),
+    latestDraftConfidence: ownerBookingAlert ? undefined : confidenceRatio(raw.latest_draft_confidence),
   };
 }
 
