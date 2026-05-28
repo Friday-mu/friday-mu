@@ -191,6 +191,8 @@ Current packet:
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Use this as the current Wave C source matrix before Website event/context-pack implementation.
   - It expands handoff, public context-pack, privacy, hospitality assistant, prompt-injection, and escalation eval requirements.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Use this as the current Wave C contract draft for Website context-pack requests, compact redacted learning events, and takeover-state event mapping.
 
 Initial source matrix:
 
@@ -224,6 +226,8 @@ Current packet:
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Use this as the current Wave D source matrix before owner lead-capsule or FAD owners assistant implementation.
   - It adds Website owner-enquiry inheritance, competitor/market context, Mauritius TAC/tourist-fee notes, and owner-data privacy questions.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Use this as the current Wave D contract draft for owner lead capsules and owner-scoped learning-event redaction.
 
 Initial source matrix:
 
@@ -251,6 +255,8 @@ Current packet:
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Use this as the current Wave E source matrix before feedback evidence/candidate implementation.
   - It expands screenshot/diagnostic handling, redaction, retention, bug-cluster learning, and prompt-injection poisoning eval requirements.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Use this as the current Wave E contract draft for feedback evidence capsules, multiple screenshot refs, and redacted learning-event pointers.
 
 Initial source matrix:
 

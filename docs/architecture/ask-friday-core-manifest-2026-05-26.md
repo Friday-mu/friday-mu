@@ -47,6 +47,7 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - Deployment status: live frontend and backend both reported `7caf6576` during the 2026-05-28 recovery pass.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
+  - `a496b217 docs(ask-friday): map public owner feedback surfaces`
   - `0a65333d feat(fad): strengthen ops roster consult context`
   - `9d48ab0f fix(fad): restore push setup and owner alert routing`
   - `03c08858 fix(fad): harden Ask Friday inbox flows`
@@ -79,6 +80,8 @@ Read these first, in order:
    - Design-only read-tool/action-request contracts for reservation, calendar, and property context.
 12. `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
    - Current Plan 3 source-truth packet for Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning surfaces.
+13. `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+   - Contract draft for Website context-pack consumption, Website learning-event emission, owner lead capsules, feedback evidence capsules, and takeover alignment.
 
 ## Master Plan And Subplans
 
@@ -100,6 +103,8 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.

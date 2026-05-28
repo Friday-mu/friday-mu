@@ -148,5 +148,6 @@ The immediate goal is to define what these surfaces may know, where that knowled
    - Website redacted learning event emission;
    - owner lead capsule;
    - feedback evidence capsule.
+   - Contract draft: `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`.
 3. Do not wire Website until a separate Website worktree/session is opened.
 4. Do not publish public/owner KB rows until Ishant has reviewed owner wording, public property fields, and feedback retention.

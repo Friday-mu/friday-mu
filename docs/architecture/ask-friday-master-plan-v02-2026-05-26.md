@@ -381,6 +381,9 @@ Current Plan 3 packet:
   - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are now source-mapped.
   - This packet is planning/research proof only. It does not mean Website, owner, or feedback surfaces are wired to Core runtime.
   - It defines eval seeds and open Ishant-review decisions before public/owner KB/context-pack publishing.
+- `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
+  - Contract draft for Website context-pack consumption, Website redacted learning events, owner lead capsules, feedback evidence capsules, and takeover alignment.
+  - This packet is not implementation proof. It defines the payload shapes and runtime boundaries for a future Website worktree and future FAD/Core API hardening.
 - `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
   - Branch-only deterministic eval scaffolding for those scoped risks. It is not deployed.
 
