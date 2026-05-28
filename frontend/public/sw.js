@@ -2,7 +2,7 @@
 // fetch strategy, or after a deploy that you want to force-evict stale
 // chunks from. The activate handler deletes every cache that doesn't
 // match this name, so users on an older SW lose their cache on update.
-const CACHE_NAME = 'friday-admin-v6';
+const CACHE_NAME = 'friday-admin-v7';
 
 // Best-effort static pre-cache. cache.addAll() is atomic — if ANY asset
 // fails (e.g. 403 from misperm'd file on the server), the WHOLE install
@@ -97,15 +97,30 @@ self.addEventListener('fetch', (event) => {
 });
 
 // Push notifications
+function parsePushPayload(event) {
+  if (!event.data) return {};
+  try {
+    return event.data.json();
+  } catch (err) {
+    try {
+      const body = event.data.text();
+      return body ? { body } : {};
+    } catch {
+      return {};
+    }
+  }
+}
+
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
+  const data = parsePushPayload(event);
+  const extraData = data && typeof data.data === 'object' && data.data ? data.data : {};
   const title = data.title || 'Friday Admin';
   const options = {
     body: data.body || 'You have a new notification',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     tag: data.tag || 'gms-notification',
-    data: { url: data.url || '/' },
+    data: { ...extraData, url: data.url || extraData.url || '/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

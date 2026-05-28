@@ -48,6 +48,7 @@ import { MODULE_RESOURCE, PermissionsProvider, canSeeModule, useCurrentRole } fr
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
 import { apiFetch, getToken } from '../../../components/types';
+import NotificationPrompt from '../../../components/NotificationPrompt';
 import { useEnabledModules } from '../_data/useEnabledModules';
 import { useAnnexA } from '../_data/useAnnexA';
 import { useTenantCurrency } from '../_data/useTenantCurrency';
@@ -380,6 +381,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
         onToggleTheme={toggleTheme}
       />
       <BugReportFab currentModuleLabel={fridayFs ? 'Ask Friday' : mod.label} />
+      <NotificationPrompt />
       <Toaster />
       {mustChangePassword && (
         <ChangePasswordModal onChanged={() => setMustChangePassword(false)} />

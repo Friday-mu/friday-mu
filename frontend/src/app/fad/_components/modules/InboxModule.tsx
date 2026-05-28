@@ -870,21 +870,6 @@ export function InboxModule({ onAskFriday: _onAskFriday }: Props) {
           </span>
         </button>
       ))}
-      {canSeeGuest && secondaryExternalChips.map((c) => (
-        <button
-          key={c.key}
-          className={'inbox-chip inbox-chip-secondary' + (entityFilter === c.key ? ' active' : '')}
-          onClick={() => {
-            setEntityFilter(c.key);
-            setChipMoreOpen(false);
-          }}
-        >
-          {c.label}{' '}
-          <span className="mono" style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>
-            {c.count}
-          </span>
-        </button>
-      ))}
       {canSeeGuest && (
         <button
           className={'inbox-chip' + (triageFilter === 'review' ? ' active' : '')}

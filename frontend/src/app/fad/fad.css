@@ -853,7 +853,7 @@ html.fad-dark .inbox-collapse-btn { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
   font-weight: 500;
 }
 .inbox-chip-more-wrap {
-  display: none;
+  display: block;
   position: relative;
   flex: 0 0 auto;
 }

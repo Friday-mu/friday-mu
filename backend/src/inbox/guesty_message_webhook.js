@@ -125,6 +125,7 @@ function isGuestyAutoResponse(body) {
 function isSystemNotification(body) {
   if (!body || typeof body !== 'string') return false;
   const lower = body.toLowerCase();
+  if (isOwnerBookingAlert(body)) return true;
   if (lower.startsWith('new guest reservation') || lower.startsWith('new guest inquiry')) return true;
   if (lower.includes('status changed to')) return true;
   if (/reservation\s+[a-f0-9]{10,}/i.test(body)) return true;
@@ -133,6 +134,27 @@ function isSystemNotification(body) {
   if (lower.includes('has been canceled') || lower.includes('has been cancelled')) return true;
   if (lower.includes('payment received') || lower.includes('payment failed')) return true;
   return false;
+}
+
+function isOwnerBookingAlert(body) {
+  if (!body || typeof body !== 'string') return false;
+  const lower = body.toLowerCase();
+  if (!lower.includes('new booking alert')) return false;
+  return lower.includes('owner') || lower.includes('owner portal') || lower.includes("owner's name");
+}
+
+function extractOwnerAlertProperty(body) {
+  if (!body || typeof body !== 'string') return null;
+  const match = body.match(/\bproperty:\s*(.+?)(?:\s+(?:dates?|check-?in|guest\s+name|owner'?s\s+name):|$)/i);
+  const value = match?.[1]?.trim().replace(/[.;,\s]+$/g, '');
+  return value ? value.slice(0, 500) : null;
+}
+
+function extractOwnerAlertName(body) {
+  if (!body || typeof body !== 'string') return null;
+  const match = body.match(/\bowner'?s\s+name:\s*(.+?)(?:\s+owner\s+portal(?:\s+link)?:|[.;\n]|$)/i);
+  const value = match?.[1]?.trim().replace(/[.;,\s]+$/g, '');
+  return value ? value.slice(0, 200) : null;
 }
 
 // Body + attachments + reaction-flag derivation. Mirrors GMS poller
@@ -338,8 +360,9 @@ async function handleMessageEvent(event) {
   // (regex on body) and Guesty system pings (booking confirmations
   // etc.). Downstream queries filter these out of read-status /
   // next-step / draft-trigger logic.
-  const isAutoResponse = direction === 'outbound'
-    && (isGuestyAutoResponse(body) || isSystemNotification(body));
+  const ownerBookingAlert = isOwnerBookingAlert(body);
+  const isAutoResponse = isSystemNotification(body)
+    || (direction === 'outbound' && isGuestyAutoResponse(body));
 
   const inserted = await query(
     `INSERT INTO messages (
@@ -373,9 +396,23 @@ async function handleMessageEvent(event) {
     `UPDATE conversations
        SET last_message_at = $2,
            updated_at = NOW(),
-           last_inbound_at = CASE WHEN $3 = 'inbound' THEN $2 ELSE last_inbound_at END
+           last_inbound_at = CASE WHEN $3 = 'inbound' THEN $2 ELSE last_inbound_at END,
+           communication_channel = CASE WHEN $4 THEN 'owner_email' ELSE communication_channel END,
+           property_name = CASE WHEN $4 THEN COALESCE(property_name, $5) ELSE property_name END,
+           guest_name = CASE
+             WHEN $4 AND (guest_name IS NULL OR guest_name = '' OR LOWER(guest_name) = 'guest')
+               THEN COALESCE($6, 'Owner')
+             ELSE guest_name
+           END
      WHERE id = $1`,
-    [conversationId, createdAt, direction],
+    [
+      conversationId,
+      createdAt,
+      direction,
+      ownerBookingAlert,
+      extractOwnerAlertProperty(body),
+      extractOwnerAlertName(body),
+    ],
   );
 
   // Auto-reopen: a new inbound message on a 'done' conversation
@@ -454,4 +491,13 @@ async function handleMessageEvent(event) {
   return { messageId: inserted.rows[0].id, conversationId, direction, isReaction, isAutoResponse };
 }
 
-module.exports = { isMessageEvent, handleMessageEvent };
+module.exports = {
+  isMessageEvent,
+  handleMessageEvent,
+  __test: {
+    isSystemNotification,
+    isOwnerBookingAlert,
+    extractOwnerAlertProperty,
+    extractOwnerAlertName,
+  },
+};

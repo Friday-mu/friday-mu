@@ -124,11 +124,15 @@ const LIST_SELECT_SQL = `
     (SELECT m.direction FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message_direction,
     CASE
       WHEN rs.last_read_at IS NULL AND EXISTS (
-        SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'inbound'
+        SELECT 1 FROM messages m
+        WHERE m.conversation_id = c.id
+          AND m.direction = 'inbound'
+          AND ${SUBSTANTIVE_MESSAGE_SQL.replace('is_auto_response', 'm.is_auto_response')}
       ) THEN true
       WHEN rs.last_read_at IS NOT NULL AND EXISTS (
         SELECT 1 FROM messages m1
         WHERE m1.conversation_id = c.id AND m1.direction = 'inbound'
+        AND ${SUBSTANTIVE_MESSAGE_SQL.replace('is_auto_response', 'm1.is_auto_response')}
         AND m1.created_at > rs.last_read_at
         AND NOT EXISTS (
           SELECT 1 FROM messages m2

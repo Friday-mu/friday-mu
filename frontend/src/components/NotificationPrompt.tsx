@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { usePushNotifications } from './usePushNotifications'
 
-const DISMISSED_KEY = 'gms_notif_prompt_dismissed'
+const DISMISSED_KEY = 'fad_notif_prompt_dismissed'
 
 export default function NotificationPrompt() {
   const [show, setShow] = useState(false)
@@ -63,7 +63,7 @@ export default function NotificationPrompt() {
           Enable notifications
         </div>
         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-          Get alerted when new guest messages arrive
+          Get alerted when new guest and team updates arrive
         </div>
       </div>
       <button
