@@ -273,7 +273,7 @@ Status:
 - PR #9 was merged on 2026-05-27 as `da67c7be`.
 - Ask Friday Core hardening, Inbox event wrapping, Ops event wrapping, DB consult locks, eval seeds, candidate lanes, and Ops scheduling constraints are now on `fad-rebuild`.
 - Production frontend and backend reported deployed SHA `7caf6576` during the 2026-05-28 recovery pass.
-- Plan 1 is deployed but not yet marked team-useful until fresh Inbox and Ops workflow smoke passes.
+- Plan 1 is deployed and non-destructive API/model smoke passed on 2026-05-28, but it is not yet marked fully team-useful until real Inbox and Ops browser/workflow QA passes.
 
 Scope:
 
@@ -291,8 +291,9 @@ Execution sequence:
    - Inbox draft/consult unchanged from user perspective;
    - Ops schedule/roster useful for Franny;
    - global FAD Ask Friday harmless action path.
-2. Patch only blockers.
-3. Update completion ledger and Notion.
+2. Run real browser/workflow QA for Inbox and Ops staff scenarios.
+3. Patch only blockers.
+4. Update completion ledger and Notion.
 
 Exit criteria:
 
@@ -726,11 +727,11 @@ Create ADRs for these before or during implementation:
 
 ## Current Next Move
 
-Do not start broad Plan 2 implementation before Plan 1 has live Inbox/Ops smoke evidence unless the work is docs/research-only and cannot conflict.
+Do not start broad Plan 2 implementation before Plan 1 has live Inbox/Ops workflow evidence unless the work is docs/research-only and cannot conflict.
 
 Current safe next moves:
 
-1. Smoke live Inbox/Friday Consult and Ops/Friday Consult.
+1. Browser-test live Inbox/Friday Consult and Ops/Friday Consult with real workflow scenarios.
 2. Patch only production-blocking defects.
 3. Update completion ledger from live team-usefulness evidence.
 4. Start reservations/calendar and properties subplans because they are upstream of Ops, Inbox, guest, and owner surfaces.

@@ -39,10 +39,10 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | backend green before deploy; live API smoke passed | deployed at `7caf6576` | not directly user-facing | deployed control plane, not finished platform |
-| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | backend green before deploy | deployed at `7caf6576` | needs fresh live workflow smoke | Plan 1 smoke priority |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | backend/frontend green before deploy | deployed at `7caf6576` | not yet proven live for Franny after deploy | Plan 1 smoke priority |
-| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | backend green before deploy | deployed at `7caf6576` | needs harmless-action smoke | Plan 1 smoke priority |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `7caf6576` | not directly user-facing | deployed control plane, not finished platform |
+| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live synthetic Consult smoke passed | deployed at `7caf6576` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed | deployed at `7caf6576` | needs Franny real schedule/roster proof | Plan 1 browser/workflow priority |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `7caf6576` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
@@ -104,18 +104,18 @@ Current reconciliation as of 2026-05-28:
 - Migrations through `100_feedback_multi_screenshots.sql` have been applied in production; startup logs showed `095` through `100` available/applied and migration 100 applied during the feedback deploy.
 - Analyzer remains out of the web request path by default; production logs show the web-process scheduler disabled unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
 - Live authenticated smoke passed for `/api/ask-friday/core/surfaces`, seeded eval cases, KB-candidate list, and unauthenticated staff-route denial.
+- 2026-05-28 continuation branch `283c6796` reconciled stale planning docs against live truth.
+- Focused backend tests passed locally after dependency install: `src/operations/consult.test.js`, `src/inbox/consult.test.js`, `src/ask_friday/index.test.js`, `src/ask_friday/policy.test.js`, `src/ask_friday/contracts.test.js`, `src/ask_friday/eval_runner.test.js` = 6 suites, 49 tests.
+- Live non-destructive API/model smoke passed:
+  - Core staff routes: auth/me, active surfaces = 9, active eval cases = 10, KB candidates = 0, unauth/private route denial = 401.
+  - Ops Friday Consult synthetic schedule: loaded `ops-consult` KB, used `gemini-3.5-flash`, deferred non-urgent occupied work, allowed urgent guest lock issue, named assignee, mentioned lunch, returned `draft_schedule` suggestion only.
+  - Inbox Friday Consult synthetic teaching review: loaded `inbox-advisory`, used `gemini-3.5-flash`, no draft mutation, no automatic teaching creation, session created.
+  - Global FAD Ask Friday synthetic command: routed website AI handoffs to Inbox, returned navigation-only action, no direct mutation.
+- PM2 log watch after smoke showed no new Ask Friday route errors. It did show pre-existing AI classifier/extraction warnings and push fan-out with `subscriptions: 0`; keep that in the notification bug lane, not as an Ask Friday Core blocker.
 
 Remaining Plan 1 tasks:
 
-1. Smoke production:
-   - `/api/version`;
-   - `/api/ask-friday/core/surfaces`;
-   - public routes reject private surfaces;
-   - Inbox/Friday Consult draft/consult;
-   - Ops Schedule Friday Consult draft/apply/undo;
-   - Ops Roster Friday Consult conversation/draft;
-   - global FAD Ask Friday harmless action suggestion.
-2. Run live workflow QA with staff-shaped scenarios:
+1. Run browser/live workflow QA with real staff-shaped scenarios:
    - Inbox guest complaint draft with latest guest turn;
    - Inbox property/reservation-grounded reply;
    - Inbox teaching/action feedback still included;
@@ -123,8 +123,8 @@ Remaining Plan 1 tasks:
    - Ops weekly schedule with checkout and arrival pressure;
    - Ops roster with lunch/coverage/fairness;
    - Ops urgent guest issue during occupancy.
-3. Patch only blocking defects.
-4. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
+2. Patch only blocking defects from that browser/workflow QA.
+3. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
