@@ -1,8 +1,9 @@
 # Ask Friday Completion Ledger
 
 Date: 2026-05-26
+Last reconciled: 2026-05-28
 Status: recovery ledger and execution plan
-Branch: `codex/ask-friday-autonomous-core-20260526`
+Current continuation branch: `codex/ask-friday-continuation-20260528`
 
 ## Purpose
 
@@ -38,10 +39,10 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired on branch | backend green | not deployed | not directly user-facing | merge/deploy candidate, not finished platform |
-| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease on branch | backend green | not deployed from this branch | likely improves after deploy, but needs live smoke | Plan 1 priority |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints on branch | backend/frontend green | not deployed from this branch | not proven live for Franny yet | Plan 1 priority |
-| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring on branch | backend green | not deployed from this branch | not the main Plan 1 target | later smoke after merge |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | backend green before deploy; live API smoke passed | deployed at `7caf6576` | not directly user-facing | deployed control plane, not finished platform |
+| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | backend green before deploy | deployed at `7caf6576` | needs fresh live workflow smoke | Plan 1 smoke priority |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | backend/frontend green before deploy | deployed at `7caf6576` | not yet proven live for Franny after deploy | Plan 1 smoke priority |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | backend green before deploy | deployed at `7caf6576` | needs harmless-action smoke | Plan 1 smoke priority |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
@@ -95,14 +96,18 @@ Core should help define:
 
 ### Plan 1 Tasks
 
-1. Verify branch ancestry and current live production before merge.
-2. Merge/push current Ask Friday Core + Ops constraint branch through the FAD canonical path.
-3. Apply migrations `095` through `098` if not already applied in production.
-4. Decide analyzer process mode before deploy:
-   - default: keep analyzer manual/off in web process;
-   - run worker only if PM2/process plan is explicit.
-5. Deploy backend and frontend together; no frontend-only deploy if backend changed.
-6. Smoke production:
+Current reconciliation as of 2026-05-28:
+
+- PR #9 was merged on 2026-05-27 as `da67c7be`.
+- Later PR #13 was merged and deployed on 2026-05-28 as `7caf6576f0030a6935b9f13342c52cbce10e6d6f`.
+- Live frontend and backend both report `7caf6576`.
+- Migrations through `100_feedback_multi_screenshots.sql` have been applied in production; startup logs showed `095` through `100` available/applied and migration 100 applied during the feedback deploy.
+- Analyzer remains out of the web request path by default; production logs show the web-process scheduler disabled unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
+- Live authenticated smoke passed for `/api/ask-friday/core/surfaces`, seeded eval cases, KB-candidate list, and unauthenticated staff-route denial.
+
+Remaining Plan 1 tasks:
+
+1. Smoke production:
    - `/api/version`;
    - `/api/ask-friday/core/surfaces`;
    - public routes reject private surfaces;
@@ -110,7 +115,7 @@ Core should help define:
    - Ops Schedule Friday Consult draft/apply/undo;
    - Ops Roster Friday Consult conversation/draft;
    - global FAD Ask Friday harmless action suggestion.
-7. Run live workflow QA with staff-shaped scenarios:
+2. Run live workflow QA with staff-shaped scenarios:
    - Inbox guest complaint draft with latest guest turn;
    - Inbox property/reservation-grounded reply;
    - Inbox teaching/action feedback still included;
@@ -118,8 +123,8 @@ Core should help define:
    - Ops weekly schedule with checkout and arrival pressure;
    - Ops roster with lunch/coverage/fairness;
    - Ops urgent guest issue during occupancy.
-8. Patch only blocking defects.
-9. Record what is actually live in this ledger and Notion.
+3. Patch only blocking defects.
+4. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
@@ -208,11 +213,9 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 ## Immediate Next Step
 
-Continue with Plan 1.
+Continue with Plan 1 smoke and usefulness verification.
 
-The branch has pushed but not deployed Ask Friday Core hardening plus Ops constraints.
-
-Draft PR: `https://github.com/Friday-mu/friday-mu/pull/9`
+PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `7caf6576`, which includes PR #9 plus later bugfixes and the Feedback FAB evidence-flow work.
 
 New execution-planning artifacts on this branch:
 
@@ -227,4 +230,4 @@ Current autonomous execution note:
 - Local repo evidence has been folded into the execution pack: FAD shared-integration ownership, existing critical rules, business-config pricing/payment rules, Inbox/Consult session behavior, Ops owner-approval rules, and seed eval coverage.
 - The surface subplans now explicitly include the FAD global Ask Friday command surface and an "absorbed module" policy for modules that do not yet justify independent agents.
 
-The next safe action is coordinated FAD review/merge/deploy/smoke for Inbox and Ops only, then patch any production-blocking defects before Plan 2 research/buildout.
+The next safe action is production smoke for Inbox and Ops, then patch any production-blocking defects before Plan 2 research/buildout. If smoke passes, start reservations/calendar and properties subplans because they are upstream of Ops, Inbox, guest, owner, and Website surfaces.

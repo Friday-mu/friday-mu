@@ -1,7 +1,7 @@
 # Ask Friday Knowledge And Harness Catalog
 
 Date: 2026-05-26
-Status: planning/spec artifact on `codex/ask-friday-autonomous-core-20260526`
+Status: planning/spec artifact, reconciled on `codex/ask-friday-continuation-20260528`
 Scope: FAD + Website + Public MCP + internal-agent Ask Friday surfaces
 
 Compaction recovery manifest: `docs/architecture/ask-friday-core-manifest-2026-05-26.md`.
@@ -19,7 +19,7 @@ Use the manifest first, then the completion ledger before continuing implementat
 
 ## Current Implementation Truth
 
-Current branch adds the first hardening layer on top of the deployed Core scaffold:
+Current live baseline includes the first hardening layer on top of the deployed Core scaffold:
 
 - Public Core policy enforces the surface registry, not only API scopes.
 - Staff/private surfaces are blocked from public Core routes.
@@ -39,7 +39,7 @@ Current branch adds the first hardening layer on top of the deployed Core scaffo
 - Initial deterministic eval cases are seeded for public, staff, Ops, finance, MCP, and internal-agent safety suites.
 - KB candidates carry review-lane metadata so public, staff ops, restricted finance/legal, owner-private, internal, and general candidates can be reviewed separately before canonical publishing.
 
-The branch is pushed but not deployed. Production currently remains on the previously deployed `fad-rebuild` code until this branch is merged/deployed.
+The original hardening branch has since been merged and deployed through `fad-rebuild`. During the 2026-05-28 recovery pass, production frontend and backend both reported `7caf6576`; the remaining gap is live Inbox/Ops workflow smoke and team-usefulness proof, not deployment.
 
 ## Flow Closure
 

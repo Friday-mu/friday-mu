@@ -2,8 +2,8 @@
 
 Date: 2026-05-26
 Status: execution-grade master plan expansion
-Branch: `codex/ask-friday-autonomous-core-20260526`
-PR: `https://github.com/Friday-mu/friday-mu/pull/9`
+Current continuation branch: `codex/ask-friday-continuation-20260528`
+Historical PR: `https://github.com/Friday-mu/friday-mu/pull/9` merged as `da67c7be`; production later advanced to `7caf6576`
 Notion mirror: `https://www.notion.so/36c43ca88492815d9644e44b14a297d0`
 
 ## Purpose
@@ -238,7 +238,7 @@ flowchart TD
   A --> F["Plan 5: MCP and internal agent bridge"]
   A --> G["Plan 6: Operating cadence and continuous improvement"]
 
-  B --> B1["PR #9 review, merge, deploy, smoke"]
+  B --> B1["live Inbox/Ops smoke and team-usefulness proof"]
   B --> B2["Inbox preserve mature harness"]
   B --> B3["Ops formalize schedule/roster harness"]
 
@@ -270,9 +270,10 @@ Goal: make the active staff surfaces useful in production before expanding the a
 
 Status:
 
-- Branch and draft PR exist: `https://github.com/Friday-mu/friday-mu/pull/9`
-- Ask Friday Core hardening, Inbox event wrapping, Ops event wrapping, DB consult locks, eval seeds, candidate lanes, and Ops scheduling constraints are on the branch.
-- Not deployed.
+- PR #9 was merged on 2026-05-27 as `da67c7be`.
+- Ask Friday Core hardening, Inbox event wrapping, Ops event wrapping, DB consult locks, eval seeds, candidate lanes, and Ops scheduling constraints are now on `fad-rebuild`.
+- Production frontend and backend reported deployed SHA `7caf6576` during the 2026-05-28 recovery pass.
+- Plan 1 is deployed but not yet marked team-useful until fresh Inbox and Ops workflow smoke passes.
 
 Scope:
 
@@ -283,22 +284,15 @@ Scope:
 
 Execution sequence:
 
-1. Review PR #9 diff against latest `origin/fad-rebuild`.
-2. Confirm migrations `095` through `098`.
-3. Confirm analyzer process mode:
-   - default safe posture: analyzer worker not in web process;
-   - PM2 worker only if explicitly configured.
-4. Merge when reviewed.
-5. Deploy frontend/backend together.
-6. Smoke:
+1. Smoke:
    - version endpoints;
    - Core surfaces;
    - private/public route policy;
    - Inbox draft/consult unchanged from user perspective;
    - Ops schedule/roster useful for Franny;
    - global FAD Ask Friday harmless action path.
-7. Patch only blockers.
-8. Update completion ledger and Notion.
+2. Patch only blockers.
+3. Update completion ledger and Notion.
 
 Exit criteria:
 
@@ -732,13 +726,13 @@ Create ADRs for these before or during implementation:
 
 ## Current Next Move
 
-Do not start Plan 2 implementation before Plan 1 PR #9 is resolved unless the work is docs/research-only and cannot conflict.
+Do not start broad Plan 2 implementation before Plan 1 has live Inbox/Ops smoke evidence unless the work is docs/research-only and cannot conflict.
 
 Current safe next moves:
 
-1. Review/merge/deploy PR #9 with FAD coordination.
-2. After deploy, smoke Inbox and Ops.
-3. Update completion ledger from live evidence.
+1. Smoke live Inbox/Friday Consult and Ops/Friday Consult.
+2. Patch only production-blocking defects.
+3. Update completion ledger from live team-usefulness evidence.
 4. Start reservations/calendar and properties subplans because they are upstream of Ops, Inbox, guest, and owner surfaces.
 5. Start KB research factory for public guest, owner, Ops, and local Mauritius context.
 

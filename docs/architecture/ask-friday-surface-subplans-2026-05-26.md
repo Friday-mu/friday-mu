@@ -3,8 +3,8 @@
 Date: 2026-05-26
 Status: execution subplans, not implementation proof
 Anchor: `docs/architecture/ask-friday-master-plan-v02-2026-05-26.md`
-Branch: `codex/ask-friday-autonomous-core-20260526`
-PR: `https://github.com/Friday-mu/friday-mu/pull/9`
+Current continuation branch: `codex/ask-friday-continuation-20260528`
+Historical PR: `https://github.com/Friday-mu/friday-mu/pull/9` merged as `da67c7be`; production later advanced to `7caf6576`
 
 ## Purpose
 
@@ -191,7 +191,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- PR #9 Plan 1 deploy/smoke, then live mining design against recent Inbox Consult conversations.
+- Live workflow smoke and team-usefulness proof, then live mining design against recent Inbox Consult conversations.
 
 Ishant review:
 
@@ -255,7 +255,7 @@ Acceptance criteria:
 
 First implementation slice:
 
-- PR #9 Plan 1 deploy/smoke, then live Ops scenario QA.
+- Live Ops scenario QA and team-usefulness proof.
 
 Ishant review:
 

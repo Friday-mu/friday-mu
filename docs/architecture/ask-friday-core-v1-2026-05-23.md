@@ -1,8 +1,8 @@
 # Ask Friday Core V1 Architecture Recommendation
 
 Date: 2026-05-23
-Last updated: 2026-05-26
-Status: V1 backend contract scaffold is live on `fad-rebuild`; autonomous hardening branch is pushed but not deployed
+Last updated: 2026-05-28
+Status: V1 backend contract scaffold and autonomous hardening are live on `fad-rebuild` at deployed SHA `7caf6576`; Plan 1 still needs fresh Inbox/Ops team-usefulness smoke
 Repo/session: FAD only. No Friday Website edits in this branch.
 
 ## Naming

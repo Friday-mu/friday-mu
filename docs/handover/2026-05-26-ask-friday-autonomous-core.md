@@ -7,7 +7,7 @@
 - Base: `origin/fad-rebuild@19b9bf777dedd358686f1ee018bdfc30df1a2883`
 - Deployed baseline before this branch: `19b9bf77`
 
-This branch is not deployed.
+This branch was later merged via PR #9 as `da67c7be`. Current production has advanced further and reported deployed SHA `7caf6576` during the 2026-05-28 recovery pass. Treat this handover as historical implementation context; use the manifest and completion ledger for current branch/deploy truth.
 
 ## Compaction Recovery
 
