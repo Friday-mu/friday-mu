@@ -106,6 +106,41 @@ describe('draft revise route', () => {
     expect(query.mock.calls[4][0]).toContain('INSERT INTO learning_events');
   });
 
+  test('records teach-mode revisions with current teaching source and typed placeholders', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [draftRow()] })
+      .mockResolvedValueOnce({ rows: [{ id: MESSAGE_ID, direction: 'inbound' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await request(app())
+      .post(`/api/inbox/drafts/${DRAFT_ID}/revise`)
+      .set('Authorization', `Bearer ${token()}`)
+      .send({ revision_instruction: 'Use warmer check-in language', mode: 'teach', scope: 'property' })
+      .expect(202);
+
+    const teachingCall = query.mock.calls.find(([sql]) => (
+      String(sql).includes('INSERT INTO teachings')
+    ));
+    expect(teachingCall).toBeTruthy();
+    expect(teachingCall[0]).toContain("'friday_consult'");
+    expect(teachingCall[0]).toContain('$1::uuid');
+    expect(teachingCall[0]).toContain('$2::text');
+    expect(teachingCall[0]).toContain('$5::uuid[]');
+    expect(teachingCall[0]).toContain('$6::text');
+    expect(teachingCall[1]).toEqual([
+      TENANT_ID,
+      'Use warmer check-in language',
+      'property',
+      'MV-1',
+      [DRAFT_ID],
+      'Ishant Ayadassen',
+    ]);
+  });
+
   test('supersedes stale drafts instead of revising after a newer outbound message', async () => {
     query
       .mockResolvedValueOnce({ rows: [draftRow()] })

@@ -3,6 +3,7 @@
 const express = require('express');
 const request = require('supertest');
 
+jest.mock('../database/client', () => ({ query: jest.fn() }));
 jest.mock('../design/auth', () => ({
   attachIdentity: (req, _res, next) => {
     req.identity = {
@@ -18,6 +19,7 @@ jest.mock('../design/auth', () => ({
 jest.mock('../mcp', () => ({ callTool: jest.fn() }));
 jest.mock('../ask_friday/action_writer', () => ({ recordActionRequest: jest.fn() }));
 
+const { query } = require('../database/client');
 const { callTool } = require('../mcp');
 const { recordActionRequest } = require('../ask_friday/action_writer');
 const { router, _test } = require('./friday');
@@ -31,6 +33,7 @@ function app() {
 
 describe('FAD Ask Friday helpers', () => {
   beforeEach(() => {
+    query.mockReset();
     callTool.mockReset();
     recordActionRequest.mockReset();
   });
@@ -64,6 +67,36 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.parseInboxFocusThreadId('not-a-uuid')).toBeNull();
     expect(_test.parseInboxFocusThreadId('')).toBeNull();
     expect(_test.parseInboxFocusThreadId(null)).toBeNull();
+  });
+
+  test('loads focused Guesty inbox threads without selecting removed guest_phone column', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: '8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+          guest_name: 'Maria Guest',
+          property_name: 'MV-1',
+          status: 'open',
+          communication_channel: 'airbnb',
+          last_message_at: '2026-05-28T09:00:00.000Z',
+          updated_at: '2026-05-28T09:01:00.000Z',
+          guesty_id: 'guesty-thread',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const focused = await _test.loadFocusedGuestyThread(
+      '00000000-0000-0000-0000-000000000001',
+      '8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+    );
+
+    expect(focused).toEqual(expect.objectContaining({
+      kind: 'guesty_conversation',
+      guest: 'Maria Guest',
+      property: 'MV-1',
+    }));
+    expect(query.mock.calls[0][0]).not.toContain('guest_phone');
   });
 
   test('sanitizes operator focus payload — drops empty + caps lengths', () => {
