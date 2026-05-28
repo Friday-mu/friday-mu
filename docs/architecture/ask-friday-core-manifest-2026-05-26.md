@@ -46,6 +46,10 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - Deployment status: live frontend and backend both reported `7caf6576` during the 2026-05-28 recovery pass.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
+- Latest pushed continuation commits include:
+  - `0a65333d feat(fad): strengthen ops roster consult context`
+  - `9d48ab0f fix(fad): restore push setup and owner alert routing`
+  - `03c08858 fix(fad): harden Ask Friday inbox flows`
 
 ## Canonical Recovery Docs
 
@@ -73,6 +77,8 @@ Read these first, in order:
    - Current Plan 3 source-truth packet for Reservations/Calendar and Properties: FAD API paths, Guesty/FAD/Breezeway ownership, harness implications, gaps, and first tool contracts.
 11. `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
    - Design-only read-tool/action-request contracts for reservation, calendar, and property context.
+12. `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+   - Current Plan 3 source-truth packet for Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning surfaces.
 
 ## Master Plan And Subplans
 
@@ -92,6 +98,8 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
@@ -198,6 +206,7 @@ Ask Friday Core migrations:
 - `backend/migrations/097_ask_friday_seed_eval_cases.sql`
 - `backend/migrations/098_ask_friday_candidate_review_lanes.sql`
 - `backend/migrations/101_ask_friday_context_tools.sql`
+- `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
 
 Plan 1 surface code:
 
@@ -310,6 +319,11 @@ Current Plan 3 source-truth packet:
   - Property cards need richer privacy/access classification before public context-pack use.
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
   - Design-only contracts for `load_reservation_context`, `load_calendar_context`, `load_property_context`, and `request_reservation_action`.
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are source-mapped but not wired to Core runtime in this branch.
+  - Public and owner-facing context needs Ishant review before published KB/context-pack use.
+  - Feedback evidence needs retention/redaction policy before raw screenshots or diagnostics are mined.
+  - Branch migration `102_ask_friday_public_owner_feedback_evals.sql` seeds deterministic eval scaffolding for these scoped risks. This is not deployed.
 
 ## Maintenance Rule
 

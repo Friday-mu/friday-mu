@@ -113,7 +113,7 @@ Current reconciliation as of 2026-05-28:
   - Global FAD Ask Friday synthetic command: routed website AI handoffs to Inbox, returned navigation-only action, no direct mutation.
 - Browser snapshot smoke loaded live Operations > Schedule and showed the Friday Consult panel plus live task queues. Multi-step browser click/type QA is parked because the local bridge repeatedly released/closed the claimed tab between commands; this is a tooling blocker, not a product result.
 - PM2 log watch after smoke showed no new Ask Friday route errors. It did show pre-existing AI classifier/extraction warnings and push fan-out with `subscriptions: 0`; keep that in the notification bug lane, not as an Ask Friday Core blocker.
-- 2026-05-28 continuation branch runtime patch in progress: Roster Friday Consult now receives weekly reservation overlays and cached calendar-pricing signals; the local roster draft uses arrivals/checkouts/in-house stays as demand; Ops consult open-work constraints ignore completed/closed tasks; Inbox Friday Consult browser timeout is aligned with the backend long-context budget.
+- 2026-05-28 continuation branch runtime patch pushed as `0a65333d`: Roster Friday Consult now receives weekly reservation overlays and cached calendar-pricing signals; the local roster draft uses arrivals/checkouts/in-house stays as demand; Ops consult open-work constraints ignore completed/closed tasks; Inbox Friday Consult browser timeout is aligned with the backend long-context budget.
 - Focused local verification for that runtime patch passed before full regression: `src/operations/consult.test.js` = 7 tests, Inbox consult/draft/reservation context tests = 46 tests, frontend TypeScript passed.
 
 Remaining Plan 1 tasks:
@@ -136,6 +136,8 @@ Plan 3 source-mapping progress:
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md` drafts the first read-only context contracts and the approval-routed reservation action contract.
 - Branch implementation added staff-only `/api/ask-friday/core/context-tools/load-reservation-context`, `/load-calendar-context`, and `/load-property-context`, plus migration `101_ask_friday_context_tools.sql` for registry/eval seeds. This is not deployed.
 - Key gaps carried forward: Guesty/OTA write-through contract, quote validity policy, public price fields, property public/guest/staff/restricted classification, and richer privacy enforcement for `fad_property_cards`.
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md` now source-maps Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning. These are scoped only, not runtime wired. Key gaps carried forward: public property-field policy, owner package/competitor wording, owner-data retention/consent, feedback evidence retention/redaction, and Website/FAD event/context-pack contracts.
+- Branch migration `102_ask_friday_public_owner_feedback_evals.sql` seeds deterministic eval scaffolding for Website public handoff/privacy, owner safety/privacy/compliance, and feedback evidence/candidate safety. This is not deployed.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 

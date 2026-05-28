@@ -186,6 +186,12 @@ Goal:
 
 - Public answer quality without private leakage or broken handoff.
 
+Current packet:
+
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Use this as the current Wave C source matrix before Website event/context-pack implementation.
+  - It expands handoff, public context-pack, privacy, hospitality assistant, prompt-injection, and escalation eval requirements.
+
 Initial source matrix:
 
 | fact_or_rule | source | source_type | trust_tier | privacy_class | allowed_surfaces | freshness_rule | candidate_action | ishant_review |
@@ -213,6 +219,12 @@ Goal:
 
 - Support owner lead qualification and Friday positioning without unsupported guarantees.
 
+Current packet:
+
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Use this as the current Wave D source matrix before owner lead-capsule or FAD owners assistant implementation.
+  - It adds Website owner-enquiry inheritance, competitor/market context, Mauritius TAC/tourist-fee notes, and owner-data privacy questions.
+
 Initial source matrix:
 
 | fact_or_rule | source | source_type | trust_tier | privacy_class | allowed_surfaces | freshness_rule | candidate_action | ishant_review |
@@ -233,6 +245,12 @@ Open questions:
 Goal:
 
 - Convert feedback into useful bugs/product candidates with safe evidence retention.
+
+Current packet:
+
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Use this as the current Wave E source matrix before feedback evidence/candidate implementation.
+  - It expands screenshot/diagnostic handling, redaction, retention, bug-cluster learning, and prompt-injection poisoning eval requirements.
 
 Initial source matrix:
 

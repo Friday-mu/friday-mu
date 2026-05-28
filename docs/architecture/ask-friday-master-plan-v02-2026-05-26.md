@@ -377,6 +377,12 @@ Current Plan 3 packet:
   - It defines first tool contracts to design later: reservation context, calendar context, property context, and approval-routed reservation actions.
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
   - Design-only contract draft for those first tools. Use it before implementation or eval seeding.
+- `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
+  - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are now source-mapped.
+  - This packet is planning/research proof only. It does not mean Website, owner, or feedback surfaces are wired to Core runtime.
+  - It defines eval seeds and open Ishant-review decisions before public/owner KB/context-pack publishing.
+- `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
+  - Branch-only deterministic eval scaffolding for those scoped risks. It is not deployed.
 
 Exit criteria for each surface:
 
