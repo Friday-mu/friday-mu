@@ -105,7 +105,7 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 - `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
-  - Notion: not mirrored yet; use repo as current source until mirror is created.
+  - Notion: `https://www.notion.so/36e43ca8849281e39565c1d18a057827`
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
 
