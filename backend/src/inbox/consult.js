@@ -16,6 +16,8 @@ const {
   latestGuestTurnPromptBlock,
   statusUpdateSafetyInstruction,
   applyStatusUpdateSafety,
+  stripAIPreamble,
+  capitalizeDraftOpening,
 } = require('./draft_generator');
 const {
   resolveInboxReservationContext,
@@ -328,11 +330,25 @@ function stripFullThreadEnvelope(value) {
   return match ? match[1].trim() : text;
 }
 
+function compactConsultEnvelopeForHistory(value) {
+  const parsed = parseJsonish(value);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return value;
+  const response = String(parsed.response_text || parsed.response || parsed.message || '').trim();
+  const drafts = normalizeConsultDrafts(parsed);
+  const lines = [];
+  if (response) lines.push(response);
+  drafts.forEach((draft, index) => {
+    const label = draft.recipientLabel ? ` for ${draft.recipientLabel}` : '';
+    lines.push(`Draft ${index + 1}${label}: ${truncateText(draft.body, 700)}`);
+  });
+  return lines.length ? lines.join('\n\n') : value;
+}
+
 function sanitizeConsultHistoryEntry(entry) {
   if (!entry || typeof entry !== 'object') return entry;
   const next = { ...entry };
-  if (typeof next.content === 'string') next.content = stripFullThreadEnvelope(next.content);
-  if (typeof next.text === 'string') next.text = stripFullThreadEnvelope(next.text);
+  if (typeof next.content === 'string') next.content = compactConsultEnvelopeForHistory(stripFullThreadEnvelope(next.content));
+  if (typeof next.text === 'string') next.text = compactConsultEnvelopeForHistory(stripFullThreadEnvelope(next.text));
   return next;
 }
 
@@ -362,6 +378,39 @@ function parseDraftUpdate(responseText) {
   return match ? match[1].trim() || null : null;
 }
 
+function parseJsonish(raw) {
+  if (typeof raw !== 'string') return null;
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+  if (!cleaned) return null;
+  try { return JSON.parse(cleaned); } catch { /* fall through */ }
+  const first = cleaned.indexOf('{');
+  const last = cleaned.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    try { return JSON.parse(cleaned.slice(first, last + 1)); } catch { /* fall through */ }
+  }
+  return null;
+}
+
+const DRAFT_LIKE_OPENING_RE = /^(hi|hello|dear|hey|good morning|good afternoon|good evening)\b[\s,!.:-]/i;
+const DRAFT_LEAD_IN_RE = /^(?:sure|of course|absolutely|here(?:'s| is)|draft|message|reply|email)\b[\s\S]{0,180}?:\s*/i;
+const DRAFT_SIGNOFF_RE = /\b(best regards|kind regards|regards|warm regards|thanks again|thank you)\b/i;
+
+function extractUntaggedDraftUpdate(responseText, context) {
+  if (!['compose', 'revision', 'draft_review'].includes(context)) return null;
+  let text = stripProtocolTags(responseText);
+  if (!text) return null;
+  text = stripAIPreamble(text).trim();
+  text = text.replace(DRAFT_LEAD_IN_RE, '').trim();
+  if (!text) return null;
+  const lineCount = text.split(/\n+/).filter((line) => line.trim()).length;
+  const looksLikeDraft =
+    DRAFT_LIKE_OPENING_RE.test(text)
+    || DRAFT_SIGNOFF_RE.test(text)
+    || (lineCount >= 2 && /\byou\b|\bwe\b|\bour\b|\bFriday\b/i.test(text));
+  if (!looksLikeDraft) return null;
+  return capitalizeDraftOpening(text);
+}
+
 function replaceDraftUpdate(responseText, draftUpdate) {
   const replacement = `[DRAFT_UPDATE]${draftUpdate || ''}[/DRAFT_UPDATE]`;
   const text = String(responseText || '');
@@ -369,6 +418,49 @@ function replaceDraftUpdate(responseText, draftUpdate) {
     return text.replace(/\[DRAFT_UPDATE\][\s\S]*?\[\/DRAFT_UPDATE\]/, replacement);
   }
   return `${text.trim()}\n${replacement}`.trim();
+}
+
+function normalizeConsultDraft(raw) {
+  const source = raw && typeof raw === 'object' ? raw : { body: raw };
+  const body = stripProtocolTags(
+    source.body
+    || source.draft_body
+    || source.draftBody
+    || source.text
+    || source.message
+    || '',
+  );
+  if (!body) return null;
+  const recipientLabel = source.recipient_label || source.recipientLabel || source.recipient || source.to || null;
+  const targetHint = source.target_hint || source.targetHint || source.target || null;
+  return {
+    body: capitalizeDraftOpening(body),
+    recipientLabel: recipientLabel ? String(recipientLabel).trim().slice(0, 120) : null,
+    channel: source.channel ? String(source.channel).trim().slice(0, 40) : null,
+    targetHint: targetHint ? String(targetHint).trim().slice(0, 200) : null,
+  };
+}
+
+function normalizeConsultDrafts(parsed) {
+  if (!parsed || typeof parsed !== 'object') return [];
+  const rawDrafts = [];
+  if (Array.isArray(parsed.drafts)) rawDrafts.push(...parsed.drafts);
+  if (Array.isArray(parsed.draft_updates)) rawDrafts.push(...parsed.draft_updates);
+  if (parsed.draft_update) rawDrafts.push(parsed.draft_update);
+  if (parsed.draft) rawDrafts.push(parsed.draft);
+  return rawDrafts
+    .map(normalizeConsultDraft)
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function normalizeTeachingActionObject(action, teachingIdMap = {}) {
+  if (!action) return [];
+  if (typeof action === 'string') {
+    return parseTeachingActions(`[TEACH]{"action":"create","instruction":${JSON.stringify(action)}}[/TEACH]`, teachingIdMap);
+  }
+  if (typeof action !== 'object') return [];
+  return parseTeachingActions(`[TEACH]${JSON.stringify(action)}[/TEACH]`, teachingIdMap);
 }
 
 function parseTeachingActions(responseText, teachingIdMap = {}) {
@@ -403,36 +495,129 @@ function parseTeachingActions(responseText, teachingIdMap = {}) {
   return actions.filter((a) => a.instruction);
 }
 
-// Parse [TASK]{json}[/TASK] suggestions emitted by Friday Consult when
-// the conversation surfaces actionable work. Mirrors parseTeachingActions
-// shape so the response field is the obvious sibling to teaching_actions.
+const VALID_TASK_DEPT = new Set(['cleaning', 'inspection', 'maintenance', 'office']);
+const VALID_TASK_PRIORITY = new Set(['urgent', 'high', 'medium', 'low', 'lowest']);
+
+function normalizeTaskSuggestionObject(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const title = String(parsed.title || '').trim();
+  if (!title) return null;
+  const dept = String(parsed.department || '').toLowerCase();
+  const prio = String(parsed.priority || '').toLowerCase();
+  return {
+    title: title.slice(0, 140),
+    description: String(parsed.description || '').trim().slice(0, 1000) || null,
+    propertyCode: parsed.property_code || parsed.propertyCode || null,
+    department: VALID_TASK_DEPT.has(dept) ? dept : 'maintenance',
+    priority: VALID_TASK_PRIORITY.has(prio) ? prio : 'medium',
+    subdepartment: parsed.subdepartment || null,
+    dueDate: parsed.due_date || parsed.dueDate || null,
+  };
+}
+
+// Parse [TASK]{json}[/TASK] suggestions emitted by legacy Friday Consult
+// responses when the conversation surfaces actionable work.
 function parseTaskSuggestions(responseText) {
   const suggestions = [];
   const matches = [...String(responseText || '').matchAll(/\[TASK\]([\s\S]*?)\[\/TASK\]/g)];
-  const VALID_DEPT = new Set(['cleaning', 'inspection', 'maintenance', 'office']);
-  const VALID_PRIO = new Set(['urgent', 'high', 'medium', 'low', 'lowest']);
   for (const match of matches) {
     const raw = match[1].trim();
     try {
       const parsed = JSON.parse(raw);
-      const title = String(parsed.title || '').trim();
-      if (!title) continue;
-      const dept = String(parsed.department || '').toLowerCase();
-      const prio = String(parsed.priority || '').toLowerCase();
-      suggestions.push({
-        title: title.slice(0, 140),
-        description: String(parsed.description || '').trim().slice(0, 1000) || null,
-        propertyCode: parsed.property_code || parsed.propertyCode || null,
-        department: VALID_DEPT.has(dept) ? dept : 'maintenance',
-        priority: VALID_PRIO.has(prio) ? prio : 'medium',
-        subdepartment: parsed.subdepartment || null,
-        dueDate: parsed.due_date || parsed.dueDate || null,
-      });
+      const suggestion = normalizeTaskSuggestionObject(parsed);
+      if (suggestion) suggestions.push(suggestion);
     } catch {
       // Malformed JSON — skip. Friday will re-propose if it still matters.
     }
   }
   return suggestions;
+}
+
+function parseConsultEnvelope(responseText, context, teachingIdMap = {}) {
+  const parsed = parseJsonish(responseText);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const drafts = normalizeConsultDrafts(parsed);
+  const rawTeachings = Array.isArray(parsed.teaching_actions)
+    ? parsed.teaching_actions
+    : (Array.isArray(parsed.teachings) ? parsed.teachings : []);
+  const teachingActions = rawTeachings.flatMap((action) => normalizeTeachingActionObject(action, teachingIdMap));
+  const rawTasks = Array.isArray(parsed.task_suggestions)
+    ? parsed.task_suggestions
+    : (Array.isArray(parsed.tasks) ? parsed.tasks : []);
+  const taskSuggestions = rawTasks
+    .map(normalizeTaskSuggestionObject)
+    .filter(Boolean);
+  const responseTextValue = stripProtocolTags(
+    parsed.response_text
+    || parsed.response
+    || parsed.message
+    || parsed.operator_message
+    || '',
+  );
+  return {
+    responseText: responseTextValue,
+    drafts,
+    teachingActions,
+    taskSuggestions,
+    usedEnvelope: true,
+    context,
+  };
+}
+
+const TASK_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'this', 'that', 'guest', 'guests',
+  'please', 'task', 'follow', 'up', 'followup', 'check', 'confirm', 'about',
+  'regarding', 'property', 'friday', 'team', 'issue', 'request',
+]);
+
+function normalizeTaskText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 2 && !TASK_STOP_WORDS.has(word));
+}
+
+function taskSimilarity(a, b) {
+  const aWords = normalizeTaskText(a);
+  const bWords = normalizeTaskText(b);
+  if (aWords.length === 0 || bWords.length === 0) return 0;
+  const bSet = new Set(bWords);
+  const overlap = aWords.filter((word) => bSet.has(word)).length;
+  return overlap / Math.min(aWords.length, bWords.length);
+}
+
+function filterDuplicateTaskSuggestions(suggestions, existingWork) {
+  if (!Array.isArray(suggestions) || suggestions.length === 0) return [];
+  if (!Array.isArray(existingWork) || existingWork.length === 0) return suggestions;
+  return suggestions.filter((suggestion) => {
+    const candidate = [suggestion.title, suggestion.description].filter(Boolean).join(' ');
+    return !existingWork.some((item) => {
+      const existing = [item.title, item.action_text, item.description].filter(Boolean).join(' ');
+      return taskSimilarity(candidate, existing) >= 0.6;
+    });
+  });
+}
+
+function formatExistingWorkForPrompt(existingWork) {
+  if (!Array.isArray(existingWork) || existingWork.length === 0) return '';
+  const lines = existingWork.slice(0, 30).map((item) => {
+    const kind = item.kind === 'ops_task' ? 'Ops task' : 'Pending action';
+    const title = item.title || item.action_text || item.description || '(untitled)';
+    const status = item.status ? `status=${item.status}` : '';
+    const owner = item.owner ? `owner=${item.owner}` : '';
+    const due = item.due_date || item.due_by ? `due=${item.due_date || item.due_by}` : '';
+    const property = item.property_code ? `property=${item.property_code}` : '';
+    const reservation = item.reservation_guesty_id ? `reservation=${item.reservation_guesty_id}` : '';
+    const extra = [status, owner, due, property, reservation].filter(Boolean).join(', ');
+    return `- ${kind}: ${title}${extra ? ` (${extra})` : ''}`;
+  });
+  return [
+    '[Existing open work for this thread]',
+    ...lines,
+    'Do not propose a duplicate task. If the operator asks about the same work, suggest updating the existing item instead.',
+  ].join('\n');
 }
 
 function selectConsultSurface(context) {
@@ -442,17 +627,17 @@ function selectConsultSurface(context) {
 function contextTaskInstruction(context) {
   switch (context) {
     case 'revision':
-      return `Task: Help revise the current draft. If you rewrite it, put the full updated message in [DRAFT_UPDATE]...[/DRAFT_UPDATE]. Briefly explain what changed outside the tag.`;
+      return `Task: Help revise the current draft. If you rewrite it, put each complete updated guest-facing message in drafts[].body and briefly explain what changed in response_text.`;
     case 'compose':
-      return `Task: Help compose a guest-facing message. When writing or rewriting message text, put the full message in [DRAFT_UPDATE]...[/DRAFT_UPDATE]. Do not paste the same draft outside the tag.`;
+      return `Task: Help compose guest-facing message drafts. When writing message text, put each complete message in drafts[].body. If the operator asks for separate recipients/messages, create one drafts[] item per recipient/message.`;
     case 'draft_review':
-      return `Task: Review the draft only against Friday rules, active teachings, property facts, and platform constraints. If the operator asks for a rewrite, provide [DRAFT_UPDATE].`;
+      return `Task: Review the draft only against Friday rules, active teachings, property facts, and platform constraints. If the operator asks for a rewrite, put the rewritten message in drafts[].body.`;
     case 'pending_action':
     case 'next_step':
       return `Task: Advise the team on the pending action or next operational step. Inbox may propose a pending action; Ops owns real task creation and lifecycle. Do not create or imply a task was created.`;
     case 'teaching':
     case 'learning_candidate':
-      return `Task: Decide whether this pattern is worth learning. Use [TEACH] JSON only when the operator should confirm a durable rule.`;
+      return `Task: Decide whether this pattern is worth learning. Use teaching_actions[] only when the operator should confirm a durable rule.`;
     case 'message_review':
       return `Task: Review the guest/team message for accuracy, tone, and operational risk. Suggest a concise correction when needed.`;
     default:
@@ -469,6 +654,7 @@ function buildConsultUserMessage({
   liveExchangeRateBlock,
   sessionHistory,
   currentSessionSummary,
+  existingWork,
   fullThread = false,
 }) {
   const parts = [];
@@ -502,6 +688,8 @@ function buildConsultUserMessage({
   if (liveExchangeRateBlock) {
     parts.push(liveExchangeRateBlock);
   }
+  const existingWorkBlock = formatExistingWorkForPrompt(existingWork);
+  if (existingWorkBlock) parts.push(existingWorkBlock);
   const latestInbound = latestInboundMessage(messages);
   const updateGuard = statusUpdateSafetyInstruction({
     message: latestInbound,
@@ -533,6 +721,7 @@ function buildCompactConsultUserMessage({
   liveExchangeRateBlock,
   sessionHistory,
   currentSessionSummary,
+  existingWork,
 }) {
   const parts = [];
   parts.push(`[Compact Consult context]\n- Mode: ${context}`);
@@ -568,6 +757,8 @@ function buildCompactConsultUserMessage({
   if (liveExchangeRateBlock) {
     parts.push(truncateText(liveExchangeRateBlock, 1800));
   }
+  const existingWorkBlock = formatExistingWorkForPrompt(existingWork);
+  if (existingWorkBlock) parts.push(truncateText(existingWorkBlock, 2200));
   const latestInbound = latestInboundMessage(messages);
   const updateGuard = statusUpdateSafetyInstruction({
     message: latestInbound,
@@ -601,7 +792,9 @@ function compactConsultSystemPrompt({
 
 Respond in English. Be concise and operational.
 Use only the compact context provided. Do not invent prices, availability, property features, refunds, or operational commitments.
-If the operator asks you to write or modify a guest-facing draft/message, put the complete final text in [DRAFT_UPDATE]...[/DRAFT_UPDATE] and do not repeat it outside the tag.
+Return only valid JSON with this shape:
+{"response_text":"short operator-facing note","drafts":[{"body":"complete guest-facing draft","recipient_label":"optional","channel":"optional","target_hint":"optional"}],"teaching_actions":[],"task_suggestions":[]}
+If the operator asks you to write or modify guest-facing messages, put each complete final message in drafts[].body. Do not paste draft text in response_text.
 If you cannot safely answer from the compact context, say exactly what is missing and what the operator should check.
 Use confidence gates: high confidence means answer directly; medium confidence means answer with a caveat or ask one clarification; low confidence means say human context is needed.
 
@@ -654,29 +847,34 @@ function composeSystemPrompt({
 
 Always respond in English.
 
-DRAFT UPDATE PROTOCOL:
-- When you write or modify a guest-facing draft/message, wrap the complete final text in [DRAFT_UPDATE]...[/DRAFT_UPDATE].
-- Never repeat the draft text outside [DRAFT_UPDATE]. Outside the tag, use a short acknowledgement or short reasoning.
-- Draft update text must be English only. Translation happens later at send time.
+CONSULT RESPONSE ENVELOPE:
+- Return only valid JSON. No Markdown, no code fences, no prose outside JSON.
+- Required shape:
+{"response_text":"short operator-facing note","drafts":[{"body":"complete guest-facing draft","recipient_label":"optional","channel":"optional","target_hint":"optional"}],"teaching_actions":[],"task_suggestions":[]}
+- Use response_text for a short operator-facing acknowledgement, explanation, caveat, or missing-context note.
+- If you write or modify a guest-facing draft/message, put the complete final text in drafts[].body.
+- Never paste guest-facing draft text in response_text.
+- If the operator asks for separate messages or recipients, create one drafts[] item per message/recipient. Do not combine separate recipient drafts into one body.
+- Draft body text must be English only. Translation happens later at send time.
 
-TEACHING PROTOCOL:
-- If the operator gives a durable rule, correction, property fact, or recurring operational preference, emit one [TEACH] JSON block for the UI to confirm.
+TEACHING ACTIONS:
+- If the operator gives a durable rule, correction, property fact, or recurring operational preference, add one teaching_actions[] object for the UI to confirm.
 - Use property scope for property facts. Use global scope only for rules that apply across Friday.
 - If the new rule conflicts with an active T-number teaching, use action "flag_conflict" and reference the T-number in "conflicting".
-- Format examples:
-[TEACH]{"action":"create","instruction":"Keep checkout messages to 1-2 sentences","scope":"global"}[/TEACH]
-[TEACH]{"action":"create","instruction":"No daily cleaning. Linen change on Wednesdays only.","scope":"property","property_code":"LB-C"}[/TEACH]
-[TEACH]{"action":"flag_conflict","conflicting":"T2","instruction":"Always mention pool hours for this property","reason":"T2 says keep messages brief"}[/TEACH]
+- Teaching action examples:
+{"action":"create","instruction":"Keep checkout messages to 1-2 sentences","scope":"global"}
+{"action":"create","instruction":"No daily cleaning. Linen change on Wednesdays only.","scope":"property","property_code":"LB-C"}
+{"action":"flag_conflict","conflicting":"T2","instruction":"Always mention pool hours for this property","reason":"T2 says keep messages brief"}
 
-TASK SUGGESTION PROTOCOL:
-- When the conversation surfaces real operational work (a maintenance request, cleaning issue, supply run, follow-up reminder, owner ack needed, etc.), emit a [TASK] JSON block so the operator can one-click create it.
+TASK SUGGESTIONS:
+- When the conversation surfaces real operational work (a maintenance request, cleaning issue, supply run, follow-up reminder, owner ack needed, etc.), add task_suggestions[] objects so the operator can one-click create them.
 - Only propose a task when it's clearly actionable + not already handled in this thread. Do not propose tasks for purely informational requests, draft revisions, or learning rules.
 - Choose department: cleaning · inspection · maintenance · office.
 - Choose priority: urgent (guest is on-property + blocked) · high (guest arriving in <24h or comfort impact) · medium (standard turnaround) · low (cosmetic / nice-to-have).
 - Property code: prefer the conversation's property when present, omit if uncertain.
-- Format examples:
-[TASK]{"title":"Fix toilet leak at GBH-C8 — guest reports flooding","department":"maintenance","priority":"urgent","property_code":"GBH-C8","description":"Guest Gael Le Metayer messaged: keypad broken at entry door. Mathias to send technician this afternoon."}[/TASK]
-[TASK]{"title":"Restock welcome amenities at LB-3 before tomorrow's arrival","department":"cleaning","priority":"high","property_code":"LB-3","description":"Standard arrival pack: water, coffee, snacks."}[/TASK]
+- Task suggestion examples:
+{"title":"Fix toilet leak at GBH-C8 — guest reports flooding","department":"maintenance","priority":"urgent","property_code":"GBH-C8","description":"Guest Gael Le Metayer messaged: keypad broken at entry door. Mathias to send technician this afternoon."}
+{"title":"Restock welcome amenities at LB-3 before tomorrow's arrival","department":"cleaning","priority":"high","property_code":"LB-3","description":"Standard arrival pack: water, coffee, snacks."}
 
 Be concise. Surface missing knowledge honestly. Do not invent prices, availability, property features, refunds, or operational commitments.`;
   const liveRateProtocol = liveExchangeRateBlock ? `
@@ -763,6 +961,63 @@ async function loadConversationBundle(conversationId, tenantId, { fullThread = f
     conversation,
     messages: messagesResult.rows,
   };
+}
+
+async function loadExistingInboxWork(conversationId, tenantId, conversation = null) {
+  if (!isUuid(conversationId)) return [];
+  const propertyCode = conversation ? resolvePropertyCode(conversation) : null;
+  const reservationIds = [
+    conversation?.reservation_id,
+    conversation?.guesty_reservation_id,
+    conversation?.reservation_context?.guesty_reservation_id,
+    conversation?.reservation_context?.reservation_id,
+  ].filter(Boolean).map((v) => String(v));
+  const taskParams = [tenantId];
+  const taskScopeClauses = [];
+  taskParams.push(conversationId);
+  taskScopeClauses.push(`inbox_thread_id = $${taskParams.length}`);
+  if (reservationIds.length > 0) {
+    taskParams.push(reservationIds);
+    taskScopeClauses.push(`reservation_guesty_id = ANY($${taskParams.length}::text[])`);
+  }
+  if (propertyCode) {
+    taskParams.push(propertyCode);
+    taskScopeClauses.push(`property_code = $${taskParams.length}`);
+  }
+  const [pendingResult, taskResult] = await Promise.all([
+    query(
+      `SELECT action_text, status, due_by, owner, category
+         FROM pending_actions
+        WHERE tenant_id = $1
+          AND conversation_id = $2
+          AND COALESCE(status, 'open') NOT IN (
+            'completed',
+            'dismissed',
+            'auto_dismissed',
+            'auto_converted',
+            'resolved'
+          )
+        ORDER BY detected_at DESC NULLS LAST, id::text DESC
+        LIMIT 20`,
+      [tenantId, conversationId],
+    ),
+    query(
+      `SELECT title, description, status, due_date, source,
+              property_code, reservation_guesty_id, inbox_thread_id
+         FROM tasks
+        WHERE tenant_id = $1
+          AND (${taskScopeClauses.join(' OR ')})
+          AND COALESCE(status, 'scheduled') NOT IN ('completed', 'closed', 'cancelled')
+        ORDER BY created_at DESC NULLS LAST, id::text DESC
+        LIMIT 20`,
+      taskParams,
+    ),
+  ]);
+
+  return [
+    ...pendingResult.rows.map((row) => ({ kind: 'pending_action', ...row })),
+    ...taskResult.rows.map((row) => ({ kind: 'ops_task', ...row })),
+  ];
 }
 
 async function loadWebsiteConversationBundle(conversationId, threadId, tenantId, { fullThread = false } = {}) {
@@ -1070,6 +1325,10 @@ router.post('/', attachIdentity, async (req, res) => {
     const processTurn = async () => {
       const { conversation, messages } = await loadConversationBundle(conversationId, req.tenantId, { fullThread });
       await validateConsultDraftContext({ draftId, conversationId, tenantId: req.tenantId });
+      const existingWork = await loadExistingInboxWork(conversationId, req.tenantId, conversation).catch((e) => {
+        console.warn(`[consult] existing work lookup failed for ${conversationId}: ${e.message}`);
+        return [];
+      });
       const propertyCode = conversation ? resolvePropertyCode(conversation) : null;
       const session = await getOrCreateSession({
         req,
@@ -1116,6 +1375,7 @@ router.post('/', attachIdentity, async (req, res) => {
         liveExchangeRateBlock,
         sessionHistory,
         currentSessionSummary: session.running_summary || session.summary || null,
+        existingWork,
         fullThread,
       });
 
@@ -1126,6 +1386,7 @@ router.post('/', attachIdentity, async (req, res) => {
         timeoutMs: CONSULT_TIMEOUT_MS,
         maxRetries: CONSULT_MAX_RETRIES,
         maxTokens: CONSULT_MAX_TOKENS,
+        responseJson: true,
       });
       let fallbackUsed = false;
       let degraded = false;
@@ -1151,6 +1412,7 @@ router.post('/', attachIdentity, async (req, res) => {
           liveExchangeRateBlock,
           sessionHistory,
           currentSessionSummary: session.running_summary || session.summary || null,
+          existingWork,
         });
         result = await generateDraftReply({
           system: compactConsultSystemPrompt({
@@ -1171,6 +1433,7 @@ router.post('/', attachIdentity, async (req, res) => {
           maxRetries: CONSULT_FALLBACK_MAX_RETRIES,
           maxTokens: CONSULT_FALLBACK_MAX_TOKENS,
           model: CONSULT_FALLBACK_MODEL,
+          responseJson: true,
         });
       }
       if (!result.ok && isTransientConsultFailure(result)) {
@@ -1196,25 +1459,64 @@ router.post('/', attachIdentity, async (req, res) => {
       }
       if (!result.ok) throw new Error(result.error || 'Consult model call failed');
 
+      const consultEnvelope = parseConsultEnvelope(result.text, context, teachingIdMap);
       let responseTextForHistory = result.text;
-      let draftUpdate = parseDraftUpdate(result.text);
+      let draftUpdates = consultEnvelope?.drafts || [];
+      let draftUpdate = draftUpdates[0]?.body || parseDraftUpdate(result.text);
       let statusUpdateSafetyApplied = false;
-      if (draftUpdate) {
-        const latestInbound = latestInboundMessage(messages);
-        const guarded = applyStatusUpdateSafety(draftUpdate, {
-          message: latestInbound,
-          conversation,
-          messages,
-        });
-        if (guarded.applied) {
-          draftUpdate = guarded.draftBody;
-          statusUpdateSafetyApplied = true;
-          responseTextForHistory = replaceDraftUpdate(responseTextForHistory, draftUpdate);
+      if (draftUpdate && draftUpdates.length === 0) {
+        draftUpdates = [{ body: draftUpdate, recipientLabel: null, channel: null, targetHint: null }];
+      }
+      if (!draftUpdate) {
+        const recoveredDraft = extractUntaggedDraftUpdate(result.text, context);
+        if (recoveredDraft) {
+          draftUpdate = recoveredDraft;
+          draftUpdates = [{ body: recoveredDraft, recipientLabel: null, channel: null, targetHint: null }];
+          responseTextForHistory = replaceDraftUpdate('Done — I prepared the draft.', draftUpdate);
         }
       }
-      const teachingActions = parseTeachingActions(result.text, teachingIdMap);
-      const taskSuggestions = parseTaskSuggestions(result.text);
-      let responseTextForClient = stripProtocolTags(responseTextForHistory);
+      if (draftUpdates.length > 0) {
+        const latestInbound = latestInboundMessage(messages);
+        draftUpdates = draftUpdates.map((draft) => {
+          const guarded = applyStatusUpdateSafety(draft.body, {
+            message: latestInbound,
+            conversation,
+            messages,
+          });
+          if (!guarded.applied) return draft;
+          statusUpdateSafetyApplied = true;
+          return { ...draft, body: guarded.draftBody };
+        });
+        draftUpdate = draftUpdates[0]?.body || null;
+        if (consultEnvelope) {
+          responseTextForHistory = JSON.stringify({
+            response_text: consultEnvelope.responseText,
+            drafts: draftUpdates,
+            teaching_actions: consultEnvelope.teachingActions,
+            task_suggestions: consultEnvelope.taskSuggestions,
+          });
+        } else if (draftUpdate) {
+          responseTextForHistory = replaceDraftUpdate(responseTextForHistory, draftUpdate);
+        }
+      } else if (consultEnvelope) {
+        responseTextForHistory = JSON.stringify({
+          response_text: consultEnvelope.responseText,
+          drafts: [],
+          teaching_actions: consultEnvelope.teachingActions,
+          task_suggestions: consultEnvelope.taskSuggestions,
+        });
+      }
+      const teachingActions = consultEnvelope
+        ? consultEnvelope.teachingActions
+        : parseTeachingActions(result.text, teachingIdMap);
+      const parsedTaskSuggestions = consultEnvelope
+        ? consultEnvelope.taskSuggestions
+        : parseTaskSuggestions(result.text);
+      const taskSuggestions = filterDuplicateTaskSuggestions(parsedTaskSuggestions, existingWork);
+      const suppressedTaskSuggestionCount = parsedTaskSuggestions.length - taskSuggestions.length;
+      let responseTextForClient = consultEnvelope
+        ? consultEnvelope.responseText
+        : stripProtocolTags(responseTextForHistory);
       if (!responseTextForClient && draftUpdate) {
         responseTextForClient = 'Done — I updated the draft in the editor.';
       }
@@ -1226,6 +1528,9 @@ router.post('/', attachIdentity, async (req, res) => {
         responseTextForClient = n === 1
           ? 'I think this is worth a task — review below.'
           : `I think ${n} tasks are worth creating — review below.`;
+      }
+      if (!responseTextForClient && suppressedTaskSuggestionCount > 0) {
+        responseTextForClient = 'This already appears to be covered by existing open work on the thread.';
       }
 
       const userHistory = {
@@ -1257,8 +1562,10 @@ router.post('/', attachIdentity, async (req, res) => {
             context,
             draftId,
             actorName: actorName(req),
-            hasDraftUpdate: !!draftUpdate,
+            hasDraftUpdate: draftUpdates.length > 0,
+            draftUpdateCount: draftUpdates.length,
             teachingActionCount: teachingActions.length,
+            taskSuggestionCount: taskSuggestions.length,
           },
         }).catch(() => {});
       }
@@ -1306,6 +1613,7 @@ router.post('/', attachIdentity, async (req, res) => {
             statusUpdateSafetyApplied,
             teachingActionCount: teachingActions.length,
             taskSuggestionCount: taskSuggestions.length,
+            suppressedDuplicateTaskSuggestionCount: suppressedTaskSuggestionCount,
           },
           privacyClass: 'high',
           redactionStatus: 'partially_redacted',
@@ -1326,6 +1634,7 @@ router.post('/', attachIdentity, async (req, res) => {
         model: result.model || DRAFT_MODEL,
         confidence,
         ...(draftUpdate ? { draft_update: draftUpdate } : {}),
+        ...(draftUpdates.length > 0 ? { draft_updates: draftUpdates } : {}),
         ...(teachingActions.length > 0 ? { teaching_actions: teachingActions, teaching_action: teachingActions[0] } : {}),
         ...(taskSuggestions.length > 0 ? { task_suggestions: taskSuggestions } : {}),
         sessionId: activeSessionId,
@@ -1338,6 +1647,9 @@ router.post('/', attachIdentity, async (req, res) => {
           degraded,
           modelTimeout,
           statusUpdateSafetyApplied,
+          suppressedDuplicateTaskSuggestionCount: suppressedTaskSuggestionCount,
+          draftUpdateCount: draftUpdates.length,
+          structuredEnvelope: !!consultEnvelope,
           fullThread,
           messageCount: messages.length,
         },
@@ -1496,7 +1808,16 @@ module.exports._test = {
   websiteConversationFromThread,
   stripProtocolTags,
   parseDraftUpdate,
+  parseConsultEnvelope,
+  normalizeConsultDrafts,
+  extractUntaggedDraftUpdate,
   parseTeachingActions,
+  parseTaskSuggestions,
+  normalizeTaskText,
+  taskSimilarity,
+  filterDuplicateTaskSuggestions,
+  formatExistingWorkForPrompt,
+  loadExistingInboxWork,
   selectConsultSurface,
   contextTaskInstruction,
   isTransientConsultFailure,

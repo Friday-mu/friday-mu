@@ -43,6 +43,7 @@ const { translateText, getConversationLanguageFallback } = require('../ai/transl
 const { publishFadEvent } = require('../realtime');
 const { detectActions } = require('../inbox/action_detector');
 const { checkAutoResolve } = require('../inbox/auto_resolve');
+const { isWithinWhatsAppWindow, loadLastInboundWhatsAppAt } = require('../inbox/whatsapp_window');
 
 const router = express.Router();
 
@@ -58,7 +59,6 @@ const GUEST_CHANNELS  = new Set(['whatsapp', 'airbnb', 'booking', 'email']);
 const TEAM_CHANNELS   = new Set(['team-channel', 'team-dm']);
 const EMAIL_CHANNELS  = new Set(['email']);
 const FR_TENANT_ID = '00000000-0000-0000-0000-000000000001';
-const WA_WINDOW_MS = 24 * 60 * 60 * 1000;
 const ACTION_DETECTOR_DISABLED = process.env.FAD_ACTION_DETECTOR_DISABLED === 'true';
 const AUTO_RESOLVE_DISABLED = process.env.FAD_AUTO_RESOLVE_DISABLED === 'true';
 
@@ -302,7 +302,7 @@ function extractGuestyMessageId(result) {
 async function sendGuestDirect({ tenantId, conversationId, body, channel, reviewedBy }) {
   const { rows } = await query(
     `SELECT id, tenant_id, guesty_conversation_id, channel, communication_channel,
-            last_inbound_at, guest_name, property_name
+            guest_name, property_name
        FROM conversations
       WHERE id = $1
         AND tenant_id = $2
@@ -337,9 +337,8 @@ async function sendGuestDirect({ tenantId, conversationId, body, channel, review
     throw err;
   }
   if (outboundChannel === 'whatsapp') {
-    const lastInbound = conversation.last_inbound_at;
-    const windowOpen = lastInbound
-      && (Date.now() - new Date(lastInbound).getTime()) < WA_WINDOW_MS;
+    const lastInbound = await loadLastInboundWhatsAppAt(conversation.id);
+    const windowOpen = isWithinWhatsAppWindow(lastInbound);
     if (!windowOpen) {
       const err = new Error('WhatsApp 24h conversation window closed — must use a template');
       err.statusCode = 409;

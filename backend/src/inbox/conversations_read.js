@@ -30,6 +30,7 @@ const {
   resolveInboxReservationContext,
   applyReservationContextToConversation,
 } = require('./reservation_context');
+const { getWhatsAppWindowState } = require('./whatsapp_window');
 
 const router = express.Router();
 
@@ -529,13 +530,9 @@ router.get('/:id', attachIdentity, async (req, res) => {
     let whatsapp_window_open = null;
     let whatsapp_window_expires_at = null;
     if (available_channels && available_channels.includes('whatsapp')) {
-      if (conv.last_inbound_at) {
-        const expiresAt = new Date(new Date(conv.last_inbound_at).getTime() + 24 * 60 * 60 * 1000);
-        whatsapp_window_open = expiresAt > new Date();
-        whatsapp_window_expires_at = expiresAt.toISOString();
-      } else {
-        whatsapp_window_open = false;
-      }
+      const whatsappWindow = await getWhatsAppWindowState(id);
+      whatsapp_window_open = whatsappWindow.open;
+      whatsapp_window_expires_at = whatsappWindow.expiresAt;
     }
 
     // Who has seen this conversation
