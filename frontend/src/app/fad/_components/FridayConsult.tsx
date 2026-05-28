@@ -147,7 +147,9 @@ const CHIP_INSTRUCTIONS: Record<string, string> = {
   'What does the guest want?': 'Identify what the guest wants, what we know, and the next best reply.',
 };
 
-const CONSULT_CLIENT_TIMEOUT_MS = 90_000;
+// Keep the browser budget aligned with the backend/nginx long-context path.
+// The panel has a Stop control, so operators can still cancel manually.
+const CONSULT_CLIENT_TIMEOUT_MS = 590_000;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';

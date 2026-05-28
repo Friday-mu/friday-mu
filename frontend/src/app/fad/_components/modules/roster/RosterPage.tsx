@@ -26,6 +26,7 @@ import {
   type OperationsConsultActionSuggestion,
   type OperationsConsultHistoryMessage,
 } from '../../../_data/operationsConsultClient';
+import { fetchScheduleReservations, type ScheduleReservation } from '../../../_data/reservationsClient';
 import { useApiTasksPage } from '../../../_data/useApiTasks';
 import { useCurrentUserId, useJwtRawUserId, usePermissions } from '../../usePermissions';
 import { fireToast } from '../../Toaster';
@@ -147,6 +148,21 @@ function taskZone(task: Task): Zone | null {
   return task.propertyCode ? PROPERTY_ZONE_BY_CODE.get(task.propertyCode) ?? null : null;
 }
 
+function reservationStatusBlocksOps(status: string | null | undefined): boolean {
+  return ['confirmed', 'checked_in', 'reserved', 'booked'].includes(String(status || '').toLowerCase());
+}
+
+function reservationOccupiesRosterDay(reservation: ScheduleReservation, date: string): boolean {
+  return reservationStatusBlocksOps(reservation.status)
+    && Boolean(reservation.checkInDate && reservation.checkOutDate)
+    && reservation.checkInDate <= date
+    && date < reservation.checkOutDate;
+}
+
+function reservationZone(reservation: ScheduleReservation): Zone | null {
+  return reservation.propertyCode ? PROPERTY_ZONE_BY_CODE.get(reservation.propertyCode) ?? null : null;
+}
+
 function staffZone(user: OperationsStaffUser): Zone | null {
   return user.zone === 'north' || user.zone === 'west' ? user.zone : null;
 }
@@ -154,6 +170,16 @@ function staffZone(user: OperationsStaffUser): Zone | null {
 function dominantZone(tasks: Task[], fallback: Zone | null): Zone | null {
   const counts = tasks.reduce<Record<Zone, number>>((acc, task) => {
     const zone = taskZone(task);
+    if (zone) acc[zone] += 1;
+    return acc;
+  }, { north: 0, west: 0 });
+  if (counts.north === 0 && counts.west === 0) return fallback;
+  return counts.north >= counts.west ? 'north' : 'west';
+}
+
+function dominantReservationZone(reservations: ScheduleReservation[], fallback: Zone | null): Zone | null {
+  const counts = reservations.reduce<Record<Zone, number>>((acc, reservation) => {
+    const zone = reservationZone(reservation);
     if (zone) acc[zone] += 1;
     return acc;
   }, { north: 0, west: 0 });
@@ -170,6 +196,7 @@ function buildRosterAgentPlan(input: {
   dates: string[];
   staff: OperationsStaffUser[];
   tasks: Task[];
+  reservations: ScheduleReservation[];
   currentCells: Map<string, RosterDay>;
 }): RosterAgentSuggestion[] {
   const weeklyAssignedLoad = new Map<string, number>();
@@ -186,12 +213,22 @@ function buildRosterAgentPlan(input: {
   const suggestions: RosterAgentSuggestion[] = [];
   for (const date of input.dates) {
     const dayTasks = input.tasks.filter((task) => task.dueDate === date);
-    const dayZone = dominantZone(dayTasks, null);
+    const arrivals = input.reservations.filter((reservation) => reservationStatusBlocksOps(reservation.status) && reservation.checkInDate === date);
+    const checkouts = input.reservations.filter((reservation) => reservationStatusBlocksOps(reservation.status) && reservation.checkOutDate === date);
+    const occupied = input.reservations.filter((reservation) => reservationOccupiesRosterDay(reservation, date));
+    const reservationDemandUnits = (arrivals.length + checkouts.length) * 2 + (occupied.length > 0 ? 1 : 0);
+    const reservationSignal = [
+      arrivals.length > 0 ? `${arrivals.length} arrival${arrivals.length === 1 ? '' : 's'}` : null,
+      checkouts.length > 0 ? `${checkouts.length} checkout${checkouts.length === 1 ? '' : 's'}` : null,
+      occupied.length > 0 ? `${occupied.length} in-house` : null,
+    ].filter(Boolean).join(', ');
+    const dayZone = dominantZone(dayTasks, dominantReservationZone([...arrivals, ...checkouts, ...occupied], null));
     const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
     const weekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const demandUnits = dayTasks.length + reservationDemandUnits;
     const neededCoverage = Math.min(
       input.staff.length,
-      dayTasks.length === 0 ? 0 : Math.max(1, Math.ceil(dayTasks.length / 4)),
+      demandUnits === 0 ? 0 : Math.max(1, Math.ceil(demandUnits / 4)),
     );
     const ranked = [...input.staff].sort((a, b) => {
       const aAssigned = dayTasks.filter((task) => [a.id, a.userId, a.staffId].filter(Boolean).some((id) => task.assigneeIds.includes(id as string))).length;
@@ -235,7 +272,10 @@ function buildRosterAgentPlan(input: {
         reason: userTasks.length > 0
           ? `${userTasks.length} assigned task${userTasks.length === 1 ? '' : 's'} on this day.`
           : coverage.has(key)
-            ? `${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'} need coverage.`
+            ? [
+              `${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'} need coverage.`,
+              reservationSignal ? `Reservation overlay: ${reservationSignal}.` : null,
+            ].filter(Boolean).join(' ')
             : weekend
               ? 'Weekend with no assigned task load.'
               : 'Weekday base coverage using staff zone.',
@@ -254,6 +294,7 @@ function rosterConsultNotes(input: {
   dates: string[];
   currentCells: Map<string, RosterDay>;
   draft: RosterAgentSuggestion[];
+  reservations: ScheduleReservation[];
   workload: WorkloadSummary;
 }): string {
   const staffRows = input.staff.slice(0, 10).map((user) => {
@@ -269,10 +310,19 @@ function rosterConsultNotes(input: {
   const draftRows = input.draft.slice(0, 12).map((item) => (
     `${item.date}: ${item.staffName} -> ${item.availability}${item.zone ? `/${item.zone}` : ''} (${item.reason})`
   ));
+  const reservationRows = input.dates.map((date) => {
+    const arrivals = input.reservations.filter((reservation) => reservationStatusBlocksOps(reservation.status) && reservation.checkInDate === date);
+    const checkouts = input.reservations.filter((reservation) => reservationStatusBlocksOps(reservation.status) && reservation.checkOutDate === date);
+    const occupied = input.reservations.filter((reservation) => reservationOccupiesRosterDay(reservation, date));
+    if (arrivals.length === 0 && checkouts.length === 0 && occupied.length === 0) return null;
+    return `${date.slice(5)}: ${arrivals.length} arrivals, ${checkouts.length} checkouts, ${occupied.length} in-house`;
+  }).filter(Boolean);
+  const pricedReservations = input.reservations.filter((reservation) => reservation.calendarPricing).length;
   return [
     `Roster week ${input.weekStart} to ${input.weekEnd}.`,
     `Roster status: ${input.rosterStatus || 'draft'}; unsaved edits: ${input.dirty ? 'yes' : 'no'}.`,
     `Workload: ${input.workload.total} tasks, ${input.workload.unassignedCount} unassigned, ${input.workload.priorityCount} urgent/high.`,
+    `Reservation overlays: ${input.reservations.length} visible stays; ${pricedReservations} have cached calendar pricing. Daily signals: ${reservationRows.join(' | ') || 'none'}.`,
     `Current roster cells: ${staffRows.join(' | ') || 'none loaded'}.`,
     `Visible roster draft: ${draftRows.join(' | ') || 'none'}.`,
   ].join(' ');
@@ -283,6 +333,7 @@ function RosterFridayConsultPanel({
   weekEnd,
   dates,
   staff,
+  reservations,
   tasks,
   workload,
   currentCells,
@@ -299,6 +350,7 @@ function RosterFridayConsultPanel({
   weekEnd: string;
   dates: string[];
   staff: OperationsStaffUser[];
+  reservations: ScheduleReservation[];
   tasks: Task[];
   workload: WorkloadSummary;
   currentCells: Map<string, RosterDay>;
@@ -386,6 +438,7 @@ function RosterFridayConsultPanel({
         rangeEnd: weekEnd,
         plannerMode: 'roster_week',
         scheduledTasks: tasks,
+        reservations,
         staff,
         history,
         notes: rosterConsultNotes({
@@ -397,6 +450,7 @@ function RosterFridayConsultPanel({
           staff,
           currentCells,
           draft: rosterAgentPlan,
+          reservations,
           workload,
         }),
       });
@@ -512,6 +566,9 @@ export function RosterPage() {
   const [weekStart, setWeekStart] = useState(() => mondayFor(todayIso()));
   const [staffUsers, setStaffUsers] = useState<OperationsStaffUser[]>([]);
   const [staffError, setStaffError] = useState<string | null>(null);
+  const [reservations, setReservations] = useState<ScheduleReservation[]>([]);
+  const [reservationsError, setReservationsError] = useState<string | null>(null);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
   const [rosterWeek, setRosterWeek] = useState<ApiRosterWeek | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
@@ -577,6 +634,28 @@ export function RosterPage() {
       cancelled = true;
     };
   }, [weekStart]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReservationsLoading(true);
+    setReservationsError(null);
+    void fetchScheduleReservations({ from: weekStart, to: weekEnd, limit: 500 })
+      .then((items) => {
+        if (!cancelled) setReservations(items);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setReservations([]);
+          setReservationsError(e instanceof Error ? e.message : 'Reservation overlays unavailable');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReservationsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [weekEnd, weekStart]);
 
   const rosterUsers = useMemo<OperationsStaffUser[]>(() => {
     const byId = new Map<string, OperationsStaffUser>();
@@ -723,6 +802,7 @@ export function RosterPage() {
       dates,
       staff: persistableUsers,
       tasks: tasksPage.tasks,
+      reservations,
       currentCells: currentRosterCells,
     });
     setRosterAgentPlan(next);
@@ -794,9 +874,9 @@ export function RosterPage() {
         </button>
       </div>
 
-      {((staffError && visibleUsers.length === 0) || rosterError || tasksPage.error) && (
+      {((staffError && visibleUsers.length === 0) || rosterError || tasksPage.error || reservationsError) && (
         <div className="ops-roster-warning">
-          {(staffError && visibleUsers.length === 0) || rosterError || tasksPage.error}
+          {(staffError && visibleUsers.length === 0) || rosterError || tasksPage.error || reservationsError}
         </div>
       )}
 
@@ -806,6 +886,7 @@ export function RosterPage() {
           weekEnd={weekEnd}
           dates={dates}
           staff={persistableUsers}
+          reservations={reservations}
           tasks={tasksPage.tasks}
           workload={workload}
           currentCells={currentRosterCells}
@@ -843,7 +924,7 @@ export function RosterPage() {
               staff={visibleUsers}
               assignableCount={visibleUsers.filter((user) => user.canAssign).length}
               workload={workload}
-              loading={tasksPage.loading || rosterLoading}
+              loading={tasksPage.loading || rosterLoading || reservationsLoading}
               rosterStatus={rosterWeek?.status}
               dirty={dirty}
             />

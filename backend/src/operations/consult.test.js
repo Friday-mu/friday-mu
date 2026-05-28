@@ -109,6 +109,35 @@ describe('Operations Friday Consult helpers', () => {
     ]));
   });
 
+  test('does not treat completed or closed tasks as open planning blockers', () => {
+    const constraints = buildPlanningConstraints({
+      selectedDate: '2026-05-27',
+      rangeStart: '2026-05-27',
+      rangeEnd: '2026-05-27',
+      currentPlan: [],
+      reservations: [{
+        id: 'rsv-closed',
+        propertyCode: 'VA-1',
+        guestName: 'Guest One',
+        checkInDate: '2026-05-26',
+        checkOutDate: '2026-05-28',
+        status: 'confirmed',
+      }],
+      scheduledTasks: [
+        { id: 'closed-1', propertyCode: 'VA-1', status: 'completed', dueDate: '2026-05-27', assigneeIds: [] },
+        { id: 'open-1', propertyCode: 'VA-1', status: 'scheduled', dueDate: '2026-05-27', assigneeIds: [] },
+      ],
+      unscheduledTasks: [
+        { id: 'closed-2', propertyCode: 'GBH-C3', status: 'closed', assigneeIds: [] },
+        { id: 'open-2', propertyCode: 'GBH-C4', status: 'reported', assigneeIds: [] },
+      ],
+    });
+
+    expect(constraints.unassignedOpenTaskIds).toEqual(expect.arrayContaining(['open-1', 'open-2']));
+    expect(constraints.unassignedOpenTaskIds).not.toEqual(expect.arrayContaining(['closed-1', 'closed-2']));
+    expect(constraints.nonUrgentOccupiedTaskIds).toEqual(['open-1']);
+  });
+
   test('classifies urgent guest access work as occupancy-eligible', () => {
     expect(guestUrgentTask({
       priority: 'high',
