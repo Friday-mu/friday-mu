@@ -142,6 +142,7 @@ Plan 3 source-mapping progress:
 - `backend/src/ask_friday/policy.test.js` now pins the public/owner/feedback contract boundaries: valid Website public context-pack/event shapes, owner lead event summaries, feedback evidence refs, and rejection of owner-private scopes or restricted unredacted evidence on public routes. Focused Core verification passed on 2026-05-28: `src/ask_friday/policy.test.js`, `contracts.test.js`, and `index.test.js` all green.
 - `backend/src/ask_friday/index.test.js` now covers public owner follow-up and feedback issue action requests. This confirms `request_owner_followup` and `create_feedback_issue` queue as approval-routed pending action requests under public surface policy; they do not execute directly.
 - Branch migration `103_ask_friday_public_contract_evals.sql` adds contract-specific eval seeds for missing context-pack fallback, ready owner lead capsules, feedback evidence/action requests, and restricted evidence rejection. This is not deployed.
+- `docs/handover/2026-05-28-ask-friday-website-public-wiring-prompt.md` is a paste-ready Website-session prompt for implementing public context-pack consumption, redacted learning-event emission, owner lead capsules, feedback evidence capsules, and takeover preservation from a separate Website worktree.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 

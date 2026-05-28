@@ -68,6 +68,7 @@ Read these first, in order:
    - Eval matrix, conversation-mining runbook, candidate review lanes, and ADR backlog.
 6. `docs/handover/2026-05-26-ask-friday-autonomous-core.md`
    - Branch handover and implementation summary.
+   - Current Website public wiring prompt: `docs/handover/2026-05-28-ask-friday-website-public-wiring-prompt.md`.
 7. `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
    - Surface catalog, knowledge classes, memory/session policy, and Plan 2 profiles.
 8. `docs/architecture/ask-friday-core-v1-2026-05-23.md`
