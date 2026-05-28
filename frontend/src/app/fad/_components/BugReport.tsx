@@ -81,7 +81,7 @@ interface FeedbackDraftSnapshot {
   type: FeedbackType;
   messages: ChatMessage[];
   input: string;
-  screenshotExpanded: boolean;
+  expandedScreenshotIds: string[];
 }
 
 type FeedbackDraft = FeedbackDraftSnapshot & {
@@ -537,7 +537,7 @@ export function BugReportFab({ currentModuleLabel }: Props) {
       type: 'bug',
       messages: [],
       input: '',
-      screenshotExpanded: false,
+      expandedScreenshotIds: [],
       screenshots: [],
       screenshotPending: true,
       routeUrl,
@@ -847,10 +847,9 @@ function BugReportModal({
   // mounts (so the modal itself isn't in the capture). The modal just
   // displays it.
   const latestScreenshot = screenshots[screenshots.length - 1] ?? null;
-  // Click-to-expand the screenshot thumbnail. Default collapsed so the
-  // modal stays compact; user can tap to see the full capture before
-  // submitting. Matches the website's screenshot preview UX.
-  const [screenshotExpanded, setScreenshotExpanded] = useState(initialDraft.screenshotExpanded);
+  // Each screenshot expands independently. New captures are collapsed by
+  // default so additional evidence does not shove chat/actions off-screen.
+  const [expandedScreenshotIds, setExpandedScreenshotIds] = useState<string[]>(initialDraft.expandedScreenshotIds || []);
   // The chat transcript. First message is always from the user (their
   // initial description); from there Friday replies, user can reply
   // back, etc. Posted in full to /api/feedback/chat on each turn.
@@ -1046,6 +1045,14 @@ function BugReportModal({
     }
   };
 
+  const toggleScreenshotExpanded = (shotId: string) => {
+    setExpandedScreenshotIds((current) => (
+      current.includes(shotId)
+        ? current.filter((id) => id !== shotId)
+        : [...current, shotId]
+    ));
+  };
+
   // Switching feedback type mid-conversation resets the chat — the
   // structure of useful questions differs across bug / feature /
   // suggestion, so reusing a transcript would confuse Kimi. Bump
@@ -1171,7 +1178,7 @@ function BugReportModal({
               if (dictation.state === 'recording' || dictation.state === 'transcribing') {
                 dictation.toggle();
               }
-              onMinimize({ type, messages, input, screenshotExpanded });
+              onMinimize({ type, messages, input, expandedScreenshotIds });
             }}
             disabled={submitting}
             title="Minimize and keep this draft"
@@ -1200,60 +1207,44 @@ function BugReportModal({
             ))}
           </div>
 
-          {/* Screenshot preview — collapsed thumb until clicked, full
-              when expanded. The user can SEE what they're sending
-              instead of trusting an "attached" label. Pending state
-              shows while the upstream capture is still in flight so
-              there's no flash to the "unavailable" copy before the
-              capture lands. */}
-          <div className={'bug-screenshot-frame' + (screenshotExpanded ? ' is-expanded' : '')}>
+          {/* Screenshots stay collapsed independently. Expanding one shows
+              the whole captured image without internal clipping; the modal
+              body scrolls if the screenshot is tall. */}
+          <div className="bug-screenshot-frame">
             {screenshots.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setScreenshotExpanded((v) => !v)}
-                aria-label={screenshotExpanded ? 'Collapse screenshot preview' : 'Expand screenshot preview'}
-                aria-expanded={screenshotExpanded}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: 0,
-                  border: 0,
-                  background: 'transparent',
-                  cursor: 'pointer',
-                }}
-              >
-                <span className="bug-screenshot-meta">
-                  {screenshots.length === 1
-                    ? (latestScreenshot?.moduleLabel || currentModuleLabel || 'current view')
-                    : `${screenshots.length} screenshots · latest ${latestScreenshot?.moduleLabel || currentModuleLabel || 'current view'}`}
-                </span>
-                <span className="bug-screenshot-toggle-label">
-                  {screenshotExpanded ? 'Hide screenshots' : 'Show screenshot'}
-                </span>
-                <div className={'bug-screenshot-list' + (screenshots.length > 1 ? ' is-multiple' : '')}>
-                  {(screenshotExpanded ? screenshots : [latestScreenshot]).filter(Boolean).map((shot, index) => (
-                    <figure className="bug-screenshot-item" key={(shot as FeedbackScreenshot).id}>
-                      {screenshotExpanded && screenshots.length > 1 && (
-                        <figcaption>
-                          Screenshot {index + 1} · {(shot as FeedbackScreenshot).moduleLabel} · {(shot as FeedbackScreenshot).routeUrl}
-                        </figcaption>
+              <div className="bug-screenshot-stack">
+                {screenshots.map((shot, index) => {
+                  const expanded = expandedScreenshotIds.includes(shot.id);
+                  return (
+                    <div className={'bug-screenshot-row' + (expanded ? ' is-expanded' : '')} key={shot.id}>
+                      <button
+                        type="button"
+                        className="bug-screenshot-toggle"
+                        onClick={() => toggleScreenshotExpanded(shot.id)}
+                        aria-label={expanded ? `Collapse screenshot ${index + 1}` : `Expand screenshot ${index + 1}`}
+                        aria-expanded={expanded}
+                      >
+                        <span className="bug-screenshot-toggle-main">
+                          <strong>Screenshot {index + 1}</strong>
+                          <span>{shot.moduleLabel || currentModuleLabel || 'current view'} · {shot.routeUrl}</span>
+                        </span>
+                        <span className="bug-screenshot-toggle-label">
+                          {expanded ? 'Hide' : 'Show'}
+                        </span>
+                      </button>
+                      {expanded && (
+                        <figure className="bug-screenshot-item">
+                          <figcaption>
+                            Captured {new Date(shot.capturedAt).toLocaleString()} · {shot.moduleLabel} · {shot.routeUrl}
+                          </figcaption>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={shot.dataUrl} alt={`Page screenshot ${index + 1}`} />
+                        </figure>
                       )}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={(shot as FeedbackScreenshot).dataUrl}
-                        alt={`Page screenshot ${index + 1}`}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          maxHeight: screenshotExpanded ? '70vh' : 200,
-                          objectFit: screenshotExpanded ? 'contain' : 'cover',
-                          objectPosition: 'top',
-                        }}
-                      />
-                    </figure>
-                  ))}
-                </div>
-              </button>
+                    </div>
+                  );
+                })}
+              </div>
             ) : screenshotPending ? (
               <div
                 style={{
@@ -1336,8 +1327,8 @@ function BugReportModal({
               onKeyDown={handleKeyDown}
               disabled={!canDraft}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, width: '100%' }}>
                 {dictation.supported && (
                   <button
                     type="button"
@@ -1429,15 +1420,6 @@ function BugReportModal({
                                                     : `${getModifierSymbol()}${getModifierSymbol()} to dictate · ${getModifierSymbol()}+Enter to send`}
                 </span>
               </div>
-              <button
-                type="button"
-                className="btn primary sm"
-                onClick={send}
-                disabled={!canSend}
-                style={{ opacity: !canSend ? 0.5 : 1 }}
-              >
-                {thinking ? 'Sending…' : messages.length === 0 ? 'Send to Friday' : 'Reply'}
-              </button>
             </div>
           </div>
 
@@ -1457,9 +1439,9 @@ function BugReportModal({
             </div>
           )}
         </div>
-        <div className="fad-modal-foot">
+        <div className="fad-modal-foot bug-modal-foot">
           {!canSubmit && !submitting && (
-            <span style={{ marginRight: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)', alignSelf: 'center' }}>
+            <span className="bug-modal-foot-status">
               {messages.length === 0
                 ? 'Send your first message to Friday'
                 : 'Waiting for Friday\'s reply…'}
@@ -1467,6 +1449,16 @@ function BugReportModal({
           )}
           <button type="button" className="btn" onClick={onClose} disabled={submitting}>
             Cancel
+          </button>
+          <button
+            type="button"
+            className={'btn' + (!canSubmit ? ' primary' : '')}
+            onClick={send}
+            disabled={!canSend}
+            style={{ opacity: !canSend ? 0.5 : 1 }}
+            title={reachedTurnCap ? 'Message cap reached. Submit when ready.' : 'Send to Friday'}
+          >
+            {thinking ? 'Sending…' : messages.length === 0 ? 'Send to Friday' : 'Reply'}
           </button>
           <button
             type="button"

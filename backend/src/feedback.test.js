@@ -8,7 +8,12 @@ jest.mock('./database/client', () => ({
   query: jest.fn(),
 }));
 
+jest.mock('./realtime', () => ({
+  notifyUsers: jest.fn(() => Promise.resolve()),
+}));
+
 const { query } = require('./database/client');
+const { notifyUsers } = require('./realtime');
 const feedbackRouter = require('./feedback');
 
 const JWT_SECRET = 'feedback-test-secret';
@@ -36,6 +41,11 @@ describe('feedback router', () => {
   beforeEach(() => {
     process.env.JWT_SECRET = JWT_SECRET;
     query.mockReset();
+    notifyUsers.mockClear();
+    delete process.env.SLACK_BOT_TOKEN;
+    delete process.env.SLACK_FEEDBACK_WEBHOOK_URL;
+    delete process.env.SLACK_NOTIFY_CHANNEL;
+    delete process.env.FAD_FEEDBACK_OWNER_EMAILS;
   });
 
   test('lists tenant-scoped feedback with screenshot metadata only', async () => {
@@ -112,6 +122,65 @@ describe('feedback router', () => {
 
     expect(res.body.feedback.screenshot_data_url).toBe('data:image/jpeg;base64,abc');
     expect(query.mock.calls[0][1]).toEqual(['fb-1', TENANT_ID]);
+  });
+
+  test('stores multiple screenshots and notifies only the feedback owner', async () => {
+    const shot1 = 'data:image/jpeg;base64,aaa';
+    const shot2 = 'data:image/jpeg;base64,bbb';
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'fb-new',
+          type: 'bug',
+          title: 'Broken flow',
+          description: 'Details',
+          severity: null,
+          route_url: '/fad?m=inbox',
+          module_label: 'Inbox',
+          status: 'new',
+          source: 'fad',
+          created_at: '2026-05-28T00:00:00.000Z',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: USER_ID }],
+      });
+
+    await request(app())
+      .post('/api/feedback')
+      .set('Authorization', `Bearer ${token()}`)
+      .send({
+        type: 'bug',
+        title: 'Broken flow',
+        description: 'Details',
+        route_url: '/fad?m=inbox',
+        module_label: 'Inbox',
+        screenshot_data_urls: [shot1, shot2],
+        diagnostics: { viewport: { width: 390, height: 844 } },
+      })
+      .expect(200);
+
+    const [insertSql, insertParams] = query.mock.calls[0];
+    expect(insertSql).toContain('screenshot_data_urls');
+    expect(insertSql).toContain('diagnostics');
+    expect(insertParams[6]).toBe(shot2);
+    expect(JSON.parse(insertParams[7])).toEqual([shot1, shot2]);
+    expect(JSON.parse(insertParams[8])).toMatchObject({ viewport: { width: 390, height: 844 } });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    const [recipientSql, recipientParams] = query.mock.calls[1];
+    expect(recipientSql).toContain('LOWER(COALESCE(email');
+    expect(recipientSql).not.toContain("role IN ('admin', 'director')");
+    expect(recipientParams).toEqual([TENANT_ID, ['ishant@friday.mu']]);
+    expect(notifyUsers).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: TENANT_ID,
+      userIds: [USER_ID],
+      data: expect.objectContaining({
+        emailNotification: true,
+        emailNotifyOnline: true,
+        feedbackId: 'fb-new',
+      }),
+    }));
   });
 
   test('records fix provenance and verification evidence on patch', async () => {

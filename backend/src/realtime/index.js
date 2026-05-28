@@ -356,7 +356,8 @@ async function sendEmailNotifications({ tenantId, userIds, type, title, body = '
     [tenantId, userIds],
   );
   let sent = 0;
-  const onlineIds = process.env.FAD_EMAIL_NOTIFY_ONLINE_USERS === 'true'
+  const notifyOnlineUsers = process.env.FAD_EMAIL_NOTIFY_ONLINE_USERS === 'true' || data.emailNotifyOnline === true;
+  const onlineIds = notifyOnlineUsers
     ? new Set()
     : new Set(activePresenceSnapshotForTenant(tenantId).userIds.map(String));
   const offlineRows = rows.filter((user) => !onlineIds.has(String(user.id)));

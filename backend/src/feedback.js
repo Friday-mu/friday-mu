@@ -60,11 +60,12 @@ const GEMINI_FEEDBACK_VISION_MODEL = process.env.GEMINI_FEEDBACK_VISION_MODEL ||
 // half before falling through to Kimi text-only. 25 s × (vision then
 // Kimi fallback) ≈ 50 s worst case, still bounded but much less abusive.
 const GEMINI_FEEDBACK_TIMEOUT_MS = Number(process.env.GEMINI_FEEDBACK_TIMEOUT_MS) || 25_000;
-// 1.5 MB raw base64 cap. The full feedback submission accepts up to 5 MB
-// (MAX_SCREENSHOT_BYTES below) for archival; the chat clarifier sees a
-// smaller window because we pay model latency on each turn. The final
-// submission still attaches the full-resolution screenshot.
+// 1.5 MB raw base64 cap per image. The full feedback submission accepts
+// larger screenshots for archival; the chat clarifier sees a smaller
+// window because we pay model latency on each turn.
 const MAX_CHAT_SCREENSHOT_BYTES = 1_500_000;
+const MAX_CHAT_SCREENSHOTS = 3;
+const MAX_CHAT_SCREENSHOT_TOTAL_CHARS = 3_000_000;
 
 const CHAT_SYSTEM_PROMPT = `You are Friday, the team's friendly triage assistant. The user is filing a {{type}} report (bug / feature request / suggestion). Your job is to gather enough context so a human can triage and act on it later — nothing more.
 
@@ -124,6 +125,27 @@ function validateChatScreenshot(raw) {
   return { mimeType, data: base64 };
 }
 
+function validateChatScreenshots(rawList, legacy) {
+  const rawUrls = [];
+  if (Array.isArray(rawList)) {
+    for (const item of rawList) {
+      if (typeof item === 'string') rawUrls.push(item);
+    }
+  }
+  if (typeof legacy === 'string') rawUrls.push(legacy);
+  const parsed = [];
+  let totalChars = 0;
+  for (const raw of [...new Set(rawUrls)]) {
+    if (parsed.length >= MAX_CHAT_SCREENSHOTS) break;
+    const candidate = validateChatScreenshot(raw);
+    if (!candidate) continue;
+    if (totalChars + raw.length > MAX_CHAT_SCREENSHOT_TOTAL_CHARS) continue;
+    totalChars += raw.length;
+    parsed.push(candidate);
+  }
+  return parsed;
+}
+
 function safeStringifyDiagnostics(obj, maxChars = 600) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
   try {
@@ -137,6 +159,20 @@ function safeStringifyDiagnostics(obj, maxChars = 600) {
   }
 }
 
+function inferModuleIntent(moduleLabel) {
+  const label = String(moduleLabel || '').toLowerCase();
+  if (!label) return null;
+  if (label.includes('inbox')) return 'Inbox helps staff understand guest/owner messages, draft replies, coordinate internal handoff, and preserve conversation context.';
+  if (label.includes('operation') || label.includes('task') || label.includes('roster') || label.includes('schedule')) return 'Operations helps staff plan tasks, rosters, schedules, field work, and property readiness around reservations.';
+  if (label.includes('calendar')) return 'Calendar helps staff inspect reservations, blocks, property occupancy, pricing, and operational timing constraints.';
+  if (label.includes('reservation')) return 'Reservations helps staff inspect booking status, guest details, dates, channels, payment state, and booking follow-up.';
+  if (label.includes('propert')) return 'Properties helps staff inspect listings, property facts, owners, amenities, operations notes, and Guesty/Breezeway-linked state.';
+  if (label.includes('feedback') || label.includes('setting')) return 'Settings and Feedback help admins triage product issues, notification routing, account controls, and system configuration.';
+  if (label.includes('finance')) return 'Finance helps staff inspect transactions, owner statements, revenue/cost classification, and operating finance workflows.';
+  if (label.includes('owner')) return 'Owners helps staff inspect owner records, properties, communication, statements, and owner-service follow-up.';
+  return null;
+}
+
 function buildVisionEvidence(type, moduleLabel, routeUrl, diagnostics) {
   const focus =
     type === 'bug'
@@ -144,11 +180,13 @@ function buildVisionEvidence(type, moduleLabel, routeUrl, diagnostics) {
       : type === 'feature'
         ? 'Look at the screenshot to ground your follow-up — what part of this surface prompted the request, what nearby UI affordance is missing or insufficient.'
         : 'Look at the screenshot — what specific element, copy, or layout choice may be the friction the user is reacting to.';
-  const diag = safeStringifyDiagnostics(diagnostics);
+  const diag = safeStringifyDiagnostics(diagnostics, 4500);
+  const moduleIntent = inferModuleIntent(moduleLabel);
   return [
     `Feedback type: ${type}.`,
     moduleLabel ? `Module: ${moduleLabel}.` : null,
     routeUrl ? `Route: ${routeUrl}.` : null,
+    moduleIntent ? `Likely module intent: ${moduleIntent}` : null,
     focus,
     diag ? `Safe diagnostics:\n${diag}` : null,
   ]
@@ -159,21 +197,24 @@ function buildVisionEvidence(type, moduleLabel, routeUrl, diagnostics) {
 // Vision-aware chat reply. Returns null when the vision path isn't
 // available (no key, invalid screenshot, model error) so the caller can
 // fall through to generateChatReply() text-only. Never throws.
-async function generateChatReplyWithVision({ type, transcript, moduleLabel, routeUrl, screenshotParsed, diagnostics }) {
+async function generateChatReplyWithVision({ type, transcript, moduleLabel, routeUrl, screenshotsParsed, diagnostics }) {
   if (!GEMINI_API_KEY) return null;
-  if (!screenshotParsed) return null;
+  if (!Array.isArray(screenshotsParsed) || screenshotsParsed.length === 0) return null;
   const system = CHAT_SYSTEM_PROMPT.replace('{{type}}', type);
   const evidence = buildVisionEvidence(type, moduleLabel, routeUrl, diagnostics);
 
-  // Gemini multimodal: the screenshot rides as inline_data inside the
-  // first user turn alongside the evidence text. Subsequent turns are
-  // text-only — the model carries the visual context forward.
+  // Gemini multimodal: screenshots ride as inline_data inside the first
+  // user turn alongside the evidence text. Subsequent turns are usually
+  // text-only from the frontend, keeping the loop quick after the model
+  // has inspected the visual state.
   const contents = [
     {
       role: 'user',
       parts: [
-        { text: evidence },
-        { inline_data: { mime_type: screenshotParsed.mimeType, data: screenshotParsed.data } },
+        { text: `${evidence}\nScreenshots supplied to model: ${screenshotsParsed.length}.` },
+        ...screenshotsParsed.map((screenshotParsed) => ({
+          inline_data: { mime_type: screenshotParsed.mimeType, data: screenshotParsed.data },
+        })),
       ],
     },
     ...transcript.map((m) => ({
@@ -264,6 +305,7 @@ router.post('/chat', attachIdentity, async (req, res) => {
       route_url: routeUrl,
       module_label: moduleLabel,
       screenshot_data_url: screenshotRaw,
+      screenshot_data_urls: screenshotRawList,
       diagnostics,
     } = req.body || {};
     if (!TYPES.has(type)) {
@@ -290,11 +332,11 @@ router.post('/chat', attachIdentity, async (req, res) => {
     // generateChatReplyWithVision returns null on any failure (no key,
     // bad payload, model error) so we fall through to the Kimi text-only
     // path below — the user never blocks on the upgrade.
-    const screenshotParsed = validateChatScreenshot(screenshotRaw);
-    if (screenshotParsed) {
+    const screenshotsParsed = validateChatScreenshots(screenshotRawList, screenshotRaw);
+    if (screenshotsParsed.length > 0) {
       const visionResult = await generateChatReplyWithVision({
         ...baseArgs,
-        screenshotParsed,
+        screenshotsParsed,
         diagnostics,
       });
       if (visionResult) {
@@ -303,7 +345,7 @@ router.post('/chat', attachIdentity, async (req, res) => {
       }
     }
     const result = await generateChatReply(baseArgs);
-    console.log(`[feedback] chat ok source=${result.source || 'unknown'} turns=${normalized.length} hadScreenshot=${Boolean(screenshotParsed)} latency=${Date.now() - startedAt}ms`);
+    console.log(`[feedback] chat ok source=${result.source || 'unknown'} turns=${normalized.length} screenshots=${screenshotsParsed.length} latency=${Date.now() - startedAt}ms`);
     res.json(result);
   } catch (err) {
     console.error(`[feedback] chat error after ${Date.now() - startedAt}ms:`, err.message);
@@ -319,10 +361,62 @@ const STATUSES = new Set(['new', 'triaged', 'in_progress', 'resolved', 'wontfix'
 // (and mobile / portals when they ship). DB has a matching CHECK.
 const SOURCES = new Set(['fad', 'website', 'mobile', 'design-portal', 'owner-portal']);
 
-// 5MB cap on the base64 data URL keeps DB rows bounded. A 0.5-scale
-// 0.7-quality JPEG (what html2canvas produces in the frontend) lands
-// at ~200-600KB for full-page captures, so 5MB is generous.
-const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
+// Keep inline screenshots bounded. The frontend caps each draft at 5
+// screenshots; backend repeats the cap so a malformed caller cannot fill
+// the feedback table. These are data-URL character caps, chosen to stay
+// under the server's 10 MB express.json limit.
+const MAX_SCREENSHOTS = 5;
+const MAX_SCREENSHOT_CHARS = 5 * 1024 * 1024;
+const MAX_SCREENSHOT_TOTAL_CHARS = 9 * 1024 * 1024;
+const MAX_DIAGNOSTICS_CHARS = 12_000;
+
+function isFeedbackScreenshotDataUrl(value) {
+  return typeof value === 'string' && /^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(value);
+}
+
+function normalizeScreenshotDataUrls(rawList, legacy) {
+  if (rawList != null && !Array.isArray(rawList)) {
+    return { error: { status: 400, message: 'screenshot_data_urls must be an array' } };
+  }
+  const rawUrls = [];
+  if (Array.isArray(rawList)) rawUrls.push(...rawList);
+  if (typeof legacy === 'string' && legacy.length > 0) rawUrls.push(legacy);
+
+  const urls = [];
+  let totalChars = 0;
+  for (const raw of rawUrls) {
+    if (typeof raw !== 'string' || raw.length === 0) continue;
+    if (!isFeedbackScreenshotDataUrl(raw)) {
+      return { error: { status: 400, message: 'screenshot must be a data:image/... URL' } };
+    }
+    if (raw.length > MAX_SCREENSHOT_CHARS) {
+      return { error: { status: 413, message: 'screenshot too large (>5MB)' } };
+    }
+    if (urls.includes(raw)) continue;
+    if (totalChars + raw.length > MAX_SCREENSHOT_TOTAL_CHARS) {
+      return { error: { status: 413, message: 'screenshots too large (>9MB total)' } };
+    }
+    urls.push(raw);
+    totalChars += raw.length;
+    if (urls.length >= MAX_SCREENSHOTS) break;
+  }
+  return { urls };
+}
+
+function normalizeDiagnostics(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  try {
+    const json = JSON.stringify(value, (_key, v) => {
+      if (typeof v === 'string') return v.slice(0, 1000);
+      if (Array.isArray(v)) return v.slice(0, 25);
+      return v;
+    });
+    if (json.length <= MAX_DIAGNOSTICS_CHARS) return JSON.parse(json);
+    return { truncated: true, preview: json.slice(0, MAX_DIAGNOSTICS_CHARS) };
+  } catch {
+    return {};
+  }
+}
 
 function normalizeOptionalText(value, max = 2000) {
   if (value == null) return undefined;
@@ -345,8 +439,15 @@ function selectFeedbackFields({ includeScreenshot = false } = {}) {
     resolved_at, source, created_at, updated_at,
     triaged_at, fixed_commit, fixed_branch, fix_deployed_at,
     fix_verified_at, fix_verification_note, root_cause,
-    (screenshot_data_url IS NOT NULL AND length(screenshot_data_url) > 0) AS has_screenshot
-    ${includeScreenshot ? ', screenshot_data_url' : ''}
+    (
+      (screenshot_data_url IS NOT NULL AND length(screenshot_data_url) > 0)
+      OR COALESCE(jsonb_array_length(screenshot_data_urls), 0) > 0
+    ) AS has_screenshot,
+    GREATEST(
+      COALESCE(jsonb_array_length(screenshot_data_urls), 0),
+      CASE WHEN screenshot_data_url IS NOT NULL AND length(screenshot_data_url) > 0 THEN 1 ELSE 0 END
+    ) AS screenshot_count
+    ${includeScreenshot ? ', screenshot_data_url, screenshot_data_urls, diagnostics' : ''}
   `;
 }
 
@@ -360,33 +461,44 @@ function normalizeRecentLimit(value) {
   return Math.max(1, Math.min(parsed, 100));
 }
 
+function feedbackOwnerEmails() {
+  return (process.env.FAD_FEEDBACK_OWNER_EMAILS || 'ishant@friday.mu')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 // ─── Push + email + in-app notification fan-out ─────────────────────
-// On every new feedback submission, notify every admin/director in the
-// tenant via the standard FAD notifications pipeline (DB row + SSE
-// push to live tabs + web push to subscribed devices + email when
-// recipient is offline). Slack continues to be its own separate
+// On every new feedback submission, notify Ishant via the standard FAD
+// notifications pipeline (DB row + SSE push to live tabs + web push to
+// subscribed devices + email). Slack continues as its separate team
 // channel via notifySlack() below.
 //
-// Recipient policy: admins + directors of the SAME tenant as the
-// reporter. They're already the cohort with access to the Feedback
-// inbox at Settings → Feedback inbox, so this notifies the same
-// people who would otherwise have to discover the report by chance.
-//
-// Excludes the reporter themselves so the submitter doesn't get a
-// push echo of their own submission.
-async function notifyAdmins({ tenantId, reporterUserId, type, title, description, severity, routeUrl, moduleLabel, feedbackId, reporterDisplayName, reporterUsername }) {
+// Recipient policy: same-tenant active user whose email/username matches
+// FAD_FEEDBACK_OWNER_EMAILS (default: ishant@friday.mu), with a display-
+// name fallback for older auth rows. We deliberately do NOT exclude the
+// reporter: Ishant asked to receive feedback notifications even when he
+// files the report himself.
+async function notifyFeedbackOwner({ tenantId, type, title, description, severity, routeUrl, moduleLabel, feedbackId, reporterDisplayName, reporterUsername }) {
   try {
-    const { rows: admins } = await query(
+    const ownerEmails = feedbackOwnerEmails();
+    const { rows: owners } = await query(
       `SELECT id
          FROM users
         WHERE tenant_id = $1
           AND is_active = TRUE
-          AND role IN ('admin', 'director')
-          AND id <> COALESCE($2::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`,
-      [tenantId, reporterUserId || null],
+          AND (
+            LOWER(COALESCE(email, '')) = ANY($2::text[])
+            OR LOWER(COALESCE(username, '')) = ANY($2::text[])
+            OR LOWER(COALESCE(display_name, '')) LIKE 'ishant%'
+          )`,
+      [tenantId, ownerEmails],
     );
-    if (admins.length === 0) return;
-    const userIds = admins.map((a) => a.id);
+    if (owners.length === 0) {
+      console.warn('[feedback] no feedback owner recipient found for tenant', tenantId);
+      return;
+    }
+    const userIds = owners.map((a) => a.id);
     const reporter = reporterDisplayName || reporterUsername || 'someone';
     const icon = type === 'bug' ? '🐛' : type === 'feature' ? '💡' : '✨';
     const sevSuffix = severity ? ` · ${severity}` : '';
@@ -409,6 +521,7 @@ async function notifyAdmins({ tenantId, reporterUserId, type, title, description
       data: {
         module: 'settings',
         emailNotification: true,
+        emailNotifyOnline: true,
         feedbackId,
         feedbackType: type,
         severity: severity || null,
@@ -418,7 +531,7 @@ async function notifyAdmins({ tenantId, reporterUserId, type, title, description
       },
     });
   } catch (err) {
-    console.warn('[feedback] notifyAdmins failed:', err.message);
+    console.warn('[feedback] notifyFeedbackOwner failed:', err.message);
   }
 }
 
@@ -519,6 +632,8 @@ router.post('/', attachIdentity, async (req, res) => {
       route_url: routeUrl,
       module_label: moduleLabel,
       screenshot_data_url: screenshotDataUrl,
+      screenshot_data_urls: screenshotDataUrls,
+      diagnostics,
       source: rawSource,
     } = req.body || {};
 
@@ -538,23 +653,20 @@ router.post('/', attachIdentity, async (req, res) => {
       return res.status(400).json({ error: `source must be one of: ${[...SOURCES].join(', ')}` });
     }
 
-    let screenshot = null;
-    if (typeof screenshotDataUrl === 'string' && screenshotDataUrl.length > 0) {
-      if (!screenshotDataUrl.startsWith('data:image/')) {
-        return res.status(400).json({ error: 'screenshot must be a data:image/... URL' });
-      }
-      if (screenshotDataUrl.length > MAX_SCREENSHOT_BYTES) {
-        return res.status(413).json({ error: 'screenshot too large (>5MB)' });
-      }
-      screenshot = screenshotDataUrl;
+    const screenshotResult = normalizeScreenshotDataUrls(screenshotDataUrls, screenshotDataUrl);
+    if (screenshotResult.error) {
+      return res.status(screenshotResult.error.status).json({ error: screenshotResult.error.message });
     }
+    const screenshotUrls = screenshotResult.urls || [];
+    const screenshot = screenshotUrls[screenshotUrls.length - 1] || null;
+    const safeDiagnostics = normalizeDiagnostics(diagnostics);
 
     const { rows } = await query(
       `INSERT INTO feedback (
          type, title, description, severity, route_url, module_label,
-         screenshot_data_url, user_id, user_username, user_display_name,
-         tenant_id, source
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         screenshot_data_url, screenshot_data_urls, diagnostics,
+         user_id, user_username, user_display_name, tenant_id, source
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14)
        RETURNING id, type, title, description, severity, route_url, module_label,
                  status, source, created_at`,
       [
@@ -565,6 +677,8 @@ router.post('/', attachIdentity, async (req, res) => {
         (routeUrl || '').toString().slice(0, 500) || null,
         (moduleLabel || '').toString().slice(0, 100) || null,
         screenshot,
+        JSON.stringify(screenshotUrls),
+        JSON.stringify(safeDiagnostics),
         req.identity.userId,
         req.identity.username,
         req.identity.displayName,
@@ -588,12 +702,10 @@ router.post('/', attachIdentity, async (req, res) => {
     }).catch(() => { /* logged inside notifySlack */ });
 
     // Fan out via the FAD notifications pipeline: in-app notification
-    // (SSE push to live tabs) + web push to subscribed devices + email
-    // when the recipient is offline. Targets tenant admins + directors
-    // (the cohort with access to the Feedback inbox).
-    notifyAdmins({
+    // (SSE push to live tabs) + web push to subscribed devices + email.
+    // Targets Ishant only; Slack remains the team-wide channel.
+    notifyFeedbackOwner({
       tenantId: req.tenantId,
-      reporterUserId: req.identity.userId,
       type: rows[0].type,
       title: rows[0].title,
       description: rows[0].description,
