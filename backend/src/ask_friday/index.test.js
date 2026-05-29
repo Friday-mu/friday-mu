@@ -427,6 +427,27 @@ describe('Ask Friday Core router', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  test('previews Plan 2 staff shell context-pack templates when requested', async () => {
+    const res = await request(app())
+      .get('/api/ask-friday/core/context-pack-templates?includeWebsite=false&includePlan2Shells=true&version=5')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .expect(200);
+
+    expect(res.body).toMatchObject({
+      mode: 'preview',
+      version: 5,
+      count: 3,
+    });
+    expect(res.body.drafts.map((draft) => draft.surfaceId)).toEqual([
+      'fad_reservations_calendar_assistant',
+      'fad_properties_assistant',
+      'fad_owners_assistant',
+    ]);
+    expect(res.body.drafts.every((draft) => draft.status === 'draft')).toBe(true);
+    expect(res.body.drafts[0].toolPolicy.allowedActions).toContain('request_channel_visible_block');
+    expect(query).not.toHaveBeenCalled();
+  });
+
   test('upserts selected generated staff shell context-pack drafts', async () => {
     query
       .mockResolvedValueOnce({

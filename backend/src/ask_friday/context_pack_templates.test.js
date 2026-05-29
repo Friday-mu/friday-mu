@@ -276,6 +276,14 @@ describe('Ask Friday active FAD runtime context-pack templates', () => {
 });
 
 describe('Ask Friday Plan 2 staff shell context-pack templates', () => {
+  test('staff shell drafts cover Reservations, Properties, and planned Owners shells', () => {
+    expect(plan2StaffDraftContextPacks().map((draft) => draft.surfaceId)).toEqual([
+      'fad_reservations_calendar_assistant',
+      'fad_properties_assistant',
+      'fad_owners_assistant',
+    ]);
+  });
+
   test('staff shell drafts validate against their surface policies', () => {
     for (const draft of plan2StaffDraftContextPacks()) {
       const pack = normalizeContextPack(draft);
