@@ -109,6 +109,25 @@ describe('FAD-native Consult helpers', () => {
     expect(parsed.taskSuggestions).toHaveLength(1);
   });
 
+  test('parses the first complete Consult envelope when provider JSON has a malformed tail', () => {
+    const strayBrace = `{
+  "response_text": "Review complete. No draft needed.",
+  "drafts": [],
+  "teaching_actions": [],
+  "task_suggestions": []
+}
+}`;
+    const malformedAppendix = '{"response_text":"Do nothing for now.","drafts":[],"teaching_actions":[],"task_suggestions":[]}\n[":null":[], "task_suggestions":[]}';
+
+    const parsedStrayBrace = parseConsultEnvelope(strayBrace, 'message_review');
+    const parsedMalformedAppendix = parseConsultEnvelope(malformedAppendix, 'message_review');
+
+    expect(parsedStrayBrace.responseText).toBe('Review complete. No draft needed.');
+    expect(parsedStrayBrace.drafts).toEqual([]);
+    expect(parsedMalformedAppendix.responseText).toBe('Do nothing for now.');
+    expect(parsedMalformedAppendix.drafts).toEqual([]);
+  });
+
   test('normalizes draft_update compatibility into structured draft objects', () => {
     expect(normalizeConsultDrafts({ draft_update: 'hello Guest,\n\nThanks.' })).toEqual([
       { body: 'Hello Guest,\n\nThanks.', recipientLabel: null, channel: null, targetHint: null },

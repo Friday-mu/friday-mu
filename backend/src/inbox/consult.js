@@ -382,11 +382,59 @@ function parseJsonish(raw) {
   if (typeof raw !== 'string') return null;
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
   if (!cleaned) return null;
-  try { return JSON.parse(cleaned); } catch { /* fall through */ }
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first >= 0 && last > first) {
-    try { return JSON.parse(cleaned.slice(first, last + 1)); } catch { /* fall through */ }
+  const parseValue = (text, depth = 0) => {
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed === 'string' && depth < 2) {
+        return parseValue(parsed.trim(), depth + 1) || parsed;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+  const direct = parseValue(cleaned);
+  if (direct !== null) return direct;
+
+  const slices = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const ch = cleaned[i];
+    if (start < 0) {
+      if (ch === '{') {
+        start = i;
+        depth = 1;
+        inString = false;
+        escaped = false;
+      }
+      continue;
+    }
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        slices.push(cleaned.slice(start, i + 1));
+        if (slices.length >= 5) break;
+        start = -1;
+      }
+    }
+  }
+  for (const slice of slices) {
+    const parsed = parseValue(slice);
+    if (parsed !== null) return parsed;
   }
   return null;
 }
