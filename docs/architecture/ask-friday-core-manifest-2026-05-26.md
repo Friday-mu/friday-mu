@@ -67,7 +67,9 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #35: merged and deployed on 2026-05-29 as `f92d4df`; this fixes Inbox Consult JSON-envelope parsing when a provider returns a valid envelope plus a stray brace or malformed tail, preventing raw `response_text` JSON from leaking into the chat UI.
 - PR #37: merged and deployed on 2026-05-29 as `5fd42245`; this removes the production-invalid `messages.communication_channel` WhatsApp-window query while keeping message-level WhatsApp detection via `messages.module_type`.
 - PR #39: merged and deployed on 2026-05-29 as `ad2b1151`; this unpins compact Inbox Consult fallback so compact retries use the normal Gemini-first hierarchy unless an explicit fallback model env var is configured.
-- Deployment status: live frontend and backend both report `ad2b1151`. This deployment includes the field-staff PWA delta merged through `19008eb7`, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, PR #31 docs, PR #33 Ops pricing-signal hardening, PR #35 Inbox malformed-envelope parsing, PR #37 WhatsApp-window schema fix, and PR #39 compact fallback reliability fix. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #41: merged on 2026-05-29 as `61960837`; this adds staff-only TeamInbox context to global FAD Ask Friday. Not deployed yet.
+- PR #42: merged on 2026-05-29 as `aa7e7f01`; this adds the sanitized page-focus envelope for the shared Ask Friday right panel and documents the frontend-to-Core contract. Not deployed yet.
+- Deployment status: live frontend and backend both report `ad2b1151`. This deployment includes the field-staff PWA delta merged through `19008eb7`, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, PR #31 docs, PR #33 Ops pricing-signal hardening, PR #35 Inbox malformed-envelope parsing, PR #37 WhatsApp-window schema fix, and PR #39 compact fallback reliability fix. PR #41 and PR #42 are on `origin/fad-rebuild` but still await coordinated backend deploy. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
@@ -106,6 +108,8 @@ Read these first, in order:
    - Current Plan 3 source-truth packet for Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning surfaces.
 13. `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
    - Contract draft for Website context-pack consumption, Website learning-event emission, owner lead capsules, feedback evidence capsules, and takeover alignment.
+14. `docs/architecture/ask-friday-right-panel-focus-contract-2026-05-29.md`
+   - Backend contract for the shared FAD Ask Friday right panel page-focus envelope: module/view/object/selection/visible-state context, action-boundary notes, and frontend wiring guidance.
 
 ## Master Plan And Subplans
 

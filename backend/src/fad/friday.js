@@ -19,6 +19,8 @@ const ASK_FRIDAY_MODEL = process.env.FAD_ASK_MODEL || 'gemini-3.5-flash';
 const ASK_FRIDAY_MAX_TOKENS = Number(process.env.KIMI_FAD_ASK_MAX_TOKENS) || 4096;
 const FOCUS_THREAD_MESSAGE_LIMIT = 40;
 const FOCUS_OTHER_THREAD_LIMIT = 3;
+const TEAM_CONTEXT_MESSAGE_LIMIT = 8;
+const TEAM_FOCUS_MESSAGE_LIMIT = 24;
 const WEBSITE_CONVERSATION_PREFIX = 'web-';
 const WEBSITE_DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
 
@@ -36,20 +38,117 @@ function parseInboxFocusThreadId(value) {
   return isUuid(raw) ? { kind: 'guesty', id: raw, raw } : null;
 }
 
+function cleanStringList(value, maxItems = 12, maxChars = 120) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => cleanString(item, maxChars))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function sanitizeScalarMap(value, maxEntries = 16, maxChars = 180) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value)
+    .slice(0, maxEntries)
+    .map(([key, raw]) => {
+      const cleanKey = cleanString(key, 80);
+      if (!cleanKey) return null;
+      if (raw == null) return [cleanKey, raw];
+      if (Array.isArray(raw)) return [cleanKey, cleanStringList(raw, 8, maxChars)];
+      if (typeof raw === 'number' || typeof raw === 'boolean') return [cleanKey, raw];
+      if (typeof raw === 'string') return [cleanKey, cleanString(raw, maxChars)];
+      return [cleanKey, cleanString(raw.label || raw.id || raw.value || '', maxChars)];
+    })
+    .filter(Boolean)
+    .filter(([, raw]) => raw !== '' && !(Array.isArray(raw) && raw.length === 0));
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+function sanitizeFocusedObject(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const type = cleanString(raw.type || raw.kind, 80).toLowerCase();
+  const id = cleanString(raw.id || raw.objectId || raw.object_id, 140);
+  const label = cleanString(raw.label || raw.title || raw.name, 180);
+  if (!type && !id && !label) return null;
+  return {
+    type: type || null,
+    id: id || null,
+    label: label || null,
+  };
+}
+
+function sanitizeSelection(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const selectedIds = cleanStringList(raw.selectedIds || raw.selected_ids || raw.ids, 20, 140);
+  const cursorRange = cleanString(raw.cursorRange || raw.cursor_range, 120);
+  const summary = cleanString(raw.summary, 240);
+  if (!selectedIds.length && !cursorRange && !summary) return null;
+  return {
+    selectedIds,
+    cursorRange: cursorRange || null,
+    summary: summary || null,
+  };
+}
+
+function sanitizeVisibleState(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const summary = cleanString(raw.summary, 700);
+  const activeTab = cleanString(raw.activeTab || raw.active_tab || raw.tab, 80);
+  const filters = sanitizeScalarMap(raw.filters, 16, 160);
+  const counts = sanitizeScalarMap(raw.counts || raw.visibleCounts || raw.visible_counts, 16, 80);
+  if (!summary && !activeTab && !filters && !counts) return null;
+  return {
+    summary: summary || null,
+    activeTab: activeTab || null,
+    filters: filters || null,
+    counts: counts || null,
+  };
+}
+
+function cleanStalenessMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(Math.round(n), 600_000);
+}
+
 function sanitizeFocus(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const module = cleanString(raw.module, 40).toLowerCase();
+  const module = normalizeFocusModule(raw.module) || cleanString(raw.module, 40).toLowerCase();
   const threadId = cleanString(raw.threadId || raw.thread_id, 80);
   const focusMessageId = cleanString(raw.focusMessageId || raw.focus_message_id || raw.messageId, 80);
   const teamTarget = cleanString(raw.teamTarget || raw.team, 120);
   const pageUrl = cleanString(raw.pageUrl || raw.page_url, 600);
-  if (!module && !threadId && !focusMessageId && !teamTarget && !pageUrl) return null;
+  const surfaceId = cleanString(raw.surfaceId || raw.surface_id, 100);
+  const host = cleanString(raw.host, 80);
+  const route = cleanString(raw.route || raw.pageRoute || raw.page_route, 300);
+  const view = cleanString(raw.view, 100).toLowerCase();
+  const focusedObject = sanitizeFocusedObject(raw.focusedObject || raw.focused_object || raw.object);
+  const selection = sanitizeSelection(raw.selection);
+  const visibleState = sanitizeVisibleState(raw.visibleState || raw.visible_state);
+  const allowedActions = cleanStringList(raw.allowedActions || raw.allowed_actions, 12, 80);
+  const privacyClass = cleanString(raw.privacyClass || raw.privacy_class, 60).toLowerCase();
+  const stalenessMs = cleanStalenessMs(raw.stalenessMs ?? raw.staleness_ms);
+  if (
+    !module && !threadId && !focusMessageId && !teamTarget && !pageUrl &&
+    !surfaceId && !host && !route && !view && !focusedObject && !selection &&
+    !visibleState && !allowedActions.length && !privacyClass && stalenessMs == null
+  ) return null;
   return {
     module: module || null,
     threadId: threadId || null,
     focusMessageId: focusMessageId || null,
     teamTarget: teamTarget || null,
     pageUrl: pageUrl || null,
+    surfaceId: surfaceId || null,
+    host: host || null,
+    route: route || null,
+    view: view || null,
+    focusedObject,
+    selection,
+    visibleState,
+    allowedActions,
+    privacyClass: privacyClass || null,
+    stalenessMs,
   };
 }
 // 2026-05-23 — bumped 45s → 8min (provider) / 25s → 90s (auto mode).
@@ -85,6 +184,7 @@ const ACTION_REGISTRY = {
 };
 const MODULE_LABELS = {
   inbox: 'Inbox',
+  team: 'TeamInbox',
   operations: 'Operations',
   hr: 'HR',
   reviews: 'Reviews',
@@ -92,9 +192,12 @@ const MODULE_LABELS = {
   reservations: 'Reservations',
   properties: 'Properties',
 };
-const ASK_FRIDAY_CONTEXT_MODULES = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+const ASK_FRIDAY_CONTEXT_MODULES = ['inbox', 'team', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
 const ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES = {
   inbox: 'staff_inbox',
+  team: 'staff_inbox',
+  team_inbox: 'staff_inbox',
+  team_messages: 'staff_inbox',
   operations: 'ops_tasks',
   hr: 'hr_staff',
   reviews: 'reviews',
@@ -116,6 +219,11 @@ const SECTION_SOURCE_KIND = {
   guest_inbox: 'fad_db',
   website_ai_handoffs: 'fad_db',
   focused_inbox_thread: 'fad_db',
+  team: 'fad_db',
+  team_inbox_recent: 'fad_db',
+  team_inbox_recent_channels: 'fad_db',
+  team_inbox_recent_dms: 'fad_db',
+  focused_team_inbox_thread: 'fad_db',
   operations: 'fad_db',
   hr: 'fad_db',
   reviews: 'guesty_api',
@@ -381,6 +489,7 @@ function isAllFadScope(scope = '') {
 function questionHintsModule(question = '', module) {
   const hasPropertyCode = Boolean(extractPropertyCode(question));
   if (module === 'inbox') return /\b(inbox|guest conversation|conversation|message|reply|draft|website|ask friday|handoff|takeover)\b/i.test(question);
+  if (module === 'team') return /\b(team\s*inbox|team chat|team message|team messages|internal message|internal messages|internal discussion|internal discussions|staff discussion|staff discussions|channel|dm|direct message|mention|mentions|what did (we|they) discuss|what are (we|they) discussing)\b/i.test(question);
   if (module === 'operations') return /\b(task|todo|work order|ops|operation|issue|maintenance|repair|schedule|roster|runner|inspection|housekeeping)\b/i.test(question);
   if (module === 'hr') return /\b(hr|staff|team|leave|time off|roster|availability|who is on)\b/i.test(question);
   if (module === 'reviews') return /\b(reviews?|ratings?|guest feedback|airbnb|booking\.?com|booking com)\b/i.test(question);
@@ -388,6 +497,102 @@ function questionHintsModule(question = '', module) {
   if (module === 'reservations') return /\b(reservation|booking|arrival|arriving|check.?in|checkout|stay|returning guest|who'?s checking in)\b/i.test(question);
   if (module === 'properties') return hasPropertyCode || /\b(property|properties|villa|listing|availability|calendar|amenit|bedroom|bathroom)\b/i.test(question);
   return false;
+}
+
+function normalizeFocusModule(value) {
+  const raw = cleanString(value, 120).toLowerCase();
+  if (!raw) return null;
+  const normalized = raw.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const aliases = {
+    ops: 'operations',
+    operation: 'operations',
+    operations: 'operations',
+    tasks: 'operations',
+    schedule: 'operations',
+    roster: 'operations',
+    fad_ops_assistant: 'operations',
+    fad_operations: 'operations',
+    inbox: 'inbox',
+    guest_inbox: 'inbox',
+    guest_messages: 'inbox',
+    website_handoff: 'inbox',
+    fad_inbox_assistant: 'inbox',
+    team: 'team',
+    team_inbox: 'team',
+    teaminbox: 'team',
+    team_messages: 'team',
+    staff_chat: 'team',
+    hr: 'hr',
+    people: 'hr',
+    staff: 'hr',
+    reviews: 'reviews',
+    review: 'reviews',
+    design: 'design',
+    reservations: 'reservations',
+    reservation: 'reservations',
+    bookings: 'reservations',
+    booking: 'reservations',
+    properties: 'properties',
+    property: 'properties',
+    listings: 'properties',
+    listing: 'properties',
+  };
+  if (ASK_FRIDAY_CONTEXT_MODULES.includes(normalized)) return normalized;
+  if (aliases[normalized]) return aliases[normalized];
+  if (/\b(ops|operations|schedule|roster|task|tasks)\b/.test(normalized)) return 'operations';
+  if (/\b(team_inbox|teaminbox|team_messages|staff_chat)\b/.test(normalized)) return 'team';
+  if (/\b(inbox|guest_messages|guest_inbox|handoff)\b/.test(normalized)) return 'inbox';
+  if (/\b(reservation|reservations|booking|bookings)\b/.test(normalized)) return 'reservations';
+  if (/\b(property|properties|listing|listings)\b/.test(normalized)) return 'properties';
+  if (/\b(review|reviews)\b/.test(normalized)) return 'reviews';
+  if (/\b(design)\b/.test(normalized)) return 'design';
+  if (/\b(hr|people|staff)\b/.test(normalized)) return 'hr';
+  return null;
+}
+
+function routeModuleHint(value) {
+  const raw = cleanString(value, 600).toLowerCase();
+  if (!raw) return null;
+  const queryMatch = raw.match(/[?&](?:m|module|scope)=([a-z0-9_-]+)/i);
+  if (queryMatch) {
+    const module = normalizeFocusModule(queryMatch[1]);
+    if (module) return module;
+  }
+  const pathMatch = raw.match(/\/fad\/?([a-z0-9_-]+)?/i);
+  if (pathMatch?.[1]) {
+    const module = normalizeFocusModule(pathMatch[1]);
+    if (module) return module;
+  }
+  return normalizeFocusModule(raw);
+}
+
+function focusedObjectModuleHint(focusedObject) {
+  const type = cleanString(focusedObject?.type, 80).toLowerCase();
+  if (!type) return null;
+  if (/\b(task|issue|work_order|workorder|schedule|roster)\b/.test(type)) return 'operations';
+  if (/\b(conversation|thread|guest_message|message|handoff|draft)\b/.test(type)) return 'inbox';
+  if (/\b(team|channel|dm|direct_message)\b/.test(type)) return 'team';
+  if (/\b(reservation|booking|stay)\b/.test(type)) return 'reservations';
+  if (/\b(property|listing|villa)\b/.test(type)) return 'properties';
+  if (/\b(review|rating)\b/.test(type)) return 'reviews';
+  if (/\b(project|design)\b/.test(type)) return 'design';
+  if (/\b(staff|user|employee|leave)\b/.test(type)) return 'hr';
+  return null;
+}
+
+function contextModulesFromFocus(focus = null) {
+  if (!focus) return [];
+  const candidates = [
+    normalizeFocusModule(focus.module),
+    normalizeFocusModule(focus.surfaceId),
+    normalizeFocusModule(focus.view),
+    routeModuleHint(focus.route),
+    routeModuleHint(focus.pageUrl),
+    focusedObjectModuleHint(focus.focusedObject),
+  ].filter(Boolean);
+  if (focus.threadId && parseInboxFocusThreadId(focus.threadId)) candidates.push('inbox');
+  if (focus.teamTarget) candidates.push('team');
+  return [...new Set(candidates.filter((module) => ASK_FRIDAY_CONTEXT_MODULES.includes(module)))];
 }
 
 function isBroadAllFadQuestion({ question = '', scope = '' }) {
@@ -864,6 +1069,201 @@ async function loadInboxContext(tenantId, focus = null) {
   return { sections, focusedThreadKind: focused?.kind || null };
 }
 
+function parseTeamTarget(value) {
+  const raw = cleanString(value, 160);
+  if (!raw) return null;
+  const match = raw.match(/^(channel|dm):(.+)$/i);
+  if (!match) return null;
+  const kind = match[1].toLowerCase();
+  const valuePart = cleanString(match[2], 120);
+  if (!valuePart) return null;
+  if (kind === 'dm' && !isUuid(valuePart)) return null;
+  return { kind, value: valuePart, raw };
+}
+
+function questionWantsDmContext(question = '') {
+  return /\b(dm|dms|direct message|direct messages|private message|private messages)\b/i.test(question);
+}
+
+function shapeTeamChannelMessage(row) {
+  return {
+    kind: 'channel',
+    id: row.id || row.message_id || null,
+    channelId: row.channel_id || null,
+    channelKey: row.channel_key || null,
+    channelName: row.channel_name || row.name || null,
+    visibility: row.visibility || null,
+    messageKind: row.kind || 'text',
+    author: row.author_display_name || null,
+    at: row.created_at || null,
+    excerpt: cleanString(row.text, 700),
+  };
+}
+
+function shapeTeamDmMessage(row) {
+  return {
+    kind: 'dm',
+    id: row.id || row.message_id || null,
+    dmId: row.dm_id || null,
+    participantCount: Number(row.participant_count) || null,
+    messageKind: row.kind || 'text',
+    author: row.author_display_name || null,
+    at: row.created_at || null,
+    excerpt: cleanString(row.text, 700),
+  };
+}
+
+async function loadFocusedTeamContext(tenantId, identity, target) {
+  const userId = identity?.userId;
+  if (!userId || !target) return null;
+  if (target.kind === 'channel') {
+    const { rows: channelRows } = await query(
+      `SELECT c.id, c.channel_key, c.name, c.visibility,
+              (mem.user_id IS NOT NULL) AS is_member
+         FROM team_channels c
+         LEFT JOIN team_channel_members mem
+           ON mem.channel_id = c.id AND mem.user_id = $2
+        WHERE c.tenant_id = $1
+          AND c.archived_at IS NULL
+          AND (c.id::text = $3 OR c.channel_key = $3)
+        LIMIT 1`,
+      [tenantId, userId, target.value],
+    );
+    const channel = channelRows[0] || null;
+    if (!channel) return { kind: 'channel', target: target.raw, access: 'not_found' };
+    if (channel.visibility === 'private' && !channel.is_member) {
+      return {
+        kind: 'channel',
+        target: target.raw,
+        access: 'forbidden',
+        channelKey: channel.channel_key,
+        channelName: channel.name,
+        visibility: channel.visibility,
+        policy: 'Private TeamInbox channels are available only to members.',
+      };
+    }
+    const { rows } = await query(
+      `SELECT id, channel_id, $2::text AS channel_key, $3::text AS channel_name,
+              $4::text AS visibility, author_display_name, text, kind, created_at
+         FROM team_channel_messages
+        WHERE channel_id = $1
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC, id::text DESC
+        LIMIT $5`,
+      [channel.id, channel.channel_key, channel.name, channel.visibility, TEAM_FOCUS_MESSAGE_LIMIT],
+    );
+    return {
+      kind: 'channel',
+      target: target.raw,
+      access: 'allowed',
+      channelKey: channel.channel_key,
+      channelName: channel.name,
+      visibility: channel.visibility,
+      messages: rows.map(shapeTeamChannelMessage).reverse(),
+    };
+  }
+
+  const { rows: dmRows } = await query(
+    `SELECT id, participant_user_ids, array_length(participant_user_ids, 1) AS participant_count
+       FROM team_dms
+      WHERE tenant_id = $1
+        AND id = $2
+        AND $3 = ANY(participant_user_ids)
+      LIMIT 1`,
+    [tenantId, target.value, userId],
+  );
+  const dm = dmRows[0] || null;
+  if (!dm) return { kind: 'dm', target: target.raw, access: 'not_found_or_forbidden' };
+  const { rows } = await query(
+    `SELECT id, dm_id, $2::int AS participant_count, author_display_name, text, kind, created_at
+       FROM team_dm_messages
+      WHERE dm_id = $1
+        AND deleted_at IS NULL
+      ORDER BY created_at DESC, id::text DESC
+      LIMIT $3`,
+    [dm.id, Number(dm.participant_count) || null, TEAM_FOCUS_MESSAGE_LIMIT],
+  );
+  return {
+    kind: 'dm',
+    target: target.raw,
+    access: 'allowed',
+    participantCount: Number(dm.participant_count) || null,
+    messages: rows.map(shapeTeamDmMessage).reverse(),
+  };
+}
+
+async function loadTeamContext(tenantId, identity = {}, focus = null, options = {}) {
+  const userId = identity?.userId;
+  if (!userId) {
+    return {
+      policy: 'TeamInbox context requires an authenticated staff user.',
+      skipped: 'missing_staff_identity',
+      sections: [],
+    };
+  }
+
+  const target = parseTeamTarget(focus?.teamTarget);
+  const includeDms = Boolean(options.includeDms || target?.kind === 'dm');
+  const focused = target ? await loadFocusedTeamContext(tenantId, identity, target) : null;
+  const channelResult = await safeSection('team_inbox_recent_channels', async () => {
+    const { rows } = await query(
+      `SELECT msg.id, msg.channel_id, c.channel_key, c.name AS channel_name,
+              c.visibility, msg.author_display_name, msg.text, msg.kind, msg.created_at
+         FROM team_channel_messages msg
+         JOIN team_channels c ON c.id = msg.channel_id
+         LEFT JOIN team_channel_members mem
+           ON mem.channel_id = c.id AND mem.user_id = $2
+        WHERE c.tenant_id = $1
+          AND c.archived_at IS NULL
+          AND msg.deleted_at IS NULL
+          AND msg.parent_message_id IS NULL
+          AND (c.visibility = 'public' OR mem.user_id IS NOT NULL)
+        ORDER BY msg.created_at DESC, msg.id::text DESC
+        LIMIT $3`,
+      [tenantId, userId, TEAM_CONTEXT_MESSAGE_LIMIT],
+    );
+    return rows.map(shapeTeamChannelMessage);
+  });
+  const dmResult = includeDms ? await safeSection('team_inbox_recent_dms', async () => {
+    const { rows } = await query(
+      `SELECT msg.id, msg.dm_id, array_length(dm.participant_user_ids, 1) AS participant_count,
+              msg.author_display_name, msg.text, msg.kind, msg.created_at
+         FROM team_dm_messages msg
+         JOIN team_dms dm ON dm.id = msg.dm_id
+        WHERE dm.tenant_id = $1
+          AND $2 = ANY(dm.participant_user_ids)
+          AND msg.deleted_at IS NULL
+          AND msg.parent_message_id IS NULL
+        ORDER BY msg.created_at DESC, msg.id::text DESC
+        LIMIT $3`,
+      [tenantId, userId, TEAM_CONTEXT_MESSAGE_LIMIT],
+    );
+    return rows.map(shapeTeamDmMessage);
+  }) : {
+    name: 'team_inbox_recent_dms',
+    ok: true,
+    source: sectionSource('team_inbox_recent_dms'),
+    data: [],
+    skipped: 'dm_context_requires_dm_focus_or_explicit_request',
+  };
+
+  const sections = [channelResult, dmResult];
+  if (focused) {
+    sections.unshift({
+      name: 'focused_team_inbox_thread',
+      ok: true,
+      source: sectionSource('focused_team_inbox_thread'),
+      data: focused,
+    });
+  }
+
+  return {
+    policy: 'TeamInbox messages are staff-only operational evidence, not canonical truth. Private channels are only loaded for members. DMs are only loaded for participants when a DM is focused or explicitly requested.',
+    focusedTargetKind: focused?.kind || null,
+    sections,
+  };
+}
+
 async function loadOperationsContext(tenantId) {
   const { rows } = await query(
     `SELECT id, title, status, priority, category, department, property_code,
@@ -987,18 +1387,19 @@ async function loadPropertiesContext(tenantId) {
   return rows;
 }
 
-async function loadFridayContext({ tenantId, question, scope, focus }) {
+async function loadFridayContext({ tenantId, question, scope, focus, identity = {} }) {
   const requested = ASK_FRIDAY_CONTEXT_MODULES
     .filter((module) => shouldLoad({ question, scope }, module));
-  // If the operator is focused on a specific inbox thread, force-include
-  // 'inbox' so the focused-thread bundle ships even when the question text
-  // doesn't otherwise trip the inbox heuristic ("explain this handoff" did
-  // not, which is how Franny's bug manifested).
-  const focusForcedInbox = focus?.threadId && parseInboxFocusThreadId(focus.threadId);
   let effective = requested.length > 0 ? requested : ['inbox', 'operations', 'reservations', 'properties'];
-  if (focusForcedInbox && !effective.includes('inbox')) effective = ['inbox', ...effective];
+  // The shared right panel is page-aware: when the host tells Core the active
+  // module/object, that focused module must be present even for vague prompts
+  // such as "what should I do next?"
+  for (const focusModule of contextModulesFromFocus(focus).reverse()) {
+    if (!effective.includes(focusModule)) effective = [focusModule, ...effective];
+  }
   const loaders = {
     inbox: () => loadInboxContext(tenantId, focus),
+    team: () => loadTeamContext(tenantId, identity, focus, { includeDms: questionWantsDmContext(question) }),
     operations: () => loadOperationsContext(tenantId),
     hr: () => loadHrContext(tenantId),
     reviews: () => loadReviewsContext(tenantId),
@@ -1030,16 +1431,18 @@ function buildSystemPrompt() {
 
 Purpose:
 - Answer staff questions using the supplied live FAD context.
-- Think across Inbox, Operations, HR, Reviews, Design, Reservations, and Properties when present.
+- Think across Inbox, TeamInbox, Operations, HR, Reviews, Design, Reservations, and Properties when present.
 - Act as a command surface: answer, propose next steps, and return structured action buttons when the operator can safely act.
 - You do not execute actions yourself. The UI will only execute an action after a staff member clicks the button.
 
 Rules:
 - Use only the supplied context. If a source is unavailable or missing, say that plainly.
 - Treat context.dataTruth as binding. Never infer from, cite, summarize, or act on demo/fixture module data. If a module is excluded because it is not live-wired yet, say that plainly.
-- Keep ownership boundaries clear: Inbox owns guest communication context; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
+- Keep ownership boundaries clear: Inbox owns guest communication context; TeamInbox is staff-only internal discussion/evidence, not canonical truth; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
 - **Focus rule:** if a section named "focused_inbox_thread" is present under context.sections[*].data.sections (or anywhere in the inbox subtree), the operator is asking about THAT specific thread. Anchor your answer on its messages / events / latestAiHandoff. The other inbox entries are background context only — do not summarize or mix them in unless the question explicitly asks for a cross-thread comparison.
+- **Page focus rule:** operatorFocus is compact page state from the current FAD surface. Use operatorFocus.module/view/focusedObject/selection/visibleState to understand where the staff member is working, but treat it as navigation/attention context only. Operational truth still comes from context.sections and owning module tools.
 - For "explain this AI handoff" / "what's going on with this guest" / "summarise this conversation" style questions, use only the focused thread's events and latestAiHandoff payload; do not pull in unrelated threads.
+- If TeamInbox context is present, treat it as what the team is discussing. Use it to explain team intent, blockers, and next checks, but confirm operational truth against the owning module before making commitments.
 - Prefer concise operational answers: answer first, then the evidence or next check.
 - Do not use markdown tables. Use compact bullets so the FAD panel stays readable on desktop and mobile.
 - If confidence is low, ask one targeted clarification instead of inventing.
@@ -1056,7 +1459,7 @@ Return JSON only:
   "answer": "markdown answer",
   "confidence": "high|medium|low",
   "followups": ["short suggested follow-up", "..."],
-  "sourcesUsed": ["inbox", "operations"],
+  "sourcesUsed": ["inbox", "team", "operations"],
   "actions": [
     {
       "type": "navigate|create_task|send_team_message|request_approval",
@@ -1267,7 +1670,7 @@ router.post('/ask', attachIdentity, async (req, res) => {
     const scope = cleanString(req.body?.scope || 'All of FAD', 120);
     const history = sanitizeHistory(req.body?.history);
     const focus = sanitizeFocus(req.body?.focus);
-    const context = await loadFridayContext({ tenantId: req.tenantId, question, scope, focus });
+    const context = await loadFridayContext({ tenantId: req.tenantId, question, scope, focus, identity: req.identity });
     const model = req.body?.model || ASK_FRIDAY_MODEL;
     const timeoutMs = String(model).toLowerCase() === 'auto'
       ? ASK_FRIDAY_AUTO_PROVIDER_TIMEOUT_MS
@@ -1384,9 +1787,15 @@ module.exports = {
     shapeReview,
     buildListingIndex,
     sanitizeFocus,
+    normalizeFocusModule,
+    contextModulesFromFocus,
     parseInboxFocusThreadId,
+    parseTeamTarget,
+    questionWantsDmContext,
     loadFocusedGuestyThread,
     loadFocusedWebsiteThread,
+    loadTeamContext,
+    loadFocusedTeamContext,
     knowledgeScopesForAskFriday,
     stableActionRequestId,
     ASK_FRIDAY_MODEL,
