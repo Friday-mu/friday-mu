@@ -215,21 +215,16 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
     onClick: onChangeSubPage ? () => onChangeSubPage(t.id) : undefined,
   }));
 
-  // @demo:ui — static Ask-Friday conversation; the parallel Ask-Friday session
-  // wires this to Ask Friday Core. Tag: PROD-GM-ASKPANEL-1.
+  // Ask-Friday side panel opener — seeded from REAL counts (no fabricated
+  // data). The parallel Ask-Friday session wires the live chat/actions to
+  // Ask Friday Core. Tag: PROD-GM-ASKPANEL-1.
   const askMsgs: AskMsg[] = [
-    { t: "Heavy day — <b>" + todayCount + " tasks</b>. 2 sit behind in-house guests (held urgent-only) and the West store is low on pipe sealant &amp; towels." },
-    { me: true, t: 'Reassign the overdue jobs and re-order the low supplies.' },
-    {
-      t: 'Done — moved 2 admin tasks to the office queue and 1 maintenance job to Matthieu (stand-by). Drafted a supply order.',
-      done: '3 tasks reassigned · order drafted',
-      action: { t: 'Place supply order', d: 'Pipe sealant ×12, bath towels ×10 to West store — Rs 2,140.', btn: 'Place order' },
-    },
+    { t: `Today: <b>${todayCount} task${todayCount === 1 ? '' : 's'}</b> due · ${openCount} open · ${overdueCount} overdue · ${reportedCount} report${reportedCount === 1 ? '' : 's'} to approve. Ask me to triage, reassign, or draft the day — I'll show the plan before anything is applied.` },
   ];
   const panel = review ? (
     <AskPanel
       scope="Operations · Overview"
-      aware={`Aware of: today's ${todayCount} tasks, ${topStaff.length} staff on, guest-blocked jobs, supplies at West store.`}
+      aware={`Aware of: today's ${todayCount} tasks, ${topStaff.length} staff, ${overdueCount} overdue, ${reportedCount} to approve.`}
       msgs={askMsgs}
       onClose={() => setReview(false)}
     />
@@ -291,9 +286,6 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
                 <span className="row" style={{ gap: 7 }}><span className="bdg amber">{reportedCount}</span><DI n="chevR" s={2} style={{ color: 'var(--tx-3)' }} /></span>
               </div>
               <div className="divider" style={{ height: 1, background: 'var(--line-2)' }} />
-              {/* @demo:data — recurring-fault detection is not yet computed from history. Tag: PROD-GM-OPS-2. */}
-              <div className="between" style={{ fontSize: 12 }}><span className="dim">Recurring · GBH-C5 pump</span><span className="bdg red dot">fault</span></div>
-              <div className="divider" style={{ height: 1, background: 'var(--line-2)' }} />
               <div className="between" style={{ fontSize: 12 }}>
                 <span className="dim">Blocked jobs</span>
                 <span className="row" style={{ gap: 7 }}><span className="bdg gray">{blockedCount}</span><DI n="chevR" s={2} style={{ color: 'var(--tx-3)' }} /></span>
@@ -346,19 +338,6 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
                       </div>
                     </div>
                     <button className="dbtn sm" type="button" onClick={() => onChangeSubPage?.('schedule')}>Reassign</button>
-                  </div>
-                </div>
-                <div className="panel" style={{ padding: 11 }}>
-                  <div className="between">
-                    <div className="row">
-                      <span className="pri low"><DI n="more" s={2} style={{ width: 11, height: 11 }} /></span>
-                      <div>
-                        {/* @demo:data — supplies par-levels are not yet wired. Tag: PROD-GM-OPS-2. */}
-                        <div className="tt" style={{ fontSize: 13 }}>Supplies low · West store</div>
-                        <div className="sub">pipe sealant · towels below par</div>
-                      </div>
-                    </div>
-                    <button className="dbtn sm" type="button">Order</button>
                   </div>
                 </div>
               </div>

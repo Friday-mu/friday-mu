@@ -18,6 +18,15 @@ function todayIso(): string {
 }
 const DONE_STATUSES: TaskStatus[] = ['completed', 'closed', 'cancelled'];
 
+/** Native HTML5 drag only on a fine pointer / desktop width — mirrors the
+ *  classic Ops planner (OperationsModule.canUseNativeDrag) so touch users
+ *  don't get a broken half-drag. */
+function canUseNativeDrag(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: fine) and (min-width: 769px)').matches;
+}
+
 function opsTabs(onChange?: (s: string) => void): GmTab[] {
   const go = (s: string) => () => onChange?.(s);
   return [
@@ -30,7 +39,7 @@ function opsTabs(onChange?: (s: string) => void): GmTab[] {
   ];
 }
 
-/* ── schedule grid primitives (ported from design SCell) ── */
+/* ── schedule grid primitives ── */
 type BlockColor = 'ind' | 'grn' | 'amb';
 interface ScheduledBlock { taskId: string; color: BlockColor; title: string; sub?: string; }
 
@@ -79,45 +88,45 @@ function emptySlots(): Array<ScheduledBlock | 'lunch' | null> {
 }
 
 function placeBlock(slots: Array<ScheduledBlock | 'lunch' | null>, idx: number, block: ScheduledBlock): void {
-  // Don't overwrite the protected lunch slot or an already-placed block;
-  // walk forward to the next free hour so two jobs at the same hour both show.
   let i = idx;
   while (i < slots.length && slots[i] !== null) i += 1;
   if (i >= slots.length) {
-    // grid full from idx onward — try filling any earlier gap so nothing is lost
     i = slots.findIndex((s) => s === null);
     if (i < 0) return;
   }
   slots[i] = block;
 }
 
-/* ── grid cell: empty placeholder / lunch / draggable task block, droppable ── */
+/* ── grid cell: empty / lunch / draggable task block; live drop-target highlight ── */
 function SCell({
-  block, lunch, hourIdx, onDropTask, onDragBlock,
+  block, lunch, isDropTarget, dragEnabled,
+  onDragOverCell, onDragLeaveCell, onDropCell, onDragStartBlock,
 }: {
   block?: ScheduledBlock;
   lunch?: boolean;
-  hourIdx: number;
-  onDropTask: (hourIdx: number) => void;
-  onDragBlock: (taskId: string) => void;
+  isDropTarget: boolean;
+  dragEnabled: boolean;
+  onDragOverCell: (e: React.DragEvent) => void;
+  onDragLeaveCell: (e: React.DragEvent) => void;
+  onDropCell: (e: React.DragEvent) => void;
+  onDragStartBlock: (e: React.DragEvent, taskId: string) => void;
 }) {
-  const dropProps = {
-    onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; },
-    onDrop: (e: React.DragEvent) => { e.preventDefault(); onDropTask(hourIdx); },
-  };
-  if (lunch) {
-    return <div className="sgcell" {...dropProps}><div className="sblock lunch">Lunch</div></div>;
-  }
-  if (!block) return <div className="sgcell" {...dropProps} />;
+  const cellStyle = isDropTarget
+    ? { outline: '2px dashed var(--indigo, #6366f1)', outlineOffset: '-3px', background: 'color-mix(in srgb, var(--indigo, #6366f1) 14%, transparent)', borderRadius: 8 }
+    : undefined;
+  const drop = { onDragOver: onDragOverCell, onDragLeave: onDragLeaveCell, onDrop: onDropCell };
+  if (lunch) return <div className="sgcell" style={cellStyle} {...drop}><div className="sblock lunch">Lunch</div></div>;
+  if (!block) return <div className="sgcell" style={cellStyle} {...drop} />;
   return (
-    <div className="sgcell" {...dropProps}>
+    <div className="sgcell" style={cellStyle} {...drop}>
       <div
         className={'sblock ' + block.color}
-        draggable
-        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', block.taskId); onDragBlock(block.taskId); }}
-        title="Drag to another staff row / hour to reschedule"
+        draggable={dragEnabled}
+        onDragStart={(e) => onDragStartBlock(e, block.taskId)}
+        style={dragEnabled ? { cursor: 'grab' } : undefined}
+        title={dragEnabled ? 'Drag to another staff row / hour to reschedule' : undefined}
       >
-        <span className="grip">⠿</span>
+        {dragEnabled && <span className="grip">⠿</span>}
         {block.title}
         {block.sub && <span className="sm">{block.sub}</span>}
       </div>
@@ -131,19 +140,37 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
   const { onChangeSubPage } = props;
   const [view, setView] = useState<ScheduleView>('user');
   const [askOpen, setAskOpen] = useState(false);
-  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null); // "<rowKey>:<hourIdx>"
   const [saving, setSaving] = useState(false);
+  const [dragEnabled, setDragEnabled] = useState(false);
 
   const { tasks, loading, loaded, refetch } = useApiTasks(useMemo(() => ({}), []));
   const { properties } = useLiveProperties();
 
-  // ALL staff (not just those with tasks) — the whole assignable directory.
+  // ALL assignable staff (not just those with tasks).
   const [staff, setStaff] = useState<OperationsStaffUser[]>([]);
   useEffect(() => {
     let alive = true;
     loadOperationsStaffUsers().then((u) => { if (alive) setStaff(u); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // drag capability (desktop / fine pointer only), refreshed on resize
+  useEffect(() => {
+    const refresh = () => setDragEnabled(canUseNativeDrag());
+    refresh();
+    window.addEventListener('resize', refresh);
+    return () => window.removeEventListener('resize', refresh);
+  }, []);
+
+  // global dragend cleanup so a released-outside drag never leaves stuck state
+  useEffect(() => {
+    if (!dragTaskId) return;
+    const onEnd = () => { setDragTaskId(null); setDragOverKey(null); };
+    window.addEventListener('dragend', onEnd);
+    return () => window.removeEventListener('dragend', onEnd);
+  }, [dragTaskId]);
 
   const today = todayIso();
   const todaysTasks = useMemo(
@@ -154,7 +181,7 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
 
   const blockOf = (t: Task, label: string, sub?: string): ScheduledBlock => ({ taskId: t.id, color: blockColor(t), title: label, sub });
 
-  // ── by-staff rows: one row PER STAFF MEMBER (all of them), tasks placed in ──
+  // ── by-staff rows: one row PER STAFF MEMBER (all of them) ──
   const userRows = useMemo<GridRow[]>(() => {
     const idsOf = (s: OperationsStaffUser) => [s.userId, s.id, s.staffId].filter(Boolean) as string[];
     const rows = staff.map((s) => {
@@ -163,7 +190,6 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
       for (const t of mine) placeBlock(slots, hourIndex(t), blockOf(t, `${t.propertyCode} ${t.title}`.trim(), t.department));
       return { key: s.userId || s.id, badge: s.initials, name: s.name, isProp: false, slots };
     });
-    // Surface any assignee that isn't in the staff directory (so no task is hidden).
     const known = new Set(staff.flatMap(idsOf));
     const orphans = new Map<string, GridRow>();
     for (const t of todaysTasks) {
@@ -177,16 +203,19 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
     return [...rows, ...orphans.values()];
   }, [staff, todaysTasks]);
 
-  // ── by-property rows: one row PER PROPERTY (all of them), tasks placed in ──
+  // ── by-property rows: one row per ACTIVE / currently-listed property ──
   const propRows = useMemo<GridRow[]>(() => {
-    const list = properties.length > 0
-      ? properties.map((p) => ({ code: p.code, name: p.name }))
+    const active = properties.filter((p) => p.lifecycleStatus === 'live');
+    const list = active.length > 0
+      ? active.map((p) => ({ code: p.code, name: p.name }))
       : Object.values(TASK_PROPERTY_BY_CODE).map((p) => ({ code: p.code, name: p.name }));
     const byCode = new Map(list.map((p) => [p.code, { key: p.code, badge: p.code, name: p.name, isProp: true, slots: emptySlots() } as GridRow]));
     for (const t of todaysTasks) {
       const code = t.propertyCode || '—';
-      let row = byCode.get(code);
-      if (!row) { row = { key: code, badge: code, name: TASK_PROPERTY_BY_CODE[code]?.name || code, isProp: true, slots: emptySlots() }; byCode.set(code, row); }
+      const row = byCode.get(code);
+      // Only place tasks on listed properties; a task on a delisted property
+      // still shows in by-staff view, so nothing is lost.
+      if (!row) continue;
       const who = t.assigneeNames?.[0];
       placeBlock(row.slots, hourIndex(t), blockOf(t, who ? `${t.title} · ${initialsFromName(who)}` : t.title, t.dueTime || t.department));
     }
@@ -196,25 +225,47 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
   const rows = view === 'prop' ? propRows : userRows;
   const placedCount = todaysTasks.length - unassigned.length;
 
-  /* ── drag-to-reschedule / drop-to-assign — persisted via updateTask ── */
-  const dropOnRow = useCallback(async (row: GridRow, hourIdx: number) => {
-    if (!dragId || saving) return;
+  /* ── drag handlers (match the classic Ops planner quality) ── */
+  const startDrag = useCallback((e: React.DragEvent, taskId: string) => {
+    if (!dragEnabled) { e.preventDefault(); return; }
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', taskId);
+    setDragTaskId(taskId);
+  }, [dragEnabled]);
+
+  const allowDrop = useCallback((e: React.DragEvent, key: string) => {
+    if (!dragTaskId || !dragEnabled) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverKey(key);
+  }, [dragTaskId, dragEnabled]);
+
+  const leaveDrop = useCallback((e: React.DragEvent, key: string) => {
+    if ((e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) return;
+    setDragOverKey((prev) => (prev === key ? null : prev));
+  }, []);
+
+  const dropOnCell = useCallback(async (e: React.DragEvent, row: GridRow, hourIdx: number) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData('text/plain') || dragTaskId;
+    setDragOverKey(null);
+    setDragTaskId(null);
+    if (!taskId || saving) return;
     const dueTime = `${HOURS[hourIdx]}:00`;
-    const patch = view === 'prop'
+    const patch = row.isProp
       ? { propertyCode: row.key, dueTime, dueDate: today }
       : { assigneeIds: [row.key], dueTime, dueDate: today };
     setSaving(true);
     try {
-      await updateTask({ taskId: dragId, patch });
-      fireToast(view === 'prop' ? `Moved to ${row.badge} · ${dueTime}` : `Assigned to ${row.name.split(' ')[0]} · ${dueTime}`);
+      await updateTask({ taskId, patch });
+      fireToast(row.isProp ? `Moved to ${row.badge} · ${dueTime}` : `Assigned to ${row.name.split(' ')[0]} · ${dueTime}`);
       refetch();
-    } catch (e) {
-      fireToast(e instanceof Error ? e.message : 'Could not reschedule');
+    } catch (err) {
+      fireToast(err instanceof Error ? err.message : 'Could not reschedule');
     } finally {
       setSaving(false);
-      setDragId(null);
     }
-  }, [dragId, saving, view, today, refetch]);
+  }, [dragTaskId, saving, today, refetch]);
 
   const panel = askOpen ? (
     <AskPanel
@@ -237,16 +288,15 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
     <GmShell
       eyebrow="OPERATIONS"
       title="Schedule"
-      sub={`Today · ${staff.length} staff · ${view === 'prop' ? propRows.length : userRows.length} rows`}
+      sub={`Today · ${staff.length} staff · ${view === 'prop' ? propRows.length + ' listed properties' : userRows.length + ' staff'}`}
       tabs={opsTabs(onChangeSubPage)}
       panel={panel}
       actions={<button className="dbtn ghost" onClick={() => refetch()}><DI n="undo" s={1.9} /> Refresh</button>}
     >
-      {/* slim Friday bar — Review opens the Ask panel (Ask Friday Core wiring owned by parallel session) */}
       <FridayBar
         actions={<button className="dbtn ghost sm" onClick={() => setAskOpen(true)}>Review <DI n="chevR" s={2} /></button>}
       >
-        <b>{todaysTasks.length} job{todaysTasks.length === 1 ? '' : 's'} today</b> · {placedCount} placed · {unassigned.length} unassigned · drag to assign &amp; reschedule.
+        <b>{todaysTasks.length} job{todaysTasks.length === 1 ? '' : 's'} today</b> · {placedCount} placed · {unassigned.length} unassigned{dragEnabled ? ' · drag to assign & reschedule' : ''}.
       </FridayBar>
 
       {/* view toggle */}
@@ -259,17 +309,19 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
             <DI n="home" s={1.8} /> By property
           </span>
         </div>
-        <span className="draghint">
-          <span style={{ fontSize: 12 }}>⠿</span> Drag a job onto a {view === 'prop' ? 'property' : 'staff'} row &amp; hour to {view === 'prop' ? 'move it' : 'assign it'}{saving ? ' · saving…' : ''}
-        </span>
+        {dragEnabled && (
+          <span className="draghint">
+            <span style={{ fontSize: 12 }}>⠿</span> Drag a job onto a {view === 'prop' ? 'property' : 'staff'} row &amp; hour{saving ? ' · saving…' : ''}
+          </span>
+        )}
       </div>
 
-      {/* the grid — ALL staff / ALL properties, empty rows shown for visibility */}
+      {/* the grid — all staff / active properties; empty rows shown for visibility */}
       {loading && !loaded ? (
         <div className="panel" style={{ padding: 24, textAlign: 'center', color: 'var(--tx-3)', fontSize: 12.5 }}>Loading today's schedule…</div>
       ) : rows.length === 0 ? (
         <div className="panel" style={{ padding: 24, textAlign: 'center', color: 'var(--tx-3)', fontSize: 12.5 }}>
-          {view === 'prop' ? 'No properties loaded yet.' : 'No staff loaded yet.'}
+          {view === 'prop' ? 'No listed properties yet.' : 'No staff loaded yet.'}
         </div>
       ) : (
         <div className="sgrid" style={{ maxHeight: '62vh', overflow: 'auto' }}>
@@ -283,24 +335,30 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
                 {r.isProp ? <span className="pcodeD">{r.badge}</span> : <span className="av1">{r.badge}</span>}{' '}
                 <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
               </div>
-              {r.slots.map((slot, j) => (
-                <SCell
-                  key={j}
-                  hourIdx={j}
-                  lunch={slot === 'lunch'}
-                  block={slot && typeof slot === 'object' ? slot : undefined}
-                  onDropTask={(h) => dropOnRow(r, h)}
-                  onDragBlock={setDragId}
-                />
-              ))}
+              {r.slots.map((slot, j) => {
+                const cellKey = `${r.key}:${j}`;
+                return (
+                  <SCell
+                    key={j}
+                    lunch={slot === 'lunch'}
+                    block={slot && typeof slot === 'object' ? slot : undefined}
+                    isDropTarget={dragOverKey === cellKey}
+                    dragEnabled={dragEnabled}
+                    onDragOverCell={(e) => allowDrop(e, cellKey)}
+                    onDragLeaveCell={(e) => leaveDrop(e, cellKey)}
+                    onDropCell={(e) => dropOnCell(e, r, j)}
+                    onDragStartBlock={startDrag}
+                  />
+                );
+              })}
             </div>
           ))}
         </div>
       )}
 
-      {/* unassigned dropzone — draggable chips */}
+      {/* unassigned — draggable chips */}
       <div className="dml">
-        Unassigned <span className="ct">{unassigned.length} · drag onto a row</span>
+        Unassigned <span className="ct">{unassigned.length}{dragEnabled ? ' · drag onto a row' : ''}</span>
         <span className="rule" />
       </div>
       <div className="dropzone row" style={{ gap: 9, padding: 11, flexWrap: 'wrap' }}>
@@ -311,13 +369,13 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
             <div
               key={t.id}
               className="panel"
-              style={{ padding: '8px 11px', flex: '0 0 auto', cursor: 'grab' }}
-              draggable
-              onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); setDragId(t.id); }}
-              title="Drag onto a staff row + hour to assign"
+              style={{ padding: '8px 11px', flex: '0 0 auto', cursor: dragEnabled ? 'grab' : 'default' }}
+              draggable={dragEnabled}
+              onDragStart={(e) => startDrag(e, t.id)}
+              title={dragEnabled ? 'Drag onto a staff row + hour to assign' : undefined}
             >
               <span className="row" style={{ gap: 9 }}>
-                <span className="grip faint">⠿</span>
+                {dragEnabled && <span className="grip faint">⠿</span>}
                 <span className="pcodeD">{t.propertyCode}</span> {t.title}{' '}
                 <span className="bdg amber">unassigned</span>
               </span>
