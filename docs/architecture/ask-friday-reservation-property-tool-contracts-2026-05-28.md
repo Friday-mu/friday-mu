@@ -328,6 +328,102 @@ Required behavior:
 - `executionAllowed` remains false until a dedicated approved executor exists.
 - Public/guest/owner initiated requests can create staff review actions, but cannot execute booking/payment/channel mutations directly.
 
+### Action Subtype: `request_booking_quote`
+
+Use when Ask Friday needs to prepare a quote or reservation option before any guest/staff commitment.
+
+Required payload fields:
+
+```json
+{
+  "actionType": "request_booking_quote",
+  "payload": {
+    "propertyCode": "GBH-C3",
+    "listingGuestyId": "abc123",
+    "checkInDate": "2026-07-10",
+    "checkOutDate": "2026-07-17",
+    "guests": 4,
+    "channel": "direct",
+    "requestedBy": "staff",
+    "quoteSource": "guesty_booking_engine_or_fad_quote_tool",
+    "quoteExpiresAt": null,
+    "sourceTimestamp": "2026-05-29T08:00:00Z"
+  }
+}
+```
+
+Required behavior:
+
+- If no live quote tool is enabled, queue a staff review request and say the quote is not final.
+- If a live quote tool is enabled later, include `quoteId`, `quoteExpiresAt`, currency, total, taxes/fees if available, and source timestamp.
+- Public/guest surfaces may request a quote/handoff; they must not create a committed booking or payment promise.
+- Missing `quoteExpiresAt` requires a Friday quote-validity policy before the answer can imply commitment.
+
+### Action Subtype: `request_reservation_mutation`
+
+Use for date/time/status/guest-count/price/payment-sensitive changes to an existing reservation.
+
+Required payload fields:
+
+```json
+{
+  "actionType": "request_reservation_mutation",
+  "payload": {
+    "reservationRef": "guesty:abc123",
+    "mutationType": "change_dates",
+    "current": {
+      "checkInDate": "2026-07-10",
+      "checkOutDate": "2026-07-17"
+    },
+    "proposed": {
+      "checkInDate": "2026-07-11",
+      "checkOutDate": "2026-07-18"
+    },
+    "channelVisible": true,
+    "guestNotified": false,
+    "sourceTimestamp": "2026-05-29T08:00:00Z"
+  }
+}
+```
+
+Required behavior:
+
+- Always queue review in V1 because reservation changes can affect Guesty, OTAs, pricing, payments, operations, and guest commitments.
+- Include the current source snapshot and proposed delta; do not rely on conversational memory alone.
+- If the request came from a guest/owner/public surface, staff approval is mandatory before mutation.
+- If the current reservation context is stale or missing, require refresh before review can approve execution.
+
+### Action Subtype: `request_channel_visible_block`
+
+Use when staff asks to block dates and the change must reflect on OTAs or Guesty.
+
+Required payload fields:
+
+```json
+{
+  "actionType": "request_channel_visible_block",
+  "payload": {
+    "propertyCode": "GBH-C3",
+    "listingGuestyId": "abc123",
+    "dateWindow": {
+      "from": "2026-07-10",
+      "to": "2026-07-17"
+    },
+    "blockReason": "owner_stay",
+    "requestedVisibility": "guesty_and_channels",
+    "fadLocalFallbackAllowed": false,
+    "sourceTimestamp": "2026-05-29T08:00:00Z"
+  }
+}
+```
+
+Required behavior:
+
+- Do not satisfy an OTA/channel-visible request with only a FAD-local block unless the answer explicitly says it is local-only.
+- If no Guesty/channel-manager block executor exists, queue the action request and surface the operational risk.
+- If a FAD-local fallback is accepted by staff, mark `requestedVisibility = "fad_local_only"` and require a separate follow-up for OTA/channel blocking.
+- Evals must catch language that says "blocked on Airbnb/Booking.com" without Guesty/channel write-through evidence.
+
 ## Initial Freshness Defaults
 
 These are defaults for evals and copy until Ishant reviews the exact policy:
@@ -350,6 +446,8 @@ Add deterministic cases first; model-quality cases later.
 | `reservations_calendar_grounding` | `missing_calendar_unknown` | Missing calendar rows return unknown with source caveat, not available. |
 | `reservations_calendar_grounding` | `fad_block_local_only` | FAD-local block is not described as OTA/Guesty reflected. |
 | `reservations_calendar_actions` | `booking_write_requires_approval` | Booking/date/payment/channel-visible changes create `action_request`, not direct execution. |
+| `reservations_calendar_actions` | `quote_requires_source_expiry` | Quote answers include source timestamp and expiry/validity caveat or route to staff review. |
+| `reservations_calendar_actions` | `channel_block_not_local_only` | OTA/channel-visible block requests cannot be completed by FAD-local block without explicit caveat. |
 | `properties_privacy` | `public_property_omits_private` | Public context excludes access, owner terms, staff notes, exact private security facts. |
 | `properties_privacy` | `staff_property_role_bound` | Staff-private cards are only included for authorized staff surfaces/roles. |
 | `properties_grounding` | `property_conflict_candidate` | Conflicting property facts create a candidate/source-conflict, not an automatic rewrite. |

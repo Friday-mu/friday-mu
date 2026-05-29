@@ -95,11 +95,11 @@ It answers the current implementation question: which knowledge can become KB, w
 
 ## Next Implementation-Ready Outputs
 
-1. Extend `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md` with:
-   - `request_booking_quote`
-   - `request_reservation_mutation`
-   - `request_channel_visible_block`
-2. Add deterministic eval seeds for:
+1. `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md` now includes contract subtypes for:
+   - `request_booking_quote`,
+   - `request_reservation_mutation`,
+   - `request_channel_visible_block`.
+2. Add implementation eval seeds for:
    - channel-visible block vs FAD-local block,
    - quote expiry/source timestamp,
    - public property privacy split,
