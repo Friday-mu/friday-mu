@@ -6,6 +6,7 @@ const {
   buildOpsModuleContext,
   buildSystemPrompt,
   buildPlanningConstraints,
+  buildTaskAssignmentCoverage,
   guestUrgentTask,
   parseOpsActionSuggestions,
   reservationBlocksOps,
@@ -68,6 +69,7 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"selectedDate": "2026-05-27"');
     expect(context).toContain('"scheduledTasks": 1');
     expect(context).toContain('"planningConstraints"');
+    expect(context).toContain('"taskAssignmentCoverage"');
     expect(context).toContain('"nonUrgentOccupiedTaskIds"');
     expect(context).toContain('"calendarPricingSignals"');
     expect(context).toContain('"availabilityPricingSummary"');
@@ -140,6 +142,9 @@ describe('Operations Friday Consult helpers', () => {
 
     expect(context).toContain('"compact": true');
     expect(context).toContain('"unassignedOpenTaskCount": 45');
+    expect(context).toContain('"taskAssignmentCoverage"');
+    expect(context).toContain('"visibleOpenTaskCount": 45');
+    expect(context).toContain('"proposedAssignmentCount"');
     expect(context).toContain('"assignableStaffCount": 1');
     expect(context).toContain('"calendarPricingMissingCount": 1');
     expect(context).toContain('"availabilityPricingSummary"');
@@ -159,6 +164,8 @@ describe('Operations Friday Consult helpers', () => {
     expect(prompt).toContain('Use at most 8 bullets and 450 words');
     expect(prompt).toContain('Do not output raw UUIDs');
     expect(prompt).toContain('always include an availability/pricing check');
+    expect(prompt).toContain('every visible open task individually');
+    expect(prompt).toContain('Do not treat roster as staff coverage only');
     expect(prompt).toContain('do not recommend a schedule that leaves a visible open task with no named assignee');
     expect(prompt).toContain('compact fallback mode');
   });
@@ -264,6 +271,108 @@ describe('Operations Friday Consult helpers', () => {
     ]);
   });
 
+  test('builds task-level roster assignment coverage for every visible open task', () => {
+    const constraints = buildPlanningConstraints({
+      selectedDate: '2026-05-27',
+      rangeStart: '2026-05-27',
+      rangeEnd: '2026-05-27',
+      currentPlan: [],
+      staff: [
+        { id: 'u-bryan', name: 'Bryan Henri', role: 'maintenance', department: 'maintenance', canAssign: true },
+        { id: 'u-franny', name: 'Franny Henri', role: 'ops_manager', department: 'operations', canAssign: true },
+      ],
+      reservations: [{
+        id: 'rsv-1',
+        propertyCode: 'BW-C4',
+        guestName: 'Guest One',
+        checkInDate: '2026-05-26',
+        checkOutDate: '2026-05-28',
+        status: 'confirmed',
+      }],
+      scheduledTasks: [{
+        id: 'assigned-1',
+        title: 'Existing inspection',
+        propertyCode: 'GBH-C3',
+        status: 'scheduled',
+        department: 'inspection',
+        dueDate: '2026-05-27',
+        assigneeIds: ['u-franny'],
+      }],
+      unscheduledTasks: [
+        {
+          id: 'proposed-1',
+          title: 'Fix AC drain',
+          propertyCode: 'GBH-C8',
+          status: 'reported',
+          department: 'maintenance',
+          priority: 'medium',
+          assigneeIds: [],
+        },
+        {
+          id: 'manual-1',
+          title: 'Aesthetic check',
+          propertyCode: 'BW-C4',
+          status: 'reported',
+          department: 'inspection',
+          priority: 'medium',
+          assigneeIds: [],
+        },
+      ],
+    });
+
+    expect(constraints.taskAssignmentCoverage.summary).toMatchObject({
+      visibleOpenTaskCount: 3,
+      existingAssignedTaskCount: 1,
+      proposedAssignmentCount: 1,
+      manualReviewTaskCount: 1,
+      allVisibleTasksRepresented: true,
+      allAssignableTasksHaveAssignee: false,
+    });
+    expect(constraints.taskAssignmentCoverage.assignments).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        taskId: 'assigned-1',
+        coverageStatus: 'assigned_existing',
+        assigneeNames: ['Franny Henri'],
+      }),
+      expect.objectContaining({
+        taskId: 'proposed-1',
+        coverageStatus: 'proposed_assignment',
+        assigneeNames: ['Bryan Henri'],
+      }),
+      expect.objectContaining({
+        taskId: 'manual-1',
+        coverageStatus: 'manual_review',
+        reason: 'occupied_property_non_urgent',
+      }),
+    ]));
+  });
+
+  test('raw task assignment coverage proposes no assignment without assignable staff', () => {
+    const coverage = buildTaskAssignmentCoverage({
+      selectedDate: '2026-05-27',
+      assignableStaff: [],
+      occupiedPropertyDays: [],
+      visibleOpenTasks: [{
+        id: 'task-1',
+        title: 'Restock coffee',
+        propertyCode: 'GBH-C3',
+        status: 'reported',
+        assigneeIds: [],
+      }],
+    });
+
+    expect(coverage.summary).toMatchObject({
+      visibleOpenTaskCount: 1,
+      proposedAssignmentCount: 0,
+      manualReviewTaskCount: 1,
+      allAssignableTasksHaveAssignee: false,
+    });
+    expect(coverage.assignments[0]).toMatchObject({
+      coverageStatus: 'manual_review',
+      reason: 'no_assignable_staff',
+    });
+  });
+
   test('classifies urgent guest access work as occupancy-eligible', () => {
     expect(guestUrgentTask({
       priority: 'high',
@@ -367,6 +476,8 @@ describe('Operations Friday Consult helpers', () => {
 
     expect(fallback.text).toContain('safe planner checks locally');
     expect(fallback.text).toContain('Assignment blocker: 2');
+    expect(fallback.text).toContain('Task-level roster coverage: 2 visible open task(s)');
+    expect(fallback.text).toContain('proposed to named staff');
     expect(fallback.text).toContain('Occupancy blocker: 1');
     expect(fallback.text).toContain('Availability/pricing check: 1');
     expect(fallback.text).toContain('Lunch/fairness rule');
@@ -378,6 +489,11 @@ describe('Operations Friday Consult helpers', () => {
       calendarPricingSignalCount: 1,
       calendarPricingMissingCount: 0,
       assignableStaffCount: 1,
+      taskAssignmentCoverage: expect.objectContaining({
+        visibleOpenTaskCount: 2,
+        proposedAssignmentCount: 1,
+        manualReviewTaskCount: 1,
+      }),
     });
   });
 

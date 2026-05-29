@@ -1119,7 +1119,6 @@ const READABLE_TASK_DURATION_MINUTES = 120;
 const SCHEDULE_DAY_START_MINUTES = 8 * 60;
 const SCHEDULE_DAY_END_MINUTES = 17 * 60;
 const SCHEDULE_TASK_GAP_MINUTES = 15;
-const SCHEDULE_AGENT_MAX_DRAFT_TASKS = 30;
 const STAFF_LUNCH_WINDOWS = [
   { label: '12:00-13:00', start: 12 * 60, end: 13 * 60 },
   { label: '11:00-12:00', start: 11 * 60, end: 12 * 60 },
@@ -1490,8 +1489,7 @@ function buildScheduleAgentPlan(input: {
       PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
       compareText(taskPropertyLabel(a), taskPropertyLabel(b)) ||
       compareText(taskTitle(a), taskTitle(b))
-    ))
-    .slice(0, SCHEDULE_AGENT_MAX_DRAFT_TASKS);
+    ));
 
   return candidates.flatMap((task) => {
     const duration = taskDurationMinutes(task);

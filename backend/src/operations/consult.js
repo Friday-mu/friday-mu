@@ -14,6 +14,7 @@ const OPS_CONSULT_MAX_TOKENS = Number(process.env.OPS_CONSULT_MAX_TOKENS) || 420
 const OPS_CONSULT_CONTEXT_CHAR_LIMIT = Number(process.env.OPS_CONSULT_CONTEXT_CHAR_LIMIT) || 180_000;
 const OPS_CONSULT_COMPACT_FIRST_TASK_THRESHOLD = Number(process.env.OPS_CONSULT_COMPACT_FIRST_TASK_THRESHOLD) || 50;
 const OPS_CONSULT_COMPACT_FIRST_RESERVATION_THRESHOLD = Number(process.env.OPS_CONSULT_COMPACT_FIRST_RESERVATION_THRESHOLD) || 70;
+const OPS_CONSULT_TASK_ASSIGNMENT_COVERAGE_LIMIT = Number(process.env.OPS_CONSULT_TASK_ASSIGNMENT_COVERAGE_LIMIT) || 160;
 
 const VALID_CONTEXTS = new Set([
   'schedule',
@@ -263,7 +264,194 @@ function summarizeTaskSignals(tasks, limit = 4) {
   return `${list.join('; ')}${extra}`;
 }
 
-function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = [], reservations, currentPlan, selectedDate, rangeStart, rangeEnd }) {
+function taskAssignmentHumanLabel(item) {
+  if (!item) return 'unnamed task';
+  const bits = [
+    item.title || 'Untitled task',
+    item.propertyCode ? `at ${item.propertyCode}` : '',
+    item.coverageStatus === 'proposed_assignment' && Array.isArray(item.assigneeNames) && item.assigneeNames.length
+      ? `to ${item.assigneeNames[0]}`
+      : '',
+    item.coverageStatus === 'manual_review' && item.reason
+      ? `needs review: ${item.reason.replace(/_/g, ' ')}`
+      : '',
+  ].filter(Boolean);
+  return bits.join(' ');
+}
+
+function summarizeTaskAssignmentRows(rows, limit = 4) {
+  const list = safeArray(rows, limit)
+    .map(taskAssignmentHumanLabel)
+    .filter(Boolean);
+  if (list.length === 0) return 'none named';
+  const extra = Array.isArray(rows) && rows.length > limit ? `, plus ${rows.length - limit} more` : '';
+  return `${list.join('; ')}${extra}`;
+}
+
+function occupiedTaskKey(propertyCode, day) {
+  return `${cleanString(propertyCode, 120)}::${dateOnly(day)}`;
+}
+
+function taskPlanningDay(task, selectedDate) {
+  return dateOnly(task?.dueDate) || dateOnly(selectedDate) || null;
+}
+
+function staffFitScoreForTask(task, staffUser) {
+  const taskDepartment = cleanString(task?.department, 120).toLowerCase();
+  const taskSubdepartment = cleanString(task?.subdepartment, 120).toLowerCase();
+  const taskText = `${task?.title || ''} ${taskDepartment} ${taskSubdepartment}`.toLowerCase();
+  const staffDepartment = cleanString(staffUser?.department, 120).toLowerCase();
+  const staffRole = cleanString(staffUser?.role, 120).toLowerCase();
+  const staffZone = cleanString(staffUser?.zone, 120).toLowerCase();
+  const propertyCode = cleanString(task?.propertyCode, 120).toLowerCase();
+  let score = 0;
+  if (taskDepartment && staffDepartment && taskDepartment === staffDepartment) score += 40;
+  if (taskDepartment && staffRole && staffRole.includes(taskDepartment)) score += 24;
+  if (taskSubdepartment && staffRole && staffRole.includes(taskSubdepartment)) score += 16;
+  if (staffZone && propertyCode && propertyCode.includes(staffZone)) score += 8;
+  if (taskText.includes('clean') && staffRole.includes('clean')) score += 24;
+  if ((taskText.includes('maintenance') || taskText.includes('repair') || taskText.includes('fix')) && staffRole.includes('maintenance')) score += 24;
+  if ((taskText.includes('inspection') || taskText.includes('check')) && staffRole.includes('inspection')) score += 16;
+  return score;
+}
+
+function chooseAssigneeForTask(task, assignableStaff, staffLoadMinutes, staffAssignmentCount) {
+  if (!assignableStaff.length) return null;
+  const ranked = assignableStaff
+    .map((staffUser) => {
+      const id = staffUser.id;
+      const load = Number(staffLoadMinutes.get(id) || 0);
+      const count = Number(staffAssignmentCount.get(id) || 0);
+      return {
+        staffUser,
+        fit: staffFitScoreForTask(task, staffUser),
+        load,
+        count,
+      };
+    })
+    .sort((a, b) => {
+      if (b.fit !== a.fit) return b.fit - a.fit;
+      if (a.load !== b.load) return a.load - b.load;
+      if (a.count !== b.count) return a.count - b.count;
+      return String(a.staffUser.name || '').localeCompare(String(b.staffUser.name || ''));
+    });
+  return ranked[0]?.staffUser || null;
+}
+
+function buildTaskAssignmentCoverage({ visibleOpenTasks, assignableStaff, occupiedPropertyDays, selectedDate }) {
+  const occupiedByPropertyDay = new Set(
+    safeArray(occupiedPropertyDays, 400)
+      .map((item) => occupiedTaskKey(item?.propertyCode, item?.day))
+      .filter((key) => key !== '::'),
+  );
+  const staffById = new Map(assignableStaff.map((user) => [user.id, user]));
+  const staffLoadMinutes = new Map(assignableStaff.map((user) => [user.id, 0]));
+  const staffAssignmentCount = new Map(assignableStaff.map((user) => [user.id, 0]));
+  const openTasks = safeArray(visibleOpenTasks, 500).filter(Boolean);
+
+  for (const task of openTasks) {
+    const estimatedMinutes = Number(task.estimatedMinutes || 45);
+    const assigneeIds = Array.isArray(task.assigneeIds) ? task.assigneeIds : [];
+    for (const assigneeId of assigneeIds) {
+      if (!staffById.has(assigneeId)) continue;
+      staffLoadMinutes.set(assigneeId, Number(staffLoadMinutes.get(assigneeId) || 0) + (Number.isFinite(estimatedMinutes) ? estimatedMinutes : 45));
+      staffAssignmentCount.set(assigneeId, Number(staffAssignmentCount.get(assigneeId) || 0) + 1);
+    }
+  }
+
+  const assignments = openTasks.map((task) => {
+    const planningDay = taskPlanningDay(task, selectedDate);
+    const assigneeIds = Array.isArray(task.assigneeIds) ? task.assigneeIds.filter(Boolean) : [];
+    const assigneeNames = Array.isArray(task.assigneeNames) ? task.assigneeNames.filter(Boolean) : [];
+    const base = {
+      taskId: task.id || null,
+      title: task.title || '(untitled)',
+      propertyCode: task.propertyCode || null,
+      planningDay,
+      dueTime: task.dueTime || null,
+      status: task.status || null,
+      priority: task.priority || null,
+      department: task.department || null,
+      estimatedMinutes: task.estimatedMinutes ?? null,
+    };
+
+    if (assigneeIds.length > 0) {
+      return {
+        ...base,
+        coverageStatus: 'assigned_existing',
+        assigneeIds,
+        assigneeNames: assigneeNames.length
+          ? assigneeNames
+          : assigneeIds.map((id) => staffById.get(id)?.name).filter(Boolean),
+        resolution: 'already_assigned',
+      };
+    }
+
+    const blockedByOccupancy = task.propertyCode
+      && planningDay
+      && occupiedByPropertyDay.has(occupiedTaskKey(task.propertyCode, planningDay))
+      && !guestUrgentTask(task);
+
+    if (blockedByOccupancy) {
+      return {
+        ...base,
+        coverageStatus: 'manual_review',
+        reason: 'occupied_property_non_urgent',
+        resolution: 'move_to_checkout_or_open_day_before_assignment',
+      };
+    }
+
+    const proposedAssignee = chooseAssigneeForTask(task, assignableStaff, staffLoadMinutes, staffAssignmentCount);
+    if (!proposedAssignee) {
+      return {
+        ...base,
+        coverageStatus: 'manual_review',
+        reason: 'no_assignable_staff',
+        resolution: 'needs_staff_assignment_source',
+      };
+    }
+
+    const estimatedMinutes = Number(task.estimatedMinutes || 45);
+    staffLoadMinutes.set(
+      proposedAssignee.id,
+      Number(staffLoadMinutes.get(proposedAssignee.id) || 0) + (Number.isFinite(estimatedMinutes) ? estimatedMinutes : 45),
+    );
+    staffAssignmentCount.set(proposedAssignee.id, Number(staffAssignmentCount.get(proposedAssignee.id) || 0) + 1);
+    return {
+      ...base,
+      coverageStatus: 'proposed_assignment',
+      assigneeIds: [proposedAssignee.id],
+      assigneeNames: [proposedAssignee.name],
+      resolution: 'assign_in_draft',
+    };
+  });
+
+  const limit = Math.max(20, OPS_CONSULT_TASK_ASSIGNMENT_COVERAGE_LIMIT);
+  const existingAssignedTaskCount = assignments.filter((item) => item.coverageStatus === 'assigned_existing').length;
+  const proposedAssignmentCount = assignments.filter((item) => item.coverageStatus === 'proposed_assignment').length;
+  const manualReviewTaskCount = assignments.filter((item) => item.coverageStatus === 'manual_review').length;
+  const omittedCount = Math.max(0, assignments.length - limit);
+  return {
+    summary: {
+      visibleOpenTaskCount: assignments.length,
+      existingAssignedTaskCount,
+      proposedAssignmentCount,
+      manualReviewTaskCount,
+      taskLevelCoverageCount: assignments.length,
+      allVisibleTasksRepresented: omittedCount === 0,
+      allAssignableTasksHaveAssignee: manualReviewTaskCount === 0,
+      truncated: omittedCount > 0,
+      omittedCount,
+      limit,
+    },
+    assignments: assignments.slice(0, limit),
+    omittedTaskIds: omittedCount > 0
+      ? assignments.slice(limit).map((item) => item.taskId).filter(Boolean).slice(0, 80)
+      : [],
+  };
+}
+
+function buildPlanningConstraints({ scheduledTasks = [], unscheduledTasks = [], staff = [], reservations = [], currentPlan = [], selectedDate, rangeStart, rangeEnd }) {
   const daySet = new Set([
     ...daysInRange(rangeStart || selectedDate, rangeEnd || selectedDate),
     dateOnly(selectedDate),
@@ -284,17 +472,18 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = []
       }
     }
   }
+  const openScheduledTasks = scheduledTasks.filter(isOpenPlanningTask);
+  const openUnscheduledTasks = unscheduledTasks.filter(isOpenPlanningTask);
+  const visibleOpenTasks = openScheduledTasks.concat(openUnscheduledTasks);
   const occupiedSelectedProperties = new Set(
     occupiedPropertyDays
       .filter((item) => item.day === selected)
       .map((item) => item.propertyCode),
   );
-  const selectedDateCandidateTasks = scheduledTasks
-    .filter(isOpenPlanningTask)
-    .filter((task) => selected && task.dueDate === selected)
+  const selectedDateCandidateTasks = openScheduledTasks
+    .filter((task) => selected && dateOnly(task.dueDate) === selected)
     .concat(
-      unscheduledTasks
-        .filter(isOpenPlanningTask)
+      openUnscheduledTasks
         .filter((task) => selected && !task.dueDate),
     );
   const nonUrgentOccupiedTasks = selectedDateCandidateTasks
@@ -302,8 +491,7 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = []
     .filter((task) => !guestUrgentTask(task))
     .map(compactPlanningTaskSignal)
     .filter(Boolean);
-  const unassignedOpenTasks = scheduledTasks.concat(unscheduledTasks)
-    .filter(isOpenPlanningTask)
+  const unassignedOpenTasks = visibleOpenTasks
     .filter((task) => task.assigneeIds.length === 0)
     .map(compactPlanningTaskSignal)
     .filter(Boolean);
@@ -329,13 +517,20 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = []
     : (reservations.length > 0
       ? `${reservations.length} reservation overlay(s) are loaded, but none include usable cached calendar-pricing values; availability and prices are not proved by the cache.`
       : 'No reservation overlay is loaded, so availability and prices are not proved by the context.');
+  const taskAssignmentCoverage = buildTaskAssignmentCoverage({
+    visibleOpenTasks,
+    assignableStaff,
+    occupiedPropertyDays,
+    selectedDate: selected,
+  });
   return {
-    assignmentPolicy: 'Every drafted scheduled task must have at least one eligible assignee; do not leave work unassigned unless the staff directory is unavailable.',
+    assignmentPolicy: 'Roster and schedule drafts are task-level plans: every visible open task must be represented individually as already assigned, proposed to a named assignee, moved/blocked for a stated reason, or sent to manual review. Do not treat roster as staff coverage only.',
     occupancyPolicy: 'Do not schedule non-urgent non-guest-requested property work while occupied. Checkout day is available after checkout for turnover work. Urgent guest-requested issues may be handled during occupancy.',
     lunchPolicy: 'Protect one hour lunch for every staff member; prefer 12:00-13:00, fallback 11:00-12:00 or 13:00-14:00. Stagger office staff so someone remains available.',
     availabilityPricingSource: 'Use reservation overlays and calendarPricing from the FAD reservation cache when present; do not invent availability or prices if cache fields are missing.',
     availabilityPricingSummary,
-    draftCompletenessPolicy: 'A planning draft should either assign every visible open task it pulls into the selected day or explicitly name the tasks that must move/manual-review. Do not present a partial plan as complete.',
+    draftCompletenessPolicy: 'A roster or schedule draft is incomplete if any visible open task is missing from taskAssignmentCoverage. Do not present a partial task plan as complete.',
+    taskAssignmentCoverage,
     calendarPricingSignals: calendarPricingSignals.slice(0, 60),
     calendarPricingSignalCount: calendarPricingSignals.length,
     calendarPricingMissingCount: calendarPricingMissingReservations.length,
@@ -378,6 +573,12 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
   const pricingSignalCount = constraints.calendarPricingSignalCount || constraints.calendarPricingSignals.length;
   const pricingMissingCount = constraints.calendarPricingMissingCount || 0;
   const assignableStaffCount = constraints.assignableStaff.length;
+  const assignmentCoverage = constraints.taskAssignmentCoverage || { summary: {}, assignments: [] };
+  const assignmentSummary = assignmentCoverage.summary || {};
+  const manualReviewAssignments = safeArray(assignmentCoverage.assignments, 40)
+    .filter((item) => item.coverageStatus === 'manual_review');
+  const proposedAssignments = safeArray(assignmentCoverage.assignments, 40)
+    .filter((item) => item.coverageStatus === 'proposed_assignment');
   const shouldSuggestDraft = ['schedule', 'roster', 'general'].includes(context)
     && assignableStaffCount > 0
     && (unscheduledTasks.length > 0 || unassignedCount > 0 || draftUnassignedCount > 0);
@@ -393,6 +594,16 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
     lines.push(`Assignment blocker: ${unassignedCount} visible open task(s) have no assignee. First examples: ${summarizeTaskSignals(constraints.unassignedOpenTasks)}.`);
   } else {
     lines.push('Assignment check: no unassigned visible open task was detected in the provided context.');
+  }
+  lines.push(`Task-level roster coverage: ${assignmentSummary.visibleOpenTaskCount || 0} visible open task(s), ${assignmentSummary.existingAssignedTaskCount || 0} already assigned, ${assignmentSummary.proposedAssignmentCount || 0} proposed to named staff, ${assignmentSummary.manualReviewTaskCount || 0} needing manual review.`);
+  if (proposedAssignments.length > 0) {
+    lines.push(`First proposed task assignments: ${summarizeTaskAssignmentRows(proposedAssignments)}.`);
+  }
+  if (manualReviewAssignments.length > 0) {
+    lines.push(`Manual-review task examples: ${summarizeTaskAssignmentRows(manualReviewAssignments)}.`);
+  }
+  if (assignmentSummary.truncated) {
+    lines.push(`Coverage warning: ${assignmentSummary.omittedCount} task(s) were outside the compact coverage sample, so do not call the roster complete without a narrower date/property filter or full draft view.`);
   }
   if (occupiedConflictCount > 0) {
     lines.push(`Occupancy blocker: ${occupiedConflictCount} non-urgent task(s) are on occupied properties for the selected day. First examples: ${summarizeTaskSignals(constraints.nonUrgentOccupiedTasks)}.`);
@@ -428,6 +639,7 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
       calendarPricingSignalCount: pricingSignalCount,
       calendarPricingMissingCount: pricingMissingCount,
       assignableStaffCount,
+      taskAssignmentCoverage: assignmentSummary,
     },
   };
 }
@@ -530,7 +742,14 @@ function buildOpsCompactModuleContext(body) {
       calendarPricingSignalCount: planningConstraints.calendarPricingSignalCount,
       calendarPricingMissingCount: planningConstraints.calendarPricingMissingCount,
       assignableStaffCount: planningConstraints.assignableStaff.length,
+      taskAssignmentCoverage: planningConstraints.taskAssignmentCoverage.summary,
     },
+    taskAssignmentCoverage: {
+      summary: planningConstraints.taskAssignmentCoverage.summary,
+      assignments: planningConstraints.taskAssignmentCoverage.assignments.slice(0, 12),
+      omittedTaskIds: planningConstraints.taskAssignmentCoverage.omittedTaskIds.slice(0, 40),
+    },
+    unassignedOpenTasks: planningConstraints.unassignedOpenTasks.slice(0, 20),
     staff: staff.map((user) => ({
       id: user.id,
       name: user.name,
@@ -538,10 +757,9 @@ function buildOpsCompactModuleContext(body) {
       zone: user.zone,
       canAssign: user.canAssign,
     })),
-    scheduledTasks: scheduledTasks.slice(0, 30),
-    unscheduledTasks: unscheduledTasks.slice(0, 20),
+    scheduledTasks: scheduledTasks.slice(0, 20),
+    unscheduledTasks: unscheduledTasks.slice(0, 12),
     occupiedPropertyDays: planningConstraints.occupiedPropertyDays.slice(0, 30),
-    unassignedOpenTasks: planningConstraints.unassignedOpenTasks.slice(0, 20),
     calendarPricingSignals: planningConstraints.calendarPricingSignals.slice(0, 20),
     calendarPricingMissingReservations: planningConstraints.calendarPricingMissingReservations.slice(0, 20),
     currentPlan: currentPlan.slice(0, 20),
@@ -610,11 +828,12 @@ function responseContract({ compact = false } = {}) {
   return `RESPONSE CONTRACT:
 - Default to a bounded operational summary, not an exhaustive report.
 - Use at most 8 bullets and 450 words; compact fallback mode uses at most 5 bullets and 260 words.
-- For schedule/roster QA, summarize counts and top risks before examples. Do not list every task.
+- For schedule/roster QA, summarize counts and top risks before examples. Do not narrate every task unless asked, but use taskAssignmentCoverage to ensure every visible open task has a resolution.
 - For schedule/roster QA, always include an availability/pricing check: say whether usable calendarPricing signals were present, or explicitly say availability/prices are not proved by the cache.
 - Do not output raw UUIDs unless the operator explicitly asks for IDs; use task title, property code, and assignee names.
-- For schedule-generation requests, account for every visible open unassigned task: assign it, move/block it for a stated reason, or name it as still needing manual review.
+- For roster-generation and schedule-generation requests, account for every visible open task individually: keep existing assignments, assign it to named staff, move/block it for a stated reason, or name it as still needing manual review.
 - If assignable staff are loaded, do not recommend a schedule that leaves a visible open task with no named assignee.
+- Do not treat roster as staff coverage only; roster output must resolve task ownership as well as coverage/lunch/fairness.
 - If a reversible local action would help, include one concise [OPS_ACTION] block after the summary.
 - If the context is too large, say which exact summary is still reliable and ask for a narrower date/property filter.
 ${compact ? '- You are in compact fallback mode because a previous provider response was incomplete; be extra concise.' : ''}`;
@@ -695,7 +914,7 @@ router.post('/consult', attachIdentity, async (req, res) => {
           '[Operator request]',
           instruction,
           '[Compact-first instruction]',
-          'This roster context is large, so start with bounded planner checks. Do not enumerate all tasks.',
+          'This roster context is large, so start with bounded planner checks. Do not narrate every task, but use taskAssignmentCoverage to verify every visible open task is assigned, blocked, or in manual review.',
         ].filter(Boolean).join('\n\n')
       : [
           history ? `[Recent module consult turns]\n${history}` : '',
@@ -722,7 +941,7 @@ router.post('/consult', attachIdentity, async (req, res) => {
         '[Operator request]',
         instruction,
         '[Fallback instruction]',
-        'The previous provider response was incomplete. Answer with a bounded summary only. Do not enumerate all tasks.',
+        'The previous provider response was incomplete. Answer with a bounded summary only. Do not narrate every task, but keep taskAssignmentCoverage as the source of task-level roster truth.',
       ].join('\n\n');
       result = await generateDraftReply({
         system: buildSystemPrompt({ composed, context, compact: true }),
@@ -846,6 +1065,7 @@ module.exports._test = {
   buildDeterministicOpsFallback,
   buildSystemPrompt,
   buildPlanningConstraints,
+  buildTaskAssignmentCoverage,
   confidenceBand,
   guestUrgentTask,
   parseOpsActionSuggestions,
