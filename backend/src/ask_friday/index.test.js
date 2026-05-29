@@ -237,6 +237,15 @@ describe('Ask Friday Core router', () => {
         published_updated_at: null,
         active_eval_case_count: 2,
         active_eval_suite_ids: ['reservations_calendar_actions'],
+        memory_policy: {
+          learningEventPolicy: {
+            required: true,
+            mode: 'global_panel_module_mirror_until_dedicated_runtime',
+            emitter: 'Global Ask Friday',
+          },
+        },
+        recent_learning_event_count: 3,
+        latest_learning_event_at: new Date('2026-05-29T09:00:00.000Z'),
       }, {
         ...surfaceRow({
           surface_id: 'website_guest_hero',
@@ -265,6 +274,15 @@ describe('Ask Friday Core router', () => {
         published_updated_at: null,
         active_eval_case_count: 0,
         active_eval_suite_ids: [],
+        memory_policy: {
+          learningEventPolicy: {
+            required: true,
+            mode: 'public_core_events',
+            emitter: 'Friday Website',
+          },
+        },
+        recent_learning_event_count: 0,
+        latest_learning_event_at: null,
       }],
     });
 
@@ -297,6 +315,15 @@ describe('Ask Friday Core router', () => {
       evals: {
         activeCaseCount: 2,
         missingDeclaredSuiteIds: [],
+      },
+      learningFeedback: {
+        policy: {
+          required: true,
+          mode: 'global_panel_module_mirror_until_dedicated_runtime',
+          emitter: 'Global Ask Friday',
+        },
+        recentEventWindowDays: 14,
+        recentEventCount: 3,
       },
     });
     expect(res.body.surfaces[1].flags).toEqual(expect.arrayContaining([

@@ -214,6 +214,23 @@ function shapeContextPackPointer(row, prefix) {
   };
 }
 
+function shapeLearningFeedback(row) {
+  const rawPolicy = row?.memory_policy && typeof row.memory_policy === 'object'
+    ? (row.memory_policy.learningEventPolicy || row.memory_policy.learning_event_policy || {})
+    : {};
+  return {
+    policy: {
+      required: rawPolicy.required !== false,
+      mode: cleanString(rawPolicy.mode || rawPolicy.eventRoute || rawPolicy.event_route, 120) || null,
+      emitter: cleanString(rawPolicy.emitter || rawPolicy.owner, 120) || null,
+      notes: cleanString(rawPolicy.notes || rawPolicy.note, 500) || null,
+    },
+    recentEventWindowDays: 14,
+    recentEventCount: Number(row?.recent_learning_event_count || 0),
+    latestEventAt: row?.latest_learning_event_at || null,
+  };
+}
+
 function contextPackExpectation(row) {
   const active = cleanString(row?.status, 40).toLowerCase() === 'active';
   const surfaceId = cleanString(row?.surface_id, 120);
@@ -259,6 +276,7 @@ function shapeSurfaceReadiness(row) {
   const declaredEvalSuites = row.eval_suite_ids || [];
   const missingDeclaredEvalSuites = declaredEvalSuites.filter((suiteId) => !activeEvalSuites.includes(suiteId));
   const activeEvalCaseCount = Number(row.active_eval_case_count || 0);
+  const learningFeedback = shapeLearningFeedback(row);
   const flags = [];
 
   if (expectation.requiredStatus === 'published' && !latestPublished) {
@@ -295,6 +313,13 @@ function shapeSurfaceReadiness(row) {
       `No active eval cases found for declared suites: ${missingDeclaredEvalSuites.join(', ')}.`,
     ));
   }
+  if (surface.status === 'active' && learningFeedback.policy.required && !learningFeedback.policy.mode) {
+    flags.push(readinessFlag(
+      'missing_learning_event_policy',
+      'info',
+      'Active surface has no explicit learning-event feedback policy in memory_policy.learningEventPolicy.',
+    ));
+  }
 
   const readinessStatus = flags.some((flag) => flag.severity === 'blocker')
     ? 'blocked'
@@ -323,6 +348,7 @@ function shapeSurfaceReadiness(row) {
       toolCount: surface.allowedTools.length,
       actionCount: surface.allowedActions.length,
     },
+    learningFeedback,
     flags,
   };
 }
@@ -609,7 +635,9 @@ router.get('/readiness', attachIdentity, async (req, res) => {
          published.published_at AS published_published_at,
          published.updated_at AS published_updated_at,
          COALESCE(eval_counts.active_eval_case_count, 0)::int AS active_eval_case_count,
-         COALESCE(eval_counts.active_eval_suite_ids, ARRAY[]::text[]) AS active_eval_suite_ids
+         COALESCE(eval_counts.active_eval_suite_ids, ARRAY[]::text[]) AS active_eval_suite_ids,
+         COALESCE(event_counts.recent_learning_event_count, 0)::int AS recent_learning_event_count,
+         event_counts.latest_learning_event_at
        FROM ask_friday_surfaces s
        LEFT JOIN LATERAL (
          SELECT pack_id, version, status, approved_by, approved_at, published_at, updated_at
@@ -639,6 +667,16 @@ router.get('/readiness', attachIdentity, async (req, res) => {
          GROUP BY tenant_id, surface_id
        ) eval_counts ON eval_counts.tenant_id = s.tenant_id
                     AND eval_counts.surface_id = s.surface_id
+       LEFT JOIN (
+         SELECT
+           tenant_id,
+           surface_id,
+           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days') AS recent_learning_event_count,
+           MAX(created_at) AS latest_learning_event_at
+         FROM ask_friday_learning_events
+         GROUP BY tenant_id, surface_id
+       ) event_counts ON event_counts.tenant_id = s.tenant_id
+                    AND event_counts.surface_id = s.surface_id
       WHERE ${filters.join(' AND ')}
       ORDER BY s.source_system, s.surface_id`,
       params,
