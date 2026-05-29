@@ -204,12 +204,19 @@ Ask Friday Core backend:
 - `backend/src/ask_friday/context_tools.js`
 - `backend/src/ask_friday/policy.js`
 - `backend/src/ask_friday/publisher.js`
+- `backend/src/ask_friday/context_pack_templates.js`
 - `backend/src/ask_friday/analyzer.js`
 - `backend/src/ask_friday/eval_runner.js`
 - `backend/src/ask_friday/event_writer.js`
 - `backend/src/ask_friday/action_writer.js`
 - `backend/src/ask_friday/retention.js`
 - `backend/src/ask_friday/scheduler.js`
+
+Ask Friday Core scripts:
+
+- `backend/scripts/ask-friday-context-pack-drafts.js`
+  - Dry-run by default. Produces policy-validated draft context packs for `website_guest_hero` and `website_ask_friday_fab`.
+  - `--apply` upserts draft rows only; it does not publish public-readable context packs.
 
 Ask Friday Core migrations:
 
@@ -333,11 +340,16 @@ Current Plan 3 source-truth packet:
   - Property cards need richer privacy/access classification before public context-pack use.
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
   - Design-only contracts for `load_reservation_context`, `load_calendar_context`, `load_property_context`, and `request_reservation_action`.
+  - Runtime note: the staff-only read tools are live behind `/api/ask-friday/core/context-tools/*`; they are not public Website context packs and do not perform write-through actions.
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are source-mapped but not wired to Core runtime in this branch.
   - Public and owner-facing context needs Ishant review before published KB/context-pack use.
   - Feedback evidence needs retention/redaction policy before raw screenshots or diagnostics are mined.
-  - Branch migration `102_ask_friday_public_owner_feedback_evals.sql` seeds deterministic eval scaffolding for these scoped risks. This is not deployed.
+  - Migration `102_ask_friday_public_owner_feedback_evals.sql` is live and seeds deterministic eval scaffolding for these scoped risks.
+  - Production currently has zero context packs, so Website public Core fetches can authenticate but return `context_pack_not_found` until the first reviewed public pack is published.
+- `backend/src/ask_friday/context_pack_templates.js`
+  - Draft-only templates now exist for `website_guest_hero` and `website_ask_friday_fab`.
+  - These are review artifacts, not published truth. They keep dynamic facts live-tool grounded and carry explicit review blockers for public property fields, owner wording, and feedback evidence retention.
 
 ## Maintenance Rule
 
