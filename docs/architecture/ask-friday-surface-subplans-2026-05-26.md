@@ -3,8 +3,8 @@
 Date: 2026-05-26
 Status: execution subplans, not implementation proof
 Anchor: `docs/architecture/ask-friday-master-plan-v02-2026-05-26.md`
-Current continuation branch: `codex/ask-friday-continuation-20260528`
-Historical PR: `https://github.com/Friday-mu/friday-mu/pull/9` merged as `da67c7be`; production later advanced to `7caf6576`
+Current continuation branch: `codex/ask-friday-core-next-20260529` merged as PR #25; next continuation branch TBD.
+Historical PR: `https://github.com/Friday-mu/friday-mu/pull/9` merged as `da67c7be`; production later advanced to `7266f78a`.
 
 ## Purpose
 
