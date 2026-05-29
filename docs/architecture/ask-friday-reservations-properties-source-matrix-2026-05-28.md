@@ -10,6 +10,8 @@ This packet turns the Plan 3 Reservations/Calendar and Properties subplans into 
 
 The immediate goal is to make Ops, Inbox, Website guest surfaces, owner surfaces, and future reservation/property agents safer by defining which facts come from live runtime data, which facts can become KB, and which actions must stay approval-gated.
 
+2026-05-29 research addendum: `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md` adds current source rows for Guesty booking/quote/block write-through, local Mauritius official context, Ops housekeeping/planning constraints, owner competitor/market signals, and eval candidates.
+
 ## Current Runtime Truth
 
 FAD already has the correct integration boundary: shared Guesty/Breezeway data should flow through FAD wrappers, cached tables, and FAD APIs, not module-local external clients.

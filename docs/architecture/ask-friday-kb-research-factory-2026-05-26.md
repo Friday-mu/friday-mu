@@ -106,6 +106,11 @@ This answers the open question from planning: competitor knowledge, industry kno
 
 ## First Research Waves
 
+2026-05-29 addendum:
+
+- `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md` extends the first research waves with source-matrix rows for Guesty booking/quote/block write-through, Mauritius official context, Ops housekeeping/planning constraints, owner competitor/market signals, and eval candidates.
+- Treat that file as a research addendum, not runtime readiness. It does not mark any new agent as wired.
+
 ### Wave A: Reservations / Calendar
 
 Goal:
