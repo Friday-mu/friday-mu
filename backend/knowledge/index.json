@@ -125,6 +125,111 @@
         "positioning-safety": "always"
       },
       "property_card": false
+    },
+    "feedback-learning": {
+      "consumer": "planned:website_feedback_bug/website_feedback_feature/learning-analyzer",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/feedback-learning",
+      "lazy_loadable": {
+        "evidence-redaction": "always",
+        "candidate-taxonomy": "always"
+      },
+      "property_card": false
+    },
+    "analytics-intelligence": {
+      "consumer": "planned:fad_analytics_intelligence",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/analytics-intelligence",
+      "lazy_loadable": {
+        "metric-source-policy": "always",
+        "trend-confidence": "always"
+      },
+      "property_card": false
+    },
+    "finance-assistant": {
+      "consumer": "planned:fad_finance_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/finance-assistant",
+      "lazy_loadable": {
+        "source-privacy": "always",
+        "tax-tourist-fee-caveats": "trigger:tax|vat|mra|tourist fee|owner statement|payout|finance"
+      },
+      "property_card": false
+    },
+    "legal-admin": {
+      "consumer": "planned:fad_legal_admin_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/legal-admin",
+      "lazy_loadable": {
+        "compliance-source-policy": "always",
+        "legal-review-boundary": "always"
+      },
+      "property_card": false
+    },
+    "hr-training": {
+      "consumer": "planned:fad_hr_training_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/hr-training",
+      "lazy_loadable": {
+        "hr-privacy-boundary": "always",
+        "sop-training-matrix": "always"
+      },
+      "property_card": false
+    },
+    "guest-portal-ask-friday": {
+      "consumer": "planned:guest_portal_ask_friday",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/guest-portal-ask-friday",
+      "lazy_loadable": {
+        "stay-scope-policy": "always",
+        "handoff-support-policy": "always"
+      },
+      "property_card": "stay_scoped"
+    },
+    "public-mcp": {
+      "consumer": "planned:public_mcp",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/public-mcp",
+      "lazy_loadable": {
+        "scope-action-policy": "always",
+        "public-truth-policy": "always"
+      },
+      "property_card": false
+    },
+    "internal-agent-bridge": {
+      "consumer": "planned:internal_agent_bridge",
+      "always_load": [
+        "global/critical-rules"
+      ],
+      "surface_skill": "surfaces/internal-agent-bridge",
+      "lazy_loadable": {
+        "sanitized-summary-contract": "always",
+        "provenance-review-policy": "always"
+      },
+      "property_card": false
     }
   },
   "compose_context_mapping": {
