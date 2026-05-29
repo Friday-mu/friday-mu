@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current continuation branch: `codex/ask-friday-core-next-20260529` merged as PR #25; next continuation branch TBD.
+Current continuation branch: `codex/ask-friday-plan2-research-20260529`; PR #44 roster compact-first fix is merged but not deployed.
 
 ## Purpose
 
@@ -38,12 +38,12 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/fad-deploy-ad2b1151`
-- Branch: `codex/ask-friday-compact-fallback-ledger-20260529`
+- Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan2-research-20260529`
+- Branch: `codex/ask-friday-plan2-research-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after Inbox compact-fallback deploy: `ad2b115146aa26f54d0de1a9069130b1e29a1d5d`
-- Current deployed code-bearing SHA: `ad2b115146aa26f54d0de1a9069130b1e29a1d5d`
-- Note: `origin/fad-rebuild` may receive docs-only ledger commits after this SHA without requiring a production deploy.
+- Base/canonical SHA after PR #44 merge: `7d2f87324a5a1d6f1c0e9e324a58e102300f4a12`
+- Current deployed code-bearing SHA: `810250395041bf377d53900422f6befddfd4ac65`
+- Note: `origin/fad-rebuild` is ahead of live production because PR #44 is merged but not deployed. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -67,9 +67,11 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #35: merged and deployed on 2026-05-29 as `f92d4df`; this fixes Inbox Consult JSON-envelope parsing when a provider returns a valid envelope plus a stray brace or malformed tail, preventing raw `response_text` JSON from leaking into the chat UI.
 - PR #37: merged and deployed on 2026-05-29 as `5fd42245`; this removes the production-invalid `messages.communication_channel` WhatsApp-window query while keeping message-level WhatsApp detection via `messages.module_type`.
 - PR #39: merged and deployed on 2026-05-29 as `ad2b1151`; this unpins compact Inbox Consult fallback so compact retries use the normal Gemini-first hierarchy unless an explicit fallback model env var is configured.
-- PR #41: merged on 2026-05-29 as `61960837`; this adds staff-only TeamInbox context to global FAD Ask Friday. Not deployed yet.
-- PR #42: merged on 2026-05-29 as `aa7e7f01`; this adds the sanitized page-focus envelope for the shared Ask Friday right panel and documents the frontend-to-Core contract. Not deployed yet.
-- Deployment status: live frontend and backend both report `ad2b1151`. This deployment includes the field-staff PWA delta merged through `19008eb7`, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, PR #31 docs, PR #33 Ops pricing-signal hardening, PR #35 Inbox malformed-envelope parsing, PR #37 WhatsApp-window schema fix, and PR #39 compact fallback reliability fix. PR #41 and PR #42 are on `origin/fad-rebuild` but still await coordinated backend deploy. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #41: merged on 2026-05-29 as `61960837`; this adds staff-only TeamInbox context to global FAD Ask Friday.
+- PR #42: merged on 2026-05-29 as `aa7e7f01`; this adds the sanitized page-focus envelope for the shared Ask Friday right panel and documents the frontend-to-Core contract.
+- Coordinated deploy `81025039` includes PR #41, PR #42, the frontend performance/code-split pass, and owner-notification read-side filtering. Live frontend and backend both report `81025039`.
+- PR #44 merged on 2026-05-29 as `7d2f8732`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is not deployed.
+- Deployment status: live frontend and backend both report `81025039`, so live production does not yet include PR #44. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
@@ -109,7 +111,13 @@ Read these first, in order:
 13. `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
    - Contract draft for Website context-pack consumption, Website learning-event emission, owner lead capsules, feedback evidence capsules, and takeover alignment.
 14. `docs/architecture/ask-friday-right-panel-focus-contract-2026-05-29.md`
-   - Backend contract for the shared FAD Ask Friday right panel page-focus envelope: module/view/object/selection/visible-state context, action-boundary notes, and frontend wiring guidance.
+    - Backend contract for the shared FAD Ask Friday right panel page-focus envelope: module/view/object/selection/visible-state context, action-boundary notes, and frontend wiring guidance.
+15. `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md`
+    - Plan 2 research/source-matrix addendum for reservations/calendar, properties, Ops, Website public, owner enquiry, local Mauritius context, competitor/market signals, and eval candidates.
+16. `docs/architecture/ask-friday-property-field-classification-2026-05-29.md`
+    - Draft property privacy/field matrix for public, guest-scoped, owner-scoped, staff-private, and restricted property facts.
+17. `docs/architecture/ask-friday-owner-positioning-source-matrix-2026-05-29.md`
+    - Staff-private owner-positioning source matrix for competitor, market, compliance, and owner enquiry harness signals.
 
 ## Master Plan And Subplans
 
@@ -134,6 +142,12 @@ The repo-owned execution pack under the master plan is:
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 - `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
   - Notion: `https://www.notion.so/36e43ca8849281e39565c1d18a057827`
+- `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-property-field-classification-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-owner-positioning-source-matrix-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
 

@@ -12,6 +12,8 @@ It is planning evidence only. It does not mean these surfaces are wired to Ask F
 
 The immediate goal is to define what these surfaces may know, where that knowledge comes from, what must stay private, and which evals should exist before implementation.
 
+2026-05-29 research addendum: `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md` adds current source rows for owner competitor/market signals, Mauritius official tourism/tax context, Website public live-price guardrails, and eval candidates.
+
 ## Shared Rules
 
 - Public Website Ask Friday surfaces consume published public context packs only.
