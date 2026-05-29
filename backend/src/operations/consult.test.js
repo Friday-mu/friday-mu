@@ -10,6 +10,7 @@ const {
   parseOpsActionSuggestions,
   reservationBlocksOps,
   shouldRetryWithCompactOpsPrompt,
+  shouldUseCompactOpsPromptFirst,
   stripOpsProtocolTags,
   taskSignalsForContext,
 } = require('./consult')._test;
@@ -306,6 +307,24 @@ describe('Operations Friday Consult helpers', () => {
       ok: false,
       error: 'rate limit',
       finishReason: null,
+    })).toBe(false);
+  });
+
+  test('starts large roster reviews in compact mode instead of failing full context first', () => {
+    expect(shouldUseCompactOpsPromptFirst({
+      context: 'roster',
+      scheduledTasks: Array.from({ length: 50 }, (_, i) => ({ id: `task-${i}` })),
+      reservations: [],
+    })).toBe(true);
+    expect(shouldUseCompactOpsPromptFirst({
+      context: 'roster',
+      scheduledTasks: [],
+      reservations: Array.from({ length: 70 }, (_, i) => ({ id: `rsv-${i}` })),
+    })).toBe(true);
+    expect(shouldUseCompactOpsPromptFirst({
+      context: 'schedule',
+      scheduledTasks: Array.from({ length: 80 }, (_, i) => ({ id: `task-${i}` })),
+      reservations: [],
     })).toBe(false);
   });
 
