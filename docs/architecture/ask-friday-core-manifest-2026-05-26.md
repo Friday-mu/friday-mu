@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current canonical checkpoint: `origin/fad-rebuild` at `31fbfd549e432598d0e5d22e5068ba61ee4b5284`; next continuation branch TBD.
+Current canonical checkpoint: `origin/fad-rebuild` at `b28406712093b385cece8d28f9c2a2b1c80f2d30`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
 
 ## Purpose
 
@@ -38,12 +38,12 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan2-eval-seeds-20260529`
-- Branch: `codex/ask-friday-plan2-eval-seeds-20260529`
+- Latest reconciliation worktree: `/Users/judith/.codex/worktrees/ask-friday-live-9097-ledger-sync-20260529`
+- Branch: `codex/ask-friday-live-9097-ledger-sync-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after PR #48 merge: `31fbfd549e432598d0e5d22e5068ba61ee4b5284`
-- Current deployed code-bearing SHA: `810250395041bf377d53900422f6befddfd4ac65`
-- Note: `origin/fad-rebuild` is ahead of live production because PR #44, PR #46, and PR #48 are merged but not deployed. Do not deploy without explicit coordination.
+- Base/canonical SHA after the public-experiences routing merge: `b28406712093b385cece8d28f9c2a2b1c80f2d30`
+- Current deployed code-bearing SHA: `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`
+- Note: live production includes PR #44 and PR #46. `origin/fad-rebuild` is still ahead of live because PR #48, PR #49, and the follow-up public-experiences routing fix are merged but not deployed; PR #49 is docs-only. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -69,13 +69,16 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #39: merged and deployed on 2026-05-29 as `ad2b1151`; this unpins compact Inbox Consult fallback so compact retries use the normal Gemini-first hierarchy unless an explicit fallback model env var is configured.
 - PR #41: merged on 2026-05-29 as `61960837`; this adds staff-only TeamInbox context to global FAD Ask Friday.
 - PR #42: merged on 2026-05-29 as `aa7e7f01`; this adds the sanitized page-focus envelope for the shared Ask Friday right panel and documents the frontend-to-Core contract.
-- Coordinated deploy `81025039` includes PR #41, PR #42, the frontend performance/code-split pass, and owner-notification read-side filtering. Live frontend and backend both report `81025039`.
-- PR #44 merged on 2026-05-29 as `7d2f8732`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is not deployed.
+- Coordinated deploy `81025039` includes PR #41, PR #42, the frontend performance/code-split pass, and owner-notification read-side filtering.
+- Live deploy `9097f9bc` includes PR #44, PR #46, and commit `9097f9bc` (`feat(public): /api/public/experiences supply hub + Bokun ingestion + channel routing`, including migration `106_experiences.sql`). This deploy was not performed by this Ask Friday Core session.
+- PR #44 merged on 2026-05-29 as `7d2f8732`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is deployed in live `9097f9bc`; live roster re-smoke is still pending.
 - PR #45 merged on 2026-05-29 as `decee0fb`; it adds Plan 2 research/source matrices, reservation action subtype contracts, property field classification, and owner positioning docs. Docs-only; no deploy required.
-- PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for Plan 2 deterministic eval scaffolding. It is not deployed.
+- PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for Plan 2 deterministic eval scaffolding. It is deployed in live `9097f9bc`.
 - PR #47 merged on 2026-05-29 as `d33f151b`; docs-only ledger/manifest sync after PR #46.
 - PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is not deployed.
-- Deployment status: live frontend and backend both report `81025039`, so live production does not yet include PR #44, PR #46, or PR #48. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #49 merged on 2026-05-29 as `d7497305`; docs-only ledger/manifest sync after PR #48.
+- Commit `12b02389` (`fix(experiences): route Bokun by real country (account is multi-country)`) was merged into `origin/fad-rebuild` at `b2840671`. It is not deployed at the time of this reconciliation.
+- Deployment status: live frontend and backend both report `9097f9bc`, so live production includes PR #44 and PR #46 but does not yet include PR #48, PR #49, or `12b02389`. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
