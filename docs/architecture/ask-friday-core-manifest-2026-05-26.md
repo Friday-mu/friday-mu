@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current canonical checkpoint: `origin/fad-rebuild` at `b28406712093b385cece8d28f9c2a2b1c80f2d30`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
+Current canonical checkpoint: `origin/fad-rebuild` at `7d3a52ba5d490c119b12e109ff430643208b851f`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
 
 ## Purpose
 
@@ -39,11 +39,11 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 ## Current Branch Truth
 
 - Latest reconciliation worktree: `/Users/judith/.codex/worktrees/ask-friday-live-9097-ledger-sync-20260529`
-- Branch: `codex/ask-friday-live-9097-ledger-sync-20260529`
+- Branch: `codex/ask-friday-plan2-core-surfaces-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after the public-experiences routing merge: `b28406712093b385cece8d28f9c2a2b1c80f2d30`
+- Base/canonical SHA after the redesign-docs coordination merge: `7d3a52ba5d490c119b12e109ff430643208b851f`
 - Current deployed code-bearing SHA: `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`
-- Note: live production includes PR #44 and PR #46. `origin/fad-rebuild` is still ahead of live because PR #48, PR #49, and the follow-up public-experiences routing fix are merged but not deployed; PR #49 is docs-only. Do not deploy without explicit coordination.
+- Note: live production includes PR #44 and PR #46. `origin/fad-rebuild` is still ahead of live because PR #48, PR #49, PR #50, PR #51, the follow-up public-experiences routing fix, and redesign docs are merged but not deployed; PR #49, PR #50, PR #51, and the redesign commits are docs-only. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -78,7 +78,11 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is not deployed.
 - PR #49 merged on 2026-05-29 as `d7497305`; docs-only ledger/manifest sync after PR #48.
 - Commit `12b02389` (`fix(experiences): route Bokun by real country (account is multi-country)`) was merged into `origin/fad-rebuild` at `b2840671`. It is not deployed at the time of this reconciliation.
-- Deployment status: live frontend and backend both report `9097f9bc`, so live production includes PR #44 and PR #46 but does not yet include PR #48, PR #49, or `12b02389`. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #50 merged on 2026-05-29 as `4574e0e7`; docs-only live `9097f9bc` ledger sync.
+- PR #51 merged on 2026-05-29 as `62c8f1c1`; docs-only live compact-first roster smoke evidence.
+- Commit `d44174a9` added FAD V2 redesign implementation docs; merge `7d3a52ba` is the current canonical origin checkpoint for this slice.
+- Current pending branch `codex/ask-friday-plan2-core-surfaces-20260529` adds migration `107_ask_friday_plan2_surface_readiness.sql`, staff shell draft context-pack templates, action-policy validation, deterministic `action_safety` eval checks, and focused tests. It is not deployed.
+- Deployment status: live frontend and backend both report `9097f9bc`, so live production includes PR #44 and PR #46 but does not yet include PR #48, PR #49, PR #50, PR #51, `12b02389`, redesign docs, or the pending Plan 2 Core shell readiness branch. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
@@ -288,6 +292,7 @@ Ask Friday Core scripts:
 
 - `backend/scripts/ask-friday-context-pack-drafts.js`
   - Dry-run by default. Produces policy-validated draft context packs for `website_guest_hero` and `website_ask_friday_fab`.
+  - `--include-plan2-shells` also includes draft staff shell packs for Reservations/Calendar, Properties, and the planned Owners shell.
   - `--apply` upserts draft rows only; it does not publish public-readable context packs.
 
 Ask Friday Core migrations:
@@ -300,6 +305,8 @@ Ask Friday Core migrations:
 - `backend/migrations/101_ask_friday_context_tools.sql`
 - `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
 - `backend/migrations/103_ask_friday_public_contract_evals.sql`
+- `backend/migrations/107_ask_friday_plan2_surface_readiness.sql`
+  - Pending in `codex/ask-friday-plan2-core-surfaces-20260529`. Activates Reservations/Calendar and Properties as governed Core shells; keeps Owners planned.
 
 Plan 1 surface code:
 

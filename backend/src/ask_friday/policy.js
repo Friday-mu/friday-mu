@@ -58,6 +58,22 @@ const BLOCKED_PUBLIC_ACTION_EXACT = new Set([
   'create_legal_candidate',
 ]);
 
+const STAFF_ACTIONS_REQUIRING_APPROVAL = new Set([
+  'request_booking_quote',
+  'request_reservation_mutation',
+  'request_channel_visible_block',
+  'request_reservation_action',
+  'create_quote_draft',
+  'create_followup_candidate',
+  'create_property_kb_candidate',
+  'request_property_update_approval',
+  'draft_owner_reply',
+  'create_owner_action_request',
+  'create_owner_kb_candidate',
+  'create_finance_candidate',
+  'create_legal_candidate',
+]);
+
 function policyError(message, status = 400) {
   const err = new Error(message);
   err.status = status;
@@ -203,6 +219,14 @@ function validateStaffActionRequest(action, surface) {
     throw policyError(`sourceSystem does not match registered surface: ${action.sourceSystem}`, 403);
   }
   assertAllowedValues([action.actionType], surfaceAllowedActions(surface), 'actionType');
+  if (STAFF_ACTIONS_REQUIRING_APPROVAL.has(action.actionType)) {
+    if (action.approvalRequired !== true) {
+      throw policyError('staff action requests of this type must require approval', 403);
+    }
+    if (action.status !== 'pending') {
+      throw policyError('staff action requests of this type must start pending', 403);
+    }
+  }
   assertNoSecretLikeContent({ payload: action.payload, reason: action.reason }, 'action_request');
   return action;
 }
@@ -229,11 +253,17 @@ function allowedToolsFromPack(toolPolicy) {
   return cleanArray(policy.allowedTools || policy.allowed_tools || policy.tools, 200, 160);
 }
 
+function allowedActionsFromPack(toolPolicy) {
+  const policy = toolPolicy || {};
+  return cleanArray(policy.allowedActions || policy.allowed_actions || policy.actions, 200, 160);
+}
+
 function validateContextPackAgainstSurface(pack, surface) {
   if (!surface) throw policyError(`surfaceId is not registered: ${pack.surfaceId}`, 404);
   const publicSurface = isPublicReadableSurface(surface);
   assertAllowedValues(pack.knowledgeScopes, surfaceAllowedKnowledgeScopes(surface), 'knowledgeScopes', { blockPublicValues: publicSurface });
   assertAllowedValues(allowedToolsFromPack(pack.toolPolicy), surfaceAllowedTools(surface), 'toolPolicy.allowedTools', { blockPublicValues: publicSurface });
+  assertAllowedValues(allowedActionsFromPack(pack.toolPolicy), surfaceAllowedActions(surface), 'toolPolicy.allowedActions', { blockPublicValues: publicSurface });
   if (publicSurface) {
     assertNoSecretLikeContent({
       behaviorRules: pack.behaviorRules,
@@ -255,8 +285,10 @@ module.exports = {
   validatePublicLearningEvent,
   validateStaffActionRequest,
   _test: {
+    allowedActionsFromPack,
     blockedPublicValue,
     policyError,
+    STAFF_ACTIONS_REQUIRING_APPROVAL,
     surfaceAccessClass,
     surfaceAllowedActions,
     surfaceAllowedKnowledgeScopes,

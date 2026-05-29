@@ -6,7 +6,10 @@ require('dotenv').config();
 const { query, pool } = require('../src/database/client');
 const { normalizeContextPack } = require('../src/ask_friday/contracts');
 const { validateContextPackAgainstSurface } = require('../src/ask_friday/policy');
-const { websitePublicDraftContextPacks } = require('../src/ask_friday/context_pack_templates');
+const {
+  plan2StaffDraftContextPacks,
+  websitePublicDraftContextPacks,
+} = require('../src/ask_friday/context_pack_templates');
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -83,7 +86,11 @@ async function main() {
   const tenantId = argValue('--tenant', process.env.ASK_FRIDAY_TENANT_ID || DEFAULT_TENANT_ID);
   const version = Number.parseInt(argValue('--version', '1'), 10) || 1;
   const apply = hasFlag('--apply');
-  const drafts = websitePublicDraftContextPacks({ version });
+  const includePlan2Shells = hasFlag('--include-plan2-shells');
+  const drafts = [
+    ...websitePublicDraftContextPacks({ version }),
+    ...(includePlan2Shells ? plan2StaffDraftContextPacks({ version }) : []),
+  ];
 
   if (!apply) {
     console.log(JSON.stringify({
@@ -91,7 +98,7 @@ async function main() {
       tenantId,
       count: drafts.length,
       drafts,
-      note: 'Run with --apply to upsert draft rows. Drafts are not public-readable until explicitly published through the gated publisher.',
+      note: 'Run with --apply to upsert draft rows. Drafts are not public-readable until explicitly published through the gated publisher. Add --include-plan2-shells to include staff shell drafts.',
     }, null, 2));
     return;
   }
