@@ -26,6 +26,14 @@ import { useCanSee, useCurrentUserId, usePermissions } from '../usePermissions';
 import { fireToast } from '../Toaster';
 import { createTask, fetchTask, updateTask } from '../../_data/tasksClient';
 import { useApiTasks, useApiTasksPage } from '../../_data/useApiTasks';
+import {
+  fetchOperationsSettings,
+  saveOperationsSettings,
+  newSettingsId,
+  DEFAULT_OPERATIONS_SETTINGS,
+  type OperationsSettingsConfig,
+  type OpsRule,
+} from '../../_data/operationsSettingsClient';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../_data/operationsStaffClient';
 import {
   sendOperationsConsultMessage,
@@ -5297,77 +5305,144 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 
 // ───────────────── Settings ─────────────────
 
-// @demo:config — Tag: PROD-CONFIG-10 — see frontend/DEMO_CRUFT.md
-const SETTINGS_TEMPLATES = [
-  { id: 'std-clean', name: 'Standard cleaning', route: 'cleaning > standard_clean', estimate: '2h', state: 'Manual selection; checkout trigger pending' },
-  { id: 'post-clean', name: 'Post-clean inspection', route: 'inspection > post_clean', estimate: '30m', state: 'Manual selection; checkout trigger pending' },
-  { id: 'pre-arrival', name: 'Pre-arrival inspection', route: 'inspection > pre_arrival', estimate: '45m', state: 'Manual selection; check-in trigger pending' },
-  { id: 'deep-clean', name: 'Deep clean', route: 'cleaning > deep_clean', estimate: '6h', state: 'Manual selection' },
-  { id: 'pool', name: 'Pool clarity check', route: 'maintenance > pool', estimate: '45m', state: 'Manual selection' },
-];
+const SETTINGS_INPUT: CSSProperties = {
+  padding: '5px 8px', fontSize: 12, border: '0.5px solid var(--color-border-tertiary)',
+  borderRadius: 5, background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', width: '100%',
+};
 
-const SETTINGS_BOOKING_POLICIES = [
-  { trigger: 'Checkout received', actions: ['Create standard cleaning for checkout day', 'Create post-clean inspection after cleaning is due', 'Current state: trigger pending backend verification'] },
-  {
-    trigger: 'Two days before check-in',
-    actions: [
-      'If property is empty more than 3 days or flagged, create pre-arrival inspection',
-      'Otherwise skip to avoid noise',
-      'Current state: trigger pending backend verification',
-    ],
-  },
-];
+function EnabledToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={'inbox-chip' + (on ? ' active' : '')}
+      style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}
+      title={on ? 'Live — click to pause' : 'Paused — click to enable'}
+    >
+      {on ? 'Live' : 'Paused'}
+    </button>
+  );
+}
 
-const SETTINGS_RECURRING_RULES = [
-  { trigger: 'Pest control per property', actions: ['Every 3 months'] },
-  { trigger: 'AC servicing per property', actions: ['Every 6 months'] },
-  { trigger: 'Preventative maintenance', actions: ['Monthly - all properties'] },
-  { trigger: 'Aesthetic check', actions: ['Monthly - all properties'] },
-  { trigger: 'Amenities form gap analysis', actions: ['Monthly - sequential'] },
-];
+// Booking-trigger + recurring rules share the {trigger, actions[]} shape.
+function SettingsRuleSection({ title, rules, listKey, mutate }: {
+  title: string;
+  rules: OpsRule[];
+  listKey: 'bookingPolicies' | 'recurringRules';
+  mutate: (fn: (c: OperationsSettingsConfig) => OperationsSettingsConfig) => void;
+}) {
+  const patch = (i: number, p: Partial<OpsRule>) =>
+    mutate((c) => ({ ...c, [listKey]: c[listKey].map((x, j) => (j === i ? { ...x, ...p } : x)) }));
+  return (
+    <Section title={title}>
+      {rules.length === 0 && <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--color-text-tertiary)' }}>No rules yet.</div>}
+      {rules.map((r, i) => (
+        <div key={r.id || i} style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <input style={{ ...SETTINGS_INPUT, fontWeight: 500, flex: 1 }} value={r.trigger} placeholder="Trigger" onChange={(e) => patch(i, { trigger: e.target.value })} />
+            <EnabledToggle on={r.enabled} onToggle={() => patch(i, { enabled: !r.enabled })} />
+            <button type="button" className="btn ghost sm" title="Remove rule" onClick={() => mutate((c) => ({ ...c, [listKey]: c[listKey].filter((_, j) => j !== i) }))}>×</button>
+          </div>
+          <textarea
+            style={{ ...SETTINGS_INPUT, minHeight: 52, fontFamily: 'inherit', resize: 'vertical' }}
+            value={r.actions.join('\n')}
+            placeholder="One action per line"
+            onChange={(e) => patch(i, { actions: e.target.value.split('\n') })}
+          />
+        </div>
+      ))}
+      <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => mutate((c) => ({ ...c, [listKey]: [...c[listKey], { id: newSettingsId(), trigger: '', actions: [], enabled: true }] }))}>+ Add rule</button>
+    </Section>
+  );
+}
 
 function SettingsPage() {
+  const [config, setConfig] = useState<OperationsSettingsConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchOperationsSettings()
+      .then((r) => { if (!cancelled) { setConfig(r.config); setLoadError(null); } })
+      .catch((e) => { if (!cancelled) { setConfig(DEFAULT_OPERATIONS_SETTINGS); setLoadError(e instanceof Error ? e.message : 'Could not load saved settings — showing defaults.'); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const mutate = (fn: (c: OperationsSettingsConfig) => OperationsSettingsConfig) => {
+    setConfig((c) => (c ? fn(c) : c));
+    setDirty(true);
+    setSaved(false);
+  };
+  const patchTemplate = (i: number, p: Partial<OperationsSettingsConfig['templates'][number]>) =>
+    mutate((c) => ({ ...c, templates: c.templates.map((x, j) => (j === i ? { ...x, ...p } : x)) }));
+
+  const save = async () => {
+    if (!config || saving) return;
+    setSaving(true);
+    try {
+      const r = await saveOperationsSettings(config);
+      setConfig(r.config); setDirty(false); setSaved(true);
+      fireToast('Operations settings saved');
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Could not save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading || !config) {
+    return (
+      <div className="ops-settings-page">
+        <div className="ops-settings-head"><h2>Settings</h2></div>
+        <LoadingState label="Loading operations settings" />
+      </div>
+    );
+  }
+
   return (
     <div className="ops-settings-page">
-      <div className="ops-settings-head">
+      <div className="ops-settings-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <h2>Settings</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {dirty ? <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Unsaved changes</span>
+            : saved ? <span style={{ fontSize: 11, color: 'var(--color-text-success, var(--color-text-tertiary))' }}>Saved ✓</span> : null}
+          <button type="button" className="btn primary sm" disabled={!dirty || saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
       </div>
+
+      {loadError && <div className="ops-my-alert" style={{ marginBottom: 10 }}>{loadError}</div>}
 
       <div className="ops-settings-policy-note">
-        Manual task creation is live. Booking-trigger automation below is policy only until the backend trigger job is wired and verified.
+        These settings are editable and saved per tenant. Booking-trigger and recurring rules can be configured + paused/resumed here; the backend job that auto-creates tasks from them is a later slice, so today they document policy and gate future automation.
       </div>
 
-      <Section title="Templates">
+      <Section title="Task templates">
         <div className="ops-settings-grid-row head">
-          <span>Template</span>
-          <span>Route</span>
-          <span>Estimate</span>
-          <span>Current state</span>
+          <span>Template</span><span>Route</span><span>Estimate</span><span>State</span>
         </div>
-        {SETTINGS_TEMPLATES.map((t) => (
-          <div
-            key={t.id}
-            className="ops-settings-grid-row"
-          >
-            <span className="ops-settings-template" data-label="Template">{t.name}</span>
-            <span className="ops-settings-route" data-label="Route">{t.route}</span>
-            <span className="mono ops-settings-estimate" data-label="Estimate">{t.estimate}</span>
-            <span className="ops-settings-state" data-label="State">{t.state}</span>
+        {config.templates.length === 0 && <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--color-text-tertiary)' }}>No templates yet.</div>}
+        {config.templates.map((t, i) => (
+          <div key={t.id || i} className="ops-settings-grid-row">
+            <input style={SETTINGS_INPUT} value={t.name} placeholder="Name" onChange={(e) => patchTemplate(i, { name: e.target.value })} />
+            <input style={SETTINGS_INPUT} value={t.route} placeholder="dept > subtype" onChange={(e) => patchTemplate(i, { route: e.target.value })} />
+            <input style={SETTINGS_INPUT} value={t.estimate} placeholder="2h" onChange={(e) => patchTemplate(i, { estimate: e.target.value })} />
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <EnabledToggle on={t.enabled} onToggle={() => patchTemplate(i, { enabled: !t.enabled })} />
+              <button type="button" className="btn ghost sm" title="Remove template" onClick={() => mutate((c) => ({ ...c, templates: c.templates.filter((_, j) => j !== i) }))}>×</button>
+            </span>
           </div>
         ))}
+        <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => mutate((c) => ({ ...c, templates: [...c.templates, { id: newSettingsId(), name: '', route: '', estimate: '', enabled: true }] }))}>+ Add template</button>
       </Section>
 
-      <Section title="Booking-trigger policy">
-        {SETTINGS_BOOKING_POLICIES.map((workflow) => (
-          <Workflow key={workflow.trigger} trigger={workflow.trigger} actions={workflow.actions} />
-        ))}
-      </Section>
-
-      <Section title="Recurring rules">
-        {SETTINGS_RECURRING_RULES.map((workflow) => (
-          <Workflow key={workflow.trigger} trigger={workflow.trigger} actions={workflow.actions} />
-        ))}
-      </Section>
+      <SettingsRuleSection title="Booking-trigger policy" rules={config.bookingPolicies} listKey="bookingPolicies" mutate={mutate} />
+      <SettingsRuleSection title="Recurring rules" rules={config.recurringRules} listKey="recurringRules" mutate={mutate} />
     </div>
   );
 }
