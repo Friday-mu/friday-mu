@@ -394,6 +394,10 @@ function parseJsonish(raw) {
 const DRAFT_LIKE_OPENING_RE = /^(hi|hello|dear|hey|good morning|good afternoon|good evening)\b[\s,!.:-]/i;
 const DRAFT_LEAD_IN_RE = /^(?:sure|of course|absolutely|here(?:'s| is)|draft|message|reply|email)\b[\s\S]{0,180}?:\s*/i;
 const DRAFT_SIGNOFF_RE = /\b(best regards|kind regards|regards|warm regards|thanks again|thank you)\b/i;
+const DRAFT_FORBID_RE = /\b(?:do\s+not|don't|dont|no)\s+(?:create|draft|write|compose|change|modify|update|rewrite|revise|edit|touch|alter)\b[\s\S]{0,100}\b(?:draft|reply|response|message|email|whatsapp)\b/i;
+const DRAFT_WITHOUT_RE = /\bwithout\s+(?:creating|drafting|writing|composing|changing|modifying|updating|rewriting|revising|editing|touching|altering)\s+(?:any\s+|a\s+|the\s+)?(?:draft|reply|response|message|email|whatsapp)\b/i;
+const REVIEW_ONLY_RE = /\b(?:review|read|inspect|check|assess)\s+only\b|\bread[-\s]?only\b/i;
+const DRAFT_REQUEST_RE = /\b(?:draft|compose|write)\s+(?:a\s+|an\s+|the\s+)?(?:reply|response|message|email|whatsapp)\b|\b(?:rewrite|revise|polish|shorten|reword|improve|edit)\b|\bmore\s+(?:formal|casual|friendly|concise)\b|\bmake\s+(?:it|this|the\s+draft)\s+(?:more\s+)?(?:formal|casual|friendly|concise|shorter|warmer)\b|\bshorter\b/i;
 
 function extractUntaggedDraftUpdate(responseText, context) {
   if (!['compose', 'revision', 'draft_review'].includes(context)) return null;
@@ -409,6 +413,26 @@ function extractUntaggedDraftUpdate(responseText, context) {
     || (lineCount >= 2 && /\byou\b|\bwe\b|\bour\b|\bFriday\b/i.test(text));
   if (!looksLikeDraft) return null;
   return capitalizeDraftOpening(text);
+}
+
+function instructionForbidsDraftUpdate(instruction) {
+  const text = stripFullThreadEnvelope(instruction);
+  if (!text) return false;
+  return DRAFT_FORBID_RE.test(text)
+    || DRAFT_WITHOUT_RE.test(text)
+    || REVIEW_ONLY_RE.test(text);
+}
+
+function instructionRequestsDraftUpdate(instruction) {
+  const text = stripFullThreadEnvelope(instruction);
+  if (!text) return false;
+  return DRAFT_REQUEST_RE.test(text);
+}
+
+function shouldAllowDraftUpdatesForTurn(context, instruction) {
+  if (instructionForbidsDraftUpdate(instruction)) return false;
+  if (context === 'draft_review') return instructionRequestsDraftUpdate(instruction);
+  return ['compose', 'revision'].includes(context);
 }
 
 function replaceDraftUpdate(responseText, draftUpdate) {
@@ -1515,14 +1539,18 @@ router.post('/', attachIdentity, async (req, res) => {
       if (!result.ok) throw new Error(result.error || 'Consult model call failed');
 
       const consultEnvelope = parseConsultEnvelope(result.text, context, teachingIdMap);
+      const draftUpdatesAllowed = shouldAllowDraftUpdatesForTurn(context, instruction);
       let responseTextForHistory = result.text;
-      let draftUpdates = consultEnvelope?.drafts || [];
-      let draftUpdate = draftUpdates[0]?.body || parseDraftUpdate(result.text);
+      let draftUpdates = draftUpdatesAllowed ? (consultEnvelope?.drafts || []) : [];
+      let draftUpdate = draftUpdatesAllowed ? (draftUpdates[0]?.body || parseDraftUpdate(result.text)) : null;
+      const suppressedDraftUpdateCount = draftUpdatesAllowed
+        ? 0
+        : ((consultEnvelope?.drafts?.length || 0) + (parseDraftUpdate(result.text) ? 1 : 0));
       let statusUpdateSafetyApplied = false;
       if (draftUpdate && draftUpdates.length === 0) {
         draftUpdates = [{ body: draftUpdate, recipientLabel: null, channel: null, targetHint: null }];
       }
-      if (!draftUpdate) {
+      if (!draftUpdate && draftUpdatesAllowed) {
         const recoveredDraft = extractUntaggedDraftUpdate(result.text, context);
         if (recoveredDraft) {
           draftUpdate = recoveredDraft;
@@ -1669,6 +1697,7 @@ router.post('/', attachIdentity, async (req, res) => {
             teachingActionCount: teachingActions.length,
             taskSuggestionCount: taskSuggestions.length,
             suppressedDuplicateTaskSuggestionCount: suppressedTaskSuggestionCount,
+            suppressedDraftUpdateCount,
           },
           privacyClass: 'high',
           redactionStatus: 'partially_redacted',
@@ -1703,6 +1732,7 @@ router.post('/', attachIdentity, async (req, res) => {
           modelTimeout,
           statusUpdateSafetyApplied,
           suppressedDuplicateTaskSuggestionCount: suppressedTaskSuggestionCount,
+          suppressedDraftUpdateCount,
           draftUpdateCount: draftUpdates.length,
           structuredEnvelope: !!consultEnvelope,
           fullThread,
@@ -1867,6 +1897,9 @@ module.exports._test = {
   normalizeConsultDrafts,
   splitCombinedRecipientDraft,
   extractUntaggedDraftUpdate,
+  instructionForbidsDraftUpdate,
+  instructionRequestsDraftUpdate,
+  shouldAllowDraftUpdatesForTurn,
   parseTeachingActions,
   parseTaskSuggestions,
   normalizeTaskText,
