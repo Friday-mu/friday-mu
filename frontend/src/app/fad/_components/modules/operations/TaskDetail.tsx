@@ -35,7 +35,16 @@ import { IconClose, IconExpand, IconPlus, IconSparkle } from '../../icons';
 import { AddCostDrawer } from './AddCostDrawer';
 import { AddSupplyDrawer } from './AddSupplyDrawer';
 import { CaptureExpenseDrawer } from './CaptureExpenseDrawer';
-import { fetchExpensesForTask, fetchReceiptsForExpense, fetchReceiptContent, receiptDisplayUrl, type ExpenseRow, type ReceiptMeta } from '../../../_data/expensesClient';
+import { fetchExpensesForTask, fetchReceiptsForExpense, fetchReceiptContent, receiptDisplayUrl, fileToBase64, type ExpenseRow, type ReceiptMeta } from '../../../_data/expensesClient';
+import {
+  fetchTaskAttachments,
+  uploadTaskAttachment,
+  fetchTaskAttachmentContent,
+  taskAttachmentDisplayUrl,
+  isImageAttachment,
+  MAX_TASK_ATTACHMENT_BYTES,
+  type TaskAttachmentMeta,
+} from '../../../_data/taskAttachmentsClient';
 import { useAITelemetry, type AISurface } from '../../ai/useAITelemetry';
 import { AIConfidenceChip } from '../../ai/AIComponents';
 import { RISK_FLAG_EXPLANATIONS, pickFromPool } from '../../../_data/aiFixtures';
@@ -228,7 +237,9 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
   const [syncError, setSyncError] = useState<string | null>(null);
   const [queuedStatus, setQueuedStatus] = useState<Task['status'] | null>(null);
   const [closeArmed, setCloseArmed] = useState(false);
-  const [evidenceQueue, setEvidenceQueue] = useState<EvidenceItem[]>([]);
+  const [attachments, setAttachments] = useState<TaskAttachmentMeta[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [attachmentsRev, setAttachmentsRev] = useState(0);
   const [requirementState, setRequirementState] = useState(() => normalizeRequirementState(task.requirementState));
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(() => minutesToSeconds(task.spentMinutes));
   const [timerStartedAt, setTimerStartedAt] = useState<number | null>(() =>
@@ -239,13 +250,21 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
 
   useEffect(() => {
     setCompletionSummary(latestExecutionSummary(task));
-    setEvidenceQueue([]);
     setRequirementState(normalizeRequirementState(task.requirementState));
     setQueuedStatus(null);
     setSyncError(null);
     setSyncState('idle');
     setCloseArmed(false);
   }, [task.id]);
+
+  // Load durable attachments for this task (reloads after each upload via attachmentsRev).
+  useEffect(() => {
+    let cancelled = false;
+    fetchTaskAttachments(task.id)
+      .then((r) => { if (!cancelled) setAttachments(r.attachments); })
+      .catch(() => { if (!cancelled) setAttachments([]); });
+    return () => { cancelled = true; };
+  }, [task.id, attachmentsRev]);
 
   useEffect(() => {
     setRequirementState(normalizeRequirementState(task.requirementState));
@@ -296,13 +315,13 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
 
   const completionSignals = useMemo<CompletionSignals>(() => ({
     attachmentCount: task.attachmentCount,
-    queuedEvidenceCount: evidenceQueue.length,
+    queuedEvidenceCount: uploadingCount, // in-flight uploads (not yet persisted)
     costCount: task.costs.length,
     supplyCount: task.supplies?.length ?? 0,
     elapsedSeconds,
     spentMinutes: spentMinutesForPatch(),
     summary: completionSummary,
-  }), [completionSummary, elapsedSeconds, evidenceQueue.length, task.attachmentCount, task.costs.length, task.spentMinutes, task.supplies?.length]);
+  }), [completionSummary, elapsedSeconds, uploadingCount, task.attachmentCount, task.costs.length, task.spentMinutes, task.supplies?.length]);
 
   const missingCompletionRequirements = useMemo(() => (
     missingRequiredRequirements(requirements, requirementState, completionSignals)
@@ -436,17 +455,49 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     });
   };
 
-  const onEvidenceSelected = (files: FileList | null) => {
-    const next = Array.from(files || []).map((file) => ({
-      id: `${task.id}-${file.name}-${file.lastModified}-${file.size}`,
-      name: file.name,
-      size: file.size,
-      type: file.type || 'file',
-    }));
-    if (next.length === 0) return;
-    setEvidenceQueue((items) => [...items, ...next]);
-    setSyncState('queued');
-    setSyncError('Evidence is queued locally; upload is not yet persisted.');
+  const onEvidenceSelected = async (files: FileList | null) => {
+    const list = Array.from(files || []);
+    if (list.length === 0) return;
+    const capMb = Math.round(MAX_TASK_ATTACHMENT_BYTES / (1024 * 1024));
+    const ok = list.filter((f) => f.size <= MAX_TASK_ATTACHMENT_BYTES);
+    const tooBig = list.length - ok.length;
+    if (ok.length === 0) {
+      setSyncState('failed');
+      setSyncError(`File over ${capMb}MB — attach a smaller photo.`);
+      return;
+    }
+    setUploadingCount((n) => n + ok.length);
+    setSyncState('saving');
+    setSyncError(null);
+    let failed = 0;
+    // One request per file — keeps each payload under the 10mb JSON body cap.
+    for (const file of ok) {
+      try {
+        const base64 = await fileToBase64(file);
+        await uploadTaskAttachment(task.id, {
+          base64,
+          file_name: file.name,
+          content_type: file.type || undefined,
+          kind: 'evidence',
+        });
+      } catch {
+        failed += 1;
+      } finally {
+        setUploadingCount((n) => Math.max(0, n - 1));
+      }
+    }
+    setAttachmentsRev((r) => r + 1); // reload the live list
+    onBumpRev();                     // refresh task (attachment_count badge)
+    if (failed > 0 || tooBig > 0) {
+      setSyncState('failed');
+      setSyncError([
+        failed > 0 ? `${failed} upload(s) failed — retry.` : null,
+        tooBig > 0 ? `${tooBig} file(s) over ${capMb}MB skipped.` : null,
+      ].filter(Boolean).join(' '));
+    } else {
+      setSyncState('saved');
+      window.setTimeout(() => setSyncState((s) => (s === 'saved' ? 'idle' : s)), 1600);
+    }
   };
 
   const openAddSupply = (item?: SupplyLoadoutItem) => {
@@ -492,7 +543,8 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           queuedStatus={queuedStatus}
           onRetryQueuedStatus={retryQueuedStatus}
           onSetStatus={setStatus}
-          evidenceQueue={evidenceQueue}
+          attachments={attachments}
+          uploadingCount={uploadingCount}
           onEvidenceSelected={onEvidenceSelected}
           requirements={requirements}
           requirementState={requirementState}
@@ -850,7 +902,8 @@ function Body({
   queuedStatus,
   onRetryQueuedStatus,
   onSetStatus,
-  evidenceQueue,
+  attachments,
+  uploadingCount,
   onEvidenceSelected,
   requirements,
   requirementState,
@@ -888,7 +941,8 @@ function Body({
   queuedStatus: Task['status'] | null;
   onRetryQueuedStatus: () => void;
   onSetStatus: (s: Task['status']) => void;
-  evidenceQueue: EvidenceItem[];
+  attachments: TaskAttachmentMeta[];
+  uploadingCount: number;
   onEvidenceSelected: (files: FileList | null) => void;
   requirements: TaskRequirement[];
   requirementState: TaskRequirementState;
@@ -950,7 +1004,7 @@ function Body({
         task={task}
         assignees={assignees}
         canManageTasks={canManageTasks}
-        evidenceQueueLength={evidenceQueue.length}
+        evidenceQueueLength={uploadingCount}
         elapsedSeconds={elapsedSeconds}
         onOpenAssigneePicker={() => setAssigneePickerOpen(true)}
         onUpdateAssignees={onUpdateAssignees}
@@ -1054,8 +1108,8 @@ function Body({
         </CollapsibleSection>
       )}
 
-      <Section title={`Evidence · ${task.attachmentCount + evidenceQueue.length}`}>
-        <EvidencePanel task={task} evidenceQueue={evidenceQueue} onEvidenceSelected={onEvidenceSelected} />
+      <Section title={`Evidence · ${Math.max(task.attachmentCount, attachments.length) + uploadingCount}`}>
+        <EvidencePanel task={task} attachments={attachments} uploadingCount={uploadingCount} onEvidenceSelected={onEvidenceSelected} />
       </Section>
 
       <Section title="Access">
@@ -1422,45 +1476,103 @@ function PropertyContextPanel({ task, canViewSensitiveContext }: { task: Task; c
   );
 }
 
+const ATTACHMENT_THUMB: React.CSSProperties = {
+  width: 44, height: 44, flex: '0 0 44px', borderRadius: 6, objectFit: 'cover',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  background: 'var(--color-background-secondary)', fontSize: 9, fontWeight: 600,
+  color: 'var(--color-text-tertiary)', overflow: 'hidden',
+};
+
+// Lazy-loads its own content (inline base64 → data URL) so the list endpoint
+// stays light. Click opens the full file in a new tab.
+function TaskAttachmentThumb({ attachment }: { attachment: TaskAttachmentMeta }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const isImg = isImageAttachment(attachment.content_type);
+  useEffect(() => {
+    if (!isImg) return undefined;
+    let cancelled = false;
+    fetchTaskAttachmentContent(attachment.id)
+      .then((c) => { if (!cancelled) setUrl(taskAttachmentDisplayUrl(c)); })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [attachment.id, isImg]);
+
+  const openFull = async () => {
+    try {
+      const c = await fetchTaskAttachmentContent(attachment.id);
+      window.open(taskAttachmentDisplayUrl(c), '_blank', 'noopener,noreferrer');
+    } catch {
+      fireToast('Could not open attachment');
+    }
+  };
+
+  return (
+    <div
+      className="ops-evidence-row"
+      role="button"
+      tabIndex={0}
+      onClick={openFull}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openFull(); }}
+      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9 }}
+    >
+      {isImg && url
+        ? <img src={url} alt={attachment.file_name || 'evidence'} style={ATTACHMENT_THUMB} />
+        : <span style={ATTACHMENT_THUMB}>{isImg ? (failed ? '⚠' : '…') : 'FILE'}</span>}
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {attachment.file_name || 'attachment'}
+        </span>
+        <small>
+          {attachment.byte_size ? formatBytes(attachment.byte_size) : ''}
+          {attachment.uploaded_by_name ? ` · ${attachment.uploaded_by_name.split(' ')[0]}` : ''}
+        </small>
+      </span>
+    </div>
+  );
+}
+
 function EvidencePanel({
   task,
-  evidenceQueue,
+  attachments,
+  uploadingCount,
   onEvidenceSelected,
 }: {
   task: Task;
-  evidenceQueue: EvidenceItem[];
+  attachments: TaskAttachmentMeta[];
+  uploadingCount: number;
   onEvidenceSelected: (files: FileList | null) => void;
 }) {
+  // Breezeway-sourced photo refs the upload table doesn't hold previews for.
+  const sourceOnly = Math.max(0, task.attachmentCount - attachments.length);
   return (
     <div className="ops-evidence-panel">
-      {task.attachmentCount > 0 && (
+      {sourceOnly > 0 && (
         <div className="ops-evidence-source-count">
-          <strong>{task.attachmentCount}</strong>
-          <span>attachment{task.attachmentCount === 1 ? '' : 's'} recorded in source history. File previews will appear here after attachment import is enabled.</span>
+          <strong>{sourceOnly}</strong>
+          <span>attachment{sourceOnly === 1 ? '' : 's'} recorded in source history (Breezeway).</span>
         </div>
       )}
       <label className="btn ghost sm ops-evidence-pick">
-        Add photo/file
+        {uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Add photo/file'}
         <input
           type="file"
           accept="image/*,.pdf"
           capture="environment"
           multiple
+          disabled={uploadingCount > 0}
           onChange={(e) => {
             onEvidenceSelected(e.currentTarget.files);
             e.currentTarget.value = '';
           }}
         />
       </label>
-      {evidenceQueue.length === 0 ? (
-        <div className="ops-evidence-empty">No local evidence queued.</div>
+      {attachments.length === 0 && uploadingCount === 0 ? (
+        <div className="ops-evidence-empty">No photos or files attached yet.</div>
       ) : (
         <div className="ops-evidence-queue">
-          {evidenceQueue.map((file) => (
-            <div key={file.id} className="ops-evidence-row">
-              <span>{file.name}</span>
-              <small>{formatBytes(file.size)} · queued locally</small>
-            </div>
+          {attachments.map((a) => (
+            <TaskAttachmentThumb key={a.id} attachment={a} />
           ))}
         </div>
       )}

@@ -33,6 +33,7 @@
 //   - bz_id             → Breezeway external id (when we sync)
 
 const express = require('express');
+const crypto = require('crypto');
 const { pool, query } = require('../database/client');
 const { attachIdentity } = require('../design/auth');
 const { sendEmail, tplTaskAssigned } = require('../tenants/email');
@@ -1280,6 +1281,134 @@ router.delete('/:taskId/supplies/:supplyId', attachIdentity, async (req, res) =>
     res.status(500).json({ error: e.message });
   } finally {
     client.release();
+  }
+});
+
+// ─── Attachments (evidence / photos) ──────────────────────────────
+// Durable per-task evidence, mirroring the expense_receipts inline-base64
+// pattern (finance/expenses). The frontend uploads ONE file per request
+// (base64 in JSON); the global express.json limit is 10mb, so files are
+// capped at 7MB (base64 ~9.3MB) to stay safely under it. Hash-dedup per task.
+const MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024; // 7 MB per file (base64 ~9.3MB < 10mb body cap)
+const VALID_ATTACHMENT_KIND = new Set(['evidence', 'before', 'after', 'document', 'other']);
+
+router.post('/:id/attachments', attachIdentity, async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'task id must be a UUID' });
+    const { rows: taskRows } = await query(
+      `SELECT id FROM tasks WHERE tenant_id = $1 AND id = $2`,
+      [req.tenantId, req.params.id],
+    );
+    if (taskRows.length === 0) return res.status(404).json({ error: 'Task not found' });
+
+    // Accept a single {base64,...} or an array under `attachments`/`files`.
+    const raw = Array.isArray(req.body?.attachments) ? req.body.attachments
+      : Array.isArray(req.body?.files) ? req.body.files
+      : (req.body?.base64 ? [req.body] : []);
+    if (raw.length === 0) return res.status(400).json({ error: 'no files provided' });
+
+    const saved = [];
+    let dupes = 0;
+    for (const f of raw) {
+      const base64 = typeof f?.base64 === 'string' ? f.base64 : null;
+      if (!base64) continue;
+      const byteSize = Math.floor(base64.length * 0.75); // approx decoded size
+      if (byteSize > MAX_ATTACHMENT_BYTES) {
+        return res.status(413).json({ error: `attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes` });
+      }
+      const sha256 = crypto.createHash('sha256').update(base64).digest('hex');
+      const kind = VALID_ATTACHMENT_KIND.has(f?.kind) ? f.kind : 'evidence';
+      const fileName = cleanText(f?.file_name, '').slice(0, 200) || null;
+      const contentType = cleanText(f?.content_type, '').slice(0, 100) || null;
+      const caption = cleanText(f?.caption, '').slice(0, 500) || null;
+      try {
+        const { rows } = await query(
+          `INSERT INTO task_attachments (
+             task_id, tenant_id, kind, storage_kind, inline_base64,
+             file_name, content_type, byte_size, sha256_hash, caption, uploaded_by
+           )
+           VALUES ($1,$2,$3,'inline_base64',$4,$5,$6,$7,$8,$9,$10)
+           RETURNING id, kind, file_name, content_type, byte_size, caption, uploaded_at`,
+          [
+            req.params.id, req.tenantId, kind, base64,
+            fileName, contentType, byteSize, sha256, caption,
+            req.identity?.userId || null,
+          ],
+        );
+        saved.push(rows[0]);
+      } catch (err) {
+        if (err.code === '23505') { dupes++; continue; } // hash dedup — same file re-uploaded
+        throw err;
+      }
+    }
+
+    if (saved.length > 0) {
+      // Keep tasks.attachment_count truthful — never below the real upload count.
+      await query(
+        `UPDATE tasks
+            SET attachment_count = GREATEST(
+                  COALESCE(attachment_count, 0),
+                  (SELECT COUNT(*)::int FROM task_attachments WHERE task_id = $2)
+                ),
+                updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [req.tenantId, req.params.id],
+      );
+      void appendActivity(req.params.id, req.tenantId, {
+        kind: 'attachment_added',
+        actorId: req.identity?.userId || 'system',
+        detail: saved.map((s) => s.file_name).filter(Boolean).join(', ') || `${saved.length} file(s)`,
+      });
+    }
+    res.status(201).json({ attachments: saved, duplicates: dupes });
+  } catch (e) {
+    console.error('[tasks/attachments] upload error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/:id/attachments', attachIdentity, async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'task id must be a UUID' });
+    const { rows } = await query(
+      `SELECT a.id, a.task_id, a.kind, a.file_name, a.content_type, a.byte_size,
+              a.caption, a.uploaded_by, a.uploaded_at, u.display_name AS uploaded_by_name
+         FROM task_attachments a
+         LEFT JOIN users u ON u.id = a.uploaded_by
+        WHERE a.tenant_id = $1 AND a.task_id = $2
+        ORDER BY a.uploaded_at ASC`,
+      [req.tenantId, req.params.id],
+    );
+    res.json({ attachments: rows });
+  } catch (e) {
+    console.error('[tasks/attachments] list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/attachments/:attachmentId/content', attachIdentity, async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.attachmentId)) return res.status(400).json({ error: 'attachmentId must be a UUID' });
+    const { rows } = await query(
+      `SELECT a.id, a.storage_kind, a.inline_base64, a.file_name, a.content_type, a.byte_size
+         FROM task_attachments a
+         JOIN tasks t ON t.id = a.task_id
+        WHERE t.tenant_id = $1 AND a.id = $2`,
+      [req.tenantId, req.params.attachmentId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'attachment not found' });
+    const a = rows[0];
+    // inline_base64 only for now (do_spaces signed-URL path reserved, per migration 113).
+    res.json({
+      kind: 'inline_base64',
+      base64: a.inline_base64,
+      file_name: a.file_name,
+      content_type: a.content_type,
+      byte_size: a.byte_size,
+    });
+  } catch (e) {
+    console.error('[tasks/attachments] content error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
