@@ -39,10 +39,10 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `c55e94c0` | not directly user-facing | deployed control plane, not finished platform |
-| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed | deployed at `c55e94c0` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed | deployed at `c55e94c0` | needs Franny real schedule/roster proof | Plan 1 browser/workflow priority |
-| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `c55e94c0` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `75ef9bc8` | not directly user-facing | deployed control plane, not finished platform |
+| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed; detail load fix verified | deployed at `75ef9bc8` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed | deployed at `75ef9bc8` | needs Franny real schedule/roster proof | Plan 1 browser/workflow priority |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `75ef9bc8` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
@@ -101,7 +101,8 @@ Current reconciliation as of 2026-05-29:
 - PR #9 was merged on 2026-05-27 as `da67c7be`.
 - Later PR #13 was merged and deployed on 2026-05-28 as `7caf6576f0030a6935b9f13342c52cbce10e6d6f`.
 - PR #15 was merged and deployed on 2026-05-29 as `c55e94c08691b977ebf8995f3c86f22742e4ea3a`.
-- Live frontend and backend both report `c55e94c0`.
+- PR #16 was merged and deployed on 2026-05-29 as `75ef9bc8479074619bfa76f9d4f25a3013c5fbce`.
+- Live frontend and backend both report `75ef9bc8`.
 - Migrations through `100_feedback_multi_screenshots.sql` have been applied in production; startup logs showed `095` through `100` available/applied and migration 100 applied during the feedback deploy.
 - Analyzer remains out of the web request path by default; production logs show the web-process scheduler disabled unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
 - Live authenticated smoke passed for `/api/ask-friday/core/surfaces`, seeded eval cases, KB-candidate list, and unauthenticated staff-route denial.
@@ -122,10 +123,17 @@ Current reconciliation as of 2026-05-29:
   - Inbox Friday Consult returned a structured JSON envelope through `gemini-3.5-flash` with `draftUpdateCount=1`, `structuredEnvelope=true`, `degraded=false`, and `fallbackUsed=false`.
   - Ops Friday Consult returned through `gemini-3.5-flash`, suggested only reversible `draft_schedule`, and referenced occupancy, lunch/breaks, and named staff assignees for the synthetic occupied-property schedule scenario.
   - PM2 stayed online; startup logs showed migrations complete with 107 already applied. Recent error log entries were pre-existing classifier/extraction warnings from before the `c55e94c0` deploy.
+- 2026-05-29 follow-up release `75ef9bc8` restored Inbox conversation detail loading after `backend/src/inbox/whatsapp_window.js` queried a non-existent `messages.communication_channel` column on production. The helper now reads message `module_type` and falls back through `conversations.communication_channel` / `conversations.channel`. Live browser QA loaded the top Inbox detail with no error, visible Ask input, visible Send button, `whatsapp_window_open=true`, and both `email`/`whatsapp` available channels.
+- 2026-05-29 Plan 1 browser/live QA on production after `75ef9bc8`:
+  - Inbox loaded without the previous conversation-detail error. A real Julia Maichle message-review Consult turn returned through `gemini-3.5-flash`, used structured envelope mode, grounded the answer to property `GBH-C3`, and correctly said no further guest reply was needed after the thread had already been closed.
+  - Ops Schedule loaded live with 4 visible open tasks and 2 initially unassigned visible tasks. The local reversible `Draft schedule` action drafted 4 moves and assigned every visible move, including occupancy reasoning, calendar-pricing overlay notes, and preferred 12:00-13:00 lunch protection.
+  - Ops Roster loaded live with 187 scheduled weekly tasks and 87 unassigned tasks. The reversible `Draft roster` action drafted 11 staff coverage cells using reservation pressure. This is staff-coverage planning, not per-task assignment; if Friday expects roster generation itself to assign individual tasks, that needs a separate roster/task-allocation contract.
+  - Ops Consult model QA exposed a blocker: `/api/operations/consult` returned HTTP 200 but visible text was cut mid-task id and had no reversible action suggestion. Current branch `codex/ask-friday-consult-finish-reason-20260529` patches the shared draft client so non-normal provider finish reasons with partial text are treated as incomplete and trigger fallback/failure instead of being shown as successful advice. This needs deploy plus live re-smoke before closing Plan 1 Ops Consult.
 
 Remaining Plan 1 tasks:
 
-1. Run browser/live workflow QA with real staff-shaped scenarios:
+1. Merge/deploy the Consult finish-reason guard, then re-smoke Ops Consult on the live schedule prompt that previously returned partial text.
+2. Run browser/live workflow QA with real staff-shaped scenarios:
    - Inbox guest complaint draft with latest guest turn;
    - Inbox property/reservation-grounded reply;
    - Inbox teaching/action feedback still included;
@@ -133,8 +141,8 @@ Remaining Plan 1 tasks:
    - Ops weekly schedule with checkout and arrival pressure;
    - Ops roster with lunch/coverage/fairness;
    - Ops urgent guest issue during occupancy.
-2. Patch only blocking defects from that browser/workflow QA.
-3. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
+3. Patch only blocking defects from that browser/workflow QA.
+4. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
 
 Plan 3 source-mapping progress:
 
@@ -240,7 +248,7 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 Continue with Plan 1 browser/workflow usefulness verification.
 
-PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `c55e94c0`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, and the Inbox/Consult structured-draft bugfix release.
+PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `75ef9bc8`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, the Inbox/Consult structured-draft bugfix release, and the WhatsApp-window Inbox detail fix.
 
 New execution-planning artifacts on this branch:
 

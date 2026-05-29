@@ -9,7 +9,7 @@ jest.mock('../tenants/ai_usage', () => ({ recordUsage: jest.fn(() => Promise.res
 
 const axios = require('axios');
 const { recordUsage } = require('../tenants/ai_usage');
-const { extractStructuredOutput, EXTRACT_MODEL } = require('./kimi_draft');
+const { generateDraftReply, extractStructuredOutput, EXTRACT_MODEL } = require('./kimi_draft');
 
 describe('kimi draft structured extraction', () => {
   beforeEach(() => {
@@ -44,6 +44,41 @@ describe('kimi draft structured extraction', () => {
       promptTokens: 12,
       completionTokens: 4,
       success: true,
+    }));
+  });
+});
+
+describe('draft generation finish reasons', () => {
+  beforeEach(() => {
+    axios.post.mockReset();
+    recordUsage.mockClear();
+  });
+
+  test('rejects non-empty Kimi output when finish_reason indicates truncation', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: {
+        choices: [{ message: { content: 'Partial answer cut mid-sentence' }, finish_reason: 'length' }],
+        usage: { prompt_tokens: 120, completion_tokens: 40 },
+      },
+    });
+
+    const result = await generateDraftReply({
+      system: 'Draft safely.',
+      user: 'Review visible schedule.',
+      meter: { feature: 'ops_consult' },
+      maxRetries: 0,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'incomplete response (finish_reason=length)',
+      finishReason: 'length',
+      inputTokens: 120,
+      outputTokens: 40,
+    });
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({
+      success: false,
+      errorCode: 'incomplete response (finish_reason=length)',
     }));
   });
 });
