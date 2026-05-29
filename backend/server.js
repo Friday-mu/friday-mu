@@ -919,6 +919,8 @@ app.use('/api/auth/token', apiClientsAuth.router);
 // rather than by the user-session identity.
 const publicListingsRoutes = require('./src/public/listings');
 app.use('/api/public/listings', publicListingsRoutes);
+const publicExperiencesRoutes = require('./src/public/experiences');
+app.use('/api/public/experiences', publicExperiencesRoutes);
 const publicAvailabilityRoutes = require('./src/public/availability');
 app.use('/api/public/availability', publicAvailabilityRoutes.router);
 const publicReturningGuestRoutes = require('./src/public/returning_guest');
