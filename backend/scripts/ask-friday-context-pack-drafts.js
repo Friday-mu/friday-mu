@@ -7,6 +7,7 @@ const { query, pool } = require('../src/database/client');
 const { normalizeContextPack } = require('../src/ask_friday/contracts');
 const { validateContextPackAgainstSurface } = require('../src/ask_friday/policy');
 const {
+  fadRuntimeDraftContextPacks,
   plan2StaffDraftContextPacks,
   websitePublicDraftContextPacks,
 } = require('../src/ask_friday/context_pack_templates');
@@ -92,9 +93,11 @@ async function main() {
   const tenantId = argValue('--tenant', process.env.ASK_FRIDAY_TENANT_ID || DEFAULT_TENANT_ID);
   const version = Number.parseInt(argValue('--version', '1'), 10) || 1;
   const apply = hasFlag('--apply');
+  const includeFadRuntime = hasFlag('--include-fad-runtime');
   const includePlan2Shells = hasFlag('--include-plan2-shells');
   const drafts = [
     ...websitePublicDraftContextPacks({ version }),
+    ...(includeFadRuntime ? fadRuntimeDraftContextPacks({ version }) : []),
     ...(includePlan2Shells ? plan2StaffDraftContextPacks({ version }) : []),
   ];
 
@@ -104,7 +107,7 @@ async function main() {
       tenantId,
       count: drafts.length,
       drafts,
-      note: 'Run with --apply to upsert draft rows. Drafts are not public-readable until explicitly published through the gated publisher. Add --include-plan2-shells to include staff shell drafts.',
+      note: 'Run with --apply to upsert draft rows. Drafts are not public-readable until explicitly published through the gated publisher. Add --include-fad-runtime for active FAD runtime drafts and --include-plan2-shells to include staff shell drafts.',
     }, null, 2));
     return;
   }

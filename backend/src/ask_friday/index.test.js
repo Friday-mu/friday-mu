@@ -407,6 +407,26 @@ describe('Ask Friday Core router', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  test('previews active FAD runtime context-pack templates when requested', async () => {
+    const res = await request(app())
+      .get('/api/ask-friday/core/context-pack-templates?includeWebsite=false&includeFadRuntime=true&version=4')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .expect(200);
+
+    expect(res.body).toMatchObject({
+      mode: 'preview',
+      version: 4,
+      count: 3,
+    });
+    expect(res.body.drafts.map((draft) => draft.surfaceId)).toEqual([
+      'fad_global_ask_friday',
+      'fad_consult',
+      'fad_ops_assistant',
+    ]);
+    expect(res.body.drafts.every((draft) => draft.status === 'draft')).toBe(true);
+    expect(query).not.toHaveBeenCalled();
+  });
+
   test('upserts selected generated staff shell context-pack drafts', async () => {
     query
       .mockResolvedValueOnce({
@@ -487,6 +507,106 @@ describe('Ask Friday Core router', () => {
       'reservations-calendar',
       'channel_write_policy',
     ]));
+  });
+
+  test('upserts selected active FAD runtime context-pack drafts', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          surface_id: 'fad_ops_assistant',
+          source_system: 'fad',
+          access_class: 'staff',
+          status: 'active',
+          allowed_knowledge_scopes: [
+            'ops_tasks',
+            'reservations',
+            'properties',
+            'staff_runbooks',
+            'approved_public_kb',
+            'ops-consult',
+            'schedule_policy',
+            'task_taxonomy',
+            'property_ops_metadata',
+            'owner_approval_rules',
+            'vendor_policy',
+            'supplies_policy',
+          ],
+          allowed_tools: [
+            'load_task',
+            'load_schedule',
+            'load_reservation',
+            'load_property',
+            'create_task_candidate',
+            'load_roster',
+            'load_reported_issue',
+            'load_travel_time_estimate',
+            'load_property_ops_metadata',
+            'load_reservation_context',
+            'load_calendar_context',
+            'load_property_context',
+          ],
+          allowed_actions: [
+            'create_task',
+            'create_task_candidate',
+            'create_kb_candidate',
+            'request_approval',
+            'draft_schedule',
+            'apply_schedule_draft',
+            'clear_schedule_times',
+            'clear_times_and_assignees',
+            'undo_last_schedule_step',
+            'request_owner_approval',
+          ],
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          pack_id: 'fad_ops_assistant_v2_draft',
+          surface_id: 'fad_ops_assistant',
+          version: 2,
+          status: 'draft',
+          knowledge_scopes: ['ops_tasks', 'reservations', 'properties'],
+          behavior_rules: [{ id: 'occupancy_constraint' }],
+          tool_policy: { allowedTools: ['load_task', 'load_schedule'] },
+          memory_policy: { staffSessions: 'durable_team_visible' },
+          source_snapshot_refs: [{ type: 'repo_doc' }],
+          pack_payload: { contextPackClass: 'fad_ops_assistant_runtime_v1_draft' },
+          approved_by: null,
+          approved_at: null,
+          published_at: null,
+          updated_at: new Date('2026-05-29T10:30:00.000Z'),
+        }],
+      });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/context-pack-templates/drafts')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        includeWebsite: false,
+        includeFadRuntime: true,
+        surfaceIds: ['fad_ops_assistant'],
+        version: 2,
+      })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      mode: 'drafts_upserted',
+      count: 1,
+      contextPacks: [{
+        packId: 'fad_ops_assistant_v2_draft',
+        surfaceId: 'fad_ops_assistant',
+        status: 'draft',
+      }],
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0][1]).toEqual([TENANT_ID, 'fad_ops_assistant']);
+    expect(query.mock.calls[1][1][1]).toBe('fad_ops_assistant_v2_draft');
+    expect(query.mock.calls[1][1][4]).toEqual(expect.arrayContaining([
+      'ops_tasks',
+      'schedule_policy',
+      'property_ops_metadata',
+    ]));
+    expect(query.mock.calls[1][1][6]).toContain('draft_schedule');
   });
 
   test('refuses generated drafts that would overwrite a published pack version', async () => {

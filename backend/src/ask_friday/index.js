@@ -31,6 +31,7 @@ const {
 const { publishContextPack } = require('./publisher');
 const contextTools = require('./context_tools');
 const {
+  fadRuntimeDraftContextPacks,
   plan2StaffDraftContextPacks,
   websitePublicDraftContextPacks,
 } = require('./context_pack_templates');
@@ -41,6 +42,7 @@ router.use('/context-tools', contextTools.router);
 
 const TEMPLATE_CONTEXT_PACK_SURFACE_IDS = new Set([
   ...websitePublicDraftContextPacks(),
+  ...fadRuntimeDraftContextPacks(),
   ...plan2StaffDraftContextPacks(),
 ].map((pack) => pack.surfaceId));
 
@@ -411,10 +413,12 @@ function readinessSummary(items) {
 function generatedContextPackDrafts(options = {}) {
   const version = Number.parseInt(options.version, 10) || 1;
   const includeWebsite = options.includeWebsite !== false;
+  const includeFadRuntime = options.includeFadRuntime === true;
   const includePlan2Shells = options.includePlan2Shells === true;
   const surfaceIds = new Set(parseCsvArray(options.surfaceIds));
   const drafts = [
     ...(includeWebsite ? websitePublicDraftContextPacks({ version }) : []),
+    ...(includeFadRuntime ? fadRuntimeDraftContextPacks({ version }) : []),
     ...(includePlan2Shells ? plan2StaffDraftContextPacks({ version }) : []),
   ];
   return surfaceIds.size === 0
@@ -426,6 +430,13 @@ function contextPackTemplateOptions(raw = {}) {
   return {
     version: Number.parseInt(raw.version, 10) || 1,
     includeWebsite: parseBoolean(raw.includeWebsite ?? raw.include_website, true),
+    includeFadRuntime: parseBoolean(
+      raw.includeFadRuntime
+        ?? raw.include_fad_runtime
+        ?? raw.includeRuntimeStaff
+        ?? raw.include_runtime_staff,
+      false,
+    ),
     includePlan2Shells: parseBoolean(
       raw.includePlan2Shells
         ?? raw.include_plan2_shells
