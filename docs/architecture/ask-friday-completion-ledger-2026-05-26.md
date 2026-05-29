@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current continuation branch: `codex/ask-friday-ops-pricing-signal-20260529`; live production is `3daa4920b41e10dd231e1e68f5299959f7db46b2`.
+Current continuation branch: `codex/ask-friday-ops-pricing-deploy-ledger-20260529`; live production is `fe3d5fab21ccea988f08e2aecfd28fac006b28c5`.
 
 ## Purpose
 
@@ -39,9 +39,9 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed code-bearing SHA `3daa4920`; docs-only ledger commits may follow without deploy | not directly user-facing | deployed control plane, not finished platform |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed code-bearing SHA `fe3d5fab`; docs-only ledger commits may follow without deploy | not directly user-facing | deployed control plane, not finished platform |
 | FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed; detail load fix verified; PR #20 Consult draft/timer tests green; PR #27 review-only tests/build green; PR #30 handoff/WhatsApp/draft recovery tests green | deployed at `3daa4920` | real staff-thread browser smoke passed for Julia closed-thread review; review-only and bugfix code are now deployed but still need staff/browser usefulness proof | Plan 1 code deployed; continue broader staff-shaped workflow QA |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live; planner guardrails live | focused tests green; bounded live Ops prompt smoke passed; PR #21 Ops guardrail tests/build green; PR #25 deterministic fallback tests/build green; pricing-cache proof tests green on pending branch | deployed at `3daa4920`; pricing-signal hardening pending deploy | daily schedule draft and broad schedule-review Consult smoke passed; 2026-05-29 larger weekly live smoke returned 200 with 60 tasks, 6 staff, 31 reservations, `finishReason=STOP`; later live QA found missing explicit availability/pricing check when cache values were empty | Plan 1 materially improved; pricing-signal hardening pending merge/deploy; roster task-allocation contract still open |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live; planner guardrails live | focused tests green; bounded live Ops prompt smoke passed; PR #21 Ops guardrail tests/build green; PR #25 deterministic fallback tests/build green; PR #33 pricing-cache proof tests/build green; live pricing-caveat smoke passed | deployed at `fe3d5fab` | daily schedule draft and broad schedule-review Consult smoke passed; 2026-05-29 live weekly smoke returned 200 with 60 tasks, 22 staff, 31 reservations, `finishReason=STOP`, and explicit availability/pricing cache check | Plan 1 materially improved; roster task-allocation contract and staff-use proof still open |
 | FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `5d44d16d` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
 | Website guest hero Ask Friday | scoped | public Website context pack v1 published | existing Website harness | FAD/Core published pack; Website wiring in separate repo/session | FAD public context-pack smoke passed | DB-published pack v1; FAD code deploy at `3daa4920` | awaiting Website re-smoke/live usefulness | `website_guest_hero_v1` published; `search_journal` excluded |
 | Website Ask Friday FAB | scoped | public Website context pack v1 published | existing Website harness | FAD/Core published pack; Website wiring in separate repo/session | FAD public context-pack + learning-event smoke passed | DB-published pack v1; FAD code deploy at `3daa4920` | awaiting Website re-smoke/live usefulness | `website_ask_friday_fab_v1` published; `search_journal` retained |
@@ -154,6 +154,7 @@ Current reconciliation as of 2026-05-29:
 - 2026-05-29 PR #31 merged as `3daa4920`; it is docs/backlog only but is the current live repository/deploy SHA. It adds the preferred FAD assistant shell direction: one shared right-side Ask Friday panel with page awareness and module action bridges, while specialist Ops/Inbox agents still own domain prompts, KB, actions, and evals behind Core routing.
 - 2026-05-29 live Plan 1 smoke on `3daa4920` passed Inbox review-only Consult: HTTP 200, structured envelope, no `draft_update`, `draftUpdateCount=0`, and the draft row stayed unchanged.
 - 2026-05-29 live Plan 1 smoke on `3daa4920` passed Ops schedule review for unassigned work, occupancy, lunch, staffing, and reversible `draft_schedule`, but failed the availability/pricing expectation: reservations carried `calendar_pricing` objects with empty/null values and the model did not explicitly say prices/availability were unproved. Pending branch `codex/ask-friday-ops-pricing-signal-20260529` treats empty `calendar_pricing` objects as missing proof, exposes missing counts in context, forces the response contract to include an availability/pricing check, and updates the deterministic fallback wording.
+- 2026-05-29 PR #33 merged and deployed as `fe3d5fab`. Frontend/backend live versions align. Post-deploy Ops smoke returned HTTP 200 through `gemini-3.5-flash` with 60 scheduled tasks, 15 unscheduled tasks, 31 reservation overlays, 22 staff, `finishReason=STOP`, reversible `draft_schedule`, and explicit availability/pricing/unknown-cache language.
 
 Remaining Plan 1 tasks:
 
@@ -164,9 +165,9 @@ Remaining Plan 1 tasks:
    - Ops weekly schedule with checkout and arrival pressure;
    - Ops roster with lunch/coverage/fairness;
    - Ops urgent guest issue during occupancy.
-2. Merge/deploy the pending Ops pricing-signal hardening, then re-smoke Ops schedule review and confirm the response explicitly says whether availability/pricing is proved or unknown.
+2. Continue Ops roster/schedule browser QA with staff-shaped prompts and record whether Franny can use it for real daily/weekly planning.
 3. Decide whether Ops roster generation must allocate individual tasks or remain staff-coverage planning; current live behavior drafts coverage cells and schedule planning assigns visible tasks.
-4. Pair with Franny/Mary on real use after the `3daa4920` deploy: the code now blocks known planner failures, but staff-use proof is still the team-usefulness gate.
+4. Pair with Franny/Mary on real use after the `fe3d5fab` deploy: the code now blocks known planner failures, but staff-use proof is still the team-usefulness gate.
 5. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
 
 Plan 3 source-mapping progress:
@@ -274,7 +275,7 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 ## Immediate Next Step
 
-Continue Plan 1 browser/workflow usefulness verification on live `3daa4920`, then return to the broader Ask Friday agent/KB buildout.
+Continue Plan 1 browser/workflow usefulness verification on live `fe3d5fab`, then return to the broader Ask Friday agent/KB buildout.
 
 PR #9 is no longer pending. It was merged as `da67c7be`, and production code now runs `3daa4920`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, the Inbox/Consult structured-draft bugfix release, the WhatsApp-window Inbox detail fixes, Consult partial-output rejection, bounded Ops Consult compact fallback, the context-pack draft-script env fix, reviewed Website context-pack source tightening, the deterministic Ops Consult fallback, field-staff PWA work, PR #27 review-only Consult suppression, PR #30 Inbox/Consult/Feedback hardening, and PR #31 right-panel direction docs. Production DB already has the two reviewed Website public context packs published.
 
