@@ -20,7 +20,7 @@ It exists to prevent the earlier failure mode: treating scoped/planned Ask Frida
 | Properties | shell | yes | yes | active Core shell | public/private field policy still needs approval |
 | Website guest hero/FAB | public context packs, no FAD KB folder | yes | yes | FAD packs, Website wiring separate | public packs published; richer packs blocked by property-field approval |
 | Owners | shell | FAD owners planned shell | yes | Website public active, FAD owners planned | owner-private rules not locked |
-| Feedback | no dedicated KB folder | no | yes | public action policy/scope | evidence retention/redaction not locked |
+| Feedback | retention/redaction policy proposed | no | yes | public action policy/scope | implementation/enforcement not wired |
 | Guest Portal | no | no | no dedicated coverage | registry planned | not built |
 | Finance | no | no | minimal privacy seed | registry planned | not built |
 | Legal/Admin | no | no | no | registry planned | not built |
@@ -76,14 +76,14 @@ Current safe slice:
 
 Needed before learning from screenshots/raw diagnostics:
 
-- Evidence retention/redaction ADR.
+- Ishant approval of `docs/architecture/ask-friday-feedback-retention-redaction-policy-2026-05-29.md`.
 - Access policy for raw screenshots, console logs, DOM metadata, route/device metadata, and user/session identifiers.
 - Candidate-lane taxonomy: bug pattern, UX confusion, missing context, policy gap, feature request.
 - Eval cases for restricted evidence rejection and redacted summary quality.
 
 Current safe slice:
 
-- Write retention/redaction policy first. Do not mine raw feedback evidence into KB until this is approved.
+- Wire evidence-class expiry and redaction enforcement only after the proposed policy is reviewed. Do not mine raw feedback evidence into KB until this is approved.
 
 ### Guest Portal
 
@@ -186,7 +186,7 @@ Current safe slice:
 ## Execution Order
 
 1. Keep Plan 1 staff-use proof first: Inbox and Ops must be team-useful.
-2. Finish Feedback retention/redaction before evidence mining.
+2. Review and then implement Feedback retention/redaction before evidence mining.
 3. Finish Properties field classification before richer public Website/MCP context packs.
 4. Tighten Reservations/Calendar contracts before write-through actions.
 5. Keep Finance, Legal/Admin, HR, Analytics, Guest Portal, Public MCP, and Internal Agent Bridge as scoped/planned until their source matrices and privacy rules exist.
