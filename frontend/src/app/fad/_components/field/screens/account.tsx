@@ -12,6 +12,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from '../icons';
 import { AppHeader, TabBar, BackBtn, Badge, MLabel, useFieldNav } from '../kit';
+import { usePermissions } from '../../usePermissions';
 import { useLiveNotifications } from '../../../_data/notificationsClient';
 import type { Notification } from '../../../_data/notifications';
 import { usePushNotifications } from '../../../../../components/usePushNotifications';
@@ -203,6 +204,12 @@ export function ScreenAccount() {
   const toggleLang = () => { void setLang(lang === 'fr' ? 'en' : 'fr'); };
   const langValue = lang === 'fr' ? 'Français' : 'English';
 
+  // The field PWA has no "View as" switcher (real field staff must never see one),
+  // so a director who View-as'd into Field had no way back. This exit row is gated
+  // on the *real* JWT role being director — invisible to actual field staff.
+  const { realRole, setRole: switchRole } = usePermissions();
+  const exitFieldView = () => { switchRole('director'); window.location.replace('/fad'); };
+
   const signOut = () => {
     // @demo:auth — fake sign-out: just clears the local token + bounces to login.
     // Real auth should revoke server-side. Tag: PROD-FIELD-ACCT-2.
@@ -223,6 +230,15 @@ export function ScreenAccount() {
             <div className="row gap6 mt8"><Badge tone="indigo">North</Badge><Badge tone="indigo">West</Badge></div>
           </div>
         </div>
+
+        {realRole === 'director' && (
+          <>
+            <MLabel rule={false}>Director</MLabel>
+            <div className="setgroup">
+              <SetRow ic="shield" label="Back to Director view" value="exit view-as" chev last onClick={exitFieldView} />
+            </div>
+          </>
+        )}
 
         {/* @demo:ui — availability / lunch / zones are display-only (no scheduler yet).
             Tag: PROD-FIELD-ACCT-4. */}
