@@ -2,9 +2,9 @@
 
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
-> Last reviewed: **2026-05-29** (Ask Friday Core deploy-ledger sync after PR #33).
-> Live on prod: frontend `fe3d5fab` · backend `fe3d5fab`.
-> Tree tip on `fad-rebuild`: `fe3d5fab` (live).
+> Last reviewed: **2026-05-29** (Ask Friday Core deploy-ledger sync after PR #35).
+> Live on prod: frontend `f92d4df` · backend `f92d4df`.
+> Tree tip on `fad-rebuild`: `f92d4df` (live).
 > Overnight run details: `docs/handover/2026-05-25-morning-handover.md`.
 
 ## How to use this doc

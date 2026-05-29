@@ -38,11 +38,11 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/fad-deploy-fe3d5fab`
-- Branch: `codex/ask-friday-ops-pricing-deploy-ledger-20260529`
+- Worktree: `/Users/judith/.codex/worktrees/fad-deploy-f92d4df`
+- Branch: `codex/ask-friday-inbox-consult-deploy-ledger-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after Ops pricing deploy: `fe3d5fab21ccea988f08e2aecfd28fac006b28c5`
-- Current deployed code-bearing SHA: `fe3d5fab21ccea988f08e2aecfd28fac006b28c5`
+- Base/canonical SHA after Inbox malformed-envelope deploy: `f92d4dfadadf9410ef6b508ea323269145d01992`
+- Current deployed code-bearing SHA: `f92d4dfadadf9410ef6b508ea323269145d01992`
 - Note: `origin/fad-rebuild` may receive docs-only ledger commits after this SHA without requiring a production deploy.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
@@ -64,7 +64,8 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #31: merged on 2026-05-29 as `3daa4920`; this recorded the unified FAD Ask Friday right-panel direction and added it to the FAD backlog.
 - PR #32: docs-only ledger sync merged on 2026-05-29 as `00895279`; no deploy needed.
 - PR #33: merged and deployed on 2026-05-29 as `fe3d5fab`; this hardens Ops Consult availability/pricing checks after live QA showed the model skipped this check when `calendar_pricing` objects existed but contained no usable price/availability values.
-- Deployment status: live frontend and backend both report `fe3d5fab`. This deployment includes the field-staff PWA delta, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, PR #31 docs, and PR #33 Ops pricing-signal hardening. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #35: merged and deployed on 2026-05-29 as `f92d4df`; this fixes Inbox Consult JSON-envelope parsing when a provider returns a valid envelope plus a stray brace or malformed tail, preventing raw `response_text` JSON from leaking into the chat UI.
+- Deployment status: live frontend and backend both report `f92d4df`. This deployment includes the field-staff PWA delta, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, PR #31 docs, PR #33 Ops pricing-signal hardening, and PR #35 Inbox malformed-envelope parsing. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
