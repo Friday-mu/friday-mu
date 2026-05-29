@@ -6,10 +6,12 @@ const {
   parseDraftUpdate,
   parseConsultEnvelope,
   normalizeConsultDrafts,
+  splitCombinedRecipientDraft,
   extractUntaggedDraftUpdate,
   parseTeachingActions,
   filterDuplicateTaskSuggestions,
   formatExistingWorkForPrompt,
+  extractPriorTaskSuggestionsFromHistory,
   selectConsultSurface,
   buildConsultUserMessage,
   buildCompactConsultUserMessage,
@@ -96,6 +98,32 @@ describe('FAD-native Consult helpers', () => {
     ]);
   });
 
+  test('splits one combined multi-recipient draft into separate draft cards', () => {
+    const drafts = normalizeConsultDrafts({
+      drafts: [{
+        channel: 'email',
+        body: 'To Maria:\nhello Maria,\n\nWe will send the file shortly.\n\nTo Volodymyr:\nhello Volodymyr,\n\nWe waived the fee this time.',
+      }],
+    });
+
+    expect(drafts).toHaveLength(2);
+    expect(drafts[0]).toMatchObject({
+      recipientLabel: 'Maria',
+      channel: 'email',
+      body: expect.stringContaining('Hello Maria,'),
+    });
+    expect(drafts[1]).toMatchObject({
+      recipientLabel: 'Volodymyr',
+      channel: 'email',
+      body: expect.stringContaining('Hello Volodymyr,'),
+    });
+    expect(splitCombinedRecipientDraft({
+      recipientLabel: 'Guest',
+      body: 'To Maria:\nhello Maria.\n\nTo Volodymyr:\nhello Volodymyr.',
+    }).map((draft) => draft.recipientLabel)).toEqual(['Maria', 'Volodymyr']);
+    expect(splitCombinedRecipientDraft({ body: 'Hello guest', recipientLabel: null })).toHaveLength(1);
+  });
+
   test('filters duplicate task suggestions against existing thread work', () => {
     const suggestions = [
       {
@@ -118,6 +146,32 @@ describe('FAD-native Consult helpers', () => {
     const filtered = filterDuplicateTaskSuggestions(suggestions, existingWork);
     expect(filtered).toHaveLength(1);
     expect(filtered[0].title).toContain('Restock coffee');
+  });
+
+  test('extracts prior Consult task suggestions from history for duplicate suppression', () => {
+    const prior = extractPriorTaskSuggestionsFromHistory([
+      {
+        role: 'assistant',
+        content: JSON.stringify({
+          response_text: 'Review below.',
+          task_suggestions: [
+            {
+              title: 'Assess the water leak at BW-C4',
+              description: 'Guest reports water leak and needs follow-up.',
+              department: 'maintenance',
+              priority: 'urgent',
+            },
+          ],
+        }),
+      },
+    ]);
+    expect(prior).toHaveLength(1);
+    expect(prior[0]).toMatchObject({ kind: 'prior_task_suggestion', title: 'Assess the water leak at BW-C4' });
+
+    const filtered = filterDuplicateTaskSuggestions([
+      { title: 'Assess water leak at BW-C4', description: 'Follow up with the guest.' },
+    ], prior);
+    expect(filtered).toHaveLength(0);
   });
 
   test('parses teaching JSON and resolves T-number references to UUIDs', () => {

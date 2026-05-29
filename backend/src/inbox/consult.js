@@ -441,6 +441,28 @@ function normalizeConsultDraft(raw) {
   };
 }
 
+function splitCombinedRecipientDraft(draft) {
+  if (!draft?.body) return [];
+  const body = String(draft.body);
+  const matches = [...body.matchAll(/^\s*To\s+([^:\n]{2,80}):\s*/gim)];
+  if (matches.length < 2) return [draft];
+
+  return matches
+    .map((match, index) => {
+      const start = (match.index || 0) + match[0].length;
+      const end = index + 1 < matches.length ? matches[index + 1].index : body.length;
+      const part = body.slice(start, end).trim();
+      if (!part) return null;
+      const recipientLabel = String(match[1] || '').trim().slice(0, 120) || draft.recipientLabel;
+      return {
+        ...draft,
+        body: capitalizeDraftOpening(part),
+        recipientLabel,
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeConsultDrafts(parsed) {
   if (!parsed || typeof parsed !== 'object') return [];
   const rawDrafts = [];
@@ -451,6 +473,7 @@ function normalizeConsultDrafts(parsed) {
   return rawDrafts
     .map(normalizeConsultDraft)
     .filter(Boolean)
+    .flatMap(splitCombinedRecipientDraft)
     .slice(0, 5);
 }
 
@@ -603,7 +626,11 @@ function filterDuplicateTaskSuggestions(suggestions, existingWork) {
 function formatExistingWorkForPrompt(existingWork) {
   if (!Array.isArray(existingWork) || existingWork.length === 0) return '';
   const lines = existingWork.slice(0, 30).map((item) => {
-    const kind = item.kind === 'ops_task' ? 'Ops task' : 'Pending action';
+    const kind = item.kind === 'ops_task'
+      ? 'Ops task'
+      : item.kind === 'prior_task_suggestion'
+        ? 'Prior Consult suggestion'
+        : 'Pending action';
     const title = item.title || item.action_text || item.description || '(untitled)';
     const status = item.status ? `status=${item.status}` : '';
     const owner = item.owner ? `owner=${item.owner}` : '';
@@ -618,6 +645,30 @@ function formatExistingWorkForPrompt(existingWork) {
     ...lines,
     'Do not propose a duplicate task. If the operator asks about the same work, suggest updating the existing item instead.',
   ].join('\n');
+}
+
+function extractPriorTaskSuggestionsFromHistory(history) {
+  if (!Array.isArray(history) || history.length === 0) return [];
+  const out = [];
+  const seen = new Set();
+  for (const entry of history) {
+    const text = String(entry?.content || entry?.text || '').trim();
+    if (!text) continue;
+    const parsed = parseJsonish(text);
+    const raw = [];
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (Array.isArray(parsed.task_suggestions)) raw.push(...parsed.task_suggestions);
+      if (Array.isArray(parsed.tasks)) raw.push(...parsed.tasks);
+    }
+    raw.push(...parseTaskSuggestions(text));
+    for (const item of raw.map(normalizeTaskSuggestionObject).filter(Boolean)) {
+      const key = normalizeTaskText([item.title, item.description].filter(Boolean).join(' ')).join('|');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ kind: 'prior_task_suggestion', ...item });
+    }
+  }
+  return out.slice(-20);
 }
 
 function selectConsultSurface(context) {
@@ -1343,6 +1394,10 @@ router.post('/', attachIdentity, async (req, res) => {
       const sessionHistory = Array.isArray(session.conversation_history)
         ? sanitizeConsultHistory(session.conversation_history)
         : (Array.isArray(req.body?.history) ? req.body.history : []);
+      const existingWorkForPrompt = [
+        ...existingWork,
+        ...extractPriorTaskSuggestionsFromHistory(sessionHistory),
+      ];
 
       const [{ block: teachingsBlock, teachingIdMap }, actionFeedbackBlock] = await Promise.all([
         loadTeachingBlockWithIds(req.tenantId, propertyCode),
@@ -1375,7 +1430,7 @@ router.post('/', attachIdentity, async (req, res) => {
         liveExchangeRateBlock,
         sessionHistory,
         currentSessionSummary: session.running_summary || session.summary || null,
-        existingWork,
+        existingWork: existingWorkForPrompt,
         fullThread,
       });
 
@@ -1412,7 +1467,7 @@ router.post('/', attachIdentity, async (req, res) => {
           liveExchangeRateBlock,
           sessionHistory,
           currentSessionSummary: session.running_summary || session.summary || null,
-          existingWork,
+          existingWork: existingWorkForPrompt,
         });
         result = await generateDraftReply({
           system: compactConsultSystemPrompt({
@@ -1512,7 +1567,7 @@ router.post('/', attachIdentity, async (req, res) => {
       const parsedTaskSuggestions = consultEnvelope
         ? consultEnvelope.taskSuggestions
         : parseTaskSuggestions(result.text);
-      const taskSuggestions = filterDuplicateTaskSuggestions(parsedTaskSuggestions, existingWork);
+      const taskSuggestions = filterDuplicateTaskSuggestions(parsedTaskSuggestions, existingWorkForPrompt);
       const suppressedTaskSuggestionCount = parsedTaskSuggestions.length - taskSuggestions.length;
       let responseTextForClient = consultEnvelope
         ? consultEnvelope.responseText
@@ -1810,6 +1865,7 @@ module.exports._test = {
   parseDraftUpdate,
   parseConsultEnvelope,
   normalizeConsultDrafts,
+  splitCombinedRecipientDraft,
   extractUntaggedDraftUpdate,
   parseTeachingActions,
   parseTaskSuggestions,
@@ -1817,6 +1873,7 @@ module.exports._test = {
   taskSimilarity,
   filterDuplicateTaskSuggestions,
   formatExistingWorkForPrompt,
+  extractPriorTaskSuggestionsFromHistory,
   loadExistingInboxWork,
   selectConsultSurface,
   contextTaskInstruction,

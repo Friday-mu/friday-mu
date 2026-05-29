@@ -699,7 +699,13 @@ export default function ConsultChat({
               className="flex-1 text-base rounded px-2 py-1.5 outline-none resize-none"
               style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#f1f5f9', minHeight: '36px', maxHeight: '96px', overflowY: 'auto', transition: 'height 0.1s ease' }}
               rows={1}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply() } }} />
+              onKeyDown={e => {
+                e.stopPropagation();
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  handleReply();
+                }
+              }} />
             <button onClick={handleReply} disabled={!replyText.trim()}
               className="px-2 py-1 text-xs rounded disabled:opacity-50"
               style={{ background: 'rgba(99,149,255,0.2)', color: '#6395ff', border: '1px solid rgba(99,149,255,0.3)' }}>

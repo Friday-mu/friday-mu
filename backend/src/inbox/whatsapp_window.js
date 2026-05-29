@@ -26,7 +26,10 @@ async function loadLastInboundWhatsAppAt(conversationId, queryFn = query) {
         AND m.direction = 'inbound'
         AND (
           LOWER(COALESCE(m.module_type, '')) LIKE '%whatsapp%'
-          OR LOWER(COALESCE(c.communication_channel, c.channel, '')) LIKE '%whatsapp%'
+          OR (
+            NULLIF(TRIM(COALESCE(m.module_type, '')), '') IS NULL
+            AND LOWER(COALESCE(c.communication_channel, c.channel, '')) LIKE '%whatsapp%'
+          )
         )`,
     [conversationId],
   );
