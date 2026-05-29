@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current canonical checkpoint: `origin/fad-rebuild` at `e01945b5015c2bba903f8b11dc22f3490aecfe22`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
+Current canonical checkpoint: `origin/fad-rebuild` at `0b9c965729289f1f7fedcf243fe23583a108159d`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
 
 ## Purpose
 
@@ -39,11 +39,11 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 ## Current Branch Truth
 
 - Latest reconciliation worktree: `/Users/judith/.codex/worktrees/ask-friday-live-9097-ledger-sync-20260529`
-- Branch: `codex/ask-friday-public-actions-scope-20260529`
+- Branch: `codex/ask-friday-pr54-ledger-sync-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after PR #53 merge: `e01945b5015c2bba903f8b11dc22f3490aecfe22`
+- Base/canonical SHA after PR #54 merge: `0b9c965729289f1f7fedcf243fe23583a108159d`
 - Current deployed code-bearing SHA: `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`
-- Note: live production includes PR #44 and PR #46. `origin/fad-rebuild` is still ahead of live because PR #48, PR #49, PR #50, PR #51, PR #52, PR #53, the follow-up public-experiences routing fix, and redesign docs are merged but not deployed; PR #49, PR #50, PR #51, PR #53, and the redesign commits are docs-only. Do not deploy without explicit coordination.
+- Note: live production includes PR #44 and PR #46. `origin/fad-rebuild` is still ahead of live because PR #48, PR #49, PR #50, PR #51, PR #52, PR #53, PR #54, the follow-up public-experiences routing fix, and redesign docs are merged but not deployed; PR #49, PR #50, PR #51, PR #53, and the redesign commits are docs-only. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -83,8 +83,8 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - Commit `d44174a9` added FAD V2 redesign implementation docs; merge `7d3a52ba` is the current canonical origin checkpoint for this slice.
 - PR #52 merged on 2026-05-29 as `b26982c8`; it adds migration `107_ask_friday_plan2_surface_readiness.sql`, staff shell draft context-pack templates, action-policy validation, deterministic `action_safety` eval checks, and focused tests. It is not deployed.
 - PR #53 merged on 2026-05-29 as `e01945b5`; docs-only ledger sync after PR #52.
-- Current pending branch `codex/ask-friday-public-actions-scope-20260529` adds migration `108_ask_friday_website_public_action_scope.sql` so the `friday-website` API client can enqueue approval-gated public action requests for owner enquiry and feedback surfaces. It is not deployed.
-- Deployment status: live frontend and backend both report `9097f9bc`, so live production includes PR #44 and PR #46 but does not yet include PR #48, PR #49, PR #50, PR #51, PR #52, PR #53, `12b02389`, redesign docs, or the pending public action scope migration. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #54 merged on 2026-05-29 as `0b9c9657`; it adds migration `108_ask_friday_website_public_action_scope.sql` so the `friday-website` API client can enqueue approval-gated public action requests for owner enquiry and feedback surfaces. It is not deployed.
+- Deployment status: live frontend and backend both report `9097f9bc`, so live production includes PR #44 and PR #46 but does not yet include PR #48, PR #49, PR #50, PR #51, PR #52, PR #53, PR #54, `12b02389`, or redesign docs. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
@@ -310,7 +310,7 @@ Ask Friday Core migrations:
 - `backend/migrations/107_ask_friday_plan2_surface_readiness.sql`
   - Merged in PR #52, not deployed. Activates Reservations/Calendar and Properties as governed Core shells; keeps Owners planned.
 - `backend/migrations/108_ask_friday_website_public_action_scope.sql`
-  - Pending in `codex/ask-friday-public-actions-scope-20260529`. Grants `friday-website` the API scope for approval-gated public action requests.
+  - Merged in PR #54, not deployed. Grants `friday-website` the API scope for approval-gated public action requests.
 
 Plan 1 surface code:
 
