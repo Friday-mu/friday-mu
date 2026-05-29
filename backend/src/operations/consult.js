@@ -194,16 +194,38 @@ function isOpenPlanningTask(task) {
 function formatPricingSignal(reservation) {
   const pricing = reservation?.calendarPricing;
   if (!pricing || typeof pricing !== 'object') return null;
+  const nightsCached = Number(pricing.nightsCached ?? 0);
+  const blockedNights = Number(pricing.blockedNights ?? 0);
+  const totalMinor = pricing.totalMinor ?? null;
+  const minPriceMinor = pricing.minPriceMinor ?? null;
+  const maxPriceMinor = pricing.maxPriceMinor ?? null;
+  const syncedAt = pricing.syncedAt || null;
+  const hasCachedAvailability = Number.isFinite(nightsCached) && nightsCached > 0;
+  const hasBlockedSignal = Number.isFinite(blockedNights) && blockedNights > 0;
+  const hasPriceSignal = [totalMinor, minPriceMinor, maxPriceMinor].some((value) => value != null);
+  if (!hasCachedAvailability && !hasBlockedSignal && !hasPriceSignal && !syncedAt) return null;
   return {
     reservationId: reservation.id || null,
     propertyCode: reservation.propertyCode || null,
     checkInDate: reservation.checkInDate || null,
     checkOutDate: reservation.checkOutDate || null,
-    totalMinor: pricing.totalMinor ?? null,
-    minPriceMinor: pricing.minPriceMinor ?? null,
-    maxPriceMinor: pricing.maxPriceMinor ?? null,
+    nightsCached: Number.isFinite(nightsCached) ? nightsCached : 0,
+    blockedNights: Number.isFinite(blockedNights) ? blockedNights : 0,
+    totalMinor,
+    minPriceMinor,
+    maxPriceMinor,
     currencyCode: pricing.currencyCode || null,
-    syncedAt: pricing.syncedAt || null,
+    syncedAt,
+  };
+}
+
+function formatPricingMissingReservation(reservation) {
+  if (!reservation) return null;
+  return {
+    reservationId: reservation.id || null,
+    propertyCode: reservation.propertyCode || null,
+    checkInDate: reservation.checkInDate || null,
+    checkOutDate: reservation.checkOutDate || null,
   };
 }
 
@@ -293,16 +315,29 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = []
       zone: user.zone || null,
     }))
     .filter((user) => user.id && user.name);
+  const calendarPricingSignals = reservations
+    .map(formatPricingSignal)
+    .filter(Boolean);
+  const calendarPricingMissingReservations = reservations
+    .filter((reservation) => !formatPricingSignal(reservation))
+    .map(formatPricingMissingReservation)
+    .filter(Boolean);
+  const availabilityPricingSummary = calendarPricingSignals.length > 0
+    ? `${calendarPricingSignals.length} reservation overlay(s) include usable cached calendar-pricing or availability signals; treat null price fields as unknown.`
+    : (reservations.length > 0
+      ? `${reservations.length} reservation overlay(s) are loaded, but none include usable cached calendar-pricing values; availability and prices are not proved by the cache.`
+      : 'No reservation overlay is loaded, so availability and prices are not proved by the context.');
   return {
     assignmentPolicy: 'Every drafted scheduled task must have at least one eligible assignee; do not leave work unassigned unless the staff directory is unavailable.',
     occupancyPolicy: 'Do not schedule non-urgent non-guest-requested property work while occupied. Checkout day is available after checkout for turnover work. Urgent guest-requested issues may be handled during occupancy.',
     lunchPolicy: 'Protect one hour lunch for every staff member; prefer 12:00-13:00, fallback 11:00-12:00 or 13:00-14:00. Stagger office staff so someone remains available.',
     availabilityPricingSource: 'Use reservation overlays and calendarPricing from the FAD reservation cache when present; do not invent availability or prices if cache fields are missing.',
+    availabilityPricingSummary,
     draftCompletenessPolicy: 'A planning draft should either assign every visible open task it pulls into the selected day or explicitly name the tasks that must move/manual-review. Do not present a partial plan as complete.',
-    calendarPricingSignals: reservations
-      .map(formatPricingSignal)
-      .filter(Boolean)
-      .slice(0, 60),
+    calendarPricingSignals: calendarPricingSignals.slice(0, 60),
+    calendarPricingSignalCount: calendarPricingSignals.length,
+    calendarPricingMissingCount: calendarPricingMissingReservations.length,
+    calendarPricingMissingReservations: calendarPricingMissingReservations.slice(0, 60),
     assignableStaff: assignableStaff.slice(0, 60),
     unassignedOpenTasks: unassignedOpenTasks.slice(0, 60),
     unassignedOpenTaskIds: unassignedOpenTasks.map((task) => task.id).filter(Boolean).slice(0, 60),
@@ -338,7 +373,8 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
   const unassignedCount = constraints.unassignedOpenTaskIds.length;
   const occupiedConflictCount = constraints.nonUrgentOccupiedTaskIds.length;
   const draftUnassignedCount = constraints.currentDraftUnassignedTaskIds.length;
-  const pricingSignalCount = constraints.calendarPricingSignals.length;
+  const pricingSignalCount = constraints.calendarPricingSignalCount || constraints.calendarPricingSignals.length;
+  const pricingMissingCount = constraints.calendarPricingMissingCount || 0;
   const assignableStaffCount = constraints.assignableStaff.length;
   const shouldSuggestDraft = ['schedule', 'roster', 'general'].includes(context)
     && assignableStaffCount > 0
@@ -363,8 +399,10 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
   }
   if (pricingSignalCount > 0) {
     lines.push(`Availability/pricing check: ${pricingSignalCount} reservation overlay(s) include cached calendar-pricing signals. Treat missing prices or stale syncs as unknown, not confirmed.`);
+  } else if (reservations.length > 0) {
+    lines.push(`Availability/pricing check: ${pricingMissingCount || reservations.length} reservation overlay(s) are loaded, but none include usable cached calendar-pricing values. Availability and prices are not proved by the cache.`);
   } else {
-    lines.push('Availability/pricing check: no cached calendar-pricing signal was provided, so do not infer rates or availability.');
+    lines.push('Availability/pricing check: no reservation or cached calendar-pricing signal was provided, so do not infer rates or availability.');
   }
   lines.push('Lunch/fairness rule: protect one hour per staff member, prefer 12:00-13:00, and stagger office coverage if office staff are included.');
   lines.push(shouldSuggestDraft
@@ -386,6 +424,7 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
       nonUrgentOccupiedTaskCount: occupiedConflictCount,
       currentDraftUnassignedTaskCount: draftUnassignedCount,
       calendarPricingSignalCount: pricingSignalCount,
+      calendarPricingMissingCount: pricingMissingCount,
       assignableStaffCount,
     },
   };
@@ -479,13 +518,15 @@ function buildOpsCompactModuleContext(body) {
       occupancy: planningConstraints.occupancyPolicy,
       lunch: planningConstraints.lunchPolicy,
       availabilityPricing: planningConstraints.availabilityPricingSource,
+      availabilityPricingSummary: planningConstraints.availabilityPricingSummary,
     },
     riskSignals: {
       unassignedOpenTaskCount: planningConstraints.unassignedOpenTaskIds.length,
       nonUrgentOccupiedTaskCount: planningConstraints.nonUrgentOccupiedTaskIds.length,
       occupiedPropertyDayCount: planningConstraints.occupiedPropertyDays.length,
       currentDraftUnassignedTaskCount: planningConstraints.currentDraftUnassignedTaskIds.length,
-      calendarPricingSignalCount: planningConstraints.calendarPricingSignals.length,
+      calendarPricingSignalCount: planningConstraints.calendarPricingSignalCount,
+      calendarPricingMissingCount: planningConstraints.calendarPricingMissingCount,
       assignableStaffCount: planningConstraints.assignableStaff.length,
     },
     staff: staff.map((user) => ({
@@ -500,6 +541,7 @@ function buildOpsCompactModuleContext(body) {
     occupiedPropertyDays: planningConstraints.occupiedPropertyDays.slice(0, 30),
     unassignedOpenTasks: planningConstraints.unassignedOpenTasks.slice(0, 20),
     calendarPricingSignals: planningConstraints.calendarPricingSignals.slice(0, 20),
+    calendarPricingMissingReservations: planningConstraints.calendarPricingMissingReservations.slice(0, 20),
     currentPlan: currentPlan.slice(0, 20),
     notes: cleanString(body.notes, 1600) || null,
   };
@@ -554,6 +596,7 @@ function responseContract({ compact = false } = {}) {
 - Default to a bounded operational summary, not an exhaustive report.
 - Use at most 8 bullets and 450 words; compact fallback mode uses at most 5 bullets and 260 words.
 - For schedule/roster QA, summarize counts and top risks before examples. Do not list every task.
+- For schedule/roster QA, always include an availability/pricing check: say whether usable calendarPricing signals were present, or explicitly say availability/prices are not proved by the cache.
 - Do not output raw UUIDs unless the operator explicitly asks for IDs; use task title, property code, and assignee names.
 - For schedule-generation requests, account for every visible open unassigned task: assign it, move/block it for a stated reason, or name it as still needing manual review.
 - If assignable staff are loaded, do not recommend a schedule that leaves a visible open task with no named assignee.

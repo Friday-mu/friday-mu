@@ -38,10 +38,10 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/ask-friday-deploy-ledger-20260529`
-- Branch: `codex/ask-friday-deploy-ledger-20260529`
+- Worktree: `/Users/judith/.codex/worktrees/ask-friday-ops-pricing-signal-20260529`
+- Branch: `codex/ask-friday-ops-pricing-signal-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA when this continuation branch was created: `3daa4920b41e10dd231e1e68f5299959f7db46b2`
+- Base/canonical SHA after docs-ledger rebase: `008952798b77f1b2b48dabc4c82d6096c335d07c`
 - Current deployed code-bearing SHA: `3daa4920b41e10dd231e1e68f5299959f7db46b2`
 - Note: `origin/fad-rebuild` may receive docs-only ledger commits after this SHA without requiring a production deploy.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
@@ -62,7 +62,9 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #29: docs-only Ask Friday plan terminology sync.
 - PR #30: merged and deployed on 2026-05-29 as `d19b8317`; this hardened Inbox/Consult bug flows by fixing schema-tolerant Website handoff context loading, message-level WhatsApp timer detection, controlled email-style draft recovery, Feedback FAB minimize/preserve behavior, tighter mobile FAB controls, and lower-friction Inbox Consult draft cards.
 - PR #31: merged on 2026-05-29 as `3daa4920`; this recorded the unified FAD Ask Friday right-panel direction and added it to the FAD backlog.
+- PR #32: docs-only ledger sync merged on 2026-05-29 as `00895279`; no deploy needed.
 - Deployment status: live frontend and backend both report `3daa4920`. This deployment includes the field-staff PWA delta, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, and PR #31 docs. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- Pending branch `codex/ask-friday-ops-pricing-signal-20260529` hardens Ops Consult availability/pricing checks after live QA showed the model skipped this check when `calendar_pricing` objects existed but contained no usable price/availability values.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
