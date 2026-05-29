@@ -1181,6 +1181,7 @@ function AskFridayInput({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
+          e.stopPropagation();
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
             e.preventDefault();
             submit();
