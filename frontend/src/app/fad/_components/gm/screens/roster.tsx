@@ -445,11 +445,7 @@ export function ScreenRoster(props: { subPage?: string; onChangeSubPage?: (s: st
       <FridayBar
         badge={<span className={'bdg ' + (status === 'published' ? 'green' : 'amber')}>{status === 'published' ? 'Published' : 'Draft'}</span>}
         actions={
-          <>
-            <button className="dbtn primary sm"><DI n="check" s={2} /> Apply draft</button>
-            <button className="dbtn ghost sm">Discard</button>
-            <button className="dbtn ghost sm" onClick={() => setReview(true)}>Review <DI n="chevR" s={2} /></button>
-          </>
+          <button className="dbtn ghost sm" onClick={() => setReview(true)}>Review <DI n="chevR" s={2} /></button>
         }
       >
         <b>Friday Consult · roster coverage agent.</b> {stats.total} tasks · {stats.unassigned} unassigned{stats.busiestDay ? ` · ${stats.busiestDay.label} busiest` : ''} — ask it to balance, check zone fit or weekend fairness.

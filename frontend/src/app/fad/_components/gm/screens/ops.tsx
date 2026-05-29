@@ -138,8 +138,8 @@ function TaskTR({ code, addr, title, dept, due, occ, occTone, pri, status, statu
 
 /* ─────────────────────────── Screen ─────────────────────────── */
 
-export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: string) => void }) {
-  const { subPage = 'overview', onChangeSubPage } = props;
+export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: string) => void; onCreate?: () => void }) {
+  const { subPage = 'overview', onChangeSubPage, onCreate } = props;
 
   // All tasks (no filter) — the overview computes everything from the full set.
   const allFilter = useMemo(() => ({}), []);
@@ -233,7 +233,7 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
   const actions = (
     <>
       <button className="dbtn ghost" type="button" onClick={() => onChangeSubPage?.('roster')}><DI n="pin" s={1.9} /> Map</button>
-      <button className="dbtn primary" type="button"><DI n="plus" s={2} /> New task</button>
+      <button className="dbtn primary" type="button" onClick={() => onCreate?.()}><DI n="plus" s={2} /> New task</button>
     </>
   );
 

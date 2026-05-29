@@ -430,7 +430,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       case 'overview':
         return isField
           ? <OverviewPage onOpenTask={setDetailTaskId} onChangeSubPage={onChangeSubPage} canSeeRoster={canSeeRoster} />
-          : <ScreenOps subPage={active} onChangeSubPage={gmNav} />;
+          : <ScreenOps subPage={active} onChangeSubPage={gmNav} onCreate={() => openManagerCreate()} />;
       case 'schedule':
         return isField
           ? <SchedulePage onOpenTask={setDetailTaskId} onCreate={openManagerCreate} />
