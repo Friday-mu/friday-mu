@@ -6,6 +6,7 @@ const {
   validateContextPackAgainstSurface,
   validatePublicActionRequest,
   validatePublicLearningEvent,
+  validateStaffActionRequest,
 } = require('./policy');
 
 function surface(overrides = {}) {
@@ -281,6 +282,68 @@ describe('Ask Friday Core surface policy', () => {
     }, surface())).toThrow('must require approval');
   });
 
+  test('accepts approval-routed staff reservation and property shell actions', () => {
+    const reservationsSurface = surface({
+      surface_id: 'fad_reservations_calendar_assistant',
+      source_system: 'fad',
+      access_class: 'staff',
+      allowed_actions: [
+        'request_booking_quote',
+        'request_reservation_mutation',
+        'request_channel_visible_block',
+      ],
+    });
+    const propertiesSurface = surface({
+      surface_id: 'fad_properties_assistant',
+      source_system: 'fad',
+      access_class: 'staff',
+      allowed_actions: [
+        'create_property_kb_candidate',
+        'request_property_update_approval',
+      ],
+    });
+
+    expect(() => validateStaffActionRequest({
+      sourceSystem: 'fad',
+      surfaceId: 'fad_reservations_calendar_assistant',
+      actionType: 'request_booking_quote',
+      approvalRequired: true,
+      status: 'pending',
+      payload: { propertyCode: 'GBH-C3', dateWindow: { from: '2026-07-10', to: '2026-07-12' } },
+      reason: 'Staff requested a source-dated quote draft.',
+    }, reservationsSurface)).not.toThrow();
+
+    expect(() => validateStaffActionRequest({
+      sourceSystem: 'fad',
+      surfaceId: 'fad_reservations_calendar_assistant',
+      actionType: 'mutate_external_system',
+      approvalRequired: true,
+      status: 'pending',
+      payload: { propertyCode: 'GBH-C3' },
+      reason: 'Direct mutation should not be accepted as a shell action.',
+    }, reservationsSurface)).toThrow('actionType is not allowed');
+
+    expect(() => validateStaffActionRequest({
+      sourceSystem: 'fad',
+      surfaceId: 'fad_properties_assistant',
+      actionType: 'create_property_kb_candidate',
+      approvalRequired: true,
+      status: 'pending',
+      payload: { propertyCode: 'GBH-C3', candidateType: 'source_conflict' },
+      reason: 'Property source conflict needs human review.',
+    }, propertiesSurface)).not.toThrow();
+
+    expect(() => validateStaffActionRequest({
+      sourceSystem: 'fad',
+      surfaceId: 'fad_reservations_calendar_assistant',
+      actionType: 'request_channel_visible_block',
+      approvalRequired: false,
+      status: 'pending',
+      payload: { propertyCode: 'GBH-C3' },
+      reason: 'Channel-visible actions must be approval-routed.',
+    }, reservationsSurface)).toThrow('must require approval');
+  });
+
   test('context packs cannot publish scopes outside their surface boundary', () => {
     expect(() => validateContextPackAgainstSurface({
       surfaceId: 'website_ask_friday_fab',
@@ -301,5 +364,31 @@ describe('Ask Friday Core surface policy', () => {
       sourceSnapshotRefs: [],
       packPayload: { compactPrompt: 'Private owner context' },
     }, surface())).toThrow('knowledgeScopes contains public-blocked values');
+
+    expect(() => validateContextPackAgainstSurface({
+      surfaceId: 'website_ask_friday_fab',
+      knowledgeScopes: ['public_brand'],
+      behaviorRules: [],
+      toolPolicy: {
+        allowedTools: ['search_residences'],
+        allowedActions: ['charge_card'],
+      },
+      memoryPolicy: {},
+      sourceSnapshotRefs: [],
+      packPayload: { compactPrompt: 'Public context' },
+    }, surface())).toThrow('toolPolicy.allowedActions contains public-blocked values');
+
+    expect(() => validateContextPackAgainstSurface({
+      surfaceId: 'website_ask_friday_fab',
+      knowledgeScopes: ['public_brand'],
+      behaviorRules: [],
+      toolPolicy: {
+        allowedTools: ['search_residences'],
+        allowedActions: ['create_property_kb_candidate'],
+      },
+      memoryPolicy: {},
+      sourceSnapshotRefs: [],
+      packPayload: { compactPrompt: 'Public context' },
+    }, surface())).toThrow('toolPolicy.allowedActions is not allowed');
   });
 });
