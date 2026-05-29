@@ -200,7 +200,12 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
     }
     return m;
   }, [active]);
-  const topStaff = staff.slice(0, 4);
+  // Show ALL staff (not just the top 4 / only those with tasks) — sorted
+  // busiest-first — so the manager sees the whole team's load incl. idle staff.
+  const topStaff = useMemo(
+    () => [...staff].sort((a, b) => (loadByInitials.get(b.initials) || 0) - (loadByInitials.get(a.initials) || 0)),
+    [staff, loadByInitials],
+  );
   const maxLoad = Math.max(1, ...topStaff.map((s) => loadByInitials.get(s.initials) || 0));
 
   const tabs: GmTab[] = OPS_TABS.map((t) => ({
@@ -359,8 +364,8 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
               </div>
             </div>
             <div>
-              <div className="dml">Staff load <span className="rule" /></div>
-              <div className="panel">
+              <div className="dml">Staff load <span className="ct">{topStaff.length}</span><span className="rule" /></div>
+              <div className="panel" style={{ maxHeight: 248, overflowY: 'auto' }}>
                 {staffLoading && <div className="faint mono" style={{ fontSize: 11, padding: '8px 2px', textAlign: 'center' }}>Loading staff…</div>}
                 {!staffLoading && staffError && topStaff.length === 0 && (
                   <div className="faint" style={{ fontSize: 12, padding: '8px 2px', textAlign: 'center' }}>Couldn’t load staff — {staffError}</div>
