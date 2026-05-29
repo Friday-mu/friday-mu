@@ -382,11 +382,59 @@ function parseJsonish(raw) {
   if (typeof raw !== 'string') return null;
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
   if (!cleaned) return null;
-  try { return JSON.parse(cleaned); } catch { /* fall through */ }
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first >= 0 && last > first) {
-    try { return JSON.parse(cleaned.slice(first, last + 1)); } catch { /* fall through */ }
+  const parseValue = (text, depth = 0) => {
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed === 'string' && depth < 2) {
+        return parseValue(parsed.trim(), depth + 1) || parsed;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+  const direct = parseValue(cleaned);
+  if (direct !== null) return direct;
+
+  const slices = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const ch = cleaned[i];
+    if (start < 0) {
+      if (ch === '{') {
+        start = i;
+        depth = 1;
+        inString = false;
+        escaped = false;
+      }
+      continue;
+    }
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        slices.push(cleaned.slice(start, i + 1));
+        if (slices.length >= 5) break;
+        start = -1;
+      }
+    }
+  }
+  for (const slice of slices) {
+    const parsed = parseValue(slice);
+    if (parsed !== null) return parsed;
   }
   return null;
 }
@@ -580,10 +628,10 @@ function parseTaskSuggestions(responseText) {
   return suggestions;
 }
 
-function parseConsultEnvelope(responseText, context, teachingIdMap = {}) {
+function parseConsultEnvelope(responseText, context, teachingIdMap = {}, options = {}) {
   const parsed = parseJsonish(responseText);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const drafts = normalizeConsultDrafts(parsed);
+  let drafts = normalizeConsultDrafts(parsed);
   const rawTeachings = Array.isArray(parsed.teaching_actions)
     ? parsed.teaching_actions
     : (Array.isArray(parsed.teachings) ? parsed.teachings : []);
@@ -601,8 +649,16 @@ function parseConsultEnvelope(responseText, context, teachingIdMap = {}) {
     || parsed.operator_message
     || '',
   );
+  let operatorResponseText = responseTextValue;
+  if (drafts.length === 0 && options.allowResponseTextDraftRecovery) {
+    const recoveredDraft = extractUntaggedDraftUpdate(responseTextValue, context);
+    if (recoveredDraft) {
+      drafts = [{ body: recoveredDraft, recipientLabel: null, channel: null, targetHint: null }];
+      operatorResponseText = 'Done — I prepared the draft.';
+    }
+  }
   return {
-    responseText: responseTextValue,
+    responseText: operatorResponseText,
     drafts,
     teachingActions,
     taskSuggestions,
@@ -1538,8 +1594,10 @@ router.post('/', attachIdentity, async (req, res) => {
       }
       if (!result.ok) throw new Error(result.error || 'Consult model call failed');
 
-      const consultEnvelope = parseConsultEnvelope(result.text, context, teachingIdMap);
       const draftUpdatesAllowed = shouldAllowDraftUpdatesForTurn(context, instruction);
+      const consultEnvelope = parseConsultEnvelope(result.text, context, teachingIdMap, {
+        allowResponseTextDraftRecovery: draftUpdatesAllowed,
+      });
       let responseTextForHistory = result.text;
       let draftUpdates = draftUpdatesAllowed ? (consultEnvelope?.drafts || []) : [];
       let draftUpdate = draftUpdatesAllowed ? (draftUpdates[0]?.body || parseDraftUpdate(result.text)) : null;

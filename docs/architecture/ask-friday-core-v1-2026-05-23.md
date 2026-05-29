@@ -1,8 +1,8 @@
 # Ask Friday Core V1 Architecture Recommendation
 
 Date: 2026-05-23
-Last updated: 2026-05-28
-Status: V1 backend contract scaffold and autonomous hardening are live on `fad-rebuild` at deployed SHA `7caf6576`; Plan 1 still needs fresh Inbox/Ops team-usefulness smoke
+Last updated: 2026-05-29
+Status: V1 backend contract scaffold and autonomous hardening are on `fad-rebuild`; live deploy state must be verified per frontend/backend surface before shipping follow-up work.
 Repo/session: FAD only. No Friday Website edits in this branch.
 
 ## Naming
@@ -12,6 +12,29 @@ The user-facing global AI surface is **Ask Friday**.
 FridayOS can remain the broader product/system label where already canonical. The AI surface, Website FAB, guest assistant, owner chat, feedback assistant, and staff consult surface should use Ask Friday in product-facing language.
 
 FAD still has staff module labels such as Friday Consult. Treat those as internal/module-mode aliases under Ask Friday, not separate public assistant products or personas. Do not introduce new public-facing assistant names.
+
+## FAD Assistant Host Direction
+
+Product direction added on 2026-05-29: FAD should converge toward one shared right-side **Ask Friday** panel instead of each module owning a separate embedded Friday Consult UI.
+
+This is a frontend harness direction, not a change to the Ask Friday Core ownership model.
+
+Target behavior:
+
+- The page/module publishes where the user is, what is selected, what is visible, and which actions are allowed.
+- The shared right-side panel opens from the FAD header or from local buttons such as "Review with Ask Friday".
+- Ask Friday Core receives the page state, applies registry/tool/action policy, then routes to the correct specialist mode such as Inbox, Ops, Finance, Legal/Admin, or public Website support.
+- The specialist mode returns operator-facing text plus structured actions.
+- The page applies approved actions through its existing backend/API paths, so the user sees the screen change without the assistant pretending it already executed unapproved work.
+
+Do not collapse all specialist behavior into one monolithic prompt. Ask Friday Core should orchestrate identity, policy, page awareness, memory, learning events, and action approval. Module agents still own domain reasoning, prompts, KB scopes, evals, and action contracts.
+
+Migration policy:
+
+- Keep current embedded Consult surfaces for urgent production bug fixes until the bridge is proven.
+- Build the shared right panel and page-state/action bridge first.
+- Migrate Ops before Inbox. Ops has a less settled harness and benefits most from a planning/control panel. Inbox has a mature draft/review/send flow, so its inline draft cards should remain while the right panel becomes the review/explanation/action host.
+- Do not remove or rewrite existing Inbox draft/review contracts until the unified panel can reproduce draft creation, revision, split-recipient drafts, task suggestions, teaching candidates, and approval safety.
 
 ## Sources Read
 
@@ -89,7 +112,7 @@ Flow closure rules added on 2026-05-26:
 - Public exposure of staff workload, staff identity, owner-private data, guest-sensitive data, payment data, or secrets.
 - Fine-tuning.
 - Full session replay.
-- Broad frontend UI work in the current FAD FAB files.
+- Broad frontend UI migration in the current backend/Core slice. The unified right-side panel is a planned FAD frontend harness slice and should not be mixed into backend-only Core hardening.
 
 ## Contracts
 
@@ -127,6 +150,83 @@ Seeded surfaces:
 - `fad_finance_assistant`
 - `public_mcp` as planned
 - `internal_agent_bridge`
+
+### `page_state_context`
+
+The unified FAD right-side panel needs a compact page-state contract. This is frontend-to-Core context, not canonical knowledge.
+
+```json
+{
+  "surfaceId": "fad_ops_assistant",
+  "host": "fad_right_panel",
+  "route": "/fad?m=operations",
+  "module": "operations",
+  "view": "schedule_planner",
+  "focusedObject": {
+    "type": "task",
+    "id": "task_123",
+    "label": "Fix AC at GBH-C8"
+  },
+  "selection": {
+    "selectedIds": ["task_123"],
+    "cursorRange": null
+  },
+  "visibleState": {
+    "filters": { "date": "2026-05-29", "team": "field" },
+    "summary": "Manager schedule view with 18 open tasks and 6 field staff visible."
+  },
+  "allowedActions": [
+    "create_task",
+    "update_task",
+    "assign_task",
+    "propose_schedule",
+    "apply_schedule_after_approval"
+  ],
+  "privacyClass": "staff_private",
+  "stalenessMs": 1500
+}
+```
+
+Rules:
+
+- Page state is allowed to be compact and lossy. It should identify the current work surface and selected object, not serialize the full DOM.
+- Sensitive row details stay behind server loaders/tool calls; the browser should send IDs, filters, and summaries where possible.
+- Allowed actions must come from the surface registry and page bridge, not from model preference.
+- The panel may request page changes, but page modules execute them through existing typed APIs after approval gates.
+
+### `panel_action_result`
+
+Specialist agents can return actions for the page bridge. The panel should display the action, require approval where needed, then let the owning module apply it.
+
+```json
+{
+  "responseText": "I can rebalance today's field schedule and keep lunch breaks between noon and 2pm.",
+  "actions": [
+    {
+      "actionType": "propose_schedule",
+      "target": { "module": "operations", "view": "schedule_planner" },
+      "requiresApproval": true,
+      "payload": {
+        "date": "2026-05-29",
+        "assignments": [],
+        "constraintsApplied": [
+          "no_unassigned_tasks",
+          "avoid_occupied_properties_unless_urgent",
+          "one_hour_lunch_break"
+        ]
+      },
+      "evidenceRefs": [],
+      "confidence": "medium"
+    }
+  ]
+}
+```
+
+Rules:
+
+- High-impact actions default to `requiresApproval: true`.
+- Inbox send/approve remains owned by Inbox. Ops schedule/task writes remain owned by Operations.
+- If an action cannot be applied safely, create an action request or draft proposal; do not claim execution.
 
 ### `learning_event`
 
@@ -370,6 +470,14 @@ FAD backend/core session:
 - Own migrations, contracts, public API routes, review queue routes, eval tables, identity/consent tables.
 - Avoid active FAB UI files until the polish branch is merged or parked.
 - Current branch includes a manual analyzer route, context-pack publisher, and deterministic eval runner. Later: scheduled analyzer workflow, review UI, model-backed evals, and context-pack publisher UX.
+
+FAD frontend shell/session:
+
+- Own the shared right-side Ask Friday panel, page-state bridge, action-application bridge, and module migration plan.
+- Start with additive wiring. Do not delete embedded Inbox/Ops Friday Consult flows until the shared panel proves equivalent or better for each workflow.
+- For Ops, the panel can become the primary planning/control surface once it can read schedule/task/availability/occupancy context and return typed schedule/task proposals.
+- For Inbox, keep inline draft cards and send/review controls; use the shared panel as the review/explanation/task/teaching host focused on the current thread or draft.
+- The frontend shell should not own specialist prompts or durable memory. It passes page state and approved actions to Ask Friday Core/module routes.
 
 Website session:
 

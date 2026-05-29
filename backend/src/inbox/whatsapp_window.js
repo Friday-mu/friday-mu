@@ -21,15 +21,13 @@ async function loadLastInboundWhatsAppAt(conversationId, queryFn = query) {
   const { rows } = await queryFn(
     `SELECT MAX(m.created_at) AS last_whatsapp_inbound_at
        FROM messages m
-       LEFT JOIN conversations c ON c.id = m.conversation_id
       WHERE m.conversation_id = $1
         AND m.direction = 'inbound'
         AND (
           LOWER(COALESCE(m.module_type, '')) LIKE '%whatsapp%'
-          OR (
-            NULLIF(TRIM(COALESCE(m.module_type, '')), '') IS NULL
-            AND LOWER(COALESCE(c.communication_channel, c.channel, '')) LIKE '%whatsapp%'
-          )
+          OR LOWER(COALESCE(m.module_type, '')) = 'wa'
+          OR LOWER(COALESCE(m.communication_channel, '')) LIKE '%whatsapp%'
+          OR LOWER(COALESCE(m.communication_channel, '')) = 'wa'
         )`,
     [conversationId],
   );

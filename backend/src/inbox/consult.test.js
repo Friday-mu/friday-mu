@@ -109,10 +109,61 @@ describe('FAD-native Consult helpers', () => {
     expect(parsed.taskSuggestions).toHaveLength(1);
   });
 
+  test('parses the first complete Consult envelope when provider JSON has a malformed tail', () => {
+    const strayBrace = `{
+  "response_text": "Review complete. No draft needed.",
+  "drafts": [],
+  "teaching_actions": [],
+  "task_suggestions": []
+}
+}`;
+    const malformedAppendix = '{"response_text":"Do nothing for now.","drafts":[],"teaching_actions":[],"task_suggestions":[]}\n[":null":[], "task_suggestions":[]}';
+
+    const parsedStrayBrace = parseConsultEnvelope(strayBrace, 'message_review');
+    const parsedMalformedAppendix = parseConsultEnvelope(malformedAppendix, 'message_review');
+
+    expect(parsedStrayBrace.responseText).toBe('Review complete. No draft needed.');
+    expect(parsedStrayBrace.drafts).toEqual([]);
+    expect(parsedMalformedAppendix.responseText).toBe('Do nothing for now.');
+    expect(parsedMalformedAppendix.drafts).toEqual([]);
+  });
+
   test('normalizes draft_update compatibility into structured draft objects', () => {
     expect(normalizeConsultDrafts({ draft_update: 'hello Guest,\n\nThanks.' })).toEqual([
       { body: 'Hello Guest,\n\nThanks.', recipientLabel: null, channel: null, targetHint: null },
     ]);
+  });
+
+  test('recovers email-style draft text from response_text into a draft card', () => {
+    const parsed = parseConsultEnvelope(
+      JSON.stringify({
+        response_text: 'Hello Maria,\n\nThank you for your message. We will confirm shortly.\n\nBest regards,\nFriday Retreats',
+        drafts: [],
+      }),
+      'compose',
+      {},
+      { allowResponseTextDraftRecovery: true },
+    );
+
+    expect(parsed.responseText).toBe('Done — I prepared the draft.');
+    expect(parsed.drafts).toEqual([
+      {
+        body: expect.stringContaining('Hello Maria,'),
+        recipientLabel: null,
+        channel: null,
+        targetHint: null,
+      },
+    ]);
+  });
+
+  test('does not recover response_text drafts unless the turn allows draft updates', () => {
+    const parsed = parseConsultEnvelope(JSON.stringify({
+      response_text: 'Hello Maria,\n\nThank you for your message.\n\nBest regards,\nFriday Retreats',
+      drafts: [],
+    }), 'draft_review');
+
+    expect(parsed.responseText).toContain('Hello Maria');
+    expect(parsed.drafts).toEqual([]);
   });
 
   test('splits one combined multi-recipient draft into separate draft cards', () => {

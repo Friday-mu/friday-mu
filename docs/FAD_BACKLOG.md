@@ -2,9 +2,9 @@
 
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
-> Last reviewed: **2026-05-25** (Judith — after overnight autonomous run: Guests + Owners backends, PropertyDetail Financial, Multi-calendar v0.1, Availability search, Quote generator).
-> Live on prod: frontend `36502839` · backend `9e18f180`.
-> Tree tip on `fad-rebuild`: `36502839` (live).
+> Last reviewed: **2026-05-29** (Ask Friday Core deploy-ledger sync after PR #33).
+> Live on prod: frontend `fe3d5fab` · backend `fe3d5fab`.
+> Tree tip on `fad-rebuild`: `fe3d5fab` (live).
 > Overnight run details: `docs/handover/2026-05-25-morning-handover.md`.
 
 ## How to use this doc
@@ -483,6 +483,7 @@ Strike through completed items, move to "Recently shipped" log at the bottom.
 ### Ask Friday Core remaining slices
 - **T4.1 — Slice 4**: Scheduled analyzer worker ✓ shipped 2026-05-23 (`69e2caca`) — `backend/src/ask_friday/scheduler.js` runs every 30 min, looks back 24h, idempotent via candidate UPSERT. First-tick delay 90s after boot. Env-overridable; disable with `ASK_FRIDAY_ANALYZER_DISABLED=1`.
 - **T4.2 — Slice 5**: FAD frontend reads Core as policy source (effort: M-L)
+- **T4.2a — Unified FAD Ask Friday right panel**: Additive frontend harness slice. Replace per-module embedded Consult direction with one shared right-side Ask Friday panel plus `page_state_context` and action bridge. Migrate Ops first, then Inbox. Keep existing Inbox draft/review/send contracts until parity is proven. Architecture reference: `docs/architecture/ask-friday-core-v1-2026-05-23.md`.
 - **T4.3 — Slice 7**: Model-backed eval grading (effort: M)
 - **T4.4 — Slice 8**: Public MCP V1 design + later implementation (effort: XL — design first)
 - **T4.5 — Slice 9**: Retention / redaction worker (effort: M-L)
