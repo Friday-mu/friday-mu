@@ -138,6 +138,8 @@ Read these first, in order:
     - Defines what counts as Mary/Franny/Ishant staff-usefulness proof for Inbox, Ops, and global Ask Friday.
 19. `docs/architecture/ask-friday-plan2-kb-gap-tracker-2026-05-29.md`
     - Current gap tracker for planned surfaces that still lack KB files, context packs, evals, or runtime wiring.
+20. `docs/architecture/ask-friday-feedback-retention-redaction-policy-2026-05-29.md`
+    - Proposed ADR for feedback screenshots/diagnostics retention, redaction, evidence classes, and learning eligibility.
 
 ## Master Plan And Subplans
 
@@ -171,6 +173,8 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-staff-use-evidence-runbook-2026-05-29.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 - `docs/architecture/ask-friday-plan2-kb-gap-tracker-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-feedback-retention-redaction-policy-2026-05-29.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.

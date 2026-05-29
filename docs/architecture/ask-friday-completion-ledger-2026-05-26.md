@@ -302,6 +302,7 @@ Post-PR #59 planning anchors:
 
 - `docs/architecture/ask-friday-staff-use-evidence-runbook-2026-05-29.md`
 - `docs/architecture/ask-friday-plan2-kb-gap-tracker-2026-05-29.md`
+- `docs/architecture/ask-friday-feedback-retention-redaction-policy-2026-05-29.md`
 
 New execution-planning artifacts on this branch:
 
