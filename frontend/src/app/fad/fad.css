@@ -3043,9 +3043,19 @@ html.fad-dark .fad-feedback-tab.is-active {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
   }
+  .bug-modal-foot {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
   .bug-modal-foot-status {
-    flex: 1 0 100%;
-    margin-right: 0;
+    display: none;
+  }
+  .bug-modal-foot .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 }
 

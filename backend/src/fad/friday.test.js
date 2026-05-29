@@ -99,6 +99,33 @@ describe('FAD Ask Friday helpers', () => {
     expect(query.mock.calls[0][0]).not.toContain('guest_phone');
   });
 
+  test('loads focused website handoff threads without requiring guest_phone column', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: '8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+          guest_email: 'guest@example.com',
+          guest_name: 'Website Guest',
+          status: 'handoff',
+          last_event_type: 'website.ai_handoff',
+          last_event_at: '2026-05-28T09:00:00.000Z',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const focused = await _test.loadFocusedWebsiteThread(
+      '00000000-0000-0000-0000-000000000001',
+      '8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+    );
+
+    expect(focused).toEqual(expect.objectContaining({
+      kind: 'website_ai_handoff_thread',
+      guest: 'Website Guest',
+    }));
+    expect(query.mock.calls[0][0]).toContain("to_jsonb(t)->>'guest_phone'");
+    expect(query.mock.calls[0][0]).not.toContain('guest_name, guest_phone');
+  });
+
   test('sanitizes operator focus payload — drops empty + caps lengths', () => {
     expect(_test.sanitizeFocus(null)).toBeNull();
     expect(_test.sanitizeFocus({})).toBeNull();

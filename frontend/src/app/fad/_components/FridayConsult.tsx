@@ -188,6 +188,8 @@ const CHIP_INSTRUCTIONS: Record<string, string> = {
   'More formal': 'Make this draft more formal and professional in tone.',
   'More casual': 'Make this draft more casual and friendly in tone.',
   'STR KB': '[STR_KB] Review this draft against the full STR best practices. Flag any issues and suggest improvements.',
+  'Airbnb policy': 'Review this draft against Airbnb guest messaging, review, refund, and policy constraints. Flag concrete risks only.',
+  'Booking.com policy': 'Review this draft against Booking.com guest messaging, cancellation, payment, and policy constraints. Flag concrete risks only.',
   'Summarise this thread': 'Summarise this conversation for an operator. Focus on guest intent, open questions, and next action.',
   'What does the guest want?': 'Identify what the guest wants, what we know, and the next best reply.',
 };
@@ -504,11 +506,10 @@ export function FridayConsult({
   }, [currentDraft?.id, currentDraft?.body]);
 
   // ─── Quick chips ─────────────────────────────────────────────────────
-  // Context-aware quick replies. draft_review gets the OLD-UI set
-  // (Polish / Shorter / More formal / More casual / STR KB); compose
-  // gets a smaller set focused on triage.
+  // Context-aware quick replies. Draft review keeps high-signal checks
+  // only; broad tone chips created clutter and encouraged cosmetic turns.
   const chips = context === 'draft_review'
-    ? ['Polish', 'Shorter', 'More formal', 'More casual', 'STR KB']
+    ? ['Shorter', 'STR KB', 'Airbnb policy', 'Booking.com policy']
     : ['Summarise this thread', 'What does the guest want?', 'STR KB'];
 
   // When the parent's inbox-compose dropdown picks "Ask Friday", it
@@ -1189,14 +1190,14 @@ function AskFridayInput({
         }}
         placeholder={`Ask Friday about ${threadGuest}…`}
         disabled={disabled || busy}
-        rows={1}
+        rows={2}
         style={{
           flex: 1,
           minWidth: 0,
           width: '100%',
           boxSizing: 'border-box',
-          minHeight: 32,
-          maxHeight: 72,
+          minHeight: 44,
+          maxHeight: 96,
           padding: '7px 9px',
           fontSize: 12,
           lineHeight: 1.35,
@@ -1468,8 +1469,8 @@ function DraftMessageActive({
   const waOpen = waState.open;
   const waLeft = waState.expiresInMinutes;
   return (
-    <div className="friday-draft-card friday-draft-card-active" style={{ padding: '7px 8px', minWidth: 0, maxWidth: '100%' }}>
-      <div style={{ marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+    <div className="friday-draft-card friday-draft-card-active" style={{ padding: '6px 7px', minWidth: 0, maxWidth: '100%' }}>
+      <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
         <span style={{ color: 'var(--color-brand-accent)' }}>
           <IconSparkle size={10} /> Draft {typeof revisionNumber === 'number' ? `· rev ${revisionNumber}` : ''}
         </span>
@@ -1516,12 +1517,12 @@ function DraftMessageActive({
         value={workingBody}
         onChange={(e) => setWorkingBody(e.target.value)}
         placeholder="Draft body…"
-        rows={3}
+        rows={2}
         style={{
           width: '100%',
-          minHeight: 56,
-          maxHeight: 140,
-          padding: 6,
+          minHeight: 48,
+          maxHeight: 124,
+          padding: 5,
           fontSize: 12,
           lineHeight: 1.4,
           fontFamily: 'inherit',

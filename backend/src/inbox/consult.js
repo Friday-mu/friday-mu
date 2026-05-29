@@ -580,10 +580,10 @@ function parseTaskSuggestions(responseText) {
   return suggestions;
 }
 
-function parseConsultEnvelope(responseText, context, teachingIdMap = {}) {
+function parseConsultEnvelope(responseText, context, teachingIdMap = {}, options = {}) {
   const parsed = parseJsonish(responseText);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const drafts = normalizeConsultDrafts(parsed);
+  let drafts = normalizeConsultDrafts(parsed);
   const rawTeachings = Array.isArray(parsed.teaching_actions)
     ? parsed.teaching_actions
     : (Array.isArray(parsed.teachings) ? parsed.teachings : []);
@@ -601,8 +601,16 @@ function parseConsultEnvelope(responseText, context, teachingIdMap = {}) {
     || parsed.operator_message
     || '',
   );
+  let operatorResponseText = responseTextValue;
+  if (drafts.length === 0 && options.allowResponseTextDraftRecovery) {
+    const recoveredDraft = extractUntaggedDraftUpdate(responseTextValue, context);
+    if (recoveredDraft) {
+      drafts = [{ body: recoveredDraft, recipientLabel: null, channel: null, targetHint: null }];
+      operatorResponseText = 'Done — I prepared the draft.';
+    }
+  }
   return {
-    responseText: responseTextValue,
+    responseText: operatorResponseText,
     drafts,
     teachingActions,
     taskSuggestions,
@@ -1538,8 +1546,10 @@ router.post('/', attachIdentity, async (req, res) => {
       }
       if (!result.ok) throw new Error(result.error || 'Consult model call failed');
 
-      const consultEnvelope = parseConsultEnvelope(result.text, context, teachingIdMap);
       const draftUpdatesAllowed = shouldAllowDraftUpdatesForTurn(context, instruction);
+      const consultEnvelope = parseConsultEnvelope(result.text, context, teachingIdMap, {
+        allowResponseTextDraftRecovery: draftUpdatesAllowed,
+      });
       let responseTextForHistory = result.text;
       let draftUpdates = draftUpdatesAllowed ? (consultEnvelope?.drafts || []) : [];
       let draftUpdate = draftUpdatesAllowed ? (draftUpdates[0]?.body || parseDraftUpdate(result.text)) : null;
