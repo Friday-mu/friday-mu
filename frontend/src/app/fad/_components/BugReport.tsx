@@ -620,6 +620,14 @@ export function BugReportFab({ currentModuleLabel }: Props) {
     setDictationToggleSeq(0);
   }, [activeDraftId]);
 
+  const patchActiveDraft = useCallback((snapshot: Partial<FeedbackDraftSnapshot>) => {
+    const id = activeDraftId;
+    if (!id) return;
+    setDrafts((current) => current.map((item) => item.id === id
+      ? { ...item, ...snapshot, updatedAt: new Date().toISOString() }
+      : item));
+  }, [activeDraftId]);
+
   const attachScreenshotToDraft = useCallback(async (draftId: string) => {
     if (capturing || activeDraftId) return;
     const captureSeq = captureSeqRef.current + 1;
@@ -749,6 +757,7 @@ export function BugReportFab({ currentModuleLabel }: Props) {
           recentInteractions={activeDraft.recentInteractions}
           initialDraft={activeDraft}
           onMinimize={minimizeActiveDraft}
+          onPatchDraft={patchActiveDraft}
           onClose={discardActiveDraft}
           autoStartDictation={shouldAutoStartDictation}
           dictationToggleSeq={dictationToggleSeq}
@@ -824,6 +833,7 @@ function BugReportModal({
   recentInteractions,
   initialDraft,
   onMinimize,
+  onPatchDraft,
   onClose,
   autoStartDictation = false,
   dictationToggleSeq = 0,
@@ -836,6 +846,7 @@ function BugReportModal({
   recentInteractions: FeedbackBreadcrumb[];
   initialDraft: FeedbackDraftSnapshot;
   onMinimize: (snapshot: FeedbackDraftSnapshot) => void;
+  onPatchDraft: (snapshot: Partial<FeedbackDraftSnapshot>) => void;
   onClose: () => void;
   /** True when the modal was opened via the ⌘⌘ shortcut — start dictation on mount. */
   autoStartDictation?: boolean;
@@ -862,6 +873,7 @@ function BugReportModal({
   const [submitted, setSubmitted] = useState(false);
 
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const mountedRef = useRef(true);
   // Bumped on every chat send + on type switch + on close. The async
   // chat fetch checks this counter before applying its reply — if the
   // user switched type or closed the modal before the reply landed, we
@@ -869,6 +881,9 @@ function BugReportModal({
   // transcript. Same pattern as captureSeqRef on the FAB.
   const chatSeqRef = useRef(0);
   const chatEvidenceSentRef = useRef(false);
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
   // Auto-scroll the chat to the bottom on new messages / thinking state.
   useEffect(() => {
     const el = transcriptRef.current;
@@ -883,7 +898,9 @@ function BugReportModal({
       setInput((cur) => {
         const trimmed = cur.replace(/\s+$/, '');
         const sep = trimmed.length > 0 ? ' ' : '';
-        return trimmed + sep + text;
+        const next = trimmed + sep + text;
+        onPatchDraft({ type, messages, input: next, expandedScreenshotIds });
+        return next;
       });
     },
   });
@@ -918,18 +935,21 @@ function BugReportModal({
     dictation.toggle();
   }, [dictationToggleSeq, dictation]);
 
-  // Esc-to-close + body scroll lock while the modal is mounted. Lock
+  const minimizeDraft = useCallback(() => {
+    if (dictation.state === 'recording' || dictation.state === 'transcribing') {
+      dictation.toggle();
+    }
+    onMinimize({ type, messages, input, expandedScreenshotIds });
+  }, [dictation, expandedScreenshotIds, input, messages, onMinimize, type]);
+
+  // Esc-to-minimize + body scroll lock while the modal is mounted. Lock
   // is restored on unmount even if a parent state path forgets to call
   // onClose. Disabled during submitting so the user can't accidentally
-  // dismiss while the POST is in flight. Stops any in-flight dictation
-  // first so a late transcript can't poison the next modal session.
+  // dismiss while the POST is in flight.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || submitting) return;
-      if (dictation.state === 'recording' || dictation.state === 'transcribing') {
-        dictation.toggle();
-      }
-      onClose();
+      minimizeDraft();
     };
     document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -938,7 +958,7 @@ function BugReportModal({
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [submitting, onClose, dictation]);
+  }, [submitting, minimizeDraft]);
 
   const trimmedInput = input.trim();
   const userMsgCount = messages.filter((m) => m.role === 'user').length;
@@ -973,6 +993,7 @@ function BugReportModal({
     chatSeqRef.current = chatSeq;
     setMessages(nextMessages);
     setInput('');
+    onPatchDraft({ type, messages: nextMessages, input: '', expandedScreenshotIds });
     setThinking(true);
     setChatError(null);
     try {
@@ -1012,9 +1033,11 @@ function BugReportModal({
       if (chatSeqRef.current !== chatSeq) return; // stale — user moved on
       const reply = (data?.reply || '').trim();
       if (reply.length > 0) {
-        setMessages((prev) => [...prev, { role: 'friday', text: reply }]);
+        const replyMessages = [...nextMessages, { role: 'friday' as const, text: reply }];
+        onPatchDraft({ type, messages: replyMessages, input: '', expandedScreenshotIds });
+        if (mountedRef.current) setMessages(replyMessages);
       } else {
-        setChatError('Friday went quiet. You can keep typing or just submit.');
+        if (mountedRef.current) setChatError('Friday went quiet. You can keep typing or just submit.');
       }
     } catch (err) {
       if (chatSeqRef.current !== chatSeq) return; // stale error too
@@ -1024,15 +1047,17 @@ function BugReportModal({
       // makes it clear the AI was unreachable rather than ignoring
       // them. Mirrors the website's soft-fallback UX.
       console.warn('[feedback] chat failed:', err);
-      setMessages((prev) => [
-        ...prev,
+      const fallbackMessages = [
+        ...nextMessages,
         {
-          role: 'friday',
+          role: 'friday' as const,
           text: "I'm not able to fetch a follow-up right now. Add anything else you want the team to know, then hit submit.",
         },
-      ]);
+      ];
+      onPatchDraft({ type, messages: fallbackMessages, input: '', expandedScreenshotIds });
+      if (mountedRef.current) setMessages(fallbackMessages);
     } finally {
-      if (chatSeqRef.current === chatSeq) setThinking(false);
+      if (mountedRef.current && chatSeqRef.current === chatSeq) setThinking(false);
     }
   };
 
@@ -1046,11 +1071,13 @@ function BugReportModal({
   };
 
   const toggleScreenshotExpanded = (shotId: string) => {
-    setExpandedScreenshotIds((current) => (
-      current.includes(shotId)
+    setExpandedScreenshotIds((current) => {
+      const next = current.includes(shotId)
         ? current.filter((id) => id !== shotId)
-        : [...current, shotId]
-    ));
+        : [...current, shotId];
+      onPatchDraft({ type, messages, input, expandedScreenshotIds: next });
+      return next;
+    });
   };
 
   // Switching feedback type mid-conversation resets the chat — the
@@ -1068,6 +1095,7 @@ function BugReportModal({
     setType(t);
     setMessages([]);
     setInput('');
+    onPatchDraft({ type: t, messages: [], input: '', expandedScreenshotIds });
     setChatError(null);
     setThinking(false);
   };
@@ -1160,7 +1188,7 @@ function BugReportModal({
   }
 
   return (
-    <div className="fad-modal-overlay feedback-modal-backdrop" style={{ zIndex: 10000 }} onClick={onClose}>
+    <div className="fad-modal-overlay feedback-modal-backdrop" style={{ zIndex: 10000 }} onClick={minimizeDraft}>
       <div className="fad-modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
         <div className="fad-modal-head">
           <IconTool size={16} />
@@ -1174,12 +1202,7 @@ function BugReportModal({
             type="button"
             className="btn ghost sm"
             style={{ marginLeft: 'auto' }}
-            onClick={() => {
-              if (dictation.state === 'recording' || dictation.state === 'transcribing') {
-                dictation.toggle();
-              }
-              onMinimize({ type, messages, input, expandedScreenshotIds });
-            }}
+            onClick={minimizeDraft}
             disabled={submitting}
             title="Minimize and keep this draft"
           >
@@ -1323,7 +1346,11 @@ function BugReportModal({
               rows={messages.length === 0 ? 4 : 2}
               placeholder={messages.length === 0 ? TYPE_META[type].initialPlaceholder : TYPE_META[type].replyPlaceholder}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setInput(next);
+                onPatchDraft({ type, messages, input: next, expandedScreenshotIds });
+              }}
               onKeyDown={handleKeyDown}
               disabled={!canDraft}
             />

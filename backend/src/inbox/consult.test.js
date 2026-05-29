@@ -115,6 +115,38 @@ describe('FAD-native Consult helpers', () => {
     ]);
   });
 
+  test('recovers email-style draft text from response_text into a draft card', () => {
+    const parsed = parseConsultEnvelope(
+      JSON.stringify({
+        response_text: 'Hello Maria,\n\nThank you for your message. We will confirm shortly.\n\nBest regards,\nFriday Retreats',
+        drafts: [],
+      }),
+      'compose',
+      {},
+      { allowResponseTextDraftRecovery: true },
+    );
+
+    expect(parsed.responseText).toBe('Done — I prepared the draft.');
+    expect(parsed.drafts).toEqual([
+      {
+        body: expect.stringContaining('Hello Maria,'),
+        recipientLabel: null,
+        channel: null,
+        targetHint: null,
+      },
+    ]);
+  });
+
+  test('does not recover response_text drafts unless the turn allows draft updates', () => {
+    const parsed = parseConsultEnvelope(JSON.stringify({
+      response_text: 'Hello Maria,\n\nThank you for your message.\n\nBest regards,\nFriday Retreats',
+      drafts: [],
+    }), 'draft_review');
+
+    expect(parsed.responseText).toContain('Hello Maria');
+    expect(parsed.drafts).toEqual([]);
+  });
+
   test('splits one combined multi-recipient draft into separate draft cards', () => {
     const drafts = normalizeConsultDrafts({
       drafts: [{

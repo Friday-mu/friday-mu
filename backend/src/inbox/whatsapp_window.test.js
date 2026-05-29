@@ -23,26 +23,29 @@ describe('WhatsApp window helpers', () => {
     expect(isWithinWhatsAppWindow(null, now)).toBe(false);
   });
 
-  test('loads last inbound WhatsApp timestamp from message or conversation channel markers', async () => {
+  test('loads last inbound WhatsApp timestamp from message-level channel markers', async () => {
     const queryFn = jest.fn(async () => ({
       rows: [{ last_whatsapp_inbound_at: '2026-05-29T10:00:00.000Z' }],
     }));
 
     await expect(loadLastInboundWhatsAppAt('conversation-1', queryFn)).resolves.toBe('2026-05-29T10:00:00.000Z');
     expect(queryFn.mock.calls[0][0]).toContain('m.module_type');
-    expect(queryFn.mock.calls[0][0]).toContain('c.communication_channel');
-    expect(queryFn.mock.calls[0][0]).toContain("NULLIF(TRIM(COALESCE(m.module_type, '')), '') IS NULL");
-    expect(queryFn.mock.calls[0][0]).not.toContain('m.communication_channel');
+    expect(queryFn.mock.calls[0][0]).toContain('m.communication_channel');
+    expect(queryFn.mock.calls[0][0]).toContain("LOWER(COALESCE(m.communication_channel, '')) LIKE '%whatsapp%'");
+    expect(queryFn.mock.calls[0][0]).not.toContain('c.communication_channel');
     expect(queryFn.mock.calls[0][1]).toEqual(['conversation-1']);
   });
 
-  test('does not let typed non-WhatsApp messages inherit the conversation WhatsApp channel', async () => {
+  test('does not let inbound email messages inherit the conversation WhatsApp channel', async () => {
     const queryFn = jest.fn(async () => ({ rows: [{ last_whatsapp_inbound_at: null }] }));
 
     await loadLastInboundWhatsAppAt('conversation-1', queryFn);
     const sql = queryFn.mock.calls[0][0];
     expect(sql).toMatch(/LOWER\(COALESCE\(m\.module_type, ''\)\) LIKE '%whatsapp%'/);
-    expect(sql).toMatch(/NULLIF\(TRIM\(COALESCE\(m\.module_type, ''\)\), ''\) IS NULL/);
+    expect(sql).toMatch(/LOWER\(COALESCE\(m\.communication_channel, ''\)\) LIKE '%whatsapp%'/);
+    expect(sql).not.toContain('LEFT JOIN conversations');
+    expect(sql).not.toContain('c.communication_channel');
+    expect(sql).not.toContain('c.channel');
   });
 
   test('returns exact expiry metadata for the UI', async () => {

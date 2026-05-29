@@ -696,11 +696,13 @@ async function loadFocusedWebsiteThread(tenantId, threadId) {
   if (tenantId !== FR_TENANT_ID) return null;
   const [threadRes, eventRes] = await Promise.all([
     query(
-      `SELECT id, guest_email, guest_name, guest_phone, status, last_event_type,
-              last_event_at, guesty_reservation_id, guesty_listing_id,
-              guesty_reservation_status, paid_at
-         FROM inbox_threads
-        WHERE id = $1`,
+      `SELECT t.id, t.guest_email, t.guest_name,
+              (to_jsonb(t)->>'guest_phone') AS guest_phone,
+              t.status, t.last_event_type, t.last_event_at,
+              t.guesty_reservation_id, t.guesty_listing_id,
+              t.guesty_reservation_status, t.paid_at
+         FROM inbox_threads t
+        WHERE t.id = $1`,
       [threadId],
     ),
     query(
@@ -800,9 +802,11 @@ async function loadInboxContext(tenantId, focus = null) {
 
   const website = tenantId === FR_TENANT_ID ? await safeSection('website_ai_handoffs', async () => {
     const { rows } = await query(
-      `SELECT id, guest_email, guest_name, guest_phone, status, last_event_type,
-              last_event_at, guesty_reservation_id, guesty_listing_id,
-              guesty_reservation_status, paid_at,
+      `SELECT t.id, t.guest_email, t.guest_name,
+              (to_jsonb(t)->>'guest_phone') AS guest_phone,
+              t.status, t.last_event_type, t.last_event_at,
+              t.guesty_reservation_id, t.guesty_listing_id,
+              t.guesty_reservation_status, t.paid_at,
               latest_handoff.payload AS ai_handoff_payload,
               latest_handoff.created_at AS ai_handoff_at,
               latest_takeover.created_at AS ai_takeover_at
@@ -1382,6 +1386,7 @@ module.exports = {
     sanitizeFocus,
     parseInboxFocusThreadId,
     loadFocusedGuestyThread,
+    loadFocusedWebsiteThread,
     knowledgeScopesForAskFriday,
     stableActionRequestId,
     ASK_FRIDAY_MODEL,
