@@ -81,6 +81,7 @@ function compactStaff(user) {
     role: user.role || null,
     department: user.department || null,
     zone: user.zone || null,
+    status: user.status || null,
     canAssign: user.canAssign ?? user.can_assign ?? null,
   };
 }
@@ -206,7 +207,21 @@ function formatPricingSignal(reservation) {
   };
 }
 
-function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, reservations, currentPlan, selectedDate, rangeStart, rangeEnd }) {
+function compactPlanningTaskSignal(task) {
+  if (!task) return null;
+  return {
+    id: task.id || null,
+    title: task.title || '(untitled)',
+    propertyCode: task.propertyCode || null,
+    dueDate: task.dueDate || null,
+    dueTime: task.dueTime || null,
+    status: task.status || null,
+    priority: task.priority || null,
+    assigneeNames: Array.isArray(task.assigneeNames) ? task.assigneeNames.slice(0, 4) : [],
+  };
+}
+
+function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = [], reservations, currentPlan, selectedDate, rangeStart, rangeEnd }) {
   const daySet = new Set([
     ...daysInRange(rangeStart || selectedDate, rangeEnd || selectedDate),
     dateOnly(selectedDate),
@@ -232,30 +247,50 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, reservatio
       .filter((item) => item.day === selected)
       .map((item) => item.propertyCode),
   );
-  const nonUrgentOccupiedTaskIds = scheduledTasks
+  const selectedDateCandidateTasks = scheduledTasks
     .filter(isOpenPlanningTask)
     .filter((task) => selected && task.dueDate === selected)
+    .concat(
+      unscheduledTasks
+        .filter(isOpenPlanningTask)
+        .filter((task) => selected && !task.dueDate),
+    );
+  const nonUrgentOccupiedTasks = selectedDateCandidateTasks
     .filter((task) => occupiedSelectedProperties.has(task.propertyCode))
     .filter((task) => !guestUrgentTask(task))
-    .map((task) => task.id)
+    .map(compactPlanningTaskSignal)
     .filter(Boolean);
+  const unassignedOpenTasks = scheduledTasks.concat(unscheduledTasks)
+    .filter(isOpenPlanningTask)
+    .filter((task) => task.assigneeIds.length === 0)
+    .map(compactPlanningTaskSignal)
+    .filter(Boolean);
+  const assignableStaff = staff
+    .filter((user) => user?.canAssign !== false)
+    .map((user) => ({
+      id: user.id || null,
+      name: user.name || null,
+      role: user.role || null,
+      department: user.department || null,
+      zone: user.zone || null,
+    }))
+    .filter((user) => user.id && user.name);
   return {
     assignmentPolicy: 'Every drafted scheduled task must have at least one eligible assignee; do not leave work unassigned unless the staff directory is unavailable.',
     occupancyPolicy: 'Do not schedule non-urgent non-guest-requested property work while occupied. Checkout day is available after checkout for turnover work. Urgent guest-requested issues may be handled during occupancy.',
     lunchPolicy: 'Protect one hour lunch for every staff member; prefer 12:00-13:00, fallback 11:00-12:00 or 13:00-14:00. Stagger office staff so someone remains available.',
     availabilityPricingSource: 'Use reservation overlays and calendarPricing from the FAD reservation cache when present; do not invent availability or prices if cache fields are missing.',
+    draftCompletenessPolicy: 'A planning draft should either assign every visible open task it pulls into the selected day or explicitly name the tasks that must move/manual-review. Do not present a partial plan as complete.',
     calendarPricingSignals: reservations
       .map(formatPricingSignal)
       .filter(Boolean)
       .slice(0, 60),
-    unassignedOpenTaskIds: scheduledTasks.concat(unscheduledTasks)
-      .filter(isOpenPlanningTask)
-      .filter((task) => task.assigneeIds.length === 0)
-      .map((task) => task.id)
-      .filter(Boolean)
-      .slice(0, 60),
+    assignableStaff: assignableStaff.slice(0, 60),
+    unassignedOpenTasks: unassignedOpenTasks.slice(0, 60),
+    unassignedOpenTaskIds: unassignedOpenTasks.map((task) => task.id).filter(Boolean).slice(0, 60),
     occupiedPropertyDays: occupiedPropertyDays.slice(0, 80),
-    nonUrgentOccupiedTaskIds: nonUrgentOccupiedTaskIds.slice(0, 60),
+    nonUrgentOccupiedTasks: nonUrgentOccupiedTasks.slice(0, 60),
+    nonUrgentOccupiedTaskIds: nonUrgentOccupiedTasks.map((task) => task.id).filter(Boolean).slice(0, 60),
     currentDraftUnassignedTaskIds: currentPlan
       .filter((item) => !Array.isArray(item.assigneeIds) || item.assigneeIds.length === 0)
       .map((item) => item.taskId)
@@ -359,6 +394,7 @@ function buildOpsCompactModuleContext(body) {
       occupiedPropertyDayCount: planningConstraints.occupiedPropertyDays.length,
       currentDraftUnassignedTaskCount: planningConstraints.currentDraftUnassignedTaskIds.length,
       calendarPricingSignalCount: planningConstraints.calendarPricingSignals.length,
+      assignableStaffCount: planningConstraints.assignableStaff.length,
     },
     staff: staff.map((user) => ({
       id: user.id,
@@ -370,6 +406,7 @@ function buildOpsCompactModuleContext(body) {
     scheduledTasks: scheduledTasks.slice(0, 30),
     unscheduledTasks: unscheduledTasks.slice(0, 20),
     occupiedPropertyDays: planningConstraints.occupiedPropertyDays.slice(0, 30),
+    unassignedOpenTasks: planningConstraints.unassignedOpenTasks.slice(0, 20),
     calendarPricingSignals: planningConstraints.calendarPricingSignals.slice(0, 20),
     currentPlan: currentPlan.slice(0, 20),
     notes: cleanString(body.notes, 1600) || null,
@@ -426,6 +463,8 @@ function responseContract({ compact = false } = {}) {
 - Use at most 8 bullets and 450 words; compact fallback mode uses at most 5 bullets and 260 words.
 - For schedule/roster QA, summarize counts and top risks before examples. Do not list every task.
 - Do not output raw UUIDs unless the operator explicitly asks for IDs; use task title, property code, and assignee names.
+- For schedule-generation requests, account for every visible open unassigned task: assign it, move/block it for a stated reason, or name it as still needing manual review.
+- If assignable staff are loaded, do not recommend a schedule that leaves a visible open task with no named assignee.
 - If a reversible local action would help, include one concise [OPS_ACTION] block after the summary.
 - If the context is too large, say which exact summary is still reliable and ask for a narrower date/property filter.
 ${compact ? '- You are in compact fallback mode because a previous provider response was incomplete; be extra concise.' : ''}`;
