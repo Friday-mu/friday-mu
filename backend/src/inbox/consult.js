@@ -40,9 +40,10 @@ const router = express.Router();
 const CONSULT_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_TIMEOUT_MS) || 480_000;
 const CONSULT_MAX_RETRIES = Number(process.env.KIMI_CONSULT_MAX_RETRIES) || 0;
 const CONSULT_MAX_TOKENS = Number(process.env.KIMI_CONSULT_MAX_TOKENS) || 3200;
-// Compact Consult retries still carry KB, reservation context, and session
-// history, so default to the long-context draft model unless ops overrides it.
-const CONSULT_FALLBACK_MODEL = process.env.KIMI_CONSULT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || DRAFT_MODEL;
+// Compact Consult retries use the normal Gemini-first model hierarchy by
+// default. Set an explicit env model only when ops deliberately wants to pin
+// fallback calls to a provider/model.
+const CONSULT_FALLBACK_MODEL = process.env.KIMI_CONSULT_FALLBACK_MODEL || process.env.KIMI_FAST_DRAFT_MODEL || null;
 const CONSULT_FALLBACK_TIMEOUT_MS = Number(process.env.KIMI_CONSULT_FALLBACK_TIMEOUT_MS) || 300_000;
 const CONSULT_FALLBACK_MAX_RETRIES = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_RETRIES) || 0;
 const CONSULT_FALLBACK_MAX_TOKENS = Number(process.env.KIMI_CONSULT_FALLBACK_MAX_TOKENS) || 1800;
@@ -1549,7 +1550,7 @@ router.post('/', attachIdentity, async (req, res) => {
           currentSessionSummary: session.running_summary || session.summary || null,
           existingWork: existingWorkForPrompt,
         });
-        result = await generateDraftReply({
+        const compactCall = {
           system: compactConsultSystemPrompt({
             context,
             propertyCode,
@@ -1567,9 +1568,10 @@ router.post('/', attachIdentity, async (req, res) => {
           timeoutMs: CONSULT_FALLBACK_TIMEOUT_MS,
           maxRetries: CONSULT_FALLBACK_MAX_RETRIES,
           maxTokens: CONSULT_FALLBACK_MAX_TOKENS,
-          model: CONSULT_FALLBACK_MODEL,
           responseJson: true,
-        });
+        };
+        if (CONSULT_FALLBACK_MODEL) compactCall.model = CONSULT_FALLBACK_MODEL;
+        result = await generateDraftReply(compactCall);
       }
       if (!result.ok && isTransientConsultFailure(result)) {
         degraded = true;
@@ -1585,7 +1587,7 @@ router.post('/', attachIdentity, async (req, res) => {
         result = {
           ok: true,
           text: 'Friday timed out while reading the consultation context. I kept this Consult session open. Please retry the same request, or make the request narrower; no guest message was changed.',
-          model: CONSULT_FALLBACK_MODEL,
+          model: CONSULT_FALLBACK_MODEL || DRAFT_MODEL,
           inputTokens: 0,
           outputTokens: 0,
           latencyMs: result.latencyMs || null,

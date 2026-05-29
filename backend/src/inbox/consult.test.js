@@ -1,6 +1,5 @@
 'use strict';
 
-const { DRAFT_MODEL } = require('../ai/kimi_draft');
 const {
   stripProtocolTags,
   parseDraftUpdate,
@@ -31,8 +30,8 @@ const {
 } = require('./consult')._test;
 
 describe('FAD-native Consult helpers', () => {
-  test('defaults compact fallback to the long-context draft model', () => {
-    expect(CONSULT_FALLBACK_MODEL).toBe(DRAFT_MODEL);
+  test('leaves compact fallback unpinned unless an explicit env model is configured', () => {
+    expect(CONSULT_FALLBACK_MODEL).toBeNull();
   });
 
   test('extracts draft updates and strips protocol tags from visible response', () => {
