@@ -36,6 +36,12 @@ const WEBSITE_TOOL_ALLOWLIST = [
   'open_experience_modal',
 ];
 
+const WEBSITE_GUEST_HERO_TOOL_ALLOWLIST = WEBSITE_TOOL_ALLOWLIST.filter(
+  (toolName) => toolName !== 'search_journal',
+);
+
+const WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST = WEBSITE_TOOL_ALLOWLIST;
+
 function commonWebsiteBehaviorRules(surfaceLabel) {
   return [
     {
@@ -52,6 +58,11 @@ function commonWebsiteBehaviorRules(surfaceLabel) {
       id: 'handoff_for_commitments',
       priority: 'must',
       rule: 'For booking commitments, special requests, exceptions, complaints, owner leads, or anything requiring staff action, create an enquiry or handoff request rather than promising completion.',
+    },
+    {
+      id: 'source_or_handoff_for_policy_claims',
+      priority: 'must',
+      rule: 'Do not make OTA, channel, legal, tax, payment, cancellation, or platform-policy commitments unless grounded in approved source-dated context or a live tool result; hand off if uncertain.',
     },
     {
       id: 'takeover_respect',
@@ -109,7 +120,6 @@ function commonWebsitePayload(surfaceId) {
     reviewBlockersBeforePublish: [
       'Ishant review of exact public property fields allowed in Website context packs.',
       'Ishant review of public owner/package wording before owner-facing packs are published.',
-      'Feedback evidence retention/redaction policy before feedback packs include screenshot or diagnostic context.',
     ],
   };
 }
@@ -129,7 +139,7 @@ function websiteGuestHeroDraft({ version = 1 } = {}) {
     ],
     behaviorRules: commonWebsiteBehaviorRules('Website guest hero Ask Friday'),
     toolPolicy: {
-      allowedTools: WEBSITE_TOOL_ALLOWLIST,
+      allowedTools: WEBSITE_GUEST_HERO_TOOL_ALLOWLIST,
       toolUse: 'live_lookup_required_for_dynamic_public_facts',
       disallowedToolClaims: [
         'direct booking execution',
@@ -169,7 +179,7 @@ function websiteAskFridayFabDraft({ version = 1 } = {}) {
     ],
     behaviorRules: commonWebsiteBehaviorRules('Website Ask Friday FAB'),
     toolPolicy: {
-      allowedTools: WEBSITE_TOOL_ALLOWLIST,
+      allowedTools: WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST,
       routeIntentRequired: true,
       toolUse: 'route_then_live_lookup_for_public_dynamic_facts',
       disallowedToolClaims: [
@@ -202,6 +212,8 @@ function websitePublicDraftContextPacks(options = {}) {
 }
 
 module.exports = {
+  WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST,
+  WEBSITE_GUEST_HERO_TOOL_ALLOWLIST,
   WEBSITE_TOOL_ALLOWLIST,
   websiteAskFridayFabDraft,
   websiteGuestHeroDraft,
