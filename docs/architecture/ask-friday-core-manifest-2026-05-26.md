@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current canonical checkpoint: `origin/fad-rebuild` at `a06eda7e0c77867802a9d9c9f19f8e2a7fe3f194`; next continuation branch TBD.
+Current canonical checkpoint: `origin/fad-rebuild` at `31fbfd549e432598d0e5d22e5068ba61ee4b5284`; next continuation branch TBD.
 
 ## Purpose
 
@@ -41,9 +41,9 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan2-eval-seeds-20260529`
 - Branch: `codex/ask-friday-plan2-eval-seeds-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after PR #46 merge: `a06eda7e0c77867802a9d9c9f19f8e2a7fe3f194`
+- Base/canonical SHA after PR #48 merge: `31fbfd549e432598d0e5d22e5068ba61ee4b5284`
 - Current deployed code-bearing SHA: `810250395041bf377d53900422f6befddfd4ac65`
-- Note: `origin/fad-rebuild` is ahead of live production because PR #44 and PR #46 are merged but not deployed. Do not deploy without explicit coordination.
+- Note: `origin/fad-rebuild` is ahead of live production because PR #44, PR #46, and PR #48 are merged but not deployed. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -73,7 +73,9 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #44 merged on 2026-05-29 as `7d2f8732`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is not deployed.
 - PR #45 merged on 2026-05-29 as `decee0fb`; it adds Plan 2 research/source matrices, reservation action subtype contracts, property field classification, and owner positioning docs. Docs-only; no deploy required.
 - PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for Plan 2 deterministic eval scaffolding. It is not deployed.
-- Deployment status: live frontend and backend both report `81025039`, so live production does not yet include PR #44 or PR #46. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #47 merged on 2026-05-29 as `d33f151b`; docs-only ledger/manifest sync after PR #46.
+- PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is not deployed.
+- Deployment status: live frontend and backend both report `81025039`, so live production does not yet include PR #44, PR #46, or PR #48. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
