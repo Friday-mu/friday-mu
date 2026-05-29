@@ -187,11 +187,11 @@ function reservationFilters(scope, params) {
   }
   if (from) {
     params.push(from);
-    filters.push(`r.check_out_date >= $${params.length}::date`);
+    filters.push(`r.check_out_date > $${params.length}::date`);
   }
   if (to) {
     params.push(to);
-    filters.push(`r.check_in_date <= $${params.length}::date`);
+    filters.push(`r.check_in_date < $${params.length}::date`);
   }
   return filters;
 }
@@ -254,6 +254,13 @@ async function loadReservationContext({ tenantId, body }) {
 
   const newestSync = maxDate(rows.flatMap((row) => [row.synced_at, row.calendar_synced_at]));
   const ageSeconds = sourceAgeSeconds(newestSync);
+  const rowsWithoutCalendarCoverage = rows.filter((row) => Number(row.calendar_nights_cached || 0) <= 0);
+  const caveats = [];
+  if (rows.length > 0 && rowsWithoutCalendarCoverage.length === rows.length) {
+    caveats.push('Reservation context loaded without calendar cache coverage; availability and prices are not proved by this context.');
+  } else if (rowsWithoutCalendarCoverage.length > 0) {
+    caveats.push(`${rowsWithoutCalendarCoverage.length} reservation(s) have no calendar cache coverage; treat their availability and prices as unknown.`);
+  }
   return {
     source: {
       system: 'fad',
@@ -303,6 +310,7 @@ async function loadReservationContext({ tenantId, body }) {
         allowedUse: ['ops_schedule', 'guest_reply_staff_review', 'reservation_review'],
       };
     }),
+    caveats,
   };
 }
 

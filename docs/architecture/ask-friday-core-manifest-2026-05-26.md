@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current canonical checkpoint: `origin/fad-rebuild` at `5c1e4b2a9135586eb8472fc46aae11bb77b89c1f`; live production remains `af513255723d68b3354de351c381f89532366efe`.
+Current canonical checkpoint: `origin/fad-rebuild` at `28c7794cea388004a9ea16f821177bfe076144e8`; live production remains `af513255723d68b3354de351c381f89532366efe`.
 
 ## Purpose
 
@@ -39,11 +39,11 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 ## Current Branch Truth
 
 - Latest active Ask Friday Core worktree: `/Users/judith/.codex/worktrees/ask-friday-readiness-evals-20260529`
-- Branch: `codex/ask-friday-post-pr59-plan-next-20260529`
+- Branch: `codex/ask-friday-module-feedback-ops-rules-20260529`
 - Base branch: `origin/fad-rebuild`
-- Current origin SHA after PR #59 merge: `5c1e4b2a9135586eb8472fc46aae11bb77b89c1f`
+- Current origin SHA after PR #61 and parallel FAD V2 Operations UI merges: `28c7794cea388004a9ea16f821177bfe076144e8`
 - Current deployed code-bearing SHA: `af513255723d68b3354de351c381f89532366efe`
-- Note: PR #59 is merged to `origin/fad-rebuild` but not deployed. Live production still reports `af513255`. Do not deploy without explicit coordination.
+- Note: PR #59 is merged to `origin/fad-rebuild` but not deployed; PR #61 is docs-only and also does not require deploy. Live production still reports `af513255`. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -87,7 +87,8 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #57 merged on 2026-05-29; it adds global Ask Friday Core state/readiness loading.
 - PR #58 merged on 2026-05-29; it fixes global Ask Friday learning-event scope drift.
 - PR #59 merged on 2026-05-29 as `5c1e4b2a`; it adds migrations `109_ask_friday_learning_feedback_policies.sql`, `110_ask_friday_eval_readiness_coverage.sql`, and `111_ask_friday_active_runtime_context_pack_drafts.sql`, mirrors global Ask Friday page-aware learning into active module surfaces, adds generated active runtime context-pack templates for global Ask Friday / Inbox Consult / Ops Assistant, and seeds non-destructive draft rows for those packs. It is not deployed.
-- Deployment status: live frontend and backend both report `af513255`, while `origin/fad-rebuild` is `5c1e4b2a`. Reviewed Website public context packs remain published through the gated publisher in production DB. PR #59 is merged but remains the current undeployed Ask Friday Core delta.
+- PR #61 merged on 2026-05-29 as `8b5dde3c`; it adds the Ask Friday feedback retention/redaction policy and links it into the manifest/ledger/gap tracker. Docs-only; no deploy required.
+- Deployment status: live frontend and backend both report `af513255`, while `origin/fad-rebuild` is `28c7794c`. Reviewed Website public context packs remain published through the gated publisher in production DB. PR #59 remains the current undeployed Ask Friday Core runtime delta; PR #61 is docs-only; later Operations UI merges are frontend redesign work.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
