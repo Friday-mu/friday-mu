@@ -75,4 +75,52 @@ describe('Ask Friday Core action writer', () => {
 
     expect(query).toHaveBeenCalledTimes(1);
   });
+
+  test('writes approval-routed reservation calendar shell actions', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          surface_id: 'fad_reservations_calendar_assistant',
+          allowed_actions: [
+            'request_booking_quote',
+            'request_reservation_mutation',
+            'request_channel_visible_block',
+          ],
+        })],
+      })
+      .mockResolvedValueOnce({ rows: [{ action_id: 'act-quote-1' }] });
+
+    const result = await recordActionRequest({
+      tenantId: TENANT_ID,
+      action: {
+        actionId: 'act-quote-1',
+        sourceSystem: 'fad',
+        surfaceId: 'fad_reservations_calendar_assistant',
+        requestedBy: { identityType: 'staff', identityKey: 'ishant', authenticated: true },
+        actionType: 'request_booking_quote',
+        riskClass: 'approval',
+        payload: {
+          propertyCode: 'GBH-C3',
+          dateWindow: { from: '2026-07-10', to: '2026-07-12' },
+          sourceFreshnessRequired: true,
+        },
+        reason: 'Ask Friday should queue a source-dated quote draft for review.',
+        approvalRequired: true,
+        status: 'pending',
+      },
+    });
+
+    expect(result).toEqual({ actionId: 'act-quote-1', written: true });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1][1]).toEqual(expect.arrayContaining([
+      TENANT_ID,
+      'act-quote-1',
+      'fad',
+      'fad_reservations_calendar_assistant',
+      'request_booking_quote',
+      'approval',
+      true,
+      'pending',
+    ]));
+  });
 });
