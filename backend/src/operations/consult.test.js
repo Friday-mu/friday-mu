@@ -1,11 +1,14 @@
 'use strict';
 
 const {
+  buildOpsCompactModuleContext,
   buildOpsModuleContext,
+  buildSystemPrompt,
   buildPlanningConstraints,
   guestUrgentTask,
   parseOpsActionSuggestions,
   reservationBlocksOps,
+  shouldRetryWithCompactOpsPrompt,
   stripOpsProtocolTags,
   taskSignalsForContext,
 } = require('./consult')._test;
@@ -68,6 +71,49 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"totalMinor": 34000');
     expect(context).toContain('Fix AC drain leak');
     expect(context).toContain('Bryan Henri');
+  });
+
+  test('compact fallback context keeps planning signals but limits task detail', () => {
+    const context = buildOpsCompactModuleContext({
+      context: 'schedule',
+      selectedDate: '2026-05-29',
+      scheduledTasks: Array.from({ length: 45 }, (_, index) => ({
+        id: `task-${index}`,
+        title: `Visible task ${index}`,
+        propertyCode: index % 2 === 0 ? 'BW-C4' : 'MV-1',
+        status: 'scheduled',
+        priority: index === 0 ? 'high' : 'medium',
+        assigneeIds: [],
+        description: `Long internal detail ${index}`.repeat(20),
+      })),
+      staff: [{ id: 'u-franny', name: 'Franny Henri', role: 'ops_manager', canAssign: true }],
+      reservations: [{
+        id: 'rsv-1',
+        propertyCode: 'BW-C4',
+        guestName: 'Guest One',
+        checkInDate: '2026-05-28',
+        checkOutDate: '2026-05-30',
+        status: 'confirmed',
+      }],
+    });
+
+    expect(context).toContain('"compact": true');
+    expect(context).toContain('"unassignedOpenTaskCount": 45');
+    expect(context).toContain('Visible task 0');
+    expect(context).not.toContain('Long internal detail');
+    expect(context.length).toBeLessThan(20000);
+  });
+
+  test('system prompt enforces bounded responses and hides raw ids by default', () => {
+    const prompt = buildSystemPrompt({
+      context: 'schedule',
+      composed: { system_message: 'Loaded ops KB.' },
+      compact: true,
+    });
+
+    expect(prompt).toContain('Use at most 8 bullets and 450 words');
+    expect(prompt).toContain('Do not output raw UUIDs');
+    expect(prompt).toContain('compact fallback mode');
   });
 
   test('treats checkout day as schedulable after checkout for occupancy rules', () => {
@@ -169,5 +215,18 @@ describe('Operations Friday Consult helpers', () => {
   test('detects useful task signals from operator language', () => {
     const signals = taskSignalsForContext('Can you roster Bryan, schedule AC maintenance, and check owner approval for the repair quote?');
     expect(signals).toEqual(expect.arrayContaining(['schedule', 'roster', 'maintenance', 'owner_approval']));
+  });
+
+  test('retries compact prompt for incomplete provider finishes', () => {
+    expect(shouldRetryWithCompactOpsPrompt({
+      ok: false,
+      error: 'incomplete response (finish_reason=MAX_TOKENS)',
+      finishReason: 'MAX_TOKENS',
+    })).toBe(true);
+    expect(shouldRetryWithCompactOpsPrompt({
+      ok: false,
+      error: 'rate limit',
+      finishReason: null,
+    })).toBe(false);
   });
 });

@@ -39,10 +39,10 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `75ef9bc8` | not directly user-facing | deployed control plane, not finished platform |
-| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed; detail load fix verified | deployed at `75ef9bc8` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed | deployed at `75ef9bc8` | needs Franny real schedule/roster proof | Plan 1 browser/workflow priority |
-| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `75ef9bc8` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `205d8a91` | not directly user-facing | deployed control plane, not finished platform |
+| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed; detail load fix verified | deployed at `205d8a91` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed; finish guard live | deployed at `205d8a91` | needs live bounded-response re-smoke | Plan 1 browser/workflow priority |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `205d8a91` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
@@ -129,10 +129,11 @@ Current reconciliation as of 2026-05-29:
   - Ops Schedule loaded live with 4 visible open tasks and 2 initially unassigned visible tasks. The local reversible `Draft schedule` action drafted 4 moves and assigned every visible move, including occupancy reasoning, calendar-pricing overlay notes, and preferred 12:00-13:00 lunch protection.
   - Ops Roster loaded live with 187 scheduled weekly tasks and 87 unassigned tasks. The reversible `Draft roster` action drafted 11 staff coverage cells using reservation pressure. This is staff-coverage planning, not per-task assignment; if Friday expects roster generation itself to assign individual tasks, that needs a separate roster/task-allocation contract.
   - Ops Consult model QA exposed a blocker: `/api/operations/consult` returned HTTP 200 but visible text was cut mid-task id and had no reversible action suggestion. Current branch `codex/ask-friday-consult-finish-reason-20260529` patches the shared draft client so non-normal provider finish reasons with partial text are treated as incomplete and trigger fallback/failure instead of being shown as successful advice. This needs deploy plus live re-smoke before closing Plan 1 Ops Consult.
+- 2026-05-29 PR #17 merged and deployed as `205d8a91`; frontend/backend versions aligned, PM2 online, and post-deploy smoke confirmed the previous partial output no longer leaks. The same Ops schedule prompt now fails closed as `ops_consult_model_failed` when Gemini hits `MAX_TOKENS` and Kimi hits `finish_reason=length`. Current branch `codex/ops-consult-bounded-response-20260529` adds a bounded response contract and compact Ops fallback context so Ops Consult can answer team-usefully instead of failing closed on broad schedule-review prompts.
 
 Remaining Plan 1 tasks:
 
-1. Merge/deploy the Consult finish-reason guard, then re-smoke Ops Consult on the live schedule prompt that previously returned partial text.
+1. Merge/deploy the Ops bounded-response/compact-fallback branch, then re-smoke Ops Consult on the live schedule prompt that currently fails closed.
 2. Run browser/live workflow QA with real staff-shaped scenarios:
    - Inbox guest complaint draft with latest guest turn;
    - Inbox property/reservation-grounded reply;
