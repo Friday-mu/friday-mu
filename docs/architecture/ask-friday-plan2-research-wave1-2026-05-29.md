@@ -106,7 +106,7 @@ It answers the current implementation question: which knowledge can become KB, w
    - Mauritius official-source answer,
    - competitor comparison safety.
 3. `docs/architecture/ask-friday-property-field-classification-2026-05-29.md` now drafts the property field-classification table that must be reviewed before public property context packs expand.
-4. Create a staff-private owner positioning source matrix.
+4. `docs/architecture/ask-friday-owner-positioning-source-matrix-2026-05-29.md` now captures staff-private owner positioning, competitor, market, compliance, and owner-enquiry harness signals.
 5. Keep broad Plan 2 runtime wiring blocked until Plan 1 staff-use proof is recorded or the work is read-only/docs/evals-only.
 
 ## Sources

@@ -116,6 +116,8 @@ Read these first, in order:
     - Plan 2 research/source-matrix addendum for reservations/calendar, properties, Ops, Website public, owner enquiry, local Mauritius context, competitor/market signals, and eval candidates.
 16. `docs/architecture/ask-friday-property-field-classification-2026-05-29.md`
     - Draft property privacy/field matrix for public, guest-scoped, owner-scoped, staff-private, and restricted property facts.
+17. `docs/architecture/ask-friday-owner-positioning-source-matrix-2026-05-29.md`
+    - Staff-private owner-positioning source matrix for competitor, market, compliance, and owner enquiry harness signals.
 
 ## Master Plan And Subplans
 
@@ -143,6 +145,8 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 - `docs/architecture/ask-friday-property-field-classification-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-owner-positioning-source-matrix-2026-05-29.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
