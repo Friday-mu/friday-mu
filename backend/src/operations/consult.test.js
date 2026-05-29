@@ -69,6 +69,8 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"nonUrgentOccupiedTaskIds"');
     expect(context).toContain('"calendarPricingSignals"');
     expect(context).toContain('"totalMinor": 34000');
+    expect(context).toContain('"unassignedOpenTasks"');
+    expect(context).toContain('"assignableStaff"');
     expect(context).toContain('Fix AC drain leak');
     expect(context).toContain('Bryan Henri');
   });
@@ -99,6 +101,8 @@ describe('Operations Friday Consult helpers', () => {
 
     expect(context).toContain('"compact": true');
     expect(context).toContain('"unassignedOpenTaskCount": 45');
+    expect(context).toContain('"assignableStaffCount": 1');
+    expect(context).toContain('"unassignedOpenTasks"');
     expect(context).toContain('Visible task 0');
     expect(context).not.toContain('Long internal detail');
     expect(context.length).toBeLessThan(20000);
@@ -113,6 +117,7 @@ describe('Operations Friday Consult helpers', () => {
 
     expect(prompt).toContain('Use at most 8 bullets and 450 words');
     expect(prompt).toContain('Do not output raw UUIDs');
+    expect(prompt).toContain('do not recommend a schedule that leaves a visible open task with no named assignee');
     expect(prompt).toContain('compact fallback mode');
   });
 
@@ -180,8 +185,41 @@ describe('Operations Friday Consult helpers', () => {
     });
 
     expect(constraints.unassignedOpenTaskIds).toEqual(expect.arrayContaining(['open-1', 'open-2']));
+    expect(constraints.unassignedOpenTasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'open-1', propertyCode: 'VA-1' }),
+      expect.objectContaining({ id: 'open-2', propertyCode: 'GBH-C4' }),
+    ]));
     expect(constraints.unassignedOpenTaskIds).not.toEqual(expect.arrayContaining(['closed-1', 'closed-2']));
     expect(constraints.nonUrgentOccupiedTaskIds).toEqual(['open-1']);
+  });
+
+  test('flags unscheduled non-urgent work blocked by selected-day occupancy', () => {
+    const constraints = buildPlanningConstraints({
+      selectedDate: '2026-05-27',
+      rangeStart: '2026-05-27',
+      rangeEnd: '2026-05-27',
+      currentPlan: [],
+      staff: [{ id: 'u-catherine', name: 'Catherine Henri', canAssign: true }],
+      reservations: [{
+        id: 'rsv-1',
+        propertyCode: 'BW-C4',
+        guestName: 'Guest One',
+        checkInDate: '2026-05-26',
+        checkOutDate: '2026-05-28',
+        status: 'confirmed',
+      }],
+      scheduledTasks: [],
+      unscheduledTasks: [
+        { id: 'unscheduled-1', title: 'Aesthetic check', propertyCode: 'BW-C4', status: 'scheduled', priority: 'medium', assigneeIds: [] },
+        { id: 'urgent-1', title: 'Guest lock access blocked', propertyCode: 'BW-C4', status: 'reported', priority: 'high', source: 'reported_issue', assigneeIds: [] },
+      ],
+    });
+
+    expect(constraints.assignableStaff).toEqual([expect.objectContaining({ name: 'Catherine Henri' })]);
+    expect(constraints.nonUrgentOccupiedTaskIds).toEqual(['unscheduled-1']);
+    expect(constraints.nonUrgentOccupiedTasks).toEqual([
+      expect.objectContaining({ id: 'unscheduled-1', title: 'Aesthetic check' }),
+    ]);
   });
 
   test('classifies urgent guest access work as occupancy-eligible', () => {

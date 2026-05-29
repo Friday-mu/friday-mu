@@ -1029,6 +1029,14 @@ interface ScheduleAgentSuggestion {
   reason: string;
 }
 
+interface SchedulePlanAudit {
+  targetTasks: Task[];
+  unplannedTasks: Task[];
+  occupancyBlockedTasks: Task[];
+  unassignedAfterApplyTasks: Task[];
+  untimedAfterApplyTasks: Task[];
+}
+
 interface ScheduleUndoTaskState {
   taskId: string;
   title: string;
@@ -1572,6 +1580,54 @@ function buildScheduleAgentPlan(input: {
       ].filter(Boolean).join(' '),
     }];
   });
+}
+
+function taskNeedsSchedulePlanning(task: Task, selectedDate: string): boolean {
+  if (!OPEN_SCHEDULE_STATUSES.includes(task.status)) return false;
+  if (!task.dueDate) return true;
+  return task.dueDate === selectedDate && (!task.dueTime || task.assigneeIds.length === 0);
+}
+
+function auditScheduleAgentPlan(input: {
+  selectedDate: string;
+  scheduledTasks: Task[];
+  unscheduledTasks: Task[];
+  reservations: ScheduleReservation[];
+  agentPlan: ScheduleAgentSuggestion[];
+}): SchedulePlanAudit {
+  const planByTaskId = new Map(input.agentPlan.map((item) => [item.taskId, item]));
+  const targetTasks = mergeTaskSlices(input.scheduledTasks, input.unscheduledTasks)
+    .filter((task) => taskNeedsSchedulePlanning(task, input.selectedDate));
+  const occupancyBlockedTasks = targetTasks
+    .filter((task) => !taskFitsOccupancyPolicy(task, input.selectedDate, input.reservations));
+  const occupancyBlockedIds = new Set(occupancyBlockedTasks.map((task) => task.id));
+  const unplannedTasks = targetTasks
+    .filter((task) => !occupancyBlockedIds.has(task.id))
+    .filter((task) => !planByTaskId.has(task.id));
+  const unassignedAfterApplyTasks = targetTasks
+    .filter((task) => {
+      const plan = planByTaskId.get(task.id);
+      const plannedAssignees = plan?.assigneeIds || [];
+      return task.assigneeIds.length === 0 && plannedAssignees.length === 0;
+    });
+  const untimedAfterApplyTasks = targetTasks
+    .filter((task) => {
+      const plan = planByTaskId.get(task.id);
+      return !task.dueTime && !plan?.dueTime;
+    });
+  return {
+    targetTasks,
+    unplannedTasks,
+    occupancyBlockedTasks,
+    unassignedAfterApplyTasks,
+    untimedAfterApplyTasks,
+  };
+}
+
+function summarizeTaskList(tasks: Task[], limit = 3): string {
+  const labels = tasks.slice(0, limit).map((task) => `${taskTitle(task)} (${taskPropertyLabel(task)})`);
+  const extra = tasks.length > limit ? ` +${tasks.length - limit} more` : '';
+  return `${labels.join(', ')}${extra}`;
 }
 
 function buildScheduleUndoEntry(label: string, tasks: Task[]): ScheduleUndoEntry | null {
@@ -2254,9 +2310,25 @@ function SchedulePage({
       fireToast(`${taskPropertyLabel(task)} is occupied by ${occupied.guestName}; schedule non-urgent work after checkout.`);
       return;
     }
+    const [suggestion] = buildScheduleAgentPlan({
+      selectedDate,
+      scheduledTasks: rawScheduleTasks,
+      unscheduledTasks: [task],
+      staffOptions,
+      reservations,
+    }).filter((item) => item.taskId === task.id);
+    if (staffOptions.some((user) => user.canAssign) && (!suggestion || suggestion.assigneeIds.length === 0)) {
+      fireToast(`Friday Consult could not assign ${taskTitle(task)} safely. Open the task and choose a staff member first.`);
+      return;
+    }
     void patchTask(
       task,
-      { dueDate: selectedDate, status: task.status === 'reported' ? 'scheduled' : task.status },
+      {
+        dueDate: selectedDate,
+        dueTime: suggestion?.dueTime || task.dueTime || '',
+        assigneeIds: suggestion?.assigneeIds.length ? suggestion.assigneeIds : task.assigneeIds,
+        status: task.status === 'reported' ? 'scheduled' : task.status,
+      },
       'Task added to schedule',
       'add task to schedule',
     );
@@ -2453,19 +2525,63 @@ function SchedulePage({
       staffOptions,
       reservations,
     });
+    const audit = auditScheduleAgentPlan({
+      selectedDate,
+      scheduledTasks: rawScheduleTasks,
+      unscheduledTasks,
+      reservations,
+      agentPlan: next,
+    });
+    const selectedDayUnplanned = audit.unplannedTasks.filter((task) => task.dueDate === selectedDate);
+    const selectedDayBlocked = audit.occupancyBlockedTasks.filter((task) => task.dueDate === selectedDate);
+    const reviewCount = selectedDayUnplanned.length + selectedDayBlocked.length;
     setAgentPlan(next);
-    fireToast(next.length > 0 ? `Friday Consult drafted ${next.length} schedule move${next.length === 1 ? '' : 's'}` : 'No draftable tasks fit the staff, occupancy, and lunch constraints');
+    fireToast(next.length > 0
+      ? reviewCount > 0
+        ? `Friday Consult drafted ${next.length} move${next.length === 1 ? '' : 's'}; ${reviewCount} scheduled task${reviewCount === 1 ? '' : 's'} still need review.`
+        : `Friday Consult drafted ${next.length} move${next.length === 1 ? '' : 's'} with assignments and times.`
+      : 'No draftable tasks fit the staff, occupancy, and lunch constraints');
     return next;
   };
 
   const applyAgentPlan = async () => {
     if (agentPlan.length === 0 || agentApplying) return;
+    const plannedTaskIds = new Set(agentPlan.map((item) => item.taskId));
+    const audit = auditScheduleAgentPlan({
+      selectedDate,
+      scheduledTasks: rawScheduleTasks,
+      unscheduledTasks,
+      reservations,
+      agentPlan,
+    });
     const unassignedDraft = agentPlan.find((item) => {
       const task = allKnownTasks.find((candidate) => candidate.id === item.taskId);
       return !(task?.assigneeIds.length) && item.assigneeIds.length === 0;
     });
     if (unassignedDraft) {
       fireToast(`Friday Consult draft still has unassigned work: ${unassignedDraft.title}. Load staff or assign it manually first.`);
+      return;
+    }
+    const selectedDayBlocked = audit.occupancyBlockedTasks.filter((task) => task.dueDate === selectedDate);
+    if (selectedDayBlocked.length > 0) {
+      fireToast(`Move occupied non-urgent work before applying: ${summarizeTaskList(selectedDayBlocked)}.`);
+      return;
+    }
+    const selectedDayUnplanned = audit.unplannedTasks.filter((task) => task.dueDate === selectedDate);
+    if (selectedDayUnplanned.length > 0) {
+      fireToast(`Friday Consult draft is incomplete for ${summarizeTaskList(selectedDayUnplanned)}.`);
+      return;
+    }
+    const unassignedAfterApply = audit.unassignedAfterApplyTasks
+      .filter((task) => task.dueDate === selectedDate || plannedTaskIds.has(task.id));
+    if (unassignedAfterApply.length > 0) {
+      fireToast(`Friday Consult would leave unassigned work: ${summarizeTaskList(unassignedAfterApply)}.`);
+      return;
+    }
+    const untimedAfterApply = audit.untimedAfterApplyTasks
+      .filter((task) => task.dueDate === selectedDate || plannedTaskIds.has(task.id));
+    if (untimedAfterApply.length > 0) {
+      fireToast(`Friday Consult would leave untimed work: ${summarizeTaskList(untimedAfterApply)}.`);
       return;
     }
     setAgentApplying(true);
