@@ -1,6 +1,8 @@
 'use strict';
 
 const {
+  WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST,
+  WEBSITE_GUEST_HERO_TOOL_ALLOWLIST,
   WEBSITE_TOOL_ALLOWLIST,
   websitePublicDraftContextPacks,
 } = require('./context_pack_templates');
@@ -58,6 +60,24 @@ describe('Ask Friday public Website context-pack templates', () => {
       expect(draft.status).toBe('draft');
       expect(draft.packPayload.reviewBlockersBeforePublish.length).toBeGreaterThan(0);
       expect(draft.memoryPolicy.canonicalization).toContain('human_review_required');
+    }
+  });
+
+  test('hero has narrower tools than Website FAB', () => {
+    const [hero, fab] = websitePublicDraftContextPacks();
+
+    expect(hero.toolPolicy.allowedTools).toEqual(WEBSITE_GUEST_HERO_TOOL_ALLOWLIST);
+    expect(fab.toolPolicy.allowedTools).toEqual(WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST);
+    expect(hero.toolPolicy.allowedTools).not.toContain('search_journal');
+    expect(fab.toolPolicy.allowedTools).toContain('search_journal');
+  });
+
+  test('feedback evidence blocker is not attached to public Website packs', () => {
+    for (const draft of websitePublicDraftContextPacks()) {
+      const blockers = draft.packPayload.reviewBlockersBeforePublish.join(' ').toLowerCase();
+      expect(blockers).not.toContain('feedback');
+      expect(blockers).not.toContain('screenshot');
+      expect(blockers).not.toContain('diagnostic');
     }
   });
 });

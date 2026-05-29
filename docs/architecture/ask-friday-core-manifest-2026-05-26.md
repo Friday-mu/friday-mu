@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current continuation branch: `codex/ask-friday-plan2-20260529`
+Current continuation branch: `codex/ask-friday-core-next-20260529`
 
 ## Purpose
 
@@ -38,11 +38,12 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan2-20260529`
-- Branch: `codex/ask-friday-plan2-20260529`
+- Worktree: `/Users/judith/.codex/worktrees/ask-friday-core-next-20260529`
+- Branch: `codex/ask-friday-core-next-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/live SHA when this continuation branch was created: `5d44d16dd26c4fb2edc323fcbb570f816089aaa3`
-- Current live/canonical SHA after the latest Plan 1 bugfix deploy: `5d44d16dd26c4fb2edc323fcbb570f816089aaa3`
+- Base/canonical SHA when this continuation branch was created: `3b09772fd9054f80f0212e8c26cba038f611ceb6`
+- Current deployed code SHA: `b70c40871c13dd99adaea26143ebad563d2d4286`
+- Current canonical branch SHA: `3b09772fd9054f80f0212e8c26cba038f611ceb6`
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -51,7 +52,10 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #18: merged and deployed on 2026-05-29 as `c52f1a6e`; this adds bounded Ops Consult responses plus compact fallback context for broad schedule-review prompts.
 - PR #20: merged and deployed on 2026-05-29 as `73dc8fec`; this split email-style multi-recipient Consult drafts into separate draft cards, suppressed duplicate same-session task suggestions, fixed Inbox textarea shortcut propagation, and made the WhatsApp timer source stricter.
 - PR #21: merged and deployed on 2026-05-29 as `5d44d16d`; this tightened Ops schedule planner guardrails so drafts/apply paths account for assignable staff, unassigned visible work, occupancy blockers, and selected-day untimed work.
-- Deployment status: live frontend and backend both reported `5d44d16d` after the 2026-05-29 Ops planner guardrail deploy.
+- PR #22: merged on 2026-05-29 as `45d3c066`; this added draft-only Website public context pack templates.
+- PR #23: merged and deployed on 2026-05-29 as `b70c4087`; this fixed environment loading for the context-pack draft script.
+- PR #24: merged on 2026-05-29 as `3b09772f`; this narrowed the Website guest hero context pack, kept FAB journal search, and removed feedback-specific blockers from Website public packs.
+- Deployment status: live frontend and backend both report `b70c4087`. `origin/fad-rebuild` is ahead at `3b09772f`; that source change is not deployed yet, but the reviewed Website public context packs were published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
@@ -346,10 +350,10 @@ Current Plan 3 source-truth packet:
   - Public and owner-facing context needs Ishant review before published KB/context-pack use.
   - Feedback evidence needs retention/redaction policy before raw screenshots or diagnostics are mined.
   - Migration `102_ask_friday_public_owner_feedback_evals.sql` is live and seeds deterministic eval scaffolding for these scoped risks.
-  - Production currently has zero context packs, so Website public Core fetches can authenticate but return `context_pack_not_found` until the first reviewed public pack is published.
+  - Production now has published public Website context packs for `website_guest_hero` and `website_ask_friday_fab`. Website public Core fetches should no longer return `context_pack_not_found` for those two surfaces.
 - `backend/src/ask_friday/context_pack_templates.js`
-  - Draft-only templates now exist for `website_guest_hero` and `website_ask_friday_fab`.
-  - These are review artifacts, not published truth. They keep dynamic facts live-tool grounded and carry explicit review blockers for public property fields, owner wording, and feedback evidence retention.
+  - Source templates exist for `website_guest_hero` and `website_ask_friday_fab`.
+  - They remain the editable source for regenerated drafts. Reviewed v1 public Website context packs are now published in the production DB; dynamic facts still stay live-tool grounded and feedback evidence remains retention/redaction gated.
 
 ## Maintenance Rule
 

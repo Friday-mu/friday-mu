@@ -2,6 +2,7 @@
 
 const {
   buildOpsCompactModuleContext,
+  buildDeterministicOpsFallback,
   buildOpsModuleContext,
   buildSystemPrompt,
   buildPlanningConstraints,
@@ -266,5 +267,77 @@ describe('Operations Friday Consult helpers', () => {
       error: 'rate limit',
       finishReason: null,
     })).toBe(false);
+  });
+
+  test('deterministic fallback gives bounded safe schedule checks after model exhaustion', () => {
+    const fallback = buildDeterministicOpsFallback({
+      context: 'schedule',
+      selectedDate: '2026-05-29',
+      scheduledTasks: [{
+        id: 'task-1',
+        title: 'Post-clean inspection',
+        propertyCode: 'BW-C4',
+        status: 'scheduled',
+        priority: 'medium',
+        dueDate: '2026-05-29',
+        assigneeIds: [],
+      }],
+      unscheduledTasks: [{
+        id: 'task-2',
+        title: 'Restock coffee',
+        propertyCode: 'GBH-C3',
+        status: 'reported',
+        priority: 'medium',
+        assigneeIds: [],
+      }],
+      staff: [{ id: 'u-franny', name: 'Franny Henri', canAssign: true }],
+      reservations: [{
+        id: 'rsv-1',
+        propertyCode: 'BW-C4',
+        guestName: 'Guest One',
+        checkInDate: '2026-05-28',
+        checkOutDate: '2026-05-30',
+        status: 'confirmed',
+        calendarPricing: {
+          nightsCached: 2,
+          totalMinor: 32000,
+          currencyCode: 'MUR',
+        },
+      }],
+    }, { reason: 'finish_reason=length' });
+
+    expect(fallback.text).toContain('safe planner checks locally');
+    expect(fallback.text).toContain('Assignment blocker: 2');
+    expect(fallback.text).toContain('Occupancy blocker: 1');
+    expect(fallback.text).toContain('Availability/pricing check: 1');
+    expect(fallback.text).toContain('Lunch/fairness rule');
+    expect(fallback.text).toContain('[OPS_ACTION]');
+    expect(fallback.action).toMatchObject({ type: 'draft_schedule' });
+    expect(fallback.diagnostics).toMatchObject({
+      unassignedOpenTaskCount: 2,
+      nonUrgentOccupiedTaskCount: 1,
+      calendarPricingSignalCount: 1,
+      assignableStaffCount: 1,
+    });
+  });
+
+  test('deterministic fallback does not suggest schedule actions without staff', () => {
+    const fallback = buildDeterministicOpsFallback({
+      context: 'schedule',
+      selectedDate: '2026-05-29',
+      unscheduledTasks: [{
+        id: 'task-1',
+        title: 'Aesthetic check',
+        propertyCode: 'BW-C4',
+        status: 'reported',
+        priority: 'medium',
+      }],
+      staff: [],
+      reservations: [],
+    });
+
+    expect(fallback.text).not.toContain('[OPS_ACTION]');
+    expect(fallback.action).toBeNull();
+    expect(fallback.diagnostics.assignableStaffCount).toBe(0);
   });
 });
