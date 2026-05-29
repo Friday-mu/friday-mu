@@ -221,6 +221,24 @@ function compactPlanningTaskSignal(task) {
   };
 }
 
+function taskHumanLabel(task) {
+  if (!task) return 'unnamed task';
+  const bits = [
+    task.title || 'Untitled task',
+    task.propertyCode ? `at ${task.propertyCode}` : '',
+  ].filter(Boolean);
+  return bits.join(' ');
+}
+
+function summarizeTaskSignals(tasks, limit = 4) {
+  const list = safeArray(tasks, limit)
+    .map(taskHumanLabel)
+    .filter(Boolean);
+  if (list.length === 0) return 'none named';
+  const extra = Array.isArray(tasks) && tasks.length > limit ? `, plus ${tasks.length - limit} more` : '';
+  return `${list.join('; ')}${extra}`;
+}
+
 function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = [], reservations, currentPlan, selectedDate, rangeStart, rangeEnd }) {
   const daySet = new Set([
     ...daysInRange(rangeStart || selectedDate, rangeEnd || selectedDate),
@@ -296,6 +314,80 @@ function buildPlanningConstraints({ scheduledTasks, unscheduledTasks, staff = []
       .map((item) => item.taskId)
       .filter(Boolean)
       .slice(0, 60),
+  };
+}
+
+function buildDeterministicOpsFallback(body, { reason } = {}) {
+  const scheduledTasks = safeArray(body.scheduledTasks || body.tasks, 220).map(compactTask).filter(Boolean);
+  const unscheduledTasks = safeArray(body.unscheduledTasks, 120).map(compactTask).filter(Boolean);
+  const staff = safeArray(body.staff || body.staffUsers, 80).map(compactStaff).filter(Boolean);
+  const reservations = safeArray(body.reservations, 120).map(compactReservation).filter(Boolean);
+  const currentPlan = safeArray(body.currentPlan || body.agentPlan || body.scheduleDraft, 80).map(compactPlanItem).filter(Boolean);
+  const context = cleanString(body.context || body.mode, 80) || 'general';
+  const counts = summarizeCounts({ scheduledTasks, unscheduledTasks, staff, reservations, currentPlan });
+  const constraints = buildPlanningConstraints({
+    scheduledTasks,
+    unscheduledTasks,
+    staff,
+    reservations,
+    currentPlan,
+    selectedDate: body.selectedDate,
+    rangeStart: body.rangeStart,
+    rangeEnd: body.rangeEnd,
+  });
+  const unassignedCount = constraints.unassignedOpenTaskIds.length;
+  const occupiedConflictCount = constraints.nonUrgentOccupiedTaskIds.length;
+  const draftUnassignedCount = constraints.currentDraftUnassignedTaskIds.length;
+  const pricingSignalCount = constraints.calendarPricingSignals.length;
+  const assignableStaffCount = constraints.assignableStaff.length;
+  const shouldSuggestDraft = ['schedule', 'roster', 'general'].includes(context)
+    && assignableStaffCount > 0
+    && (unscheduledTasks.length > 0 || unassignedCount > 0 || draftUnassignedCount > 0);
+
+  const lines = [
+    'Friday Consult could not get a complete model answer, so I ran the safe planner checks locally.',
+    `Loaded ${counts.scheduledTasks} scheduled task(s), ${counts.unscheduledTasks} unscheduled task(s), ${counts.staff} staff record(s), and ${counts.reservations} reservation overlay(s).`,
+  ];
+  if (reason) {
+    lines.push(`Model fallback reason: ${cleanString(reason, 180)}.`);
+  }
+  if (unassignedCount > 0) {
+    lines.push(`Assignment blocker: ${unassignedCount} visible open task(s) have no assignee. First examples: ${summarizeTaskSignals(constraints.unassignedOpenTasks)}.`);
+  } else {
+    lines.push('Assignment check: no unassigned visible open task was detected in the provided context.');
+  }
+  if (occupiedConflictCount > 0) {
+    lines.push(`Occupancy blocker: ${occupiedConflictCount} non-urgent task(s) are on occupied properties for the selected day. First examples: ${summarizeTaskSignals(constraints.nonUrgentOccupiedTasks)}.`);
+  } else {
+    lines.push('Occupancy check: no non-urgent selected-day occupied-property blocker was detected.');
+  }
+  if (pricingSignalCount > 0) {
+    lines.push(`Availability/pricing check: ${pricingSignalCount} reservation overlay(s) include cached calendar-pricing signals. Treat missing prices or stale syncs as unknown, not confirmed.`);
+  } else {
+    lines.push('Availability/pricing check: no cached calendar-pricing signal was provided, so do not infer rates or availability.');
+  }
+  lines.push('Lunch/fairness rule: protect one hour per staff member, prefer 12:00-13:00, and stagger office coverage if office staff are included.');
+  lines.push(shouldSuggestDraft
+    ? 'Next safe step: create a reversible schedule draft, then review unassigned and occupancy blockers before applying it.'
+    : 'Next safe step: do not apply changes automatically; review manually or provide staff/task context if planning is still needed.');
+
+  const action = shouldSuggestDraft ? {
+    type: 'draft_schedule',
+    label: 'Draft safe schedule',
+    reason: 'Local planner checks found open schedule work and assignable staff; the draft remains reversible for review before apply.',
+    confidence: 0.62,
+  } : null;
+
+  return {
+    text: `${lines.map((line) => `- ${line}`).join('\n')}${action ? `\n[OPS_ACTION]${JSON.stringify(action)}[/OPS_ACTION]` : ''}`,
+    action,
+    diagnostics: {
+      unassignedOpenTaskCount: unassignedCount,
+      nonUrgentOccupiedTaskCount: occupiedConflictCount,
+      currentDraftUnassignedTaskCount: draftUnassignedCount,
+      calendarPricingSignalCount: pricingSignalCount,
+      assignableStaffCount,
+    },
   };
 }
 
@@ -571,6 +663,24 @@ router.post('/consult', attachIdentity, async (req, res) => {
       });
     }
 
+    let deterministicFallbackUsed = false;
+    let deterministicFallbackDiagnostics = null;
+    if (!result.ok && shouldRetryWithCompactOpsPrompt(result)) {
+      deterministicFallbackUsed = true;
+      const fallback = buildDeterministicOpsFallback(requestContext, {
+        reason: result.error || result.finishReason || 'incomplete model response',
+      });
+      deterministicFallbackDiagnostics = fallback.diagnostics;
+      result = {
+        ok: true,
+        text: fallback.text,
+        model: 'ops-deterministic-fallback',
+        inputTokens: result.inputTokens || null,
+        outputTokens: result.outputTokens || null,
+        finishReason: result.finishReason || 'deterministic_fallback',
+      };
+    }
+
     if (!result.ok) {
       return res.status(result.status || 502).json({
         error: 'ops_consult_model_failed',
@@ -613,6 +723,9 @@ router.post('/consult', attachIdentity, async (req, res) => {
         signals: {
           actionSuggestionCount: actionSuggestions.length,
           context,
+          compactFallbackUsed,
+          deterministicFallbackUsed,
+          deterministicFallbackDiagnostics,
         },
         privacyClass: 'high',
         redactionStatus: 'partially_redacted',
@@ -638,11 +751,13 @@ router.post('/consult', attachIdentity, async (req, res) => {
         tokenEstimate: composed.metadata.token_estimate,
         propertyCode: composed.metadata.property_code,
         inputTokens: result.inputTokens || null,
-          outputTokens: result.outputTokens || null,
-          finishReason: result.finishReason || null,
-          compactFallbackUsed,
-        },
-      });
+        outputTokens: result.outputTokens || null,
+        finishReason: result.finishReason || null,
+        compactFallbackUsed,
+        deterministicFallbackUsed,
+        deterministicFallbackDiagnostics,
+      },
+    });
   } catch (e) {
     console.error('[operations/consult] error:', e.message);
     res.status(e.statusCode || 500).json({
@@ -657,6 +772,7 @@ module.exports = router;
 module.exports._test = {
   buildOpsCompactModuleContext,
   buildOpsModuleContext,
+  buildDeterministicOpsFallback,
   buildSystemPrompt,
   buildPlanningConstraints,
   confidenceBand,

@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current continuation branch: `codex/ask-friday-plan2-20260529`
+Current continuation branch: `codex/ask-friday-core-next-20260529`
 
 ## Purpose
 
@@ -39,12 +39,12 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `5d44d16d` | not directly user-facing | deployed control plane, not finished platform |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed code at `b70c4087`; canonical branch at `3b09772f` | not directly user-facing | deployed control plane, not finished platform |
 | FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed; detail load fix verified; PR #20 Consult draft/timer tests green | deployed at `73dc8fec` | real staff-thread browser smoke passed for Julia closed-thread review; Mary flicker still needs staff/pair verification if it recurs | Plan 1 needs broader staff-shaped workflow QA |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live; planner guardrails live | focused tests green; bounded live Ops prompt smoke passed; PR #21 Ops guardrail tests/build green | deployed at `5d44d16d` | daily schedule draft and broad schedule-review Consult smoke passed; live model smoke found real unassigned/occupancy blockers; Franny workflow proof still needed | Plan 1 materially improved; roster task-allocation contract still open |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live; planner guardrails live | focused tests green; bounded live Ops prompt smoke passed; PR #21 Ops guardrail tests/build green; current branch adds deterministic fallback tests | deployed at `5d44d16d`; deterministic fallback not deployed yet | daily schedule draft and broad schedule-review Consult smoke passed; 2026-05-29 larger weekly live probe still hit model exhaustion before current branch patch | Plan 1 materially improved; deploy/re-smoke deterministic fallback; roster task-allocation contract still open |
 | FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `5d44d16d` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
-| Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
-| Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
+| Website guest hero Ask Friday | scoped | public Website context pack v1 published | existing Website harness | FAD/Core published pack; Website wiring in separate repo/session | FAD public context-pack smoke passed | DB-published pack v1; FAD code deploy at `b70c4087` | awaiting Website re-smoke | `website_guest_hero_v1` published; `search_journal` excluded |
+| Website Ask Friday FAB | scoped | public Website context pack v1 published | existing Website harness | FAD/Core published pack; Website wiring in separate repo/session | FAD public context-pack + learning-event smoke passed | DB-published pack v1; FAD code deploy at `b70c4087` | awaiting Website re-smoke | `website_ask_friday_fab_v1` published; `search_journal` retained |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
 | Website feedback | scoped | feedback skeleton only | existing Website FAB/chat | not wired to Core | no | no | no | Plan 2 |
 | Guest portal Ask Friday | scoped | not built | not built | not wired | no | no | no | later |
@@ -106,7 +106,9 @@ Current reconciliation as of 2026-05-29:
 - PR #18 was merged and deployed on 2026-05-29 as `c52f1a6eb3b9f82ba703635b5bd61071322c3b0b`.
 - PR #20 was merged and deployed on 2026-05-29 as `73dc8fece965ed64ee1b1360ead23b547b171666`.
 - PR #21 was merged and deployed on 2026-05-29 as `5d44d16dd26c4fb2edc323fcbb570f816089aaa3`.
-- Live frontend and backend both report `5d44d16d`.
+- PR #22 was merged on 2026-05-29 as `45d3c066fce95a739123ecae3297933381280e04`; it added draft-only Website public context pack templates.
+- PR #23 was merged and deployed on 2026-05-29 as `b70c40871c13dd99adaea26143ebad563d2d4286`; it fixed environment loading for the context-pack draft script. Live frontend and backend both report `b70c4087`.
+- PR #24 was merged on 2026-05-29 as `3b09772fd9054f80f0212e8c26cba038f611ceb6`; it tightened the Website public context pack templates. The source change is canonical on `origin/fad-rebuild` but not deployed as code yet.
 - Migrations through `100_feedback_multi_screenshots.sql` have been applied in production; startup logs showed `095` through `100` available/applied and migration 100 applied during the feedback deploy.
 - Analyzer remains out of the web request path by default; production logs show the web-process scheduler disabled unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
 - Live authenticated smoke passed for `/api/ask-friday/core/surfaces`, seeded eval cases, KB-candidate list, and unauthenticated staff-route denial.
@@ -137,6 +139,8 @@ Current reconciliation as of 2026-05-29:
 - 2026-05-29 PR #18 merged and deployed as `c52f1a6e`; frontend/backend versions aligned, PM2 online, and the exact broad live Ops schedule-review prompt returned a complete bounded QA summary with no cut-off text and no `ops_consult_model_failed`. The answer identified unassigned visible tasks, occupancy/property risks, lunch-verification limits, and suggested only the reversible `Draft schedule` action.
 - 2026-05-29 PR #20 merged and deployed as `73dc8fec`; frontend/backend versions aligned, PM2 online, and live smoke confirmed auth, Inbox conversation detail reads, and current frontend chunks. This release split email-style multi-recipient Consult drafts into separate draft cards, suppressed duplicate same-session task suggestions, fixed Inbox/FAD Consult textarea shortcut propagation, and tightened WhatsApp-window source detection so email does not refresh a WhatsApp window by accident.
 - 2026-05-29 PR #21 merged and deployed as `5d44d16d`; frontend/backend versions aligned, PM2 online, and live Ops Consult smoke returned HTTP 200 with 4 scheduled tasks, 15 unscheduled tasks, 6 active staff, 26 overlapping reservations, `finishReason=STOP`, and no compact fallback. The response identified the real unassigned scheduled work and occupied-property backlog risk. This release adds named unassigned/occupancy task signals to Ops Consult, exposes assignable staff in planning context, makes `Schedule Today` choose a safe assignee/time when possible, and blocks applying a selected-day plan that would leave visible work unassigned, untimed, or in non-urgent occupancy conflict.
+- 2026-05-29 Website public context-pack publication: `website_guest_hero_v1` and `website_ask_friday_fab_v1` were published through the gated publisher with `approvedBy: Ishant`. FAD-side public GET smoke passed for both packs; `website_guest_hero` excludes `search_journal`, `website_ask_friday_fab` keeps it, and both include the source-or-handoff rule for OTA/channel/legal/tax/payment/cancellation/platform-policy claims.
+- 2026-05-29 Plan 1 larger live probe found a new Ops blocker: a weekly schedule QA prompt with 60 live tasks, active staff, and reservation overlays returned `ops_consult_model_failed` after both full and compact model paths exhausted with `finish_reason=length`. Current branch `codex/ask-friday-core-next-20260529` patches `/api/operations/consult` to return a deterministic bounded planner safety summary when model exhaustion persists after compact fallback. This branch needs deploy plus live re-smoke before closing that blocker.
 
 Remaining Plan 1 tasks:
 
@@ -147,7 +151,7 @@ Remaining Plan 1 tasks:
    - Ops weekly schedule with checkout and arrival pressure;
    - Ops roster with lunch/coverage/fairness;
    - Ops urgent guest issue during occupancy.
-2. Patch only blocking defects from that browser/workflow QA.
+2. Deploy/re-smoke the deterministic Ops fallback patch from `codex/ask-friday-core-next-20260529`, then patch only additional blocking defects from browser/workflow QA.
 3. Decide whether Ops roster generation must allocate individual tasks or remain staff-coverage planning; current live behavior drafts coverage cells and schedule planning assigns visible tasks.
 4. Pair with Franny/Mary on real use after the `5d44d16d` deploy: the code now blocks known planner failures, but staff-use proof is still the team-usefulness gate.
 5. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
@@ -166,8 +170,8 @@ Plan 3 source-mapping progress:
 - `backend/src/ask_friday/policy.test.js` now pins the public/owner/feedback contract boundaries: valid Website public context-pack/event shapes, owner lead event summaries, feedback evidence refs, and rejection of owner-private scopes or restricted unredacted evidence on public routes. Focused Core verification passed on 2026-05-28: `src/ask_friday/policy.test.js`, `contracts.test.js`, and `index.test.js` all green.
 - `backend/src/ask_friday/index.test.js` now covers public owner follow-up and feedback issue action requests. This confirms `request_owner_followup` and `create_feedback_issue` queue as approval-routed pending action requests under public surface policy; they do not execute directly.
 - Migration `103_ask_friday_public_contract_evals.sql` is live and adds contract-specific eval seeds for missing context-pack fallback, ready owner lead capsules, feedback evidence/action requests, and restricted evidence rejection.
-- Production currently has zero `ask_friday_context_packs`. Website public Core calls are authorized after migration 104, but `GET /api/ask-friday/core/context-packs/:surfaceId` returns `context_pack_not_found` until a reviewed public context pack is drafted, evaluated, approved, and published.
-- Branch `codex/ask-friday-plan2-20260529` adds draft-only public Website context-pack templates plus `backend/scripts/ask-friday-context-pack-drafts.js`. The script dry-runs by default and `--apply` upserts draft rows only. It does not publish public-readable packs or bypass the gated publisher.
+- Production now has two published public Website context packs: `website_guest_hero_v1` and `website_ask_friday_fab_v1`. FAD-side public context-pack GET smoke passed for both surfaces after publication.
+- Branch `codex/ask-friday-plan2-20260529` added draft-only public Website context-pack templates plus `backend/scripts/ask-friday-context-pack-drafts.js`; PR #24 later tightened those templates. The script dry-runs by default and `--apply` upserts draft rows only. Publishing still requires the gated publisher.
 - `docs/handover/2026-05-28-ask-friday-website-public-wiring-prompt.md` is a paste-ready Website-session prompt for implementing public context-pack consumption, redacted learning-event emission, owner lead capsules, feedback evidence capsules, and takeover preservation from a separate Website worktree.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
@@ -257,9 +261,9 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 ## Immediate Next Step
 
-Continue with Plan 1 browser/workflow usefulness verification.
+Deploy and re-smoke the current Plan 1 Ops deterministic fallback patch, then continue browser/workflow usefulness verification.
 
-PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `c52f1a6e`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, the Inbox/Consult structured-draft bugfix release, the WhatsApp-window Inbox detail fix, Consult partial-output rejection, and bounded Ops Consult compact fallback.
+PR #9 is no longer pending. It was merged as `da67c7be`, and production code now runs `b70c4087`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, the Inbox/Consult structured-draft bugfix release, the WhatsApp-window Inbox detail fix, Consult partial-output rejection, bounded Ops Consult compact fallback, and the context-pack draft-script env fix. Canonical `origin/fad-rebuild` is ahead at `3b09772f`; production DB already has the two reviewed Website public context packs published.
 
 New execution-planning artifacts on this branch:
 
