@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current canonical checkpoint: `origin/fad-rebuild` at `b26982c8a35a906ba869c80f0b33c0e19a0414e3`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
+Current canonical checkpoint: `origin/fad-rebuild` at `e01945b5015c2bba903f8b11dc22f3490aecfe22`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
 
 ## Purpose
 
@@ -45,8 +45,8 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 | FAD global Ask Friday | subplan added | module context only | existing FAB/action harness plus TeamInbox/page-focus contract | events + action mirroring live; TeamInbox context and right-panel focus envelope live | focused tests green; live harmless-action smoke passed; PR #41 tests green; PR #42 page-focus contract tests/build green; post-deploy TeamInbox/page-focus API smoke passed | deployed at `9097f9bc` | staff command smoke passed for navigation and page-focus context | Plan 1 mostly clear; frontend can evolve to unified right-panel shell without changing Core ownership |
 | Website guest hero Ask Friday | scoped | public Website context pack v1 published | existing Website harness | FAD/Core published pack; Website wiring in separate repo/session | FAD public context-pack smoke passed | DB-published pack v1; FAD code deploy at `3daa4920` | awaiting Website re-smoke/live usefulness | `website_guest_hero_v1` published; `search_journal` excluded |
 | Website Ask Friday FAB | scoped | public Website context pack v1 published | existing Website harness | FAD/Core published pack; Website wiring in separate repo/session | FAD public context-pack + learning-event smoke passed | DB-published pack v1; FAD code deploy at `3daa4920` | awaiting Website re-smoke/live usefulness | `website_ask_friday_fab_v1` published; `search_journal` retained |
-| Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
-| Website feedback | scoped | feedback skeleton only | existing Website FAB/chat | not wired to Core | no | no | no | Plan 2 |
+| Website owner enquiry | scoped | public owner skeleton only | existing Website chat | public action route/policy exists; API client action scope pending | public action request tests green; Website repo not wired | no | no | Plan 2, approval-gated action scope pending |
+| Website feedback | scoped | feedback skeleton only | existing Website FAB/chat | public action route/policy exists; API client action scope pending | public action request tests green; Website repo not wired | no | no | Plan 2, approval-gated action scope pending |
 | Guest portal Ask Friday | scoped | not built | not built | not wired | no | no | no | later |
 | Reservations/calendar agent | source-mapped, not full agent | source matrix + KB shell drafted | read-tool/action-request contracts drafted; Core shell readiness merged | staff-only read context route live; eval seeds live; KB shell and PR #52 shell migration pending deploy | focused tests green locally; live context-tool smoke passed; composer shell smoke passed in PR #48; PR #52 policy/eval/template tests green | read tools and eval seeds deployed; PR #48 KB shell and PR #52/107 shell migration not deployed | no dedicated agent UI yet | read-only staff context is live; PR #52 makes it a governed Core shell after next deploy, still not a full UI agent |
 | Properties agent | source-mapped, not full agent | public/private split + KB shell drafted | read-tool contract drafted; Core shell readiness merged | staff-only read context route live; eval seeds live; KB shell and PR #52 shell migration pending deploy | focused tests green locally; live context-tool smoke passed; composer shell smoke passed in PR #48; PR #52 policy/eval/template tests green | read tools and eval seeds deployed; PR #48 KB shell and PR #52/107 shell migration not deployed | no dedicated agent UI yet | PR #52 makes staff shell governable after next deploy; public field policy still needs Ishant review before public packs |
@@ -170,6 +170,7 @@ Current reconciliation as of 2026-05-29:
 - 2026-05-29 live Ops compact-first roster smoke on `9097f9bc` passed through `/api/operations/consult`: 140 scheduled tasks, 80 unscheduled tasks, 6 staff, 33 reservation overlays, about 12s elapsed, model `gemini-3.5-flash`, `compactFallbackUsed=true`, `deterministicFallbackUsed=false`, `finishReason=STOP`, one action suggestion, bounded 1,144-character response, and lunch, availability/pricing, occupancy, assignment/unassigned, and manual-review guardrails all present. This confirms the old 144s wasted full-context pass is gone for the tested large roster shape.
 - 2026-05-29 `origin/fad-rebuild` advanced to `7d3a52ba` with PR #50, PR #51, and FAD V2 redesign docs after the live `9097f9bc` deploy.
 - 2026-05-29 PR #52 merged as `b26982c8`, advancing `origin/fad-rebuild` again. Live still reports `9097f9bc`, so PR #52 is not deployed.
+- 2026-05-29 PR #53 merged as `e01945b5`; docs-only ledger sync after PR #52. Live still reports `9097f9bc`.
 
 Remaining Plan 1 tasks:
 
@@ -199,6 +200,7 @@ Plan 3 source-mapping progress:
 - PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for deterministic eval scaffolding covering channel-visible blocks, quote expiry/source timestamps, reservation mutations, property privacy/conflicts, owner market/stat/compliance caveats, and large Ops roster boundedness. It is deployed in live `9097f9bc`.
 - PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is not deployed yet.
 - PR #52 merged on 2026-05-29 as `b26982c8`; it adds migration `107_ask_friday_plan2_surface_readiness.sql`. It activates `fad_reservations_calendar_assistant` and `fad_properties_assistant` as governed staff Core shells, keeps `fad_owners_assistant` planned, fixes Plan 2 eval payload action/tool shape, adds deterministic `action_safety` checks, validates context-pack action allowlists against surface policy, requires approval for risky staff shell actions, and adds staff shell draft context-pack templates. It is not deployed.
+- Current pending branch `codex/ask-friday-public-actions-scope-20260529` adds migration `108_ask_friday_website_public_action_scope.sql`. It grants `friday-website` the `ask-friday:actions:write` scope needed to enqueue approval-gated public action requests for owner enquiry and feedback surfaces. It is not deployed and does not bypass surface allowlists or human approval.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
