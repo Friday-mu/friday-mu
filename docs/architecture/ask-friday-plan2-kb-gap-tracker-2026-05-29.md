@@ -21,13 +21,13 @@ It exists to prevent the earlier failure mode: treating scoped/planned Ask Frida
 | Website guest hero/FAB | public context packs, no FAD KB folder | yes | yes | FAD packs, Website wiring separate | public packs published; richer packs blocked by property-field approval |
 | Owners | shell | FAD owners planned shell | yes | Website public active, FAD owners planned | owner-private rules not locked |
 | Feedback | shell | no | yes | public action policy/scope | retention/redaction and candidate taxonomy drafted; implementation/enforcement not wired |
-| Guest Portal | shell | no | no dedicated coverage | registry planned | stay-scope and handoff policy drafted; not built |
-| Finance | shell | no | minimal privacy seed | registry planned | restricted finance source/privacy shell drafted; not built |
-| Legal/Admin | shell | no | no | registry planned | compliance source and legal-review boundary drafted; not built |
-| HR/Training | shell | no | no | registry planned | HR privacy and SOP/training shell drafted; not built |
-| Analytics/Intelligence | shell | no | no | registry planned | metric source and trend-confidence policy drafted; not wired |
-| Public MCP | shell | no | basic safety/property seeds | registry planned | public-pack-only scope/action shell drafted; not built |
-| Internal Agent Bridge | shell | no | yes | generic Core candidate/event paths only | sanitized summary/provenance contract drafted; runtime not built |
+| Guest Portal | shell | yes | no dedicated coverage | registry planned | stay-scope and handoff policy drafted; not built |
+| Finance | shell | yes | minimal privacy seed | registry planned | restricted finance source/privacy shell drafted; not built |
+| Legal/Admin | shell | yes | no | registry planned | compliance source and legal-review boundary drafted; not built |
+| HR/Training | shell | yes | no | registry planned | HR privacy and SOP/training shell drafted; not built |
+| Analytics/Intelligence | shell | yes | no | registry planned | metric source and trend-confidence policy drafted; not wired |
+| Public MCP | shell | yes | basic safety/property seeds | registry planned | public-pack-only scope/action shell drafted; not built |
+| Internal Agent Bridge | shell | yes | yes | generic Core candidate/event paths only | sanitized summary/provenance contract drafted; runtime not built |
 
 ## Missing Work By Surface
 

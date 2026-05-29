@@ -436,12 +436,19 @@ describe('Ask Friday Core router', () => {
     expect(res.body).toMatchObject({
       mode: 'preview',
       version: 5,
-      count: 3,
+      count: 10,
     });
     expect(res.body.drafts.map((draft) => draft.surfaceId)).toEqual([
       'fad_reservations_calendar_assistant',
       'fad_properties_assistant',
       'fad_owners_assistant',
+      'fad_finance_assistant',
+      'fad_legal_admin_assistant',
+      'fad_hr_training_assistant',
+      'fad_analytics_intelligence',
+      'guest_portal_ask_friday',
+      'public_mcp',
+      'internal_agent_bridge',
     ]);
     expect(res.body.drafts.every((draft) => draft.status === 'draft')).toBe(true);
     expect(res.body.drafts[0].toolPolicy.allowedActions).toContain('request_channel_visible_block');

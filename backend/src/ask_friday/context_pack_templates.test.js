@@ -1,16 +1,30 @@
 'use strict';
 
 const {
+  ANALYTICS_INTELLIGENCE_ACTION_ALLOWLIST,
+  ANALYTICS_INTELLIGENCE_TOOL_ALLOWLIST,
   FAD_CONSULT_ACTION_ALLOWLIST,
   FAD_CONSULT_TOOL_ALLOWLIST,
+  FINANCE_ASSISTANT_ACTION_ALLOWLIST,
+  FINANCE_ASSISTANT_TOOL_ALLOWLIST,
   FAD_GLOBAL_ACTION_ALLOWLIST,
   FAD_GLOBAL_TOOL_ALLOWLIST,
+  GUEST_PORTAL_ACTION_ALLOWLIST,
+  GUEST_PORTAL_TOOL_ALLOWLIST,
+  HR_TRAINING_ACTION_ALLOWLIST,
+  HR_TRAINING_TOOL_ALLOWLIST,
+  INTERNAL_AGENT_BRIDGE_ACTION_ALLOWLIST,
+  INTERNAL_AGENT_BRIDGE_TOOL_ALLOWLIST,
+  LEGAL_ADMIN_ACTION_ALLOWLIST,
+  LEGAL_ADMIN_TOOL_ALLOWLIST,
   OWNER_ENQUIRY_ACTION_ALLOWLIST,
   OWNER_ENQUIRY_TOOL_ALLOWLIST,
   OPS_ASSISTANT_ACTION_ALLOWLIST,
   OPS_ASSISTANT_TOOL_ALLOWLIST,
   PROPERTIES_ASSISTANT_ACTION_ALLOWLIST,
   PROPERTIES_ASSISTANT_TOOL_ALLOWLIST,
+  PUBLIC_MCP_ACTION_ALLOWLIST,
+  PUBLIC_MCP_TOOL_ALLOWLIST,
   RESERVATIONS_CALENDAR_ACTION_ALLOWLIST,
   RESERVATIONS_CALENDAR_TOOL_ALLOWLIST,
   WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST,
@@ -161,6 +175,118 @@ function staffShellSurface(surfaceId) {
       allowed_actions: PROPERTIES_ASSISTANT_ACTION_ALLOWLIST,
     };
   }
+  if (surfaceId === 'fad_finance_assistant') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'fad',
+      access_class: 'restricted_staff',
+      status: 'planned',
+      allowed_knowledge_scopes: [
+        'finance_workflows',
+        'approved_finance_policy',
+        'owner_statement_rules',
+      ],
+      allowed_tools: FINANCE_ASSISTANT_TOOL_ALLOWLIST,
+      allowed_actions: FINANCE_ASSISTANT_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'fad_legal_admin_assistant') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'fad',
+      access_class: 'restricted_staff',
+      status: 'planned',
+      allowed_knowledge_scopes: [
+        'legal_admin_policy',
+        'contracts',
+        'compliance_calendar',
+        'license_register',
+        'document_templates',
+      ],
+      allowed_tools: LEGAL_ADMIN_TOOL_ALLOWLIST,
+      allowed_actions: LEGAL_ADMIN_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'fad_hr_training_assistant') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'fad',
+      access_class: 'staff',
+      status: 'planned',
+      allowed_knowledge_scopes: [
+        'training',
+        'sops',
+        'role_guides',
+        'quality_rules',
+      ],
+      allowed_tools: HR_TRAINING_TOOL_ALLOWLIST,
+      allowed_actions: HR_TRAINING_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'fad_analytics_intelligence') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'fad',
+      access_class: 'staff',
+      status: 'planned',
+      allowed_knowledge_scopes: [
+        'aggregate_metrics',
+        'eval_results',
+        'learning_event_trends',
+        'module_metrics',
+      ],
+      allowed_tools: ANALYTICS_INTELLIGENCE_TOOL_ALLOWLIST,
+      allowed_actions: ANALYTICS_INTELLIGENCE_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'guest_portal_ask_friday') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'friday-website',
+      access_class: 'authenticated_guest',
+      status: 'planned',
+      allowed_knowledge_scopes: [
+        'guest_portal_public',
+        'stay_specific',
+        'property_guide',
+        'approved_mauritius',
+        'guest_support_rules',
+      ],
+      allowed_tools: GUEST_PORTAL_TOOL_ALLOWLIST,
+      allowed_actions: GUEST_PORTAL_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'public_mcp') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'mcp',
+      access_class: 'public_api',
+      status: 'planned',
+      allowed_knowledge_scopes: [
+        'public_brand',
+        'public_residences',
+        'public_experiences',
+        'public_owner_overview',
+      ],
+      allowed_tools: PUBLIC_MCP_TOOL_ALLOWLIST,
+      allowed_actions: PUBLIC_MCP_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'internal_agent_bridge') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'codex',
+      access_class: 'internal',
+      status: 'active',
+      allowed_knowledge_scopes: [
+        'approved_architecture',
+        'approved_runbooks',
+        'engineering_decisions',
+      ],
+      allowed_tools: INTERNAL_AGENT_BRIDGE_TOOL_ALLOWLIST,
+      allowed_actions: INTERNAL_AGENT_BRIDGE_ACTION_ALLOWLIST,
+    };
+  }
   return {
     surface_id: surfaceId,
     source_system: 'fad',
@@ -276,11 +402,18 @@ describe('Ask Friday active FAD runtime context-pack templates', () => {
 });
 
 describe('Ask Friday Plan 2 staff shell context-pack templates', () => {
-  test('staff shell drafts cover Reservations, Properties, and planned Owners shells', () => {
+  test('staff shell drafts cover Plan 2 governed and planned shells', () => {
     expect(plan2StaffDraftContextPacks().map((draft) => draft.surfaceId)).toEqual([
       'fad_reservations_calendar_assistant',
       'fad_properties_assistant',
       'fad_owners_assistant',
+      'fad_finance_assistant',
+      'fad_legal_admin_assistant',
+      'fad_hr_training_assistant',
+      'fad_analytics_intelligence',
+      'guest_portal_ask_friday',
+      'public_mcp',
+      'internal_agent_bridge',
     ]);
   });
 
@@ -293,7 +426,18 @@ describe('Ask Friday Plan 2 staff shell context-pack templates', () => {
   });
 
   test('staff shell drafts carry explicit action allowlists', () => {
-    const [reservations, properties, owners] = plan2StaffDraftContextPacks();
+    const [
+      reservations,
+      properties,
+      owners,
+      finance,
+      legal,
+      hr,
+      analytics,
+      guestPortal,
+      publicMcp,
+      internalBridge,
+    ] = plan2StaffDraftContextPacks();
 
     expect(reservations.toolPolicy.allowedTools).toEqual(RESERVATIONS_CALENDAR_TOOL_ALLOWLIST);
     expect(reservations.toolPolicy.allowedActions).toEqual(RESERVATIONS_CALENDAR_ACTION_ALLOWLIST);
@@ -306,6 +450,14 @@ describe('Ask Friday Plan 2 staff shell context-pack templates', () => {
     expect(owners.surfaceId).toBe('fad_owners_assistant');
     expect(owners.memoryPolicy.runtimeStatus).toBe('planned_shell');
     expect(owners.toolPolicy.allowedActions).toEqual(OWNER_ENQUIRY_ACTION_ALLOWLIST);
+
+    expect(finance.toolPolicy.allowedActions).toEqual(FINANCE_ASSISTANT_ACTION_ALLOWLIST);
+    expect(legal.toolPolicy.allowedTools).toEqual(LEGAL_ADMIN_TOOL_ALLOWLIST);
+    expect(hr.memoryPolicy.reviewerLaneRequired).toBe('restricted_hr');
+    expect(analytics.toolPolicy.allowedActions).toContain('create_report_candidate');
+    expect(guestPortal.toolPolicy.allowedActions).toEqual(GUEST_PORTAL_ACTION_ALLOWLIST);
+    expect(publicMcp.toolPolicy.allowedActions).toEqual(PUBLIC_MCP_ACTION_ALLOWLIST);
+    expect(internalBridge.toolPolicy.allowedTools).toEqual(INTERNAL_AGENT_BRIDGE_TOOL_ALLOWLIST);
   });
 
   test('staff shell drafts do not promise direct external writes', () => {

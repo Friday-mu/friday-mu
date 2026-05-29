@@ -205,6 +205,88 @@ const OWNER_ENQUIRY_ACTION_ALLOWLIST = [
   'request_approval',
 ];
 
+const FINANCE_ASSISTANT_TOOL_ALLOWLIST = [
+  'load_finance_summary',
+  'load_owner_statement_context',
+  'create_finance_draft',
+];
+
+const FINANCE_ASSISTANT_ACTION_ALLOWLIST = [
+  'create_finance_candidate',
+  'request_approval',
+];
+
+const LEGAL_ADMIN_TOOL_ALLOWLIST = [
+  'load_contract_context',
+  'load_compliance_item',
+  'draft_document_request',
+];
+
+const LEGAL_ADMIN_ACTION_ALLOWLIST = [
+  'create_legal_candidate',
+  'request_approval',
+];
+
+const HR_TRAINING_TOOL_ALLOWLIST = [
+  'load_sop',
+  'load_training_progress',
+  'draft_training_task',
+];
+
+const HR_TRAINING_ACTION_ALLOWLIST = [
+  'create_training_task_candidate',
+  'create_sop_candidate',
+  'request_approval',
+];
+
+const ANALYTICS_INTELLIGENCE_TOOL_ALLOWLIST = [
+  'query_aggregate_metrics',
+  'query_eval_runs',
+  'query_learning_candidates',
+];
+
+const ANALYTICS_INTELLIGENCE_ACTION_ALLOWLIST = [
+  'create_report_candidate',
+  'create_eval_candidate',
+  'request_approval',
+];
+
+const GUEST_PORTAL_TOOL_ALLOWLIST = [
+  'load_stay_context',
+  'load_property_guide',
+  'request_team_help',
+];
+
+const GUEST_PORTAL_ACTION_ALLOWLIST = [
+  'request_handoff',
+  'create_guest_support_request',
+];
+
+const PUBLIC_MCP_TOOL_ALLOWLIST = [
+  'check_availability',
+  'get_residence_lowest_rate',
+  'list_experiences',
+  'query_public_truth',
+  'search_residences',
+];
+
+const PUBLIC_MCP_ACTION_ALLOWLIST = [
+  'request_booking',
+  'request_handoff',
+  'send_general_enquiry',
+  'submit_owner_enquiry',
+];
+
+const INTERNAL_AGENT_BRIDGE_TOOL_ALLOWLIST = [
+  'submit_sanitized_summary',
+  'query_approved_truth',
+];
+
+const INTERNAL_AGENT_BRIDGE_ACTION_ALLOWLIST = [
+  'create_kb_candidate',
+  'create_eval_candidate',
+];
+
 function commonWebsiteBehaviorRules(surfaceLabel) {
   return [
     {
@@ -716,6 +798,417 @@ function ownerEnquiryShellDraft({ version = 1 } = {}) {
   };
 }
 
+function financeAssistantShellDraft({ version = 1 } = {}) {
+  return {
+    packId: `fad_finance_assistant_v${version}_draft`,
+    surfaceId: 'fad_finance_assistant',
+    version,
+    status: 'draft',
+    knowledgeScopes: ['finance_workflows', 'approved_finance_policy', 'owner_statement_rules'],
+    behaviorRules: [
+      {
+        id: 'restricted_by_default',
+        priority: 'must',
+        rule: 'Treat finance data, owner statements, payments, payouts, expenses, tax, VAT, and tourist-fee handling as restricted unless the current role and surface explicitly allow access.',
+      },
+      {
+        id: 'human_review_for_external_outputs',
+        priority: 'must',
+        rule: 'Owner-facing, guest-facing, public, filing, payment, payout, and accounting/tax outputs require human finance review before any external use.',
+      },
+      {
+        id: 'source_dated_official_caveats',
+        priority: 'must',
+        rule: 'Use source-dated MRA or approved Friday finance workpaper context for VAT, tourist fee, exchange, tax, and filing claims; route interpretation to finance review.',
+      },
+    ],
+    toolPolicy: {
+      allowedTools: FINANCE_ASSISTANT_TOOL_ALLOWLIST,
+      allowedActions: FINANCE_ASSISTANT_ACTION_ALLOWLIST,
+      toolUse: 'restricted_finance_source_read_before_finance_claim',
+      actionBoundary: 'finance_candidate_or_approval_request_only',
+    },
+    memoryPolicy: {
+      ...commonStaffShellMemoryPolicy('Finance'),
+      staffSessions: 'durable_need_to_know',
+      ownerStatementIsolation: 'required',
+      runtimeStatus: 'planned_shell',
+    },
+    sourceSnapshotRefs: PLAN2_STAFF_SOURCE_REFS,
+    packPayload: {
+      contextPackClass: 'restricted_finance_shell_v1_draft',
+      includedContext: [
+        'finance source ownership',
+        'owner-statement privacy boundary',
+        'tourist-fee, VAT, and tax caveat policy',
+        'finance candidate and approval routing',
+      ],
+      excludedContext: [
+        'direct payment, payout, or accounting mutation',
+        'cross-owner finance examples',
+        'final tax or accounting advice',
+        'unreviewed external finance wording',
+      ],
+      reviewBlockersBeforePublish: [
+        'Confirm finance table/source ownership, QuickBooks/general-ledger status, and owner statement isolation.',
+        'Approve tourist-fee/VAT/cleaning-fee wording before any owner, guest, or public use.',
+      ],
+    },
+  };
+}
+
+function legalAdminShellDraft({ version = 1 } = {}) {
+  return {
+    packId: `fad_legal_admin_assistant_v${version}_draft`,
+    surfaceId: 'fad_legal_admin_assistant',
+    version,
+    status: 'draft',
+    knowledgeScopes: [
+      'legal_admin_policy',
+      'contracts',
+      'compliance_calendar',
+      'license_register',
+      'document_templates',
+    ],
+    behaviorRules: [
+      {
+        id: 'no_final_legal_advice',
+        priority: 'must',
+        rule: 'Produce source packets, review questions, and non-binding candidates only; do not provide final legal advice or binding contract/compliance commitments.',
+      },
+      {
+        id: 'official_sources_are_source_dated',
+        priority: 'must',
+        rule: 'Use source-dated official Mauritius sources or approved internal templates and separate source facts from interpretation.',
+      },
+      {
+        id: 'review_before_external_use',
+        priority: 'must',
+        rule: 'Contract, license, compliance, data-protection, owner, guest, or regulatory outputs require legal/admin human review before external use.',
+      },
+    ],
+    toolPolicy: {
+      allowedTools: LEGAL_ADMIN_TOOL_ALLOWLIST,
+      allowedActions: LEGAL_ADMIN_ACTION_ALLOWLIST,
+      toolUse: 'source_packet_before_legal_or_admin_candidate',
+      actionBoundary: 'candidate_or_approval_request_only',
+    },
+    memoryPolicy: {
+      ...commonStaffShellMemoryPolicy('Legal/Admin'),
+      staffSessions: 'durable_need_to_know',
+      runtimeStatus: 'planned_shell',
+    },
+    sourceSnapshotRefs: PLAN2_STAFF_SOURCE_REFS,
+    packPayload: {
+      contextPackClass: 'restricted_legal_admin_shell_v1_draft',
+      includedContext: [
+        'contract/template source policy',
+        'compliance and license source packets',
+        'legal-review boundary',
+        'data-protection and HR/legal overlap caveats',
+      ],
+      excludedContext: [
+        'final legal advice',
+        'direct filing/license/contract mutation',
+        'binding owner or guest commitments',
+        'unreviewed legal interpretation',
+      ],
+      reviewBlockersBeforePublish: [
+        'Confirm legal/admin reviewer roles, template source ownership, and document-signature source of truth.',
+      ],
+    },
+  };
+}
+
+function hrTrainingShellDraft({ version = 1 } = {}) {
+  return {
+    packId: `fad_hr_training_assistant_v${version}_draft`,
+    surfaceId: 'fad_hr_training_assistant',
+    version,
+    status: 'draft',
+    knowledgeScopes: ['training', 'sops', 'role_guides', 'quality_rules'],
+    behaviorRules: [
+      {
+        id: 'sop_guidance_not_hr_decision',
+        priority: 'must',
+        rule: 'Answer SOP and training questions from approved sources; do not make hiring, firing, discipline, payroll, leave, compensation, or performance decisions.',
+      },
+      {
+        id: 'hr_private_boundary',
+        priority: 'must',
+        rule: 'Keep staff performance, discipline, leave reasons, payroll, complaints, medical data, and private HR notes in restricted HR lanes.',
+      },
+      {
+        id: 'ops_minimum_staff_data',
+        priority: 'must',
+        rule: 'Ops planning may use availability and skill fit, but not private HR rationale or performance notes.',
+      },
+    ],
+    toolPolicy: {
+      allowedTools: HR_TRAINING_TOOL_ALLOWLIST,
+      allowedActions: HR_TRAINING_ACTION_ALLOWLIST,
+      toolUse: 'approved_sop_or_training_source_before_guidance',
+      actionBoundary: 'training_or_sop_candidate_only',
+    },
+    memoryPolicy: {
+      ...commonStaffShellMemoryPolicy('HR/Training'),
+      privateHrNotes: 'restricted',
+      reviewerLaneRequired: 'restricted_hr',
+      runtimeStatus: 'planned_shell',
+    },
+    sourceSnapshotRefs: PLAN2_STAFF_SOURCE_REFS,
+    packPayload: {
+      contextPackClass: 'staff_hr_training_shell_v1_draft',
+      includedContext: [
+        'SOP and role-guide source policy',
+        'training progress privacy boundary',
+        'restricted HR reviewer lane requirement',
+        'Ops/HR scheduling data minimization',
+      ],
+      excludedContext: [
+        'private HR notes',
+        'staff performance rankings',
+        'payroll or discipline conclusions',
+        'employment-law advice as final policy',
+      ],
+      reviewBlockersBeforePublish: [
+        'Create restricted HR review lane and confirm allowed staff/training data per role.',
+      ],
+    },
+  };
+}
+
+function analyticsIntelligenceShellDraft({ version = 1 } = {}) {
+  return {
+    packId: `fad_analytics_intelligence_v${version}_draft`,
+    surfaceId: 'fad_analytics_intelligence',
+    version,
+    status: 'draft',
+    knowledgeScopes: ['aggregate_metrics', 'eval_results', 'learning_event_trends', 'module_metrics'],
+    behaviorRules: [
+      {
+        id: 'metric_contract_required',
+        priority: 'must',
+        rule: 'Every metric needs owner, definition, source, freshness, privacy class, allowed audience, sample size, and definition version before decision support.',
+      },
+      {
+        id: 'trend_confidence',
+        priority: 'must',
+        rule: 'Separate observed facts, inferred trends, hypotheses, and recommended actions; include sample size, time window, missing-source caveats, and confidence.',
+      },
+      {
+        id: 'no_staff_performance_without_policy',
+        priority: 'must',
+        rule: 'Do not rank individual staff performance or expose private workload without an approved HR/privacy policy.',
+      },
+    ],
+    toolPolicy: {
+      allowedTools: ANALYTICS_INTELLIGENCE_TOOL_ALLOWLIST,
+      allowedActions: ANALYTICS_INTELLIGENCE_ACTION_ALLOWLIST,
+      toolUse: 'aggregate_metric_sources_before_trend_claim',
+      actionBoundary: 'report_or_eval_candidate_only',
+    },
+    memoryPolicy: {
+      ...commonStaffShellMemoryPolicy('Analytics/Intelligence'),
+      rawPiiDefault: 'excluded',
+      runtimeStatus: 'planned_shell',
+    },
+    sourceSnapshotRefs: PLAN2_STAFF_SOURCE_REFS,
+    packPayload: {
+      contextPackClass: 'staff_analytics_intelligence_shell_v1_draft',
+      includedContext: [
+        'metric source ownership',
+        'aggregation privacy policy',
+        'trend confidence rules',
+        'eval and learning event reporting boundaries',
+      ],
+      excludedContext: [
+        'private staff performance claims without policy',
+        'guest or owner PII in broad reports',
+        'trend claims from stale or insufficient samples',
+      ],
+      reviewBlockersBeforePublish: [
+        'Confirm minimum cohort thresholds and which analytics snapshots can become approved context packs.',
+      ],
+    },
+  };
+}
+
+function guestPortalShellDraft({ version = 1 } = {}) {
+  return {
+    packId: `guest_portal_ask_friday_v${version}_draft`,
+    surfaceId: 'guest_portal_ask_friday',
+    version,
+    status: 'draft',
+    knowledgeScopes: [
+      'guest_portal_public',
+      'stay_specific',
+      'property_guide',
+      'approved_mauritius',
+      'guest_support_rules',
+    ],
+    behaviorRules: [
+      {
+        id: 'stay_scope_required',
+        priority: 'must',
+        rule: 'Use stay-specific or access-related context only for a valid stay token or authenticated guest identity scoped to the current stay.',
+      },
+      {
+        id: 'handoff_respected',
+        priority: 'must',
+        rule: 'If human takeover or aiMayReply:false is active, stop AI replies and route through FAD Inbox/handoff.',
+      },
+      {
+        id: 'request_only_actions',
+        priority: 'must',
+        rule: 'Guest Portal actions are support/handoff requests only; no direct booking, payment, refund, cancellation, access, or date mutation.',
+      },
+    ],
+    toolPolicy: {
+      allowedTools: GUEST_PORTAL_TOOL_ALLOWLIST,
+      allowedActions: GUEST_PORTAL_ACTION_ALLOWLIST,
+      toolUse: 'stay_context_and_property_guide_before_stay_specific_answer',
+      actionBoundary: 'guest_support_request_or_handoff_only',
+    },
+    memoryPolicy: {
+      ...commonStaffShellMemoryPolicy('Guest Portal Ask Friday'),
+      stayTokenScoped: true,
+      durableMemory: 'consent_or_terms_required',
+      runtimeStatus: 'planned_shell',
+    },
+    sourceSnapshotRefs: PLAN2_STAFF_SOURCE_REFS,
+    packPayload: {
+      contextPackClass: 'guest_portal_shell_v1_draft',
+      includedContext: [
+        'stay-token/authenticated guest scope',
+        'property guidebook and stay phase',
+        'guest support and FAD Inbox handoff policy',
+      ],
+      excludedContext: [
+        'other guest data',
+        'staff workload or private notes',
+        'owner/private finance/legal facts',
+        'direct booking/payment/refund/cancellation/access mutation',
+      ],
+      reviewBlockersBeforePublish: [
+        'Confirm Guest Portal consent/memory policy and access-code visibility windows.',
+      ],
+    },
+  };
+}
+
+function publicMcpShellDraft({ version = 1 } = {}) {
+  return {
+    packId: `public_mcp_v${version}_draft`,
+    surfaceId: 'public_mcp',
+    version,
+    status: 'draft',
+    knowledgeScopes: ['public_brand', 'public_residences', 'public_experiences', 'public_owner_overview'],
+    behaviorRules: [
+      {
+        id: 'published_public_packs_only',
+        priority: 'must',
+        rule: 'External agents may read published public context packs and approved public tools only; draft, staff, guest-sensitive, owner-private, finance, legal, and internal context is blocked.',
+      },
+      {
+        id: 'scope_and_registry_policy',
+        priority: 'must',
+        rule: 'Validate OAuth scope, surface registry, allowed tools/actions, privacy class, and redaction status on every request.',
+      },
+      {
+        id: 'approval_routed_requests_only',
+        priority: 'must',
+        rule: 'Public MCP may create approval-routed requests only; no direct booking, payment, refund, cancellation, ops, property, owner, or external-send writes.',
+      },
+    ],
+    toolPolicy: {
+      allowedTools: PUBLIC_MCP_TOOL_ALLOWLIST,
+      allowedActions: PUBLIC_MCP_ACTION_ALLOWLIST,
+      toolUse: 'published_public_context_pack_plus_live_public_tools',
+      actionBoundary: 'approval_routed_public_requests_only',
+    },
+    memoryPolicy: {
+      ...commonStaffShellMemoryPolicy('Public MCP'),
+      anonymous: 'session_only',
+      durableMemory: 'disabled_until_policy_locked',
+      runtimeStatus: 'planned_shell',
+    },
+    sourceSnapshotRefs: PLAN2_STAFF_SOURCE_REFS,
+    packPayload: {
+      contextPackClass: 'public_mcp_shell_v1_draft',
+      includedContext: [
+        'published public Ask Friday context packs',
+        'public residence and experience discovery tools',
+        'approval-routed request actions',
+      ],
+      excludedContext: [
+        'staff/private/guest-sensitive/owner-private context',
+        'finance/legal/internal engineering context',
+        'direct irreversible write tools',
+      ],
+      reviewBlockersBeforePublish: [
+        'Confirm exact MCP tool names, OAuth scopes, and approval lanes before implementation.',
+      ],
+    },
+  };
+}
+
+function internalAgentBridgeShellDraft({ version = 1 } = {}) {
+  return {
+    packId: `internal_agent_bridge_v${version}_draft`,
+    surfaceId: 'internal_agent_bridge',
+    version,
+    status: 'draft',
+    knowledgeScopes: ['approved_architecture', 'approved_runbooks', 'engineering_decisions'],
+    behaviorRules: [
+      {
+        id: 'sanitized_summaries_only',
+        priority: 'must',
+        rule: 'Accept sanitized summaries, evidence refs, test/deploy evidence, and candidates only; reject raw transcripts, secrets, credentials, and private customer/staff/owner/payment data.',
+      },
+      {
+        id: 'provenance_required',
+        priority: 'must',
+        rule: 'Require source agent, repo, branch/PR/session, affected surfaces, privacy class, evidence summary, tests, deploy status, and review lane.',
+      },
+      {
+        id: 'candidate_not_canonical',
+        priority: 'must',
+        rule: 'Internal agent submissions create candidates or eval ideas only; canonical KB and context packs still require human review and publish gates.',
+      },
+    ],
+    toolPolicy: {
+      allowedTools: INTERNAL_AGENT_BRIDGE_TOOL_ALLOWLIST,
+      allowedActions: INTERNAL_AGENT_BRIDGE_ACTION_ALLOWLIST,
+      toolUse: 'sanitized_summary_and_approved_truth_queries_only',
+      actionBoundary: 'candidate_creation_only_no_canonical_write',
+    },
+    memoryPolicy: {
+      ...commonStaffShellMemoryPolicy('Internal Agent Bridge'),
+      rawTranscripts: 'not_ingested',
+      runtimeStatus: 'planned_shell',
+    },
+    sourceSnapshotRefs: PLAN2_STAFF_SOURCE_REFS,
+    packPayload: {
+      contextPackClass: 'internal_agent_bridge_shell_v1_draft',
+      includedContext: [
+        'sanitized summary contract',
+        'provenance and review policy',
+        'candidate/eval creation boundary',
+      ],
+      excludedContext: [
+        'raw transcripts',
+        'secrets or credentials',
+        'direct canonical memory writes',
+        'unverified agent claims as truth',
+      ],
+      reviewBlockersBeforePublish: [
+        'Confirm trusted-agent allowlist, trust tiers, and retention/redaction for agent handovers.',
+      ],
+    },
+  };
+}
+
 function websiteGuestHeroDraft({ version = 1 } = {}) {
   return {
     packId: `website_guest_hero_v${version}_draft`,
@@ -816,15 +1309,34 @@ function plan2StaffDraftContextPacks(options = {}) {
     reservationsCalendarDraft(options),
     propertiesAssistantDraft(options),
     ownerEnquiryShellDraft(options),
+    financeAssistantShellDraft(options),
+    legalAdminShellDraft(options),
+    hrTrainingShellDraft(options),
+    analyticsIntelligenceShellDraft(options),
+    guestPortalShellDraft(options),
+    publicMcpShellDraft(options),
+    internalAgentBridgeShellDraft(options),
   ];
 }
 
 module.exports = {
+  ANALYTICS_INTELLIGENCE_ACTION_ALLOWLIST,
+  ANALYTICS_INTELLIGENCE_TOOL_ALLOWLIST,
   FAD_CONSULT_ACTION_ALLOWLIST,
   FAD_CONSULT_TOOL_ALLOWLIST,
+  FINANCE_ASSISTANT_ACTION_ALLOWLIST,
+  FINANCE_ASSISTANT_TOOL_ALLOWLIST,
   FAD_GLOBAL_ACTION_ALLOWLIST,
   FAD_GLOBAL_TOOL_ALLOWLIST,
   FAD_RUNTIME_SOURCE_REFS,
+  GUEST_PORTAL_ACTION_ALLOWLIST,
+  GUEST_PORTAL_TOOL_ALLOWLIST,
+  HR_TRAINING_ACTION_ALLOWLIST,
+  HR_TRAINING_TOOL_ALLOWLIST,
+  INTERNAL_AGENT_BRIDGE_ACTION_ALLOWLIST,
+  INTERNAL_AGENT_BRIDGE_TOOL_ALLOWLIST,
+  LEGAL_ADMIN_ACTION_ALLOWLIST,
+  LEGAL_ADMIN_TOOL_ALLOWLIST,
   OWNER_ENQUIRY_ACTION_ALLOWLIST,
   OWNER_ENQUIRY_TOOL_ALLOWLIST,
   OPS_ASSISTANT_ACTION_ALLOWLIST,
@@ -832,18 +1344,27 @@ module.exports = {
   PLAN2_STAFF_SOURCE_REFS,
   PROPERTIES_ASSISTANT_ACTION_ALLOWLIST,
   PROPERTIES_ASSISTANT_TOOL_ALLOWLIST,
+  PUBLIC_MCP_ACTION_ALLOWLIST,
+  PUBLIC_MCP_TOOL_ALLOWLIST,
   RESERVATIONS_CALENDAR_ACTION_ALLOWLIST,
   RESERVATIONS_CALENDAR_TOOL_ALLOWLIST,
   WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST,
   WEBSITE_GUEST_HERO_TOOL_ALLOWLIST,
   WEBSITE_TOOL_ALLOWLIST,
+  analyticsIntelligenceShellDraft,
   fadConsultDraft,
+  financeAssistantShellDraft,
   fadGlobalAskFridayDraft,
   fadRuntimeDraftContextPacks,
+  guestPortalShellDraft,
+  hrTrainingShellDraft,
+  internalAgentBridgeShellDraft,
+  legalAdminShellDraft,
   opsAssistantDraft,
   ownerEnquiryShellDraft,
   plan2StaffDraftContextPacks,
   propertiesAssistantDraft,
+  publicMcpShellDraft,
   reservationsCalendarDraft,
   websiteAskFridayFabDraft,
   websiteGuestHeroDraft,
