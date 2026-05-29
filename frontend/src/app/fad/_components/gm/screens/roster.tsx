@@ -24,6 +24,7 @@ import {
   type ApiRosterDay,
   type ApiRosterWeek,
 } from '../../../_data/rosterClient';
+import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../../_data/operationsStaffClient';
 import {
   AVAILABILITY_LABEL,
   ZONE_LABEL,
@@ -298,6 +299,14 @@ export function ScreenRoster(props: { subPage?: string; onChangeSubPage?: (s: st
   const { tasks } = useApiTasks();
   const stats = useMemo(() => computeStats(tasks, weekStart), [tasks, weekStart]);
 
+  // Staff directory → real Assignable (can-assign) + No-login counts.
+  const [staffDir, setStaffDir] = useState<OperationsStaffUser[]>([]);
+  useEffect(() => {
+    let alive = true;
+    loadOperationsStaffUsers().then((u) => { if (alive) setStaffDir(u); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   // Load the week whenever weekStart changes. loadRosterWeek THROWS for an
   // empty week — catch it and render an empty grid rather than crashing.
   useEffect(() => {
@@ -400,6 +409,9 @@ export function ScreenRoster(props: { subPage?: string; onChangeSubPage?: (s: st
   ];
 
   const activeCount = rows.length;
+  // Fall back to the rostered count if the directory hasn't loaded yet.
+  const assignableCount = staffDir.length > 0 ? staffDir.filter((s) => s.canAssign).length : activeCount;
+  const noLoginCount = staffDir.length > 0 ? staffDir.filter((s) => !s.userId).length : 0;
 
   // @demo:ui — roster-agent panel copy is static; wiring to Ask Friday Core is
   // owned by the parallel Ask-Friday session. Tag: PROD-GM-ASKPANEL-1.
@@ -459,8 +471,8 @@ export function ScreenRoster(props: { subPage?: string; onChangeSubPage?: (s: st
           </div>
           <div className="rstat3">
             <div className="statc" style={{ padding: '8px 9px' }}><div className="n">{activeCount}</div><div className="l">Active</div></div>
-            <div className="statc" style={{ padding: '8px 9px' }}><div className="n">{activeCount}</div><div className="l">Assignable</div></div>
-            <div className="statc" style={{ padding: '8px 9px' }}><div className="n" style={{ color: 'var(--tx-3)' }}>0</div><div className="l">No login</div></div>
+            <div className="statc" style={{ padding: '8px 9px' }}><div className="n">{assignableCount}</div><div className="l">Assignable</div></div>
+            <div className="statc" style={{ padding: '8px 9px' }}><div className="n" style={{ color: 'var(--tx-3)' }}>{noLoginCount}</div><div className="l">No login</div></div>
           </div>
         </div>
 

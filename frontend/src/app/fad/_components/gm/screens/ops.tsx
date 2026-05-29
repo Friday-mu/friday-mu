@@ -19,6 +19,7 @@ import { PriD, GmShell, FridayBar, AskPanel, type GmTab, type AskMsg } from '../
 import { DI } from '../icons';
 import { useApiTasks } from '../../../_data/useApiTasks';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../../_data/operationsStaffClient';
+import { fetchScheduleReservations, type ScheduleReservation } from '../../../_data/reservationsClient';
 import {
   TASK_PROPERTY_BY_CODE,
   type Task,
@@ -38,6 +39,20 @@ const DONE_STATUSES: TaskStatus[] = ['completed', 'closed', 'cancelled'];
 // Task union has no such member — `reported` is the intake-equivalent, so we
 // fold it in here and the remaining live statuses.)
 const OPEN_STATUSES: TaskStatus[] = ['reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked'];
+
+// Occupancy for a property on `today`, from live reservations (blocking
+// statuses only). Returns the design's occ label + bdg tone.
+const RES_BLOCKS = (s: string) => ['confirmed', 'checked_in', 'reserved', 'booked'].includes((s || '').toLowerCase());
+function occForProperty(code: string, today: string, reservations: ScheduleReservation[], loaded: boolean): { occ: string; occTone: string } {
+  if (!loaded || !code) return { occ: '—', occTone: 'gray' };
+  const rel = reservations.filter((r) => (r.propertyCode || '').trim() === code && RES_BLOCKS(r.status));
+  for (const r of rel) {
+    if (r.checkInDate === today) return { occ: 'Check-in', occTone: 'amber' };
+    if (r.checkOutDate === today) return { occ: 'Checkout', occTone: 'amber' };
+    if (r.checkInDate <= today && today < r.checkOutDate) return { occ: 'Guest in', occTone: 'red' };
+  }
+  return { occ: 'Vacant', occTone: 'green' };
+}
 
 /* ── status → label + badge tone (mirrors the design's statusTone vocabulary) ── */
 const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -156,6 +171,18 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
       .then((users) => { if (alive) { setStaff(users); setStaffError(null); } })
       .catch((e: unknown) => { if (alive) setStaffError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (alive) setStaffLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  // Today's reservations → occupancy column in the task table.
+  const [reservations, setReservations] = useState<ScheduleReservation[]>([]);
+  const [resLoaded, setResLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const d = todayIso();
+    fetchScheduleReservations({ from: d, to: d, limit: 500 })
+      .then((items) => { if (alive) { setReservations(items); setResLoaded(true); } })
+      .catch(() => { if (alive) setResLoaded(false); });
     return () => { alive = false; };
   }, []);
 
@@ -388,6 +415,7 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
                   {todayRows.map((t) => {
                     const prop = TASK_PROPERTY_BY_CODE[t.propertyCode];
                     const who = (t.assigneeNames && t.assigneeNames.length > 0) ? initialsOf(t.assigneeNames[0]) : '—';
+                    const occInfo = occForProperty(t.propertyCode, today, reservations, resLoaded);
                     return (
                       <TaskTR
                         key={t.id}
@@ -396,8 +424,8 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
                         title={t.title}
                         dept={t.department}
                         due={t.dueTime || t.dueDate}
-                        occ="—"
-                        occTone="gray"
+                        occ={occInfo.occ}
+                        occTone={occInfo.occTone}
                         pri={t.priority}
                         status={STATUS_LABEL[t.status]}
                         statusTone={STATUS_TONE[t.status]}
