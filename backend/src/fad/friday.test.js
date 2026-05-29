@@ -45,6 +45,7 @@ describe('FAD Ask Friday helpers', () => {
     expect(prompt).toContain('request_approval');
     expect(prompt).toContain('concrete next step');
     expect(prompt).toContain('Inbox');
+    expect(prompt).toContain('TeamInbox');
     expect(prompt).toContain('Operations');
     expect(prompt).toContain('HR');
     expect(prompt).toContain('Reviews');
@@ -58,6 +59,8 @@ describe('FAD Ask Friday helpers', () => {
     // the model must answer on THAT thread not the recent slice.
     expect(prompt).toContain('focused_inbox_thread');
     expect(prompt).toContain('background context');
+    expect(prompt).toContain('staff-only internal discussion/evidence');
+    expect(prompt).toContain('not canonical truth');
   });
 
   test('parses inbox focus thread ids — UUID conversation vs website handoff prefix', () => {
@@ -143,6 +146,30 @@ describe('FAD Ask Friday helpers', () => {
     });
   });
 
+  test('parses TeamInbox focus targets for channel and DM context', () => {
+    const channelId = '6c4c13d0-d780-4b1c-b2de-4051a9bdd555';
+    const dmId = '8b8914d9-66cd-4bcc-ab3e-1266fae27c69';
+    expect(_test.parseTeamTarget(`channel:${channelId}`)).toEqual({
+      kind: 'channel',
+      value: channelId,
+      raw: `channel:${channelId}`,
+    });
+    expect(_test.parseTeamTarget('channel:ops')).toEqual({
+      kind: 'channel',
+      value: 'ops',
+      raw: 'channel:ops',
+    });
+    expect(_test.parseTeamTarget(`dm:${dmId}`)).toEqual({
+      kind: 'dm',
+      value: dmId,
+      raw: `dm:${dmId}`,
+    });
+    expect(_test.parseTeamTarget('dm:not-a-uuid')).toBeNull();
+    expect(_test.parseTeamTarget('ops')).toBeNull();
+    expect(_test.questionWantsDmContext('what did Mary DM me?')).toBe(true);
+    expect(_test.questionWantsDmContext('what is in the ops channel?')).toBe(false);
+  });
+
   test('surfaces operatorFocus in the model prompt body', () => {
     const focus = {
       module: 'inbox',
@@ -183,13 +210,14 @@ describe('FAD Ask Friday helpers', () => {
 
   test('selects module context from question and scope', () => {
     expect(_test.shouldLoad({ question: 'Any urgent maintenance?', scope: 'Operations' }, 'operations')).toBe(true);
+    expect(_test.shouldLoad({ question: 'What are we discussing in TeamInbox about RC-16?', scope: 'All of FAD' }, 'team')).toBe(true);
     expect(_test.shouldLoad({ question: 'Summarize Villa Azur reviews', scope: 'All of FAD' }, 'reviews')).toBe(true);
     expect(_test.shouldLoad({ question: 'Who is on leave this week?', scope: 'HR' }, 'hr')).toBe(true);
     expect(_test.shouldLoad({ question: 'What is the design blocker?', scope: 'Design' }, 'design')).toBe(true);
   });
 
   test('broad all of FAD question loads every owned context family', () => {
-    const modules = ['inbox', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
+    const modules = ['inbox', 'team', 'operations', 'hr', 'reviews', 'design', 'reservations', 'properties'];
     for (const module of modules) {
       expect(_test.shouldLoad({ question: 'What needs attention?', scope: 'All of FAD' }, module)).toBe(true);
     }
@@ -210,6 +238,150 @@ describe('FAD Ask Friday helpers', () => {
     expect(loadedForHandoff).toEqual(['inbox']);
     expect(loadedForReviews).toEqual(['reviews']);
     expect(loadedForTask).toEqual(['operations', 'properties']);
+  });
+
+  test('loads TeamInbox recent context through staff visibility gates', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'msg-channel-1',
+          channel_id: 'channel-1',
+          channel_key: 'ops',
+          channel_name: 'Operations',
+          visibility: 'public',
+          author_display_name: 'Franny',
+          text: 'Can someone check RC-16 before arrival?',
+          kind: 'text',
+          created_at: '2026-05-29T08:00:00.000Z',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'msg-dm-1',
+          dm_id: 'dm-1',
+          participant_count: 2,
+          author_display_name: 'Mary',
+          text: 'I already asked the guest for a Saturday slot.',
+          kind: 'text',
+          created_at: '2026-05-29T08:05:00.000Z',
+        }],
+      });
+
+    const context = await _test.loadTeamContext(
+      '00000000-0000-0000-0000-000000000001',
+      { userId: '11111111-1111-4111-8111-111111111111' },
+      null,
+      { includeDms: true },
+    );
+
+    expect(context.policy).toContain('staff-only operational evidence');
+    expect(context.sections).toEqual([
+      expect.objectContaining({
+        name: 'team_inbox_recent_channels',
+        ok: true,
+        data: [expect.objectContaining({
+          kind: 'channel',
+          channelKey: 'ops',
+          excerpt: 'Can someone check RC-16 before arrival?',
+        })],
+      }),
+      expect.objectContaining({
+        name: 'team_inbox_recent_dms',
+        ok: true,
+        data: [expect.objectContaining({
+          kind: 'dm',
+          participantCount: 2,
+          excerpt: 'I already asked the guest for a Saturday slot.',
+        })],
+      }),
+    ]);
+    expect(query.mock.calls[0][0]).toContain("(c.visibility = 'public' OR mem.user_id IS NOT NULL)");
+    expect(query.mock.calls[1][0]).toContain('$2 = ANY(dm.participant_user_ids)');
+  });
+
+  test('skips recent DM context unless focused or explicitly requested', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    const context = await _test.loadTeamContext(
+      '00000000-0000-0000-0000-000000000001',
+      { userId: '11111111-1111-4111-8111-111111111111' },
+      null,
+    );
+
+    expect(context.sections[1]).toEqual(expect.objectContaining({
+      name: 'team_inbox_recent_dms',
+      ok: true,
+      data: [],
+      skipped: 'dm_context_requires_dm_focus_or_explicit_request',
+    }));
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not load private focused TeamInbox channels for non-members', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{
+        id: 'channel-private',
+        channel_key: 'finance-private',
+        name: 'Finance Private',
+        visibility: 'private',
+        is_member: false,
+      }],
+    });
+
+    const focused = await _test.loadFocusedTeamContext(
+      '00000000-0000-0000-0000-000000000001',
+      { userId: '11111111-1111-4111-8111-111111111111' },
+      { kind: 'channel', value: 'finance-private', raw: 'channel:finance-private' },
+    );
+
+    expect(focused).toEqual(expect.objectContaining({
+      kind: 'channel',
+      access: 'forbidden',
+      channelKey: 'finance-private',
+      visibility: 'private',
+    }));
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  test('loads focused TeamInbox channel messages when the staff member has access', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'channel-ops',
+          channel_key: 'ops',
+          name: 'Operations',
+          visibility: 'private',
+          is_member: true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'msg-2',
+          channel_id: 'channel-ops',
+          channel_key: 'ops',
+          channel_name: 'Operations',
+          visibility: 'private',
+          author_display_name: 'Franny',
+          text: 'Assign the plumbing check after guest checkout.',
+          kind: 'text',
+          created_at: '2026-05-29T08:10:00.000Z',
+        }],
+      });
+
+    const focused = await _test.loadFocusedTeamContext(
+      '00000000-0000-0000-0000-000000000001',
+      { userId: '11111111-1111-4111-8111-111111111111' },
+      { kind: 'channel', value: 'ops', raw: 'channel:ops' },
+    );
+
+    expect(focused).toEqual(expect.objectContaining({
+      kind: 'channel',
+      access: 'allowed',
+      channelKey: 'ops',
+      messages: [expect.objectContaining({
+        excerpt: 'Assign the plumbing check after guest checkout.',
+      })],
+    }));
   });
 
   test('keeps enough output budget for Kimi K2.6 visible answers', () => {
@@ -465,9 +637,9 @@ describe('FAD Ask Friday helpers', () => {
 
   test('maps global Ask Friday loaded modules to Core knowledge scopes', () => {
     expect(_test.knowledgeScopesForAskFriday({
-      requestedModules: ['inbox', 'operations', 'reservations', 'properties'],
+      requestedModules: ['inbox', 'team', 'operations', 'reservations', 'properties'],
     }, {
-      sourcesUsed: ['design'],
+      sourcesUsed: ['team_messages', 'design'],
     })).toEqual([
       'fad_live_context',
       'staff_inbox',
