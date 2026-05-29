@@ -8,6 +8,9 @@ const {
   normalizeConsultDrafts,
   splitCombinedRecipientDraft,
   extractUntaggedDraftUpdate,
+  instructionForbidsDraftUpdate,
+  instructionRequestsDraftUpdate,
+  shouldAllowDraftUpdatesForTurn,
   parseTeachingActions,
   filterDuplicateTaskSuggestions,
   formatExistingWorkForPrompt,
@@ -51,6 +54,20 @@ describe('FAD-native Consult helpers', () => {
     ].join('\n');
     expect(extractUntaggedDraftUpdate(raw, 'compose')).toContain('Hi Volodymyr,');
     expect(extractUntaggedDraftUpdate(raw, 'message_review')).toBeNull();
+  });
+
+  test('blocks draft updates when an operator asks for review-only advice', () => {
+    const reviewOnly = 'Review this conversation and tell me whether a reply is needed. Do not create or change any draft.';
+
+    expect(instructionForbidsDraftUpdate(reviewOnly)).toBe(true);
+    expect(shouldAllowDraftUpdatesForTurn('draft_review', reviewOnly)).toBe(false);
+    expect(shouldAllowDraftUpdatesForTurn('compose', 'Do not create a reply draft; just tell me the risk.')).toBe(false);
+  });
+
+  test('allows draft updates for explicit revision requests in draft review', () => {
+    expect(instructionRequestsDraftUpdate('Polish this and make it more formal.')).toBe(true);
+    expect(shouldAllowDraftUpdatesForTurn('draft_review', 'Polish this and make it more formal.')).toBe(true);
+    expect(shouldAllowDraftUpdatesForTurn('draft_review', 'What should I know before replying?')).toBe(false);
   });
 
   test('parses structured Consult envelopes with multiple separate drafts', () => {
