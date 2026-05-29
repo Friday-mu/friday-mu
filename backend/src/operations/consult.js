@@ -301,6 +301,82 @@ function buildOpsModuleContext(body) {
   return truncate(JSON.stringify(payload, null, 2), OPS_CONSULT_CONTEXT_CHAR_LIMIT);
 }
 
+function compactOpsTaskForFallback(task) {
+  const compact = compactTask(task);
+  if (!compact) return null;
+  return {
+    id: compact.id,
+    title: compact.title,
+    propertyCode: compact.propertyCode,
+    status: compact.status,
+    priority: compact.priority,
+    dueDate: compact.dueDate,
+    dueTime: compact.dueTime,
+    estimatedMinutes: compact.estimatedMinutes,
+    assigneeNames: compact.assigneeNames,
+    assigneeIds: compact.assigneeIds,
+    reservationId: compact.reservationId,
+    source: compact.source,
+    riskFlags: compact.riskFlags,
+  };
+}
+
+function buildOpsCompactModuleContext(body) {
+  const scheduledTasks = safeArray(body.scheduledTasks || body.tasks, 80).map(compactOpsTaskForFallback).filter(Boolean);
+  const unscheduledTasks = safeArray(body.unscheduledTasks, 40).map(compactOpsTaskForFallback).filter(Boolean);
+  const staff = safeArray(body.staff || body.staffUsers, 40).map(compactStaff).filter(Boolean);
+  const reservations = safeArray(body.reservations, 80).map(compactReservation).filter(Boolean);
+  const currentPlan = safeArray(body.currentPlan || body.agentPlan || body.scheduleDraft, 40).map(compactPlanItem).filter(Boolean);
+  const planningConstraints = buildPlanningConstraints({
+    scheduledTasks,
+    unscheduledTasks,
+    staff,
+    reservations,
+    currentPlan,
+    selectedDate: body.selectedDate,
+    rangeStart: body.rangeStart,
+    rangeEnd: body.rangeEnd,
+  });
+  const payload = {
+    module: 'operations',
+    consultSurface: 'Friday Consult',
+    compact: true,
+    context: body.context || body.mode || 'general',
+    selectedDate: body.selectedDate || null,
+    rangeStart: body.rangeStart || null,
+    rangeEnd: body.rangeEnd || null,
+    plannerMode: body.plannerMode || null,
+    counts: summarizeCounts({ scheduledTasks, unscheduledTasks, staff, reservations, currentPlan }),
+    policies: {
+      assignment: planningConstraints.assignmentPolicy,
+      occupancy: planningConstraints.occupancyPolicy,
+      lunch: planningConstraints.lunchPolicy,
+      availabilityPricing: planningConstraints.availabilityPricingSource,
+    },
+    riskSignals: {
+      unassignedOpenTaskCount: planningConstraints.unassignedOpenTaskIds.length,
+      nonUrgentOccupiedTaskCount: planningConstraints.nonUrgentOccupiedTaskIds.length,
+      occupiedPropertyDayCount: planningConstraints.occupiedPropertyDays.length,
+      currentDraftUnassignedTaskCount: planningConstraints.currentDraftUnassignedTaskIds.length,
+      calendarPricingSignalCount: planningConstraints.calendarPricingSignals.length,
+    },
+    staff: staff.map((user) => ({
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      zone: user.zone,
+      canAssign: user.canAssign,
+    })),
+    scheduledTasks: scheduledTasks.slice(0, 30),
+    unscheduledTasks: unscheduledTasks.slice(0, 20),
+    occupiedPropertyDays: planningConstraints.occupiedPropertyDays.slice(0, 30),
+    calendarPricingSignals: planningConstraints.calendarPricingSignals.slice(0, 20),
+    currentPlan: currentPlan.slice(0, 20),
+    notes: cleanString(body.notes, 1600) || null,
+  };
+  return truncate(JSON.stringify(payload, null, 2), Math.min(OPS_CONSULT_CONTEXT_CHAR_LIMIT, 20_000));
+}
+
 function taskSignalsForContext(text) {
   const source = String(text || '').toLowerCase();
   const signals = [];
@@ -344,7 +420,18 @@ function parseOpsActionSuggestions(text) {
   return suggestions;
 }
 
-function buildSystemPrompt({ composed, context }) {
+function responseContract({ compact = false } = {}) {
+  return `RESPONSE CONTRACT:
+- Default to a bounded operational summary, not an exhaustive report.
+- Use at most 8 bullets and 450 words; compact fallback mode uses at most 5 bullets and 260 words.
+- For schedule/roster QA, summarize counts and top risks before examples. Do not list every task.
+- Do not output raw UUIDs unless the operator explicitly asks for IDs; use task title, property code, and assignee names.
+- If a reversible local action would help, include one concise [OPS_ACTION] block after the summary.
+- If the context is too large, say which exact summary is still reliable and ask for a narrower date/property filter.
+${compact ? '- You are in compact fallback mode because a previous provider response was incomplete; be extra concise.' : ''}`;
+}
+
+function buildSystemPrompt({ composed, context, compact = false }) {
   return `You are Friday Consult, the Operations module agent inside FAD.
 
 You help the Ops Manager plan schedules, rosters, task triage, maintenance, cleaning, supplies, and owner approvals.
@@ -359,9 +446,22 @@ Example:
 
 Do not use action tags for high-risk or non-reversible actions. Ask for human confirmation first.
 
+${responseContract({ compact })}
+
 Current Operations context: ${context}.
 
 ${composed.system_message}`;
+}
+
+function shouldRetryWithCompactOpsPrompt(result) {
+  if (!result || result.ok) return false;
+  const reason = cleanString(result.finishReason, 80).toLowerCase();
+  const error = cleanString(result.error, 500).toLowerCase();
+  return reason === 'length'
+    || reason === 'max_tokens'
+    || error.includes('finish_reason=length')
+    || error.includes('finish_reason=max_tokens')
+    || error.includes('incomplete response');
 }
 
 function confidenceBand(value) {
@@ -377,7 +477,8 @@ router.post('/consult', attachIdentity, async (req, res) => {
     const context = VALID_CONTEXTS.has(req.body?.context) ? req.body.context : 'general';
     if (!instruction) return res.status(400).json({ error: 'instruction required' });
 
-    const moduleContext = buildOpsModuleContext({ ...req.body, context });
+    const requestContext = { ...req.body, context };
+    const moduleContext = buildOpsModuleContext(requestContext);
     const contextText = `${instruction}\n\n${moduleContext}`;
     const composed = defaultComposer().load('ops-consult', {
       property_code: cleanString(req.body?.propertyCode, 80) || undefined,
@@ -400,7 +501,8 @@ router.post('/consult', attachIdentity, async (req, res) => {
       `[Operator request]\n${instruction}`,
     ].filter(Boolean).join('\n\n');
 
-    const result = await generateDraftReply({
+    let compactFallbackUsed = false;
+    let result = await generateDraftReply({
       system: buildSystemPrompt({ composed, context }),
       user: userMessage,
       meter: { tenantId: req.tenantId, feature: 'ops_consult' },
@@ -409,10 +511,33 @@ router.post('/consult', attachIdentity, async (req, res) => {
       maxTokens: OPS_CONSULT_MAX_TOKENS,
     });
 
+    if (!result.ok && shouldRetryWithCompactOpsPrompt(result)) {
+      compactFallbackUsed = true;
+      const compactModuleContext = buildOpsCompactModuleContext(requestContext);
+      const compactUserMessage = [
+        '[Compact Operations module context]',
+        compactModuleContext,
+        '[Operator request]',
+        instruction,
+        '[Fallback instruction]',
+        'The previous provider response was incomplete. Answer with a bounded summary only. Do not enumerate all tasks.',
+      ].join('\n\n');
+      result = await generateDraftReply({
+        system: buildSystemPrompt({ composed, context, compact: true }),
+        user: compactUserMessage,
+        meter: { tenantId: req.tenantId, feature: 'ops_consult_compact' },
+        timeoutMs: OPS_CONSULT_TIMEOUT_MS,
+        maxRetries: OPS_CONSULT_MAX_RETRIES,
+        maxTokens: Math.min(OPS_CONSULT_MAX_TOKENS, 1800),
+      });
+    }
+
     if (!result.ok) {
       return res.status(result.status || 502).json({
         error: 'ops_consult_model_failed',
         details: result.error || 'Operations Consult model call failed',
+        finishReason: result.finishReason || null,
+        compactFallbackUsed,
       });
     }
 
@@ -474,9 +599,11 @@ router.post('/consult', attachIdentity, async (req, res) => {
         tokenEstimate: composed.metadata.token_estimate,
         propertyCode: composed.metadata.property_code,
         inputTokens: result.inputTokens || null,
-        outputTokens: result.outputTokens || null,
-      },
-    });
+          outputTokens: result.outputTokens || null,
+          finishReason: result.finishReason || null,
+          compactFallbackUsed,
+        },
+      });
   } catch (e) {
     console.error('[operations/consult] error:', e.message);
     res.status(e.statusCode || 500).json({
@@ -489,12 +616,15 @@ router.post('/consult', attachIdentity, async (req, res) => {
 module.exports = router;
 
 module.exports._test = {
+  buildOpsCompactModuleContext,
   buildOpsModuleContext,
+  buildSystemPrompt,
   buildPlanningConstraints,
   confidenceBand,
   guestUrgentTask,
   parseOpsActionSuggestions,
   reservationBlocksOps,
+  shouldRetryWithCompactOpsPrompt,
   stripOpsProtocolTags,
   taskSignalsForContext,
 };
