@@ -343,7 +343,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   // Manager/GM desktop retrofit: these sub-pages render the FAD V2 GM screens
   // (own header+tabs via GmShell) → skip ModuleHeader. Field role keeps the
   // existing pages. gmNav normalises the GM screens' tab ids to ours.
-  const GM_SUBS = ['overview', 'schedule', 'approvals', 'roster', 'all'];
+  const GM_SUBS = ['overview', 'schedule', 'approvals', 'roster', 'all', 'my'];
   const isGm = !isField && GM_SUBS.includes(active);
   const gmNav = (s: string) => onChangeSubPage(s === 'reported' ? 'approvals' : s);
 
@@ -422,6 +422,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
         return (
           <MyTasksPage
             onOpenTask={setDetailTaskId}
+            onNav={gmNav}
           />
         );
       case 'history':
@@ -3372,11 +3373,14 @@ function KpiCard({ label, value, accent }: { label: string; value: number; accen
 
 function MyTasksPage({
   onOpenTask,
+  onNav,
 }: {
   onOpenTask: (id: string) => void;
+  onNav?: (s: string) => void;
 }) {
   const currentUserId = useCurrentUserId();
   const { role } = usePermissions();
+  const isField = role === 'field';
   const { t } = useT();
   const myTaskFilter = useMemo(() => ({ assignee: 'me' as const }), []);
   const { tasks: assignedTasks, loading, error, refetch } = useApiTasks(myTaskFilter);
@@ -3444,24 +3448,16 @@ function MyTasksPage({
     }
   };
 
-  return (
-    <div className="ops-my-tasks">
-      <div className="ops-my-header">
-        <div>
-          <div className="ops-mobile-kicker">{role === 'field' ? t('operations.mine.kickerField') : t('operations.mine.kickerManager')}</div>
-          <h2>{t('operations.mine.title')}</h2>
-          <p>{role === 'field' ? t('operations.mine.introField') : t('operations.mine.introManager')}</p>
-        </div>
-        <div className="ops-my-header-side">
-          <div className="ops-my-counts" aria-label={t('operations.mine.countsAria')}>
-            <span><strong>{counts.active}</strong> {t('operations.mine.countActive')}</span>
-            <span><strong>{counts.due}</strong> {t('operations.mine.countDue')}</span>
-            <span><strong>{counts.blocked}</strong> {t('operations.mine.countBlocked')}</span>
-            <span><strong>{counts.completed}</strong> {t('operations.mine.countDone')}</span>
-          </div>
-        </div>
-      </div>
-
+  const myTabs: GmTab[] = [
+    { l: 'Overview', onClick: () => onNav?.('overview') },
+    { l: 'Schedule', onClick: () => onNav?.('schedule') },
+    { l: 'My tasks', on: true },
+    { l: 'All tasks', onClick: () => onNav?.('all') },
+    { l: 'Approvals', onClick: () => onNav?.('approvals') },
+    { l: 'Roster', onClick: () => onNav?.('roster') },
+  ];
+  const inner = (
+    <>
       {error && (
         <div className="ops-my-alert">
           {t('operations.mine.loadError', { error })}
@@ -3556,7 +3552,44 @@ function MyTasksPage({
         ))}
         {visibleTasks.length === 0 && <Empty>{t('operations.mine.empty')}</Empty>}
       </div>
-    </div>
+    </>
+  );
+
+  // Field keeps its classic work-queue chrome (+ the shared ModuleHeader);
+  // managers get the V2 GmShell frame, consistent with All-tasks. The body
+  // (tabs/filters/grouped MyTaskCards) is shared — MyTaskCard is untouched so
+  // the field PWA experience is unchanged.
+  if (isField) {
+    return (
+      <div className="ops-my-tasks">
+        <div className="ops-my-header">
+          <div>
+            <div className="ops-mobile-kicker">{t('operations.mine.kickerField')}</div>
+            <h2>{t('operations.mine.title')}</h2>
+            <p>{t('operations.mine.introField')}</p>
+          </div>
+          <div className="ops-my-header-side">
+            <div className="ops-my-counts" aria-label={t('operations.mine.countsAria')}>
+              <span><strong>{counts.active}</strong> {t('operations.mine.countActive')}</span>
+              <span><strong>{counts.due}</strong> {t('operations.mine.countDue')}</span>
+              <span><strong>{counts.blocked}</strong> {t('operations.mine.countBlocked')}</span>
+              <span><strong>{counts.completed}</strong> {t('operations.mine.countDone')}</span>
+            </div>
+          </div>
+        </div>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <GmShell
+      eyebrow="OPERATIONS"
+      title={t('operations.mine.title')}
+      sub={`${counts.active} active · ${counts.due} due · ${counts.blocked} blocked · ${counts.completed} done`}
+      tabs={myTabs}
+    >
+      {inner}
+    </GmShell>
   );
 }
 
@@ -4040,6 +4073,7 @@ function AllTasksPage({ onOpenTask, onCreate, onNav }: { onOpenTask: (id: string
   const allTabs: GmTab[] = [
     { l: 'Overview', onClick: () => onNav?.('overview') },
     { l: 'Schedule', onClick: () => onNav?.('schedule') },
+    { l: 'My tasks', onClick: () => onNav?.('my') },
     { l: 'All tasks', on: true },
     { l: 'Approvals', onClick: () => onNav?.('approvals') },
     { l: 'Roster', onClick: () => onNav?.('roster') },
