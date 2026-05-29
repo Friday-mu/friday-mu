@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current continuation branch: `codex/ask-friday-plan1-qa-20260529`
+Current continuation branch: `codex/ask-friday-ledger-c52-smoke-20260529`
 
 ## Purpose
 
@@ -39,10 +39,10 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 
 | Surface | Plan | KB | Harness | Core wiring | Tests | Deploy | Team-useful | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `205d8a91` | not directly user-facing | deployed control plane, not finished platform |
-| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed; detail load fix verified | deployed at `205d8a91` | needs real staff-thread browser smoke | Plan 1 browser/workflow priority |
-| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; live synthetic Ops smoke passed; finish guard live | deployed at `205d8a91` | needs live bounded-response re-smoke | Plan 1 browser/workflow priority |
-| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `205d8a91` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
+| Ask Friday Core | built beyond scaffold | partial global contracts | worker/review/policy scaffold | runtime wired live | focused tests green; live API smoke passed | deployed at `c52f1a6e` | not directly user-facing | deployed control plane, not finished platform |
+| FAD Inbox / Friday Consult | mature existing plan | existing Inbox/runtime KB | strong existing harness | learning events + DB turn lease live | focused tests green; live structured Consult smoke passed; detail load fix verified | deployed at `c52f1a6e` | real staff-thread browser smoke passed for Julia closed-thread review | Plan 1 needs broader staff-shaped workflow QA |
+| FAD Ops / Friday Consult | strong active plan | strong Ops KB | improving, still young | learning events + schedule constraints live | focused tests green; bounded live Ops prompt smoke passed | deployed at `c52f1a6e` | daily schedule draft and broad schedule-review Consult smoke passed; roster task-allocation contract still open | Plan 1 needs broader roster/weekly/urgent workflow QA |
+| FAD global Ask Friday | subplan added | module context only | existing FAB/action harness | events + action mirroring live | focused tests green; live harmless-action smoke passed | deployed at `c52f1a6e` | staff command smoke passed for navigation only | Plan 1 mostly clear; broaden later |
 | Website guest hero Ask Friday | scoped | Website docs/source truth exist | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 / separate Website worktree |
 | Website Ask Friday FAB | scoped | partial public KB sources | existing Website harness | not wired to Core events/packs | not in this branch | no | no Core integration yet | Plan 2 |
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
@@ -102,7 +102,9 @@ Current reconciliation as of 2026-05-29:
 - Later PR #13 was merged and deployed on 2026-05-28 as `7caf6576f0030a6935b9f13342c52cbce10e6d6f`.
 - PR #15 was merged and deployed on 2026-05-29 as `c55e94c08691b977ebf8995f3c86f22742e4ea3a`.
 - PR #16 was merged and deployed on 2026-05-29 as `75ef9bc8479074619bfa76f9d4f25a3013c5fbce`.
-- Live frontend and backend both report `75ef9bc8`.
+- PR #17 was merged and deployed on 2026-05-29 as `205d8a91545d336e7db726eb576ddf108813c4ea`.
+- PR #18 was merged and deployed on 2026-05-29 as `c52f1a6eb3b9f82ba703635b5bd61071322c3b0b`.
+- Live frontend and backend both report `c52f1a6e`.
 - Migrations through `100_feedback_multi_screenshots.sql` have been applied in production; startup logs showed `095` through `100` available/applied and migration 100 applied during the feedback deploy.
 - Analyzer remains out of the web request path by default; production logs show the web-process scheduler disabled unless `ASK_FRIDAY_ANALYZER_IN_WEB=1`.
 - Live authenticated smoke passed for `/api/ask-friday/core/surfaces`, seeded eval cases, KB-candidate list, and unauthenticated staff-route denial.
@@ -129,20 +131,20 @@ Current reconciliation as of 2026-05-29:
   - Ops Schedule loaded live with 4 visible open tasks and 2 initially unassigned visible tasks. The local reversible `Draft schedule` action drafted 4 moves and assigned every visible move, including occupancy reasoning, calendar-pricing overlay notes, and preferred 12:00-13:00 lunch protection.
   - Ops Roster loaded live with 187 scheduled weekly tasks and 87 unassigned tasks. The reversible `Draft roster` action drafted 11 staff coverage cells using reservation pressure. This is staff-coverage planning, not per-task assignment; if Friday expects roster generation itself to assign individual tasks, that needs a separate roster/task-allocation contract.
   - Ops Consult model QA exposed a blocker: `/api/operations/consult` returned HTTP 200 but visible text was cut mid-task id and had no reversible action suggestion. Current branch `codex/ask-friday-consult-finish-reason-20260529` patches the shared draft client so non-normal provider finish reasons with partial text are treated as incomplete and trigger fallback/failure instead of being shown as successful advice. This needs deploy plus live re-smoke before closing Plan 1 Ops Consult.
-- 2026-05-29 PR #17 merged and deployed as `205d8a91`; frontend/backend versions aligned, PM2 online, and post-deploy smoke confirmed the previous partial output no longer leaks. The same Ops schedule prompt now fails closed as `ops_consult_model_failed` when Gemini hits `MAX_TOKENS` and Kimi hits `finish_reason=length`. Current branch `codex/ops-consult-bounded-response-20260529` adds a bounded response contract and compact Ops fallback context so Ops Consult can answer team-usefully instead of failing closed on broad schedule-review prompts.
+- 2026-05-29 PR #17 merged and deployed as `205d8a91`; frontend/backend versions aligned, PM2 online, and post-deploy smoke confirmed the previous partial output no longer leaks. The same Ops schedule prompt failed closed as `ops_consult_model_failed` when Gemini hit `MAX_TOKENS` and Kimi hit `finish_reason=length`, which proved the guard was safe but not team-useful.
+- 2026-05-29 PR #18 merged and deployed as `c52f1a6e`; frontend/backend versions aligned, PM2 online, and the exact broad live Ops schedule-review prompt returned a complete bounded QA summary with no cut-off text and no `ops_consult_model_failed`. The answer identified unassigned visible tasks, occupancy/property risks, lunch-verification limits, and suggested only the reversible `Draft schedule` action.
 
 Remaining Plan 1 tasks:
 
-1. Merge/deploy the Ops bounded-response/compact-fallback branch, then re-smoke Ops Consult on the live schedule prompt that currently fails closed.
-2. Run browser/live workflow QA with real staff-shaped scenarios:
+1. Continue browser/live workflow QA with real staff-shaped scenarios:
    - Inbox guest complaint draft with latest guest turn;
    - Inbox property/reservation-grounded reply;
    - Inbox teaching/action feedback still included;
-   - Ops daily schedule with occupied property;
    - Ops weekly schedule with checkout and arrival pressure;
    - Ops roster with lunch/coverage/fairness;
    - Ops urgent guest issue during occupancy.
-3. Patch only blocking defects from that browser/workflow QA.
+2. Patch only blocking defects from that browser/workflow QA.
+3. Decide whether Ops roster generation must allocate individual tasks or remain staff-coverage planning; current live behavior drafts coverage cells and schedule planning assigns visible tasks.
 4. Record team-useful evidence in this ledger and mirror to Notion when connector access is available.
 
 Plan 3 source-mapping progress:
@@ -249,7 +251,7 @@ Do not use Judith/subagents to edit the same source files concurrently with the 
 
 Continue with Plan 1 browser/workflow usefulness verification.
 
-PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `75ef9bc8`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, the Inbox/Consult structured-draft bugfix release, and the WhatsApp-window Inbox detail fix.
+PR #9 is no longer pending. It was merged as `da67c7be`, and production now runs `c52f1a6e`, which includes PR #9, later Feedback FAB evidence-flow work, Website Ask Friday Core scopes, the Inbox/Consult structured-draft bugfix release, the WhatsApp-window Inbox detail fix, Consult partial-output rejection, and bounded Ops Consult compact fallback.
 
 New execution-planning artifacts on this branch:
 
