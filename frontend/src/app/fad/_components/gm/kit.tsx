@@ -118,3 +118,26 @@ export function AskPanel({ scope, aware, msgs, onClose }: { scope: string; aware
     </div>
   );
 }
+
+/* ── Provenance source chip — V2 "source of truth" indicator ──────────────────
+   Shows which system owns a field: Guesty (commercial), Breezeway (operational),
+   Friday-owned, modeled/forecast, stale, or failed-sync. Base layout = .srcbz;
+   colour/border variants live in gm-desktop.css. Cross-cutting — used across
+   the property spine, reservation detail drawer, etc. (FAD V2 defining concept). */
+export type ProvenanceSource = 'guesty' | 'breezeway' | 'friday' | 'modeled' | 'stale' | 'failed';
+const SRC_META: Record<ProvenanceSource, { variant: string; label: string }> = {
+  guesty: { variant: 'srcgy', label: 'Guesty' },
+  breezeway: { variant: '', label: 'Breezeway' },
+  friday: { variant: 'srcfr', label: 'Friday' },
+  modeled: { variant: 'srcmodel', label: 'Modeled' },
+  stale: { variant: 'srcstale', label: 'Stale' },
+  failed: { variant: 'srcfail', label: 'Sync failed' },
+};
+export function SourceChip({ source, label, lastSyncedAt, dot = true }: {
+  source: ProvenanceSource; label?: string; lastSyncedAt?: string | null; dot?: boolean;
+}) {
+  const m = SRC_META[source] || SRC_META.friday;
+  const title = lastSyncedAt ? `${m.label} · synced ${lastSyncedAt}` : `Source: ${m.label}`;
+  const cls = ['srcbz', m.variant, dot ? 'srcdot' : ''].filter(Boolean).join(' ');
+  return <span className={cls} title={title}>{label || m.label}</span>;
+}
