@@ -145,7 +145,11 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
   const [saving, setSaving] = useState(false);
   const [dragEnabled, setDragEnabled] = useState(false);
 
-  const { tasks, loading, loaded, refetch } = useApiTasks(useMemo(() => ({}), []));
+  // Read the UNFILTERED task cache. updateTask -> replaceTaskInCache patches this
+  // cache in place + notify(), so a dragged task re-renders already moved — no
+  // refetch, no blank-and-reappear. (A filtered/page query gets *cleared* on write,
+  // which is exactly what made "the whole page disappear then reappear".)
+  const { tasks, loading, loaded } = useApiTasks();
   const { properties } = useLiveProperties();
 
   // ALL assignable staff (not just those with tasks).
@@ -258,14 +262,15 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
     setSaving(true);
     try {
       await updateTask({ taskId, patch });
+      // No refetch: replaceTaskInCache (inside updateTask) patches the unfiltered
+      // cache in place + notifies, so the grid moves the task without a blank reload.
       fireToast(row.isProp ? `Moved to ${row.badge} · ${dueTime}` : `Assigned to ${row.name.split(' ')[0]} · ${dueTime}`);
-      refetch();
     } catch (err) {
       fireToast(err instanceof Error ? err.message : 'Could not reschedule');
     } finally {
       setSaving(false);
     }
-  }, [dragTaskId, saving, today, refetch]);
+  }, [dragTaskId, saving, today]);
 
   const panel = askOpen ? (
     <AskPanel
@@ -291,7 +296,6 @@ export function ScreenSchedule(props: { subPage?: string; onChangeSubPage?: (s: 
       sub={`Today · ${staff.length} staff · ${view === 'prop' ? propRows.length + ' listed properties' : userRows.length + ' staff'}`}
       tabs={opsTabs(onChangeSubPage)}
       panel={panel}
-      actions={<button className="dbtn ghost" onClick={() => refetch()}><DI n="undo" s={1.9} /> Refresh</button>}
     >
       <FridayBar
         actions={<button className="dbtn ghost sm" onClick={() => setAskOpen(true)}>Review <DI n="chevR" s={2} /></button>}
