@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current continuation branch: `codex/ask-friday-plan2-research-20260529`; active code fix branch `codex/ask-friday-ops-roster-compact-first-20260529` is open as PR #44.
+Current continuation branch: `codex/ask-friday-plan2-research-20260529`; PR #44 roster compact-first fix is merged but not deployed.
 
 ## Purpose
 
@@ -41,9 +41,9 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan2-research-20260529`
 - Branch: `codex/ask-friday-plan2-research-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after coordinated Ask Friday/perf deploy: `810250395041bf377d53900422f6befddfd4ac65`
+- Base/canonical SHA after PR #44 merge: `7d2f87324a5a1d6f1c0e9e324a58e102300f4a12`
 - Current deployed code-bearing SHA: `810250395041bf377d53900422f6befddfd4ac65`
-- Note: `origin/fad-rebuild` may receive docs-only ledger commits after this SHA without requiring a production deploy.
+- Note: `origin/fad-rebuild` is ahead of live production because PR #44 is merged but not deployed. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -70,8 +70,8 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #41: merged on 2026-05-29 as `61960837`; this adds staff-only TeamInbox context to global FAD Ask Friday.
 - PR #42: merged on 2026-05-29 as `aa7e7f01`; this adds the sanitized page-focus envelope for the shared Ask Friday right panel and documents the frontend-to-Core contract.
 - Coordinated deploy `81025039` includes PR #41, PR #42, the frontend performance/code-split pass, and owner-notification read-side filtering. Live frontend and backend both report `81025039`.
-- PR #44 is open from `codex/ask-friday-ops-roster-compact-first-20260529`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is not deployed.
-- Deployment status: live frontend and backend both report `81025039`. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #44 merged on 2026-05-29 as `7d2f8732`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is not deployed.
+- Deployment status: live frontend and backend both report `81025039`, so live production does not yet include PR #44. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
