@@ -148,6 +148,23 @@ const LIST_SELECT_SQL = `
   LEFT JOIN read_status rs ON rs.conversation_id = c.id AND rs.user_id = $1
 `;
 
+// Exclude owner-notification "conversations" from the guest inbox list/search.
+// Guesty/Friday sends OWNERS an outbound SMS+email on every new/cancelled
+// booking (e.g. "New Booking Alert from Friday.mu … Owner's Share: 219.65").
+// These land as conversations with no guest identity and only outbound system
+// messages, so they wrongly surfaced as guest threads. Safe by construction: a
+// real guest conversation always has a guest_name OR at least one inbound
+// message — this only hides rows that have NEITHER. (Verified on prod: matches
+// exactly the 10 such convs, 0 false positives against real guest threads.)
+const EXCLUDE_OWNER_NOTIFICATIONS_SQL = `
+  AND NOT (
+    c.guest_name IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM messages mi
+      WHERE mi.conversation_id = c.id AND mi.direction = 'inbound'
+    )
+  )`;
+
 // ────────────────────────────────────────────────────────────────────
 // GET /api/inbox/conversations/search
 // Must come BEFORE the /:id route so Express doesn't match it as id=search.
@@ -160,7 +177,7 @@ router.get('/search', attachIdentity, async (req, res) => {
     const params = [userId, FR_TENANT_ID];
     let paramIdx = 3;
 
-    let sql = LIST_SELECT_SQL + ' WHERE c.tenant_id = $2';
+    let sql = LIST_SELECT_SQL + ' WHERE c.tenant_id = $2' + EXCLUDE_OWNER_NOTIFICATIONS_SQL;
 
     if (q && typeof q === 'string' && q.trim()) {
       const searchTerm = `%${q.trim()}%`;
@@ -425,7 +442,7 @@ router.get('/', attachIdentity, async (req, res) => {
     const userId = req.identity?.username || req.identity?.userId || 'unknown';
     const params = [userId, FR_TENANT_ID];
     let paramIdx = 3;
-    let sql = LIST_SELECT_SQL + ' WHERE c.tenant_id = $2';
+    let sql = LIST_SELECT_SQL + ' WHERE c.tenant_id = $2' + EXCLUDE_OWNER_NOTIFICATIONS_SQL;
 
     if (status) {
       sql += ` AND c.status = $${paramIdx++}`;
