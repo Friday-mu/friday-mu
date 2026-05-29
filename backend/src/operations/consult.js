@@ -12,6 +12,8 @@ const OPS_CONSULT_TIMEOUT_MS = Number(process.env.OPS_CONSULT_TIMEOUT_MS) || 480
 const OPS_CONSULT_MAX_RETRIES = Number(process.env.OPS_CONSULT_MAX_RETRIES) || 0;
 const OPS_CONSULT_MAX_TOKENS = Number(process.env.OPS_CONSULT_MAX_TOKENS) || 4200;
 const OPS_CONSULT_CONTEXT_CHAR_LIMIT = Number(process.env.OPS_CONSULT_CONTEXT_CHAR_LIMIT) || 180_000;
+const OPS_CONSULT_COMPACT_FIRST_TASK_THRESHOLD = Number(process.env.OPS_CONSULT_COMPACT_FIRST_TASK_THRESHOLD) || 50;
+const OPS_CONSULT_COMPACT_FIRST_RESERVATION_THRESHOLD = Number(process.env.OPS_CONSULT_COMPACT_FIRST_RESERVATION_THRESHOLD) || 70;
 
 const VALID_CONTEXTS = new Set([
   'schedule',
@@ -548,6 +550,19 @@ function buildOpsCompactModuleContext(body) {
   return truncate(JSON.stringify(payload, null, 2), Math.min(OPS_CONSULT_CONTEXT_CHAR_LIMIT, 20_000));
 }
 
+function shouldUseCompactOpsPromptFirst(body) {
+  const context = cleanString(body?.context || body?.mode, 80) || 'general';
+  const scheduledCount = safeArray(body?.scheduledTasks || body?.tasks, 300).length;
+  const unscheduledCount = safeArray(body?.unscheduledTasks, 200).length;
+  const reservationCount = safeArray(body?.reservations, 200).length;
+  const taskCount = scheduledCount + unscheduledCount;
+  return context === 'roster'
+    && (
+      taskCount >= OPS_CONSULT_COMPACT_FIRST_TASK_THRESHOLD
+      || reservationCount >= OPS_CONSULT_COMPACT_FIRST_RESERVATION_THRESHOLD
+    );
+}
+
 function taskSignalsForContext(text) {
   const source = String(text || '').toLowerCase();
   const signals = [];
@@ -652,7 +667,10 @@ router.post('/consult', attachIdentity, async (req, res) => {
     if (!instruction) return res.status(400).json({ error: 'instruction required' });
 
     const requestContext = { ...req.body, context };
-    const moduleContext = buildOpsModuleContext(requestContext);
+    const compactFirst = shouldUseCompactOpsPromptFirst(requestContext);
+    const moduleContext = compactFirst
+      ? buildOpsCompactModuleContext(requestContext)
+      : buildOpsModuleContext(requestContext);
     const contextText = `${instruction}\n\n${moduleContext}`;
     const composed = defaultComposer().load('ops-consult', {
       property_code: cleanString(req.body?.propertyCode, 80) || undefined,
@@ -669,23 +687,33 @@ router.post('/consult', attachIdentity, async (req, res) => {
       .filter(Boolean)
       .join('\n\n');
 
-    const userMessage = [
-      history ? `[Recent module consult turns]\n${history}` : '',
-      `[Live Operations module context]\n${moduleContext}`,
-      `[Operator request]\n${instruction}`,
-    ].filter(Boolean).join('\n\n');
+    const userMessage = compactFirst
+      ? [
+          history ? `[Recent module consult turns]\n${history}` : '',
+          '[Compact Operations module context]',
+          moduleContext,
+          '[Operator request]',
+          instruction,
+          '[Compact-first instruction]',
+          'This roster context is large, so start with bounded planner checks. Do not enumerate all tasks.',
+        ].filter(Boolean).join('\n\n')
+      : [
+          history ? `[Recent module consult turns]\n${history}` : '',
+          `[Live Operations module context]\n${moduleContext}`,
+          `[Operator request]\n${instruction}`,
+        ].filter(Boolean).join('\n\n');
 
-    let compactFallbackUsed = false;
+    let compactFallbackUsed = compactFirst;
     let result = await generateDraftReply({
-      system: buildSystemPrompt({ composed, context }),
+      system: buildSystemPrompt({ composed, context, compact: compactFirst }),
       user: userMessage,
-      meter: { tenantId: req.tenantId, feature: 'ops_consult' },
+      meter: { tenantId: req.tenantId, feature: compactFirst ? 'ops_consult_compact_first' : 'ops_consult' },
       timeoutMs: OPS_CONSULT_TIMEOUT_MS,
       maxRetries: OPS_CONSULT_MAX_RETRIES,
-      maxTokens: OPS_CONSULT_MAX_TOKENS,
+      maxTokens: compactFirst ? Math.min(OPS_CONSULT_MAX_TOKENS, 1800) : OPS_CONSULT_MAX_TOKENS,
     });
 
-    if (!result.ok && shouldRetryWithCompactOpsPrompt(result)) {
+    if (!compactFirst && !result.ok && shouldRetryWithCompactOpsPrompt(result)) {
       compactFallbackUsed = true;
       const compactModuleContext = buildOpsCompactModuleContext(requestContext);
       const compactUserMessage = [
@@ -823,6 +851,7 @@ module.exports._test = {
   parseOpsActionSuggestions,
   reservationBlocksOps,
   shouldRetryWithCompactOpsPrompt,
+  shouldUseCompactOpsPromptFirst,
   stripOpsProtocolTags,
   taskSignalsForContext,
 };
