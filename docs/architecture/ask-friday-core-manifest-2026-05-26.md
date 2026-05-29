@@ -71,7 +71,7 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #42: merged on 2026-05-29 as `aa7e7f01`; this adds the sanitized page-focus envelope for the shared Ask Friday right panel and documents the frontend-to-Core contract.
 - Coordinated deploy `81025039` includes PR #41, PR #42, the frontend performance/code-split pass, and owner-notification read-side filtering.
 - Live deploy `9097f9bc` includes PR #44, PR #46, and commit `9097f9bc` (`feat(public): /api/public/experiences supply hub + Bokun ingestion + channel routing`, including migration `106_experiences.sql`). This deploy was not performed by this Ask Friday Core session.
-- PR #44 merged on 2026-05-29 as `7d2f8732`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is deployed in live `9097f9bc`; live roster re-smoke is still pending.
+- PR #44 merged on 2026-05-29 as `7d2f8732`; it starts large Ops roster consults in compact mode to avoid the observed 144s full-context length-failure pass before compact fallback. It is deployed in live `9097f9bc`; live roster re-smoke passed in about 12s with compact-first active and guardrails present.
 - PR #45 merged on 2026-05-29 as `decee0fb`; it adds Plan 2 research/source matrices, reservation action subtype contracts, property field classification, and owner positioning docs. Docs-only; no deploy required.
 - PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for Plan 2 deterministic eval scaffolding. It is deployed in live `9097f9bc`.
 - PR #47 merged on 2026-05-29 as `d33f151b`; docs-only ledger/manifest sync after PR #46.
