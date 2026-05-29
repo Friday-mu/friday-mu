@@ -69,11 +69,48 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"planningConstraints"');
     expect(context).toContain('"nonUrgentOccupiedTaskIds"');
     expect(context).toContain('"calendarPricingSignals"');
+    expect(context).toContain('"availabilityPricingSummary"');
     expect(context).toContain('"totalMinor": 34000');
     expect(context).toContain('"unassignedOpenTasks"');
     expect(context).toContain('"assignableStaff"');
     expect(context).toContain('Fix AC drain leak');
     expect(context).toContain('Bryan Henri');
+  });
+
+  test('empty calendar pricing objects are treated as missing proof, not usable price signals', () => {
+    const constraints = buildPlanningConstraints({
+      selectedDate: '2026-05-29',
+      rangeStart: '2026-05-29',
+      rangeEnd: '2026-06-05',
+      scheduledTasks: [],
+      unscheduledTasks: [],
+      staff: [],
+      currentPlan: [],
+      reservations: [{
+        id: 'rsv-empty',
+        propertyCode: 'GBH-C3',
+        checkInDate: '2026-05-29',
+        checkOutDate: '2026-06-01',
+        status: 'confirmed',
+        calendarPricing: {
+          nightsCached: 0,
+          blockedNights: 0,
+          totalMinor: null,
+          minPriceMinor: null,
+          maxPriceMinor: null,
+          currencyCode: null,
+          syncedAt: null,
+        },
+      }],
+    });
+
+    expect(constraints.calendarPricingSignalCount).toBe(0);
+    expect(constraints.calendarPricingSignals).toEqual([]);
+    expect(constraints.calendarPricingMissingCount).toBe(1);
+    expect(constraints.calendarPricingMissingReservations).toEqual([
+      expect.objectContaining({ propertyCode: 'GBH-C3' }),
+    ]);
+    expect(constraints.availabilityPricingSummary).toContain('none include usable cached calendar-pricing values');
   });
 
   test('compact fallback context keeps planning signals but limits task detail', () => {
@@ -103,6 +140,8 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"compact": true');
     expect(context).toContain('"unassignedOpenTaskCount": 45');
     expect(context).toContain('"assignableStaffCount": 1');
+    expect(context).toContain('"calendarPricingMissingCount": 1');
+    expect(context).toContain('"availabilityPricingSummary"');
     expect(context).toContain('"unassignedOpenTasks"');
     expect(context).toContain('Visible task 0');
     expect(context).not.toContain('Long internal detail');
@@ -118,6 +157,7 @@ describe('Operations Friday Consult helpers', () => {
 
     expect(prompt).toContain('Use at most 8 bullets and 450 words');
     expect(prompt).toContain('Do not output raw UUIDs');
+    expect(prompt).toContain('always include an availability/pricing check');
     expect(prompt).toContain('do not recommend a schedule that leaves a visible open task with no named assignee');
     expect(prompt).toContain('compact fallback mode');
   });
@@ -317,7 +357,39 @@ describe('Operations Friday Consult helpers', () => {
       unassignedOpenTaskCount: 2,
       nonUrgentOccupiedTaskCount: 1,
       calendarPricingSignalCount: 1,
+      calendarPricingMissingCount: 0,
       assignableStaffCount: 1,
+    });
+  });
+
+  test('deterministic fallback explicitly reports missing availability pricing proof', () => {
+    const fallback = buildDeterministicOpsFallback({
+      context: 'schedule',
+      selectedDate: '2026-05-29',
+      staff: [{ id: 'u-franny', name: 'Franny Henri', canAssign: true }],
+      reservations: [{
+        id: 'rsv-empty',
+        propertyCode: 'GBH-C3',
+        checkInDate: '2026-05-29',
+        checkOutDate: '2026-06-01',
+        status: 'confirmed',
+        calendarPricing: {
+          nightsCached: 0,
+          blockedNights: 0,
+          totalMinor: null,
+          minPriceMinor: null,
+          maxPriceMinor: null,
+          currencyCode: null,
+          syncedAt: null,
+        },
+      }],
+    });
+
+    expect(fallback.text).toContain('Availability/pricing check: 1 reservation overlay(s) are loaded');
+    expect(fallback.text).toContain('Availability and prices are not proved by the cache');
+    expect(fallback.diagnostics).toMatchObject({
+      calendarPricingSignalCount: 0,
+      calendarPricingMissingCount: 1,
     });
   });
 
