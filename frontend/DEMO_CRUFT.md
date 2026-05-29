@@ -209,3 +209,35 @@ After Apr 29 2026 config audit extension:
 - **1 architectural note** — Approvals duplication (Operations vs Finance)
 
 **Total: ~86 `// @demo:*` tags across the codebase.** Grep `// @demo:` to confirm count.
+
+---
+
+## PROD-FIELD — Field-staff PWA (FAD V2)  ·  added 2026-05-29
+
+The field-staff mobile PWA (`src/app/fad/_components/field/`) is a **real feature** — it
+mounts for `role==='field'` and wires the task queue, task detail, timer, requirements,
+supplies, expense OCR, comments, reports, property issues, team chat and notifications to
+live APIs (`/api/tasks`, `/api/intent/parse-receipt`, `/api/expenses`, `/api/team/*`,
+`/api/events/notifications`). The rows below are the surfaces that still fake a backend.
+
+| ID | Path | Type | What it fakes | Backend action |
+|---|---|---|---|---|
+| PROD-FIELD-PHOTO-1 | `field/screens/detail.tsx` (Requirements, Complete), `field/screens/report.tsx` | @demo:state | Task photo/evidence capture is local-only (counts held in shell state); no upload | Add `POST /api/tasks/:id/attachments`; render real thumbnails; gate completion on real photo proof |
+| PROD-FIELD-EXPENSE-VAT | `field/screens/work.tsx` (ScreenExpense) | @demo:logic | VAT shown as a client 15% estimate — parse-receipt OCR returns no VAT field | Return VAT from parser, or compute server-side per category tax policy |
+| PROD-FIELD-REPORT-PHOTOS | `field/screens/report.tsx` (ScreenReport) | @demo:ui | Photo tiles on the report form are decorative — no upload | Wire report attachment upload; show real thumbnails |
+| PROD-FIELD-REPORTS-MINE | `field/screens/report.tsx` (ScreenReports) | @demo:logic | "Mine"/"On my properties" filtered client-side from `assignee=me` | Add server filter `created_by=me OR requester=me` to `GET /api/tasks` |
+| PROD-FIELD-PROPERTY-CONTEXT | `field/screens/report.tsx` (ScreenProperty) | @demo:data | Per-property check-in instructions + on-site guide (parking/bins/mains/fuse/storage) are inline fixtures | Field-facing property-context API (Properties/Breezeway) |
+| PROD-FIELD-ACCESS-REVEAL | `field/screens/report.tsx` (ScreenProperty) | @demo:logic | Access codes (lockbox/alarm/wifi) are inline fixtures; "Reveal" is a local toggle w/ audit copy only | Read codes from source on reveal; POST reveal to property audit trail |
+| PROD-FIELD-AIHELP | `field/screens/report.tsx` (ScreenAIHelp) | @demo:ui | Task-scoped Ask Friday is a static example; composer inert | Wire to Ask Friday Core (owned by the parallel Ask-Friday session) |
+| PROD-FIELD-CALL-1 | `field/screens/chat.tsx` (CallScreen/CallPill) + `field/FieldApp.tsx` overlays | @demo:ui | In-app audio/video is a local timer simulation — no WebRTC/Twilio/3CX | Wire a real calling backend |
+| PROD-FIELD-NOTIF-1 | `field/screens/account.tsx` (ScreenNotifs) | @demo:ui | "Friday muted 3,847 / surfaced 6" hero counts are flavor (the list itself is the real feed) | Surface real muted/surfaced counts from notifications API |
+| PROD-FIELD-NOTIF-2 | `field/screens/account.tsx` (ScreenNotifs) | @demo:ui | "1,204 muted this week" footer | Real muted-items view + count |
+| PROD-FIELD-ACCT-1 | `field/screens/account.tsx` (ScreenAccount) | @demo:data | Role label beyond what `/api/auth/me` returns | Extend `/api/auth/me` / field-staff profile endpoint |
+| PROD-FIELD-ACCT-2 | `field/screens/account.tsx` (ScreenAccount) | @demo:auth | "Sign out" clears local `gms_token` only | Revoke session server-side then clear + redirect |
+| PROD-FIELD-ACCT-3 | `field/screens/account.tsx` (ScreenAccount) | @demo:data | "North/West" working-zone chips on the profile card | Render from real assigned zones |
+| PROD-FIELD-ACCT-4 | `field/screens/account.tsx` (ScreenAccount) | @demo:ui | Availability toggle / lunch-window rows are display-only | Wire a scheduler/availability endpoint |
+| PROD-FIELD-ACCT-5 | `field/screens/account.tsx` (ScreenAccount) | @demo:ui | "Friday assist" master toggle is display-only | Persist + enforce an assist preference |
+| PROD-FIELD-NOTIFPREFS-1 | `field/screens/account.tsx` (ScreenNotifPrefs) | @demo:ui | Per-event Push/Email/In-app matrix is preset/locked, not backend-wired for v1 (per Ishant). Real push opt-in IS wired. | Per-channel notification-preference API; unlock control by role |
+| PROD-FIELD-TUTORIAL-1 | `field/screens/account.tsx` (ScreenTutorial) | @demo:ui | Walkthrough is local; "Show me" deep-links to the Tasks tab | Real onboarding state + walkthrough targets |
+| PROD-FIELD-TUTORIAL-2 | `field/screens/account.tsx` (ScreenTutorial) | @demo:ui | Static Ask-Friday Q&A example bubbles | Wire Q&A to Ask Friday |
+| PROD-FIELD-TUTORIAL-3 | `field/screens/account.tsx` (ScreenTutorial) | @demo:ui | Static "Quick how-tos" rows | Link each to a real per-topic walkthrough |

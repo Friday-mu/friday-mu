@@ -22,6 +22,7 @@ import {
 } from './modules/StubModules';
 import { PropertiesModule } from './modules/PropertiesModule';
 import { OperationsModule } from './modules/OperationsModule';
+import FieldApp from './field/FieldApp';
 import { FinanceModule } from './modules/FinanceModule';
 import { lockedFinanceSubsFor, type FinRole } from '../_data/financeRoles';
 import {
@@ -281,6 +282,21 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   };
 
   if (!authChecked) return null;
+
+  // Field staff get a dedicated mobile PWA shell (bottom-nav task app) rather
+  // than the manager Header+Sidebar desktop shell. Director "View as → Field"
+  // resolves here too, so it can be previewed. (Real feature — the demo gaps
+  // are inside individual field screens, tracked in DEMO_CRUFT.md PROD-FIELD-*.)
+  if (role === 'field') {
+    return (
+      <>
+        <FieldApp />
+        <NotificationPrompt />
+        <Toaster />
+        {mustChangePassword && <ChangePasswordModal onChanged={() => setMustChangePassword(false)} />}
+      </>
+    );
+  }
 
   return (
     <div className="fad-app">
