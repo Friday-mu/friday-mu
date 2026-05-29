@@ -278,6 +278,8 @@ function shapeSurfaceReadiness(row) {
   const activeEvalCaseCount = Number(row.active_eval_case_count || 0);
   const learningFeedback = shapeLearningFeedback(row);
   const flags = [];
+  const isActiveSurface = surface.status === 'active';
+  const evalCoverageSeverity = isActiveSurface ? 'warning' : 'info';
 
   if (expectation.requiredStatus === 'published' && !latestPublished) {
     flags.push(readinessFlag(
@@ -303,17 +305,21 @@ function shapeSurfaceReadiness(row) {
   if (declaredEvalSuites.length > 0 && activeEvalCaseCount === 0) {
     flags.push(readinessFlag(
       'missing_eval_cases',
-      'warning',
-      'Surface declares eval suites but has no active eval cases.',
+      evalCoverageSeverity,
+      isActiveSurface
+        ? 'Active surface declares eval suites but has no active eval cases.'
+        : 'Planned surface declares eval suites for future coverage but has no active eval cases yet.',
     ));
   } else if (missingDeclaredEvalSuites.length > 0) {
     flags.push(readinessFlag(
       'missing_declared_eval_suite_coverage',
-      'warning',
-      `No active eval cases found for declared suites: ${missingDeclaredEvalSuites.join(', ')}.`,
+      evalCoverageSeverity,
+      isActiveSurface
+        ? `No active eval cases found for declared suites: ${missingDeclaredEvalSuites.join(', ')}.`
+        : `Planned surface has no active eval cases yet for future suites: ${missingDeclaredEvalSuites.join(', ')}.`,
     ));
   }
-  if (surface.status === 'active' && learningFeedback.policy.required && !learningFeedback.policy.mode) {
+  if (isActiveSurface && learningFeedback.policy.required && !learningFeedback.policy.mode) {
     flags.push(readinessFlag(
       'missing_learning_event_policy',
       'info',
@@ -364,7 +370,9 @@ function readinessSummary(items) {
     if (item.flags.some((flag) => flag.code === 'missing_staff_context_pack_draft')) {
       summary.missingStaffContextPackDrafts += 1;
     }
-    if (item.flags.some((flag) => flag.code === 'missing_eval_cases' || flag.code === 'missing_declared_eval_suite_coverage')) {
+    if (item.status === 'active' && item.flags.some((flag) => (
+      flag.code === 'missing_eval_cases' || flag.code === 'missing_declared_eval_suite_coverage'
+    ))) {
       summary.missingEvalCoverage += 1;
     }
     return summary;

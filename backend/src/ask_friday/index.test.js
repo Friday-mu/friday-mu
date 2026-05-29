@@ -283,6 +283,44 @@ describe('Ask Friday Core router', () => {
         },
         recent_learning_event_count: 0,
         latest_learning_event_at: null,
+      }, {
+        ...surfaceRow({
+          surface_id: 'fad_legal_admin_assistant',
+          display_name: 'Legal Admin Assistant',
+          audience: 'restricted_staff',
+          source_system: 'fad',
+          access_class: 'restricted_staff',
+          status: 'planned',
+          allowed_knowledge_scopes: ['legal_admin_policy'],
+          allowed_tools: ['load_contract_context'],
+          allowed_actions: ['request_approval'],
+          eval_suite_ids: ['legal_grounding'],
+        }),
+        draft_pack_id: null,
+        draft_version: null,
+        draft_status: null,
+        draft_approved_by: null,
+        draft_approved_at: null,
+        draft_published_at: null,
+        draft_updated_at: null,
+        published_pack_id: null,
+        published_version: null,
+        published_status: null,
+        published_approved_by: null,
+        published_approved_at: null,
+        published_published_at: null,
+        published_updated_at: null,
+        active_eval_case_count: 0,
+        active_eval_suite_ids: [],
+        memory_policy: {
+          learningEventPolicy: {
+            required: false,
+            mode: 'planned',
+            emitter: 'not_wired_yet',
+          },
+        },
+        recent_learning_event_count: 0,
+        latest_learning_event_at: null,
       }],
     });
 
@@ -292,10 +330,11 @@ describe('Ask Friday Core router', () => {
       .expect(200);
 
     expect(res.body.summary).toMatchObject({
-      total: 2,
+      total: 3,
       active: 2,
       ready: 1,
       blocked: 1,
+      planned: 1,
       missingPublishedContextPacks: 1,
       missingEvalCoverage: 1,
     });
@@ -329,6 +368,13 @@ describe('Ask Friday Core router', () => {
     expect(res.body.surfaces[1].flags).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'missing_published_context_pack', severity: 'blocker' }),
       expect.objectContaining({ code: 'missing_eval_cases', severity: 'warning' }),
+    ]));
+    expect(res.body.surfaces[2]).toMatchObject({
+      surfaceId: 'fad_legal_admin_assistant',
+      readinessStatus: 'planned',
+    });
+    expect(res.body.surfaces[2].flags).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'missing_eval_cases', severity: 'info' }),
     ]));
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0][1]).toEqual([TENANT_ID]);
