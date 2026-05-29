@@ -20,14 +20,14 @@ It exists to prevent the earlier failure mode: treating scoped/planned Ask Frida
 | Properties | shell | yes | yes | active Core shell | public/private field policy still needs approval |
 | Website guest hero/FAB | public context packs, no FAD KB folder | yes | yes | FAD packs, Website wiring separate | public packs published; richer packs blocked by property-field approval |
 | Owners | shell | FAD owners planned shell | yes | Website public active, FAD owners planned | owner-private rules not locked |
-| Feedback | retention/redaction policy proposed | no | yes | public action policy/scope | implementation/enforcement not wired |
-| Guest Portal | no | no | no dedicated coverage | registry planned | not built |
-| Finance | no | no | minimal privacy seed | registry planned | not built |
-| Legal/Admin | no | no | no | registry planned | not built |
-| HR/Training | no | no | no | registry planned | not built |
-| Analytics/Intelligence | no | no | no | registry planned | not built |
-| Public MCP | no | no | basic safety/property seeds | registry planned | not built |
-| Internal Agent Bridge | no dedicated KB folder | no | yes | generic Core candidate/event paths only | summary contract missing |
+| Feedback | shell | no | yes | public action policy/scope | retention/redaction and candidate taxonomy drafted; implementation/enforcement not wired |
+| Guest Portal | shell | yes | no dedicated coverage | registry planned | stay-scope and handoff policy drafted; not built |
+| Finance | shell | yes | minimal privacy seed | registry planned | restricted finance source/privacy shell drafted; not built |
+| Legal/Admin | shell | yes | no | registry planned | compliance source and legal-review boundary drafted; not built |
+| HR/Training | shell | yes | no | registry planned | HR privacy and SOP/training shell drafted; not built |
+| Analytics/Intelligence | shell | yes | no | registry planned | metric source and trend-confidence policy drafted; not wired |
+| Public MCP | shell | yes | basic safety/property seeds | registry planned | public-pack-only scope/action shell drafted; not built |
+| Internal Agent Bridge | shell | yes | yes | generic Core candidate/event paths only | sanitized summary/provenance contract drafted; runtime not built |
 
 ## Missing Work By Surface
 
@@ -84,6 +84,7 @@ Needed before learning from screenshots/raw diagnostics:
 Current safe slice:
 
 - Wire evidence-class expiry and redaction enforcement only after the proposed policy is reviewed. Do not mine raw feedback evidence into KB until this is approved.
+- KB shell now exists at `backend/knowledge/surfaces/feedback-learning/`; it is planning guidance only until policy approval and wiring.
 
 ### Guest Portal
 
@@ -98,6 +99,7 @@ Needed before build:
 Current safe slice:
 
 - Docs/source matrix only. Coordinate with Website/guest portal session before wiring.
+- KB shell now exists at `backend/knowledge/surfaces/guest-portal-ask-friday/`; Guest Portal needs a separate stay-token/authenticated policy, not the public context-pack route.
 
 ### Finance
 
@@ -112,6 +114,7 @@ Needed before build:
 Current safe slice:
 
 - Design-only KB/source matrix. No runtime agent until access policy and finance data ownership are approved.
+- KB shell now exists at `backend/knowledge/surfaces/finance-assistant/`; finance remains restricted and planned.
 
 ### Legal/Admin
 
@@ -126,6 +129,7 @@ Needed before build:
 Current safe slice:
 
 - Source-mapped research only. No legal advice runtime.
+- KB shell now exists at `backend/knowledge/surfaces/legal-admin/`; legal/admin remains restricted and planned.
 
 ### HR/Training
 
@@ -140,6 +144,7 @@ Needed before build:
 Current safe slice:
 
 - KB skeleton and privacy boundary doc. No performance-memory runtime.
+- KB shell now exists at `backend/knowledge/surfaces/hr-training/`; add a restricted HR reviewer lane before HR-sensitive candidates are actionable.
 
 ### Analytics/Intelligence
 
@@ -154,6 +159,7 @@ Needed before build:
 Current safe slice:
 
 - Docs-only metric/source matrix.
+- KB shell now exists at `backend/knowledge/surfaces/analytics-intelligence/`; it is not runtime-wired and does not authorize individual staff-performance claims.
 
 ### Public MCP
 
@@ -168,6 +174,7 @@ Needed before build:
 Current safe slice:
 
 - Contract doc only. Coordinate with Website MCP branch before implementation.
+- KB shell now exists at `backend/knowledge/surfaces/public-mcp/`; keep it public context packs plus approval-routed requests only.
 
 ### Internal Agent Bridge
 
@@ -182,6 +189,7 @@ Needed before build:
 Current safe slice:
 
 - Contract/eval design only. Keep canonicalization human-reviewed.
+- KB shell now exists at `backend/knowledge/surfaces/internal-agent-bridge/`; it accepts sanitized summaries/candidates only, not raw transcripts.
 
 ## Execution Order
 

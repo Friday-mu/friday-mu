@@ -290,6 +290,78 @@ These are draft KB shells only. They are not proof of dedicated runtime agents, 
 - Principle:
   - Owner lead qualification can use competitor/market context internally, but public wording requires Ishant-approved positioning.
 
+### Feedback Learning
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/feedback-learning/SKILL.md`
+  - `backend/knowledge/surfaces/feedback-learning/evidence-redaction.md`
+  - `backend/knowledge/surfaces/feedback-learning/candidate-taxonomy.md`
+- Principle:
+  - Feedback evidence can create redacted candidates and eval ideas, not canonical learning without human review.
+
+### Analytics / Intelligence
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/analytics-intelligence/SKILL.md`
+  - `backend/knowledge/surfaces/analytics-intelligence/metric-source-policy.md`
+  - `backend/knowledge/surfaces/analytics-intelligence/trend-confidence.md`
+- Principle:
+  - Metrics need source ownership, privacy class, freshness, sample size, and confidence before Ask Friday treats them as decision support.
+
+### Finance
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/finance-assistant/SKILL.md`
+  - `backend/knowledge/surfaces/finance-assistant/source-privacy.md`
+  - `backend/knowledge/surfaces/finance-assistant/tax-tourist-fee-caveats.md`
+- Principle:
+  - Finance remains restricted by default; owner statements, payments, VAT/tax/tourist-fee handling, and finance outputs require human review.
+
+### Legal / Admin
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/legal-admin/SKILL.md`
+  - `backend/knowledge/surfaces/legal-admin/compliance-source-policy.md`
+  - `backend/knowledge/surfaces/legal-admin/legal-review-boundary.md`
+- Principle:
+  - Ask Friday may assemble source packets and draft candidates, not legal advice, filings, license completions, or binding commitments.
+
+### HR / Training
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/hr-training/SKILL.md`
+  - `backend/knowledge/surfaces/hr-training/hr-privacy-boundary.md`
+  - `backend/knowledge/surfaces/hr-training/sop-training-matrix.md`
+- Principle:
+  - SOP/training guidance can be drafted; private HR, performance, discipline, payroll, and leave-reason data need a restricted HR reviewer lane.
+
+### Guest Portal
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/guest-portal-ask-friday/SKILL.md`
+  - `backend/knowledge/surfaces/guest-portal-ask-friday/stay-scope-policy.md`
+  - `backend/knowledge/surfaces/guest-portal-ask-friday/handoff-support-policy.md`
+- Principle:
+  - Guest Portal Ask Friday is authenticated/stay-token scoped and needs its own route/policy, not the public Website context-pack route.
+
+### Public MCP
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/public-mcp/SKILL.md`
+  - `backend/knowledge/surfaces/public-mcp/scope-action-policy.md`
+  - `backend/knowledge/surfaces/public-mcp/public-truth-policy.md`
+- Principle:
+  - Public MCP can read published public packs and create approval-routed requests only; no direct booking/payment/irreversible writes.
+
+### Internal Agent Bridge
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/internal-agent-bridge/SKILL.md`
+  - `backend/knowledge/surfaces/internal-agent-bridge/sanitized-summary-contract.md`
+  - `backend/knowledge/surfaces/internal-agent-bridge/provenance-review-policy.md`
+- Principle:
+  - Internal agents submit sanitized summaries and candidates with provenance; they cannot ingest raw transcripts or publish canonical truth directly.
+
 ## Core Runtime Code Map
 
 Ask Friday Core backend:
@@ -456,6 +528,22 @@ Current Plan 3 source-truth packet:
   - Draft KB shell for property field classification and source-conflict handling.
 - `backend/knowledge/surfaces/owner-enquiry/*`
   - Draft KB shell for owner lead capsules and positioning safety.
+- `backend/knowledge/surfaces/feedback-learning/*`
+  - Draft KB shell for feedback evidence redaction and review-candidate taxonomy.
+- `backend/knowledge/surfaces/analytics-intelligence/*`
+  - Draft KB shell for metric source ownership and trend-confidence rules.
+- `backend/knowledge/surfaces/finance-assistant/*`
+  - Draft KB shell for restricted finance source/privacy and tourist-fee/VAT caveats.
+- `backend/knowledge/surfaces/legal-admin/*`
+  - Draft KB shell for compliance source packets and legal-review boundaries.
+- `backend/knowledge/surfaces/hr-training/*`
+  - Draft KB shell for HR privacy, SOPs, and training boundaries.
+- `backend/knowledge/surfaces/guest-portal-ask-friday/*`
+  - Draft KB shell for stay-scoped Guest Portal Ask Friday.
+- `backend/knowledge/surfaces/public-mcp/*`
+  - Draft KB shell for public MCP scope/action boundaries.
+- `backend/knowledge/surfaces/internal-agent-bridge/*`
+  - Draft KB shell for sanitized internal-agent summaries and provenance review.
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are source-mapped but not wired to Core runtime in this branch.
   - Public and owner-facing context needs Ishant review before published KB/context-pack use.
