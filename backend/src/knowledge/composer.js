@@ -35,7 +35,7 @@ const path = require('path');
 /**
  * Supported surface keys. Mirrors GMS — keep in sync if either side
  * adds a surface.
- * @typedef {'inbox-drafts' | 'inbox-advisory' | 'pending-actions' | 'inquiry-followup' | 'learning-analyzer' | 'ops-consult'} SurfaceKey
+ * @typedef {'inbox-drafts' | 'inbox-advisory' | 'pending-actions' | 'inquiry-followup' | 'learning-analyzer' | 'ops-consult' | 'reservations-calendar' | 'properties-assistant' | 'owner-enquiry'} SurfaceKey
  */
 
 /**

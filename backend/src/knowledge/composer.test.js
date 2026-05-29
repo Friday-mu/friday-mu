@@ -96,6 +96,30 @@ test('ops-consult loads full Operations KB', () => {
   assert(result.metadata.loaded_skills.includes('vendors-maintenance-pricing'), 'vendor rules must always load');
 });
 
+test('planned reservations-calendar KB shell loads', () => {
+  const result = composer.load('reservations-calendar', { property_code: 'BS-1' });
+  assert(result.system_message.includes('Ask Friday - Reservations And Calendar'), 'must include reservations/calendar shell');
+  assert(result.system_message.includes('Availability And Reservation Status Rules'), 'must include status rules');
+  assert(result.system_message.includes('Quote And Channel-Visible Action Rules'), 'must include quote/action rules');
+  assert(result.system_message.includes('property:BS-1'), 'property card loads when passed');
+});
+
+test('planned properties-assistant KB shell loads', () => {
+  const result = composer.load('properties-assistant', { property_code: 'BS-1' });
+  assert(result.system_message.includes('Ask Friday - Properties'), 'must include properties shell');
+  assert(result.system_message.includes('Property Field Classification'), 'must include field classification');
+  assert(result.system_message.includes('Property Source Conflict Rules'), 'must include source conflict rules');
+  assert(result.system_message.includes('property:BS-1'), 'property card loads when passed');
+});
+
+test('planned owner-enquiry KB shell loads without property card', () => {
+  const result = composer.load('owner-enquiry');
+  assert(result.system_message.includes('Ask Friday - Owner Enquiry'), 'must include owner enquiry shell');
+  assert(result.system_message.includes('Owner Lead Capsule Rules'), 'must include lead capsule rules');
+  assert(result.system_message.includes('Owner Positioning Safety'), 'must include positioning safety');
+  assert(result.metadata.property_code === null, 'owner-enquiry must not load property card');
+});
+
 test('lazy-loadable trigger keyword pulls in fragment', () => {
   // inbox-drafts has discount-bounds lazy-loaded on /discount|deal|promo/i
   const withDiscount = composer.load('inbox-drafts', {
