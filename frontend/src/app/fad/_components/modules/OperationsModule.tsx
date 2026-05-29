@@ -2,6 +2,13 @@
 
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
 import { ModuleHeader } from '../ModuleHeader';
+// FAD V2 Manager/GM desktop screens (Claude Design retrofit). Rendered for
+// manager/director on the Operations sub-pages; they bring their own refined
+// header+tabs (GmShell), so ModuleHeader is skipped for those sub-pages.
+import { ScreenOps } from '../gm/screens/ops';
+import { ScreenApprovals as GmApprovals } from '../gm/screens/approvals';
+import { ScreenSchedule as GmSchedule } from '../gm/screens/schedule';
+import { ScreenRoster as GmRoster } from '../gm/screens/roster';
 import { useT } from '../../_i18n/useT';
 import {
   TASK_PROPERTIES,
@@ -331,6 +338,13 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   const canonicalSubPage = subPage === 'intake' || subPage === 'inbox-ai' ? 'issues' : subPage;
   const active = tabs.find((t) => t.id === canonicalSubPage)?.id ?? (isField ? 'my' : 'overview');
 
+  // Manager/GM desktop retrofit: these sub-pages render the FAD V2 GM screens
+  // (own header+tabs via GmShell) → skip ModuleHeader. Field role keeps the
+  // existing pages. gmNav normalises the GM screens' tab ids to ours.
+  const GM_SUBS = ['overview', 'schedule', 'approvals', 'roster'];
+  const isGm = !isField && GM_SUBS.includes(active);
+  const gmNav = (s: string) => onChangeSubPage(s === 'reported' ? 'approvals' : s);
+
   const [detailRefreshKey, setDetailRefreshKey] = useState(0);
   const bumpRev = () => {
     setDetailRefreshKey((n) => n + 1);
@@ -411,17 +425,21 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
       case 'history':
         return <MyHistoryPage onOpenTask={setDetailTaskId} />;
       case 'overview':
-        return <OverviewPage onOpenTask={setDetailTaskId} onChangeSubPage={onChangeSubPage} canSeeRoster={canSeeRoster} />;
+        return isField
+          ? <OverviewPage onOpenTask={setDetailTaskId} onChangeSubPage={onChangeSubPage} canSeeRoster={canSeeRoster} />
+          : <ScreenOps subPage={active} onChangeSubPage={gmNav} />;
       case 'schedule':
-        return <SchedulePage onOpenTask={setDetailTaskId} onCreate={openManagerCreate} />;
+        return isField
+          ? <SchedulePage onOpenTask={setDetailTaskId} onCreate={openManagerCreate} />
+          : <GmSchedule subPage={active} onChangeSubPage={gmNav} />;
       case 'all':
         return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
       case 'issues':
         return <ReportedIssuesPage onOpenTask={setDetailTaskId} />;
       case 'approvals':
-        return canSeeApprovals ? <ApprovalsPage onOpenTask={setDetailTaskId} /> : null;
+        return canSeeApprovals ? <GmApprovals subPage={active} onChangeSubPage={gmNav} /> : null;
       case 'roster':
-        return (canSeeRoster || isField) ? <RosterPage /> : null;
+        return isField ? <RosterPage /> : (canSeeRoster ? <GmRoster subPage={active} onChangeSubPage={gmNav} /> : null);
       case 'insights':
         return <InsightsPage />;
       case 'settings':
@@ -433,7 +451,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <ModuleHeader
+      {!isGm && <ModuleHeader
         title={i18nT('module.operations', 'Operations')}
         subtitle={isField
           ? i18nT('operations.subtitle.field', 'Assigned work · comments · evidence · history')
@@ -450,7 +468,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
             <IconPlus size={12} /> {i18nT('operations.newTask', 'New task')}
           </button>
         )}
-      />
+      />}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {renderSub()}
       </div>

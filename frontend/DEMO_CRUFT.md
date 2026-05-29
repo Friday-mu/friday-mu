@@ -241,3 +241,38 @@ live APIs (`/api/tasks`, `/api/intent/parse-receipt`, `/api/expenses`, `/api/tea
 | PROD-FIELD-TUTORIAL-1 | `field/screens/account.tsx` (ScreenTutorial) | @demo:ui | Walkthrough is local; "Show me" deep-links to the Tasks tab | Real onboarding state + walkthrough targets |
 | PROD-FIELD-TUTORIAL-2 | `field/screens/account.tsx` (ScreenTutorial) | @demo:ui | Static Ask-Friday Q&A example bubbles | Wire Q&A to Ask Friday |
 | PROD-FIELD-TUTORIAL-3 | `field/screens/account.tsx` (ScreenTutorial) | @demo:ui | Static "Quick how-tos" rows | Link each to a real per-topic walkthrough |
+
+---
+
+## PROD-GM — Manager/GM desktop (FAD V2)  ·  added 2026-05-29
+
+The manager/GM desktop retrofit (`src/app/fad/_components/gm/`) refines the existing dark FAD desktop Operations surfaces (Overview, Approvals, Schedule, Roster) in the Claude Design "FAD V2 — Manager (GM)" system, scoped under `.dwrap`. Mounted in `OperationsModule` for manager/director sub-pages (ModuleHeader skipped there; field role keeps the existing pages). Donut/table/staff-load/roster-grid read live data; the rows below still fake a backend. (Live Map `map.tsx` is built but not yet mounted/navigable — a deliberate follow-up.)
+
+| ID | Path | Type | What it fakes | Backend action |
+|---|---|---|---|---|
+| PROD-GM-ASKPANEL-1 | `gm/kit.tsx` (AskPanel) + ops/schedule/roster | @demo:ui | Universal Ask-Friday right-side panel is presentational (static msgs) | Wire to Ask Friday Core (parallel session owns it) |
+| PROD-GM-OPS-1 | `gm/screens/ops.tsx` | @demo:logic | "Friday suggested" task ordering (shown in source order) | Move ranking to backend / Ask Friday |
+| PROD-GM-OPS-2 | `gm/screens/ops.tsx` | @demo:data | Recurring-fault detection + supplies par-levels | Compute from history / supplies API |
+| PROD-GM-OPS-3 | `gm/screens/ops.tsx` | @demo:ui | Daily-Brief / card copy + "Apply plan" button | Wire brief + plan-apply to Ask Friday |
+| PROD-GM-APPROVALS-TRIAGE-1 | `gm/screens/approvals.tsx` | @demo:ui | "Friday triage" summary card | Ask Friday triage summary |
+| PROD-GM-APPROVALS-DRAFT-1 | `gm/screens/approvals.tsx` | @demo:ui | Per-row "Friday drafted" note | Real AI-drafted task proposal per report |
+| PROD-GM-APPROVALS-EDIT-1 | `gm/screens/approvals.tsx` | @demo:ui | "Edit draft" button (noop) | Draft editor before approval |
+| PROD-GM-APPROVALS-FILTER-1 | `gm/screens/approvals.tsx` | @demo:ui | "Filter" button | Report-list filtering |
+| PROD-GM-APPROVALS-BULK-1 | `gm/screens/approvals.tsx` | @demo:ui | "Approve all routine" (noop) | Routine-classifier + bulk approve endpoint |
+| PROD-GM-APPROVALS-STAT-VET-1 | `gm/screens/approvals.tsx` | @demo:data | "Avg vet time" stat | Approvals analytics metric |
+| PROD-GM-APPROVALS-STAT-7D-1 | `gm/screens/approvals.tsx` | @demo:data | "Approved · 7d" stat | Rolling-7d approved count |
+| PROD-GM-MAP-1 | `gm/screens/map.tsx` | @demo:ui | Whole Live Map (field-staff locations) | Opt-in field telemetry backend |
+| PROD-GM-SCHED-DRAG-1 | `gm/screens/schedule.tsx` | @demo:logic | Drag-to-reschedule / drop-to-assign not persisted | Persist schedule moves (PATCH /api/tasks dueTime/assignee) |
+| PROD-GM-SCHED-DRAFT-1 | `gm/screens/schedule.tsx` | @demo:logic | Draft plan + Apply/Undo/Clear | Wire draft-plan to operationsConsultClient |
+| PROD-GM-SCHED-ASK-1 | `gm/screens/schedule.tsx` | @demo:ui | Ask panel content static | Ask Friday Core |
+| PROD-GM-SCHED-WEEK-1 | `gm/screens/schedule.tsx` | @demo:ui | "By week" view not built | Build week view |
+| PROD-GM-SCHED-AUTOPLACE-1 | `gm/screens/schedule.tsx` | @demo:logic | "Let Friday place these" (stub) | Ask Friday auto-placement |
+| PROD-GM-ROSTER-EDIT-1 | `gm/screens/roster.tsx` | @demo:logic | Cell edits optimistic (saveRosterWeek wired; confirm echo) | Confirm saveRosterWeek round-trip |
+| PROD-GM-ROSTER-STATS-1 | `gm/screens/roster.tsx` | @demo:logic | Roster stats/bars computed client-side from tasks | Authoritative per-week rollups from backend |
+
+## PROD-FIELD — additions (2026-05-29, My Roster / Time off / Reviews)
+
+| ID | Path | Type | What it fakes | Backend action |
+|---|---|---|---|---|
+| PROD-FIELD-TIMEOFF-1 | `field/screens/work2.tsx` (ScreenTimeOff) | @demo:data | Inline time-off balance/requests + local request form | `GET/POST /api/hr/time-off?staff=me` |
+| PROD-FIELD-REVIEWS-1 | `field/screens/work2.tsx` (ScreenReviews) | @demo:data | Inline reviews list (no reviews→reservation→assigned-staff join) | `GET /api/reviews/by-staff?staff=me` |

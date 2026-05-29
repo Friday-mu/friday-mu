@@ -12,6 +12,7 @@ import { ScreenSupplies, ScreenExpense } from './screens/work';
 import { ScreenComments, ScreenReport, ScreenReports, ScreenProperty, ScreenAIHelp } from './screens/report';
 import { ScreenChat, ScreenChatThread, CallScreen, CallPill } from './screens/chat';
 import { ScreenNotifs, ScreenAccount, ScreenNotifPrefs, ScreenTutorial } from './screens/account';
+import { ScreenMyRoster, ScreenTimeOff, ScreenReviews } from './screens/work2';
 
 /**
  * FAD V2 — Field-staff PWA shell.
@@ -118,6 +119,9 @@ export default function FieldApp() {
     account: ScreenAccount,
     notifprefs: ScreenNotifPrefs,
     tutorial: ScreenTutorial,
+    myroster: ScreenMyRoster,
+    timeoff: ScreenTimeOff,
+    reviews: ScreenReviews,
   };
   const Comp = SCREENS[cur.screen] || (() => <Placeholder screen={cur.screen} />);
 

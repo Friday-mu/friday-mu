@@ -236,6 +236,9 @@ export function ScreenAccount() {
         <MLabel rule={false}>Activity</MLabel>
         <div className="setgroup">
           <SetRow ic="flag" label="My reports" value="3" chev onClick={() => nav.go('reports')} />
+          <SetRow ic="cal" label="My roster" chev onClick={() => nav.go('myroster')} />
+          <SetRow ic="cal" label="Time off" chev onClick={() => nav.go('timeoff')} />
+          <SetRow ic="star" label="Reviews" chev onClick={() => nav.go('reviews')} />
           <SetRow ic="clock" label="Work history" chev onClick={() => nav.tab('history')} last />
         </div>
 
