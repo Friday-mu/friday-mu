@@ -114,6 +114,8 @@ Read these first, in order:
     - Backend contract for the shared FAD Ask Friday right panel page-focus envelope: module/view/object/selection/visible-state context, action-boundary notes, and frontend wiring guidance.
 15. `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md`
     - Plan 2 research/source-matrix addendum for reservations/calendar, properties, Ops, Website public, owner enquiry, local Mauritius context, competitor/market signals, and eval candidates.
+16. `docs/architecture/ask-friday-property-field-classification-2026-05-29.md`
+    - Draft property privacy/field matrix for public, guest-scoped, owner-scoped, staff-private, and restricted property facts.
 
 ## Master Plan And Subplans
 
@@ -139,6 +141,8 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
   - Notion: `https://www.notion.so/36e43ca8849281e39565c1d18a057827`
 - `docs/architecture/ask-friday-plan2-research-wave1-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-property-field-classification-2026-05-29.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.

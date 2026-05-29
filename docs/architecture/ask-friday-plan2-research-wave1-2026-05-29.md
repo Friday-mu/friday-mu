@@ -105,7 +105,7 @@ It answers the current implementation question: which knowledge can become KB, w
    - public property privacy split,
    - Mauritius official-source answer,
    - competitor comparison safety.
-3. Create a property field-classification table before public property context packs expand.
+3. `docs/architecture/ask-friday-property-field-classification-2026-05-29.md` now drafts the property field-classification table that must be reviewed before public property context packs expand.
 4. Create a staff-private owner positioning source matrix.
 5. Keep broad Plan 2 runtime wiring blocked until Plan 1 staff-use proof is recorded or the work is read-only/docs/evals-only.
 
