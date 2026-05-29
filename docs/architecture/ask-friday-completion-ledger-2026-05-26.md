@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current canonical checkpoint: `origin/fad-rebuild` at `e01945b5015c2bba903f8b11dc22f3490aecfe22`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
+Current canonical checkpoint: `origin/fad-rebuild` at `0b9c965729289f1f7fedcf243fe23583a108159d`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
 
 ## Purpose
 
@@ -171,6 +171,7 @@ Current reconciliation as of 2026-05-29:
 - 2026-05-29 `origin/fad-rebuild` advanced to `7d3a52ba` with PR #50, PR #51, and FAD V2 redesign docs after the live `9097f9bc` deploy.
 - 2026-05-29 PR #52 merged as `b26982c8`, advancing `origin/fad-rebuild` again. Live still reports `9097f9bc`, so PR #52 is not deployed.
 - 2026-05-29 PR #53 merged as `e01945b5`; docs-only ledger sync after PR #52. Live still reports `9097f9bc`.
+- 2026-05-29 PR #54 merged as `0b9c9657`; it grants the Website API client approval-gated public action-request scope. Live still reports `9097f9bc`, so PR #54 is not deployed.
 
 Remaining Plan 1 tasks:
 
@@ -200,7 +201,7 @@ Plan 3 source-mapping progress:
 - PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for deterministic eval scaffolding covering channel-visible blocks, quote expiry/source timestamps, reservation mutations, property privacy/conflicts, owner market/stat/compliance caveats, and large Ops roster boundedness. It is deployed in live `9097f9bc`.
 - PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is not deployed yet.
 - PR #52 merged on 2026-05-29 as `b26982c8`; it adds migration `107_ask_friday_plan2_surface_readiness.sql`. It activates `fad_reservations_calendar_assistant` and `fad_properties_assistant` as governed staff Core shells, keeps `fad_owners_assistant` planned, fixes Plan 2 eval payload action/tool shape, adds deterministic `action_safety` checks, validates context-pack action allowlists against surface policy, requires approval for risky staff shell actions, and adds staff shell draft context-pack templates. It is not deployed.
-- Current pending branch `codex/ask-friday-public-actions-scope-20260529` adds migration `108_ask_friday_website_public_action_scope.sql`. It grants `friday-website` the `ask-friday:actions:write` scope needed to enqueue approval-gated public action requests for owner enquiry and feedback surfaces. It is not deployed and does not bypass surface allowlists or human approval.
+- PR #54 merged on 2026-05-29 as `0b9c9657`; it adds migration `108_ask_friday_website_public_action_scope.sql`. It grants `friday-website` the `ask-friday:actions:write` scope needed to enqueue approval-gated public action requests for owner enquiry and feedback surfaces. It is not deployed and does not bypass surface allowlists or human approval.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
