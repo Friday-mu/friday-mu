@@ -121,6 +121,7 @@ function compactPlanItem(item) {
     propertyCode: item.propertyCode || item.property_code || null,
     dueDate: item.dueDate || item.due_date || null,
     dueTime: item.dueTime || item.due_time || null,
+    estimatedMinutes: item.estimatedMinutes ?? item.estimated_minutes ?? null,
     assigneeIds: Array.isArray(item.assigneeIds) ? item.assigneeIds : [],
     reason: item.reason || null,
   };
@@ -451,6 +452,98 @@ function buildTaskAssignmentCoverage({ visibleOpenTasks, assignableStaff, occupi
   };
 }
 
+function timeToMinutes(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+  return hour * 60 + minute;
+}
+
+function intervalOverlapsMinutes(start, duration, windowStart, windowEnd) {
+  if (!Number.isFinite(start)) return false;
+  const safeDuration = Number.isFinite(Number(duration)) && Number(duration) > 0 ? Number(duration) : 45;
+  const end = start + safeDuration;
+  return start < windowEnd && end > windowStart;
+}
+
+function taskAssignedToStaff(item, staffId) {
+  return Array.isArray(item?.assigneeIds) && item.assigneeIds.includes(staffId);
+}
+
+function taskMatchesPlanningDay(item, selectedDate) {
+  const itemDay = dateOnly(item?.dueDate);
+  const selected = dateOnly(selectedDate);
+  return !selected || !itemDay || itemDay === selected;
+}
+
+function staffLooksOfficeBased(staffUser) {
+  const text = `${staffUser?.role || ''} ${staffUser?.department || ''}`.toLowerCase();
+  return /\b(admin|office|manager|ops_manager|reservations|finance|hr|guest|support)\b/.test(text);
+}
+
+function compactLunchConflict(item) {
+  return {
+    taskId: item.id || item.taskId || null,
+    title: item.title || '(untitled)',
+    propertyCode: item.propertyCode || null,
+    dueTime: item.dueTime || null,
+    estimatedMinutes: item.estimatedMinutes ?? null,
+  };
+}
+
+function buildLunchCoverageSummary({ assignableStaff = [], visibleOpenTasks = [], currentPlan = [], selectedDate }) {
+  const preferredWindow = { start: '12:00', end: '13:00' };
+  const alternateWindows = [
+    { start: '11:00', end: '12:00' },
+    { start: '13:00', end: '14:00' },
+  ];
+  const lunchStart = 12 * 60;
+  const lunchEnd = 13 * 60;
+  const planItems = safeArray(visibleOpenTasks, 500).concat(safeArray(currentPlan, 200));
+  const staffRows = safeArray(assignableStaff, 120).filter((user) => user?.id && user?.name);
+  const rows = staffRows.map((staffUser) => {
+    const conflicts = planItems
+      .filter((item) => taskAssignedToStaff(item, staffUser.id))
+      .filter((item) => taskMatchesPlanningDay(item, selectedDate))
+      .filter((item) => intervalOverlapsMinutes(timeToMinutes(item.dueTime), item.estimatedMinutes, lunchStart, lunchEnd))
+      .map(compactLunchConflict)
+      .slice(0, 8);
+    return {
+      staffId: staffUser.id,
+      name: staffUser.name,
+      role: staffUser.role || null,
+      department: staffUser.department || null,
+      preferredWindowStatus: conflicts.length > 0 ? 'review_needed' : 'no_visible_conflict',
+      visibleLunchConflicts: conflicts,
+      recommendedAction: conflicts.length > 0
+        ? 'Move lunch to 11:00-12:00 or 13:00-14:00, or move the conflicting task.'
+        : 'Protect 12:00-13:00 unless a later draft introduces a conflict.',
+    };
+  });
+  const staffNeedingLunchReviewCount = rows.filter((row) => row.preferredWindowStatus === 'review_needed').length;
+  const officeStaffCount = staffRows.filter(staffLooksOfficeBased).length;
+  return {
+    policy: 'Every staff member needs one open hour for lunch/break; prefer 12:00-13:00, fallback 11:00-12:00 or 13:00-14:00. Stagger office staff so someone remains available.',
+    preferredWindow,
+    alternateWindows,
+    staffCount: rows.length,
+    staffNeedingLunchReviewCount,
+    allVisibleStaffHaveLunchPath: rows.length > 0 && staffNeedingLunchReviewCount === 0,
+    officeCoverage: {
+      officeStaffCount,
+      staggerRequired: officeStaffCount > 1,
+      note: officeStaffCount > 1
+        ? 'Do not put every office/head-office staff member at lunch at the same time.'
+        : null,
+    },
+    staff: rows.slice(0, 80),
+  };
+}
+
 function buildPlanningConstraints({ scheduledTasks = [], unscheduledTasks = [], staff = [], reservations = [], currentPlan = [], selectedDate, rangeStart, rangeEnd }) {
   const daySet = new Set([
     ...daysInRange(rangeStart || selectedDate, rangeEnd || selectedDate),
@@ -523,6 +616,12 @@ function buildPlanningConstraints({ scheduledTasks = [], unscheduledTasks = [], 
     occupiedPropertyDays,
     selectedDate: selected,
   });
+  const lunchCoverageSummary = buildLunchCoverageSummary({
+    assignableStaff,
+    visibleOpenTasks,
+    currentPlan,
+    selectedDate: selected,
+  });
   return {
     assignmentPolicy: 'Roster and schedule drafts are task-level plans: every visible open task must be represented individually as already assigned, proposed to a named assignee, moved/blocked for a stated reason, or sent to manual review. Do not treat roster as staff coverage only.',
     occupancyPolicy: 'Do not schedule non-urgent non-guest-requested property work while occupied. Checkout day is available after checkout for turnover work. Urgent guest-requested issues may be handled during occupancy.',
@@ -531,6 +630,7 @@ function buildPlanningConstraints({ scheduledTasks = [], unscheduledTasks = [], 
     availabilityPricingSummary,
     draftCompletenessPolicy: 'A roster or schedule draft is incomplete if any visible open task is missing from taskAssignmentCoverage. Do not present a partial task plan as complete.',
     taskAssignmentCoverage,
+    lunchCoverageSummary,
     calendarPricingSignals: calendarPricingSignals.slice(0, 60),
     calendarPricingSignalCount: calendarPricingSignals.length,
     calendarPricingMissingCount: calendarPricingMissingReservations.length,
@@ -575,6 +675,7 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
   const assignableStaffCount = constraints.assignableStaff.length;
   const assignmentCoverage = constraints.taskAssignmentCoverage || { summary: {}, assignments: [] };
   const assignmentSummary = assignmentCoverage.summary || {};
+  const lunchSummary = constraints.lunchCoverageSummary || {};
   const manualReviewAssignments = safeArray(assignmentCoverage.assignments, 40)
     .filter((item) => item.coverageStatus === 'manual_review');
   const proposedAssignments = safeArray(assignmentCoverage.assignments, 40)
@@ -617,7 +718,11 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
   } else {
     lines.push('Availability/pricing check: no reservation or cached calendar-pricing signal was provided, so do not infer rates or availability.');
   }
-  lines.push('Lunch/fairness rule: protect one hour per staff member, prefer 12:00-13:00, and stagger office coverage if office staff are included.');
+  if (lunchSummary.staffNeedingLunchReviewCount > 0) {
+    lines.push(`Lunch/fairness rule: ${lunchSummary.staffNeedingLunchReviewCount} staff member(s) have visible 12:00-13:00 conflicts; move lunch to 11:00-12:00/13:00-14:00 or move those tasks.`);
+  } else {
+    lines.push('Lunch/fairness rule: no visible 12:00-13:00 staff conflict was detected; still protect one open hour per staff member and stagger office coverage.');
+  }
   lines.push(shouldSuggestDraft
     ? 'Next safe step: create a reversible schedule draft, then review unassigned and occupancy blockers before applying it.'
     : 'Next safe step: do not apply changes automatically; review manually or provide staff/task context if planning is still needed.');
@@ -640,6 +745,11 @@ function buildDeterministicOpsFallback(body, { reason } = {}) {
       calendarPricingMissingCount: pricingMissingCount,
       assignableStaffCount,
       taskAssignmentCoverage: assignmentSummary,
+      lunchCoverage: {
+        staffCount: lunchSummary.staffCount || 0,
+        staffNeedingLunchReviewCount: lunchSummary.staffNeedingLunchReviewCount || 0,
+        allVisibleStaffHaveLunchPath: Boolean(lunchSummary.allVisibleStaffHaveLunchPath),
+      },
     },
   };
 }
@@ -743,11 +853,20 @@ function buildOpsCompactModuleContext(body) {
       calendarPricingMissingCount: planningConstraints.calendarPricingMissingCount,
       assignableStaffCount: planningConstraints.assignableStaff.length,
       taskAssignmentCoverage: planningConstraints.taskAssignmentCoverage.summary,
+      lunchCoverage: {
+        staffCount: planningConstraints.lunchCoverageSummary.staffCount,
+        staffNeedingLunchReviewCount: planningConstraints.lunchCoverageSummary.staffNeedingLunchReviewCount,
+        allVisibleStaffHaveLunchPath: planningConstraints.lunchCoverageSummary.allVisibleStaffHaveLunchPath,
+      },
     },
     taskAssignmentCoverage: {
       summary: planningConstraints.taskAssignmentCoverage.summary,
       assignments: planningConstraints.taskAssignmentCoverage.assignments.slice(0, 12),
       omittedTaskIds: planningConstraints.taskAssignmentCoverage.omittedTaskIds.slice(0, 40),
+    },
+    lunchCoverageSummary: {
+      ...planningConstraints.lunchCoverageSummary,
+      staff: planningConstraints.lunchCoverageSummary.staff.slice(0, 12),
     },
     unassignedOpenTasks: planningConstraints.unassignedOpenTasks.slice(0, 20),
     staff: staff.map((user) => ({
@@ -1065,6 +1184,7 @@ module.exports._test = {
   buildDeterministicOpsFallback,
   buildSystemPrompt,
   buildPlanningConstraints,
+  buildLunchCoverageSummary,
   buildTaskAssignmentCoverage,
   confidenceBand,
   guestUrgentTask,

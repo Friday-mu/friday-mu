@@ -5,6 +5,7 @@ const {
   buildDeterministicOpsFallback,
   buildOpsModuleContext,
   buildSystemPrompt,
+  buildLunchCoverageSummary,
   buildPlanningConstraints,
   buildTaskAssignmentCoverage,
   guestUrgentTask,
@@ -70,6 +71,7 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"scheduledTasks": 1');
     expect(context).toContain('"planningConstraints"');
     expect(context).toContain('"taskAssignmentCoverage"');
+    expect(context).toContain('"lunchCoverageSummary"');
     expect(context).toContain('"nonUrgentOccupiedTaskIds"');
     expect(context).toContain('"calendarPricingSignals"');
     expect(context).toContain('"availabilityPricingSummary"');
@@ -148,6 +150,8 @@ describe('Operations Friday Consult helpers', () => {
     expect(context).toContain('"assignableStaffCount": 1');
     expect(context).toContain('"calendarPricingMissingCount": 1');
     expect(context).toContain('"availabilityPricingSummary"');
+    expect(context).toContain('"lunchCoverage"');
+    expect(context).toContain('"lunchCoverageSummary"');
     expect(context).toContain('"unassignedOpenTasks"');
     expect(context).toContain('Visible task 0');
     expect(context).not.toContain('Long internal detail');
@@ -347,6 +351,81 @@ describe('Operations Friday Consult helpers', () => {
     ]));
   });
 
+  test('builds deterministic lunch coverage signals from visible timed work', () => {
+    const constraints = buildPlanningConstraints({
+      selectedDate: '2026-05-27',
+      rangeStart: '2026-05-27',
+      rangeEnd: '2026-05-27',
+      currentPlan: [{
+        taskId: 'draft-1',
+        title: 'Office dispatch review',
+        dueDate: '2026-05-27',
+        dueTime: '12:15',
+        estimatedMinutes: 45,
+        assigneeIds: ['u-franny'],
+      }],
+      staff: [
+        { id: 'u-franny', name: 'Franny Henri', role: 'ops_manager', department: 'operations', canAssign: true },
+        { id: 'u-bryan', name: 'Bryan Henri', role: 'maintenance', department: 'maintenance', canAssign: true },
+      ],
+      reservations: [],
+      scheduledTasks: [{
+        id: 'task-1',
+        title: 'Repair handover',
+        status: 'scheduled',
+        dueDate: '2026-05-27',
+        dueTime: '10:00',
+        estimatedMinutes: 60,
+        assigneeIds: ['u-bryan'],
+      }],
+      unscheduledTasks: [],
+    });
+
+    expect(constraints.lunchCoverageSummary).toMatchObject({
+      preferredWindow: { start: '12:00', end: '13:00' },
+      staffCount: 2,
+      staffNeedingLunchReviewCount: 1,
+      allVisibleStaffHaveLunchPath: false,
+      officeCoverage: expect.objectContaining({
+        officeStaffCount: 1,
+        staggerRequired: false,
+      }),
+    });
+    expect(constraints.lunchCoverageSummary.staff).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        staffId: 'u-franny',
+        preferredWindowStatus: 'review_needed',
+        visibleLunchConflicts: [expect.objectContaining({
+          taskId: 'draft-1',
+          title: 'Office dispatch review',
+          dueTime: '12:15',
+        })],
+      }),
+      expect.objectContaining({
+        staffId: 'u-bryan',
+        preferredWindowStatus: 'no_visible_conflict',
+      }),
+    ]));
+  });
+
+  test('raw lunch coverage summary flags office-staff staggering', () => {
+    const lunch = buildLunchCoverageSummary({
+      selectedDate: '2026-05-27',
+      assignableStaff: [
+        { id: 'u-mary', name: 'Mary', role: 'reservations', department: 'office' },
+        { id: 'u-franny', name: 'Franny', role: 'ops_manager', department: 'operations' },
+      ],
+      visibleOpenTasks: [],
+      currentPlan: [],
+    });
+
+    expect(lunch.officeCoverage).toMatchObject({
+      officeStaffCount: 2,
+      staggerRequired: true,
+    });
+    expect(lunch.officeCoverage.note).toContain('office/head-office');
+  });
+
   test('raw task assignment coverage proposes no assignment without assignable staff', () => {
     const coverage = buildTaskAssignmentCoverage({
       selectedDate: '2026-05-27',
@@ -493,6 +572,11 @@ describe('Operations Friday Consult helpers', () => {
         visibleOpenTaskCount: 2,
         proposedAssignmentCount: 1,
         manualReviewTaskCount: 1,
+      }),
+      lunchCoverage: expect.objectContaining({
+        staffCount: 1,
+        staffNeedingLunchReviewCount: 0,
+        allVisibleStaffHaveLunchPath: true,
       }),
     });
   });

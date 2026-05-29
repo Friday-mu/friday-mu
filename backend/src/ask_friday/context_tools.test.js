@@ -103,7 +103,81 @@ describe('Ask Friday context tools', () => {
     expect(res.body.policy.allowedByRegistry).toBe(true);
     expect(res.body.reservations[0].status.normalized).toBe('inquiry');
     expect(res.body.reservations[0].status.blockingForOps).toBe(false);
+    expect(res.body.caveats).toEqual([]);
     expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  test('reservation date-window filters use checkout-excluded overlap semantics', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [surfaceRow()] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await request(app())
+      .post('/context-tools/load-reservation-context')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        surfaceId: 'fad_ops_assistant',
+        scope: {
+          dateWindow: { from: '2026-05-29', to: '2026-06-01', mode: 'overlap' },
+        },
+      })
+      .expect(200);
+
+    const sql = query.mock.calls[1][0];
+    expect(sql).toContain('r.check_out_date > $2::date');
+    expect(sql).toContain('r.check_in_date < $3::date');
+    expect(sql).not.toContain('r.check_out_date >= $2::date');
+    expect(sql).not.toContain('r.check_in_date <= $3::date');
+    expect(query.mock.calls[1][1]).toEqual([TENANT_ID, '2026-05-29', '2026-06-01']);
+  });
+
+  test('reservation context caveats missing calendar coverage for availability and price proof', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [surfaceRow()] })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'res-row-2',
+          guesty_id: 'guesty-res-2',
+          confirmation_code: 'DEF456',
+          status: 'confirmed',
+          listing_guesty_id: 'listing-2',
+          check_in_date: '2026-07-10',
+          check_out_date: '2026-07-12',
+          guests_count: 2,
+          adults: 2,
+          children: 0,
+          infants: 0,
+          guest_first_name: 'Guest',
+          guest_last_name: 'Two',
+          synced_at: new Date().toISOString(),
+          listing_nickname: 'VA-1',
+          property_code: 'VA-1',
+          overlay_status: null,
+          overlay_source_kind: 'guesty_pull',
+          overlay_cancelled_at: null,
+          calendar_nights_cached: 0,
+          calendar_blocked_nights: 0,
+          calendar_synced_at: null,
+        }],
+      });
+
+    const res = await request(app())
+      .post('/context-tools/load-reservation-context')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        surfaceId: 'fad_ops_assistant',
+        scope: {
+          propertyCode: 'VA-1',
+          dateWindow: { from: '2026-07-10', to: '2026-07-12' },
+        },
+      })
+      .expect(200);
+
+    expect(res.body.reservations[0].status.blockingForOps).toBe(true);
+    expect(res.body.reservations[0].calendar.nightsCached).toBe(0);
+    expect(res.body.caveats).toEqual([
+      expect.stringContaining('availability and prices are not proved'),
+    ]);
   });
 
   test('calendar context reports missing cache rows as unknown', async () => {

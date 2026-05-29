@@ -272,8 +272,8 @@ Status:
 
 - PR #9 was merged on 2026-05-27 as `da67c7be`.
 - Ask Friday Core hardening, Inbox event wrapping, Ops event wrapping, DB consult locks, eval seeds, candidate lanes, and Ops scheduling constraints are now on `fad-rebuild`.
-- Production frontend and backend currently report deployed SHA `7266f78a`; `origin/fad-rebuild` is ahead with un-deployed field-staff PWA work plus the merged PR #27 Inbox review-only fix.
-- Plan 1 is deployed and non-destructive API/model smoke passed on 2026-05-28, but it is not yet marked fully team-useful until real Inbox and Ops browser/workflow QA passes.
+- Production frontend and backend currently report deployed SHA `af513255`; `origin/fad-rebuild` is ahead with PR #59 active runtime context-pack drafts/module learning feedback and PR #61 feedback retention docs. These are not deployed and do not require a deploy by themselves unless bundled with the next runtime release.
+- Plan 1 is materially deployed and non-destructive API/model smoke passed through the later `af513255` checkpoint, but it is not yet marked fully team-useful until real Inbox and Ops browser/workflow QA passes with Mary/Franny.
 
 Scope:
 
