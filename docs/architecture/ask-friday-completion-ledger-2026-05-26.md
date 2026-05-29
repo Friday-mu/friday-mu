@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current canonical checkpoint: `origin/fad-rebuild` at `a06eda7e0c77867802a9d9c9f19f8e2a7fe3f194`; live production is `810250395041bf377d53900422f6befddfd4ac65`.
+Current canonical checkpoint: `origin/fad-rebuild` at `31fbfd549e432598d0e5d22e5068ba61ee4b5284`; live production is `810250395041bf377d53900422f6befddfd4ac65`.
 
 ## Purpose
 
@@ -48,9 +48,9 @@ Use this file after every compaction, handover, interruption, or parallel-sessio
 | Website owner enquiry | scoped | public owner skeleton only | existing Website chat | not wired to Core | no | no | no | Plan 2 |
 | Website feedback | scoped | feedback skeleton only | existing Website FAB/chat | not wired to Core | no | no | no | Plan 2 |
 | Guest portal Ask Friday | scoped | not built | not built | not wired | no | no | no | later |
-| Reservations/calendar agent | source-mapped, not full agent | source matrix + KB shell drafted | read-tool/action-request contracts drafted | staff-only read context route + eval seeds live; KB shell pending deploy | focused tests green locally; live context-tool smoke passed | deployed at `5d44d16d`; PR #46 eval seeds not deployed; KB shell pending branch | no dedicated agent UI yet | read-only staff context is live; not a full agent |
-| Properties agent | source-mapped, not full agent | public/private split + KB shell drafted | read-tool contract drafted | staff-only read context route + eval seeds live; KB shell pending deploy | focused tests green locally; live context-tool smoke passed | deployed at `5d44d16d`; PR #46 eval seeds not deployed; KB shell pending branch | no dedicated agent UI yet | staff context is live; public field policy still needs Ishant review before public packs |
-| Owners agent | scoped | staff-private positioning + KB shell drafted | lead-capsule and positioning harness drafted | registry/eval seed only; KB shell pending deploy | no runtime tests | no | no | later until owner-private rules locked |
+| Reservations/calendar agent | source-mapped, not full agent | source matrix + KB shell drafted | read-tool/action-request contracts drafted | staff-only read context route live; eval seeds and KB shell pending deploy | focused tests green locally; live context-tool smoke passed; composer shell smoke passed in PR #48 | deployed at `5d44d16d`; PR #46 eval seeds and PR #48 KB shell not deployed | no dedicated agent UI yet | read-only staff context is live; not a full agent |
+| Properties agent | source-mapped, not full agent | public/private split + KB shell drafted | read-tool contract drafted | staff-only read context route live; eval seeds and KB shell pending deploy | focused tests green locally; live context-tool smoke passed; composer shell smoke passed in PR #48 | deployed at `5d44d16d`; PR #46 eval seeds and PR #48 KB shell not deployed | no dedicated agent UI yet | staff context is live; public field policy still needs Ishant review before public packs |
+| Owners agent | scoped | staff-private positioning + KB shell drafted | lead-capsule and positioning harness drafted | registry/eval seeds and KB shell pending deploy | composer shell smoke passed in PR #48 | no | no | later until owner-private rules locked |
 | Finance agent | scoped | design-only | not built | registry/eval seed only | deterministic privacy seed only | no | no | later until access/redaction locked |
 | Legal/admin agent | scoped | design-only | not built | registry only | no | no | no | later until legal review rules locked |
 | HR/training agent | scoped | partial SOP direction | not built | registry only | no | no | no | Plan 2/partial |
@@ -193,6 +193,7 @@ Plan 3 source-mapping progress:
 - `docs/handover/2026-05-28-ask-friday-website-public-wiring-prompt.md` is a paste-ready Website-session prompt for implementing public context-pack consumption, redacted learning-event emission, owner lead capsules, feedback evidence capsules, and takeover preservation from a separate Website worktree.
 - PR #45 merged on 2026-05-29 as `decee0fb`; it adds Plan 2 research/source matrices, reservation action subtype contracts, property field classification, and owner positioning docs. No runtime agent is marked wired by this docs-only work.
 - PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for deterministic eval scaffolding covering channel-visible blocks, quote expiry/source timestamps, reservation mutations, property privacy/conflicts, owner market/stat/compliance caveats, and large Ops roster boundedness. It is not deployed yet.
+- PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is not deployed yet.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
