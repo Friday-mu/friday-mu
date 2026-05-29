@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+require('dotenv').config();
+
 const { query, pool } = require('../src/database/client');
 const { normalizeContextPack } = require('../src/ask_friday/contracts');
 const { validateContextPackAgainstSurface } = require('../src/ask_friday/policy');
