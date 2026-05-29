@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current continuation branch: `codex/ask-friday-ledger-c52-smoke-20260529`
+Current continuation branch: `codex/ask-friday-plan2-20260529`
 
 ## Purpose
 
@@ -38,18 +38,20 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan1-qa-20260529`
-- Branch: `codex/ask-friday-ledger-c52-smoke-20260529`
+- Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan2-20260529`
+- Branch: `codex/ask-friday-plan2-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/live SHA when this continuation branch was created: `c52f1a6eb3b9f82ba703635b5bd61071322c3b0b`
-- Current live/canonical SHA after Plan 1 recovery deploy: `c52f1a6eb3b9f82ba703635b5bd61071322c3b0b`
+- Base/live SHA when this continuation branch was created: `5d44d16dd26c4fb2edc323fcbb570f816089aaa3`
+- Current live/canonical SHA after the latest Plan 1 bugfix deploy: `5d44d16dd26c4fb2edc323fcbb570f816089aaa3`
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
 - PR #16: merged and deployed on 2026-05-29 as `75ef9bc8`; this restored Inbox conversation detail loading after the WhatsApp-window helper queried a non-existent `messages.communication_channel` column.
 - PR #17: merged and deployed on 2026-05-29 as `205d8a91`; this rejects partial Consult model responses with non-normal provider finish reasons instead of showing cut-off advice as successful.
 - PR #18: merged and deployed on 2026-05-29 as `c52f1a6e`; this adds bounded Ops Consult responses plus compact fallback context for broad schedule-review prompts.
-- Deployment status: live frontend and backend both reported `c52f1a6e` after the 2026-05-29 bounded Ops Consult deploy.
+- PR #20: merged and deployed on 2026-05-29 as `73dc8fec`; this split email-style multi-recipient Consult drafts into separate draft cards, suppressed duplicate same-session task suggestions, fixed Inbox textarea shortcut propagation, and made the WhatsApp timer source stricter.
+- PR #21: merged and deployed on 2026-05-29 as `5d44d16d`; this tightened Ops schedule planner guardrails so drafts/apply paths account for assignable staff, unassigned visible work, occupancy blockers, and selected-day untimed work.
+- Deployment status: live frontend and backend both reported `5d44d16d` after the 2026-05-29 Ops planner guardrail deploy.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
@@ -202,12 +204,19 @@ Ask Friday Core backend:
 - `backend/src/ask_friday/context_tools.js`
 - `backend/src/ask_friday/policy.js`
 - `backend/src/ask_friday/publisher.js`
+- `backend/src/ask_friday/context_pack_templates.js`
 - `backend/src/ask_friday/analyzer.js`
 - `backend/src/ask_friday/eval_runner.js`
 - `backend/src/ask_friday/event_writer.js`
 - `backend/src/ask_friday/action_writer.js`
 - `backend/src/ask_friday/retention.js`
 - `backend/src/ask_friday/scheduler.js`
+
+Ask Friday Core scripts:
+
+- `backend/scripts/ask-friday-context-pack-drafts.js`
+  - Dry-run by default. Produces policy-validated draft context packs for `website_guest_hero` and `website_ask_friday_fab`.
+  - `--apply` upserts draft rows only; it does not publish public-readable context packs.
 
 Ask Friday Core migrations:
 
@@ -331,11 +340,16 @@ Current Plan 3 source-truth packet:
   - Property cards need richer privacy/access classification before public context-pack use.
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
   - Design-only contracts for `load_reservation_context`, `load_calendar_context`, `load_property_context`, and `request_reservation_action`.
+  - Runtime note: the staff-only read tools are live behind `/api/ask-friday/core/context-tools/*`; they are not public Website context packs and do not perform write-through actions.
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are source-mapped but not wired to Core runtime in this branch.
   - Public and owner-facing context needs Ishant review before published KB/context-pack use.
   - Feedback evidence needs retention/redaction policy before raw screenshots or diagnostics are mined.
-  - Branch migration `102_ask_friday_public_owner_feedback_evals.sql` seeds deterministic eval scaffolding for these scoped risks. This is not deployed.
+  - Migration `102_ask_friday_public_owner_feedback_evals.sql` is live and seeds deterministic eval scaffolding for these scoped risks.
+  - Production currently has zero context packs, so Website public Core fetches can authenticate but return `context_pack_not_found` until the first reviewed public pack is published.
+- `backend/src/ask_friday/context_pack_templates.js`
+  - Draft-only templates now exist for `website_guest_hero` and `website_ask_friday_fab`.
+  - These are review artifacts, not published truth. They keep dynamic facts live-tool grounded and carry explicit review blockers for public property fields, owner wording, and feedback evidence retention.
 
 ## Maintenance Rule
 

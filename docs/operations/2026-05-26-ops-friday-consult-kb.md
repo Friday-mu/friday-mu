@@ -76,6 +76,12 @@ Runtime changes from this branch:
 - Reservation cache `calendarPricing` is passed into Ops Consult context for grounding.
 - The local draft planner filters non-urgent occupied-property work, protects a lunch window, and blocks applying drafts that would leave a task unassigned.
 - Draft rows now show named assignees instead of generic "assigns staff" copy.
+- The 2026-05-29 deployed guardrail release (`5d44d16d`) further tightens this contract:
+  - Ops Consult receives named `unassignedOpenTasks`, named `nonUrgentOccupiedTasks`, and `assignableStaff` instead of only raw task IDs.
+  - The model response contract now says a schedule-generation answer must assign, move/block, or explicitly name every visible open unassigned task.
+  - `Schedule Today` no longer just dates an unscheduled task; it asks the local planner for a safe assignee/time first and blocks if assignable staff are loaded but no safe assignment exists.
+  - Applying a Friday Consult schedule draft is blocked if the selected-day schedule would still contain non-urgent occupied-property work, unplanned selected-day work, unassigned work, or untimed work.
+  - Live smoke after deploy used real production context for 2026-05-29 and returned HTTP 200 with 4 scheduled tasks, 15 unscheduled tasks, 6 active staff, 26 overlapping reservations, no compact fallback, and a complete response identifying actual unassigned and occupied-property risks.
 
 ## Property Metadata Preview
 
