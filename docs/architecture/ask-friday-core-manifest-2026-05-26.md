@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current continuation branch: `codex/ops-consult-bounded-response-20260529`
+Current continuation branch: `codex/ask-friday-ledger-c52-smoke-20260529`
 
 ## Purpose
 
@@ -39,16 +39,17 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 ## Current Branch Truth
 
 - Worktree: `/Users/judith/.codex/worktrees/ask-friday-plan1-qa-20260529`
-- Branch: `codex/ops-consult-bounded-response-20260529`
+- Branch: `codex/ask-friday-ledger-c52-smoke-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/live SHA when this continuation branch was created: `c55e94c08691b977ebf8995f3c86f22742e4ea3a`
-- Current live/canonical SHA after Plan 1 recovery deploy: `205d8a91545d336e7db726eb576ddf108813c4ea`
+- Base/live SHA when this continuation branch was created: `c52f1a6eb3b9f82ba703635b5bd61071322c3b0b`
+- Current live/canonical SHA after Plan 1 recovery deploy: `c52f1a6eb3b9f82ba703635b5bd61071322c3b0b`
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
 - PR #16: merged and deployed on 2026-05-29 as `75ef9bc8`; this restored Inbox conversation detail loading after the WhatsApp-window helper queried a non-existent `messages.communication_channel` column.
 - PR #17: merged and deployed on 2026-05-29 as `205d8a91`; this rejects partial Consult model responses with non-normal provider finish reasons instead of showing cut-off advice as successful.
-- Deployment status: live frontend and backend both reported `205d8a91` after the 2026-05-29 Consult finish-reason deploy.
+- PR #18: merged and deployed on 2026-05-29 as `c52f1a6e`; this adds bounded Ops Consult responses plus compact fallback context for broad schedule-review prompts.
+- Deployment status: live frontend and backend both reported `c52f1a6e` after the 2026-05-29 bounded Ops Consult deploy.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
