@@ -1,20 +1,36 @@
 # Ask Friday Core - Claude Code Handover
 
 Date: 2026-05-29
+Last updated: 2026-05-30
 Audience: Claude Code continuation session
 Repo: `/Users/judith/repos/friday-admin-dashboard`
 Canonical branch: `origin/fad-rebuild`
 
 ## Current Truth
 
-As of this handover:
+As of the 2026-05-30 coordination update:
 
-- `origin/fad-rebuild`: `2a118654fa7ea2121f530284da4c13198af629a6`
+- `origin/fad-rebuild`: `c8ca8b2a614f10dd56496ab856438e2cf13df25e`
 - Live frontend: `https://admin.friday.mu/version.json` reports `2a118654`
 - Live backend: `https://admin.friday.mu/api/version` reports `2a118654`
-- This means the latest Ask Friday Core work described below is already included in the live deployed SHA, bundled with the FAD frontend/Ops evidence upload work.
+- Ask Friday Core runtime work through `dc819d80` and migration `112_ask_friday_plan2_context_pack_drafts.sql` is included in live `2a118654` and has been verified.
+- Readiness, surface registry, and context-pack template preview with Plan 2 shells are green, including 12 generated draft templates.
+- Remaining readiness warning: `missingStaffContextPackDrafts: 1`. The next session should inspect the readiness payload and either seed the missing non-destructive draft for the relevant active/governed staff shell or record why the shell should not require a staff draft.
+- Post-live `origin/fad-rebuild` commits include this docs handover and unrelated Operations settings work. Do not deploy just to sync this Ask Friday handover state.
 
-Do not deploy just to sync docs-only work. If you make backend changes, coordinate and deploy FE+BE together from the same SHA.
+Do not deploy just to sync this handover or to chase branch/live parity. If you make backend changes, coordinate and deploy FE+BE together from the same SHA.
+
+## Post-Handover Coordination Update
+
+The FAD redesign/frontend session confirmed live FE+BE at `2a118654`; no additional Ask Friday Core deploy is needed for the current Core state. The same session acknowledged it will not touch Ask Friday Core registry, tool, or action contracts without coordination because the generated templates validate against those allowlists.
+
+Current Core status to preserve:
+
+- `dc819d80 feat(ask-friday): draft plan2 shell context packs` is live through merge SHA `2a118654`.
+- Migration `112_ask_friday_plan2_context_pack_drafts.sql` is applied and verified.
+- `/api/ask-friday/core/readiness` is green except `missingStaffContextPackDrafts: 1`.
+- Context-pack template preview with Plan 2 shells returns 12 drafts.
+- `/api/ask-friday/core/surfaces` is green.
 
 ## Naming
 
@@ -93,6 +109,14 @@ Key commits:
   - `backend/src/tasks/index.js`
   - `frontend/src/app/fad/_components/modules/operations/TaskDetail.tsx`
   - `frontend/src/app/fad/_data/taskAttachmentsClient.ts`
+
+Post-live commits currently on `origin/fad-rebuild`:
+
+- `10001468 docs(ask-friday): add claude code handover`
+- `b33a408c feat(ops): editable Operations Settings -- persisted per tenant (was static)`
+- `c8ca8b2a` merge commit
+
+These post-live commits are not a reason to deploy Ask Friday Core by themselves. Re-check live and coordinate with the frontend/Ops session before any deployment.
 
 ## Runtime Code Map
 
@@ -228,7 +252,7 @@ Latest full backend run before the final push passed:
 - 385 tests
 - backend build passed
 
-After fast-forwarding to `2a118654`, this session did not rerun the full suite again. Claude should rerun focused smoke/tests before further pushes.
+After fast-forwarding beyond `2a118654`, this session did not rerun the full suite again. Claude should rerun focused smoke/tests before further pushes.
 
 ## Immediate Smoke For Claude
 
@@ -254,14 +278,17 @@ Also verify migration state:
 
 - `112_ask_friday_plan2_context_pack_drafts.sql`
 - `113_task_attachments.sql`
+- `114_operations_settings.sql` is present on `origin/fad-rebuild` after live `2a118654`; verify it only if continuing Ops/settings work.
 
 ## Recommended Next Slice
 
 Best next Ask Friday-only slice:
 
 1. Re-run current live/Core smoke from latest `origin/fad-rebuild`.
-2. Inspect `/api/ask-friday/core/readiness` and list remaining warnings/blockers by surface.
-3. Add eval seeds/review-lane coverage for newly shelled planned surfaces:
+2. Inspect `/api/ask-friday/core/readiness` and resolve or explicitly park `missingStaffContextPackDrafts: 1`.
+3. If the missing draft belongs to an active/governed staff shell, seed a non-destructive draft context-pack template and rerun the preview/readiness checks.
+4. If the missing draft belongs to a planned/restricted shell that should not have staff context yet, record that in readiness expectations before changing runtime behavior.
+5. Add eval seeds/review-lane coverage for newly shelled planned surfaces:
    - Finance: owner-statement privacy, no invented numbers, FR-only entity caveat, no payment mutation.
    - Legal/Admin: no legal advice, source citation, no contract/filing mutation.
    - HR/Training: restricted HR reviewer lane, no private HR/performance leak.
@@ -270,8 +297,8 @@ Best next Ask Friday-only slice:
    - Internal Agent Bridge: raw transcript rejection, secret-like content rejection, provenance required.
    - Feedback: redacted summary quality and no raw screenshot-to-KB promotion.
    - Analytics: minimum cohort/confidence/source freshness checks.
-4. Keep all restricted/planned shells non-runtime until Ishant approves source/privacy/reviewer policy.
-5. Once the redesign session stabilizes UI, resume staff-use proof for Inbox and Ops with Mary/Franny.
+6. Keep all restricted/planned shells non-runtime until Ishant approves source/privacy/reviewer policy.
+7. Once the redesign session stabilizes UI, resume staff-use proof for Inbox and Ops with Mary/Franny.
 
 Do not start with runtime wiring for Finance/Legal/HR/Public MCP/Guest Portal. The safer path is evals + review lanes + readiness reporting first.
 
@@ -299,6 +326,8 @@ Start by:
 6. continue the next backend-safe Ask Friday Core slice
 
 Current live expected at handover: 2a118654.
+Current origin/fad-rebuild expected at handover: c8ca8b2a614f10dd56496ab856438e2cf13df25e.
+Important: origin is ahead of live with this handover and unrelated Ops settings work. Do not deploy just for branch/live parity.
 
 Guardrails:
 - User-facing AI surface is Ask Friday.
@@ -311,5 +340,5 @@ Guardrails:
 - Keep Finance, Legal/Admin, HR/Training, Guest Portal, Public MCP, and Internal Agent Bridge as planned/restricted shells until source/privacy/review policy and evals are ready.
 
 Recommended next slice:
-Add eval seeds and review-lane coverage for the newly shelled Plan 2 surfaces, then re-run backend tests/build. Do not runtime-wire restricted shells yet.
+First inspect and resolve or explicitly park readiness `missingStaffContextPackDrafts: 1`. Then add eval seeds and review-lane coverage for the newly shelled Plan 2 surfaces and re-run backend tests/build. Do not runtime-wire restricted shells yet.
 ```
