@@ -1679,9 +1679,12 @@ app.get('/api/system/status', requireAuth, asyncHandler(async (req, res) => {
     guesty: {
       configured: envConfigured('GUESTY_CLIENT_ID', 'GUESTY_CLIENT_SECRET'),
       baseUrl: GUESTY_BASE_URL,
-      tokenCached: !!guestyTokenCache.token,
-      tokenExpiresAt: guestyTokenCache.expiresAt
-        ? new Date(guestyTokenCache.expiresAt).toISOString() : null,
+      // Guesty token is now managed by the shared token service
+      // (src/website_inbox/guesty getAccessToken); the old module-local
+      // `guestyTokenCache` was removed, so this status endpoint no longer
+      // introspects it (was throwing ReferenceError: guestyTokenCache is not defined).
+      tokenCached: null,
+      tokenExpiresAt: null,
       listingsCached: cache.listings.length,
       listingsLastRefreshAt: cache.fetchedAt
         ? new Date(cache.fetchedAt).toISOString() : null,
