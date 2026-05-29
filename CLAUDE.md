@@ -4,7 +4,9 @@
 
 ## Active branch
 
-**Working branch is `fad-rebuild`, not `main`.** Commit FAD work to `fad-rebuild`. `main` exists but lags. Vercel auto-deploys `fad-rebuild` to a public preview URL — Deployment Protection is currently disabled so the team can review without auth.
+**Working branch is `fad-rebuild`, not `main`.** Commit FAD work to `fad-rebuild`. `main` exists but lags. **FAD is live on `admin.friday.mu` (VPS), deployed from `fad-rebuild` via the rsync + pm2 flow in `docs/deploy.md` — NOT Vercel.** Pushing to `fad-rebuild` does not auto-deploy; the manual VPS deploy does. Verify any deploy with `admin.friday.mu/version.json` + `/api/version`.
+
+> ⚠️ **FAD is not on Vercel.** The Vercel `frontend` project + the `fad-design-os-v01-frontend` branch are the **separate Design-module SaaS** (a different product sharing this repo) — do not conflate them with FAD, and do not delete them during FAD cleanup. See memory `fad-deploy-reality`.
 
 ## Project overview
 
@@ -175,9 +177,9 @@ Before declaring any change complete:
 Canonical deploy lives in `~/.openclaw/workspace/AGENTS.md` Deploy Rules section. TL;DR:
 
 ```bash
-# Frontend (Vercel auto-deploys on push to fad-rebuild)
+# Frontend — build the static export
 cd frontend && npm run build
-# OR push to fad-rebuild → Vercel preview deploy fires automatically
+# (Pushing to fad-rebuild does NOT auto-deploy FAD — the VPS deploy below does.)
 
 # VPS deploy (manual, for production) — see docs/deploy.md for the full sequence
 # Canonical: rsync frontend/out/ → /var/www/fad/ ; rsync backend/ → /var/www/fad-backend/
@@ -188,7 +190,7 @@ cd backend && npm run build
 # Then rsync backend + pm2 restart fad-backend — see docs/deploy.md
 ```
 
-Vercel handles preview deploys automatically on push to `fad-rebuild`. VPS production deploy is manual at sprint close.
+FAD has no Vercel auto-deploy — production is `admin.friday.mu` (VPS), deployed manually from `fad-rebuild` (see `docs/deploy.md`). The Vercel `frontend` project deploys the separate Design SaaS on `fad-design-os-v01-frontend`, not FAD.
 
 ## References
 
