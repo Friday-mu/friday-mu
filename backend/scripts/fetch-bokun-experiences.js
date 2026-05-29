@@ -91,16 +91,20 @@ function durationOf(a) {
 }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 
-// Best-effort geo from the Bokun activity payload (fields vary; null when absent —
-// refine later from source_payload).
+// Geo from the Bokun activity payload's googlePlace. Confirmed shape (live API):
+//   { country, countryCode: ISO-2, city, geoLocationCenter: { lat, lng } }
+// countryCode drives channel routing — the Bokun account is multi-country
+// (MU + Brazil/Amazon + Tanzania/Kilimanjaro ...), so we must NOT assume MU.
 function locationOf(a) {
-  if (!a) return { lat: null, lng: null, area: null };
-  const gp = a.googlePlace || a.place || a.location || {};
-  const geo = gp.geoPoint || a.geoPoint || {};
-  const lat = num(geo.lat ?? gp.lat ?? a.latitude);
-  const lng = num(geo.lng ?? gp.lng ?? a.longitude);
-  const area = (gp.city || gp.name || a.city || '').toString().trim() || null;
-  return { lat, lng, area };
+  if (!a) return { country: null, lat: null, lng: null, area: null };
+  const gp = a.googlePlace || {};
+  const geo = gp.geoLocationCenter || gp.geoPoint || {};
+  return {
+    country: (gp.countryCode || '').toString().trim().toUpperCase() || null,
+    lat: num(geo.lat ?? geo.latitude),
+    lng: num(geo.lng ?? geo.longitude),
+    area: (gp.city || gp.name || '').toString().trim() || null,
+  };
 }
 
 // Heuristic category from name+description → water|land|cultural|gastro|wellness|aerial.
@@ -139,14 +143,17 @@ async function main() {
     const name = (a?.title || p.internalName || '').trim();
     const blurb = stripHtml(a?.excerpt) || null;
     const description = stripHtml(a?.description) || null;
-    const { lat, lng, area } = locationOf(a);
+    const { country, lat, lng, area } = locationOf(a);
+    // Routing rule: MU → both sites; everything else (or unknown) → friday.travel only.
+    // Unknown country defaults to friday.travel-only so we never wrongly publish to friday.mu.
+    const channels = country === 'MU' ? ['friday.mu', 'friday.travel'] : ['friday.travel'];
     const rec = {
       id: `fad-exp-${id}`,
       provider: 'bokun',
       provider_id: id,
       status: 'active',
-      country: 'MU',
-      channels: ['friday.mu', 'friday.travel'], // MU → both, per routing rule
+      country,
+      channels,
       name,
       area,
       lat,
@@ -173,8 +180,14 @@ async function main() {
   console.log(`[bokun→fad] normalized ${records.length} experiences (excluded ${excluded} demo/bad-photo)`);
 
   if (DRY_RUN) {
-    for (const r of records) console.log(`  ${r.provider_id}  ${r.photos.length}ph  €${r.price_from_eur ?? 'POR'}  ${r.rating ?? 'new'}  ${r.category || '?'}  | ${r.name.slice(0, 48)}`);
-    console.log(`[bokun→fad] DRY-RUN — no writes. Would upsert ${records.length} rows.`);
+    for (const r of records) console.log(`  ${r.provider_id}  ${(r.country || '??').padEnd(3)}  €${String(r.price_from_eur ?? 'POR').padEnd(5)}  ${r.photos.length}ph  ${(r.category || '?').padEnd(8)} | ${r.name.slice(0, 44)}`);
+    const byCountry = {};
+    for (const r of records) byCountry[r.country || 'unknown'] = (byCountry[r.country || 'unknown'] || 0) + 1;
+    const onMu = records.filter((r) => r.channels.includes('friday.mu')).length;
+    const onTravel = records.filter((r) => r.channels.includes('friday.travel')).length;
+    console.log(`[bokun→fad] DRY-RUN — no writes. ${records.length} experiences.`);
+    console.log(`  by country: ${Object.entries(byCountry).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join('  ')}`);
+    console.log(`  routing → friday.mu: ${onMu} (MU only)  ·  friday.travel: ${onTravel} (MU + intl)`);
     await pool.end();
     return;
   }
