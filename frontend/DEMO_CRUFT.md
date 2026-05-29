@@ -117,6 +117,7 @@ If you write something demo-only or fake-backend, add a `// @demo:*` comment in 
 | PROD-STATE-4 | `fad:roster-ack:{weekId}` | `_data/pendingCounts.ts` | `POST /api/hr/roster/:weekId/acknowledge` (event-based). Backend stores per-user ack with `publishedAt` timestamp; on re-publish, ack invalidates. |
 | PROD-STATE-5 | `fad:review` (review mode toggle) | `_data/reviewMode.ts` | Backend feature flag (`GET /api/feature-flags`). |
 | PROD-STATE-6 | `fad:theme`, `fad:collapsed`, `fad:inbox:list`, `fad:inbox:right` | UI preferences across FAD shell | **Optional** — these are pure UI prefs, fine to keep client-only. If we want cross-device persistence: `GET/PUT /api/user/preferences`. |
+| PROD-STATE-7 | `fad.schedule.lunchByStaff.v1` | `gm/screens/schedule.tsx` (movable-lunch override map) | Mirror lunch start-hour on the staff roster + sync: `PATCH /api/ops/staff/:id/lunch`. Default windows come from PROD-CONFIG-12; this key only holds operator drag overrides. |
 
 ---
 
@@ -185,6 +186,7 @@ Hardcoded values that are not fake data but will become tenant-configurable once
 | PROD-CONFIG-9 | `app/fad/_components/modules/OperationsModule.tsx:1254, 1311` `r.currency ?? 'MUR'` (×2) | 'MUR' hardcoded as fallback currency in spend-request display (list item + detail view). | Replace with `defaultCurrency` from `GET /api/tenant/config` |
 | PROD-CONFIG-10 | `app/fad/_components/modules/OperationsModule.tsx` `SETTINGS_TEMPLATES` / booking policies / recurring rules | Operations settings displays hardcoded template and automation policy labels while the backend policy/config API is not wired. | `GET /api/operations/settings` returning task templates, booking-trigger rules, recurring schedules, and live/paused state per tenant |
 | PROD-CONFIG-11 | `app/fad/_data/opsPolicy.ts` | Friday Ops scheduling policy: exact staff roster, skill/transport constraints, combo-property child splits, task-duration defaults, max-guest rule, and SRL/welcome-pack quantities. | `GET /api/operations/policy` returning tenant-scoped staff capabilities, duration matrix, property split rules, and supply loadout policy |
+| PROD-CONFIG-12 | `gm/screens/schedule.tsx` `LUNCH_DEFAULT_HOURS = [12, 11, 13]` | Default lunch start-hours round-robined across staff in the GM Schedule planner (movable lunch). Operator overrides are stored client-side (PROD-STATE-7). | `GET /api/ops/roster-policy` returning per-tenant lunch windows / break policy; replace the hardcoded default + persist overrides server-side |
 
 ## Notes for backend wiring
 

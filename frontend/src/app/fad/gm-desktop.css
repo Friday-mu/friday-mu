@@ -70,6 +70,14 @@
 
 /* PWA shell mock */.dwrap .pwaframe{width:390px;border:1px solid var(--line);border-radius:30px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column}.dwrap .pwa-top{display:flex;align-items:center;gap:10px;padding:14px 16px 12px;border-bottom:1px solid var(--line-2)}.dwrap .pwa-top .wm{font-family:var(--serif);font-style:italic;font-weight:500;font-size:18px}.dwrap .pwa-body{padding:16px;min-height:360px}.dwrap .pwa-tab{display:flex;align-items:center;justify-content:space-around;background:var(--bg-2);border-top:1px solid var(--line-2);padding:8px 6px 20px}.dwrap .pwa-ti{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--tx-3);font-size:9.5px;font-weight:600}.dwrap .pwa-ti.on{color:var(--indigo-bright)}.dwrap .pwa-ti svg{width:21px;height:21px}.dwrap .pwa-fab{width:50px;height:50px;border-radius:16px;background:var(--indigo);color:#fff;display:flex;align-items:center;justify-content:center;margin-top:-16px;box-shadow:0 8px 22px rgba(86,129,255,.45)}
 
+/* schedule: week columns (7 days) + relative cells + stacked blocks + 15-min tick */
+.dwrap .sgrid.wk .sgrow{grid-template-columns:160px repeat(7,1fr)}
+.dwrap .sgcell{position:relative}
+.dwrap .scellstack{display:flex;flex-direction:column;gap:3px}
+.dwrap .scellstack .sblock{height:auto}
+.dwrap .sgtick{position:absolute;top:3px;bottom:3px;width:2px;background:var(--indigo,#6366f1);border-radius:2px;pointer-events:none;z-index:3}
+.dwrap .sgtlabel{position:absolute;top:-8px;transform:translateX(-50%);background:var(--indigo,#6366f1);color:#fff;font-family:var(--mono);font-size:8.5px;font-weight:700;padding:1px 5px;border-radius:5px;white-space:nowrap;pointer-events:none;z-index:4}
+
 /* --- integration overrides: render inside FadApp main, not a fixed 1440 canvas --- */
 .dwrap .dapp{ width:100%; border:none; border-radius:0; }
 .dwrap .dmain{ overflow:visible; }
