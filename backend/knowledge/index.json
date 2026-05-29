@@ -83,6 +83,48 @@
         "learning-and-controls": "always"
       },
       "property_card": "optional"
+    },
+    "reservations-calendar": {
+      "consumer": "planned:fad_reservations_calendar_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/reservations-calendar",
+      "lazy_loadable": {
+        "availability-status-rules": "always",
+        "quote-and-channel-actions": "always"
+      },
+      "property_card": "optional"
+    },
+    "properties-assistant": {
+      "consumer": "planned:fad_properties_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/properties-assistant",
+      "lazy_loadable": {
+        "field-classification": "always",
+        "source-conflicts": "always"
+      },
+      "property_card": "optional"
+    },
+    "owner-enquiry": {
+      "consumer": "planned:website_owner_enquiry/fad_owners_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/owner-enquiry",
+      "lazy_loadable": {
+        "lead-capsules": "always",
+        "positioning-safety": "always"
+      },
+      "property_card": false
     }
   },
   "compose_context_mapping": {
