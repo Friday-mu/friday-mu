@@ -56,7 +56,9 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #23: merged and deployed on 2026-05-29 as `b70c4087`; this fixed environment loading for the context-pack draft script.
 - PR #24: merged on 2026-05-29 as `3b09772f`; this narrowed the Website guest hero context pack, kept FAB journal search, and removed feedback-specific blockers from Website public packs.
 - PR #25: merged and deployed on 2026-05-29 as `7266f78a`; this added the deterministic Ops Consult fallback for persistent model length exhaustion and deployed PR #24 source code.
-- Deployment status: live frontend and backend both report `7266f78a`. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #26: docs-only post-deploy ledger update.
+- PR #27: merged on 2026-05-29 as `3fc7e848`; this suppresses Inbox Friday Consult draft updates when the operator explicitly asks for review-only/no-draft behavior. It is not deployed yet.
+- Deployment status: live frontend and backend both report `7266f78a`. `origin/fad-rebuild` is ahead with un-deployed field-staff PWA work plus PR #27; do not deploy until that frontend field PWA delta is intentionally accepted. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
