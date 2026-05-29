@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Last reconciled: 2026-05-29
 Status: recovery ledger and execution plan
-Current continuation branch: `codex/ask-friday-ops-roster-compact-first-20260529`; live production is `810250395041bf377d53900422f6befddfd4ac65`.
+Current canonical checkpoint: `origin/fad-rebuild` at `a06eda7e0c77867802a9d9c9f19f8e2a7fe3f194`; live production is `810250395041bf377d53900422f6befddfd4ac65`.
 
 ## Purpose
 
@@ -192,7 +192,7 @@ Plan 3 source-mapping progress:
 - Branch `codex/ask-friday-plan2-20260529` added draft-only public Website context-pack templates plus `backend/scripts/ask-friday-context-pack-drafts.js`; PR #24 later tightened those templates. The script dry-runs by default and `--apply` upserts draft rows only. Publishing still requires the gated publisher.
 - `docs/handover/2026-05-28-ask-friday-website-public-wiring-prompt.md` is a paste-ready Website-session prompt for implementing public context-pack consumption, redacted learning-event emission, owner lead capsules, feedback evidence capsules, and takeover preservation from a separate Website worktree.
 - PR #45 merged on 2026-05-29 as `decee0fb`; it adds Plan 2 research/source matrices, reservation action subtype contracts, property field classification, and owner positioning docs. No runtime agent is marked wired by this docs-only work.
-- Current branch `codex/ask-friday-plan2-eval-seeds-20260529` adds migration `105_ask_friday_plan2_eval_seeds.sql` for deterministic eval scaffolding covering channel-visible blocks, quote expiry/source timestamps, reservation mutations, property privacy/conflicts, owner market/stat/compliance caveats, and large Ops roster boundedness.
+- PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for deterministic eval scaffolding covering channel-visible blocks, quote expiry/source timestamps, reservation mutations, property privacy/conflicts, owner market/stat/compliance caveats, and large Ops roster boundedness. It is not deployed yet.
 
 ## Plan 2: Broader Ask Friday Agent/KB Buildout
 
