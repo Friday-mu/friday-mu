@@ -1780,23 +1780,27 @@ function mirrorCoreActionRequests({ req, actions, reason }) {
   ));
 }
 
-function knowledgeScopesForAskFriday(context, parsed) {
+function allowedCoreKnowledgeScopes(context, surfaceId) {
+  const surface = (context?.askFridayCore?.surfaces || [])
+    .find((item) => item.surfaceId === surfaceId);
+  return Array.isArray(surface?.allowedKnowledgeScopes)
+    ? surface.allowedKnowledgeScopes.map((scope) => cleanString(scope, 160)).filter(Boolean)
+    : [];
+}
+
+function knowledgeScopesForAskFriday(context, parsed, eventSurfaceId = ASK_FRIDAY_GLOBAL_SURFACE_ID) {
   const scopes = new Set(['fad_live_context']);
   for (const moduleName of context?.requestedModules || []) {
     const scope = ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES[moduleName];
     if (scope) scopes.add(scope);
   }
-  for (const surface of context?.askFridayCore?.surfaces || []) {
-    for (const scope of surface.allowedKnowledgeScopes || []) {
-      const clean = cleanString(scope, 160);
-      if (clean) scopes.add(clean);
-    }
-  }
   for (const source of parsed?.sourcesUsed || []) {
     const scope = ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES[cleanString(source, 80).toLowerCase()];
     if (scope) scopes.add(scope);
   }
-  return [...scopes].slice(0, 40);
+  const allowed = allowedCoreKnowledgeScopes(context, eventSurfaceId);
+  const result = [...scopes].slice(0, 40);
+  return allowed.length ? result.filter((scope) => allowed.includes(scope)) : result;
 }
 
 router.post('/actions/execute', attachIdentity, async (req, res) => {
@@ -2008,6 +2012,7 @@ module.exports = {
     loadFocusedWebsiteThread,
     loadTeamContext,
     loadFocusedTeamContext,
+    allowedCoreKnowledgeScopes,
     knowledgeScopesForAskFriday,
     stableActionRequestId,
     ASK_FRIDAY_MODEL,

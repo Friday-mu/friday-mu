@@ -840,6 +840,26 @@ describe('FAD Ask Friday helpers', () => {
       'design_projects',
     ]);
   });
+
+  test('filters learning-event knowledge scopes to the event surface allowlist', () => {
+    expect(_test.knowledgeScopesForAskFriday({
+      requestedModules: ['inbox', 'operations', 'properties'],
+      askFridayCore: {
+        surfaces: [{
+          surfaceId: 'fad_global_ask_friday',
+          allowedKnowledgeScopes: ['fad_live_context', 'ops_tasks'],
+        }, {
+          surfaceId: 'fad_consult',
+          allowedKnowledgeScopes: ['staff_inbox', 'teachings', 'property_cards'],
+        }],
+      },
+    }, {
+      sourcesUsed: ['inbox', 'properties'],
+    })).toEqual([
+      'fad_live_context',
+      'ops_tasks',
+    ]);
+  });
 });
 
 describe('FAD Ask Friday action execution', () => {
