@@ -231,6 +231,37 @@ These are the high-priority production-useful surfaces.
   - Ops can be more strongly formalized by Ask Friday Core because the harness is still young.
   - Preserve reversible draft/apply/clear/undo behavior and human approval for mutations.
 
+## Plan 2 KB Shells
+
+These are draft KB shells only. They are not proof of dedicated runtime agents, UI wiring, or team-usefulness.
+
+### Reservations / Calendar
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/reservations-calendar/SKILL.md`
+  - `backend/knowledge/surfaces/reservations-calendar/availability-status-rules.md`
+  - `backend/knowledge/surfaces/reservations-calendar/quote-and-channel-actions.md`
+- Principle:
+  - Availability, rates, reservation status, quotes, and channel-visible blocks remain live/source-dated tool facts or approval-routed action requests.
+
+### Properties
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/properties-assistant/SKILL.md`
+  - `backend/knowledge/surfaces/properties-assistant/field-classification.md`
+  - `backend/knowledge/surfaces/properties-assistant/source-conflicts.md`
+- Principle:
+  - Property knowledge is field-classified before use: public, guest-scoped, owner-scoped, staff-private, or restricted.
+
+### Owner Enquiry / Owners Assistant
+
+- Runtime/KB shell:
+  - `backend/knowledge/surfaces/owner-enquiry/SKILL.md`
+  - `backend/knowledge/surfaces/owner-enquiry/lead-capsules.md`
+  - `backend/knowledge/surfaces/owner-enquiry/positioning-safety.md`
+- Principle:
+  - Owner lead qualification can use competitor/market context internally, but public wording requires Ishant-approved positioning.
+
 ## Core Runtime Code Map
 
 Ask Friday Core backend:
@@ -377,6 +408,12 @@ Current Plan 3 source-truth packet:
 - `docs/architecture/ask-friday-reservation-property-tool-contracts-2026-05-28.md`
   - Design-only contracts for `load_reservation_context`, `load_calendar_context`, `load_property_context`, and `request_reservation_action`.
   - Runtime note: the staff-only read tools are live behind `/api/ask-friday/core/context-tools/*`; they are not public Website context packs and do not perform write-through actions.
+- `backend/knowledge/surfaces/reservations-calendar/*`
+  - Draft KB shell for reservation status, availability, quote, and channel-visible action rules.
+- `backend/knowledge/surfaces/properties-assistant/*`
+  - Draft KB shell for property field classification and source-conflict handling.
+- `backend/knowledge/surfaces/owner-enquiry/*`
+  - Draft KB shell for owner lead capsules and positioning safety.
 - `docs/architecture/ask-friday-website-owner-feedback-source-matrix-2026-05-28.md`
   - Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning are source-mapped but not wired to Core runtime in this branch.
   - Public and owner-facing context needs Ishant review before published KB/context-pack use.
