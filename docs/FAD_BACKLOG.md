@@ -2,9 +2,9 @@
 
 > **When Ishant says "look at our pending tasks for FAD, let's continue", this is the file to read.**
 >
-> Last reviewed: **2026-05-25** (Judith — after overnight autonomous run: Guests + Owners backends, PropertyDetail Financial, Multi-calendar v0.1, Availability search, Quote generator).
-> Live on prod: frontend `36502839` · backend `9e18f180`.
-> Tree tip on `fad-rebuild`: `36502839` (live).
+> Last reviewed: **2026-05-29** (Ask Friday Core deploy-ledger sync after PR #30/#31).
+> Live on prod: frontend `3daa4920` · backend `3daa4920`.
+> Tree tip on `fad-rebuild`: `3daa4920` (live).
 > Overnight run details: `docs/handover/2026-05-25-morning-handover.md`.
 
 ## How to use this doc
