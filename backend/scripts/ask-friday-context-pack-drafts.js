@@ -65,6 +65,7 @@ async function upsertDraft(tenantId, draft) {
        approved_at = NULL,
        published_at = NULL,
        updated_at = NOW()
+       WHERE ask_friday_context_packs.status <> 'published'
      RETURNING pack_id, surface_id, version, status, updated_at`,
     [
       tenantId,
@@ -79,6 +80,11 @@ async function upsertDraft(tenantId, draft) {
       JSON.stringify(pack.packPayload),
     ],
   );
+  if (rows.length === 0) {
+    const err = new Error(`draft context pack would overwrite an existing published pack: ${pack.surfaceId} v${pack.version}`);
+    err.status = 409;
+    throw err;
+  }
   return rows[0];
 }
 

@@ -68,6 +68,25 @@ function parseLimit(value, fallback = 100, max = 500) {
   return Math.min(Math.max(Math.floor(raw), 1), max);
 }
 
+function parseBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value).toLowerCase());
+}
+
+function parseCsvArray(value, max = 40) {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => parseCsvArray(item, max))
+      .slice(0, max);
+  }
+  return String(value || '')
+    .split(',')
+    .map((item) => cleanString(item, 120))
+    .filter(Boolean)
+    .slice(0, max);
+}
+
 function shapeSurface(row) {
   if (!row) return null;
   return {
@@ -389,6 +408,35 @@ function readinessSummary(items) {
   });
 }
 
+function generatedContextPackDrafts(options = {}) {
+  const version = Number.parseInt(options.version, 10) || 1;
+  const includeWebsite = options.includeWebsite !== false;
+  const includePlan2Shells = options.includePlan2Shells === true;
+  const surfaceIds = new Set(parseCsvArray(options.surfaceIds));
+  const drafts = [
+    ...(includeWebsite ? websitePublicDraftContextPacks({ version }) : []),
+    ...(includePlan2Shells ? plan2StaffDraftContextPacks({ version }) : []),
+  ];
+  return surfaceIds.size === 0
+    ? drafts
+    : drafts.filter((draft) => surfaceIds.has(draft.surfaceId));
+}
+
+function contextPackTemplateOptions(raw = {}) {
+  return {
+    version: Number.parseInt(raw.version, 10) || 1,
+    includeWebsite: parseBoolean(raw.includeWebsite ?? raw.include_website, true),
+    includePlan2Shells: parseBoolean(
+      raw.includePlan2Shells
+        ?? raw.include_plan2_shells
+        ?? raw.includeStaffShells
+        ?? raw.include_staff_shells,
+      false,
+    ),
+    surfaceIds: raw.surfaceIds || raw.surface_ids || raw.surfaceId || raw.surface_id || '',
+  };
+}
+
 function shapeIdentityLink(row) {
   if (!row) return null;
   return {
@@ -451,6 +499,56 @@ async function insertEvidenceRefs(tenantId, eventId, refs) {
     if (rows.length > 0) inserted += 1;
   }
   return inserted;
+}
+
+async function upsertGeneratedContextPackDraft(tenantId, draft) {
+  const pack = normalizeContextPack(draft);
+  const surface = await loadSurfaceForPolicy(tenantId, pack.surfaceId);
+  validateContextPackAgainstSurface(pack, surface);
+  const { rows } = await query(
+    `INSERT INTO ask_friday_context_packs (
+       tenant_id, pack_id, surface_id, version, status, knowledge_scopes,
+       behavior_rules, tool_policy, memory_policy, source_snapshot_refs,
+       pack_payload, approved_by, approved_at, published_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, 'draft', $5,
+       $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb,
+       $10::jsonb, NULL, NULL, NULL, NOW()
+     )
+     ON CONFLICT (tenant_id, surface_id, version) DO UPDATE SET
+       pack_id = EXCLUDED.pack_id,
+       status = 'draft',
+       knowledge_scopes = EXCLUDED.knowledge_scopes,
+       behavior_rules = EXCLUDED.behavior_rules,
+       tool_policy = EXCLUDED.tool_policy,
+       memory_policy = EXCLUDED.memory_policy,
+       source_snapshot_refs = EXCLUDED.source_snapshot_refs,
+       pack_payload = EXCLUDED.pack_payload,
+       approved_by = NULL,
+       approved_at = NULL,
+       published_at = NULL,
+       updated_at = NOW()
+       WHERE ask_friday_context_packs.status <> 'published'
+     RETURNING *`,
+    [
+      tenantId,
+      pack.packId,
+      pack.surfaceId,
+      pack.version,
+      pack.knowledgeScopes,
+      JSON.stringify(pack.behaviorRules),
+      JSON.stringify(pack.toolPolicy),
+      JSON.stringify(pack.memoryPolicy),
+      JSON.stringify(pack.sourceSnapshotRefs),
+      JSON.stringify(pack.packPayload),
+    ],
+  );
+  if (rows.length === 0) {
+    const err = new Error(`draft context pack would overwrite an existing published pack: ${pack.surfaceId} v${pack.version}`);
+    err.status = 409;
+    throw err;
+  }
+  return rows[0];
 }
 
 function lifecycleId(prefix) {
@@ -699,6 +797,47 @@ router.get('/readiness', attachIdentity, async (req, res) => {
   }
 });
 
+router.get('/context-pack-templates', attachIdentity, async (req, res) => {
+  try {
+    const options = contextPackTemplateOptions(req.query);
+    const drafts = generatedContextPackDrafts(options).map((draft) => normalizeContextPack(draft));
+    res.json({
+      mode: 'preview',
+      version: options.version,
+      count: drafts.length,
+      drafts,
+      note: 'Generated templates are draft-only. Use POST /context-pack-templates/drafts to upsert drafts; publishing still requires /context-packs/publish with eval gate or explicit override.',
+    });
+  } catch (error) {
+    return respondError(res, error, 'context_pack_templates_failed');
+  }
+});
+
+router.post('/context-pack-templates/drafts', attachIdentity, async (req, res) => {
+  try {
+    const options = contextPackTemplateOptions(req.body || {});
+    const drafts = generatedContextPackDrafts(options);
+    if (drafts.length === 0) {
+      return res.status(400).json({
+        error: 'context_pack_template_not_found',
+        message: 'No generated draft templates matched the requested options.',
+      });
+    }
+    const rows = [];
+    for (const draft of drafts) {
+      rows.push(await upsertGeneratedContextPackDraft(req.tenantId, draft));
+    }
+    res.status(201).json({
+      mode: 'drafts_upserted',
+      count: rows.length,
+      contextPacks: rows.map(shapeContextPack),
+      note: 'Draft context packs are not public-readable and are not canonical until published through the gated publisher.',
+    });
+  } catch (error) {
+    return respondError(res, error, 'context_pack_template_draft_write_failed');
+  }
+});
+
 // Staff-only list of context packs across all surfaces / statuses.
 // Used by the Ask Friday review admin module. Public consumers should
 // hit GET /context-packs/:surfaceId which is scope-protected and only
@@ -799,6 +938,7 @@ router.post('/context-packs', attachIdentity, async (req, res) => {
          approved_at = EXCLUDED.approved_at,
          published_at = EXCLUDED.published_at,
          updated_at = NOW()
+         WHERE ask_friday_context_packs.status <> 'published'
        RETURNING *`,
       [
         req.tenantId,
@@ -815,6 +955,12 @@ router.post('/context-packs', attachIdentity, async (req, res) => {
         approver,
       ],
     );
+    if (rows.length === 0) {
+      return res.status(409).json({
+        error: 'published_context_pack_version_exists',
+        message: `Draft write refused because ${pack.surfaceId} v${pack.version} is already published. Use a new draft version or the gated publisher.`,
+      });
+    }
     res.status(201).json({ contextPack: shapeContextPack(rows[0]) });
   } catch (error) {
     return respondError(res, error, 'context_pack_write_failed');
