@@ -9,6 +9,8 @@ import { ScreenOps } from '../gm/screens/ops';
 import { ScreenApprovals as GmApprovals } from '../gm/screens/approvals';
 import { ScreenSchedule as GmSchedule } from '../gm/screens/schedule';
 import { ScreenRoster as GmRoster } from '../gm/screens/roster';
+import { GmShell, type GmTab } from '../gm/kit';
+import { DI } from '../gm/icons';
 import { useT } from '../../_i18n/useT';
 import {
   TASK_PROPERTIES,
@@ -341,7 +343,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
   // Manager/GM desktop retrofit: these sub-pages render the FAD V2 GM screens
   // (own header+tabs via GmShell) → skip ModuleHeader. Field role keeps the
   // existing pages. gmNav normalises the GM screens' tab ids to ours.
-  const GM_SUBS = ['overview', 'schedule', 'approvals', 'roster'];
+  const GM_SUBS = ['overview', 'schedule', 'approvals', 'roster', 'all'];
   const isGm = !isField && GM_SUBS.includes(active);
   const gmNav = (s: string) => onChangeSubPage(s === 'reported' ? 'approvals' : s);
 
@@ -433,7 +435,7 @@ export function OperationsModule({ subPage, onChangeSubPage }: Props) {
           ? <SchedulePage onOpenTask={setDetailTaskId} onCreate={openManagerCreate} />
           : <GmSchedule subPage={active} onChangeSubPage={gmNav} />;
       case 'all':
-        return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} />;
+        return <AllTasksPage onOpenTask={setDetailTaskId} onCreate={() => openManagerCreate()} onNav={gmNav} />;
       case 'issues':
         return <ReportedIssuesPage onOpenTask={setDetailTaskId} />;
       case 'approvals':
@@ -3814,7 +3816,7 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
   lowest: 4,
 };
 
-function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => void; onCreate: () => void }) {
+function AllTasksPage({ onOpenTask, onCreate, onNav }: { onOpenTask: (id: string) => void; onCreate: () => void; onNav?: (s: string) => void }) {
   const { role } = usePermissions();
   const { t } = useT();
 
@@ -3828,6 +3830,9 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
     due: 'all',
     source: 'all',
   });
+  // V2 quick-status segment (All · Open · Overdue · Done). Folds into the
+  // query alongside the granular Status dropdown (granular wins when set).
+  const [quick, setQuick] = useState<'all' | 'open' | 'overdue' | 'done'>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: TaskSortKey; dir: 'asc' | 'desc' } | null>(null);
   const [pageSize, setPageSize] = useState(50);
@@ -3858,21 +3863,27 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
 
   useEffect(() => {
     setOffset(0);
-  }, [filters, search, sort, pageSize]);
+  }, [filters, quick, search, sort, pageSize]);
 
   const pageQuery = useMemo(() => {
     const dueToday = filters.due === 'today';
     const dueThisWeek = filters.due === 'this_week';
     return {
       department: filters.department !== 'all' ? filters.department : undefined,
-      status: filters.status !== 'all' ? [filters.status] : undefined,
+      status: filters.status !== 'all'
+        ? [filters.status]
+        : quick === 'open'
+          ? (['reported', 'scheduled', 'ready', 'in_progress', 'paused', 'blocked'] as TaskStatus[])
+          : quick === 'done'
+            ? (['completed', 'closed', 'cancelled'] as TaskStatus[])
+            : undefined,
       priority: filters.priority !== 'all' ? filters.priority : undefined,
       property: filters.property !== 'all' ? filters.property : undefined,
       assignee: filters.mine || role === 'field'
         ? 'me'
         : (filters.assignee !== 'all' ? filters.assignee : undefined),
       source: filters.source !== 'all' ? filters.source : undefined,
-      overdue: filters.due === 'overdue',
+      overdue: filters.due === 'overdue' || quick === 'overdue',
       dueAfter: dueToday ? TODAY : (dueThisWeek ? TODAY : undefined),
       dueBefore: dueToday ? TODAY : (dueThisWeek ? addDays(TODAY, 6) : undefined),
       search: search.trim() || undefined,
@@ -3881,7 +3892,7 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
       limit: pageSize,
       offset,
     };
-  }, [filters, offset, pageSize, role, search, sort]);
+  }, [filters, offset, pageSize, quick, role, search, sort]);
 
   const {
     tasks: visibleTasks,
@@ -3912,7 +3923,6 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
     (filters.due !== 'all' ? 1 : 0) +
     (filters.source !== 'all' ? 1 : 0) +
     (filters.mine ? 1 : 0);
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const pageStart = total === 0 ? 0 : pageOffset + 1;
   const pageEnd = Math.min(pageOffset + visibleTasks.length, total);
   const canPrev = pageOffset > 0;
@@ -4027,147 +4037,80 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
     </>
   );
 
+  const allTabs: GmTab[] = [
+    { l: 'Overview', onClick: () => onNav?.('overview') },
+    { l: 'Schedule', onClick: () => onNav?.('schedule') },
+    { l: 'All tasks', on: true },
+    { l: 'Approvals', onClick: () => onNav?.('approvals') },
+    { l: 'Roster', onClick: () => onNav?.('roster') },
+    { l: 'Insights', onClick: () => onNav?.('insights') },
+  ];
+  const seg = (id: typeof quick, label: string) => (
+    <span
+      className={'vs' + (quick === id ? ' on' : '')}
+      onClick={() => { setQuick(id); if (id !== 'all') setFilters((f) => ({ ...f, status: 'all', due: 'all' })); }}
+    >
+      {label}
+    </span>
+  );
+  const th = (label: string, key?: TaskSortKey) => {
+    const active = key && sort?.key === key;
+    return (
+      <th
+        onClick={key ? () => toggleSort(key) : undefined}
+        style={key ? { cursor: 'pointer', whiteSpace: 'nowrap' } : undefined}
+      >
+        {label}{active ? (sort!.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+      </th>
+    );
+  };
   return (
-    <div className="ops-all-tasks">
-      <div className="ops-all-toolbar">
-        {error && (
-          <div style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: 'var(--color-bg-warning)', color: 'var(--color-text-warning)', fontSize: 12 }}>
-            {t('operations.overview.loadError', { error })}
-          </div>
-        )}
-        <div className="all-tasks-search-row">
-          <input
-            type="search"
-            placeholder={t('operations.all.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ flex: 1, padding: 8, fontSize: 13 }}
-          />
-          <div className="all-tasks-filter-trigger" style={{ position: 'relative' }}>
-            <button
-              type="button"
-              className={'btn ghost sm' + (activeFilterCount > 0 || mobileFiltersOpen ? ' active' : '')}
-              onClick={(e) => {
-                e.stopPropagation();
-                setMobileFiltersOpen(!mobileFiltersOpen);
-              }}
-              aria-haspopup="dialog"
-              aria-expanded={mobileFiltersOpen}
-              style={{
-                background: activeFilterCount > 0 ? 'var(--color-background-tertiary)' : undefined,
-                color: activeFilterCount > 0 ? 'var(--color-brand-accent)' : undefined,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <IconFilter size={14} /> {t('operations.all.filters')}
-              {activeFilterCount > 0 && (
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 10,
-                    marginLeft: 4,
-                    padding: '0 5px',
-                    borderRadius: 8,
-                    background: 'var(--color-brand-accent)',
-                    color: 'white',
-                  }}
-                >
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-            {mobileFiltersOpen && (
-              <>
-                <div
-                  style={{ position: 'fixed', inset: 0, zIndex: 9 }}
-                  onClick={() => setMobileFiltersOpen(false)}
-                />
-                <div
-                  className="fad-dropdown all-tasks-filter-sheet"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '4px 6px 10px',
-                      borderBottom: '0.5px solid var(--color-border-tertiary)',
-                      marginBottom: 10,
-                    }}
-                  >
-                    <span style={{ fontSize: 12, fontWeight: 500 }}>Filters</span>
-                    {activeFilterCount > 0 && (
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        onClick={clearAllFilters}
-                        style={{ fontSize: 11 }}
-                      >
-                        Clear all
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="btn primary sm"
-                      style={{ marginLeft: 'auto' }}
-                      onClick={() => setMobileFiltersOpen(false)}
-                    >
-                      Done
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {filterChips}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+    <GmShell
+      eyebrow="OPERATIONS"
+      title="All tasks"
+      sub={loading && visibleTasks.length === 0 ? 'Loading…' : `${total} task${total === 1 ? '' : 's'} · showing ${pageStart}–${pageEnd}`}
+      tabs={allTabs}
+      actions={(
+        <>
+          {(activeFilterCount > 0 || quick !== 'all') && (
+            <button className="dbtn ghost sm" onClick={() => { clearAllFilters(); setQuick('all'); }}>Clear</button>
+          )}
+          <button className="dbtn primary sm" onClick={onCreate}><DI n="plus" s={2} /> New task</button>
+        </>
+      )}
+    >
+      {error && (
+        <div className="panel" style={{ padding: 10, marginBottom: 10, color: 'var(--amber)', fontSize: 12 }}>
+          {t('operations.overview.loadError', { error })}
         </div>
-        <div className="all-tasks-filter-bar-desktop" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-          {filterChips}
-        </div>
-        <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-          <span>
-            {loading && visibleTasks.length === 0
-              ? <LoadingInline label={t('operations.mine.loadingAssigned')} />
-              : t('operations.all.resultRange', { from: pageStart, to: pageEnd, total })}
-          </span>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              aria-label={t('operations.all.filters')}
-              style={{ padding: '4px 8px', fontSize: 11, borderRadius: 4, border: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)' }}
-            >
-              <option value={50}>{t('operations.all.perPage', { n: 50 })}</option>
-              <option value={100}>{t('operations.all.perPage', { n: 100 })}</option>
-              <option value={200}>{t('operations.all.perPage', { n: 200 })}</option>
-            </select>
-            <button className="btn ghost sm" disabled={!canPrev || loading} onClick={() => setOffset(Math.max(0, pageOffset - limit))}>
-              {t('operations.all.previous')}
-            </button>
-            <button className="btn ghost sm" disabled={!canNext || loading} onClick={() => setOffset(pageOffset + limit)}>
-              {t('operations.all.next')}
-            </button>
-          </div>
-        </div>
+      )}
+
+      {/* filter bar — quick segment + granular dropdowns + search */}
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 11px' }}>
+        <span className="vseg">{seg('all', 'All')}{seg('open', 'Open')}{seg('overdue', 'Overdue')}{seg('done', 'Done')}</span>
+        {filterChips}
+        <span style={{ flex: 1, minWidth: 12 }} />
+        <input
+          type="search"
+          placeholder={t('operations.all.searchPlaceholder')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ padding: '6px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', minWidth: 180 }}
+        />
       </div>
 
-      <div className="ops-all-results">
-        <table className="fad-tasks-table ops-task-table">
+      <div className="panel" style={{ padding: '10px 6px' }}>
+        <table className="tbl">
           <thead>
-            <tr style={{ position: 'sticky', top: 0, background: 'var(--color-background-primary)', zIndex: 1 }}>
-              <Th></Th>
-              <SortableTh sortKey="propertyCode" sort={sort} onToggle={toggleSort}>Property</SortableTh>
-              <SortableTh sortKey="title" sort={sort} onToggle={toggleSort}>Title</SortableTh>
-              <SortableTh sortKey="subdepartment" sort={sort} onToggle={toggleSort}>Dept</SortableTh>
-              <SortableTh sortKey="status" sort={sort} onToggle={toggleSort}>Status</SortableTh>
-              <SortableTh sortKey="priority" sort={sort} onToggle={toggleSort}>Priority</SortableTh>
-              <Th>Assignees</Th>
-              <SortableTh sortKey="dueDate" sort={sort} onToggle={toggleSort}>Due</SortableTh>
-              <SortableTh sortKey="source" sort={sort} onToggle={toggleSort}>Origin</SortableTh>
-              <Th></Th>
+            <tr>
+              {th('Property', 'propertyCode')}
+              {th('Task', 'title')}
+              {th('Dept', 'subdepartment')}
+              {th('Assignee')}
+              {th('Due', 'dueDate')}
+              {th('Priority', 'priority')}
+              {th('Status', 'status')}
+              {th('Origin', 'source')}
             </tr>
           </thead>
           <tbody>
@@ -4176,20 +4119,35 @@ function AllTasksPage({ onOpenTask, onCreate }: { onOpenTask: (id: string) => vo
             ))}
           </tbody>
         </table>
-        {loading && visibleTasks.length === 0 && <LoadingState label="Loading live tasks" />}
-        {loading && visibleTasks.length > 0 && (
-          <div style={{ padding: '10px 0' }}>
-            <LoadingInline label="Refreshing task page" />
-          </div>
+        {loading && visibleTasks.length === 0 && (
+          <div style={{ padding: 18, textAlign: 'center', color: 'var(--tx-3)', fontSize: 12.5 }}>Loading live tasks…</div>
         )}
-        <div className="fad-tasks-cards">
-          {visibleTasks.map((t) => (
-            <TaskCard key={t.id} task={t} onClick={() => onOpenTask(t.id)} />
-          ))}
-        </div>
-        {visibleTasks.length === 0 && <Empty>{t('operations.all.empty')}</Empty>}
+        {!loading && visibleTasks.length === 0 && (
+          <div style={{ padding: 18, textAlign: 'center', color: 'var(--tx-3)', fontSize: 12.5 }}>{t('operations.all.empty')}</div>
+        )}
+        {loading && visibleTasks.length > 0 && (
+          <div style={{ padding: '8px 10px', color: 'var(--tx-3)', fontSize: 11.5, fontFamily: 'var(--mono)' }}>Refreshing…</div>
+        )}
       </div>
-    </div>
+
+      <div className="between" style={{ marginTop: 11 }}>
+        <span className="faint mono" style={{ fontSize: 10.5 }}>{pageStart}–{pageEnd} of {total}</span>
+        <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            aria-label="Per page"
+            style={{ padding: '5px 8px', fontSize: 11, borderRadius: 7, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx-2)' }}
+          >
+            <option value={50}>{t('operations.all.perPage', { n: 50 })}</option>
+            <option value={100}>{t('operations.all.perPage', { n: 100 })}</option>
+            <option value={200}>{t('operations.all.perPage', { n: 200 })}</option>
+          </select>
+          <button className="dbtn ghost sm" disabled={!canPrev || loading} onClick={() => setOffset(Math.max(0, pageOffset - limit))}>{t('operations.all.previous')}</button>
+          <button className="dbtn ghost sm" disabled={!canNext || loading} onClick={() => setOffset(pageOffset + limit)}>{t('operations.all.next')}</button>
+        </div>
+      </div>
+    </GmShell>
   );
 }
 
@@ -4207,11 +4165,12 @@ function FilterChip({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{
-        padding: '4px 8px',
-        fontSize: 11,
-        borderRadius: 4,
-        border: '0.5px solid var(--color-border-tertiary)',
-        background: value === options[0].value ? 'var(--color-background-secondary)' : 'var(--color-brand-accent-soft)',
+        padding: '5px 9px',
+        fontSize: 11.5,
+        borderRadius: 8,
+        border: '1px solid var(--line)',
+        background: value === options[0].value ? 'var(--card)' : 'var(--indigo-ghost)',
+        color: value === options[0].value ? 'var(--tx-2)' : 'var(--indigo-bright)',
         cursor: 'pointer',
       }}
     >
@@ -4313,82 +4272,43 @@ function PriorityLabel({ priority }: { priority: TaskPriority }) {
 }
 
 function TaskTableRow({ task, onClick }: { task: Task; onClick: () => void }) {
-  const sourceSwatch = toneStyle(taskSourceTone(task.source));
   const sourceLabel = SOURCE_LABEL[task.source] || 'Task';
   const assignees = taskAssigneePeople(task);
   const isClosed = CLOSED_STATUS.has(task.status);
   return (
     <tr
-      className="ops-task-row"
+      className="tdrow"
       data-closed={isClosed ? 'true' : undefined}
       onClick={onClick}
+      style={{ cursor: 'pointer', opacity: isClosed ? 0.62 : 1 }}
     >
-      <td className="ops-task-priority-cell">
-        <span className="ops-task-priority-bar" style={{ background: priorityBarColor(task.priority) }} />
-      </td>
-      <td className="ops-task-property-cell">
-        <span className="mono">{taskPropertyLabel(task)}</span>
-      </td>
-      <td className="ops-task-title-cell">
-        <div className="ops-task-title-line">{task.title}</div>
+      <td><span className="pcodeD">{taskPropertyLabel(task)}</span></td>
+      <td className="tt">
+        {task.title}
         {task.riskFlags.length > 0 && (
-          <div className="ops-task-risk-line">
-            ⚠ {task.riskFlags.slice(0, 2).join(', ')}
-            {task.riskFlags.length > 2 && ` +${task.riskFlags.length - 2}`}
-          </div>
+          <span className="sub" style={{ display: 'block', color: 'var(--amber)' }}>
+            ⚠ {task.riskFlags.slice(0, 2).join(', ')}{task.riskFlags.length > 2 ? ` +${task.riskFlags.length - 2}` : ''}
+          </span>
         )}
       </td>
-      <td className="ops-task-muted-cell">{taskSubdepartmentLabel(task)}</td>
-      <td className="ops-task-chip-cell">
-        <StatusPill status={task.status} />
-      </td>
-      <td className="ops-task-chip-cell">
-        <PriorityLabel priority={task.priority} />
-      </td>
-      <td className="ops-task-assignees-cell">
-        <div style={{ display: 'flex', gap: 0 }}>
-          {assignees.slice(0, 3).map((u, i) => {
-            return (
-              <span
-                key={u.id}
-                title={u.name}
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 11,
-                  background: u.avatarColor,
-                  color: 'white',
-                  fontSize: 9,
-                  fontWeight: 500,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginLeft: i === 0 ? 0 : -6,
-                  border: '1.5px solid var(--color-background-primary)',
-                }}
-              >
+      <td className="faint">{taskSubdepartmentLabel(task)}</td>
+      <td>
+        {assignees.length === 0 ? (
+          <span className="bdg amber">unassigned</span>
+        ) : (
+          <span className="avset">
+            {assignees.slice(0, 3).map((u) => (
+              <span key={u.id} className="av" title={u.name} style={{ background: u.avatarColor, color: '#fff', border: '1.5px solid var(--card)' }}>
                 {u.initials}
               </span>
-            );
-          })}
-          {assignees.length === 0 && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>—</span>}
-        </div>
+            ))}
+          </span>
+        )}
       </td>
-      <td className="ops-task-due-cell">{formatTaskDue(task.dueDate, task.dueTime, task.status)}</td>
-      <td className="ops-task-origin-cell">
-        <span
-          className="ops-source-label"
-          style={{
-            background: sourceSwatch.background,
-            color: sourceSwatch.color,
-          }}
-        >
-          {sourceLabel}
-        </span>
-      </td>
-      <td className="ops-task-files-cell">
-        {task.attachmentCount > 0 && `Files ${task.attachmentCount}`}
-      </td>
+      <td className="mono faint" style={{ whiteSpace: 'nowrap' }}>{formatTaskDue(task.dueDate, task.dueTime, task.status)}</td>
+      <td><PriorityLabel priority={task.priority} /></td>
+      <td><StatusPill status={task.status} /></td>
+      <td className="faint" style={{ fontSize: 11 }}>{sourceLabel}</td>
     </tr>
   );
 }
