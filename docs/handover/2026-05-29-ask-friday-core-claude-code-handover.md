@@ -10,7 +10,7 @@ Canonical branch: `origin/fad-rebuild`
 
 As of the 2026-05-30 coordination update:
 
-- `origin/fad-rebuild`: `c8ca8b2a614f10dd56496ab856438e2cf13df25e`
+- `origin/fad-rebuild`: at or after `c8ca8b2a614f10dd56496ab856438e2cf13df25e`; verify the exact latest SHA with `git ls-remote origin refs/heads/fad-rebuild`
 - Live frontend: `https://admin.friday.mu/version.json` reports `2a118654`
 - Live backend: `https://admin.friday.mu/api/version` reports `2a118654`
 - Ask Friday Core runtime work through `dc819d80` and migration `112_ask_friday_plan2_context_pack_drafts.sql` is included in live `2a118654` and has been verified.
@@ -115,6 +115,7 @@ Post-live commits currently on `origin/fad-rebuild`:
 - `10001468 docs(ask-friday): add claude code handover`
 - `b33a408c feat(ops): editable Operations Settings -- persisted per tenant (was static)`
 - `c8ca8b2a` merge commit
+- `5a5d1455 docs(ask-friday): update claude handover live status`
 
 These post-live commits are not a reason to deploy Ask Friday Core by themselves. Re-check live and coordinate with the frontend/Ops session before any deployment.
 
@@ -326,7 +327,7 @@ Start by:
 6. continue the next backend-safe Ask Friday Core slice
 
 Current live expected at handover: 2a118654.
-Current origin/fad-rebuild expected at handover: c8ca8b2a614f10dd56496ab856438e2cf13df25e.
+Current origin/fad-rebuild expected at handover: at or after c8ca8b2a614f10dd56496ab856438e2cf13df25e; verify the exact latest SHA with git ls-remote.
 Important: origin is ahead of live with this handover and unrelated Ops settings work. Do not deploy just for branch/live parity.
 
 Guardrails:
