@@ -38,11 +38,11 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Worktree: `/Users/judith/.codex/worktrees/fad-deploy-5fd42245`
-- Branch: `codex/ask-friday-final-deploy-ledger-20260529`
+- Worktree: `/Users/judith/.codex/worktrees/fad-deploy-ad2b1151`
+- Branch: `codex/ask-friday-compact-fallback-ledger-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after WhatsApp-window schema deploy: `5fd4224594d2eb1313270c3ebbe75681c83a1986`
-- Current deployed code-bearing SHA: `5fd4224594d2eb1313270c3ebbe75681c83a1986`
+- Base/canonical SHA after Inbox compact-fallback deploy: `ad2b115146aa26f54d0de1a9069130b1e29a1d5d`
+- Current deployed code-bearing SHA: `ad2b115146aa26f54d0de1a9069130b1e29a1d5d`
 - Note: `origin/fad-rebuild` may receive docs-only ledger commits after this SHA without requiring a production deploy.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
@@ -66,7 +66,8 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #33: merged and deployed on 2026-05-29 as `fe3d5fab`; this hardens Ops Consult availability/pricing checks after live QA showed the model skipped this check when `calendar_pricing` objects existed but contained no usable price/availability values.
 - PR #35: merged and deployed on 2026-05-29 as `f92d4df`; this fixes Inbox Consult JSON-envelope parsing when a provider returns a valid envelope plus a stray brace or malformed tail, preventing raw `response_text` JSON from leaking into the chat UI.
 - PR #37: merged and deployed on 2026-05-29 as `5fd42245`; this removes the production-invalid `messages.communication_channel` WhatsApp-window query while keeping message-level WhatsApp detection via `messages.module_type`.
-- Deployment status: live frontend and backend both report `5fd42245`. This deployment includes the field-staff PWA delta merged through `19008eb7`, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, PR #31 docs, PR #33 Ops pricing-signal hardening, PR #35 Inbox malformed-envelope parsing, and PR #37 WhatsApp-window schema fix. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #39: merged and deployed on 2026-05-29 as `ad2b1151`; this unpins compact Inbox Consult fallback so compact retries use the normal Gemini-first hierarchy unless an explicit fallback model env var is configured.
+- Deployment status: live frontend and backend both report `ad2b1151`. This deployment includes the field-staff PWA delta merged through `19008eb7`, PR #27 review-only fix, PR #30 Inbox/Consult/Feedback fixes, PR #31 docs, PR #33 Ops pricing-signal hardening, PR #35 Inbox malformed-envelope parsing, PR #37 WhatsApp-window schema fix, and PR #39 compact fallback reliability fix. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
