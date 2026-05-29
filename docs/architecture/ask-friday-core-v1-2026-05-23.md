@@ -386,6 +386,7 @@ FAD staff routes:
 
 - `GET /surfaces`
 - `POST /surfaces`
+- `GET /readiness`
 - `POST /context-packs`
 - `POST /context-packs/publish`
 - `GET /kb-candidates`
@@ -408,10 +409,12 @@ Start with lightweight JSON eval cases in FAD Postgres, then add runner/tooling.
 
 The current backend includes:
 
+- Readiness report endpoint: `GET /api/ask-friday/core/readiness`. It is staff-authenticated and read-only. It summarizes each registered surface's latest draft/published context pack, active eval coverage, registry counts, and blocker/warning flags so UI wiring can depend on Core state instead of guessing from separate admin lists.
 - Manual analyzer endpoint: `POST /api/ask-friday/core/analyzer/run`. It inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
 - Context-pack publisher: `POST /api/ask-friday/core/context-packs/publish`. It requires approved candidate IDs or explicit `manualApproval:true`, then creates a new published context pack version.
 - Publish gate: context-pack publishing requires either a passing eval run via `evalRunId` or explicit `evalGateOverride:true`. Direct draft writes through `POST /context-packs` cannot publish by setting `status:"published"`.
 - Deterministic eval runner: `POST /api/ask-friday/core/eval-runs`. It checks eval case shape, privacy redaction, allowed tools, and required knowledge scopes. Checks that require model output are recorded as skipped, not guessed.
+- Global FAD Ask Friday runtime: `POST /api/friday/ask` loads Ask Friday Core surface state for `fad_global_ask_friday` plus the active module surface ids, then includes compact latest context-pack status/rules in the prompt and response summary. This is backend governance wiring only; it does not require or change the side-panel UI.
 - Initial deterministic eval seed cases live in `097_ask_friday_seed_eval_cases.sql`.
 - KB candidates include review-lane metadata from `098_ask_friday_candidate_review_lanes.sql`, so public, staff, restricted, owner-private, and internal candidates do not share one undifferentiated approval queue.
 - Analyzer worker: `npm run ask-friday:analyzer`. The web process does not start the scheduler by default; set `ASK_FRIDAY_ANALYZER_IN_WEB=1` only for controlled single-process deployments.

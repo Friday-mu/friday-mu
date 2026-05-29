@@ -52,6 +52,8 @@ describe('FAD Ask Friday helpers', () => {
     expect(prompt).toContain('Design');
     expect(prompt).toContain('mauritiusCalendar');
     expect(prompt).toContain('context.dataTruth');
+    expect(prompt).toContain('context.askFridayCore');
+    expect(prompt).toContain('published context packs');
     expect(prompt).toContain('demo/fixture');
     expect(prompt).toContain('Do not use markdown tables');
     expect(prompt).toContain('Return JSON only');
@@ -268,6 +270,133 @@ describe('FAD Ask Friday helpers', () => {
       fixtureDataExcluded: true,
       excludedModules: expect.arrayContaining(['finance', 'calendar', 'training', 'notifications']),
     }));
+  });
+
+  test('maps page modules to Ask Friday Core surface ids', () => {
+    expect(_test.coreSurfaceIdsForContext(
+      ['operations', 'properties', 'team'],
+      { surfaceId: 'fad_reservations_calendar_assistant' },
+    )).toEqual([
+      'fad_global_ask_friday',
+      'fad_ops_assistant',
+      'fad_properties_assistant',
+      'fad_reservations_calendar_assistant',
+    ]);
+  });
+
+  test('loads Ask Friday Core surface state for runtime governance context', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{
+        surface_id: 'fad_global_ask_friday',
+        display_name: 'Ask Friday',
+        source_system: 'fad',
+        access_class: 'staff',
+        status: 'active',
+        allowed_knowledge_scopes: ['fad_live_context'],
+        allowed_tools: ['load_fad_context'],
+        allowed_actions: ['create_task'],
+        memory_policy: { durableMemory: 'approved_canonical_only' },
+        handoff_policy: {},
+        model_policy: {},
+        context_budget: {},
+        eval_suite_ids: ['fad_global'],
+        draft_pack_id: null,
+        draft_version: null,
+        draft_status: null,
+        draft_behavior_rules: null,
+        draft_tool_policy: null,
+        draft_memory_policy: null,
+        draft_pack_payload: null,
+        draft_approved_by: null,
+        draft_approved_at: null,
+        draft_published_at: null,
+        draft_updated_at: null,
+        published_pack_id: 'fad_global_ask_friday_v2',
+        published_version: 2,
+        published_status: 'published',
+        published_behavior_rules: [{ id: 'source_truth', priority: 'must', rule: 'Use live FAD context.' }],
+        published_tool_policy: { allowedTools: ['load_fad_context'] },
+        published_memory_policy: { durableMemory: 'approved_canonical_only' },
+        published_pack_payload: { contextPackClass: 'staff_global_v1', includedContext: ['live module context'] },
+        published_approved_by: 'Ishant',
+        published_approved_at: '2026-05-29T08:00:00.000Z',
+        published_published_at: '2026-05-29T08:01:00.000Z',
+        published_updated_at: '2026-05-29T08:01:00.000Z',
+      }, {
+        surface_id: 'fad_ops_assistant',
+        display_name: 'Ops Assistant',
+        source_system: 'fad',
+        access_class: 'staff',
+        status: 'active',
+        allowed_knowledge_scopes: ['ops_tasks'],
+        allowed_tools: ['load_calendar_context'],
+        allowed_actions: ['request_approval'],
+        memory_policy: {},
+        handoff_policy: {},
+        model_policy: {},
+        context_budget: {},
+        eval_suite_ids: ['ops_planning'],
+        draft_pack_id: 'fad_ops_assistant_v1_draft',
+        draft_version: 1,
+        draft_status: 'draft',
+        draft_behavior_rules: [{ id: 'occupancy', priority: 'must', rule: 'Respect occupied properties.' }],
+        draft_tool_policy: { allowedActions: ['request_approval'] },
+        draft_memory_policy: {},
+        draft_pack_payload: { contextPackClass: 'staff_ops_shell', reviewBlockersBeforePublish: ['Ishant review'] },
+        draft_approved_by: null,
+        draft_approved_at: null,
+        draft_published_at: null,
+        draft_updated_at: '2026-05-29T08:05:00.000Z',
+        published_pack_id: null,
+        published_version: null,
+        published_status: null,
+        published_behavior_rules: null,
+        published_tool_policy: null,
+        published_memory_policy: null,
+        published_pack_payload: null,
+        published_approved_by: null,
+        published_approved_at: null,
+        published_published_at: null,
+        published_updated_at: null,
+      }],
+    });
+
+    const result = await _test.loadAskFridayCoreSurfaceState(
+      '00000000-0000-0000-0000-000000000001',
+      ['operations'],
+      null,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      source: 'ask_friday_core',
+      surfaceIds: ['fad_global_ask_friday', 'fad_ops_assistant'],
+    });
+    expect(result.surfaces).toEqual([
+      expect.objectContaining({
+        surfaceId: 'fad_global_ask_friday',
+        contextPackStatus: 'published',
+        latestPublished: expect.objectContaining({
+          packId: 'fad_global_ask_friday_v2',
+          behaviorRules: [expect.objectContaining({ id: 'source_truth' })],
+        }),
+      }),
+      expect.objectContaining({
+        surfaceId: 'fad_ops_assistant',
+        contextPackStatus: 'draft',
+        latestDraft: expect.objectContaining({
+          packId: 'fad_ops_assistant_v1_draft',
+          packPayload: expect.objectContaining({
+            reviewBlockersBeforePublish: ['Ishant review'],
+          }),
+        }),
+      }),
+    ]);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][1]).toEqual([
+      '00000000-0000-0000-0000-000000000001',
+      ['fad_global_ask_friday', 'fad_ops_assistant'],
+    ]);
   });
 
   test('selects module context from question and scope', () => {
