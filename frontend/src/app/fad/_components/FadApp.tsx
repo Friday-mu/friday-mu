@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type MouseEvent } from 'react';
+import dynamic from 'next/dynamic';
 // T3.15 — side-effect import boots i18next before any module-level
 // useTranslation()/useT() call fires. Must precede other module
 // imports.
@@ -12,39 +13,43 @@ import { Header } from './Header';
 import { CommandPalette } from './CommandPalette';
 import { FridayDrawer } from './FridayDrawer';
 import { FridayFullscreen } from './FridayFullscreen';
-import { InboxModule } from './modules/InboxModule';
-import { CalendarModule } from './modules/CalendarModule';
-import { SettingsModule } from './modules/SettingsModule';
-import {
-  LegalModule,
-  OwnersModule,
-  TeaseModule,
-} from './modules/StubModules';
-import { PropertiesModule } from './modules/PropertiesModule';
-import { OperationsModule } from './modules/OperationsModule';
-import FieldApp from './field/FieldApp';
-import { FinanceModule } from './modules/FinanceModule';
+// Eager (shell-level): finance-role helper + the always-mounted FAB / modal / banner.
 import { lockedFinanceSubsFor, type FinRole } from '../_data/financeRoles';
-import {
-  GuestsModule,
-  IntelligenceModule,
-  LeadsModule,
-  MarketingModule,
-} from './modules/Tier3Modules';
-import { ReviewsModule } from './modules/ReviewsModule';
 import { BugReportFab } from './BugReport';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { UpdateBanner } from './UpdateBanner';
-import { AnalyticsModule } from './modules/AnalyticsModule';
-import { ReservationsModule } from './modules/ReservationsModule';
-import { TrainingModule } from './modules/TrainingModule';
-import { NotificationsModule } from './modules/NotificationsModule';
-import { HRModule } from './modules/HRModule';
-import { DesignModule } from './modules/DesignModule';
-import { TenantSettingsModule } from './modules/TenantSettingsModule';
-import { BillingModule } from './modules/BillingModule';
-import { AdminAnalyticsModule } from './modules/AdminAnalyticsModule';
-import { AskFridayReviewModule } from './modules/AskFridayReviewModule';
+
+// ── Perf: module bodies are code-split via next/dynamic ────────────────────────
+// Previously all ~19 modules + the field PWA were statically imported, so the
+// initial /fad bundle shipped every module (incl. heavy Design/Finance/Analytics
+// fixtures) up-front. Each is now a client-only (ssr:false) lazy chunk fetched on
+// demand, behind a lightweight skeleton. Shell chrome (Header / Sidebar /
+// CommandPalette / Friday*) stays eager so first paint is unaffected.
+const InboxModule = dynamic(() => import('./modules/InboxModule').then((m) => ({ default: m.InboxModule })), { ssr: false, loading: ModuleLoading });
+const CalendarModule = dynamic(() => import('./modules/CalendarModule').then((m) => ({ default: m.CalendarModule })), { ssr: false, loading: ModuleLoading });
+const SettingsModule = dynamic(() => import('./modules/SettingsModule').then((m) => ({ default: m.SettingsModule })), { ssr: false, loading: ModuleLoading });
+const LegalModule = dynamic(() => import('./modules/StubModules').then((m) => ({ default: m.LegalModule })), { ssr: false, loading: ModuleLoading });
+const OwnersModule = dynamic(() => import('./modules/StubModules').then((m) => ({ default: m.OwnersModule })), { ssr: false, loading: ModuleLoading });
+const TeaseModule = dynamic(() => import('./modules/StubModules').then((m) => ({ default: m.TeaseModule })), { ssr: false, loading: ModuleLoading });
+const PropertiesModule = dynamic(() => import('./modules/PropertiesModule').then((m) => ({ default: m.PropertiesModule })), { ssr: false, loading: ModuleLoading });
+const OperationsModule = dynamic(() => import('./modules/OperationsModule').then((m) => ({ default: m.OperationsModule })), { ssr: false, loading: ModuleLoading });
+const FieldApp = dynamic(() => import('./field/FieldApp'), { ssr: false, loading: ModuleLoading });
+const FinanceModule = dynamic(() => import('./modules/FinanceModule').then((m) => ({ default: m.FinanceModule })), { ssr: false, loading: ModuleLoading });
+const GuestsModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.GuestsModule })), { ssr: false, loading: ModuleLoading });
+const IntelligenceModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.IntelligenceModule })), { ssr: false, loading: ModuleLoading });
+const LeadsModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.LeadsModule })), { ssr: false, loading: ModuleLoading });
+const MarketingModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.MarketingModule })), { ssr: false, loading: ModuleLoading });
+const ReviewsModule = dynamic(() => import('./modules/ReviewsModule').then((m) => ({ default: m.ReviewsModule })), { ssr: false, loading: ModuleLoading });
+const AnalyticsModule = dynamic(() => import('./modules/AnalyticsModule').then((m) => ({ default: m.AnalyticsModule })), { ssr: false, loading: ModuleLoading });
+const ReservationsModule = dynamic(() => import('./modules/ReservationsModule').then((m) => ({ default: m.ReservationsModule })), { ssr: false, loading: ModuleLoading });
+const TrainingModule = dynamic(() => import('./modules/TrainingModule').then((m) => ({ default: m.TrainingModule })), { ssr: false, loading: ModuleLoading });
+const NotificationsModule = dynamic(() => import('./modules/NotificationsModule').then((m) => ({ default: m.NotificationsModule })), { ssr: false, loading: ModuleLoading });
+const HRModule = dynamic(() => import('./modules/HRModule').then((m) => ({ default: m.HRModule })), { ssr: false, loading: ModuleLoading });
+const DesignModule = dynamic(() => import('./modules/DesignModule').then((m) => ({ default: m.DesignModule })), { ssr: false, loading: ModuleLoading });
+const TenantSettingsModule = dynamic(() => import('./modules/TenantSettingsModule').then((m) => ({ default: m.TenantSettingsModule })), { ssr: false, loading: ModuleLoading });
+const BillingModule = dynamic(() => import('./modules/BillingModule').then((m) => ({ default: m.BillingModule })), { ssr: false, loading: ModuleLoading });
+const AdminAnalyticsModule = dynamic(() => import('./modules/AdminAnalyticsModule').then((m) => ({ default: m.AdminAnalyticsModule })), { ssr: false, loading: ModuleLoading });
+const AskFridayReviewModule = dynamic(() => import('./modules/AskFridayReviewModule').then((m) => ({ default: m.AskFridayReviewModule })), { ssr: false, loading: ModuleLoading });
 import { MODULE_RESOURCE, PermissionsProvider, canSeeModule, useCurrentRole } from './usePermissions';
 import { PermissionGate } from './PermissionGate';
 import { Toaster } from './Toaster';
@@ -402,6 +407,18 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
       {mustChangePassword && (
         <ChangePasswordModal onChanged={() => setMustChangePassword(false)} />
       )}
+    </div>
+  );
+}
+
+// Lightweight skeleton shown while a code-split module chunk loads.
+function ModuleLoading() {
+  return (
+    <div
+      className="fad-module-body"
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 240, fontSize: 12, color: 'var(--color-text-tertiary)' }}
+    >
+      Loading…
     </div>
   );
 }
