@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current continuation branch: `codex/ask-friday-core-next-20260529`
+Current continuation branch: `codex/ask-friday-core-next-20260529` merged as PR #25; next continuation branch TBD.
 
 ## Purpose
 
@@ -42,8 +42,8 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - Branch: `codex/ask-friday-core-next-20260529`
 - Base branch: `origin/fad-rebuild`
 - Base/canonical SHA when this continuation branch was created: `3b09772fd9054f80f0212e8c26cba038f611ceb6`
-- Current deployed code SHA: `b70c40871c13dd99adaea26143ebad563d2d4286`
-- Current canonical branch SHA: `3b09772fd9054f80f0212e8c26cba038f611ceb6`
+- Current deployed code-bearing SHA: `7266f78a73bf5bd8c92924c10ebd63e60bb89fd9`
+- Note: `origin/fad-rebuild` may receive docs-only ledger commits after this SHA without requiring a production deploy.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -55,7 +55,8 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #22: merged on 2026-05-29 as `45d3c066`; this added draft-only Website public context pack templates.
 - PR #23: merged and deployed on 2026-05-29 as `b70c4087`; this fixed environment loading for the context-pack draft script.
 - PR #24: merged on 2026-05-29 as `3b09772f`; this narrowed the Website guest hero context pack, kept FAB journal search, and removed feedback-specific blockers from Website public packs.
-- Deployment status: live frontend and backend both report `b70c4087`. `origin/fad-rebuild` is ahead at `3b09772f`; that source change is not deployed yet, but the reviewed Website public context packs were published through the gated publisher in production DB.
+- PR #25: merged and deployed on 2026-05-29 as `7266f78a`; this added the deterministic Ops Consult fallback for persistent model length exhaustion and deployed PR #24 source code.
+- Deployment status: live frontend and backend both report `7266f78a`. Reviewed Website public context packs remain published through the gated publisher in production DB.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
