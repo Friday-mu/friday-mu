@@ -18,10 +18,14 @@ jest.mock('../design/auth', () => ({
 }));
 jest.mock('../mcp', () => ({ callTool: jest.fn() }));
 jest.mock('../ask_friday/action_writer', () => ({ recordActionRequest: jest.fn() }));
+jest.mock('../ask_friday/event_writer', () => ({ recordLearningEvent: jest.fn() }));
+jest.mock('../ai/chat_proxy', () => ({ invokeChat: jest.fn() }));
 
 const { query } = require('../database/client');
 const { callTool } = require('../mcp');
 const { recordActionRequest } = require('../ask_friday/action_writer');
+const { recordLearningEvent } = require('../ask_friday/event_writer');
+const { invokeChat } = require('../ai/chat_proxy');
 const { router, _test } = require('./friday');
 
 function app() {
@@ -36,6 +40,9 @@ describe('FAD Ask Friday helpers', () => {
     query.mockReset();
     callTool.mockReset();
     recordActionRequest.mockReset();
+    recordLearningEvent.mockReset();
+    recordLearningEvent.mockResolvedValue({ eventId: 'evt-test', inserted: true, evidenceInserted: 0 });
+    invokeChat.mockReset();
   });
 
   test('builds an action-aware staff assistant system prompt', () => {
@@ -947,6 +954,140 @@ describe('FAD Ask Friday helpers', () => {
     });
 
     expect(events).toEqual([]);
+  });
+
+  test('global Ask Friday route writes global and page-focused module learning events', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{
+          surface_id: 'fad_global_ask_friday',
+          display_name: 'Ask Friday',
+          source_system: 'fad',
+          access_class: 'staff',
+          status: 'active',
+          allowed_knowledge_scopes: ['fad_live_context', 'ops_tasks'],
+          allowed_tools: ['load_fad_context'],
+          allowed_actions: ['navigate', 'create_task'],
+          memory_policy: {},
+          handoff_policy: {},
+          model_policy: {},
+          context_budget: {},
+          eval_suite_ids: [],
+          draft_pack_id: null,
+          draft_version: null,
+          draft_status: null,
+          draft_behavior_rules: null,
+          draft_tool_policy: null,
+          draft_memory_policy: null,
+          draft_pack_payload: null,
+          draft_approved_by: null,
+          draft_approved_at: null,
+          draft_published_at: null,
+          draft_updated_at: null,
+          published_pack_id: null,
+          published_version: null,
+          published_status: null,
+          published_behavior_rules: null,
+          published_tool_policy: null,
+          published_memory_policy: null,
+          published_pack_payload: null,
+          published_approved_by: null,
+          published_approved_at: null,
+          published_published_at: null,
+          published_updated_at: null,
+        }, {
+          surface_id: 'fad_ops_assistant',
+          display_name: 'Ops Assistant',
+          source_system: 'fad',
+          access_class: 'staff',
+          status: 'active',
+          allowed_knowledge_scopes: ['ops_tasks', 'reservations', 'properties', 'ops-consult'],
+          allowed_tools: ['load_task', 'load_schedule', 'load_reservation', 'load_property'],
+          allowed_actions: ['draft_schedule'],
+          memory_policy: {},
+          handoff_policy: {},
+          model_policy: {},
+          context_budget: {},
+          eval_suite_ids: [],
+          draft_pack_id: 'fad_ops_assistant_v1_draft',
+          draft_version: 1,
+          draft_status: 'draft',
+          draft_behavior_rules: [{ id: 'visible_work_assignment', rule: 'Assign visible work.' }],
+          draft_tool_policy: { allowedActions: ['draft_schedule'] },
+          draft_memory_policy: {},
+          draft_pack_payload: { contextPackClass: 'fad_ops_assistant_runtime_v1_draft' },
+          draft_approved_by: null,
+          draft_approved_at: null,
+          draft_published_at: null,
+          draft_updated_at: '2026-05-29T08:05:00.000Z',
+          published_pack_id: null,
+          published_version: null,
+          published_status: null,
+          published_behavior_rules: null,
+          published_tool_policy: null,
+          published_memory_policy: null,
+          published_pack_payload: null,
+          published_approved_by: null,
+          published_approved_at: null,
+          published_published_at: null,
+          published_updated_at: null,
+        }],
+      });
+    invokeChat.mockResolvedValueOnce({
+      ok: true,
+      model: 'gemini-3.5-flash',
+      message: {
+        content: JSON.stringify({
+          answer: 'Review the operations schedule and assign visible open work.',
+          confidence: 'high',
+          followups: ['Open schedule'],
+          sourcesUsed: ['operations'],
+          actions: [],
+        }),
+      },
+      usage: { inputTokens: 12, outputTokens: 20 },
+    });
+
+    const res = await request(app())
+      .post('/friday/ask')
+      .send({
+        question: 'What should I do next here?',
+        scope: 'Operations',
+        focus: {
+          module: 'operations',
+          surfaceId: 'fad_ops_assistant',
+          route: '/fad?m=operations',
+          view: 'schedule',
+          visibleState: { summary: 'Schedule view with open tasks.' },
+        },
+      })
+      .expect(200);
+
+    expect(res.body.answer).toContain('operations schedule');
+    expect(res.body.contextSummary.requestedModules).toEqual(['operations']);
+    expect(recordLearningEvent).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: '00000000-0000-0000-0000-000000000001',
+      event: expect.objectContaining({
+        surfaceId: 'fad_global_ask_friday',
+        knowledgeUsed: ['fad_live_context', 'ops_tasks'],
+      }),
+    }));
+    expect(recordLearningEvent).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: '00000000-0000-0000-0000-000000000001',
+      event: expect.objectContaining({
+        surfaceId: 'fad_ops_assistant',
+        toolsUsed: ['load_task', 'load_schedule', 'load_reservation', 'load_property'],
+        knowledgeUsed: ['ops_tasks', 'reservations', 'properties', 'ops-consult'],
+        signals: expect.objectContaining({
+          learningFlow: 'global_panel_module_mirror',
+          mirroredFromSurface: 'fad_global_ask_friday',
+          module: 'operations',
+          contextPackStatus: 'draft',
+        }),
+      }),
+    }));
+    expect(recordLearningEvent).toHaveBeenCalledTimes(2);
   });
 });
 

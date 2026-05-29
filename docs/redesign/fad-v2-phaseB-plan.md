@@ -21,7 +21,7 @@ The V2 design's central pattern is the **universal Ask Friday side panel** (`.da
 - Build the `.daside` panel **presentationally only** (local open/close, like the existing GM `AskPanel` demo). Do **NOT** rip out `FridayDrawer`/`FridayFullscreen` or wire the panel to Ask Friday Core — that swap is a coordinated change with the parallel session.
 - Do **NOT** globally rewrite `fad.css` (it skins their Inbox Consult UI). Keep V2 scoped (`.dwrap` / per-module) and migrate module-by-module.
 - **Inbox** module body contains their Consult UI → coordinate before restyling; do Inbox LAST / jointly.
-- Preserve "Ask Friday" / "Ask Friday Core" / "FridayOS" naming. Never "OS Friday".
+- Preserve "Ask Friday" / "Ask Friday Core" / "FridayOS" naming. Never use the retired assistant label.
 - Build from latest `origin/fad-rebuild`; fetch+merge before every push; deploy FE+BE from same SHA; ping before deploying.
 
 ## Build order (safe-first, high-value, mine)
