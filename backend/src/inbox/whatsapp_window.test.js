@@ -30,8 +30,7 @@ describe('WhatsApp window helpers', () => {
 
     await expect(loadLastInboundWhatsAppAt('conversation-1', queryFn)).resolves.toBe('2026-05-29T10:00:00.000Z');
     expect(queryFn.mock.calls[0][0]).toContain('m.module_type');
-    expect(queryFn.mock.calls[0][0]).toContain('m.communication_channel');
-    expect(queryFn.mock.calls[0][0]).toContain("LOWER(COALESCE(m.communication_channel, '')) LIKE '%whatsapp%'");
+    expect(queryFn.mock.calls[0][0]).not.toContain('m.communication_channel');
     expect(queryFn.mock.calls[0][0]).not.toContain('c.communication_channel');
     expect(queryFn.mock.calls[0][1]).toEqual(['conversation-1']);
   });
@@ -42,7 +41,7 @@ describe('WhatsApp window helpers', () => {
     await loadLastInboundWhatsAppAt('conversation-1', queryFn);
     const sql = queryFn.mock.calls[0][0];
     expect(sql).toMatch(/LOWER\(COALESCE\(m\.module_type, ''\)\) LIKE '%whatsapp%'/);
-    expect(sql).toMatch(/LOWER\(COALESCE\(m\.communication_channel, ''\)\) LIKE '%whatsapp%'/);
+    expect(sql).not.toContain('m.communication_channel');
     expect(sql).not.toContain('LEFT JOIN conversations');
     expect(sql).not.toContain('c.communication_channel');
     expect(sql).not.toContain('c.channel');
