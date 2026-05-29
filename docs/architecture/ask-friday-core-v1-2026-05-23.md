@@ -386,6 +386,7 @@ FAD staff routes:
 
 - `GET /surfaces`
 - `POST /surfaces`
+- `GET /readiness`
 - `POST /context-packs`
 - `POST /context-packs/publish`
 - `GET /kb-candidates`
@@ -408,6 +409,7 @@ Start with lightweight JSON eval cases in FAD Postgres, then add runner/tooling.
 
 The current backend includes:
 
+- Readiness report endpoint: `GET /api/ask-friday/core/readiness`. It is staff-authenticated and read-only. It summarizes each registered surface's latest draft/published context pack, active eval coverage, registry counts, and blocker/warning flags so UI wiring can depend on Core state instead of guessing from separate admin lists.
 - Manual analyzer endpoint: `POST /api/ask-friday/core/analyzer/run`. It inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
 - Context-pack publisher: `POST /api/ask-friday/core/context-packs/publish`. It requires approved candidate IDs or explicit `manualApproval:true`, then creates a new published context pack version.
 - Publish gate: context-pack publishing requires either a passing eval run via `evalRunId` or explicit `evalGateOverride:true`. Direct draft writes through `POST /context-packs` cannot publish by setting `status:"published"`.

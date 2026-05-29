@@ -21,6 +21,7 @@ const { runEvalSuite } = require('./eval_runner');
 const { runRetention } = require('./retention');
 const {
   assertPublicSurface,
+  isPublicReadableSurface,
   validateContextPackAgainstSurface,
   validatePublicActionRequest,
   validatePublicIdentityLink,
@@ -29,10 +30,19 @@ const {
 } = require('./policy');
 const { publishContextPack } = require('./publisher');
 const contextTools = require('./context_tools');
+const {
+  plan2StaffDraftContextPacks,
+  websitePublicDraftContextPacks,
+} = require('./context_pack_templates');
 
 const router = express.Router();
 
 router.use('/context-tools', contextTools.router);
+
+const TEMPLATE_CONTEXT_PACK_SURFACE_IDS = new Set([
+  ...websitePublicDraftContextPacks(),
+  ...plan2StaffDraftContextPacks(),
+].map((pack) => pack.surfaceId));
 
 function actorName(req) {
   return req.identity?.displayName
@@ -188,6 +198,161 @@ function shapeEvalCase(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function shapeContextPackPointer(row, prefix) {
+  const packId = row?.[`${prefix}_pack_id`];
+  if (!packId) return null;
+  return {
+    packId,
+    version: row[`${prefix}_version`],
+    status: row[`${prefix}_status`],
+    approvedBy: row[`${prefix}_approved_by`] || null,
+    approvedAt: row[`${prefix}_approved_at`] || null,
+    publishedAt: row[`${prefix}_published_at`] || null,
+    updatedAt: row[`${prefix}_updated_at`] || null,
+  };
+}
+
+function contextPackExpectation(row) {
+  const active = cleanString(row?.status, 40).toLowerCase() === 'active';
+  const surfaceId = cleanString(row?.surface_id, 120);
+  const hasTemplate = TEMPLATE_CONTEXT_PACK_SURFACE_IDS.has(surfaceId);
+  if (!hasTemplate) {
+    return {
+      hasTemplate: false,
+      requiredStatus: 'none',
+      note: 'No generated context-pack template is registered for this surface yet.',
+    };
+  }
+  if (!active) {
+    return {
+      hasTemplate: true,
+      requiredStatus: 'optional_draft',
+      note: 'Surface is not active; draft packs are optional planning artifacts.',
+    };
+  }
+  if (isPublicReadableSurface(row)) {
+    return {
+      hasTemplate: true,
+      requiredStatus: 'published',
+      note: 'Active public-readable surfaces should have a published public-safe context pack.',
+    };
+  }
+  return {
+    hasTemplate: true,
+    requiredStatus: 'draft_or_published',
+    note: 'Active staff shell surfaces should at least have a draft context pack before UI wiring depends on them.',
+  };
+}
+
+function readinessFlag(code, severity, message) {
+  return { code, severity, message };
+}
+
+function shapeSurfaceReadiness(row) {
+  const surface = shapeSurface(row);
+  const expectation = contextPackExpectation(row);
+  const latestDraft = shapeContextPackPointer(row, 'draft');
+  const latestPublished = shapeContextPackPointer(row, 'published');
+  const activeEvalSuites = row.active_eval_suite_ids || [];
+  const declaredEvalSuites = row.eval_suite_ids || [];
+  const missingDeclaredEvalSuites = declaredEvalSuites.filter((suiteId) => !activeEvalSuites.includes(suiteId));
+  const activeEvalCaseCount = Number(row.active_eval_case_count || 0);
+  const flags = [];
+
+  if (expectation.requiredStatus === 'published' && !latestPublished) {
+    flags.push(readinessFlag(
+      'missing_published_context_pack',
+      'blocker',
+      'Active public-readable surface has no published context pack.',
+    ));
+  }
+  if (expectation.requiredStatus === 'draft_or_published' && !latestDraft && !latestPublished) {
+    flags.push(readinessFlag(
+      'missing_staff_context_pack_draft',
+      'warning',
+      'Active staff shell surface has no draft or published context pack.',
+    ));
+  }
+  if (expectation.requiredStatus === 'optional_draft' && !latestDraft && !latestPublished) {
+    flags.push(readinessFlag(
+      'optional_context_pack_draft_missing',
+      'info',
+      'Planned surface has a template but no draft context pack yet.',
+    ));
+  }
+  if (declaredEvalSuites.length > 0 && activeEvalCaseCount === 0) {
+    flags.push(readinessFlag(
+      'missing_eval_cases',
+      'warning',
+      'Surface declares eval suites but has no active eval cases.',
+    ));
+  } else if (missingDeclaredEvalSuites.length > 0) {
+    flags.push(readinessFlag(
+      'missing_declared_eval_suite_coverage',
+      'warning',
+      `No active eval cases found for declared suites: ${missingDeclaredEvalSuites.join(', ')}.`,
+    ));
+  }
+
+  const readinessStatus = flags.some((flag) => flag.severity === 'blocker')
+    ? 'blocked'
+    : flags.some((flag) => flag.severity === 'warning')
+      ? 'needs_work'
+      : surface.status === 'active'
+        ? 'ready'
+        : 'planned';
+
+  return {
+    ...surface,
+    readinessStatus,
+    contextPackExpectation: expectation,
+    contextPacks: {
+      latestDraft,
+      latestPublished,
+    },
+    evals: {
+      declaredSuiteIds: declaredEvalSuites,
+      activeCaseCount: activeEvalCaseCount,
+      activeSuiteIds: activeEvalSuites,
+      missingDeclaredSuiteIds: missingDeclaredEvalSuites,
+    },
+    registryCoverage: {
+      knowledgeScopeCount: surface.allowedKnowledgeScopes.length,
+      toolCount: surface.allowedTools.length,
+      actionCount: surface.allowedActions.length,
+    },
+    flags,
+  };
+}
+
+function readinessSummary(items) {
+  return items.reduce((summary, item) => {
+    summary.total += 1;
+    summary[item.readinessStatus] = (summary[item.readinessStatus] || 0) + 1;
+    if (item.status === 'active') summary.active += 1;
+    if (item.flags.some((flag) => flag.code === 'missing_published_context_pack')) {
+      summary.missingPublishedContextPacks += 1;
+    }
+    if (item.flags.some((flag) => flag.code === 'missing_staff_context_pack_draft')) {
+      summary.missingStaffContextPackDrafts += 1;
+    }
+    if (item.flags.some((flag) => flag.code === 'missing_eval_cases' || flag.code === 'missing_declared_eval_suite_coverage')) {
+      summary.missingEvalCoverage += 1;
+    }
+    return summary;
+  }, {
+    total: 0,
+    active: 0,
+    ready: 0,
+    needs_work: 0,
+    blocked: 0,
+    planned: 0,
+    missingPublishedContextPacks: 0,
+    missingStaffContextPackDrafts: 0,
+    missingEvalCoverage: 0,
+  });
 }
 
 function shapeIdentityLink(row) {
@@ -409,6 +574,82 @@ router.post('/surfaces', attachIdentity, async (req, res) => {
     res.status(201).json({ surface: shapeSurface(rows[0]) });
   } catch (error) {
     return respondError(res, error, 'surface_upsert_failed');
+  }
+});
+
+router.get('/readiness', attachIdentity, async (req, res) => {
+  try {
+    const status = cleanString(req.query.status, 40) || 'all';
+    const surfaceId = cleanString(req.query.surfaceId || req.query.surface_id, 120);
+    const params = [req.tenantId];
+    const filters = ['s.tenant_id = $1'];
+    if (status !== 'all') {
+      params.push(status);
+      filters.push(`s.status = $${params.length}`);
+    }
+    if (surfaceId) {
+      params.push(surfaceId);
+      filters.push(`s.surface_id = $${params.length}`);
+    }
+    const { rows } = await query(
+      `SELECT
+         s.*,
+         draft.pack_id AS draft_pack_id,
+         draft.version AS draft_version,
+         draft.status AS draft_status,
+         draft.approved_by AS draft_approved_by,
+         draft.approved_at AS draft_approved_at,
+         draft.published_at AS draft_published_at,
+         draft.updated_at AS draft_updated_at,
+         published.pack_id AS published_pack_id,
+         published.version AS published_version,
+         published.status AS published_status,
+         published.approved_by AS published_approved_by,
+         published.approved_at AS published_approved_at,
+         published.published_at AS published_published_at,
+         published.updated_at AS published_updated_at,
+         COALESCE(eval_counts.active_eval_case_count, 0)::int AS active_eval_case_count,
+         COALESCE(eval_counts.active_eval_suite_ids, ARRAY[]::text[]) AS active_eval_suite_ids
+       FROM ask_friday_surfaces s
+       LEFT JOIN LATERAL (
+         SELECT pack_id, version, status, approved_by, approved_at, published_at, updated_at
+           FROM ask_friday_context_packs
+          WHERE tenant_id = s.tenant_id
+            AND surface_id = s.surface_id
+            AND status = 'draft'
+          ORDER BY version DESC, updated_at DESC
+          LIMIT 1
+       ) draft ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT pack_id, version, status, approved_by, approved_at, published_at, updated_at
+           FROM ask_friday_context_packs
+          WHERE tenant_id = s.tenant_id
+            AND surface_id = s.surface_id
+            AND status = 'published'
+          ORDER BY version DESC, updated_at DESC
+          LIMIT 1
+       ) published ON TRUE
+       LEFT JOIN (
+         SELECT
+           tenant_id,
+           surface_id,
+           COUNT(*) FILTER (WHERE status = 'active') AS active_eval_case_count,
+           ARRAY_REMOVE(ARRAY_AGG(DISTINCT suite_id) FILTER (WHERE status = 'active'), NULL) AS active_eval_suite_ids
+         FROM ask_friday_eval_cases
+         GROUP BY tenant_id, surface_id
+       ) eval_counts ON eval_counts.tenant_id = s.tenant_id
+                    AND eval_counts.surface_id = s.surface_id
+      WHERE ${filters.join(' AND ')}
+      ORDER BY s.source_system, s.surface_id`,
+      params,
+    );
+    const surfaces = rows.map(shapeSurfaceReadiness);
+    res.json({
+      summary: readinessSummary(surfaces),
+      surfaces,
+    });
+  } catch (error) {
+    return respondError(res, error, 'readiness_report_failed');
   }
 });
 
@@ -1125,6 +1366,7 @@ module.exports = {
     shapeKbCandidate,
     shapeLearningEvent,
     shapeSurface,
+    shapeSurfaceReadiness,
     loadSurfaceForPolicy,
     writeActionLifecycleEvent,
   },
