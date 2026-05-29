@@ -2,8 +2,8 @@
 
 Date: 2026-05-26
 Status: execution-grade master plan expansion
-Current continuation branch: `codex/ask-friday-continuation-20260528`
-Historical PR: `https://github.com/Friday-mu/friday-mu/pull/9` merged as `da67c7be`; production later advanced to `7caf6576`
+Current continuation branch: `codex/ask-friday-core-next-20260529` merged as PR #25; next continuation branch TBD.
+Historical PR: `https://github.com/Friday-mu/friday-mu/pull/9` merged as `da67c7be`; production later advanced to `7266f78a`.
 Notion mirror: `https://www.notion.so/36c43ca88492815d9644e44b14a297d0`
 
 ## Purpose
@@ -272,7 +272,7 @@ Status:
 
 - PR #9 was merged on 2026-05-27 as `da67c7be`.
 - Ask Friday Core hardening, Inbox event wrapping, Ops event wrapping, DB consult locks, eval seeds, candidate lanes, and Ops scheduling constraints are now on `fad-rebuild`.
-- Production frontend and backend reported deployed SHA `7caf6576` during the 2026-05-28 recovery pass.
+- Production frontend and backend currently report deployed SHA `7266f78a`; `origin/fad-rebuild` is ahead with un-deployed field-staff PWA work plus the merged PR #27 Inbox review-only fix.
 - Plan 1 is deployed and non-destructive API/model smoke passed on 2026-05-28, but it is not yet marked fully team-useful until real Inbox and Ops browser/workflow QA passes.
 
 Scope:
@@ -385,9 +385,9 @@ Current Plan 3 packet:
   - Contract draft for Website context-pack consumption, Website redacted learning events, owner lead capsules, feedback evidence capsules, and takeover alignment.
   - This packet is not implementation proof. It defines the payload shapes and runtime boundaries for a future Website worktree and future FAD/Core API hardening.
 - `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
-  - Branch-only deterministic eval scaffolding for those scoped risks. It is not deployed.
+  - Live deterministic eval scaffolding for those scoped risks.
 - `backend/migrations/103_ask_friday_public_contract_evals.sql`
-  - Branch-only contract-specific eval scaffolding for missing context-pack fallback, ready owner lead capsules, feedback evidence/action requests, and restricted evidence rejection. It is not deployed.
+  - Live contract-specific eval scaffolding for missing context-pack fallback, ready owner lead capsules, feedback evidence/action requests, and restricted evidence rejection.
 
 Exit criteria for each surface:
 
@@ -755,8 +755,8 @@ Current safe next moves:
 2. Patch only production-blocking defects.
 3. Update completion ledger from live team-usefulness evidence.
 4. Continue Reservations/Calendar and Properties from `docs/architecture/ask-friday-reservations-properties-source-matrix-2026-05-28.md`:
-   - read-only context tools and deterministic eval seeds now exist on the continuation branch, not deployed;
-   - live-smoke those routes after merge/deploy;
+   - read-only context tools and deterministic eval seeds are live on the FAD side and have passed staff-only smoke;
+   - continue adding evals/tool contracts only after checking the completion ledger for current deployment truth;
    - define property public/guest/staff/restricted field policy before public context packs;
    - keep reservation/channel writes as approval-routed action requests.
 5. Start KB research factory for public guest, owner, Ops, and local Mauritius context.
