@@ -860,6 +860,94 @@ describe('FAD Ask Friday helpers', () => {
       'ops_tasks',
     ]);
   });
+
+  test('mirrors global right-panel turns into module learning events for active module surfaces', () => {
+    const events = _test.moduleLearningEventsForAskFriday({
+      context: {
+        requestedModules: ['operations', 'reservations', 'properties', 'team'],
+        askFridayCore: {
+          surfaces: [{
+            surfaceId: 'fad_ops_assistant',
+            status: 'active',
+            contextPackStatus: 'draft',
+            allowedKnowledgeScopes: ['ops_tasks', 'reservations', 'properties', 'ops-consult'],
+            allowedTools: ['load_task', 'load_schedule', 'load_reservation', 'load_property'],
+          }, {
+            surfaceId: 'fad_reservations_calendar_assistant',
+            status: 'active',
+            contextPackStatus: 'draft',
+            allowedKnowledgeScopes: ['reservations', 'calendar', 'availability', 'pricing_quote_policy'],
+            allowedTools: ['load_reservation_context', 'load_calendar_context'],
+          }, {
+            surfaceId: 'fad_properties_assistant',
+            status: 'active',
+            contextPackStatus: 'draft',
+            allowedKnowledgeScopes: ['property_cards', 'property_ops_notes', 'public_private_split', 'property_field_classification'],
+            allowedTools: ['load_property_context', 'load_reservation_context'],
+          }],
+        },
+      },
+      parsed: { answer: 'Use the schedule, booking, and property state.', confidence: 'high' },
+      question: 'What should I do next here?',
+      scope: 'All of FAD',
+      actions: [{ type: 'navigate', module: 'operations' }],
+      focus: { module: 'operations', route: '/fad?m=operations' },
+      model: 'gemini-3.5-flash',
+      identityRef: { identityType: 'staff', identityKey: 'ishant', authenticated: true },
+    });
+
+    expect(events.map((event) => event.surfaceId)).toEqual([
+      'fad_ops_assistant',
+      'fad_reservations_calendar_assistant',
+      'fad_properties_assistant',
+    ]);
+    expect(events[0]).toMatchObject({
+      surfaceId: 'fad_ops_assistant',
+      toolsUsed: ['load_task', 'load_schedule', 'load_reservation', 'load_property'],
+      knowledgeUsed: ['ops_tasks', 'reservations', 'properties', 'ops-consult'],
+      signals: expect.objectContaining({
+        learningFlow: 'global_panel_module_mirror',
+        mirroredFromSurface: 'fad_global_ask_friday',
+        module: 'operations',
+      }),
+    });
+    expect(events[1]).toMatchObject({
+      surfaceId: 'fad_reservations_calendar_assistant',
+      toolsUsed: ['load_reservation_context', 'load_calendar_context'],
+      knowledgeUsed: ['reservations', 'calendar', 'availability', 'pricing_quote_policy'],
+    });
+    expect(events[2]).toMatchObject({
+      surfaceId: 'fad_properties_assistant',
+      toolsUsed: ['load_property_context', 'load_reservation_context'],
+      knowledgeUsed: ['property_cards', 'property_ops_notes', 'public_private_split', 'property_field_classification'],
+    });
+    expect(events).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ surfaceId: 'fad_global_ask_friday' }),
+    ]));
+  });
+
+  test('does not mirror module learning events to planned or paused module surfaces', () => {
+    const events = _test.moduleLearningEventsForAskFriday({
+      context: {
+        requestedModules: ['properties'],
+        askFridayCore: {
+          surfaces: [{
+            surfaceId: 'fad_properties_assistant',
+            status: 'planned',
+            allowedKnowledgeScopes: ['property_cards'],
+            allowedTools: ['load_property_context'],
+          }],
+        },
+      },
+      parsed: { answer: 'Property context is planned.', confidence: 'medium' },
+      question: 'What is known about this property?',
+      scope: 'Properties',
+      actions: [],
+      identityRef: { identityType: 'staff', identityKey: 'ishant', authenticated: true },
+    });
+
+    expect(events).toEqual([]);
+  });
 });
 
 describe('FAD Ask Friday action execution', () => {

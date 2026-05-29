@@ -213,6 +213,28 @@ const ASK_FRIDAY_MODULE_SURFACE_IDS = {
   reservations: 'fad_reservations_calendar_assistant',
   properties: 'fad_properties_assistant',
 };
+const ASK_FRIDAY_MODULE_LEARNING_POLICIES = {
+  inbox: {
+    surfaceId: 'fad_consult',
+    knowledgeScopes: ['staff_inbox', 'property_cards', 'teachings'],
+    toolsUsed: ['load_conversation', 'load_reservation', 'load_property', 'load_teachings'],
+  },
+  operations: {
+    surfaceId: 'fad_ops_assistant',
+    knowledgeScopes: ['ops_tasks', 'reservations', 'properties', 'ops-consult'],
+    toolsUsed: ['load_task', 'load_schedule', 'load_reservation', 'load_property'],
+  },
+  reservations: {
+    surfaceId: 'fad_reservations_calendar_assistant',
+    knowledgeScopes: ['reservations', 'calendar', 'availability', 'pricing_quote_policy', 'guest_inquiry_followup'],
+    toolsUsed: ['load_reservation_context', 'load_calendar_context', 'load_property_context'],
+  },
+  properties: {
+    surfaceId: 'fad_properties_assistant',
+    knowledgeScopes: ['property_cards', 'property_ops_notes', 'public_private_split', 'property_field_classification'],
+    toolsUsed: ['load_property_context', 'load_reservation_context', 'load_calendar_context'],
+  },
+};
 const ASK_FRIDAY_EXCLUDED_DEMO_MODULES = [
   'finance',
   'calendar',
@@ -1788,6 +1810,21 @@ function allowedCoreKnowledgeScopes(context, surfaceId) {
     : [];
 }
 
+function allowedCoreTools(context, surfaceId) {
+  const surface = (context?.askFridayCore?.surfaces || [])
+    .find((item) => item.surfaceId === surfaceId);
+  return Array.isArray(surface?.allowedTools)
+    ? surface.allowedTools.map((tool) => cleanString(tool, 160)).filter(Boolean)
+    : [];
+}
+
+function filterAllowedCoreValues(values, allowedValues) {
+  const cleaned = cleanStringList(values, 40, 160);
+  if (!allowedValues.length) return cleaned;
+  const allowed = new Set(allowedValues);
+  return cleaned.filter((value) => allowed.has(value));
+}
+
 function knowledgeScopesForAskFriday(context, parsed, eventSurfaceId = ASK_FRIDAY_GLOBAL_SURFACE_ID) {
   const scopes = new Set(['fad_live_context']);
   for (const moduleName of context?.requestedModules || []) {
@@ -1801,6 +1838,81 @@ function knowledgeScopesForAskFriday(context, parsed, eventSurfaceId = ASK_FRIDA
   const allowed = allowedCoreKnowledgeScopes(context, eventSurfaceId);
   const result = [...scopes].slice(0, 40);
   return allowed.length ? result.filter((scope) => allowed.includes(scope)) : result;
+}
+
+function moduleLearningEventsForAskFriday({ context, parsed, question, scope, actions, focus, model, identityRef }) {
+  const modules = new Set(Array.isArray(context?.requestedModules) ? context.requestedModules : []);
+  for (const focusModule of contextModulesFromFocus(focus)) modules.add(focusModule);
+  const emittedSurfaceIds = new Set();
+  const events = [];
+
+  for (const moduleName of modules) {
+    const policy = ASK_FRIDAY_MODULE_LEARNING_POLICIES[moduleName];
+    if (!policy || policy.surfaceId === ASK_FRIDAY_GLOBAL_SURFACE_ID || emittedSurfaceIds.has(policy.surfaceId)) continue;
+    const registeredSurface = (context?.askFridayCore?.surfaces || [])
+      .find((surface) => surface.surfaceId === policy.surfaceId);
+    if (registeredSurface && registeredSurface.status !== 'active') continue;
+
+    emittedSurfaceIds.add(policy.surfaceId);
+    const allowedScopes = allowedCoreKnowledgeScopes(context, policy.surfaceId);
+    const allowedTools = allowedCoreTools(context, policy.surfaceId);
+    events.push({
+      sourceSystem: 'fad',
+      surfaceId: policy.surfaceId,
+      identityRef,
+      intent: scope,
+      userTurnSummary: question,
+      assistantActionSummary: cleanAnswer(parsed?.answer, 900),
+      toolsUsed: filterAllowedCoreValues(policy.toolsUsed, allowedTools).slice(0, 4),
+      knowledgeUsed: filterAllowedCoreValues(policy.knowledgeScopes, allowedScopes),
+      confidence: cleanString(parsed?.confidence, 40) || 'unknown',
+      outcome: Array.isArray(actions) && actions.length ? 'action_candidate' : 'answered',
+      handoff: { triggered: false },
+      signals: {
+        learningFlow: 'global_panel_module_mirror',
+        mirroredFromSurface: ASK_FRIDAY_GLOBAL_SURFACE_ID,
+        module: moduleName,
+        actionCount: Array.isArray(actions) ? actions.length : 0,
+        contextPackStatus: registeredSurface?.contextPackStatus || 'unknown',
+        focus: focus || null,
+      },
+      privacyClass: 'high',
+      redactionStatus: 'partially_redacted',
+      eventPayload: {
+        module: moduleName,
+        scope,
+        focus,
+        model: model || null,
+      },
+    });
+  }
+
+  return events;
+}
+
+function mirrorModuleLearningEvents({ req, question, scope, context, parsed, actions, focus, model }) {
+  const identityRef = {
+    identityType: 'staff',
+    identityKey: staffIdentityKey(req),
+    authenticated: true,
+  };
+  const events = moduleLearningEventsForAskFriday({
+    context,
+    parsed,
+    question,
+    scope,
+    actions,
+    focus,
+    model,
+    identityRef,
+  });
+  if (events.length === 0) return Promise.resolve([]);
+  return Promise.all(events.map((event) =>
+    recordLearningEvent({ tenantId: req.tenantId, event }).catch((error) => {
+      console.warn(`[fad/friday] module learning event write failed for ${event.surfaceId}:`, error.message);
+      return null;
+    }),
+  ));
 }
 
 router.post('/actions/execute', attachIdentity, async (req, res) => {
@@ -1891,16 +2003,17 @@ router.post('/ask', attachIdentity, async (req, res) => {
     }).catch((e) => {
       console.warn('[fad/friday] suggested actions mirror failed:', e.message);
     });
+    const identityRef = {
+      identityType: 'staff',
+      identityKey: staffIdentityKey(req),
+      authenticated: true,
+    };
     recordLearningEvent({
       tenantId: req.tenantId,
       event: {
         sourceSystem: 'fad',
         surfaceId: 'fad_global_ask_friday',
-        identityRef: {
-          identityType: 'staff',
-          identityKey: staffIdentityKey(req),
-          authenticated: true,
-        },
+        identityRef,
         intent: scope,
         userTurnSummary: question,
         assistantActionSummary: parsed.answer.slice(0, 900),
@@ -1940,6 +2053,18 @@ router.post('/ask', attachIdentity, async (req, res) => {
       },
     }).catch((e) => {
       console.warn('[fad/friday] learning event write failed:', e.message);
+    });
+    mirrorModuleLearningEvents({
+      req,
+      question,
+      scope,
+      context,
+      parsed,
+      actions,
+      focus,
+      model: result.model || null,
+    }).catch((e) => {
+      console.warn('[fad/friday] module learning event mirror failed:', e.message);
     });
     return res.json({
       ...parsed,
@@ -2013,7 +2138,9 @@ module.exports = {
     loadTeamContext,
     loadFocusedTeamContext,
     allowedCoreKnowledgeScopes,
+    allowedCoreTools,
     knowledgeScopesForAskFriday,
+    moduleLearningEventsForAskFriday,
     stableActionRequestId,
     ASK_FRIDAY_MODEL,
     ASK_FRIDAY_MAX_TOKENS,
