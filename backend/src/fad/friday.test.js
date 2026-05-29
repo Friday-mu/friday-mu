@@ -133,17 +133,79 @@ describe('FAD Ask Friday helpers', () => {
     expect(_test.sanitizeFocus(null)).toBeNull();
     expect(_test.sanitizeFocus({})).toBeNull();
     expect(_test.sanitizeFocus({
-      module: 'inbox',
+      module: 'Operations',
       threadId: 'web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
       teamTarget: 'channel:6c4c13d0-d780-4b1c-b2de-4051a9bdd555',
       pageUrl: '/fad?m=inbox&thread=web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+      surfaceId: 'fad_ops_assistant',
+      host: 'fad_right_panel',
+      route: '/fad?m=operations',
+      view: 'Schedule Planner',
+      focusedObject: {
+        type: 'task',
+        id: 'task_123',
+        label: 'Fix AC at GBH-C8',
+        secret: 'drop me',
+      },
+      selection: {
+        selectedIds: ['task_123', 'task_456'],
+        cursorRange: 'rows 1-3',
+      },
+      visibleState: {
+        summary: 'Weekly schedule view with unassigned tasks visible.',
+        activeTab: 'schedule',
+        filters: { date: '2026-05-29', team: 'field', nested: { label: 'visible only' } },
+        counts: { tasks: 18, unassigned: 3 },
+      },
+      allowedActions: ['create_task', 'assign_task', 'apply_schedule_after_approval'],
+      privacyClass: 'staff_private',
+      stalenessMs: 1500.4,
     })).toEqual({
-      module: 'inbox',
+      module: 'operations',
       threadId: 'web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
       focusMessageId: null,
       teamTarget: 'channel:6c4c13d0-d780-4b1c-b2de-4051a9bdd555',
       pageUrl: '/fad?m=inbox&thread=web-8b8914d9-66cd-4bcc-ab3e-1266fae27c69',
+      surfaceId: 'fad_ops_assistant',
+      host: 'fad_right_panel',
+      route: '/fad?m=operations',
+      view: 'schedule planner',
+      focusedObject: {
+        type: 'task',
+        id: 'task_123',
+        label: 'Fix AC at GBH-C8',
+      },
+      selection: {
+        selectedIds: ['task_123', 'task_456'],
+        cursorRange: 'rows 1-3',
+        summary: null,
+      },
+      visibleState: {
+        summary: 'Weekly schedule view with unassigned tasks visible.',
+        activeTab: 'schedule',
+        filters: { date: '2026-05-29', team: 'field', nested: 'visible only' },
+        counts: { tasks: 18, unassigned: 3 },
+      },
+      allowedActions: ['create_task', 'assign_task', 'apply_schedule_after_approval'],
+      privacyClass: 'staff_private',
+      stalenessMs: 1500,
     });
+  });
+
+  test('infers context modules from page focus for shared right panel', () => {
+    expect(_test.contextModulesFromFocus({
+      module: 'ops',
+      view: 'roster_planner',
+      focusedObject: { type: 'task', id: 'task_1' },
+    })).toEqual(['operations']);
+    expect(_test.contextModulesFromFocus({
+      route: '/fad?m=properties',
+      focusedObject: { type: 'reservation', id: 'res_1' },
+    })).toEqual(['properties', 'reservations']);
+    expect(_test.contextModulesFromFocus({
+      teamTarget: 'channel:ops',
+      pageUrl: '/fad?m=team_inbox',
+    })).toEqual(['team']);
   });
 
   test('parses TeamInbox focus targets for channel and DM context', () => {
