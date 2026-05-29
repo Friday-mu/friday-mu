@@ -116,6 +116,12 @@ function parseJsonish(raw) {
   return null;
 }
 
+function isIncompleteFinishReason(value) {
+  const reason = String(value || '').trim().toLowerCase();
+  if (!reason || reason === 'unknown' || reason === 'stop') return false;
+  return true;
+}
+
 // One-shot Gemini call. Same return shape as callKimiOnce so the
 // caller can drop one in for the other. JSON-mode is opt-in via the
 // `responseJson` flag (sets responseMimeType=application/json) — used
@@ -156,6 +162,17 @@ async function callGeminiOnce({ system, user, model, maxTokens, temperature, tim
         latencyMs: Date.now() - start,
         inputTokens: usage.promptTokenCount ?? null,
         outputTokens: usage.candidatesTokenCount ?? null,
+      };
+    }
+    if (isIncompleteFinishReason(finishReason)) {
+      return {
+        ok: false,
+        error: `incomplete response (finish_reason=${finishReason})`,
+        finishReason,
+        latencyMs: Date.now() - start,
+        inputTokens: usage.promptTokenCount ?? null,
+        outputTokens: usage.candidatesTokenCount ?? null,
+        partialText: text.slice(0, 500),
       };
     }
     return {
@@ -219,6 +236,17 @@ async function callKimiOnce({ system, user, model, maxTokens, temperature, timeo
         latencyMs: Date.now() - start,
         inputTokens: data?.usage?.prompt_tokens ?? null,
         outputTokens: data?.usage?.completion_tokens ?? null,
+      };
+    }
+    if (isIncompleteFinishReason(finishReason)) {
+      return {
+        ok: false,
+        error: `incomplete response (finish_reason=${finishReason})`,
+        finishReason,
+        latencyMs: Date.now() - start,
+        inputTokens: data?.usage?.prompt_tokens ?? null,
+        outputTokens: data?.usage?.completion_tokens ?? null,
+        partialText: text.slice(0, 500),
       };
     }
     return {
@@ -315,7 +343,7 @@ async function callWithRetry(opts) {
       result.finishReason
       && ['content_filter', 'length'].includes(result.finishReason)
     ) {
-      console.warn(`[ai/kimi-draft] non-retryable: empty content with finish_reason=${result.finishReason} (in=${result.inputTokens} out=${result.outputTokens})`);
+      console.warn(`[ai/kimi-draft] non-retryable: incomplete content with finish_reason=${result.finishReason} (in=${result.inputTokens} out=${result.outputTokens})`);
       return result;
     }
     if (
