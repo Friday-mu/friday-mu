@@ -38,20 +38,117 @@ function parseInboxFocusThreadId(value) {
   return isUuid(raw) ? { kind: 'guesty', id: raw, raw } : null;
 }
 
+function cleanStringList(value, maxItems = 12, maxChars = 120) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => cleanString(item, maxChars))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function sanitizeScalarMap(value, maxEntries = 16, maxChars = 180) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value)
+    .slice(0, maxEntries)
+    .map(([key, raw]) => {
+      const cleanKey = cleanString(key, 80);
+      if (!cleanKey) return null;
+      if (raw == null) return [cleanKey, raw];
+      if (Array.isArray(raw)) return [cleanKey, cleanStringList(raw, 8, maxChars)];
+      if (typeof raw === 'number' || typeof raw === 'boolean') return [cleanKey, raw];
+      if (typeof raw === 'string') return [cleanKey, cleanString(raw, maxChars)];
+      return [cleanKey, cleanString(raw.label || raw.id || raw.value || '', maxChars)];
+    })
+    .filter(Boolean)
+    .filter(([, raw]) => raw !== '' && !(Array.isArray(raw) && raw.length === 0));
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+function sanitizeFocusedObject(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const type = cleanString(raw.type || raw.kind, 80).toLowerCase();
+  const id = cleanString(raw.id || raw.objectId || raw.object_id, 140);
+  const label = cleanString(raw.label || raw.title || raw.name, 180);
+  if (!type && !id && !label) return null;
+  return {
+    type: type || null,
+    id: id || null,
+    label: label || null,
+  };
+}
+
+function sanitizeSelection(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const selectedIds = cleanStringList(raw.selectedIds || raw.selected_ids || raw.ids, 20, 140);
+  const cursorRange = cleanString(raw.cursorRange || raw.cursor_range, 120);
+  const summary = cleanString(raw.summary, 240);
+  if (!selectedIds.length && !cursorRange && !summary) return null;
+  return {
+    selectedIds,
+    cursorRange: cursorRange || null,
+    summary: summary || null,
+  };
+}
+
+function sanitizeVisibleState(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const summary = cleanString(raw.summary, 700);
+  const activeTab = cleanString(raw.activeTab || raw.active_tab || raw.tab, 80);
+  const filters = sanitizeScalarMap(raw.filters, 16, 160);
+  const counts = sanitizeScalarMap(raw.counts || raw.visibleCounts || raw.visible_counts, 16, 80);
+  if (!summary && !activeTab && !filters && !counts) return null;
+  return {
+    summary: summary || null,
+    activeTab: activeTab || null,
+    filters: filters || null,
+    counts: counts || null,
+  };
+}
+
+function cleanStalenessMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(Math.round(n), 600_000);
+}
+
 function sanitizeFocus(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const module = cleanString(raw.module, 40).toLowerCase();
+  const module = normalizeFocusModule(raw.module) || cleanString(raw.module, 40).toLowerCase();
   const threadId = cleanString(raw.threadId || raw.thread_id, 80);
   const focusMessageId = cleanString(raw.focusMessageId || raw.focus_message_id || raw.messageId, 80);
   const teamTarget = cleanString(raw.teamTarget || raw.team, 120);
   const pageUrl = cleanString(raw.pageUrl || raw.page_url, 600);
-  if (!module && !threadId && !focusMessageId && !teamTarget && !pageUrl) return null;
+  const surfaceId = cleanString(raw.surfaceId || raw.surface_id, 100);
+  const host = cleanString(raw.host, 80);
+  const route = cleanString(raw.route || raw.pageRoute || raw.page_route, 300);
+  const view = cleanString(raw.view, 100).toLowerCase();
+  const focusedObject = sanitizeFocusedObject(raw.focusedObject || raw.focused_object || raw.object);
+  const selection = sanitizeSelection(raw.selection);
+  const visibleState = sanitizeVisibleState(raw.visibleState || raw.visible_state);
+  const allowedActions = cleanStringList(raw.allowedActions || raw.allowed_actions, 12, 80);
+  const privacyClass = cleanString(raw.privacyClass || raw.privacy_class, 60).toLowerCase();
+  const stalenessMs = cleanStalenessMs(raw.stalenessMs ?? raw.staleness_ms);
+  if (
+    !module && !threadId && !focusMessageId && !teamTarget && !pageUrl &&
+    !surfaceId && !host && !route && !view && !focusedObject && !selection &&
+    !visibleState && !allowedActions.length && !privacyClass && stalenessMs == null
+  ) return null;
   return {
     module: module || null,
     threadId: threadId || null,
     focusMessageId: focusMessageId || null,
     teamTarget: teamTarget || null,
     pageUrl: pageUrl || null,
+    surfaceId: surfaceId || null,
+    host: host || null,
+    route: route || null,
+    view: view || null,
+    focusedObject,
+    selection,
+    visibleState,
+    allowedActions,
+    privacyClass: privacyClass || null,
+    stalenessMs,
   };
 }
 // 2026-05-23 — bumped 45s → 8min (provider) / 25s → 90s (auto mode).
@@ -400,6 +497,102 @@ function questionHintsModule(question = '', module) {
   if (module === 'reservations') return /\b(reservation|booking|arrival|arriving|check.?in|checkout|stay|returning guest|who'?s checking in)\b/i.test(question);
   if (module === 'properties') return hasPropertyCode || /\b(property|properties|villa|listing|availability|calendar|amenit|bedroom|bathroom)\b/i.test(question);
   return false;
+}
+
+function normalizeFocusModule(value) {
+  const raw = cleanString(value, 120).toLowerCase();
+  if (!raw) return null;
+  const normalized = raw.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const aliases = {
+    ops: 'operations',
+    operation: 'operations',
+    operations: 'operations',
+    tasks: 'operations',
+    schedule: 'operations',
+    roster: 'operations',
+    fad_ops_assistant: 'operations',
+    fad_operations: 'operations',
+    inbox: 'inbox',
+    guest_inbox: 'inbox',
+    guest_messages: 'inbox',
+    website_handoff: 'inbox',
+    fad_inbox_assistant: 'inbox',
+    team: 'team',
+    team_inbox: 'team',
+    teaminbox: 'team',
+    team_messages: 'team',
+    staff_chat: 'team',
+    hr: 'hr',
+    people: 'hr',
+    staff: 'hr',
+    reviews: 'reviews',
+    review: 'reviews',
+    design: 'design',
+    reservations: 'reservations',
+    reservation: 'reservations',
+    bookings: 'reservations',
+    booking: 'reservations',
+    properties: 'properties',
+    property: 'properties',
+    listings: 'properties',
+    listing: 'properties',
+  };
+  if (ASK_FRIDAY_CONTEXT_MODULES.includes(normalized)) return normalized;
+  if (aliases[normalized]) return aliases[normalized];
+  if (/\b(ops|operations|schedule|roster|task|tasks)\b/.test(normalized)) return 'operations';
+  if (/\b(team_inbox|teaminbox|team_messages|staff_chat)\b/.test(normalized)) return 'team';
+  if (/\b(inbox|guest_messages|guest_inbox|handoff)\b/.test(normalized)) return 'inbox';
+  if (/\b(reservation|reservations|booking|bookings)\b/.test(normalized)) return 'reservations';
+  if (/\b(property|properties|listing|listings)\b/.test(normalized)) return 'properties';
+  if (/\b(review|reviews)\b/.test(normalized)) return 'reviews';
+  if (/\b(design)\b/.test(normalized)) return 'design';
+  if (/\b(hr|people|staff)\b/.test(normalized)) return 'hr';
+  return null;
+}
+
+function routeModuleHint(value) {
+  const raw = cleanString(value, 600).toLowerCase();
+  if (!raw) return null;
+  const queryMatch = raw.match(/[?&](?:m|module|scope)=([a-z0-9_-]+)/i);
+  if (queryMatch) {
+    const module = normalizeFocusModule(queryMatch[1]);
+    if (module) return module;
+  }
+  const pathMatch = raw.match(/\/fad\/?([a-z0-9_-]+)?/i);
+  if (pathMatch?.[1]) {
+    const module = normalizeFocusModule(pathMatch[1]);
+    if (module) return module;
+  }
+  return normalizeFocusModule(raw);
+}
+
+function focusedObjectModuleHint(focusedObject) {
+  const type = cleanString(focusedObject?.type, 80).toLowerCase();
+  if (!type) return null;
+  if (/\b(task|issue|work_order|workorder|schedule|roster)\b/.test(type)) return 'operations';
+  if (/\b(conversation|thread|guest_message|message|handoff|draft)\b/.test(type)) return 'inbox';
+  if (/\b(team|channel|dm|direct_message)\b/.test(type)) return 'team';
+  if (/\b(reservation|booking|stay)\b/.test(type)) return 'reservations';
+  if (/\b(property|listing|villa)\b/.test(type)) return 'properties';
+  if (/\b(review|rating)\b/.test(type)) return 'reviews';
+  if (/\b(project|design)\b/.test(type)) return 'design';
+  if (/\b(staff|user|employee|leave)\b/.test(type)) return 'hr';
+  return null;
+}
+
+function contextModulesFromFocus(focus = null) {
+  if (!focus) return [];
+  const candidates = [
+    normalizeFocusModule(focus.module),
+    normalizeFocusModule(focus.surfaceId),
+    normalizeFocusModule(focus.view),
+    routeModuleHint(focus.route),
+    routeModuleHint(focus.pageUrl),
+    focusedObjectModuleHint(focus.focusedObject),
+  ].filter(Boolean);
+  if (focus.threadId && parseInboxFocusThreadId(focus.threadId)) candidates.push('inbox');
+  if (focus.teamTarget) candidates.push('team');
+  return [...new Set(candidates.filter((module) => ASK_FRIDAY_CONTEXT_MODULES.includes(module)))];
 }
 
 function isBroadAllFadQuestion({ question = '', scope = '' }) {
@@ -1197,14 +1390,13 @@ async function loadPropertiesContext(tenantId) {
 async function loadFridayContext({ tenantId, question, scope, focus, identity = {} }) {
   const requested = ASK_FRIDAY_CONTEXT_MODULES
     .filter((module) => shouldLoad({ question, scope }, module));
-  // If the operator is focused on a specific inbox thread, force-include
-  // 'inbox' so the focused-thread bundle ships even when the question text
-  // doesn't otherwise trip the inbox heuristic ("explain this handoff" did
-  // not, which is how Franny's bug manifested).
-  const focusForcedInbox = focus?.threadId && parseInboxFocusThreadId(focus.threadId);
   let effective = requested.length > 0 ? requested : ['inbox', 'operations', 'reservations', 'properties'];
-  if (focusForcedInbox && !effective.includes('inbox')) effective = ['inbox', ...effective];
-  if (focus?.teamTarget && !effective.includes('team')) effective = ['team', ...effective];
+  // The shared right panel is page-aware: when the host tells Core the active
+  // module/object, that focused module must be present even for vague prompts
+  // such as "what should I do next?"
+  for (const focusModule of contextModulesFromFocus(focus).reverse()) {
+    if (!effective.includes(focusModule)) effective = [focusModule, ...effective];
+  }
   const loaders = {
     inbox: () => loadInboxContext(tenantId, focus),
     team: () => loadTeamContext(tenantId, identity, focus, { includeDms: questionWantsDmContext(question) }),
@@ -1248,6 +1440,7 @@ Rules:
 - Treat context.dataTruth as binding. Never infer from, cite, summarize, or act on demo/fixture module data. If a module is excluded because it is not live-wired yet, say that plainly.
 - Keep ownership boundaries clear: Inbox owns guest communication context; TeamInbox is staff-only internal discussion/evidence, not canonical truth; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
 - **Focus rule:** if a section named "focused_inbox_thread" is present under context.sections[*].data.sections (or anywhere in the inbox subtree), the operator is asking about THAT specific thread. Anchor your answer on its messages / events / latestAiHandoff. The other inbox entries are background context only — do not summarize or mix them in unless the question explicitly asks for a cross-thread comparison.
+- **Page focus rule:** operatorFocus is compact page state from the current FAD surface. Use operatorFocus.module/view/focusedObject/selection/visibleState to understand where the staff member is working, but treat it as navigation/attention context only. Operational truth still comes from context.sections and owning module tools.
 - For "explain this AI handoff" / "what's going on with this guest" / "summarise this conversation" style questions, use only the focused thread's events and latestAiHandoff payload; do not pull in unrelated threads.
 - If TeamInbox context is present, treat it as what the team is discussing. Use it to explain team intent, blockers, and next checks, but confirm operational truth against the owning module before making commitments.
 - Prefer concise operational answers: answer first, then the evidence or next check.
@@ -1594,6 +1787,8 @@ module.exports = {
     shapeReview,
     buildListingIndex,
     sanitizeFocus,
+    normalizeFocusModule,
+    contextModulesFromFocus,
     parseInboxFocusThreadId,
     parseTeamTarget,
     questionWantsDmContext,

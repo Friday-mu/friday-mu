@@ -106,6 +106,8 @@ Read these first, in order:
    - Current Plan 3 source-truth packet for Website public Ask Friday, owner enquiry/FAD owners assistant, and feedback/bug-learning surfaces.
 13. `docs/architecture/ask-friday-public-owner-feedback-contracts-2026-05-28.md`
    - Contract draft for Website context-pack consumption, Website learning-event emission, owner lead capsules, feedback evidence capsules, and takeover alignment.
+14. `docs/architecture/ask-friday-right-panel-focus-contract-2026-05-29.md`
+   - Backend contract for the shared FAD Ask Friday right panel page-focus envelope: module/view/object/selection/visible-state context, action-boundary notes, and frontend wiring guidance.
 
 ## Master Plan And Subplans
 
