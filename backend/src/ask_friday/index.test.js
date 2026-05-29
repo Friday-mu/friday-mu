@@ -207,6 +207,114 @@ describe('Ask Friday Core router', () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 
+  test('returns staff readiness with context-pack and eval coverage', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{
+        ...surfaceRow({
+          surface_id: 'fad_reservations_calendar_assistant',
+          display_name: 'Reservations / Calendar Assistant',
+          audience: 'staff',
+          source_system: 'fad',
+          access_class: 'staff',
+          allowed_knowledge_scopes: ['reservations-calendar', 'availability'],
+          allowed_tools: ['load_calendar_context'],
+          allowed_actions: ['request_booking_quote'],
+          eval_suite_ids: ['reservations_calendar_actions'],
+        }),
+        draft_pack_id: 'fad_reservations_calendar_assistant_v1_draft',
+        draft_version: 1,
+        draft_status: 'draft',
+        draft_approved_by: null,
+        draft_approved_at: null,
+        draft_published_at: null,
+        draft_updated_at: new Date('2026-05-29T08:00:00.000Z'),
+        published_pack_id: null,
+        published_version: null,
+        published_status: null,
+        published_approved_by: null,
+        published_approved_at: null,
+        published_published_at: null,
+        published_updated_at: null,
+        active_eval_case_count: 2,
+        active_eval_suite_ids: ['reservations_calendar_actions'],
+      }, {
+        ...surfaceRow({
+          surface_id: 'website_guest_hero',
+          display_name: 'Website Guest Hero',
+          audience: 'public',
+          source_system: 'friday-website',
+          access_class: 'public',
+          allowed_knowledge_scopes: ['public_brand'],
+          allowed_tools: ['search_residences'],
+          allowed_actions: ['request_handoff'],
+          eval_suite_ids: ['website_public_contracts'],
+        }),
+        draft_pack_id: null,
+        draft_version: null,
+        draft_status: null,
+        draft_approved_by: null,
+        draft_approved_at: null,
+        draft_published_at: null,
+        draft_updated_at: null,
+        published_pack_id: null,
+        published_version: null,
+        published_status: null,
+        published_approved_by: null,
+        published_approved_at: null,
+        published_published_at: null,
+        published_updated_at: null,
+        active_eval_case_count: 0,
+        active_eval_suite_ids: [],
+      }],
+    });
+
+    const res = await request(app())
+      .get('/api/ask-friday/core/readiness?status=all')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .expect(200);
+
+    expect(res.body.summary).toMatchObject({
+      total: 2,
+      active: 2,
+      ready: 1,
+      blocked: 1,
+      missingPublishedContextPacks: 1,
+      missingEvalCoverage: 1,
+    });
+    expect(res.body.surfaces[0]).toMatchObject({
+      surfaceId: 'fad_reservations_calendar_assistant',
+      readinessStatus: 'ready',
+      contextPackExpectation: {
+        hasTemplate: true,
+        requiredStatus: 'draft_or_published',
+      },
+      contextPacks: {
+        latestDraft: {
+          packId: 'fad_reservations_calendar_assistant_v1_draft',
+          status: 'draft',
+        },
+      },
+      evals: {
+        activeCaseCount: 2,
+        missingDeclaredSuiteIds: [],
+      },
+    });
+    expect(res.body.surfaces[1].flags).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'missing_published_context_pack', severity: 'blocker' }),
+      expect.objectContaining({ code: 'missing_eval_cases', severity: 'warning' }),
+    ]));
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][1]).toEqual([TENANT_ID]);
+  });
+
+  test('requires staff auth for readiness reports', async () => {
+    await request(app())
+      .get('/api/ask-friday/core/readiness')
+      .expect(401);
+
+    expect(query).not.toHaveBeenCalled();
+  });
+
   test('creates and reviews KB candidates through staff auth only', async () => {
     query
       .mockResolvedValueOnce({

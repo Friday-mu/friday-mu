@@ -23,6 +23,7 @@ const TEAM_CONTEXT_MESSAGE_LIMIT = 8;
 const TEAM_FOCUS_MESSAGE_LIMIT = 24;
 const WEBSITE_CONVERSATION_PREFIX = 'web-';
 const WEBSITE_DRAFT_EVENT_TYPES_SQL = "('ai.friday_drafting', 'ai.draft_ready', 'ai.draft_generation_failed')";
+const ASK_FRIDAY_GLOBAL_SURFACE_ID = 'fad_global_ask_friday';
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
@@ -205,6 +206,13 @@ const ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES = {
   reservations: 'reservations',
   properties: 'properties',
 };
+const ASK_FRIDAY_MODULE_SURFACE_IDS = {
+  inbox: 'fad_consult',
+  team: ASK_FRIDAY_GLOBAL_SURFACE_ID,
+  operations: 'fad_ops_assistant',
+  reservations: 'fad_reservations_calendar_assistant',
+  properties: 'fad_properties_assistant',
+};
 const ASK_FRIDAY_EXCLUDED_DEMO_MODULES = [
   'finance',
   'calendar',
@@ -236,8 +244,91 @@ function cleanString(value, max = 500) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function coreSurfaceIdsForContext(modules = [], focus = null) {
+  const ids = new Set([ASK_FRIDAY_GLOBAL_SURFACE_ID]);
+  for (const moduleName of modules || []) {
+    const surfaceId = ASK_FRIDAY_MODULE_SURFACE_IDS[cleanString(moduleName, 80).toLowerCase()];
+    if (surfaceId) ids.add(surfaceId);
+  }
+  const focusSurfaceId = cleanString(focus?.surfaceId || focus?.surface_id, 120);
+  if (focusSurfaceId) ids.add(focusSurfaceId);
+  return [...ids].slice(0, 12);
+}
+
 function cleanAnswer(value, max = 5000) {
   return String(value || '').trim().slice(0, max);
+}
+
+function compactBehaviorRules(rules) {
+  if (!Array.isArray(rules)) return [];
+  return rules.slice(0, 12).map((rule) => ({
+    id: cleanString(rule?.id, 100) || null,
+    priority: cleanString(rule?.priority, 40) || null,
+    rule: cleanString(rule?.rule || rule?.text || rule?.description, 700),
+  })).filter((rule) => rule.rule);
+}
+
+function compactStringArray(value, maxItems = 12, maxChars = 300) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => cleanString(item, maxChars)).filter(Boolean).slice(0, maxItems);
+}
+
+function compactPackPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
+  return {
+    contextPackClass: cleanString(payload.contextPackClass || payload.context_pack_class, 140) || null,
+    statusNote: cleanString(payload.statusNote || payload.status_note, 300) || null,
+    includedContext: compactStringArray(payload.includedContext || payload.included_context, 12, 300),
+    excludedContext: compactStringArray(payload.excludedContext || payload.excluded_context, 12, 300),
+    primaryJobs: compactStringArray(payload.primaryJobs || payload.primary_jobs, 12, 300),
+    freshnessRules: compactStringArray(payload.freshnessRules || payload.freshness_rules, 12, 300),
+    reviewBlockersBeforePublish: compactStringArray(
+      payload.reviewBlockersBeforePublish || payload.review_blockers_before_publish,
+      12,
+      300,
+    ),
+  };
+}
+
+function shapeCoreContextPack(row, prefix) {
+  const packId = row?.[`${prefix}_pack_id`];
+  if (!packId) return null;
+  return {
+    packId,
+    version: row[`${prefix}_version`],
+    status: row[`${prefix}_status`],
+    behaviorRules: compactBehaviorRules(row[`${prefix}_behavior_rules`]),
+    toolPolicy: row[`${prefix}_tool_policy`] || {},
+    memoryPolicy: row[`${prefix}_memory_policy`] || {},
+    packPayload: compactPackPayload(row[`${prefix}_pack_payload`]),
+    approvedBy: row[`${prefix}_approved_by`] || null,
+    approvedAt: row[`${prefix}_approved_at`] || null,
+    publishedAt: row[`${prefix}_published_at`] || null,
+    updatedAt: row[`${prefix}_updated_at`] || null,
+  };
+}
+
+function shapeCoreSurfaceState(row) {
+  const latestPublished = shapeCoreContextPack(row, 'published');
+  const latestDraft = shapeCoreContextPack(row, 'draft');
+  return {
+    surfaceId: row.surface_id,
+    displayName: row.display_name,
+    sourceSystem: row.source_system,
+    accessClass: row.access_class,
+    status: row.status,
+    allowedKnowledgeScopes: row.allowed_knowledge_scopes || [],
+    allowedTools: row.allowed_tools || [],
+    allowedActions: row.allowed_actions || [],
+    memoryPolicy: row.memory_policy || {},
+    handoffPolicy: row.handoff_policy || {},
+    modelPolicy: row.model_policy || {},
+    contextBudget: row.context_budget || {},
+    evalSuiteIds: row.eval_suite_ids || [],
+    contextPackStatus: latestPublished ? 'published' : latestDraft ? 'draft' : 'missing',
+    latestPublished,
+    latestDraft,
+  };
 }
 
 function cleanPayload(value) {
@@ -707,6 +798,91 @@ function contextDataTruth() {
     excludedModules: ASK_FRIDAY_EXCLUDED_DEMO_MODULES,
     policy: 'Ask Friday context loaders must use live database/API sources only. Fixture/demo module data is excluded from production prompts.',
   };
+}
+
+async function loadAskFridayCoreSurfaceState(tenantId, modules, focus = null) {
+  const surfaceIds = coreSurfaceIdsForContext(modules, focus);
+  try {
+    const { rows } = await query(
+      `SELECT
+         s.surface_id,
+         s.display_name,
+         s.source_system,
+         s.access_class,
+         s.status,
+         s.allowed_knowledge_scopes,
+         s.allowed_tools,
+         s.allowed_actions,
+         s.memory_policy,
+         s.handoff_policy,
+         s.model_policy,
+         s.context_budget,
+         s.eval_suite_ids,
+         draft.pack_id AS draft_pack_id,
+         draft.version AS draft_version,
+         draft.status AS draft_status,
+         draft.behavior_rules AS draft_behavior_rules,
+         draft.tool_policy AS draft_tool_policy,
+         draft.memory_policy AS draft_memory_policy,
+         draft.pack_payload AS draft_pack_payload,
+         draft.approved_by AS draft_approved_by,
+         draft.approved_at AS draft_approved_at,
+         draft.published_at AS draft_published_at,
+         draft.updated_at AS draft_updated_at,
+         published.pack_id AS published_pack_id,
+         published.version AS published_version,
+         published.status AS published_status,
+         published.behavior_rules AS published_behavior_rules,
+         published.tool_policy AS published_tool_policy,
+         published.memory_policy AS published_memory_policy,
+         published.pack_payload AS published_pack_payload,
+         published.approved_by AS published_approved_by,
+         published.approved_at AS published_approved_at,
+         published.published_at AS published_published_at,
+         published.updated_at AS published_updated_at
+       FROM ask_friday_surfaces s
+       LEFT JOIN LATERAL (
+         SELECT pack_id, version, status, behavior_rules, tool_policy, memory_policy,
+                pack_payload, approved_by, approved_at, published_at, updated_at
+           FROM ask_friday_context_packs
+          WHERE tenant_id = s.tenant_id
+            AND surface_id = s.surface_id
+            AND status = 'draft'
+          ORDER BY version DESC, updated_at DESC
+          LIMIT 1
+       ) draft ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT pack_id, version, status, behavior_rules, tool_policy, memory_policy,
+                pack_payload, approved_by, approved_at, published_at, updated_at
+           FROM ask_friday_context_packs
+          WHERE tenant_id = s.tenant_id
+            AND surface_id = s.surface_id
+            AND status = 'published'
+          ORDER BY version DESC, updated_at DESC
+          LIMIT 1
+       ) published ON TRUE
+      WHERE s.tenant_id = $1
+        AND s.surface_id = ANY($2::text[])
+      ORDER BY ARRAY_POSITION($2::text[], s.surface_id)`,
+      [tenantId, surfaceIds],
+    );
+    return {
+      ok: true,
+      source: 'ask_friday_core',
+      surfaceIds,
+      surfaces: rows.map(shapeCoreSurfaceState),
+      policy: 'Use published context packs as canonical runtime guidance. Draft packs are staff-private planning guidance only and must not be treated as public or canonical truth.',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'ask_friday_core',
+      surfaceIds,
+      surfaces: [],
+      error: cleanString(error.message, 300),
+      policy: 'Ask Friday Core surface state was unavailable; answer from live FAD context only and say Core governance context could not be loaded if relevant.',
+    };
+  }
 }
 
 async function safeSection(name, loader) {
@@ -1408,12 +1584,14 @@ async function loadFridayContext({ tenantId, question, scope, focus, identity = 
     properties: () => loadPropertiesContext(tenantId),
   };
   const sections = await Promise.all(effective.map((name) => safeSection(name, loaders[name])));
+  const askFridayCore = await loadAskFridayCoreSurfaceState(tenantId, effective, focus);
   return {
     tenantId,
     requestedModules: effective,
     focus: focus || null,
     checkedAt: new Date().toISOString(),
     dataTruth: contextDataTruth(),
+    askFridayCore,
     sections,
   };
 }
@@ -1438,6 +1616,7 @@ Purpose:
 Rules:
 - Use only the supplied context. If a source is unavailable or missing, say that plainly.
 - Treat context.dataTruth as binding. Never infer from, cite, summarize, or act on demo/fixture module data. If a module is excluded because it is not live-wired yet, say that plainly.
+- Treat context.askFridayCore as governance context for the active Ask Friday surface(s): published context packs are canonical guidance; draft packs are staff-private planning guidance only; missing Core surface state means you must fall back to live FAD context and say what is missing if relevant.
 - Keep ownership boundaries clear: Inbox owns guest communication context; TeamInbox is staff-only internal discussion/evidence, not canonical truth; Operations owns real tasks/issues; HR owns staff/roster; Design owns design projects; Reviews are read-only Guesty feedback.
 - **Focus rule:** if a section named "focused_inbox_thread" is present under context.sections[*].data.sections (or anywhere in the inbox subtree), the operator is asking about THAT specific thread. Anchor your answer on its messages / events / latestAiHandoff. The other inbox entries are background context only — do not summarize or mix them in unless the question explicitly asks for a cross-thread comparison.
 - **Page focus rule:** operatorFocus is compact page state from the current FAD surface. Use operatorFocus.module/view/focusedObject/selection/visibleState to understand where the staff member is working, but treat it as navigation/attention context only. Operational truth still comes from context.sections and owning module tools.
@@ -1601,7 +1780,15 @@ function mirrorCoreActionRequests({ req, actions, reason }) {
   ));
 }
 
-function knowledgeScopesForAskFriday(context, parsed) {
+function allowedCoreKnowledgeScopes(context, surfaceId) {
+  const surface = (context?.askFridayCore?.surfaces || [])
+    .find((item) => item.surfaceId === surfaceId);
+  return Array.isArray(surface?.allowedKnowledgeScopes)
+    ? surface.allowedKnowledgeScopes.map((scope) => cleanString(scope, 160)).filter(Boolean)
+    : [];
+}
+
+function knowledgeScopesForAskFriday(context, parsed, eventSurfaceId = ASK_FRIDAY_GLOBAL_SURFACE_ID) {
   const scopes = new Set(['fad_live_context']);
   for (const moduleName of context?.requestedModules || []) {
     const scope = ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES[moduleName];
@@ -1611,7 +1798,9 @@ function knowledgeScopesForAskFriday(context, parsed) {
     const scope = ASK_FRIDAY_MODULE_KNOWLEDGE_SCOPES[cleanString(source, 80).toLowerCase()];
     if (scope) scopes.add(scope);
   }
-  return [...scopes];
+  const allowed = allowedCoreKnowledgeScopes(context, eventSurfaceId);
+  const result = [...scopes].slice(0, 40);
+  return allowed.length ? result.filter((scope) => allowed.includes(scope)) : result;
 }
 
 router.post('/actions/execute', attachIdentity, async (req, res) => {
@@ -1723,6 +1912,15 @@ router.post('/ask', attachIdentity, async (req, res) => {
         signals: {
           actionCount: actions.length,
           requestedModules: context.requestedModules,
+          askFridayCore: {
+            ok: context.askFridayCore?.ok,
+            surfaceIds: context.askFridayCore?.surfaceIds || [],
+            surfaces: (context.askFridayCore?.surfaces || []).map((surface) => ({
+              surfaceId: surface.surfaceId,
+              status: surface.status,
+              contextPackStatus: surface.contextPackStatus,
+            })),
+          },
           sourceStatus: context.sections.map((s) => ({
             name: s.name,
             ok: s.ok,
@@ -1751,6 +1949,21 @@ router.post('/ask', attachIdentity, async (req, res) => {
       contextSummary: {
         requestedModules: context.requestedModules,
         dataTruth: context.dataTruth,
+        askFridayCore: {
+          ok: context.askFridayCore?.ok,
+          source: context.askFridayCore?.source || 'ask_friday_core',
+          surfaceIds: context.askFridayCore?.surfaceIds || [],
+          surfaces: (context.askFridayCore?.surfaces || []).map((surface) => ({
+            surfaceId: surface.surfaceId,
+            displayName: surface.displayName,
+            status: surface.status,
+            accessClass: surface.accessClass,
+            contextPackStatus: surface.contextPackStatus,
+            latestContextPackId: surface.latestPublished?.packId || surface.latestDraft?.packId || null,
+            latestContextPackVersion: surface.latestPublished?.version || surface.latestDraft?.version || null,
+          })),
+          error: context.askFridayCore?.error || null,
+        },
         focus: context.focus || null,
         sourceStatus: context.sections.map((s) => ({
           name: s.name,
@@ -1774,6 +1987,9 @@ module.exports = {
     buildUserPrompt,
     parseModelResponse,
     sanitizeHistory,
+    coreSurfaceIdsForContext,
+    shapeCoreSurfaceState,
+    loadAskFridayCoreSurfaceState,
     cleanAction,
     actionPolicyError,
     sanitizeActions,
@@ -1796,6 +2012,7 @@ module.exports = {
     loadFocusedWebsiteThread,
     loadTeamContext,
     loadFocusedTeamContext,
+    allowedCoreKnowledgeScopes,
     knowledgeScopesForAskFriday,
     stableActionRequestId,
     ASK_FRIDAY_MODEL,
