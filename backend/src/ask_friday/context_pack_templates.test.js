@@ -1,8 +1,14 @@
 'use strict';
 
 const {
+  FAD_CONSULT_ACTION_ALLOWLIST,
+  FAD_CONSULT_TOOL_ALLOWLIST,
+  FAD_GLOBAL_ACTION_ALLOWLIST,
+  FAD_GLOBAL_TOOL_ALLOWLIST,
   OWNER_ENQUIRY_ACTION_ALLOWLIST,
   OWNER_ENQUIRY_TOOL_ALLOWLIST,
+  OPS_ASSISTANT_ACTION_ALLOWLIST,
+  OPS_ASSISTANT_TOOL_ALLOWLIST,
   PROPERTIES_ASSISTANT_ACTION_ALLOWLIST,
   PROPERTIES_ASSISTANT_TOOL_ALLOWLIST,
   RESERVATIONS_CALENDAR_ACTION_ALLOWLIST,
@@ -10,6 +16,7 @@ const {
   WEBSITE_ASK_FRIDAY_FAB_TOOL_ALLOWLIST,
   WEBSITE_GUEST_HERO_TOOL_ALLOWLIST,
   WEBSITE_TOOL_ALLOWLIST,
+  fadRuntimeDraftContextPacks,
   plan2StaffDraftContextPacks,
   websitePublicDraftContextPacks,
 } = require('./context_pack_templates');
@@ -49,6 +56,73 @@ function websiteSurface(surfaceId) {
 }
 
 function staffShellSurface(surfaceId) {
+  if (surfaceId === 'fad_global_ask_friday') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'fad',
+      access_class: 'staff',
+      status: 'active',
+      allowed_knowledge_scopes: [
+        'fad_live_context',
+        'staff_inbox',
+        'ops_tasks',
+        'reservations',
+        'properties',
+        'hr_staff',
+        'reviews',
+        'design_projects',
+      ],
+      allowed_tools: FAD_GLOBAL_TOOL_ALLOWLIST,
+      allowed_actions: FAD_GLOBAL_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'fad_consult') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'fad',
+      access_class: 'staff',
+      status: 'active',
+      allowed_knowledge_scopes: [
+        'staff_inbox',
+        'property_cards',
+        'teachings',
+        'ops_context',
+        'guest_context',
+        'approved_public_kb',
+        'inbox-drafts',
+        'inbox-advisory',
+        'pending-actions',
+        'learning-analyzer',
+        'inquiry-followup',
+      ],
+      allowed_tools: FAD_CONSULT_TOOL_ALLOWLIST,
+      allowed_actions: FAD_CONSULT_ACTION_ALLOWLIST,
+    };
+  }
+  if (surfaceId === 'fad_ops_assistant') {
+    return {
+      surface_id: surfaceId,
+      source_system: 'fad',
+      access_class: 'staff',
+      status: 'active',
+      allowed_knowledge_scopes: [
+        'ops_tasks',
+        'reservations',
+        'properties',
+        'staff_runbooks',
+        'approved_public_kb',
+        'ops-consult',
+        'schedule_policy',
+        'task_taxonomy',
+        'property_ops_metadata',
+        'owner_approval_rules',
+        'vendor_policy',
+        'supplies_policy',
+      ],
+      allowed_tools: OPS_ASSISTANT_TOOL_ALLOWLIST,
+      allowed_actions: OPS_ASSISTANT_ACTION_ALLOWLIST,
+    };
+  }
   if (surfaceId === 'fad_reservations_calendar_assistant') {
     return {
       surface_id: surfaceId,
@@ -144,6 +218,60 @@ describe('Ask Friday public Website context-pack templates', () => {
       expect(blockers).not.toContain('screenshot');
       expect(blockers).not.toContain('diagnostic');
     }
+  });
+});
+
+describe('Ask Friday active FAD runtime context-pack templates', () => {
+  test('active runtime drafts validate against their surface policies', () => {
+    for (const draft of fadRuntimeDraftContextPacks()) {
+      const pack = normalizeContextPack(draft);
+      expect(pack.status).toBe('draft');
+      expect(() => validateContextPackAgainstSurface(pack, staffShellSurface(pack.surfaceId))).not.toThrow();
+    }
+  });
+
+  test('active runtime drafts cover global, Inbox Consult, and Ops surfaces', () => {
+    expect(fadRuntimeDraftContextPacks().map((draft) => draft.surfaceId)).toEqual([
+      'fad_global_ask_friday',
+      'fad_consult',
+      'fad_ops_assistant',
+    ]);
+  });
+
+  test('global Ask Friday keeps TeamInbox as staff-only evidence', () => {
+    const [globalDraft] = fadRuntimeDraftContextPacks();
+    const text = JSON.stringify(globalDraft).toLowerCase();
+
+    expect(globalDraft.toolPolicy.allowedTools).toEqual(FAD_GLOBAL_TOOL_ALLOWLIST);
+    expect(globalDraft.toolPolicy.allowedActions).toEqual(FAD_GLOBAL_ACTION_ALLOWLIST);
+    expect(text).toContain('teaminbox');
+    expect(text).toContain('staff-only');
+    expect(text).toContain('not_canonical_truth');
+  });
+
+  test('Inbox Consult preserves review-only and human-send boundaries', () => {
+    const consultDraft = fadRuntimeDraftContextPacks().find((draft) => draft.surfaceId === 'fad_consult');
+    const text = JSON.stringify(consultDraft).toLowerCase();
+
+    expect(consultDraft.toolPolicy.allowedTools).toEqual(FAD_CONSULT_TOOL_ALLOWLIST);
+    expect(consultDraft.toolPolicy.allowedActions).toEqual(FAD_CONSULT_ACTION_ALLOWLIST);
+    expect(text).toContain('review_only');
+    expect(text).toContain('draft_requires_intent');
+    expect(text).toContain('human_send_boundary');
+  });
+
+  test('Ops Assistant carries planning safety rules', () => {
+    const opsDraft = fadRuntimeDraftContextPacks().find((draft) => draft.surfaceId === 'fad_ops_assistant');
+    const text = JSON.stringify(opsDraft).toLowerCase();
+
+    expect(opsDraft.toolPolicy.allowedTools).toEqual(OPS_ASSISTANT_TOOL_ALLOWLIST);
+    expect(opsDraft.toolPolicy.allowedActions).toEqual(OPS_ASSISTANT_ACTION_ALLOWLIST);
+    expect(text).toContain('unassigned');
+    expect(text).toContain('occupancy');
+    expect(text).toContain('lunch');
+    expect(text).toContain('availability');
+    expect(text).toContain('pricing');
+    expect(text).toContain('reversible');
   });
 });
 

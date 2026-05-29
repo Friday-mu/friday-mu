@@ -237,6 +237,15 @@ describe('Ask Friday Core router', () => {
         published_updated_at: null,
         active_eval_case_count: 2,
         active_eval_suite_ids: ['reservations_calendar_actions'],
+        memory_policy: {
+          learningEventPolicy: {
+            required: true,
+            mode: 'global_panel_module_mirror_until_dedicated_runtime',
+            emitter: 'Global Ask Friday',
+          },
+        },
+        recent_learning_event_count: 3,
+        latest_learning_event_at: new Date('2026-05-29T09:00:00.000Z'),
       }, {
         ...surfaceRow({
           surface_id: 'website_guest_hero',
@@ -265,6 +274,53 @@ describe('Ask Friday Core router', () => {
         published_updated_at: null,
         active_eval_case_count: 0,
         active_eval_suite_ids: [],
+        memory_policy: {
+          learningEventPolicy: {
+            required: true,
+            mode: 'public_core_events',
+            emitter: 'Friday Website',
+          },
+        },
+        recent_learning_event_count: 0,
+        latest_learning_event_at: null,
+      }, {
+        ...surfaceRow({
+          surface_id: 'fad_legal_admin_assistant',
+          display_name: 'Legal Admin Assistant',
+          audience: 'restricted_staff',
+          source_system: 'fad',
+          access_class: 'restricted_staff',
+          status: 'planned',
+          allowed_knowledge_scopes: ['legal_admin_policy'],
+          allowed_tools: ['load_contract_context'],
+          allowed_actions: ['request_approval'],
+          eval_suite_ids: ['legal_grounding'],
+        }),
+        draft_pack_id: null,
+        draft_version: null,
+        draft_status: null,
+        draft_approved_by: null,
+        draft_approved_at: null,
+        draft_published_at: null,
+        draft_updated_at: null,
+        published_pack_id: null,
+        published_version: null,
+        published_status: null,
+        published_approved_by: null,
+        published_approved_at: null,
+        published_published_at: null,
+        published_updated_at: null,
+        active_eval_case_count: 0,
+        active_eval_suite_ids: [],
+        memory_policy: {
+          learningEventPolicy: {
+            required: false,
+            mode: 'planned',
+            emitter: 'not_wired_yet',
+          },
+        },
+        recent_learning_event_count: 0,
+        latest_learning_event_at: null,
       }],
     });
 
@@ -274,10 +330,11 @@ describe('Ask Friday Core router', () => {
       .expect(200);
 
     expect(res.body.summary).toMatchObject({
-      total: 2,
+      total: 3,
       active: 2,
       ready: 1,
       blocked: 1,
+      planned: 1,
       missingPublishedContextPacks: 1,
       missingEvalCoverage: 1,
     });
@@ -298,10 +355,26 @@ describe('Ask Friday Core router', () => {
         activeCaseCount: 2,
         missingDeclaredSuiteIds: [],
       },
+      learningFeedback: {
+        policy: {
+          required: true,
+          mode: 'global_panel_module_mirror_until_dedicated_runtime',
+          emitter: 'Global Ask Friday',
+        },
+        recentEventWindowDays: 14,
+        recentEventCount: 3,
+      },
     });
     expect(res.body.surfaces[1].flags).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'missing_published_context_pack', severity: 'blocker' }),
       expect.objectContaining({ code: 'missing_eval_cases', severity: 'warning' }),
+    ]));
+    expect(res.body.surfaces[2]).toMatchObject({
+      surfaceId: 'fad_legal_admin_assistant',
+      readinessStatus: 'planned',
+    });
+    expect(res.body.surfaces[2].flags).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'missing_eval_cases', severity: 'info' }),
     ]));
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0][1]).toEqual([TENANT_ID]);
@@ -313,6 +386,274 @@ describe('Ask Friday Core router', () => {
       .expect(401);
 
     expect(query).not.toHaveBeenCalled();
+  });
+
+  test('previews generated context-pack templates without writing drafts', async () => {
+    const res = await request(app())
+      .get('/api/ask-friday/core/context-pack-templates?version=3')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .expect(200);
+
+    expect(res.body).toMatchObject({
+      mode: 'preview',
+      version: 3,
+      count: 2,
+    });
+    expect(res.body.drafts.map((draft) => draft.surfaceId)).toEqual([
+      'website_guest_hero',
+      'website_ask_friday_fab',
+    ]);
+    expect(res.body.drafts.every((draft) => draft.status === 'draft')).toBe(true);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  test('previews active FAD runtime context-pack templates when requested', async () => {
+    const res = await request(app())
+      .get('/api/ask-friday/core/context-pack-templates?includeWebsite=false&includeFadRuntime=true&version=4')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .expect(200);
+
+    expect(res.body).toMatchObject({
+      mode: 'preview',
+      version: 4,
+      count: 3,
+    });
+    expect(res.body.drafts.map((draft) => draft.surfaceId)).toEqual([
+      'fad_global_ask_friday',
+      'fad_consult',
+      'fad_ops_assistant',
+    ]);
+    expect(res.body.drafts.every((draft) => draft.status === 'draft')).toBe(true);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  test('upserts selected generated staff shell context-pack drafts', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          surface_id: 'fad_reservations_calendar_assistant',
+          source_system: 'fad',
+          access_class: 'staff',
+          status: 'active',
+          allowed_knowledge_scopes: [
+            'reservations-calendar',
+            'reservations',
+            'calendar',
+            'availability',
+            'pricing_quote_policy',
+            'channel_write_policy',
+            'guest_inquiry_followup',
+          ],
+          allowed_tools: [
+            'load_reservation_context',
+            'load_calendar_context',
+            'load_property_context',
+          ],
+          allowed_actions: [
+            'request_booking_quote',
+            'request_reservation_mutation',
+            'request_channel_visible_block',
+            'request_reservation_action',
+            'create_quote_draft',
+            'create_followup_candidate',
+            'request_handoff',
+            'request_approval',
+          ],
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          pack_id: 'fad_reservations_calendar_assistant_v2_draft',
+          surface_id: 'fad_reservations_calendar_assistant',
+          version: 2,
+          status: 'draft',
+          knowledge_scopes: ['reservations-calendar', 'reservations'],
+          behavior_rules: [{ id: 'source_freshness' }],
+          tool_policy: { allowedTools: ['load_reservation_context'] },
+          memory_policy: { staffSessions: 'staff_scoped' },
+          source_snapshot_refs: [{ type: 'repo_doc' }],
+          pack_payload: { contextPackClass: 'staff_reservations_calendar_shell_v1_draft' },
+          approved_by: null,
+          approved_at: null,
+          published_at: null,
+          updated_at: new Date('2026-05-29T10:00:00.000Z'),
+        }],
+      });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/context-pack-templates/drafts')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        includeWebsite: false,
+        includeStaffShells: true,
+        surfaceIds: ['fad_reservations_calendar_assistant'],
+        version: 2,
+      })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      mode: 'drafts_upserted',
+      count: 1,
+      contextPacks: [{
+        packId: 'fad_reservations_calendar_assistant_v2_draft',
+        surfaceId: 'fad_reservations_calendar_assistant',
+        status: 'draft',
+      }],
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0][1]).toEqual([TENANT_ID, 'fad_reservations_calendar_assistant']);
+    expect(query.mock.calls[1][1][1]).toBe('fad_reservations_calendar_assistant_v2_draft');
+    expect(query.mock.calls[1][1][4]).toEqual(expect.arrayContaining([
+      'reservations-calendar',
+      'channel_write_policy',
+    ]));
+  });
+
+  test('upserts selected active FAD runtime context-pack drafts', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          surface_id: 'fad_ops_assistant',
+          source_system: 'fad',
+          access_class: 'staff',
+          status: 'active',
+          allowed_knowledge_scopes: [
+            'ops_tasks',
+            'reservations',
+            'properties',
+            'staff_runbooks',
+            'approved_public_kb',
+            'ops-consult',
+            'schedule_policy',
+            'task_taxonomy',
+            'property_ops_metadata',
+            'owner_approval_rules',
+            'vendor_policy',
+            'supplies_policy',
+          ],
+          allowed_tools: [
+            'load_task',
+            'load_schedule',
+            'load_reservation',
+            'load_property',
+            'create_task_candidate',
+            'load_roster',
+            'load_reported_issue',
+            'load_travel_time_estimate',
+            'load_property_ops_metadata',
+            'load_reservation_context',
+            'load_calendar_context',
+            'load_property_context',
+          ],
+          allowed_actions: [
+            'create_task',
+            'create_task_candidate',
+            'create_kb_candidate',
+            'request_approval',
+            'draft_schedule',
+            'apply_schedule_draft',
+            'clear_schedule_times',
+            'clear_times_and_assignees',
+            'undo_last_schedule_step',
+            'request_owner_approval',
+          ],
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          pack_id: 'fad_ops_assistant_v2_draft',
+          surface_id: 'fad_ops_assistant',
+          version: 2,
+          status: 'draft',
+          knowledge_scopes: ['ops_tasks', 'reservations', 'properties'],
+          behavior_rules: [{ id: 'occupancy_constraint' }],
+          tool_policy: { allowedTools: ['load_task', 'load_schedule'] },
+          memory_policy: { staffSessions: 'durable_team_visible' },
+          source_snapshot_refs: [{ type: 'repo_doc' }],
+          pack_payload: { contextPackClass: 'fad_ops_assistant_runtime_v1_draft' },
+          approved_by: null,
+          approved_at: null,
+          published_at: null,
+          updated_at: new Date('2026-05-29T10:30:00.000Z'),
+        }],
+      });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/context-pack-templates/drafts')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        includeWebsite: false,
+        includeFadRuntime: true,
+        surfaceIds: ['fad_ops_assistant'],
+        version: 2,
+      })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      mode: 'drafts_upserted',
+      count: 1,
+      contextPacks: [{
+        packId: 'fad_ops_assistant_v2_draft',
+        surfaceId: 'fad_ops_assistant',
+        status: 'draft',
+      }],
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0][1]).toEqual([TENANT_ID, 'fad_ops_assistant']);
+    expect(query.mock.calls[1][1][1]).toBe('fad_ops_assistant_v2_draft');
+    expect(query.mock.calls[1][1][4]).toEqual(expect.arrayContaining([
+      'ops_tasks',
+      'schedule_policy',
+      'property_ops_metadata',
+    ]));
+    expect(query.mock.calls[1][1][6]).toContain('draft_schedule');
+  });
+
+  test('refuses generated drafts that would overwrite a published pack version', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{
+          surface_id: 'website_guest_hero',
+          source_system: 'friday-website',
+          access_class: 'public',
+          status: 'active',
+          allowed_knowledge_scopes: [
+            'public_brand',
+            'public_residences',
+            'public_experiences',
+            'public_mauritius',
+            'guest_booking_rules',
+          ],
+          allowed_tools: [
+            'route_intent',
+            'search_residences',
+            'search_experiences',
+            'check_availability',
+            'get_residence',
+            'get_experience',
+            'search_places',
+            'send_enquiry',
+            'open_experience_modal',
+          ],
+          allowed_actions: ['request_booking', 'request_handoff'],
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/context-pack-templates/drafts')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        surfaceIds: ['website_guest_hero'],
+        version: 1,
+      })
+      .expect(409);
+
+    expect(res.body).toMatchObject({
+      error: 'context_pack_template_draft_write_failed',
+    });
+    expect(res.body.message).toContain('would overwrite an existing published pack');
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   test('creates and reviews KB candidates through staff auth only', async () => {
@@ -860,6 +1201,35 @@ describe('Ask Friday Core router', () => {
       .expect(400);
 
     expect(query).not.toHaveBeenCalled();
+  });
+
+  test('rejects draft writes that would demote an existing published context-pack version', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [surfaceRow({
+          allowed_knowledge_scopes: ['public_brand'],
+          allowed_tools: [],
+          allowed_actions: [],
+        })],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app())
+      .post('/api/ask-friday/core/context-packs')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({
+        packId: 'website_ask_friday_fab_v1_draft',
+        surfaceId: 'website_ask_friday_fab',
+        version: 1,
+        status: 'draft',
+        knowledgeScopes: ['public_brand'],
+      })
+      .expect(409);
+
+    expect(res.body).toMatchObject({
+      error: 'published_context_pack_version_exists',
+    });
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   test('records deterministic eval runs from active eval cases', async () => {

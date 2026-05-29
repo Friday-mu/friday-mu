@@ -31,6 +31,7 @@ const {
 const { publishContextPack } = require('./publisher');
 const contextTools = require('./context_tools');
 const {
+  fadRuntimeDraftContextPacks,
   plan2StaffDraftContextPacks,
   websitePublicDraftContextPacks,
 } = require('./context_pack_templates');
@@ -41,6 +42,7 @@ router.use('/context-tools', contextTools.router);
 
 const TEMPLATE_CONTEXT_PACK_SURFACE_IDS = new Set([
   ...websitePublicDraftContextPacks(),
+  ...fadRuntimeDraftContextPacks(),
   ...plan2StaffDraftContextPacks(),
 ].map((pack) => pack.surfaceId));
 
@@ -66,6 +68,25 @@ function parseLimit(value, fallback = 100, max = 500) {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return fallback;
   return Math.min(Math.max(Math.floor(raw), 1), max);
+}
+
+function parseBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value).toLowerCase());
+}
+
+function parseCsvArray(value, max = 40) {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => parseCsvArray(item, max))
+      .slice(0, max);
+  }
+  return String(value || '')
+    .split(',')
+    .map((item) => cleanString(item, 120))
+    .filter(Boolean)
+    .slice(0, max);
 }
 
 function shapeSurface(row) {
@@ -214,6 +235,23 @@ function shapeContextPackPointer(row, prefix) {
   };
 }
 
+function shapeLearningFeedback(row) {
+  const rawPolicy = row?.memory_policy && typeof row.memory_policy === 'object'
+    ? (row.memory_policy.learningEventPolicy || row.memory_policy.learning_event_policy || {})
+    : {};
+  return {
+    policy: {
+      required: rawPolicy.required !== false,
+      mode: cleanString(rawPolicy.mode || rawPolicy.eventRoute || rawPolicy.event_route, 120) || null,
+      emitter: cleanString(rawPolicy.emitter || rawPolicy.owner, 120) || null,
+      notes: cleanString(rawPolicy.notes || rawPolicy.note, 500) || null,
+    },
+    recentEventWindowDays: 14,
+    recentEventCount: Number(row?.recent_learning_event_count || 0),
+    latestEventAt: row?.latest_learning_event_at || null,
+  };
+}
+
 function contextPackExpectation(row) {
   const active = cleanString(row?.status, 40).toLowerCase() === 'active';
   const surfaceId = cleanString(row?.surface_id, 120);
@@ -259,7 +297,10 @@ function shapeSurfaceReadiness(row) {
   const declaredEvalSuites = row.eval_suite_ids || [];
   const missingDeclaredEvalSuites = declaredEvalSuites.filter((suiteId) => !activeEvalSuites.includes(suiteId));
   const activeEvalCaseCount = Number(row.active_eval_case_count || 0);
+  const learningFeedback = shapeLearningFeedback(row);
   const flags = [];
+  const isActiveSurface = surface.status === 'active';
+  const evalCoverageSeverity = isActiveSurface ? 'warning' : 'info';
 
   if (expectation.requiredStatus === 'published' && !latestPublished) {
     flags.push(readinessFlag(
@@ -285,14 +326,25 @@ function shapeSurfaceReadiness(row) {
   if (declaredEvalSuites.length > 0 && activeEvalCaseCount === 0) {
     flags.push(readinessFlag(
       'missing_eval_cases',
-      'warning',
-      'Surface declares eval suites but has no active eval cases.',
+      evalCoverageSeverity,
+      isActiveSurface
+        ? 'Active surface declares eval suites but has no active eval cases.'
+        : 'Planned surface declares eval suites for future coverage but has no active eval cases yet.',
     ));
   } else if (missingDeclaredEvalSuites.length > 0) {
     flags.push(readinessFlag(
       'missing_declared_eval_suite_coverage',
-      'warning',
-      `No active eval cases found for declared suites: ${missingDeclaredEvalSuites.join(', ')}.`,
+      evalCoverageSeverity,
+      isActiveSurface
+        ? `No active eval cases found for declared suites: ${missingDeclaredEvalSuites.join(', ')}.`
+        : `Planned surface has no active eval cases yet for future suites: ${missingDeclaredEvalSuites.join(', ')}.`,
+    ));
+  }
+  if (isActiveSurface && learningFeedback.policy.required && !learningFeedback.policy.mode) {
+    flags.push(readinessFlag(
+      'missing_learning_event_policy',
+      'info',
+      'Active surface has no explicit learning-event feedback policy in memory_policy.learningEventPolicy.',
     ));
   }
 
@@ -323,6 +375,7 @@ function shapeSurfaceReadiness(row) {
       toolCount: surface.allowedTools.length,
       actionCount: surface.allowedActions.length,
     },
+    learningFeedback,
     flags,
   };
 }
@@ -338,7 +391,9 @@ function readinessSummary(items) {
     if (item.flags.some((flag) => flag.code === 'missing_staff_context_pack_draft')) {
       summary.missingStaffContextPackDrafts += 1;
     }
-    if (item.flags.some((flag) => flag.code === 'missing_eval_cases' || flag.code === 'missing_declared_eval_suite_coverage')) {
+    if (item.status === 'active' && item.flags.some((flag) => (
+      flag.code === 'missing_eval_cases' || flag.code === 'missing_declared_eval_suite_coverage'
+    ))) {
       summary.missingEvalCoverage += 1;
     }
     return summary;
@@ -353,6 +408,44 @@ function readinessSummary(items) {
     missingStaffContextPackDrafts: 0,
     missingEvalCoverage: 0,
   });
+}
+
+function generatedContextPackDrafts(options = {}) {
+  const version = Number.parseInt(options.version, 10) || 1;
+  const includeWebsite = options.includeWebsite !== false;
+  const includeFadRuntime = options.includeFadRuntime === true;
+  const includePlan2Shells = options.includePlan2Shells === true;
+  const surfaceIds = new Set(parseCsvArray(options.surfaceIds));
+  const drafts = [
+    ...(includeWebsite ? websitePublicDraftContextPacks({ version }) : []),
+    ...(includeFadRuntime ? fadRuntimeDraftContextPacks({ version }) : []),
+    ...(includePlan2Shells ? plan2StaffDraftContextPacks({ version }) : []),
+  ];
+  return surfaceIds.size === 0
+    ? drafts
+    : drafts.filter((draft) => surfaceIds.has(draft.surfaceId));
+}
+
+function contextPackTemplateOptions(raw = {}) {
+  return {
+    version: Number.parseInt(raw.version, 10) || 1,
+    includeWebsite: parseBoolean(raw.includeWebsite ?? raw.include_website, true),
+    includeFadRuntime: parseBoolean(
+      raw.includeFadRuntime
+        ?? raw.include_fad_runtime
+        ?? raw.includeRuntimeStaff
+        ?? raw.include_runtime_staff,
+      false,
+    ),
+    includePlan2Shells: parseBoolean(
+      raw.includePlan2Shells
+        ?? raw.include_plan2_shells
+        ?? raw.includeStaffShells
+        ?? raw.include_staff_shells,
+      false,
+    ),
+    surfaceIds: raw.surfaceIds || raw.surface_ids || raw.surfaceId || raw.surface_id || '',
+  };
 }
 
 function shapeIdentityLink(row) {
@@ -417,6 +510,56 @@ async function insertEvidenceRefs(tenantId, eventId, refs) {
     if (rows.length > 0) inserted += 1;
   }
   return inserted;
+}
+
+async function upsertGeneratedContextPackDraft(tenantId, draft) {
+  const pack = normalizeContextPack(draft);
+  const surface = await loadSurfaceForPolicy(tenantId, pack.surfaceId);
+  validateContextPackAgainstSurface(pack, surface);
+  const { rows } = await query(
+    `INSERT INTO ask_friday_context_packs (
+       tenant_id, pack_id, surface_id, version, status, knowledge_scopes,
+       behavior_rules, tool_policy, memory_policy, source_snapshot_refs,
+       pack_payload, approved_by, approved_at, published_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, 'draft', $5,
+       $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb,
+       $10::jsonb, NULL, NULL, NULL, NOW()
+     )
+     ON CONFLICT (tenant_id, surface_id, version) DO UPDATE SET
+       pack_id = EXCLUDED.pack_id,
+       status = 'draft',
+       knowledge_scopes = EXCLUDED.knowledge_scopes,
+       behavior_rules = EXCLUDED.behavior_rules,
+       tool_policy = EXCLUDED.tool_policy,
+       memory_policy = EXCLUDED.memory_policy,
+       source_snapshot_refs = EXCLUDED.source_snapshot_refs,
+       pack_payload = EXCLUDED.pack_payload,
+       approved_by = NULL,
+       approved_at = NULL,
+       published_at = NULL,
+       updated_at = NOW()
+       WHERE ask_friday_context_packs.status <> 'published'
+     RETURNING *`,
+    [
+      tenantId,
+      pack.packId,
+      pack.surfaceId,
+      pack.version,
+      pack.knowledgeScopes,
+      JSON.stringify(pack.behaviorRules),
+      JSON.stringify(pack.toolPolicy),
+      JSON.stringify(pack.memoryPolicy),
+      JSON.stringify(pack.sourceSnapshotRefs),
+      JSON.stringify(pack.packPayload),
+    ],
+  );
+  if (rows.length === 0) {
+    const err = new Error(`draft context pack would overwrite an existing published pack: ${pack.surfaceId} v${pack.version}`);
+    err.status = 409;
+    throw err;
+  }
+  return rows[0];
 }
 
 function lifecycleId(prefix) {
@@ -609,7 +752,9 @@ router.get('/readiness', attachIdentity, async (req, res) => {
          published.published_at AS published_published_at,
          published.updated_at AS published_updated_at,
          COALESCE(eval_counts.active_eval_case_count, 0)::int AS active_eval_case_count,
-         COALESCE(eval_counts.active_eval_suite_ids, ARRAY[]::text[]) AS active_eval_suite_ids
+         COALESCE(eval_counts.active_eval_suite_ids, ARRAY[]::text[]) AS active_eval_suite_ids,
+         COALESCE(event_counts.recent_learning_event_count, 0)::int AS recent_learning_event_count,
+         event_counts.latest_learning_event_at
        FROM ask_friday_surfaces s
        LEFT JOIN LATERAL (
          SELECT pack_id, version, status, approved_by, approved_at, published_at, updated_at
@@ -639,6 +784,16 @@ router.get('/readiness', attachIdentity, async (req, res) => {
          GROUP BY tenant_id, surface_id
        ) eval_counts ON eval_counts.tenant_id = s.tenant_id
                     AND eval_counts.surface_id = s.surface_id
+       LEFT JOIN (
+         SELECT
+           tenant_id,
+           surface_id,
+           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days') AS recent_learning_event_count,
+           MAX(created_at) AS latest_learning_event_at
+         FROM ask_friday_learning_events
+         GROUP BY tenant_id, surface_id
+       ) event_counts ON event_counts.tenant_id = s.tenant_id
+                    AND event_counts.surface_id = s.surface_id
       WHERE ${filters.join(' AND ')}
       ORDER BY s.source_system, s.surface_id`,
       params,
@@ -650,6 +805,47 @@ router.get('/readiness', attachIdentity, async (req, res) => {
     });
   } catch (error) {
     return respondError(res, error, 'readiness_report_failed');
+  }
+});
+
+router.get('/context-pack-templates', attachIdentity, async (req, res) => {
+  try {
+    const options = contextPackTemplateOptions(req.query);
+    const drafts = generatedContextPackDrafts(options).map((draft) => normalizeContextPack(draft));
+    res.json({
+      mode: 'preview',
+      version: options.version,
+      count: drafts.length,
+      drafts,
+      note: 'Generated templates are draft-only. Use POST /context-pack-templates/drafts to upsert drafts; publishing still requires /context-packs/publish with eval gate or explicit override.',
+    });
+  } catch (error) {
+    return respondError(res, error, 'context_pack_templates_failed');
+  }
+});
+
+router.post('/context-pack-templates/drafts', attachIdentity, async (req, res) => {
+  try {
+    const options = contextPackTemplateOptions(req.body || {});
+    const drafts = generatedContextPackDrafts(options);
+    if (drafts.length === 0) {
+      return res.status(400).json({
+        error: 'context_pack_template_not_found',
+        message: 'No generated draft templates matched the requested options.',
+      });
+    }
+    const rows = [];
+    for (const draft of drafts) {
+      rows.push(await upsertGeneratedContextPackDraft(req.tenantId, draft));
+    }
+    res.status(201).json({
+      mode: 'drafts_upserted',
+      count: rows.length,
+      contextPacks: rows.map(shapeContextPack),
+      note: 'Draft context packs are not public-readable and are not canonical until published through the gated publisher.',
+    });
+  } catch (error) {
+    return respondError(res, error, 'context_pack_template_draft_write_failed');
   }
 });
 
@@ -753,6 +949,7 @@ router.post('/context-packs', attachIdentity, async (req, res) => {
          approved_at = EXCLUDED.approved_at,
          published_at = EXCLUDED.published_at,
          updated_at = NOW()
+         WHERE ask_friday_context_packs.status <> 'published'
        RETURNING *`,
       [
         req.tenantId,
@@ -769,6 +966,12 @@ router.post('/context-packs', attachIdentity, async (req, res) => {
         approver,
       ],
     );
+    if (rows.length === 0) {
+      return res.status(409).json({
+        error: 'published_context_pack_version_exists',
+        message: `Draft write refused because ${pack.surfaceId} v${pack.version} is already published. Use a new draft version or the gated publisher.`,
+      });
+    }
     res.status(201).json({ contextPack: shapeContextPack(rows[0]) });
   } catch (error) {
     return respondError(res, error, 'context_pack_write_failed');

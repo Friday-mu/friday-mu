@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Status: recovery manifest and source map
-Current canonical checkpoint: `origin/fad-rebuild` at `0b9c965729289f1f7fedcf243fe23583a108159d`; live production is `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`.
+Current canonical checkpoint: `origin/fad-rebuild` at `5c1e4b2a9135586eb8472fc46aae11bb77b89c1f`; live production remains `af513255723d68b3354de351c381f89532366efe`.
 
 ## Purpose
 
@@ -38,12 +38,12 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 
 ## Current Branch Truth
 
-- Latest reconciliation worktree: `/Users/judith/.codex/worktrees/ask-friday-live-9097-ledger-sync-20260529`
-- Branch: `codex/ask-friday-pr54-ledger-sync-20260529`
+- Latest active Ask Friday Core worktree: `/Users/judith/.codex/worktrees/ask-friday-readiness-evals-20260529`
+- Branch: `codex/ask-friday-post-pr59-plan-next-20260529`
 - Base branch: `origin/fad-rebuild`
-- Base/canonical SHA after PR #54 merge: `0b9c965729289f1f7fedcf243fe23583a108159d`
-- Current deployed code-bearing SHA: `9097f9bc3371e4dcc5d2f7e8bc5afcba7f09a59f`
-- Note: live production includes PR #44 and PR #46. `origin/fad-rebuild` is still ahead of live because PR #48, PR #49, PR #50, PR #51, PR #52, PR #53, PR #54, the follow-up public-experiences routing fix, and redesign docs are merged but not deployed; PR #49, PR #50, PR #51, PR #53, and the redesign commits are docs-only. Do not deploy without explicit coordination.
+- Current origin SHA after PR #59 merge: `5c1e4b2a9135586eb8472fc46aae11bb77b89c1f`
+- Current deployed code-bearing SHA: `af513255723d68b3354de351c381f89532366efe`
+- Note: PR #59 is merged to `origin/fad-rebuild` but not deployed. Live production still reports `af513255`. Do not deploy without explicit coordination.
 - PR #9: merged on 2026-05-27 as `da67c7be`.
 - PR #13: merged and deployed on 2026-05-28 as `7caf6576`.
 - PR #15: merged and deployed on 2026-05-29 as `c55e94c0`.
@@ -75,16 +75,19 @@ It points to the docs, Notion mirrors, runtime KBs, handovers, and recovery chec
 - PR #45 merged on 2026-05-29 as `decee0fb`; it adds Plan 2 research/source matrices, reservation action subtype contracts, property field classification, and owner positioning docs. Docs-only; no deploy required.
 - PR #46 merged on 2026-05-29 as `a06eda7e`; it adds migration `105_ask_friday_plan2_eval_seeds.sql` for Plan 2 deterministic eval scaffolding. It is deployed in live `9097f9bc`.
 - PR #47 merged on 2026-05-29 as `d33f151b`; docs-only ledger/manifest sync after PR #46.
-- PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is not deployed.
+- PR #48 merged on 2026-05-29 as `31fbfd54`; it adds draft KB shells for Reservations/Calendar, Properties, and Owner Enquiry plus composer smoke coverage. It is deployed in live `af513255`.
 - PR #49 merged on 2026-05-29 as `d7497305`; docs-only ledger/manifest sync after PR #48.
-- Commit `12b02389` (`fix(experiences): route Bokun by real country (account is multi-country)`) was merged into `origin/fad-rebuild` at `b2840671`. It is not deployed at the time of this reconciliation.
+- Commit `12b02389` (`fix(experiences): route Bokun by real country (account is multi-country)`) was merged into `origin/fad-rebuild` at `b2840671`. It is deployed in live `af513255`.
 - PR #50 merged on 2026-05-29 as `4574e0e7`; docs-only live `9097f9bc` ledger sync.
 - PR #51 merged on 2026-05-29 as `62c8f1c1`; docs-only live compact-first roster smoke evidence.
 - Commit `d44174a9` added FAD V2 redesign implementation docs; merge `7d3a52ba` is the current canonical origin checkpoint for this slice.
-- PR #52 merged on 2026-05-29 as `b26982c8`; it adds migration `107_ask_friday_plan2_surface_readiness.sql`, staff shell draft context-pack templates, action-policy validation, deterministic `action_safety` eval checks, and focused tests. It is not deployed.
+- PR #52 merged on 2026-05-29 as `b26982c8`; it adds migration `107_ask_friday_plan2_surface_readiness.sql`, staff shell draft context-pack templates, action-policy validation, deterministic `action_safety` eval checks, and focused tests. It is deployed in live `af513255`.
 - PR #53 merged on 2026-05-29 as `e01945b5`; docs-only ledger sync after PR #52.
-- PR #54 merged on 2026-05-29 as `0b9c9657`; it adds migration `108_ask_friday_website_public_action_scope.sql` so the `friday-website` API client can enqueue approval-gated public action requests for owner enquiry and feedback surfaces. It is not deployed.
-- Deployment status: live frontend and backend both report `9097f9bc`, so live production includes PR #44 and PR #46 but does not yet include PR #48, PR #49, PR #50, PR #51, PR #52, PR #53, PR #54, `12b02389`, or redesign docs. Reviewed Website public context packs remain published through the gated publisher in production DB.
+- PR #54 merged on 2026-05-29 as `0b9c9657`; it adds migration `108_ask_friday_website_public_action_scope.sql` so the `friday-website` API client can enqueue approval-gated public action requests for owner enquiry and feedback surfaces. It is deployed in live `af513255`.
+- PR #57 merged on 2026-05-29; it adds global Ask Friday Core state/readiness loading.
+- PR #58 merged on 2026-05-29; it fixes global Ask Friday learning-event scope drift.
+- PR #59 merged on 2026-05-29 as `5c1e4b2a`; it adds migrations `109_ask_friday_learning_feedback_policies.sql`, `110_ask_friday_eval_readiness_coverage.sql`, and `111_ask_friday_active_runtime_context_pack_drafts.sql`, mirrors global Ask Friday page-aware learning into active module surfaces, adds generated active runtime context-pack templates for global Ask Friday / Inbox Consult / Ops Assistant, and seeds non-destructive draft rows for those packs. It is not deployed.
+- Deployment status: live frontend and backend both report `af513255`, while `origin/fad-rebuild` is `5c1e4b2a`. Reviewed Website public context packs remain published through the gated publisher in production DB. PR #59 is merged but remains the current undeployed Ask Friday Core delta.
 - Exact commit `4ce6deeb fix(fad): align ask friday context pack publishing` is not an ancestor of `origin/fad-rebuild`, but `git cherry origin/fad-rebuild 4ce6deeb` reports it as patch-equivalent (`-`), so do not re-port it without checking the current files first.
 - Latest pushed continuation commits include:
   - `a496b217 docs(ask-friday): map public owner feedback surfaces`
@@ -131,6 +134,12 @@ Read these first, in order:
     - Draft property privacy/field matrix for public, guest-scoped, owner-scoped, staff-private, and restricted property facts.
 17. `docs/architecture/ask-friday-owner-positioning-source-matrix-2026-05-29.md`
     - Staff-private owner-positioning source matrix for competitor, market, compliance, and owner enquiry harness signals.
+18. `docs/architecture/ask-friday-staff-use-evidence-runbook-2026-05-29.md`
+    - Defines what counts as Mary/Franny/Ishant staff-usefulness proof for Inbox, Ops, and global Ask Friday.
+19. `docs/architecture/ask-friday-plan2-kb-gap-tracker-2026-05-29.md`
+    - Current gap tracker for planned surfaces that still lack KB files, context packs, evals, or runtime wiring.
+20. `docs/architecture/ask-friday-feedback-retention-redaction-policy-2026-05-29.md`
+    - Proposed ADR for feedback screenshots/diagnostics retention, redaction, evidence classes, and learning eligibility.
 
 ## Master Plan And Subplans
 
@@ -160,6 +169,12 @@ The repo-owned execution pack under the master plan is:
 - `docs/architecture/ask-friday-property-field-classification-2026-05-29.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 - `docs/architecture/ask-friday-owner-positioning-source-matrix-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-staff-use-evidence-runbook-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-plan2-kb-gap-tracker-2026-05-29.md`
+  - Notion: not mirrored yet; use repo as current source until mirror is created.
+- `docs/architecture/ask-friday-feedback-retention-redaction-policy-2026-05-29.md`
   - Notion: not mirrored yet; use repo as current source until mirror is created.
 
 The original broad master plan and subplans are mirrored in Notion and also exist as local planning-pack files under `/Users/judith/.openclaw/workspace/tmp/`.
@@ -294,6 +309,7 @@ Ask Friday Core scripts:
 
 - `backend/scripts/ask-friday-context-pack-drafts.js`
   - Dry-run by default. Produces policy-validated draft context packs for `website_guest_hero` and `website_ask_friday_fab`.
+  - `--include-fad-runtime` also includes active FAD runtime draft packs for global Ask Friday, Inbox Consult, and Ops Assistant.
   - `--include-plan2-shells` also includes draft staff shell packs for Reservations/Calendar, Properties, and the planned Owners shell.
   - `--apply` upserts draft rows only; it does not publish public-readable context packs.
 
@@ -308,9 +324,15 @@ Ask Friday Core migrations:
 - `backend/migrations/102_ask_friday_public_owner_feedback_evals.sql`
 - `backend/migrations/103_ask_friday_public_contract_evals.sql`
 - `backend/migrations/107_ask_friday_plan2_surface_readiness.sql`
-  - Merged in PR #52, not deployed. Activates Reservations/Calendar and Properties as governed Core shells; keeps Owners planned.
+  - Deployed in live `af513255`. Activates Reservations/Calendar and Properties as governed Core shells; keeps Owners planned.
 - `backend/migrations/108_ask_friday_website_public_action_scope.sql`
-  - Merged in PR #54, not deployed. Grants `friday-website` the API scope for approval-gated public action requests.
+  - Deployed in live `af513255`. Grants `friday-website` the API scope for approval-gated public action requests.
+- `backend/migrations/109_ask_friday_learning_feedback_policies.sql`
+  - Merged to origin in PR #59, not deployed. Adds explicit learning feedback policy per surface.
+- `backend/migrations/110_ask_friday_eval_readiness_coverage.sql`
+  - Merged to origin in PR #59, not deployed. Closes declared eval-suite coverage for active surfaces.
+- `backend/migrations/111_ask_friday_active_runtime_context_pack_drafts.sql`
+  - Merged to origin in PR #59, not deployed. Seeds non-destructive draft context-pack rows for active FAD runtime surfaces.
 
 Plan 1 surface code:
 
