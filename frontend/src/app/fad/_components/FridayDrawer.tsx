@@ -378,11 +378,14 @@ export function FridayMessage({
   onNavigate,
   onFollowup,
   onExecuteAction,
+  onRetry,
 }: {
   m: Message;
   onNavigate: (mod: string) => void;
   onFollowup: (q: string) => void;
   onExecuteAction: (messageId: string, actionId: string) => void;
+  /** AF2 — re-ask the question behind this answer (recovery from failed/stale). */
+  onRetry?: () => void;
 }) {
   const role = useCurrentRole();
   if (m.role === 'user') {
@@ -425,7 +428,7 @@ export function FridayMessage({
       )}
       {m.ready && (
         <>
-          <StateBanner surface="Ask Friday" health={aiHealth} />
+          <StateBanner surface="Ask Friday" health={aiHealth} onRetry={onRetry} onResync={onRetry} />
           {m.text && (
             <div className="friday-msg-text">
               <ReactMarkdown>{m.text}</ReactMarkdown>
@@ -437,6 +440,8 @@ export function FridayMessage({
               source="Friday"
               confidence={m.confidence}
               provenance={provenance}
+              onReconnect={onRetry}
+              onRetry={onRetry}
             />
           )}
           {visibleCards.map((c, i) => (
@@ -461,7 +466,7 @@ export function FridayMessage({
                   </div>
                   <button
                     className={action.risk === 'approval' ? 'btn sm' : 'btn primary sm'}
-                    disabled={action.status === 'running' || action.status === 'done'}
+                    disabled={action.status === 'running' || action.status === 'done' || (aiHealth === 'failed' && action.type !== 'navigate')}
                     onClick={() => {
                       if (action.type === 'navigate' && action.module) {
                         onNavigate(action.module);
@@ -581,6 +586,10 @@ export function FridayDrawer({ open, onClose, scope, onNavigate, onExpand }: Pro
               onNavigate={handleNavigate}
               onFollowup={submit}
               onExecuteAction={executeAction}
+              onRetry={() => {
+                const prev = msgs[i - 1];
+                if (prev && prev.role === 'user') submit(prev.body);
+              }}
             />
           ))}
           <div ref={endRef} />

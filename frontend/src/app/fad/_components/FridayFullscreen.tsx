@@ -74,6 +74,10 @@ export function FridayFullscreen({ onNavigate, onExit }: Props) {
                 onNavigate={onNavigate}
                 onFollowup={submit}
                 onExecuteAction={executeAction}
+                onRetry={() => {
+                  const prev = msgs[i - 1];
+                  if (prev && prev.role === 'user') submit(prev.body);
+                }}
               />
             ))}
             <div ref={endRef} />
