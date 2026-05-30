@@ -105,6 +105,21 @@ export function isConfidenceBand(
   return confidence === 'high' || confidence === 'medium' || confidence === 'low';
 }
 
+/**
+ * Coerce any confidence input to a coarse band — `high | medium | low` — or null
+ * when there's no signal. Numeric thresholds match the finalised design
+ * (fad-states.jsx CONF_BANDS): ≥80 → high, ≥60 → medium, else low. The UI never
+ * shows the underlying number (locked decision: confidence is a BAND, never a %).
+ */
+export function confidenceBandOf(
+  confidence: ConfidenceBand | number | null | undefined,
+): ConfidenceBand | null {
+  if (isConfidenceBand(confidence)) return confidence;
+  const pct = confidencePct(confidence);
+  if (pct == null) return null;
+  return pct >= 80 ? 'high' : pct >= 60 ? 'medium' : 'low';
+}
+
 export interface ProvenanceItem {
   label: string;
   /** Optional glyph hint; defaults to a neutral source dot. */

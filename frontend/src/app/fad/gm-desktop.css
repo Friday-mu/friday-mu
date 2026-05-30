@@ -122,6 +122,12 @@
 .cb-track{width:42px;height:5px;border-radius:3px;background:var(--card-2);overflow:hidden}
 .cb-track i{display:block;height:100%;border-radius:3px;transition:width .4s}
 .cb-num{font-family:var(--mono);font-size:9.5px;color:var(--tx-2);text-transform:capitalize}
+/* ConfBar — finalised band design (fad-states.jsx → CONF_BANDS): 3-segment track
+   + word label, NEVER a number. Ported verbatim from the design's fad-desktop.css. */
+.confband{display:inline-flex;align-items:center;gap:7px}
+.cbd-track{display:inline-flex;align-items:center;gap:3px}
+.cbd-seg{width:9px;height:5px;border-radius:2px;background:var(--card-2);transition:background .3s}
+.cbd-lbl{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
 
 .statebanner{display:flex;align-items:center;gap:10px;border-radius:11px;padding:10px 14px;font-size:12.5px;line-height:1.45;margin-bottom:14px}
 .statebanner svg{width:16px;height:16px;flex:0 0 16px}

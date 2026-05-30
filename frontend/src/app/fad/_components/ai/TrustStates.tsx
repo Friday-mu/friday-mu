@@ -16,8 +16,7 @@ import {
   type AIHealthState,
   type ProvenanceItem,
   type ConfidenceBand,
-  confidencePct,
-  isConfidenceBand,
+  confidenceBandOf,
 } from './aiHealth';
 
 // ── self-contained glyphs (the few state icons not in the repo icon set) ──
@@ -150,24 +149,32 @@ export function Provenance({
 }
 
 // ───────────────────────── ConfBar ─────────────────────────
-// Confidence meter. Accepts a real numeric confidence OR a coarse band.
-// For a band we fill to a discrete level and show the WORD — never a fake %.
+// Confidence as a qualitative BAND — never a number (locked decision; finalised
+// design fad-states.jsx → CONF_BANDS). Renders a 3-segment track (fill 3/2/1) +
+// the word High/Medium/Low. Accepts a real numeric confidence OR a coarse band;
+// either way it's coerced to a band (≥80 high · ≥60 medium · else low) so the
+// underlying % never surfaces.
+const CONF_BANDS: Record<ConfidenceBand, { label: string; fill: number; tone: string }> = {
+  high: { label: 'High', fill: 3, tone: 'var(--green)' },
+  medium: { label: 'Medium', fill: 2, tone: 'var(--amber)' },
+  low: { label: 'Low', fill: 1, tone: 'var(--red)' },
+};
 export function ConfBar({
   value,
 }: {
   value: ConfidenceBand | number | null | undefined;
 }) {
-  const pct = confidencePct(value);
-  if (pct == null) return null;
-  const tone = pct >= 80 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--red)';
-  const band = isConfidenceBand(value);
-  const readout = band ? String(value) : `${pct}%`;
+  const key = confidenceBandOf(value);
+  if (key == null) return null;
+  const { label, fill, tone } = CONF_BANDS[key];
   return (
-    <span className="confbar" title={`Friday confidence · ${readout}`}>
-      <span className="cb-track">
-        <i style={{ width: pct + '%', background: tone }} />
+    <span className={'confband ' + key} title={`Friday confidence: ${label}`}>
+      <span className="cbd-track" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="cbd-seg" style={{ background: i < fill ? tone : 'var(--card-2)' }} />
+        ))}
       </span>
-      <span className="cb-num mono">{readout}</span>
+      <span className="cbd-lbl mono" style={{ color: tone }}>{label}</span>
     </span>
   );
 }
