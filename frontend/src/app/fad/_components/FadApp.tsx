@@ -309,7 +309,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   }
 
   return (
-    <div className="fad-app">
+    <div className={'fad-app' + (uiVersion === 'v2' ? ' fad-ui-v2' : '')}>
       <UpdateBanner />
       <Header
         onOpenPalette={() => setPaletteOpen(true)}

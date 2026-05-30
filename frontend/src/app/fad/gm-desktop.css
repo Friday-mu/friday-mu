@@ -182,3 +182,45 @@
 .dwrap .vskel-row{height:38px;border-radius:8px;background:linear-gradient(90deg,var(--card) 25%,var(--card-2) 37%,var(--card) 63%);background-size:400% 100%;animation:vskelShimmer 1.4s ease infinite}
 .dwrap .vperm{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;letter-spacing:.03em;padding:2px 7px;border-radius:6px;background:var(--card-2);border:1px solid var(--line-2);color:var(--tx-3);white-space:nowrap}
 @keyframes vskelShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+
+/* ===========================================================================
+   V2 SHELL CHROME RESKIN  (gated: .fad-app.fad-ui-v2 — added when ui_version='v2')
+   ---------------------------------------------------------------------------
+   Rethemes the EXISTING Header / Sidebar / dropdowns to the shipped FridayOS
+   Claude Design (2026-05-30) by redefining the legacy --color-* + font tokens
+   the chrome reads from, under the v2 gate ONLY. The chrome COMPONENTS are
+   unchanged (every handler/dropdown intact); v1 (no .fad-ui-v2 class) is
+   byte-identical to before. This is the "reskin, not rewrite" path.
+   =========================================================================== */
+.fad-app.fad-ui-v2 {
+  /* FridayOS dark palette — maps the chrome's --color-* tokens to the new brand */
+  --color-background-tertiary:#070C1A;   /* app base (was #0b0d14) */
+  --color-background-secondary:#0C1428;  /* hover / rail surfaces */
+  --color-background-primary:#05091A;    /* header / card */
+  --color-text-tertiary:#5d6f93;
+  --color-text-secondary:#8FA0C2;
+  --color-text-primary:#EAF0FB;
+  --color-border-tertiary:#162238;
+  --color-border-secondary:#1d2b46;
+  --color-border-info:rgba(62,116,217,.5);
+  --color-brand-navy:#EAF0FB;            /* wordmark/brand ink → near-white on dark chrome */
+  --color-brand-accent:#3E74D9;          /* FridayOS blue (was #5680CA) */
+  --color-brand-accent-rgb:62,116,217;
+  --color-brand-accent-soft:rgba(62,116,217,.14);
+  --color-brand-accent-softer:rgba(62,116,217,.06);
+  --color-text-info:#6BA3F2;
+  --color-text-success:#3fb389;
+  --color-text-danger:#ef6b66;
+  --color-text-warning:#d6a85a;
+  /* fonts → shipped FridayOS type (Archivo display · Space Grotesk UI) */
+  --font-sans-fad:'Space Grotesk',-apple-system,system-ui,sans-serif;
+  --font-friday-fad:'Archivo',Georgia,sans-serif;
+}
+/* Wordmark — Archivo italic, FridayOS look. The component renders "FAD"/"F";
+   we restyle weight/italic to match the brand wordmark treatment. */
+.fad-app.fad-ui-v2 .fad-brand-wordmark{font-family:var(--font-friday-fad);font-style:italic;font-weight:800;letter-spacing:-.02em}
+/* Friday entry (rail) — subtle blue gradient like the prototype's .askfri */
+.fad-app.fad-ui-v2 .fad-friday-entry{background:linear-gradient(180deg,rgba(62,116,217,.16),rgba(62,116,217,.05));border-color:rgba(62,116,217,.24)}
+.fad-app.fad-ui-v2 .fad-friday-entry .fad-friday-label{font-family:var(--font-friday-fad);font-style:italic}
+/* Active nav item — FridayOS-blue ghost fill (component already uses accent tokens) */
+.fad-app.fad-ui-v2 .fad-nav-item.active{background:var(--color-brand-accent-soft);color:var(--color-text-info)}
