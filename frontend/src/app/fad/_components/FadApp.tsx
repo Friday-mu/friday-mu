@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 // T3.15 — side-effect import boots i18next before any module-level
 // useTranslation()/useT() call fires. Must precede other module
@@ -59,6 +59,7 @@ import NotificationPrompt from '../../../components/NotificationPrompt';
 import { useEnabledModules } from '../_data/useEnabledModules';
 import { useAnnexA } from '../_data/useAnnexA';
 import { useTenantCurrency } from '../_data/useTenantCurrency';
+import { useUiVersion, type UiVersion } from '../_data/uiVersion';
 
 type Theme = 'light' | 'dark';
 
@@ -96,6 +97,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
   const [authChecked, setAuthChecked] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const role = useCurrentRole();
+  const [uiVersion] = useUiVersion();
   const { enabledSet } = useEnabledModules();
   useAnnexA();
   useTenantCurrency();
@@ -381,7 +383,7 @@ function FadAppInner({ initialFridayFs = true }: FadAppProps) {
           ) : moduleDisabledForTenant ? (
             <ModuleNotEnabled label={mod.label} />
           ) : (
-            renderModule(mod, subPage, { theme, toggleTheme, openFriday, finRole, setFinRole, setSubPage })
+            renderModule(mod, subPage, { theme, toggleTheme, openFriday, finRole, setFinRole, setSubPage, uiVersion })
           )}
         </main>
       </div>
@@ -437,10 +439,30 @@ function ModuleNotEnabled({ label }: { label: string }) {
   );
 }
 
+// ── UI-version (P0.4): V2 parallel module renderers ────────────────────────────
+// Live-selectable Legacy(v1) ↔ V2 UI (see _data/uiVersion.ts). Each entry renders
+// the V2 component for that module id; modules WITHOUT an entry fall back to the
+// legacy switch below — so migration is incremental and never breaks an un-migrated
+// module. This map is the template-marketplace seam: add a renderer per migrated module.
+type ModuleCtx = {
+  theme: Theme;
+  toggleTheme: () => void;
+  openFriday: (scope?: string) => void;
+  finRole: FinRole;
+  setFinRole: (r: FinRole) => void;
+  setSubPage: (sub: string) => void;
+  uiVersion: UiVersion;
+};
+
+const V2_MODULE_RENDERERS: Record<string, (subPage: string | null, ctx: ModuleCtx) => ReactNode> = {
+  // Populated per module migration (M-series). Example shape:
+  // properties: (subPage, ctx) => <PropertiesModuleV2 subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} />,
+};
+
 function renderModule(
   mod: ModuleDef,
   subPage: string | null,
-  ctx: { theme: Theme; toggleTheme: () => void; openFriday: (scope?: string) => void; finRole: FinRole; setFinRole: (r: FinRole) => void; setSubPage: (sub: string) => void }
+  ctx: ModuleCtx
 ) {
   const inner = renderModuleInner(mod, subPage, ctx);
   const resources = MODULE_RESOURCE[mod.id];
@@ -458,8 +480,14 @@ function renderModule(
 function renderModuleInner(
   mod: ModuleDef,
   subPage: string | null,
-  ctx: { theme: Theme; toggleTheme: () => void; openFriday: (scope?: string) => void; finRole: FinRole; setFinRole: (r: FinRole) => void; setSubPage: (sub: string) => void }
+  ctx: ModuleCtx
 ) {
+  // UI-version switch (P0.4): render the V2 component when selected + available;
+  // otherwise fall through to the legacy switch below.
+  if (ctx.uiVersion === 'v2') {
+    const v2 = V2_MODULE_RENDERERS[mod.id];
+    if (v2) return v2(subPage, ctx);
+  }
   switch (mod.id) {
     case 'inbox':
       return <InboxModule onAskFriday={ctx.openFriday} />;

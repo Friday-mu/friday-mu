@@ -19,6 +19,7 @@ import { fireToast } from '../Toaster';
 import { TASK_USER_BY_ID } from '../../_data/tasks';
 import { ROLE_LABEL } from '../../_data/permissions';
 import { useT } from '../../_i18n/useT';
+import { useUiVersion } from '../../_data/uiVersion';
 
 interface Props {
   theme: 'light' | 'dark';
@@ -77,6 +78,7 @@ export function SettingsModule({ theme, onToggleTheme }: Props) {
 
 function Appearance({ theme, onToggleTheme }: Props) {
   const { t, lang, setLang } = useT();
+  const [uiVersion, setUiVersion] = useUiVersion();
   return (
     <div className="card settings-section">
       <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 500 }}>{t('settings.sections.appearance', 'Appearance')}</h3>
@@ -92,6 +94,36 @@ function Appearance({ theme, onToggleTheme }: Props) {
           </p>
         </div>
         <div className={'toggle' + (theme === 'dark' ? ' on' : '')} onClick={onToggleTheme} />
+      </div>
+      {/* P0.4 — UI version (Legacy ↔ V2). @demo:state PROD-STATE-8 (see _data/uiVersion.ts). */}
+      <div className="settings-row">
+        <div>
+          <h5>{t('settings.appearance.uiVersion', 'Interface')}</h5>
+          <p>{t('settings.appearance.uiVersionHelp', 'Switch between the classic interface and the new design. Remembered on this device.')}</p>
+        </div>
+        <div role="radiogroup" aria-label={t('settings.appearance.uiVersion', 'Interface')} style={{ display: 'inline-flex', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          {([['v1', t('settings.appearance.uiClassic', 'Classic')], ['v2', t('settings.appearance.uiV2', 'New design')]] as const).map(([opt, label]) => (
+            <button
+              key={opt}
+              type="button"
+              role="radio"
+              aria-checked={uiVersion === opt}
+              onClick={() => setUiVersion(opt)}
+              style={{
+                padding: '6px 14px',
+                fontSize: 13,
+                background: uiVersion === opt ? 'var(--color-brand-accent)' : 'transparent',
+                color: uiVersion === opt ? '#fff' : 'var(--color-text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: uiVersion === opt ? 500 : 400,
+                fontFamily: 'inherit',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       {/* T3.15 — language toggle (lives in Appearance because Settings
           for field staff is restricted to appearance + account only). */}

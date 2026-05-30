@@ -118,6 +118,7 @@ If you write something demo-only or fake-backend, add a `// @demo:*` comment in 
 | PROD-STATE-5 | `fad:review` (review mode toggle) | `_data/reviewMode.ts` | Backend feature flag (`GET /api/feature-flags`). |
 | PROD-STATE-6 | `fad:theme`, `fad:collapsed`, `fad:inbox:list`, `fad:inbox:right` | UI preferences across FAD shell | **Optional** — these are pure UI prefs, fine to keep client-only. If we want cross-device persistence: `GET/PUT /api/user/preferences`. |
 | PROD-STATE-7 | `fad.schedule.lunchByStaff.v1` | `gm/screens/schedule.tsx` (movable-lunch override map) | Mirror lunch start-hour on the staff roster + sync: `PATCH /api/ops/staff/:id/lunch`. Default windows come from PROD-CONFIG-12; this key only holds operator drag overrides. |
+| PROD-STATE-8 | `fad:ui_version` | `_data/uiVersion.ts` (read/write), `SettingsModule.tsx` Appearance toggle | UI-template preference (Legacy `v1` ↔ V2 `v2`). Mirror onto a per-user/per-tenant column like `preferred_language` (`backend/src/auth/session.js`) + hydrate via `/api/auth/me`, so the chosen interface follows the user across devices. This is the seam for a future multi-template ("pick your UI") capability — widen the enum to a template id when needed. |
 
 ---
 
