@@ -244,3 +244,29 @@ Friday done"): eval-mining/analyzer operating cadence (Plan 2/6), KB harness fac
   incrementally; un-migrated modules auto-fall-back to legacy with zero breakage.
 - V2 components live in `_components/modules/v2/` (one "template" dir = the marketplace seam).
 - A user toggle (Settings → Appearance) flips `ui_version`. `@demo:state` until the backend column lands.
+
+---
+
+## 10. Post-reconcile findings (2026-05-30)
+- **Trunk confirmed = `fad-rebuild`** (Ishant + `docs/deploy.md:146`). Live admin.friday.mu = fad-rebuild @ `88c0681f`
+  (VPS rsync, FE+BE paired; NOT Vercel). `fad-design-os-v01-frontend` = stale divergent line (last commit 2026-05-21)
+  → archive/reference only; repoint or decommission the Vercel project. V2 branch reconciled forward onto trunk
+  (`32faff85`), clean (the 2 trunk fixes auto-merged — equivalents already present).
+- **Guest portal #9 (FAD side) = DONE + LIVE:** `/api/public/stays/resolve` (Portal v2 — claim + resolver +
+  reservation-mode envelope + booking-proof) in `backend/src/public/portal.js`, mounted, present at live `88c0681f`.
+  The `/stay/[token]` page + un-gating ("on its way") is the website (friday.mu) repo's job — separate codebase.
+- **Ops boundaries (from `2026-05-30-fad-redesign-ops-handover.md`):** Ops owns migrations 113/114,
+  `/api/tasks/:id/attachments`, `/api/operations/settings`, `OperationsModule` SettingsPage, `gm/screens/*`,
+  `gm/kit.tsx`, `operations/TaskDetail.tsx`. **M2 (Settings integration control plane) = the FAD `SettingsModule`
+  Integrations tab — a different surface, no collision.** Reservations/Calendar are clear to start.
+- **New Ask-Friday-lane TODOs discovered (mine, sessions merged) — queue as AF7/AF8:** (a) GM Ask-panel / FridayBar
+  action buttons (`gm/kit.tsx` AskPanel — `@demo:ui` PROD-GM-ASKPANEL-1) → wire to real Core actions + failed-state UI;
+  (b) Operations TaskDetail `AISuggestionRow` "Accept" applies nothing — needs the suggestion action payload (Core contract addition).
+- **Inbox split (ops handover §5):** resolved by consolidation — this lane now owns both the guest Inbox shell AND
+  Inbox-Consult / Ask-Friday panel / TeamInbox (M11).
+- **`missingStaffContextPackDrafts: 1` — PARKED.** One active Ask-Friday surface lacks a staff context-pack DRAFT
+  (flag `missing_staff_context_pack_draft`, `ask_friday/index.js`). Resolving = author + save a draft pack for that
+  surface (governance decision via the Core publisher; needs the surface id from live `/readiness` + content/approval)
+  — not a code fix, not a V2 deploy blocker (pre-existing Core state; V2 ships behind the legacy default).
+- **Hygiene:** `git diff --check` clean (stripped trailing whitespace in the persisted design spec); retired-name
+  scan ("OS Friday") clean across the V2 diff.

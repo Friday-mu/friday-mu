@@ -36,7 +36,7 @@ For each module define `{groundsIn:[entities/source systems], canDraft:[…], ga
 - **Buyers** (CRM): name · budget · areas · type wanted · bedrooms · finance status · stage (new/qualified/viewing/offer) · last contact. Drawer = requirements + matched listings + activity.
 - **Sellers**: owner/external · property · motivation · ask vs estimate · mandate (exclusive/open) · stage. Drawer = listing link + valuation + comms.
 - **Matches (AI)**: cards pairing a buyer ↔ listing/seller with a **match score** (`ConfBar`) + reasons ("budget fit, area fit, 3-bed match, finance ready"). Actions: intro, schedule viewing, dismiss. `Provenance` = which buyer/listing fields drove it. Fallback state when comps thin.
-- **Valuations (AVM)**: interactive estimator — pick property (or type+area+size+beds) → **sale estimate band** + **rent estimate band** with `ConfBar`, driven by market comps (modeled `SourceTag`). Comparable sales/rentals table. "Generate owner valuation report" → `.doc-a4` (navy). 
+- **Valuations (AVM)**: interactive estimator — pick property (or type+area+size+beds) → **sale estimate band** + **rent estimate band** with `ConfBar`, driven by market comps (modeled `SourceTag`). Comparable sales/rentals table. "Generate owner valuation report" → `.doc-a4` (navy).
 - **Opportunities (AI)**: surfaced leads — owners likely to sell (managed units w/ low yield / long hold), buyers re-activating, price-reduction nudges, cross-sell to Syndic/Design. Each = card + reason + CTA.
 - **Deals**: offer→acceptance→deposit→deeds→commission pipeline (reuse `.wiz`/pipeline). Commission = Friday revenue line (internal).
 - **Mobile**: `MobileAgency` — listings list + buyers + matches (hot) + a quick valuation tool. More-menu entry.
@@ -53,10 +53,10 @@ For each module define `{groundsIn:[entities/source systems], canDraft:[…], ga
 ---
 ## PART 4 — MARKETING · `window.FADMKTG`, rail under System
 **Job:** listing content, channel optimization, promotions, brand. **Entities:** Listing content, Channel, Promotion, Campaign, Asset. **Sources:** Channels (Airbnb/Booking/direct), Guesty listings. Tabs: Listings content · Channels · Promotions · Performance.
-- **Listings content**: per property — photos, title/description (EN/FR), completeness score (`ConfBar`), AI-improve suggestions (Friday draft, approval-gated). 
+- **Listings content**: per property — photos, title/description (EN/FR), completeness score (`ConfBar`), AI-improve suggestions (Friday draft, approval-gated).
 - **Channels**: per channel sync state (`SyncChip`), rate/availability parity, calendar conflicts.
 - **Promotions**: discount rules, min-stay, last-minute — toggle live/scheduled.
-- **Performance**: views→booking funnel per channel, content score vs occupancy. 
+- **Performance**: views→booking funnel per channel, content score vs occupancy.
 - **States**: channel failed-sync, content "no photos yet" empty, modeled performance forecasts.
 
 ---
@@ -69,7 +69,7 @@ For each module define `{groundsIn:[entities/source systems], canDraft:[…], ga
 
 ---
 ## PART 6 — DEEPEN EXISTING (extend built screens)
-- **Finance**: period-close wizard already built — add **per-amount provenance** (`SourceTag`: Guesty-accounting-truth / FAD-ledger / pending-approval / modeled-forecast) on every figure; expand reconciliation workspace (match queue, exceptions). 
+- **Finance**: period-close wizard already built — add **per-amount provenance** (`SourceTag`: Guesty-accounting-truth / FAD-ledger / pending-approval / modeled-forecast) on every figure; expand reconciliation workspace (match queue, exceptions).
 - **Owners**: full **statement workflow** — draft→review→sent→viewed states (`bdg`) + waterfall (revenue→fees→expenses→payout) already in `ScreenOwnerStatement`; add the state badges + a "send" gate. Clarify ownership: **Owners** = relationship/statements/comms; **Finance** = ledger/close/tax. Cross-link, don't duplicate.
 - **Properties = the SPINE**: make Property record converge Guesty commercial + Breezeway ops/condition + Finance + Reviews + guest history + Ask Friday context. Each field carries a `SourceTag`. Tabs: Overview · Commercial(Guesty) · Condition/Ops(Breezeway) · Finance · Reviews · Guests · Documents · Ask Friday. This is the canonical detail record other modules link into.
 - **Reviews & HR**: explicit **"no synced data yet"** empty state vs real-data (some platforms unconnected); HR **leave-request workflow** (request→pending→approved/declined, coverage check — partially in staff drawer; make it a first-class queue).
