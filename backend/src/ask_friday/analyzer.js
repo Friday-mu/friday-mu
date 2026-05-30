@@ -1,0 +1,348 @@
+'use strict';
+
+const crypto = require('node:crypto');
+const { query } = require('../database/client');
+const { cleanString, redactText, safeJson } = require('./contracts');
+
+const LOW_CONFIDENCE = new Set(['low', 'unknown']);
+const GAP_OUTCOMES = new Set(['failed', 'abandoned', 'needs_info', 'low_confidence', 'no_answer']);
+const MAX_EVENTS = 500;
+const PRIVACY_WEIGHT = {
+  public: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  restricted: 4,
+  unknown: -1,
+};
+
+function stableId(prefix, parts) {
+  const hash = crypto.createHash('sha256').update(parts.filter(Boolean).join('|')).digest('hex');
+  return `${prefix}_${hash.slice(0, 24)}`;
+}
+
+function cleanHours(value) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return 168;
+  return Math.min(Math.max(Math.floor(raw), 1), 24 * 90);
+}
+
+function cleanLimit(value) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return 200;
+  return Math.min(Math.max(Math.floor(raw), 1), MAX_EVENTS);
+}
+
+function eventSignal(row) {
+  const confidence = cleanString(row.confidence, 40).toLowerCase();
+  const outcome = cleanString(row.outcome, 80).toLowerCase();
+  const handoffTriggered = Boolean(row.handoff?.triggered);
+  const helpfulness = row.signals?.answerHelpfulness;
+  if (LOW_CONFIDENCE.has(confidence)) return 'low_confidence';
+  if (GAP_OUTCOMES.has(outcome)) return outcome;
+  if (handoffTriggered && outcome !== 'resolved') return 'handoff';
+  if (helpfulness === false || helpfulness === 'negative') return 'negative_feedback';
+  return null;
+}
+
+function eventIntent(row) {
+  return cleanString(row.intent, 120).toLowerCase() || 'unknown_intent';
+}
+
+function clusterKey(row) {
+  return [
+    cleanString(row.surface_id, 120) || 'unknown_surface',
+    eventIntent(row),
+    eventSignal(row) || 'signal',
+  ].join('::');
+}
+
+function summarizeEvent(row) {
+  const user = redactText(cleanString(row.user_turn_summary, 800));
+  const assistant = redactText(cleanString(row.assistant_action_summary, 800));
+  return {
+    eventId: row.event_id,
+    createdAt: row.created_at,
+    outcome: row.outcome || null,
+    confidence: row.confidence || 'unknown',
+    userTurnSummary: user,
+    assistantActionSummary: assistant,
+    toolsUsed: Array.isArray(row.tools_used) ? row.tools_used.slice(0, 20) : [],
+    knowledgeUsed: Array.isArray(row.knowledge_used) ? row.knowledge_used.slice(0, 20) : [],
+    privacyClass: cleanString(row.privacy_class, 40).toLowerCase() || 'unknown',
+    evidenceRefs: Array.isArray(row.stored_evidence_refs)
+      ? row.stored_evidence_refs.slice(0, 10).map((ref) => safeJson(ref, 20, 1000))
+      : [],
+  };
+}
+
+function highestPrivacyClass(events) {
+  let selected = 'unknown';
+  for (const event of events || []) {
+    const privacyClass = cleanString(event.privacyClass, 40).toLowerCase() || 'unknown';
+    if ((PRIVACY_WEIGHT[privacyClass] ?? 2) > (PRIVACY_WEIGHT[selected] ?? 2)) {
+      selected = privacyClass;
+    }
+  }
+  return selected;
+}
+
+function reviewProfileForCluster(cluster, riskClass) {
+  const surfaceId = cleanString(cluster.surfaceId, 120).toLowerCase();
+  const targetPrivacyClass = riskClass === 'restricted' ? 'restricted' : highestPrivacyClass(cluster.events);
+
+  if (surfaceId.includes('finance')) {
+    return { reviewLane: 'restricted_finance', reviewerDomain: 'finance', targetPrivacyClass: 'restricted' };
+  }
+  if (surfaceId.includes('legal')) {
+    return { reviewLane: 'restricted_legal', reviewerDomain: 'legal', targetPrivacyClass: 'restricted' };
+  }
+  if (surfaceId.includes('owner')) {
+    return { reviewLane: 'owner_private', reviewerDomain: 'owner_relations', targetPrivacyClass: 'high' };
+  }
+  if (surfaceId.startsWith('website_') || surfaceId.startsWith('guest_portal_') || surfaceId === 'public_mcp') {
+    return { reviewLane: 'public', reviewerDomain: 'product', targetPrivacyClass };
+  }
+  if (surfaceId.includes('internal_agent') || surfaceId.includes('memory')) {
+    return { reviewLane: 'internal', reviewerDomain: 'engineering', targetPrivacyClass };
+  }
+  if (surfaceId.startsWith('fad_') || surfaceId.includes('consult') || surfaceId.includes('inbox')) {
+    return { reviewLane: 'staff_ops', reviewerDomain: 'ops', targetPrivacyClass };
+  }
+  if (riskClass === 'restricted') {
+    return { reviewLane: 'restricted_general', reviewerDomain: 'ops', targetPrivacyClass: 'restricted' };
+  }
+  return { reviewLane: 'general', reviewerDomain: null, targetPrivacyClass };
+}
+
+function buildClusters(rows, options = {}) {
+  const minClusterSize = Math.max(1, Number(options.minClusterSize) || 2);
+  const groups = new Map();
+  for (const row of rows || []) {
+    const signal = eventSignal(row);
+    if (!signal) continue;
+    const key = clusterKey(row);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        signal,
+        surfaceId: cleanString(row.surface_id, 120) || 'unknown_surface',
+        intent: eventIntent(row),
+        events: [],
+      });
+    }
+    groups.get(key).events.push(summarizeEvent(row));
+  }
+  return [...groups.values()]
+    .filter((cluster) => cluster.events.length >= minClusterSize)
+    .sort((a, b) => b.events.length - a.events.length);
+}
+
+function candidateFromCluster(cluster) {
+  const eventIds = cluster.events.map((event) => event.eventId).filter(Boolean);
+  const first = cluster.events[0] || {};
+  const candidateId = stableId('afc', [cluster.key, ...eventIds]);
+  const targetLayer = cluster.signal === 'low_confidence' ? 'canonical_or_surface_knowledge' : 'surface_behavior';
+  const riskClass = cluster.surfaceId.includes('finance') ? 'high' : 'medium';
+  const reviewProfile = reviewProfileForCluster(cluster, riskClass);
+  return {
+    candidateId,
+    candidateType: cluster.signal === 'negative_feedback' ? 'behavior_rule' : 'knowledge_gap',
+    targetLayer,
+    proposedChange: {
+      operation: 'review',
+      surfaceId: cluster.surfaceId,
+      intent: cluster.intent,
+      signal: cluster.signal,
+      suggestedReview: 'Review source truth, surface behavior, and eval coverage before publishing any change.',
+      representativeUserTurnSummary: first.userTurnSummary || null,
+    },
+    sourceEventIds: eventIds,
+    evidenceSummary: [
+      `${cluster.events.length} redacted Ask Friday events grouped for ${cluster.surfaceId}.`,
+      `Intent: ${cluster.intent}.`,
+      `Signal: ${cluster.signal}.`,
+      first.userTurnSummary ? `Representative user turn: ${first.userTurnSummary}` : '',
+    ].filter(Boolean).join(' '),
+    riskClass,
+    trustTier: 'production_event_cluster',
+    reviewStatus: 'pending',
+    reviewLane: reviewProfile.reviewLane,
+    reviewerDomain: reviewProfile.reviewerDomain,
+    allowedSurfaceIds: [cluster.surfaceId].filter(Boolean),
+    targetPrivacyClass: reviewProfile.targetPrivacyClass,
+  };
+}
+
+function evalCaseFromCluster(cluster) {
+  const first = cluster.events[0] || {};
+  const evalId = stableId('afeval', [cluster.key, first.eventId || '']);
+  return {
+    evalId,
+    suiteId: `${cluster.surfaceId}_regression`,
+    surfaceId: cluster.surfaceId,
+    sourceEventIds: cluster.events.map((event) => event.eventId).filter(Boolean),
+    inputPayload: {
+      surfaceId: cluster.surfaceId,
+      intent: cluster.intent,
+      promptSummary: first.userTurnSummary || '',
+      priorFailureSignal: cluster.signal,
+    },
+    expected: {
+      shouldGroundInApprovedKnowledge: true,
+      shouldUseAllowedToolsOnly: true,
+      shouldEscalateOrBeHonestWhenConfidenceIsLow: true,
+      shouldNotExposePrivateData: true,
+    },
+    assertions: [
+      { type: 'grounding', severity: 'must' },
+      { type: 'tool_policy', severity: 'must' },
+      { type: 'privacy_redaction', severity: 'must' },
+      { type: 'low_confidence_honesty', severity: 'should' },
+    ],
+    status: 'active',
+  };
+}
+
+async function insertCandidate(tenantId, candidate) {
+  const { rows } = await query(
+    `INSERT INTO ask_friday_kb_candidates (
+       tenant_id, candidate_id, candidate_type, target_layer, proposed_change,
+       source_event_ids, evidence_summary, risk_class, trust_tier, review_status,
+       review_lane, reviewer_domain, allowed_surface_ids, target_privacy_class, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, $5::jsonb,
+       $6, $7, $8, $9, $10,
+       $11, $12, $13, $14, NOW()
+     )
+     ON CONFLICT (tenant_id, candidate_id) DO NOTHING
+     RETURNING candidate_id`,
+    [
+      tenantId,
+      candidate.candidateId,
+      candidate.candidateType,
+      candidate.targetLayer,
+      JSON.stringify(safeJson(candidate.proposedChange, 120, 8000)),
+      candidate.sourceEventIds,
+      candidate.evidenceSummary,
+      candidate.riskClass,
+      candidate.trustTier,
+      candidate.reviewStatus,
+      candidate.reviewLane,
+      candidate.reviewerDomain,
+      candidate.allowedSurfaceIds,
+      candidate.targetPrivacyClass,
+    ],
+  );
+  return rows.length > 0;
+}
+
+async function insertEvalCase(tenantId, evalCase) {
+  const { rows } = await query(
+    `INSERT INTO ask_friday_eval_cases (
+       tenant_id, eval_id, suite_id, surface_id, source_event_ids,
+       input_payload, expected, assertions, status, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, $5,
+       $6::jsonb, $7::jsonb, $8::jsonb, $9, NOW()
+     )
+     ON CONFLICT (tenant_id, eval_id) DO NOTHING
+     RETURNING eval_id`,
+    [
+      tenantId,
+      evalCase.evalId,
+      evalCase.suiteId,
+      evalCase.surfaceId,
+      evalCase.sourceEventIds,
+      JSON.stringify(safeJson(evalCase.inputPayload, 120, 8000)),
+      JSON.stringify(safeJson(evalCase.expected, 120, 8000)),
+      JSON.stringify(evalCase.assertions.map((assertion) => safeJson(assertion))),
+      evalCase.status,
+    ],
+  );
+  return rows.length > 0;
+}
+
+async function runAnalyzer(options) {
+  const tenantId = options.tenantId;
+  const sinceHours = cleanHours(options.sinceHours);
+  const limit = cleanLimit(options.limit);
+  const minClusterSize = Math.max(1, Number(options.minClusterSize) || 2);
+  const surfaceId = cleanString(options.surfaceId, 120);
+  const dryRun = options.dryRun !== false;
+  const params = [tenantId, sinceHours];
+  const filters = [
+    'e.tenant_id = $1',
+    "e.created_at >= NOW() - ($2::int * INTERVAL '1 hour')",
+    "e.redaction_status IN ('redacted', 'partially_redacted', 'not_required')",
+  ];
+  if (surfaceId) {
+    params.push(surfaceId);
+    filters.push(`e.surface_id = $${params.length}`);
+  }
+
+  const { rows } = await query(
+    `SELECT e.event_id, e.created_at, e.source_system, e.surface_id, e.intent,
+            e.user_turn_summary, e.assistant_action_summary, e.tools_used,
+            e.knowledge_used, e.confidence, e.outcome, e.handoff, e.signals,
+            e.privacy_class, e.redaction_status,
+            COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                'evidenceId', er.evidence_id,
+                'evidenceType', er.evidence_type,
+                'privacyClass', er.privacy_class,
+                'redactionStatus', er.redaction_status,
+                'summary', er.summary
+              ) ORDER BY er.created_at DESC)
+                FROM ask_friday_evidence_refs er
+               WHERE er.tenant_id = e.tenant_id
+                 AND er.event_id = e.event_id
+            ), '[]'::jsonb) AS stored_evidence_refs
+       FROM ask_friday_learning_events e
+      WHERE ${filters.join(' AND ')}
+      ORDER BY e.created_at DESC
+      LIMIT ${limit}`,
+    params,
+  );
+
+  const clusters = buildClusters(rows, { minClusterSize });
+  const candidates = clusters.map(candidateFromCluster);
+  const evalCases = clusters.map(evalCaseFromCluster);
+
+  let insertedCandidates = 0;
+  let insertedEvalCases = 0;
+  if (!dryRun) {
+    for (const candidate of candidates) {
+      if (await insertCandidate(tenantId, candidate)) insertedCandidates += 1;
+    }
+    for (const evalCase of evalCases) {
+      if (await insertEvalCase(tenantId, evalCase)) insertedEvalCases += 1;
+    }
+  }
+
+  return {
+    dryRun,
+    inspectedEvents: rows.length,
+    clusters: clusters.length,
+    candidates,
+    evalCases,
+    insertedCandidates,
+    insertedEvalCases,
+  };
+}
+
+module.exports = {
+  runAnalyzer,
+  _test: {
+    buildClusters,
+    candidateFromCluster,
+    cleanHours,
+    cleanLimit,
+    evalCaseFromCluster,
+    eventSignal,
+    highestPrivacyClass,
+    reviewProfileForCluster,
+    stableId,
+    summarizeEvent,
+  },
+};

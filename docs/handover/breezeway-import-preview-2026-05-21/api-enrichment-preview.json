@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-05-21T17:57:30.434Z",
+  "mode": "api_task_id_preview_only",
+  "source": "breezeway_api",
+  "scanned": 2,
+  "retrieved": 2,
+  "failed": 0,
+  "failures": [],
+  "apiFieldPresence": {
+    "descriptions": 2,
+    "reportUrls": 2,
+    "assignments": 1
+  },
+  "samples": [
+    {
+      "taskId": "130484603",
+      "externalRef": "breezeway:130484603",
+      "api": {
+        "hasDescription": true,
+        "hasSummary": false,
+        "hasReportUrl": true,
+        "assignmentsCount": 0,
+        "photosCount": 0,
+        "tagsCount": 0,
+        "commentsCount": 0,
+        "costsCount": 0,
+        "suppliesCount": 0,
+        "hasCreatedBy": false,
+        "hasFinishedBy": false,
+        "hasRequestedBy": false,
+        "hasLinkedReservation": false,
+        "reportedTasksCount": 0,
+        "statusStage": "new"
+      }
+    },
+    {
+      "taskId": "112524668",
+      "externalRef": "breezeway:112524668",
+      "api": {
+        "hasDescription": true,
+        "hasSummary": false,
+        "hasReportUrl": true,
+        "assignmentsCount": 1,
+        "photosCount": 0,
+        "tagsCount": 0,
+        "commentsCount": 0,
+        "costsCount": 0,
+        "suppliesCount": 0,
+        "hasCreatedBy": false,
+        "hasFinishedBy": false,
+        "hasRequestedBy": false,
+        "hasLinkedReservation": false,
+        "reportedTasksCount": 0,
+        "statusStage": "new"
+      }
+    }
+  ],
+  "notes": [
+    "Preview only: no FAD rows were read or written.",
+    "Use DB-backed mode without --task-id to preview enrichment against imported FAD tasks."
+  ]
+}

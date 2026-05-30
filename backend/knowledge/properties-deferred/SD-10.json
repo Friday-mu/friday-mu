@@ -1,0 +1,162 @@
+{
+  "property_id": "beachfront_luxury",
+  "display_name": "Beachfront Luxury 3BR",
+  "full_name": "Luxurious Beachfront 3-Bedroom Apt with Sea Views",
+  "location": "Beachfront, Mauritius",
+  "property_type": "apartment",
+  "bedrooms": 3,
+  "guest_capacity": 6,
+  "priority_level": "high",
+  "message_volume": {
+    "monthly_average": 32,
+    "peak_season": 48,
+    "low_season": 16
+  },
+  "quick_responses": {
+    "booking": {
+      "trigger_keywords": [
+        "confirmation",
+        "check-in time",
+        "guests",
+        "arrival"
+      ],
+      "response": "Welcome! Check-in: 2:00 PM | Check-out: 10:00 AM | Please confirm arrival time and guest count | Instructions sent at 10 AM on arrival day",
+      "priority": "high"
+    },
+    "transfers": {
+      "trigger_keywords": [
+        "airport",
+        "pickup",
+        "transfer",
+        "transport"
+      ],
+      "response": "Airport transfers available via our partners | 10% discount at mauritiusattractions.com with code FRIDAYMU | Includes transfers, car rentals, activities",
+      "priority": "medium"
+    },
+    "amenities": {
+      "trigger_keywords": [
+        "beach",
+        "pool",
+        "facilities",
+        "included",
+        "features"
+      ],
+      "response": "Direct beachfront access | Sea views from all rooms | Luxury amenities included | Full guide available via guest app link sent at booking",
+      "priority": "medium"
+    },
+    "return_guest": {
+      "trigger_keywords": [
+        "next stay",
+        "discount",
+        "rebook",
+        "return"
+      ],
+      "response": "10% discount on next Friday Retreats stay! Book directly at fridayretreats.mu with code FRIDAY10 | We'd love to welcome you back!",
+      "priority": "low"
+    }
+  },
+  "property_details": {
+    "amenities": [
+      "Direct Beach Access",
+      "Sea Views",
+      "Luxury Furnishing",
+      "Pool Access"
+    ],
+    "special_offers": {
+      "activities": "10% off mauritiusattractions.com with FRIDAYMU",
+      "return_booking": "10% off next stay with FRIDAY10"
+    },
+    "check_in_time": "14:00",
+    "check_out_time": "10:00"
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "Booking confirmations",
+    "Airport transfer questions",
+    "Beach access information",
+    "Amenity details"
+  ],
+  "conversation_intelligence": {
+    "common_guest_questions": [
+      {
+        "category": "booking",
+        "frequency": "high",
+        "questions": [
+          "Booking confirmed?",
+          "Check-in time?",
+          "Guest count confirmation?"
+        ]
+      },
+      {
+        "category": "transfers",
+        "frequency": "medium",
+        "questions": [
+          "Airport pickup available?",
+          "Transfer services?"
+        ]
+      },
+      {
+        "category": "amenities",
+        "frequency": "medium",
+        "questions": [
+          "Beach access?",
+          "Pool facilities?",
+          "What's included?"
+        ]
+      }
+    ],
+    "complaint_patterns": [
+      "Confusion about direct beach access vs building beach",
+      "Questions about which floor for sea view"
+    ],
+    "things_to_avoid": [
+      "Don't oversell \"beachfront\" — it's across the coastal road",
+      "Avoid confirming specific room view angles"
+    ],
+    "operational_notes": [
+      "Airport transfers available via mauritiusattractions.com code FRIDAYMU (10% discount)",
+      "Check-in instructions sent at 10 AM on arrival day",
+      "Guests often ask about snorkeling spots — recommend Flic en Flac public beach"
+    ],
+    "response_templates": {
+      "transfers": "Airport transfers available through our partner service. 10% discount at mauritiusattractions.com with code FRIDAYMU for transfers, car rentals, and activities."
+    }
+  },
+  "general_intelligence": {
+    "peak_message_times": [
+      "Check-in day morning",
+      "During stay evening",
+      "Check-out day"
+    ],
+    "common_pain_points": [
+      "WiFi password confusion (most common)",
+      "Lockbox/door code uncertainty",
+      "Waste disposal location unclear",
+      "Emergency contact not immediately visible"
+    ],
+    "successful_patterns": [
+      "Quick WiFi credential provision",
+      "Clear step-by-step access instructions",
+      "Immediate emergency response availability",
+      "Proactive information sharing before check-in"
+    ],
+    "brand_voice_reminders": [
+      "Always use we/our/us (not I/my)",
+      "Sign off: \"Warm regards, Friday Retreats\"",
+      "No em dashes",
+      "Paragraphs over bullet points in guest messages",
+      "Empathy without fault admission"
+    ],
+    "services_to_mention": {
+      "transfers": "Airport transfers via mauritiusattractions.com (code FRIDAYMU for 10% off)",
+      "car_rental": "Car rental services available on request",
+      "luggage": "Luggage drop-off available for early arrivals / late departures",
+      "activities": "Local tours and activities bookable through our partners"
+    },
+    "language_distribution": {
+      "english": 70,
+      "french": 25,
+      "mixed": 5
+    }
+  }
+}

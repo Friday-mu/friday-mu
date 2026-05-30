@@ -326,8 +326,12 @@ input:focus, textarea:focus, select:focus {
     width: 100% !important;
   }
 
-  /* Prevent any element from causing horizontal scroll */
-  .min-h-screen, [data-testid="container-conversation-detail"], [data-testid="container-inbox"], header {
+  /* Prevent any element from causing horizontal scroll.
+     Excludes .fad-header — its overflow:hidden was clipping the avatar
+     dropdown on mobile (header is 48px tall, dropdown extends ~210px).
+     The FAD header's own mobile rules already collapse content tightly
+     enough to avoid horizontal overflow. */
+  .min-h-screen, [data-testid="container-conversation-detail"], [data-testid="container-inbox"], header:not(.fad-header) {
     max-width: 100vw;
     overflow-x: hidden;
   }

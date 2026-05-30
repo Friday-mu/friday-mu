@@ -1,0 +1,222 @@
+# Evening session handover — 2026-05-24
+
+> Session after the third `/compact` of the day. Eleven discrete
+> deliverables shipped + verified on prod between ~16:00 and ~18:00
+> MUR. This doc captures what landed, live state, and the open queue
+> for the next session.
+
+## Tree state
+
+- **Branch:** `fad-rebuild`
+- **Tree tip:** `0da4772d` (backlog docs)
+- **Last frontend deploy:** `b5ed4df4` — `https://admin.friday.mu/version.json`
+- **Last backend deploy:** `b5ed4df4` — pm2 `fad-backend` restart 284, migration 087 applied
+- **Working tree:** clean (only `next-env.d.ts` + `tsconfig.tsbuildinfo` artifacts)
+
+## What shipped this session (chronological)
+
+| # | Item | Commit | One-liner |
+|---|---|---|---|
+| 1 | **T3.14** TeamInbox chat alignment | `4cdc4f46` | Own messages right with accent bg, teammates left with neutral; threads inherit. Latent `useJwtUserId` fixture-mapping bug fixed via new `useJwtRawUserId()` hook. Also fixed ScheduleCallDrawer's silently-broken self-exclusion as a side effect. |
+| 2 | **T3.15 v0.1** French i18n toggle | `97230bd2` | i18next + react-i18next bundled as TS modules. EN/FR toggle in Settings → Appearance. Sidebar + Operations + Settings chrome localised. localStorage `fad:lang` persists per-device. First-load default respects browser preference. |
+| 3 | **Calendar v0.4** | `013b3e12` | Native `<input type="date">` jump-to-date. Per-property lane stacking for overlapping reservations (greedy lane assigner + dynamic gridAutoRows). Rich hover task preview popover (title + dept + priority + due + assignees + description). |
+| 4 | **FAB notifications fan-out** | `4de1b127` | New `notifyAdmins()` in `feedback.js` calls `realtime.notifyUsers()`, fanning out to: fad_notifications row + SSE banner + web push (VAPID) + Resend email. Targets every admin/director in the reporter's tenant, excluding the reporter. Slack continues via `notifySlack()` (env var still pending). |
+| 5 | **FAD FAB catalog entry** | `02df90e` (catalog) | New `ui/fad-feedback-fab.md` in `Friday-mu/feature-catalog`. Documents the FAD-specific superset of `feedback-fab.md`: multi-tenant scoping, 4-channel triage, mobile scroll trick (`min-height:0` + `overscroll-behavior:contain`), ⌘⌘ shortcut, env-var matrix. README index updated. |
+| 6 | **T3.15 v0.2** module headers | `72465726` | Inbox · Calendar · Properties · Reservations · HR all swap their `ModuleHeader` (title + subtitle + tab labels + primary CTAs) when language toggles. Inbox patched once (`72465726`) after a missed second `<ModuleHeader title="Inbox" />`. |
+| 7 | **T3.15 v0.3** sub-pages + DB | `a2c57583` | Sidebar sub-page lookup switched to module-qualified keys (`subpage.<module>.<id>`) so `all` resolves to "Tous les logements" in Properties context and "Toutes les réservations" in Reservations. Migration 086 adds `users.preferred_language` (NULL / 'en' / 'fr') with CHECK constraint. `shapeUser()` exposes it; new `PATCH /api/auth/me/preferences` validates + writes. Frontend fires the PATCH on toggle (fire-and-forget) and `hydrateLanguageFromServer()` on mount seeds the lang from the DB when localStorage has no choice yet. |
+| 8 | **T1.14 partial 1** — Channels + Reviews | `f71c6e38` | Analytics Channels tab reads `usePortfolio(30).channel_mix` + derives estimated commissions from industry defaults (Airbnb 15%, Booking 17%, VRBO 8%, Direct 0%) flagged "estimated" in the banner. Reviews tab reads `useLiveReviews()` and builds 6-month rolling rating trend + volume + per-channel breakdown locally. |
+| 9 | **T1.14 partial 2** — Revenue + Team | `d33f5dc4` | Analytics Revenue tab now reads `usePortfolio(30)` + `usePortfolio(90)` for KPIs and re-buckets the daily revenue trend into monthly. Team tab aggregates per-assignee task workload from `useApiTasks` (last 30d) — total touches, completion rate, open overdue. Margin parked deliberately on Finance Phase 3 (gated on GL + owner payouts schema). |
+| 10 | **T3.7 v0.1** website_inbox tenant | `b5ed4df4` | Migration 087 adds `tenant_id UUID NOT NULL DEFAULT FR_TENANT_ID` to `inbox_threads`, `inbox_events`, `inbox_guesty_jobs`, backfills 19 existing threads to FR. Replaces tenant-blind unique-email index with `(tenant_id, lower(guest_email))`. `threads.js` read paths scoped behind `attachIdentity` + `WHERE tenant_id = req.tenantId`: GET/PATCH/REPLY/MARK-PAID. Smoke-tested live: GET returns 19 threads to FR admin. |
+| 11 | **T3.15 v0.4 partial** — Settings Appearance + Reservations Overview body | `b5ed4df4`, `30343e73` | Density / Sidebar / Dark mode / "Currently:" labels in Settings → Appearance, plus Reservations Overview KPIs (Arriving today / Departing today / In-house / Next 7 days / `{n} arrivals booked` / Needs attention / Balance due before check-in) all now use `useT()` keys. Translations added under `settings.appearance.*` + `reservations.overview.*` in both en.ts and fr.ts. |
+
+Plus backlog doc commits along the way (`5e16b94f`, `4f2b7a24`, `689f6988`, `d6e9ad07`, `50ce073a`, `0da4772d`) — all captured in `docs/FAD_BACKLOG.md`.
+
+## Action needed from Ishant
+
+**Slack feedback webhook** — to enable the Slack leg of FAB notifications, add to `/var/www/fad-backend/.env`:
+
+```
+SLACK_FEEDBACK_WEBHOOK_URL=<the Slack incoming webhook URL>
+```
+
+then `pm2 restart fad-backend --update-env`. Without it the Slack leg silently no-ops; the other 3 channels (Email + Push + In-app) all fire fine on every report.
+
+Per the no-secrets-in-chat rule I deliberately didn't paste a webhook URL value — Ishant has that in his credential index (Notion `36443ca8849281f7bba1ddc93698c5ee`) or can generate a fresh one from the Slack app config.
+
+## Verified findings (with sources)
+
+- **`useJwtUserId()` was silently mapping known emails through TASK_USERS** (e.g. `ishant@friday.mu` → `'u-ishant'`) instead of returning the raw DB UUID. Source: `frontend/src/app/fad/_components/usePermissions.ts:96-104`. Consumers were comparing the result against backend-issued UUIDs and silently never matching. Fixed by splitting `readJwtUserId()` (fixture-mapped, still used for context seeding) from `readRawJwtUserId()` (plain decode), and adding `useJwtRawUserId()` for backend-id matching. Both consumers switched (TeamInbox alignment + ScheduleCallDrawer self-exclusion).
+
+- **TeamInbox modal scroll trick:** `.fad-modal-body` uses `overflow-y: auto + min-height: 0 + overscroll-behavior: contain`. Without `min-height: 0`, the flex child takes its content-size as a floor and overflow-y has no effect — the canonical "scrollable flex child" trap. Mirrors the FAD FAB modal pattern documented in the new catalog entry.
+
+- **Multi-tenant default for website_inbox:** column gets `DEFAULT '00000000-0000-0000-0000-000000000001'::uuid` so pre-migration INSERT call sites that haven't been updated yet continue to land safely on the FR tenant — no behavior change for the FR-only deployment, hardening for the non-FR rollout once it lands.
+
+## Live state — what to check
+
+```bash
+# Frontend version
+curl -fsS https://admin.friday.mu/version.json
+# → {"version":"b5ed4df4",...}
+
+# Backend version
+curl -fsS https://admin.friday.mu/api/version
+
+# Migration 086 + 087 applied
+ssh -i ~/.ssh/do_friday_admin root@admin.friday.mu \
+  'sudo -u postgres psql -d friday_gms -c "\d users" | grep preferred_language'
+ssh -i ~/.ssh/do_friday_admin root@admin.friday.mu \
+  'sudo -u postgres psql -d friday_gms -c "\d inbox_threads" | grep tenant_id'
+
+# Language preference round-trip
+# (browser POSTs /api/auth/me/preferences with {preferred_language: 'fr'},
+#  GET /api/auth/me returns preferred_language: 'fr')
+
+# Tenant-scoped website inbox
+# GET /api/inbox/website/threads as FR admin → 19 results
+# (a non-FR tenant would see 0)
+```
+
+## Open queue (next session, priority order)
+
+1. **T1.14 Margin tab** — gated on Finance Phase 3 (GL + owner payouts schema). Park; can't ship without that data.
+2. **T3.15 v0.4 remaining** — module body strings (cards, table headers, empty states, form labels) inside Inbox / Calendar / Properties / Reservations / HR / Finance. Operations module body is the highest field-staff use. Biggest remaining payoff for full FR coverage. ~2-3h.
+3. **T3.7 v0.2** — `webhook.js` + `ai_handoff.js` + `jobs.js` + drafts INSERT/UPDATE paths explicit tenant scoping. No-op for FR-only deployment (DEFAULT covers it); hardening for non-FR rollout.
+4. **Calendar v0.5** (all 3 blocked):
+   - Past-date pricing — ambiguous, needs Ishant's clarification (show historical published rate OR what guest paid?).
+   - Block-dates feature — needs backend route POST `/api/calendar/block`.
+   - Column alignment — couldn't reproduce, needs Ishant's screenshot.
+5. **T3.10** — full ReservationDetail wiring (Folio breakdown · Payments backend · Accounting tab). ~2-3h.
+6. **T3.9** — full PropertyDetail tabs (amenities · listings · per-property tasks + reservations · pricing calendar).
+7. **T1.15** — TaskDetail Breezeway re-skin (full version). Blocked on Ishant's reference screenshot.
+8. **Phase 4** — TaskDetail UI redesign (overlap with T1.15).
+9. **Bug #5** Mary inbox flicker — needs Mary pair-debug, can't repro from idle.
+10. **Bug #3** Franny notification routing — needs Franny re-test on current build.
+11. **Bug #4** Ishant schedule + Breezeway cards — same screenshot dep as T1.15.
+
+## Stopping conditions (still in force)
+
+- 3 consecutive deploy failures → halt + write handover.
+- Migration fails non-trivially → halt.
+- Context > 80% → wrap up cleanly with a fresh handover.
+- Production regression not diagnosable in 30 min → halt.
+
+## Hard constraints (immutable, repeat for next session)
+
+- Git author MUST be `Judith Friday <judith@friday.mu>` (hook-enforced).
+- Type-check + build pass before every deploy. Roll back on regression.
+- Verify on prod via Chrome MCP after every deploy.
+- Mobile QA (375×812) after every UI commit — Chrome MCP `resize_window` is unreliable; needs a real phone.
+- Multi-tenant safety: grep `tenant_id` filter after every new backend route.
+- No `--no-verify`, no force-push, no skipping hooks.
+- Don't edit Friday Website code (GMS edits OK if needed).
+- Skip VPS backups (disk 69%).
+- AI hierarchy: Gemini 3.5 Flash primary / Kimi 2.6 fallback / Sonnet 4.6 third. Image gen ONLY in 2 design surfaces on `gemini-3-pro-image-preview`.
+- `fad-rebuild` canonical — never `fad-design-os-v01-*`.
+- Protected migrations: `050_tasks.sql` through `054_*.sql`, `071_tasks_ops_lifecycle_reconcile.sql` — coordinate before touching.
+
+## Where data lives
+
+- **PROD DB:** Postgres on `admin.friday.mu` (`postgresql://friday:…@localhost:5432/friday_gms`)
+- **FAD backend:** `/var/www/fad-backend/`, pm2 `fad-backend` port 3002, restart 284
+- **GMS backend:** `/var/www/friday-gms/`, pm2 `friday-gms` port 3001, restart 3216
+- **Frontend bundle:** `/var/www/fad/` — both `admin.friday.mu` and `gms.friday.mu` vhosts serve from here
+- **SSH key:** `~/.ssh/do_friday_admin` → `root@admin.friday.mu`
+- **Ishant's Chrome MCP browser:** "Working Browser" deviceId `c49e054a-1059-4f2c-87bf-41fc0e71b03c`
+- **Feature catalog:** `/Users/judith/repos/feature-catalog` (mirror of `Friday-mu/feature-catalog`)
+- **Backlog:** `docs/FAD_BACKLOG.md` (updated this session)
+- **This handover:** `docs/handover/2026-05-24-evening-session-handover.md`
+
+## Recovery (post-compact)
+
+If you (future-self) come back to this and the auto-summary is fuzzy:
+
+1. Read this file first.
+2. `git log --oneline -20` and `curl https://admin.friday.mu/version.json + /api/version` to confirm live state.
+3. Connect Chrome MCP to deviceId `c49e054a-1059-4f2c-87bf-41fc0e71b03c` (re-pair via `switch_browser` if absent).
+4. Open queue above is priority-ordered. T3.15 v0.4 body strings is the most visible remaining payoff for full FR coverage.
+5. Don't re-litigate any of the 11 shipped items — each has its commit + verification trail above.
+
+---
+
+## Addendum — 12th deliverable (2026-05-24 ~18:36)
+
+**FR translations overlay for listings** (commit `634569de`) — per the
+website session's brief, but with the brief's premise corrected:
+auto-translate isn't in FAD. Shipped:
+- mig 088: `fad_properties.translations jsonb` + 60/60 backfill of
+  `translations.en` + GIN index.
+- PATCH `/api/properties/:id/translations` with field/locale whitelist,
+  null-clearing, auto-overlay-creation.
+- `/api/public/listings` + `/api/properties` both LEFT JOIN
+  `fad_properties` and emit `translations` on every row.
+- PropertyDetail → Identity tab → new "Public copy (EN / FR)" section
+  with 2×2 grid (Name EN/FR · Description EN/FR) + Save button.
+- Tested end-to-end on prod with BS-1: PATCH → 200, read-back via
+  `/api/properties/:id` returns the FR, cleanup → 200.
+- Handover note written to `~/.openclaw/workspace/projects/fad/handover-fr-translations-2026-05-24.md`
+  (for the website session to consume).
+- `tagline` deferred — doesn't exist in FAD/Guesty schema, awaiting
+  website team clarification on what they mean by it.
+
+**Updated live state (final):**
+- Tree tip: `634569de` (code)
+- Backend: pm2 restart 285, mig 088 applied
+- Frontend: 634569de
+
+---
+
+## Addendum — late-night follow-up session (2026-05-24 ~19:00–19:35)
+
+Resumed post-`/compact` per the night-handover prompt. Took the open
+queue in priority order. Five further deliverables shipped + verified
+on prod.
+
+| # | Item | Commit | Status |
+|---|---|---|---|
+| 13 | **T3.10** full ReservationDetail wiring (Folio + Payments + Accounting) — mig 089, new backend routes, frontend client, optimistic mutations, live Guesty money_breakdown threading through Folio + Accounting tabs | `eb8f85c6` | ✅ verified end-to-end on prod (LF-7 / Mathis reservation, FR admin) |
+| 14 | **T3.10 follow-ups** — `resolveReservationId` now handles `guesty_reservations.id` cache UUIDs, sanitises overlay channel/status enums against fad_reservations CHECK constraints, DELETE returns `{ok:true}` JSON instead of 204 (apiFetch chokes on empty body). Also `ALTER TABLE OWNER TO friday` on mig 089 tables (prod permission grant) | `e502944a` | ✅ verified on prod (add line / record payment / persist across tabs / remove line) |
+| 15 | **T3.15 v0.4 Operations Overview FR** — operations.status enum widened (reported/scheduled/ready/active/done/etc.), operations.overview.* (title, kicker, KPIs, escalations, daily brief, agenda, file/comment counts). useT() now accepts an optional interpolation params object as the 2nd arg | `47bb4608` | ✅ verified on prod with `localStorage.setItem('fad:lang','fr')` |
+| 16 | **i18n interpolation fix** — react-i18next was using `{{n}}` default; source files use `{n}` (matching the existing `arrivalsBooked` convention). Configured prefix/suffix to single braces so `t('key', {n: 5})` interpolates correctly | `bb8a3623` | ✅ verified (`2 TÂCHES`, `6 fichiers` now render instead of literal `{n}`) |
+| 17 | **T3.7 v0.2 — website_inbox writer-path tenant scoping** — `webhook.js` + `ai_handoff.js` `ON CONFLICT ((LOWER(guest_email)))` was broken since mig 087 dropped that unique index. Now `ON CONFLICT (tenant_id, (LOWER(guest_email)))` + explicit `tenant_id` in INSERT VALUES. Real prod bug fix, not just hardening | `3dfb210f` | ✅ tests pass (17/17), pm2 restart 291 |
+
+**Migrations applied this session:**
+- **089_reservation_folio_payments.sql** — `fad_reservation_folio_lines` + `fad_reservation_payments` (both with `tenant_id`, `amount_minor` BIGINT, FK CASCADE delete to `fad_reservations(id)`). Plus `ALTER TABLE OWNER TO friday` so the app user has perms.
+
+**Final live state (2026-05-24 19:35 MUR):**
+- Tree tip: `3dfb210f`
+- Frontend: `bb8a3623` deployed to `/var/www/fad/`
+- Backend: pm2 restart 291, mig 089 applied
+- Cumulative restart count today: 286 → 291 (six restarts including the Slack fix from before this addendum)
+
+**Authoritative findings from this session:**
+
+1. **`guesty_reservations.id` vs `fad_reservations.id` confusion.** GET `/api/reservations/:id` returns `id: row.id` where `row` is the joined `guesty_reservations.*` — so frontend always holds the CACHE UUID, not the overlay UUID. `resolveReservationId` was only checking `fad_reservations.id`, so every new write-path (folio/payments) 404'd. Fixed by adding a Path 2 lookup against `guesty_reservations.id` that materialises the overlay if it doesn't exist. Pattern is now: any new write route under `/:id` should use `resolveReservationId`, which handles all three id shapes.
+
+2. **`fad_reservations` CHECK constraints are stricter than `guesty_reservations`.** Guesty hands back channels like `agoda` / `homeaway` / `expedia` and statuses like `reserved` / `canceled` — the overlay enum only accepts a small set. `materialiseOverlay` now passes through `sanitizeOverlayChannel` + `sanitizeOverlayStatus` which NULL out unknowns rather than letting INSERT throw.
+
+3. **react-i18next interpolation prefix.** Default is `{{var}}` but the FAD source files were written for `{var}` (existing `arrivalsBooked` got around it with `.replace('{n}', ...)` at the call site). Configured the bootstrap to use single braces, so all current + future strings interpolate naturally with `t('key', { var: value })`.
+
+4. **`ON CONFLICT` clauses must match the unique index expression after mig 087.** The schema migration dropped the old `(LOWER(guest_email))` unique index, replaced with `(tenant_id, LOWER(guest_email))`, but the webhook + ai_handoff upsert paths still referenced the old expression. Postgres rejects with "no unique or exclusion constraint matching the ON CONFLICT specification". This was silently breaking every retried website inquiry from a repeat guest since the mig landed earlier today.
+
+**Open queue (priority order, post-late-night-session):**
+
+1. **T3.9 — full PropertyDetail tabs** (Listings push-through + per-property tasks/reservations already live; amenities + pricing calendar still pending). Listings tab has fixture mutation (`setBaseDescription` / `setChannelDescription`) that should write through to a backend route.
+2. **T3.15 v0.5 — Operations remaining + Properties + Inbox bodies.** ManagerWorkbenchPanel + Schedule + MyTasks + AllTasks pages still EN. PropertyDetail tabs (Identity/Owner/Operational/Financial/Listings/Activity) untouched. TeamInbox cards EN. Roughly 2-3h to do all three.
+3. **Bug #5** Mary inbox flicker — blocked (needs Mary pair-debug)
+4. **Bug #3** Franny notification routing — blocked (needs Franny re-test)
+5. **Bug #4** Ishant Breezeway schedule cards — blocked (needs Ishant screenshot)
+6. **T1.15 / Phase 4** TaskDetail Breezeway re-skin — blocked (needs Ishant screenshot)
+7. **T1.14 Margin** — blocked on Finance Phase 3 (GL + owner payouts schema)
+8. **Calendar v0.5** all three sub-items — blocked on clarifications/screenshots
+9. **`tagline` translation field** — Ishant confirmed the website session hallucinated this; no FAD action needed unless website team formally requests it later
+
+**Pending action items for Ishant (NOT for Claude to fix):**
+
+None remaining as of 19:35 MUR. Earlier Slack webhook + Notion mirror items both resolved during this session (Slack pivoted to chat.postMessage with bot token; Notion mirror flagged as low-priority nice-to-have that can be done from Ishant's session whenever).
+
+**Recovery (post-compact, if needed):**
+
+1. Read this file from the addendum onward.
+2. `git log --oneline -15` + `curl https://admin.friday.mu/version.json + /api/version`.
+3. Connect Chrome MCP to deviceId `c49e054a-1059-4f2c-87bf-41fc0e71b03c`.
+4. Default next move: T3.15 v0.5 module body sweep (Operations ManagerWorkbench → Properties → Inbox) OR T3.9 Listings push-through. Open queue above is priority-ordered.

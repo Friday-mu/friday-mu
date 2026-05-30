@@ -1,0 +1,160 @@
+{
+  "card_type": "subunit",
+  "parent_complex_code": "LB-C",
+  "code": "LB-1",
+  "name": "Spacious Villa with Pool · 5 Min to Beach",
+  "property_id": "674d6130ad0880000f00b766",
+  "location": {
+    "area": "Flic en Flac",
+    "region": "west",
+    "address": "Avenue Pailles en Queue, 90502 Flic en Flac, Mauritius",
+    "floor": null,
+    "coordinates": {
+      "lat": null,
+      "lng": null
+    }
+  },
+  "type": {
+    "property_type": "villa",
+    "unit_type": "3br",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [],
+  "capacity": {
+    "adults": 6,
+    "children": 0,
+    "total_max": 6,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "single",
+        "single"
+      ],
+      "ac": true,
+      "label": "kid-friendly bedroom"
+    },
+    {
+      "id": 2,
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    },
+    {
+      "id": 3,
+      "beds": [
+        "queen"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 2,
+    "ensuite_count": 0,
+    "half_baths": 0
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": true,
+    "gym": false,
+    "elevator": false,
+    "garage": true,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": null,
+      "location": null,
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": "[redacted]",
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": "[redacted]",
+      "password": "[redacted]",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": null,
+    "complex_code": null,
+    "electrical_authority": "CEB",
+    "shared_facilities": [],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "La Bergerie complex — 3 villas with shared pool, 5 min walk to Flic en Flac beach"
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": null
+    },
+    "nearest_beach": {
+      "minutes_walk": null,
+      "name": null
+    },
+    "nearby_landmarks": []
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": null,
+    "minimum_stay_nights": null
+  },
+  "operational_notes": [
+    "Display name (do not translate): 'La Raie Manta'. Keep in French.",
+    "Only bedroom at LB-C with single beds is the kid-friendly room in LB-1 (room 1). No bedroom combines single + double beds in the same room."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": null,
+    "booking": null,
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_v1_path": "/Users/judith/repos/friday-gms/knowledge/LB-1.json",
+    "migration_timestamp": "2026-05-14T10:16:31.960106+00:00",
+    "mapping_status": "locked"
+  },
+  "_editorial_review_needed": [],
+  "_rename_log": []
+}

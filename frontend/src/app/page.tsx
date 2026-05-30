@@ -140,10 +140,13 @@ export default function MessageDashboard() {
   // Init auth
   useEffect(() => {
     const t = getToken()
-    if (t) setTokenState(t)
+    if (t) {
+      window.location.replace('/fad')
+      return
+    }
     const dn = localStorage.getItem('gms_display_name')
     if (dn) setDisplayName(dn)
-    else setLoading(false)
+    setLoading(false)
   }, [])
 
   // Persist notifications to localStorage
@@ -225,9 +228,7 @@ export default function MessageDashboard() {
 
   const handleLogin = (t: string) => {
     setToken(t)
-    setTokenState(t)
-    const dn = localStorage.getItem('gms_display_name')
-    if (dn) setDisplayName(dn)
+    window.location.replace('/fad')
   }
 
   // Fetch conversations
@@ -1160,7 +1161,7 @@ export default function MessageDashboard() {
           mobileView={mobileView}
           selectConversation={selectConversation}
           handleMarkUnread={handleMarkUnread}
-          fetchPropertyCard={fetchPropertyCard}
+          fetchPropertyCard={(code) => { if (code) fetchPropertyCard(code) }}
           statusBadge={statusBadge}
           channelBadge={channelBadge}
           searchQuery={searchQuery}
@@ -1192,7 +1193,7 @@ export default function MessageDashboard() {
                 detail={detail}
                 mobileView={mobileView}
                 setMobileView={setMobileView}
-                fetchPropertyCard={fetchPropertyCard}
+                fetchPropertyCard={(code) => { if (code) fetchPropertyCard(code) }}
                 channelBadge={channelBadge}
                 displayName={displayName}
                 selectedConvId={selectedConvId}
@@ -1269,7 +1270,7 @@ export default function MessageDashboard() {
             <div className="flex-1 hidden md:flex items-center justify-center" style={{background: 'rgba(255,255,255,0.01)'}}>
               <div className="text-center">
                 <ChatBubbleLeftRightIcon className="h-20 w-20 mx-auto mb-4" style={{color: '#1e293b'}} />
-                <h3 className="text-lg font-medium mb-2" style={{color: '#f1f5f9'}}>Friday GMS</h3>
+                <h3 className="text-lg font-medium mb-2" style={{color: '#f1f5f9'}}>Friday Admin</h3>
                 <p className="text-sm max-w-md" style={{color: '#64748b'}}>Select a conversation to view messages, review AI drafts, and manage guest communication.</p>
               </div>
             </div>

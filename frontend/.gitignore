@@ -1,1 +1,7 @@
 .next/
+out/
+.vercel
+
+# Local env (per-developer secrets — never commit)
+.env.local
+.env.*.local

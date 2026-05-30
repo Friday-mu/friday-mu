@@ -1,0 +1,281 @@
+/* Stateless owner approval page — public, no FAD chrome, mobile-first */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
+
+.approve-page {
+  --bg: #f7f5f1;
+  --surface: #ffffff;
+  --text-primary: #1a1917;
+  --text-secondary: #55534d;
+  --text-tertiary: #8a8780;
+  --border: rgba(15, 24, 54, 0.1);
+  --accent: #0F1836;
+  --success: #2F7D4F;
+  --danger: #B4382A;
+  --warning: #9A6A16;
+  --bg-success: rgba(47, 125, 79, 0.08);
+  --bg-danger: rgba(180, 56, 42, 0.08);
+  --bg-warning: rgba(154, 106, 22, 0.08);
+
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  -webkit-font-smoothing: antialiased;
+}
+
+.approve-shell {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+.approve-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.approve-brand-name {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+.approve-lang {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  font-size: 12px;
+}
+.approve-lang button {
+  background: transparent;
+  border: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font: inherit;
+}
+.approve-lang button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.approve-headline {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+  line-height: 1.2;
+}
+.approve-sub {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 20px;
+}
+
+.approve-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.approve-property {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.approve-property-img {
+  width: 64px; height: 64px;
+  border-radius: 10px;
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 22px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.approve-property-name {
+  font-weight: 500;
+  font-size: 16px;
+  margin-bottom: 2px;
+}
+.approve-property-code {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.approve-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-top: 0.5px solid var(--border);
+  font-size: 14px;
+}
+.approve-row:first-of-type { border-top: 0; }
+.approve-row-label {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.approve-row-value {
+  text-align: right;
+  font-weight: 500;
+}
+.approve-amount {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.approve-amount-sub {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.approve-receipt {
+  margin-top: 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  padding: 24px;
+  background: var(--bg);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.approve-receipt:hover { border-color: var(--accent); color: var(--text-primary); }
+
+.approve-message {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  background: var(--surface);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 80px;
+  outline: none;
+}
+.approve-message:focus { border-color: var(--accent); }
+
+.approve-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 20px 0 16px;
+}
+.approve-btn {
+  padding: 16px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 0;
+  transition: background 0.15s ease, transform 0.06s ease;
+  font-family: inherit;
+  min-height: 56px;
+}
+.approve-btn:active { transform: scale(0.98); }
+.approve-btn.approve {
+  background: var(--success);
+  color: #fff;
+}
+.approve-btn.approve:hover { background: #28683f; }
+.approve-btn.decline {
+  background: var(--surface);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.approve-btn.decline:hover { background: var(--bg-danger); }
+
+.approve-expiry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 12px 0;
+  text-align: center;
+}
+.approve-expiry strong { color: var(--text-secondary); font-weight: 500; }
+
+.approve-contact {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 24px;
+  line-height: 1.7;
+}
+.approve-contact a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+/* Confirmation states */
+.approve-done {
+  text-align: center;
+  padding: 32px 20px;
+}
+.approve-done-icon {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  margin: 0 auto 16px;
+  font-size: 28px;
+}
+.approve-done-icon.approved { background: var(--bg-success); color: var(--success); }
+.approve-done-icon.declined { background: var(--bg-danger); color: var(--danger); }
+.approve-done-icon.expired { background: var(--bg-warning); color: var(--warning); }
+.approve-done-headline {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 22px;
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+.approve-done-sub {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .approve-page {
+    --bg: #0b0d14;
+    --surface: #1a1d28;
+    --text-primary: #e8e9ec;
+    --text-secondary: #a8abb6;
+    --text-tertiary: #6b6e7a;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #5680CA;
+    --bg-success: rgba(92, 179, 124, 0.14);
+    --bg-danger: rgba(224, 106, 92, 0.14);
+    --bg-warning: rgba(212, 164, 85, 0.14);
+  }
+}

@@ -1,2 +1,15 @@
 node_modules/
 .next/
+.vercel
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.*-cache.json
+backend/uploads/
+
+# Tooling artifacts — kept locally, never tracked
+.claude/worktrees/
+.claude/research/
+.claude/design-budgets-import/
+.playwright-mcp/
+vercel-revenue-chart.png

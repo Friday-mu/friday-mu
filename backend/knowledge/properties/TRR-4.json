@@ -1,0 +1,161 @@
+{
+  "card_type": "subunit",
+  "parent_complex_code": "TRR-C",
+  "code": "TRR-4",
+  "name": "Cozy 1 Bedroom Apt with Pool & 3mins Walk to Beach",
+  "property_id": "68bf0157f816f5005b8b34ef",
+  "location": {
+    "area": "Pointe aux Canonniers",
+    "region": "north",
+    "address": "Casse Ghoon Road, Pointe aux Canonniers, 30525 Grand Baie, Mauritius",
+    "floor": null,
+    "coordinates": {
+      "lat": -20.006031,
+      "lng": 57.563306
+    }
+  },
+  "type": {
+    "property_type": "apartment",
+    "unit_type": "1br",
+    "renovation_status": "current"
+  },
+  "subunits": [],
+  "adjacent_friday_properties": [],
+  "capacity": {
+    "adults": 2,
+    "children": 0,
+    "total_max": 2,
+    "infants_in_crib": 1
+  },
+  "bedrooms": [
+    {
+      "id": 1,
+      "beds": [
+        "double"
+      ],
+      "ac": true
+    }
+  ],
+  "bathrooms": {
+    "count": 1,
+    "ensuite_count": 1,
+    "half_baths": 0
+  },
+  "amenities": {
+    "kitchen": true,
+    "washer": true,
+    "dryer": false,
+    "tv": true,
+    "high_chair": true,
+    "crib": true,
+    "hair_dryer": true,
+    "gym": false,
+    "elevator": false,
+    "garage": false,
+    "view": [],
+    "power_backup": null,
+    "pool_access": {
+      "type": "shared",
+      "location": "Shared pool and garden area in The Rustic Residence.",
+      "hours": null
+    },
+    "air_conditioning": {
+      "locations": [
+        "bedroom",
+        "living area"
+      ],
+      "unit_count": null
+    },
+    "waste_disposal": null
+  },
+  "access": {
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "gate_code": null,
+    "lockbox": {
+      "code": null,
+      "location": null,
+      "code_last_updated": null
+    },
+    "spare_keys": {
+      "location": null,
+      "phone": null
+    },
+    "wifi": {
+      "network": null,
+      "password": "[redacted]",
+      "type": null
+    }
+  },
+  "building_context": {
+    "complex_name": "The Rustic Residence",
+    "complex_code": "TRR-C",
+    "electrical_authority": "CEB",
+    "shared_facilities": [
+      "pool",
+      "garden",
+      "on-site parking"
+    ],
+    "syndic": null,
+    "acoustic_notes": null,
+    "notes": "The Rustic Residence is an intimate apartment complex in Pointe aux Canonniers with shared pool, garden, private terraces, and an on-site restaurant/chef experience available on request."
+  },
+  "distances": {
+    "airport": {
+      "km": null,
+      "minutes_typical": null
+    },
+    "nearest_beach": {
+      "minutes_walk": 3,
+      "name": "Pointe aux Canonniers Beach"
+    },
+    "nearby_landmarks": [
+      {
+        "name": "Bazar of Canonniers",
+        "minutes_walk": null,
+        "notes": "Nearby local shops and market area."
+      }
+    ]
+  },
+  "house_rules": {
+    "smoking": null,
+    "pets": null,
+    "parties": null,
+    "quiet_hours": null,
+    "additional_guests_allowed": false
+  },
+  "pricing": {
+    "cleaning_fee_eur": 50,
+    "minimum_stay_nights": 3
+  },
+  "operational_notes": [
+    "Guests have private access to the apartment and terrace, plus shared access to the residence pool and garden.",
+    "The on-site restaurant can prepare meals on request for guests; ask the team/staff to arrange a menu with the chef.",
+    "Private on-site parking is available; street parking is allowed but not recommended."
+  ],
+  "operational_mitigation_library": {
+    "_status": "EMPTY_SCAFFOLD — populated in Phase 7 editorial review per BV-10",
+    "equipment_specific_mitigations": [],
+    "infrastructure_locations": {
+      "main_water_shutoff": null,
+      "electrical_breaker": null,
+      "wifi_router_location": null
+    }
+  },
+  "links": {
+    "airbnb": "https://www.airbnb.com/rooms/1505860172410304653",
+    "booking": "https://booking.com/hotel/mu/cozy-1-bedroom-apt-with-pool-3mins-walk-to-beach.en.html",
+    "google_maps": null,
+    "photos_drive": null
+  },
+  "_v2_migration_metadata": {
+    "source_v1_path": "backend/knowledge/archived/TRR-4.json",
+    "source_guesty_cache": "backend/.guesty-listings-cache.json",
+    "migration_timestamp": "2026-05-19T00:00:00+04:00",
+    "mapping_status": "guesty_backfill"
+  },
+  "_editorial_review_needed": [
+    "Confirm TRR-4 bed type, access codes, WiFi credentials, and exact parking instructions before using this card for access replies."
+  ],
+  "_rename_log": []
+}

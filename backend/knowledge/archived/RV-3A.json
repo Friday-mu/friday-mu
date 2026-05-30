@@ -1,0 +1,91 @@
+{
+  "property_id": "674d646d725ee60010b6f7d4",
+  "display_name": "RV-3A",
+  "full_name": "Modern 3-Bedroom Apt, 10mins Walk to Beach",
+  "location": "Grand Baie, Mauritius",
+  "property_type": "Townhouse",
+  "bedrooms": 3,
+  "bathrooms": 2,
+  "guest_capacity": 6,
+  "priority_level": "medium",
+  "quick_responses": {
+    "wifi": {
+      "trigger_keywords": [
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]"
+      ],
+      "response": "[redacted]",
+      "priority": "[redacted]"
+    },
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Rays Villa, Racket Lane, 30525 Grand Baie, Mauritius | Lockbox Code: [redacted]",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "",
+      "priority": "high"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +230 4084119 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    }
+  },
+  "property_details": {
+    "address": "Rays Villa, Racket Lane, 30525 Grand Baie, Mauritius",
+    "amenities": [
+      "Hair dryer",
+      "High chair",
+      "Kitchen",
+      "Washer",
+      "TV",
+      "Wireless Internet",
+      "Crib",
+      "Air conditioning",
+      "Garage"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": "Relax and rejuvenate in this spacious 3-bedroom modern apartment, just a 10-minute walk from the beach. Ideally located near the heart of Grand Bay, it offers easy access to vibrant restaurants, nightlife, and the stunning Mauritian coast, providing the perfect blend of comfort and convenience for your island escape.",
+    "space": "This well-maintained duplex is designed with relaxation and practicality in mind. It includes two standard bedrooms and a master bedroom, each furnished with soft linens and plenty of storage. You’ll find two bathrooms and three toilets, making it easy for everyone to get ready for a day of exploring.\n\nThe open-plan kitchen is fully equipped with essential appliances like a fridge, washing machine, coffee maker, toaster, and kettle, making meal prep a delight. The living area provides a welcoming space to gather, featuring comfortable seating and excellent air ventilation. Two of the bedrooms offer private balconies, ideal for enjoying a quiet cup of coffee or taking in the fresh island breeze. When you’re ready to cool off, head outside to the large shared swimming pool, set in a secure gated property with free parking on-site.",
+    "house_rules": null,
+    "parking": null,
+    "guest_access": null
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ]
+}

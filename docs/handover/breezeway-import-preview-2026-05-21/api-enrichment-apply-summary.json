@@ -1,0 +1,237 @@
+{
+  "generatedAt": "2026-05-21T19:07:19.736Z",
+  "source": "breezeway_api",
+  "mode": "apply_summary",
+  "reportFiles": [
+    "/tmp/fad-breezeway-enrichment-apply-canary.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-1.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-2.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-3.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-4.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-5.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-6.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-7.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-8.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-9.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-10.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-11.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-12.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-13.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-14.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-15.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-16.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-17.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-18.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-19.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-20.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-21.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-22.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-23.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-24.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-25.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-26.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-27.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-28.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-29.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-30.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-31.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-32.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-33.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-34.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-35.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-36.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-37.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-38.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-39.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-40.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-41.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-42.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-43.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-44.json",
+    "/tmp/fad-breezeway-enrichment-full/apply-45.json"
+  ],
+  "reportFileCount": 46,
+  "aggregate": {
+    "updated": 4483,
+    "failed": 0,
+    "scanned": 4483,
+    "apiFieldPresence": {
+      "reportUrls": 4483,
+      "assignments": 4336,
+      "photos": 2016,
+      "finishedBy": 3770,
+      "linkedReservations": 806,
+      "descriptions": 2017,
+      "tags": 399,
+      "createdBy": 2792,
+      "supplies": 1,
+      "costs": 182,
+      "summaries": 631
+    },
+    "sampleReports": [
+      {
+        "file": "fad-breezeway-enrichment-apply-canary.json",
+        "updated": 5,
+        "failed": 0,
+        "samples": [
+          {
+            "taskId": "147217732",
+            "externalRef": "breezeway:147217732",
+            "fadTaskId": "2f27c5d6-4ae7-4483-945f-391ffc2c2db8",
+            "attachmentCount": 8,
+            "commentsCount": 0,
+            "photosCount": 8,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          },
+          {
+            "taskId": "135923713",
+            "externalRef": "breezeway:135923713",
+            "fadTaskId": "8dc37ad2-4779-4f8c-a496-0afe2ad423c9",
+            "attachmentCount": 0,
+            "commentsCount": 0,
+            "photosCount": 0,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          }
+        ]
+      },
+      {
+        "file": "apply-1.json",
+        "updated": 100,
+        "failed": 0,
+        "samples": [
+          {
+            "taskId": "148397786",
+            "externalRef": "breezeway:148397786",
+            "fadTaskId": "339d36f0-c5b7-438d-928d-1241bf9fadb5",
+            "attachmentCount": 1,
+            "commentsCount": 0,
+            "photosCount": 1,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          },
+          {
+            "taskId": "147039229",
+            "externalRef": "breezeway:147039229",
+            "fadTaskId": "3c44b359-3ca8-404f-81f3-f69b4c6bfd4f",
+            "attachmentCount": 0,
+            "commentsCount": 0,
+            "photosCount": 0,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          }
+        ]
+      },
+      {
+        "file": "apply-2.json",
+        "updated": 100,
+        "failed": 0,
+        "samples": [
+          {
+            "taskId": "140691103",
+            "externalRef": "breezeway:140691103",
+            "fadTaskId": "6b2b4990-dcaa-4815-bc2e-76b9dfc574ad",
+            "attachmentCount": 0,
+            "commentsCount": 0,
+            "photosCount": 0,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          },
+          {
+            "taskId": "140691140",
+            "externalRef": "breezeway:140691140",
+            "fadTaskId": "6381bc3e-5781-47ab-a374-59af774f2078",
+            "attachmentCount": 0,
+            "commentsCount": 0,
+            "photosCount": 0,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          }
+        ]
+      },
+      {
+        "file": "apply-3.json",
+        "updated": 100,
+        "failed": 0,
+        "samples": [
+          {
+            "taskId": "140691096",
+            "externalRef": "breezeway:140691096",
+            "fadTaskId": "ea0fdb50-185f-4812-a565-21efeb03267c",
+            "attachmentCount": 0,
+            "commentsCount": 0,
+            "photosCount": 0,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          },
+          {
+            "taskId": "140691099",
+            "externalRef": "breezeway:140691099",
+            "fadTaskId": "a3521a55-b0a3-4266-a8c8-b8b02f817434",
+            "attachmentCount": 0,
+            "commentsCount": 0,
+            "photosCount": 0,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          }
+        ]
+      },
+      {
+        "file": "apply-4.json",
+        "updated": 100,
+        "failed": 0,
+        "samples": [
+          {
+            "taskId": "145918967",
+            "externalRef": "breezeway:145918967",
+            "fadTaskId": "b27d76c4-23d0-40fb-9a68-e0edc3b6cf13",
+            "attachmentCount": 2,
+            "commentsCount": 0,
+            "photosCount": 2,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          },
+          {
+            "taskId": "140603996",
+            "externalRef": "breezeway:140603996",
+            "fadTaskId": "daf5ba1d-7e1a-40af-8b5d-7bdcb49f5688",
+            "attachmentCount": 0,
+            "commentsCount": 0,
+            "photosCount": 0,
+            "costsCount": 0,
+            "suppliesCount": 0,
+            "reportedTasksCount": 0
+          }
+        ]
+      }
+    ]
+  },
+  "db": {
+    "total": 4483,
+    "missing": 0,
+    "enriched": 4483,
+    "tasks_with_attachment_count": 2016,
+    "tasks_with_api_photos": 2016,
+    "tasks_with_api_assignments": 4336,
+    "tasks_with_api_comments": 0,
+    "tasks_with_api_costs": 182,
+    "tasks_with_api_supplies": 1,
+    "tasks_with_api_linked_reservation": 806,
+    "photo_url_leak_rows": 0
+  },
+  "notes": [
+    "Existing source=breezeway tasks were enriched only; no new tasks were created.",
+    "API photo URLs were not stored in apiEnrichment.photos.",
+    "Per-batch raw reports remain on the VPS under /tmp/fad-breezeway-enrichment-full/ for this migration audit."
+  ]
+}

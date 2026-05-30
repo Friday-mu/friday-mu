@@ -1,0 +1,251 @@
+{
+  "schema_version": "v2.1",
+  "surfaces": {
+    "inbox-drafts": {
+      "consumer": "backend/src/inbox/draft_generator.js",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice",
+        "global/drafting-discipline",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/inbox-drafts",
+      "lazy_loadable": {
+        "discount-bounds": "trigger:discount|deal|promo|reduction|reduce",
+        "refund-bounds": "trigger:refund|compensation|reimburse"
+      },
+      "property_card": "optional"
+    },
+    "inbox-advisory": {
+      "consumer": "src/routes/consult.ts",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/inbox-advisory",
+      "lazy_loadable": {
+        "platform-compliance": "trigger:Airbnb|Booking|platform|policy|cancellation",
+        "ops-workflows": "trigger:maintenance|owner|escalate|team|repair"
+      },
+      "property_card": "optional"
+    },
+    "pending-actions": {
+      "consumer": "src/services/action-detector.ts",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/pending-actions",
+      "lazy_loadable": {},
+      "property_card": "optional"
+    },
+    "inquiry-followup": {
+      "consumer": "src/services/followup-draft-generator.ts",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/inquiry-followup",
+      "lazy_loadable": {
+        "tone-cadence": "always"
+      },
+      "property_card": "optional"
+    },
+    "learning-analyzer": {
+      "consumer": "src/services/learning-analyzer.ts",
+      "always_load": [
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/learning-analyzer",
+      "lazy_loadable": {},
+      "property_card": false
+    },
+    "ops-consult": {
+      "consumer": "backend/src/operations/consult.js",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/ops-consult",
+      "lazy_loadable": {
+        "staff-roster-rules": "always",
+        "task-duration-skill-matrix": "always",
+        "property-data-sources": "always",
+        "property-ops-metadata": "always",
+        "scheduling-methodology": "always",
+        "field-location-dispatch": "always",
+        "owner-terms-approval-rules": "always",
+        "vendors-maintenance-pricing": "always",
+        "turnover-maintenance-quality": "always",
+        "srl-supplies-rules": "always",
+        "learning-and-controls": "always"
+      },
+      "property_card": "optional"
+    },
+    "reservations-calendar": {
+      "consumer": "planned:fad_reservations_calendar_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/reservations-calendar",
+      "lazy_loadable": {
+        "availability-status-rules": "always",
+        "quote-and-channel-actions": "always"
+      },
+      "property_card": "optional"
+    },
+    "properties-assistant": {
+      "consumer": "planned:fad_properties_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/properties-assistant",
+      "lazy_loadable": {
+        "field-classification": "always",
+        "source-conflicts": "always"
+      },
+      "property_card": "optional"
+    },
+    "owner-enquiry": {
+      "consumer": "planned:website_owner_enquiry/fad_owners_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/owner-enquiry",
+      "lazy_loadable": {
+        "lead-capsules": "always",
+        "positioning-safety": "always"
+      },
+      "property_card": false
+    },
+    "feedback-learning": {
+      "consumer": "planned:website_feedback_bug/website_feedback_feature/learning-analyzer",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/feedback-learning",
+      "lazy_loadable": {
+        "evidence-redaction": "always",
+        "candidate-taxonomy": "always"
+      },
+      "property_card": false
+    },
+    "analytics-intelligence": {
+      "consumer": "planned:fad_analytics_intelligence",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/analytics-intelligence",
+      "lazy_loadable": {
+        "metric-source-policy": "always",
+        "trend-confidence": "always"
+      },
+      "property_card": false
+    },
+    "finance-assistant": {
+      "consumer": "planned:fad_finance_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/finance-assistant",
+      "lazy_loadable": {
+        "source-privacy": "always",
+        "tax-tourist-fee-caveats": "trigger:tax|vat|mra|tourist fee|owner statement|payout|finance"
+      },
+      "property_card": false
+    },
+    "legal-admin": {
+      "consumer": "planned:fad_legal_admin_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/legal-admin",
+      "lazy_loadable": {
+        "compliance-source-policy": "always",
+        "legal-review-boundary": "always"
+      },
+      "property_card": false
+    },
+    "hr-training": {
+      "consumer": "planned:fad_hr_training_assistant",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config"
+      ],
+      "surface_skill": "surfaces/hr-training",
+      "lazy_loadable": {
+        "hr-privacy-boundary": "always",
+        "sop-training-matrix": "always"
+      },
+      "property_card": false
+    },
+    "guest-portal-ask-friday": {
+      "consumer": "planned:guest_portal_ask_friday",
+      "always_load": [
+        "global/critical-rules",
+        "global/business-config",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/guest-portal-ask-friday",
+      "lazy_loadable": {
+        "stay-scope-policy": "always",
+        "handoff-support-policy": "always"
+      },
+      "property_card": "stay_scoped"
+    },
+    "public-mcp": {
+      "consumer": "planned:public_mcp",
+      "always_load": [
+        "global/critical-rules",
+        "global/brand-voice"
+      ],
+      "surface_skill": "surfaces/public-mcp",
+      "lazy_loadable": {
+        "scope-action-policy": "always",
+        "public-truth-policy": "always"
+      },
+      "property_card": false
+    },
+    "internal-agent-bridge": {
+      "consumer": "planned:internal_agent_bridge",
+      "always_load": [
+        "global/critical-rules"
+      ],
+      "surface_skill": "surfaces/internal-agent-bridge",
+      "lazy_loadable": {
+        "sanitized-summary-contract": "always",
+        "provenance-review-policy": "always"
+      },
+      "property_card": false
+    }
+  },
+  "compose_context_mapping": {
+    "_comment": "Maps consult.ts request context values to surface keys (backward compat)",
+    "revision": "inbox-drafts",
+    "compose": "inbox-drafts",
+    "draft_review": "inbox-advisory",
+    "pending_action": "pending-actions",
+    "next_step": "pending-actions",
+    "teaching": "inbox-advisory",
+    "learning_candidate": "learning-analyzer",
+    "message_review": "inbox-advisory",
+    "ops_schedule": "ops-consult",
+    "ops_roster": "ops-consult",
+    "ops_task_triage": "ops-consult",
+    "ops_maintenance": "ops-consult",
+    "ops_cleaning": "ops-consult"
+  }
+}

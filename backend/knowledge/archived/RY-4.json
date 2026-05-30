@@ -1,0 +1,66 @@
+{
+  "propertyId": "676004cd86472d003b575160",
+  "propertyCode": "RY-4",
+  "propertyName": "Faisans Residence, Apt 4",
+  "basics": {
+    "address": "Avenue des Faisans, Flic en Flac",
+    "buildingName": "unknown, needs verification",
+    "mapsLink": "unknown, needs verification",
+    "bedrooms": 2,
+    "bathrooms": 1,
+    "maxGuests": 4,
+    "wifiNetwork": "[redacted]",
+    "wifiPassword": "[redacted]",
+    "checkInTime": "2:00 PM",
+    "checkOutTime": "10:00 AM",
+    "accessInstructions": "unknown, needs verification",
+    "lockboxCode": "[redacted]",
+    "parking": "unknown, needs verification"
+  },
+  "amenities": {
+    "pool": "unknown, needs verification",
+    "ac": "Available. Flic en Flac properties commonly have AC. Issues reported across portfolio include units not cooling properly, requiring technician visits.",
+    "kitchen": "unknown, needs verification",
+    "laundry": "Washing machines common in Flic en Flac properties (50 mentions across portfolio). Guests with toddlers frequently ask about availability.",
+    "beachAccess": "Flic en Flac is a beachfront area. One of the most popular beach towns in Mauritius. Beach within walking distance.",
+    "nearbyGrocery": "Flic en Flac has local shops and a small supermarket. Larger SuperU available by short drive.",
+    "nearbyPharmacy": "Flic en Flac town has pharmacy access",
+    "transport": {
+      "airportDistance": "SSR Airport approx 50km, 1 hour drive",
+      "taxiInfo": "Airport transfers arranged through Friday team. Guests can book via mauritiusattractions.com with code FRIDAYMU for 10% off.",
+      "busRoutes": "Bus service available along the main coastal road in Flic en Flac"
+    }
+  },
+  "commonGuestQuestions": [
+    {
+      "question": "Is there a washing machine?",
+      "answer": "Needs verification for this specific property. Washing machine availability varies by unit."
+    },
+    {
+      "question": "How far is the beach?",
+      "answer": "Flic en Flac beach is within walking distance. One of the best beaches in Mauritius."
+    },
+    {
+      "question": "Can we get a late checkout?",
+      "answer": "Late checkout is subject to availability. We check our schedule and are often happy to accommodate when there is no same-day turnover."
+    },
+    {
+      "question": "Where is the nearest supermarket?",
+      "answer": "Local shops in Flic en Flac town, short walk or drive. Larger supermarket available nearby."
+    },
+    {
+      "question": "Can you arrange airport transfer?",
+      "answer": "Yes. Arranged through our team or via mauritiusattractions.com with code FRIDAYMU for 10% off."
+    }
+  ],
+  "knownIssues": [
+    "Flic en Flac area: 232 mentions across conversations, the most referenced area. Common issues include AC, hot water, and WiFi.",
+    "No specific conversation history found for RY-4 in the 344 analyzed conversations. Property may be newer."
+  ],
+  "doNotPromise": [
+    "Specific refund amounts without team approval",
+    "Late checkout without checking availability",
+    "Beach equipment or towels unless confirmed available"
+  ],
+  "note": "RY-4 is in Flic en Flac, the highest-traffic area for Friday (232 conversation mentions). General Flic en Flac patterns apply. Property-specific details need population from Guesty listing data."
+}

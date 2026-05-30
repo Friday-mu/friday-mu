@@ -1,4 +1,21 @@
-const CACHE_NAME = 'friday-admin-v4';
+// Service worker version. Bump on any change to STATIC_ASSETS, the
+// fetch strategy, or after a deploy that you want to force-evict stale
+// chunks from. The activate handler deletes every cache that doesn't
+// match this name, so users on an older SW lose their cache on update.
+const CACHE_NAME = 'friday-admin-v7';
+
+// Best-effort static pre-cache. cache.addAll() is atomic — if ANY asset
+// fails (e.g. 403 from misperm'd file on the server), the WHOLE install
+// rejects and the SW gets stuck in `installing` state forever, queuing
+// fetches and silently breaking the page. Use cache.add() per-asset
+// with try/catch so individual failures don't poison the install.
+//
+// 2026-05-24 incident: deploys propagated 600-perm public/ assets to
+// /var/www/fad/, nginx (www-data) returned 403 for offline.html +
+// icon-*.png, cache.addAll rejected, SW install hung, fetches pending
+// indefinitely, TeamInbox + thread history rendered empty even though
+// backend returned correct data. Defense in depth: this loop + the
+// chmod fix in rsync.
 const STATIC_ASSETS = [
   '/',
   '/offline.html',
@@ -6,10 +23,21 @@ const STATIC_ASSETS = [
   '/icon-512.png',
 ];
 
-// Install: pre-cache static assets
+// Install: pre-cache static assets (best-effort per asset)
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      for (const url of STATIC_ASSETS) {
+        try {
+          await cache.add(url);
+        } catch (err) {
+          // Asset failed to cache (404 / 403 / network). Log and skip;
+          // do NOT let one bad asset break the whole install.
+          // eslint-disable-next-line no-console
+          console.warn('[sw] failed to pre-cache', url, err && err.message);
+        }
+      }
+    })
   );
   self.skipWaiting();
 });
@@ -69,15 +97,30 @@ self.addEventListener('fetch', (event) => {
 });
 
 // Push notifications
+function parsePushPayload(event) {
+  if (!event.data) return {};
+  try {
+    return event.data.json();
+  } catch (err) {
+    try {
+      const body = event.data.text();
+      return body ? { body } : {};
+    } catch {
+      return {};
+    }
+  }
+}
+
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
+  const data = parsePushPayload(event);
+  const extraData = data && typeof data.data === 'object' && data.data ? data.data : {};
   const title = data.title || 'Friday Admin';
   const options = {
     body: data.body || 'You have a new notification',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     tag: data.tag || 'gms-notification',
-    data: { url: data.url || '/' },
+    data: { ...extraData, url: data.url || extraData.url || '/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

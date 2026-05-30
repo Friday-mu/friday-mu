@@ -330,8 +330,8 @@ This system transforms the Friday Admin Dashboard from a static display to a ful
 # Test all functionality
 ./test-system.sh
 
-# Deploy to production
-./deploy.sh production
+# Deploy to production — see docs/deploy.md for the canonical rsync flow
+# (frontend → /var/www/fad/, backend → /var/www/fad-backend/, pm2 restart fad-backend)
 ```
 
 ## ✅ **DELIVERY CONFIRMATION**

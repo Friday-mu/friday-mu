@@ -1,0 +1,785 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-04-03",
+  "categories": [
+    {
+      "name": "Guest Communication Tone & Timing",
+      "practices": [
+        {
+          "title": "Professional Warmth",
+          "description": "Strike a balance between professional and warm. Use the guest's first name, be friendly but not overly casual. Avoid corporate jargon and overly stiff language. The goal is to make guests feel welcomed by a real person, not a bot.",
+          "examples": [
+            "Hi Sarah! Welcome to Mauritius — we're so glad you chose to stay with us. Here's everything you need for a smooth arrival...",
+            "Good morning, Jean-Pierre! Just checking in — how's everything going at the villa? Let us know if you need anything at all.",
+            "Thank you for letting us know, David. I completely understand how frustrating that must be. Let me sort this out for you right away."
+          ],
+          "antiPatterns": [
+            "Dear Guest, Your reservation has been confirmed. Please find attached the check-in instructions.",
+            "Using overly casual slang or emoji-heavy messages for first contact",
+            "Copy-pasting identical template messages without personalisation",
+            "Responding with just 'OK' or 'Noted' to guest concerns"
+          ]
+        },
+        {
+          "title": "Response Time Standards",
+          "description": "Respond within 1 hour during business hours (8am-8pm MUT) and within 4 hours outside business hours. For urgent matters (lockouts, safety issues, water leaks), respond within 15 minutes regardless of time. Fast response times directly impact reviews and Superhost status on Airbnb.",
+          "examples": [
+            "Setting up auto-acknowledgement: 'Thanks for your message! We've received it and will get back to you within the hour.'",
+            "For after-hours: 'Hi! Our team is currently offline but we'll respond first thing in the morning. For emergencies, please call +230 XXXX XXXX.'"
+          ],
+          "antiPatterns": [
+            "Leaving messages unread for more than 4 hours during daytime",
+            "Not having an emergency contact number available 24/7",
+            "Sending a detailed response hours later when a quick acknowledgement would have sufficed immediately"
+          ]
+        },
+        {
+          "title": "Language Adaptation",
+          "description": "Mauritius is multilingual. Match the guest's language when possible — French and English are the primary languages. For other languages, default to English but acknowledge their language. Use simple, clear sentences that translate well.",
+          "examples": [
+            "Responding in French when a guest writes in French: 'Bonjour Marie! Merci pour votre message. Voici les instructions pour votre arrivée...'",
+            "For a German guest: 'Hello Hans! Welcome — while our team primarily communicates in English and French, please don't hesitate to write in whatever language is most comfortable for you.'"
+          ],
+          "antiPatterns": [
+            "Responding in English to a message clearly written in French",
+            "Using machine-translated messages without review — grammatical errors erode trust",
+            "Using idioms or cultural references that may not translate well"
+          ]
+        },
+        {
+          "title": "Proactive Communication Cadence",
+          "description": "Don't wait for guests to reach out. Send proactive messages at key moments: booking confirmation, 3 days before arrival, day before arrival, morning of check-in, mid-stay check-in (for stays 3+ nights), evening before checkout, and post-checkout thank you. Each message should provide value, not just be a touchpoint.",
+          "examples": [
+            "3 days before: 'Hi Sarah! Your stay at Villa Palma is just around the corner. Here's a quick guide to help you plan: [link]. Do you have any questions before you arrive?'",
+            "Mid-stay (day 3 of a 7-night stay): 'Hi Sarah! Hope you're enjoying the villa. Just wanted to check in — is everything to your liking? We're here if you need restaurant recommendations or day trip ideas!'",
+            "Pre-checkout: 'Hi Sarah, we hope you've had a wonderful stay! Just a friendly reminder that checkout is at 10am tomorrow. Here's a quick checklist to make things easy: [checklist].'"
+          ],
+          "antiPatterns": [
+            "Sending too many messages — more than one per day feels intrusive",
+            "Sending generic messages with no useful information",
+            "Not sending any message between check-in and checkout for a week-long stay",
+            "Sending mid-stay check-in on the last day of a 2-night stay"
+          ]
+        },
+        {
+          "title": "Complaint Handling — Empathy First",
+          "description": "When a guest raises a complaint, always lead with empathy and acknowledgement before jumping to solutions. Never be defensive. Follow the 4E Model: Empathise, Explain, Execute, Elevate (see refund-metrics.json). Even if the complaint seems minor or unjustified, validate their experience first.",
+          "examples": [
+            "Guest: 'The AC isn't working and it's unbearable.' Response: 'I'm really sorry about that — I can only imagine how uncomfortable that must be, especially in this heat. I'm sending our maintenance team over right now. In the meantime, there are extra fans in the hallway cupboard. I'll follow up within 30 minutes with an update.'",
+            "Guest: 'The pool looks dirty.' Response: 'Thank you for letting me know — that's definitely not the standard we aim for. I've contacted our pool maintenance team and they'll be there within the hour to sort it out. I apologise for the inconvenience.'"
+          ],
+          "antiPatterns": [
+            "'The AC was working fine before you arrived' — never imply it's the guest's fault",
+            "'We'll look into it' with no timeline or follow-up",
+            "Ignoring the complaint hoping it goes away",
+            "Offering compensation before understanding the issue"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Check-in Procedures",
+      "practices": [
+        {
+          "title": "Self Check-in Instructions",
+          "description": "Provide clear, step-by-step self check-in instructions with photos or videos. Include: gate/door access codes, lockbox locations, key identification, alarm codes if applicable, and parking instructions. Send these 24 hours before arrival AND again 2 hours before expected arrival.",
+          "examples": [
+            "Step 1: At the main gate, enter code 1234# on the keypad (photo attached). Step 2: Walk straight to the blue door — that's your entrance. Step 3: The key is in the lockbox on the left wall, code 5678. Step 4: Once inside, the WiFi network is 'VillaPalma' and password is on the fridge.",
+            "For smart lock properties: 'Your personal access code is 4521. This code is active from 3pm today until 10am on [checkout date]. Simply enter the code on the keypad — no physical key needed.'"
+          ],
+          "antiPatterns": [
+            "Sending only text instructions without photos for complex access procedures",
+            "Sending check-in instructions only once, days before arrival",
+            "Assuming guests remember codes from a message sent 5 days ago",
+            "Not having a backup access method if the smart lock fails"
+          ]
+        },
+        {
+          "title": "Greeting Message Timing",
+          "description": "Send a detailed greeting message the day before arrival with all essential info. Send a shorter confirmation message the morning of arrival. Ask for their estimated arrival time so you can coordinate (especially important for properties with in-person greeters or when coordinating with cleaners).",
+          "examples": [
+            "Day before: 'Hi Sarah! We're getting everything ready for your arrival tomorrow. Check-in is from 3pm. Here's your complete arrival guide: [WiFi, parking, access codes, house rules, emergency contacts, local tips]. Could you let us know your approximate arrival time?'",
+            "Morning of: 'Good morning Sarah! Villa Palma is all set for you. Your access code is 4521. Check-in anytime after 3pm. Safe travels and see you soon!'"
+          ],
+          "antiPatterns": [
+            "Sending all information in one overwhelming message",
+            "Not asking for arrival time — leads to coordination issues with cleaners",
+            "Sending check-in details at midnight the night before",
+            "Forgetting to include the WiFi password — the #1 thing guests look for immediately"
+          ]
+        },
+        {
+          "title": "Essential Arrival Information",
+          "description": "Every check-in message must include: WiFi network name and password, parking instructions, house rules summary, emergency contact number, access codes, and property-specific quirks (e.g., 'the front door sticks a little — give it a firm push'). Provide this as a structured, easy-to-scan message.",
+          "examples": [
+            "Welcome Pack format:\n- WiFi: VillaPalma / password: [redacted]\n- Parking: 2 spots in the driveway, plus street parking\n- Quiet hours: 10pm - 8am\n- Emergency: +230 5XXX XXXX (available 24/7)\n- Check-out: 11am on [date]\n- Nearest supermarket: Super U, 5 min drive\n- Nearest pharmacy: Pharmacie du Port, 3 min drive"
+          ],
+          "antiPatterns": [
+            "Burying the WiFi password in a long paragraph",
+            "Not mentioning property quirks — guests will find them and feel misled",
+            "Providing outdated local recommendations",
+            "Not including any emergency contact information"
+          ]
+        },
+        {
+          "title": "Late Arrival Protocols",
+          "description": "Have a clear protocol for guests arriving after 9pm. Ensure exterior lighting is on (or provide instructions), confirm self check-in works at night, and send a reassuring message. For very late arrivals (after midnight), ensure neighbours won't be disturbed by the arrival.",
+          "examples": [
+            "'No worries about your late arrival! The exterior lights will be on and the access code works 24/7. I'd just ask that you keep noise to a minimum after 10pm as the neighbours are close by. The porch light will be on to help you find the entrance. Text me when you arrive safely!'",
+            "For properties with complex access: 'Since you're arriving after dark, I've attached a video walkthrough of the entrance — it can be tricky to spot the gate at night. The sensor light will turn on as you approach.'"
+          ],
+          "antiPatterns": [
+            "Not adjusting communication for late arrivals — they need extra reassurance",
+            "Having no exterior lighting plan for nighttime arrivals",
+            "Asking guests to 'figure it out' if they arrive outside standard hours",
+            "Not warning neighbours about a very late arrival when the entrance is shared"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Check-out Procedures",
+      "practices": [
+        {
+          "title": "Checkout Reminder Timing",
+          "description": "Send checkout reminders twice: the evening before checkout (around 6pm) and the morning of checkout (around 8am). The evening message should include the full checklist. The morning message should be brief and warm. Always confirm the checkout time.",
+          "examples": [
+            "Evening before: 'Hi Sarah! We hope you've had a wonderful stay. Just a friendly reminder that checkout is at 10am tomorrow. Here's a quick checklist to make things easy:\n- Leave keys on the kitchen counter\n- Close all windows and lock the front door\n- Take out any rubbish to the bins outside\n- Turn off the AC\nNo need to strip the beds or do dishes — we'll handle that! Thank you for being a wonderful guest.'",
+            "Morning of: 'Good morning Sarah! Hope you slept well on your last night. Checkout is at 10am — take your time. Have a safe journey, and thank you again for staying with us!'"
+          ],
+          "antiPatterns": [
+            "Only sending the checkout reminder on the morning of — too late for guests to prepare",
+            "Making the checkout checklist feel like a chore list — keep it light and appreciative",
+            "Asking guests to do deep cleaning tasks (mopping, vacuuming)",
+            "Not confirming whether checkout time is flexible if asked"
+          ]
+        },
+        {
+          "title": "Clear Checkout Instructions",
+          "description": "Checkout instructions should be simple, specific, and property-appropriate. Limit to 5-6 items maximum. Differentiate between 'must do' (return keys, lock door) and 'nice to have' (start dishwasher). Never ask guests to clean — that's what the cleaning fee covers.",
+          "examples": [
+            "Must do: Return keys to lockbox, lock front door, close windows, turn off AC. Nice to have: Start the dishwasher, take rubbish out. That's it! We handle everything else.",
+            "For smart lock properties: 'Simply close the door behind you — it locks automatically. Your code will deactivate at 11am. No keys to worry about!'"
+          ],
+          "antiPatterns": [
+            "A 15-item checkout checklist — guests will ignore it entirely",
+            "Asking guests to strip beds AND start laundry AND take out rubbish AND mop the floors",
+            "Unclear key return instructions leading to lost keys",
+            "Threatening deposit deductions in the checkout message"
+          ]
+        },
+        {
+          "title": "Post-Checkout Thank You & Review Request",
+          "description": "Send a thank you message within 2 hours of checkout. Wait 24-48 hours before requesting a review — let them settle back into their routine first. The review request should feel natural, not transactional. Leave your review of the guest first — it often prompts them to reciprocate.",
+          "examples": [
+            "Same day: 'Thank you so much for staying at Villa Palma, Sarah! We loved having you. We hope you enjoyed Mauritius — safe travels home!'",
+            "24-48 hours later: 'Hi Sarah! Hope you made it home safely. If you have a moment, we'd really appreciate a review of your stay — it helps other travellers find us and helps us keep improving. Either way, thank you again and we'd love to welcome you back anytime!'"
+          ],
+          "antiPatterns": [
+            "Requesting a review in the checkout message — feels transactional",
+            "Asking for a '5-star review' specifically — feels pressuring and violates platform policies",
+            "Not leaving a review of the guest — you miss the reciprocity effect",
+            "Sending the review request a week later — they've moved on mentally"
+          ]
+        },
+        {
+          "title": "Lost and Found Protocol",
+          "description": "After each checkout, the cleaning team should check for left-behind items and report them immediately. Contact the guest within 24 hours if anything is found. Offer to ship items at the guest's expense or hold them for 30 days. Document everything with photos.",
+          "examples": [
+            "'Hi Sarah! Our cleaning team found a phone charger and a pair of sunglasses after your checkout. Would you like us to ship them to you? We can send via DHL — just let us know your address and we'll get a shipping quote for you. We'll hold them safely for 30 days.'",
+            "If nothing found but guest asks: 'I'm sorry to hear that — I've asked our cleaning team to do a thorough check and unfortunately they haven't found a [item]. I'll keep looking and let you know if it turns up.'"
+          ],
+          "antiPatterns": [
+            "Not checking for left-behind items after checkout",
+            "Disposing of items without contacting the guest",
+            "Charging excessive shipping fees",
+            "Ignoring a guest's inquiry about lost items"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Damage Reporting & Resolution",
+      "practices": [
+        {
+          "title": "Documentation Standards",
+          "description": "Photograph every property before each check-in (key areas: kitchen, bathrooms, living areas, any existing damage). After checkout, photograph the same areas. This creates a clear before/after record. Store photos with timestamps and linked to the reservation. This is essential for any damage claim.",
+          "examples": [
+            "Pre-check-in photo checklist: Kitchen (appliances, countertops, floor), Bathrooms (mirrors, fixtures, tiles), Living room (furniture, TV, decor), Bedrooms (mattresses, linens, walls), Outdoor areas (pool, garden furniture, BBQ), Any pre-existing damage with close-ups.",
+            "Post-checkout: same checklist, highlighting any changes or new damage."
+          ],
+          "antiPatterns": [
+            "Only taking photos when damage is suspected — too late for comparison",
+            "Low-quality photos that don't clearly show the issue",
+            "Not timestamping photos or linking them to specific reservations",
+            "Relying on memory instead of photographic evidence"
+          ]
+        },
+        {
+          "title": "Guest Communication About Damage",
+          "description": "When communicating about damage, be factual and non-accusatory. Present evidence objectively. Start with the assumption that it was accidental. Give the guest a chance to explain before escalating. Never use aggressive language — it backfires in platform disputes.",
+          "examples": [
+            "'Hi David, thank you for staying with us. During our post-checkout inspection, we noticed a crack in the bathroom mirror that wasn't present before your stay (photos attached showing before and after). Could you help us understand what happened? We'd like to resolve this as smoothly as possible.'",
+            "For minor damage: 'Hi David, we noticed a small stain on the sofa cushion after your stay. No worries — these things happen! We just wanted to let you know in case you'd like to discuss it. Our cleaning team will attempt to remove it first.'"
+          ],
+          "antiPatterns": [
+            "'You broke the mirror and you need to pay for it' — accusatory tone",
+            "Filing a claim without first contacting the guest",
+            "Exaggerating the damage or inflating costs",
+            "Waiting weeks to report damage — platforms have time limits for claims"
+          ]
+        },
+        {
+          "title": "Insurance & Deposit Claims",
+          "description": "Know the damage claim process for each platform. Airbnb AirCover requires claims within 14 days of checkout. Booking.com has its own damage programme. For direct bookings, have a clear deposit policy in the rental agreement. Always get repair quotes from licensed professionals.",
+          "examples": [
+            "Airbnb claim process: 1. Document damage with photos. 2. Contact guest through platform. 3. If unresolved after 24 hours, open AirCover claim. 4. Provide before/after photos, repair quotes, and receipts. 5. Airbnb mediates.",
+            "Direct booking: 'As outlined in our rental agreement, we've assessed the damage at Rs 5,000 based on the attached professional quote. We'll deduct this from your security deposit and refund the remainder within 7 business days.'"
+          ],
+          "antiPatterns": [
+            "Missing the claim deadline — Airbnb's 14-day window is strict",
+            "Not having professional quotes — estimates without documentation get rejected",
+            "Claiming for pre-existing damage — this destroys credibility",
+            "Withholding the entire deposit for minor damage"
+          ]
+        },
+        {
+          "title": "Owner Communication Threshold",
+          "description": "Not every issue needs to reach the property owner. Define clear thresholds: minor issues (under Rs 2,000) — handle internally and report in the monthly summary. Medium issues (Rs 2,000-10,000) — inform the owner within 24 hours. Major issues (over Rs 10,000 or structural) — inform immediately. Always provide solutions alongside the problem.",
+          "examples": [
+            "Minor: 'Broken wine glass replaced from our inventory — Rs 200, absorbed in operating costs.'",
+            "Medium: 'Hi [Owner], a guest accidentally cracked a bathroom tile. I've already gotten a repair quote (Rs 4,500) and can schedule the fix between bookings next week. The guest has agreed to cover it through AirCover. Shall I proceed?'",
+            "Major: 'Hi [Owner], I need to flag a significant issue — there was a water leak from a burst pipe in the upstairs bathroom that damaged the ceiling below. I've already called a plumber (arriving within the hour) and a water damage restoration company. Here's what I know so far...'"
+          ],
+          "antiPatterns": [
+            "Calling the owner about every broken glass",
+            "Not informing the owner about major damage promptly",
+            "Presenting problems without proposed solutions",
+            "Making major repair decisions without owner approval"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Noise & Neighbor Policies",
+      "practices": [
+        {
+          "title": "Quiet Hours Communication",
+          "description": "Clearly communicate quiet hours (typically 10pm-8am in Mauritius) in the listing, house rules, and check-in message. Frame it positively — 'to ensure a peaceful experience for everyone' rather than 'you'll be penalised if you're loud'. Include this in the physical welcome book at the property.",
+          "examples": [
+            "In house rules: 'We kindly ask that noise levels are kept to a minimum between 10pm and 8am. This helps ensure a peaceful stay for you and our lovely neighbours.'",
+            "Check-in message: 'One thing to note — our neighbours are wonderful but the area is residential, so we ask guests to keep things quiet after 10pm. Music and conversations indoors are totally fine!'"
+          ],
+          "antiPatterns": [
+            "Not mentioning quiet hours until there's a complaint",
+            "Threatening fines in the welcome message — sets a hostile tone",
+            "Setting unreasonable quiet hours (e.g., 8pm-10am)",
+            "Not differentiating between indoor and outdoor noise expectations"
+          ]
+        },
+        {
+          "title": "Party Prevention",
+          "description": "Prevention is easier than enforcement. Set clear expectations in the listing: 'No parties or events.' Use noise monitoring devices (like Minut) in common areas where legal. Screen bookings for red flags: single-night bookings on weekends, local bookers, very young groups, vague purpose of stay.",
+          "examples": [
+            "Listing text: 'This is a residential neighbourhood. Parties, events, and gatherings exceeding the listed occupancy are not permitted. We use noise monitoring (no audio recording) in outdoor areas for everyone's peace of mind.'",
+            "Screening message: 'Thanks for your booking request! To help us prepare, could you tell us a bit about your trip? How many guests will be staying, and is there a special occasion we should know about?'"
+          ],
+          "antiPatterns": [
+            "Assuming all young guests will party — this is discriminatory",
+            "Not having a noise monitoring device and relying only on neighbours to report",
+            "Having a 'no parties' rule but no way to enforce it",
+            "Installing hidden cameras (illegal and a major violation)"
+          ]
+        },
+        {
+          "title": "Neighbour Complaint Handling",
+          "description": "Build good relationships with neighbours proactively. Give them your direct contact number. When a complaint comes in, acknowledge it immediately, contact the guest firmly but politely, and follow up with the neighbour. Document everything for potential platform disputes.",
+          "examples": [
+            "To neighbour: 'Thank you for letting me know — I'm really sorry about the disturbance. I'm contacting the guests right now and will ensure it stops. Please don't hesitate to call me directly if it happens again.'",
+            "To guest: 'Hi David, I've received a noise complaint from the neighbours. I understand you're having a good time, but I need to ask you to bring the music/gathering inside and keep the volume down. The property is in a residential area with strict quiet hours after 10pm. I appreciate your understanding — let's make sure everyone has a great night.'",
+            "Second offence: 'David, this is the second noise complaint tonight. As per our house rules and the rental agreement, continued noise violations may result in early termination of your stay without refund. Please resolve this immediately.'"
+          ],
+          "antiPatterns": [
+            "Ignoring neighbour complaints — they can report you to local authorities",
+            "Being too soft with repeat offenders — escalate clearly",
+            "Giving neighbours the guest's personal phone number",
+            "Not documenting complaints — you'll need this for potential early termination"
+          ]
+        },
+        {
+          "title": "Maximum Occupancy Enforcement",
+          "description": "Clearly state the maximum occupancy in the listing and rental agreement. The number on the booking should match — extra guests must be approved and may incur additional fees. Use this to prevent parties. If occupancy is exceeded, address it promptly.",
+          "examples": [
+            "Listing: 'Maximum occupancy: 6 guests. All guests must be registered at the time of booking. Additional guests may be accommodated for an extra fee — please contact us in advance.'",
+            "If exceeded: 'Hi David, our noise monitoring has picked up activity suggesting more guests than the 6 listed on your booking. As per our house rules, all guests must be registered. Could you confirm how many people are currently at the property? Additional guests can be added for Rs 500/night per person.'"
+          ],
+          "antiPatterns": [
+            "Not enforcing occupancy limits until damage occurs",
+            "Setting occupancy limits without explaining why (fire safety, insurance)",
+            "Confronting guests aggressively about extra visitors (could be day visitors)",
+            "Not having a process for guests to legitimately add extra occupants"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pricing & Fee Communication",
+      "practices": [
+        {
+          "title": "Fee Transparency",
+          "description": "List all fees upfront in the listing. Guests should never be surprised by charges. Include cleaning fees, tourist taxes, extra guest fees, and any other applicable charges in the listing description and pricing breakdown. Surprise fees are the #1 cause of negative reviews about value.",
+          "examples": [
+            "Listing pricing section: 'Nightly rate: Rs 5,000 | Cleaning fee: Rs 2,000 (one-time) | Tourist tax: Rs 200/night/adult (required by Mauritius law) | Extra guest fee: Rs 500/night (for guests beyond 4)'",
+            "Pre-booking message: 'Just to confirm the total breakdown: 5 nights x Rs 5,000 = Rs 25,000 + Rs 2,000 cleaning fee + Rs 2,000 tourist tax (2 adults x Rs 200 x 5 nights) = Rs 29,000 total.'"
+          ],
+          "antiPatterns": [
+            "Hiding the cleaning fee in a high nightly rate or vice versa",
+            "Not mentioning tourist tax until after booking",
+            "Adding fees that weren't in the original listing",
+            "Making the pricing breakdown confusing or hard to find"
+          ]
+        },
+        {
+          "title": "Security Deposit Communication",
+          "description": "Explain the security deposit clearly: amount, when it's charged, when it's refunded, and what it covers. For Airbnb, AirCover replaces traditional deposits. For direct bookings, use a clear deposit agreement signed before arrival.",
+          "examples": [
+            "Direct booking: 'A refundable security deposit of Rs 10,000 is required before check-in. This covers potential damage beyond normal wear and tear. The deposit will be refunded within 7 business days of checkout, minus any documented damage costs. We'll send photos and quotes for any deductions.'",
+            "Airbnb: 'Your stay is protected by AirCover — no upfront deposit required. In the unlikely event of damage, Airbnb's resolution process handles it fairly for both parties.'"
+          ],
+          "antiPatterns": [
+            "Charging a deposit without a clear written agreement",
+            "Withholding deposits without documentation or justification",
+            "Not specifying the refund timeline — leads to anxious follow-ups",
+            "Using the deposit as leverage rather than legitimate protection"
+          ]
+        },
+        {
+          "title": "Cancellation Policy Clarity",
+          "description": "State the cancellation policy clearly in the listing and booking confirmation. For Airbnb and Booking.com, the platform policy applies. For direct bookings, define your own policy and include it in the rental agreement. Be firm but compassionate when handling cancellations.",
+          "examples": [
+            "Direct booking policy: 'Free cancellation up to 30 days before check-in for a full refund. 15-29 days: 50% refund. Less than 15 days: no refund, but we'll try to rebook the dates and refund if successful (minus a 10% admin fee).'",
+            "Compassionate handling: 'I'm sorry to hear about your situation. While our policy is [X], given the circumstances, we'd like to offer you a credit for a future stay within 12 months. Would that work for you?'"
+          ],
+          "antiPatterns": [
+            "Having different cancellation policies on different platforms without good reason",
+            "Being inflexible in genuinely exceptional circumstances (medical emergencies, natural disasters)",
+            "Not having a cancellation policy at all for direct bookings",
+            "Making the refund process unnecessarily complicated"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Amenity Descriptions",
+      "practices": [
+        {
+          "title": "Accuracy Over Aspiration",
+          "description": "Never overpromise amenities. If the WiFi is adequate for browsing but not for 4K streaming, say so. If the pool is shared, say so. If the kitchen is basic, don't describe it as 'fully equipped'. Under-promise and over-deliver is the golden rule for STR listings. Mismatched expectations are the leading cause of negative reviews.",
+          "examples": [
+            "Good: 'Compact kitchen with fridge, 2-burner stove, microwave, kettle, and basic cookware — perfect for simple meals and breakfast.'",
+            "Good: 'WiFi suitable for browsing and video calls. For heavy streaming or large downloads, we recommend using mobile data as a backup.'",
+            "Good: 'Private plunge pool (3m x 2m) — great for cooling off but not for swimming laps.'"
+          ],
+          "antiPatterns": [
+            "'Fully equipped gourmet kitchen' when there's a 2-burner stove and 3 pots",
+            "'High-speed WiFi' when the connection is 5 Mbps",
+            "'Beachfront property' when the beach is a 10-minute walk",
+            "'Luxury villa' for a clean but basic apartment",
+            "Using wide-angle lens photos that make rooms look larger than they are"
+          ]
+        },
+        {
+          "title": "Seasonal Availability Notes",
+          "description": "Clearly note any amenities that are seasonal. In Mauritius, this includes: pool heating (May-September for unheated pools), outdoor BBQ availability during cyclone season, garden conditions during dry season, and water pressure variations during peak demand.",
+          "examples": [
+            "'The pool is unheated — perfect from October to April (water temp ~26-30°C). During the cooler months (June-August), the water can be refreshing at ~20-22°C.'",
+            "'During cyclone season (November-April), outdoor furniture may be stored for safety during weather warnings. We'll keep you updated if a cyclone watch is issued.'"
+          ],
+          "antiPatterns": [
+            "Advertising the pool year-round without mentioning it's unheated",
+            "Not mentioning cyclone season impacts at all",
+            "Promising outdoor activities during periods when they may be affected by weather",
+            "Showing only summer photos in the listing"
+          ]
+        },
+        {
+          "title": "Condition Disclaimers",
+          "description": "For older or character properties, set appropriate expectations about quirks. A colonial-era house has charm but may also have uneven floors, older plumbing, or less soundproofing. Frame these honestly as part of the property's character while being transparent.",
+          "examples": [
+            "'Villa Soleil is a beautifully restored 1920s colonial house. As with all heritage properties, you may notice original wooden floors (some creaking), vintage fixtures, and character features. We've modernised all essential systems (plumbing, electrical, AC) while preserving the property's historic charm.'",
+            "'Please note: this is a tropical property. Occasional small geckos are common and harmless — they actually help keep mosquitoes away! We do regular pest control but can't eliminate all of nature's visitors.'"
+          ],
+          "antiPatterns": [
+            "Describing a property as 'modern' when it's clearly dated",
+            "Not mentioning known quirks and then dealing with complaints",
+            "Being overly apologetic about character features — own them positively",
+            "Hiding structural issues behind euphemisms like 'rustic charm'"
+          ]
+        },
+        {
+          "title": "Kitchen Equipment Specifics",
+          "description": "List specific kitchen equipment rather than vague descriptions. Guests who plan to cook want to know exactly what's available. Include: stove type and number of burners, oven availability, fridge size, coffee maker type, and any specialty equipment.",
+          "examples": [
+            "Kitchen inventory: '4-burner gas stove, full-size oven, large fridge-freezer, microwave, Nespresso machine (pods provided for first day), toaster, kettle, blender, rice cooker, full set of pots, pans, and utensils for 6, dishwasher.'",
+            "For basic kitchens: 'Kitchenette with: 2-burner electric stove, mini-fridge, microwave, kettle, toaster, basic pots and pans, plates and cutlery for 4. No oven or dishwasher.'"
+          ],
+          "antiPatterns": [
+            "'Fully equipped kitchen' without specifying what's included",
+            "Listing a Nespresso machine but not mentioning that pods aren't provided",
+            "Not mentioning the absence of common items (oven, dishwasher) that guests might assume exist",
+            "Describing equipment that's broken or missing"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Emergency Procedures",
+      "practices": [
+        {
+          "title": "Emergency Contact Chain",
+          "description": "Establish and communicate a clear emergency contact chain. The guest should always have a 24/7 number that reaches a real person. The chain should be: Guest → Property Manager (on-call) → Maintenance/Services → Property Owner (if required). Response times: immediate acknowledgement, resolution plan within 30 minutes.",
+          "examples": [
+            "Welcome message: 'For emergencies (water leak, power outage, security concern), call +230 5XXX XXXX — available 24/7. For non-urgent issues, message us here and we'll respond within the hour.'",
+            "Internal protocol: 'On-call PM receives emergency call → Assess severity → Dispatch maintenance if needed → Update guest within 30 min → Notify owner if major → Document incident with photos and timestamps.'"
+          ],
+          "antiPatterns": [
+            "Emergency number going to voicemail at night",
+            "Not having a local contact — guests abroad can't easily coordinate services",
+            "Making the guest responsible for finding emergency services",
+            "Having only one person as emergency contact with no backup"
+          ]
+        },
+        {
+          "title": "Water & Electrical Emergency Response",
+          "description": "Every property should have clear instructions (in the welcome book and communicated to guests) for water shutoff valves and electrical panel locations. The PM should know how to guide a guest through shutting off water remotely. Have trusted plumbers and electricians on speed dial who can respond within 1 hour.",
+          "examples": [
+            "Welcome book: 'In case of water emergency: The main water shutoff valve is the red handle under the kitchen sink. Turn clockwise to close. Then call us immediately at +230 5XXX XXXX.'",
+            "Remote guidance: 'I understand — let's stop the water first. Can you go to the kitchen? Under the sink, you'll see a red valve handle. Turn it clockwise until it stops. That will shut off water to the whole house. I've already called our plumber — they'll be there within 45 minutes.'"
+          ],
+          "antiPatterns": [
+            "Not knowing where the shutoff valves are for properties you manage",
+            "Not having a trusted emergency plumber/electrician for each area",
+            "Telling the guest to 'wait until morning' for a water leak",
+            "Not following up after the emergency is resolved"
+          ]
+        },
+        {
+          "title": "Medical Emergency Guidance",
+          "description": "Have a clear medical emergency protocol in the welcome book. Include the nearest hospital/clinic, pharmacy, and emergency numbers. Offer to call for help if the guest is distressed. Know which properties have first aid kits and their locations.",
+          "examples": [
+            "Welcome book: 'Medical Emergencies:\n- Emergency services (SAMU): 114\n- Police: 999 / 112\n- Fire: 115\n- Nearest hospital: SSRN Hospital, Pamplemousses — 15 min drive\n- Nearest 24hr pharmacy: Pharmacie Tombeau Bay — 5 min drive\n- First aid kit: top shelf of the hallway cupboard'",
+            "Guest communication: 'I'm so sorry to hear [guest/family member] isn't well. The nearest hospital is SSRN in Pamplemousses — about 15 minutes from the villa. Would you like me to call a taxi or ambulance? I can also recommend an English-speaking doctor who does house calls: Dr. [Name], +230 XXX XXXX.'"
+          ],
+          "antiPatterns": [
+            "Not having emergency numbers easily accessible in the property",
+            "Providing medical advice — always defer to professionals",
+            "Not knowing the nearest hospital to each property",
+            "First aid kit being empty or expired"
+          ]
+        },
+        {
+          "title": "Cyclone Season Protocols (Mauritius-Specific)",
+          "description": "Mauritius cyclone season runs November to April. Have a cyclone preparedness plan for each property. Communicate proactively when a cyclone watch is issued. Know the warning class system (1-4) and what each means for guest safety. Have emergency supplies pre-positioned.",
+          "examples": [
+            "Cyclone Watch issued: 'Hi Sarah, the Mauritius Meteorological Service has issued a Class 1 cyclone warning. This is a precautionary alert — normal activities can continue. We're monitoring the situation closely and will keep you updated. As a precaution, please bring any loose items from the terrace inside. Here's what you should know: [link to MMS updates].'",
+            "Class 3 (serious): 'Sarah, the warning has been upgraded to Class 3. This means you should stay indoors until further notice. We've ensured the property is secure. Here's what to do:\n- Stay inside, away from windows\n- Fill bathtubs with water (in case water supply is interrupted)\n- Charge all devices\n- Emergency kit is in the hallway cupboard\n- We're available 24/7 at +230 5XXX XXXX\nWe'll update you every 2 hours.'",
+            "Post-cyclone: 'The all-clear has been given. Our team is on the way to check the property. Is everyone okay? Please let us know if you notice any damage or issues.'"
+          ],
+          "antiPatterns": [
+            "Not communicating during a cyclone watch — guests panic",
+            "Not having emergency supplies (torches, batteries, water) at each property",
+            "Not checking the property after a cyclone passes",
+            "Being unaware of the cyclone warning class system"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Review Response Strategies",
+      "practices": [
+        {
+          "title": "Positive Review Responses",
+          "description": "Respond to every positive review personally and specifically. Reference something unique about their stay — it shows you remember them and aren't using a template. Keep it warm, brief, and invite them back. This also serves as marketing to potential guests reading reviews.",
+          "examples": [
+            "'Thank you so much, Sarah! We're thrilled you loved the sunset views from the terrace — it really is the best spot on the island. We hope you enjoyed that restaurant we recommended in Grand Baie! You're welcome back anytime. 😊'",
+            "'Merci beaucoup, Jean-Pierre! C'était un plaisir de vous accueillir. We're glad the kids loved the pool — we know how important it is to keep the little ones entertained. We'd love to host your family again!'"
+          ],
+          "antiPatterns": [
+            "'Thank you for your review!' — generic, forgettable",
+            "Copy-pasting the same response for every review",
+            "Not responding to positive reviews at all",
+            "Making the response about you instead of the guest"
+          ]
+        },
+        {
+          "title": "Negative Review Responses",
+          "description": "Respond to negative reviews within 48 hours. Always: acknowledge the issue, apologise for the experience, explain what you've done to fix it, and invite them to contact you directly. Never argue, get defensive, or blame the guest publicly. Remember: your response is for future guests more than the reviewer.",
+          "examples": [
+            "'Thank you for your honest feedback, David. We sincerely apologise about the AC issue during your stay — you're right, that should have been resolved faster. We've since upgraded the AC unit and improved our maintenance response time. We take this kind of feedback seriously because every guest deserves a comfortable stay. We'd love the chance to make it up to you on a future visit.'",
+            "'Sarah, we're sorry the check-in process was confusing. You've highlighted something we need to improve, and we've since added a video walkthrough and additional signage to make it much easier. Thank you for helping us get better.'"
+          ],
+          "antiPatterns": [
+            "'We disagree with this review' — sounds defensive",
+            "'This guest was difficult' — never criticise the guest publicly",
+            "Writing a longer response than the review — looks disproportionate",
+            "Ignoring negative reviews — future guests notice",
+            "Offering compensation publicly — handle that privately",
+            "Responding emotionally or within minutes of receiving the review"
+          ]
+        },
+        {
+          "title": "Review Timing & Consistency",
+          "description": "Leave reviews for guests within 7 days of checkout (before the platform deadline). Be honest but fair — mention positives first, note any issues factually. Respond to all guest reviews within 48 hours. Consistent review engagement signals to platforms and guests that you're an active, caring host.",
+          "examples": [
+            "Guest review (positive): 'Sarah was a wonderful guest — she left the property spotless and communicated clearly throughout. We'd happily host her again anytime!'",
+            "Guest review (issue): 'David and his group stayed for 3 nights. While they were friendly, we did receive a noise complaint on the second night which was resolved after a conversation. The property was left in reasonable condition.'"
+          ],
+          "antiPatterns": [
+            "Leaving retaliatory reviews because a guest left a negative review",
+            "Writing vague reviews that don't help other hosts",
+            "Not leaving reviews at all — you miss the reciprocity effect",
+            "Waiting until the last day to leave reviews — easy to forget"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Platform-Specific Rules",
+      "practices": [
+        {
+          "title": "Airbnb Best Practices",
+          "description": "Maintain Superhost eligibility: 4.8+ overall rating, <1% cancellation rate, 90%+ response rate, 10+ stays per year. Use the Airbnb messaging system for all communication (for protection). Respond to all inquiries within 24 hours. Never ask guests to communicate off-platform before booking. Understand and follow Airbnb's content policy for listings.",
+          "examples": [
+            "Keeping communication on-platform: 'I'd be happy to share more details! Here's everything you need to know about the property: [info]. If you'd like to proceed with booking, you can do so right here on Airbnb.'",
+            "Post-booking: 'Now that your booking is confirmed, here's my direct number for emergencies during your stay: +230 5XXX XXXX. For non-urgent matters, messaging through Airbnb is best as it keeps everything documented.'"
+          ],
+          "antiPatterns": [
+            "Asking guests to book directly or pay outside Airbnb (grounds for removal)",
+            "Sharing personal contact info before a booking is confirmed",
+            "Not responding to booking inquiries within 24 hours",
+            "Having a friend leave fake reviews (Airbnb detects this)"
+          ]
+        },
+        {
+          "title": "Booking.com Specifics",
+          "description": "Booking.com guests often expect free cancellation and pay-at-property options. Set clear policies upfront. The platform's Genius programme rewards properties with a 8.0+ review score. Booking.com handles payments differently — understand when you're receiving payment vs when the guest pays. Photos and descriptions are moderated more strictly.",
+          "examples": [
+            "Policy setting: 'We offer free cancellation up to 14 days before arrival, and a non-refundable rate at 10% discount for guests who prefer a lower price with commitment.'",
+            "Payment communication: 'For Booking.com reservations, payment is collected by Booking.com and transferred to us. You won't need to pay anything additional on arrival unless extra services are requested.'"
+          ],
+          "antiPatterns": [
+            "Having only non-refundable rates on Booking.com — it significantly reduces bookings",
+            "Not responding to Booking.com messages — their scoring system penalises slow responses",
+            "Not understanding the payment flow — some bookings are pay-at-property",
+            "Using the same listing copy as Airbnb without adapting to Booking.com's format"
+          ]
+        },
+        {
+          "title": "Direct Booking Standards",
+          "description": "Direct bookings need more structure since there's no platform mediating. Have a proper rental agreement, clear payment terms (deposit + balance schedule), cancellation policy, and damage deposit process. Use a booking management system to track reservations. Always get ID verification for direct bookings.",
+          "examples": [
+            "Booking confirmation: 'Thank you for choosing Villa Palma! To confirm your reservation, we require: 1. Signed rental agreement (attached). 2. 30% deposit within 48 hours. 3. Remaining balance 14 days before check-in. 4. Security deposit of Rs 10,000 (refundable). 5. Copy of ID for the primary guest.'",
+            "Rental agreement essentials: guest names, dates, property address, total price with breakdown, cancellation policy, house rules, damage policy, emergency contacts, liability limitations."
+          ],
+          "antiPatterns": [
+            "Accepting direct bookings without a rental agreement — zero legal protection",
+            "Not verifying guest identity — security risk",
+            "No deposit requirement — high no-show risk",
+            "Not having cancellation terms in writing — leads to disputes"
+          ]
+        },
+        {
+          "title": "Cross-Platform Consistency",
+          "description": "Maintain consistent pricing, descriptions, and availability across all platforms. Use a channel manager to sync calendars and avoid double bookings. While the listing copy can be adapted for each platform's format, the core information (amenities, rules, pricing) must be identical.",
+          "examples": [
+            "Calendar sync: 'All our properties use a channel manager that syncs Airbnb, Booking.com, and direct booking calendars in real-time. When a date is booked on one platform, it's instantly blocked on others.'",
+            "Pricing parity: 'Our nightly rate is consistent across platforms. The total may vary slightly due to different platform fee structures, but we never inflate prices on one platform to offset another's commission.'"
+          ],
+          "antiPatterns": [
+            "Different prices on different platforms leading to guest complaints when they compare",
+            "Manual calendar management — leads to double bookings",
+            "Different house rules or descriptions across platforms — creates confusion",
+            "Not updating all platforms when an amenity changes (e.g., pool under maintenance)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Common Guest Issues & Resolutions",
+      "practices": [
+        {
+          "title": "WiFi Troubleshooting",
+          "description": "WiFi issues are the #1 reported problem. Have a clear troubleshooting guide. Step 1: Restart the router (unplug for 30 seconds). Step 2: Try a different device to confirm. Step 3: Check if the issue is speed or connectivity. Have a backup plan (mobile hotspot device or tethering instructions).",
+          "examples": [
+            "'Sorry about the WiFi trouble! Let's try this: 1. Unplug the white router in the living room (behind the TV) for 30 seconds, then plug it back in. 2. Wait 2 minutes for the lights to stabilise. 3. Try reconnecting — network: VillaPalma, password: [redacted], there's a backup 4G hotspot in the top drawer of the TV cabinet — press and hold the power button for 3 seconds.'",
+            "If persistent: 'I've arranged for our technician to visit tomorrow between 10-11am. In the meantime, the backup hotspot should cover your needs. Sorry for the inconvenience!'"
+          ],
+          "antiPatterns": [
+            "Telling the guest 'it works fine for other guests' — dismissive",
+            "Not having a backup internet solution",
+            "Taking more than 24 hours to schedule a technician visit",
+            "Not knowing where the router is located in the property"
+          ]
+        },
+        {
+          "title": "AC & Heating Issues",
+          "description": "AC problems in a tropical climate are urgent. Have troubleshooting steps ready and maintenance on standby. Common fixes: check the remote batteries, ensure the AC is set to the correct mode, clean the filter if accessible. If the issue persists, deploy a portable AC unit as a temporary measure.",
+          "examples": [
+            "'Let me help you with the AC! First, check that the remote is set to COOL mode (snowflake icon) and the temperature is below the room temperature — try 22°C. If the remote isn't responding, there are fresh batteries in the kitchen drawer. Still not working? There's a reset button on the indoor unit — a small button on the right side. Press it once and wait 5 minutes.'",
+            "'I've sent our AC technician — they'll be there within the hour. In the meantime, opening the windows on opposite sides of the house will create a cross-breeze. There are also two standing fans in the storage cupboard. I'm really sorry about this!'"
+          ],
+          "antiPatterns": [
+            "Telling guests to 'open windows' in 35°C heat as a permanent solution",
+            "Not having a backup cooling solution (portable AC, fans)",
+            "Scheduling a repair for 'sometime this week' — AC is urgent in Mauritius",
+            "Not pre-checking the AC before each guest's arrival"
+          ]
+        },
+        {
+          "title": "Hot Water Problems",
+          "description": "Hot water issues are common in STRs, especially in older properties. Know the water heater type for each property (solar, electric, gas) and have troubleshooting steps for each. Most issues are: timer not aligned with guest's schedule, pilot light out, or tank too small for occupancy.",
+          "examples": [
+            "Solar heater: 'The hot water is solar-heated, so it's best in the afternoon and evening after a sunny day. On cloudy days, there's an electric backup — the switch is in the bathroom (red switch next to the mirror). Turn it on 30 minutes before you need hot water.'",
+            "Electric heater: 'The water heater switch is in the hallway — it's the red switch marked 'EAU CHAUDE'. Make sure it's turned on. Hot water takes about 20-30 minutes to heat up. If it's been on for 30+ minutes and still not hot, please let me know and I'll send a technician.'"
+          ],
+          "antiPatterns": [
+            "Not knowing the water heater type for a property you manage",
+            "Not explaining solar heater limitations — guests expect instant hot water",
+            "Leaving it to guests to figure out which switch controls the water heater",
+            "Not testing hot water before each guest arrival"
+          ]
+        },
+        {
+          "title": "Lockout Procedures",
+          "description": "Lockouts happen. Have a rapid response plan: spare key with a trusted neighbour or in a secure lockbox, 24/7 locksmith contact, and remote unlock capability for smart locks. The guest should be back inside within 30 minutes maximum.",
+          "examples": [
+            "'Don't worry — this happens! Option 1: There's a spare key in the lockbox on the side wall of the house, code 7890. Option 2: If you can't access that, I'm calling our locksmith right now — they should be there within 20 minutes. Stay put and I'll keep you updated.'",
+            "For smart locks: 'I can generate a new access code for you right now. Your temporary code is 1234 — it'll work for the next hour while I set up a new permanent code. The keypad is on the front door handle.'"
+          ],
+          "antiPatterns": [
+            "Not having a spare key solution — the guest waits for hours",
+            "Charging the guest for a locksmith when it's a property issue (e.g., faulty lock)",
+            "Not answering the phone during a lockout — guest is stranded",
+            "Only one spare key that's 30 minutes away"
+          ]
+        },
+        {
+          "title": "Pest Issues",
+          "description": "In tropical Mauritius, some insects are unavoidable (geckos, mosquitoes, ants). Set expectations in the listing for tropical properties. However, respond immediately to any pest complaints — it's both a comfort and health issue. Have a pest control company on retainer.",
+          "examples": [
+            "Listing: 'As a tropical property, you may occasionally encounter small geckos (harmless and great mosquito hunters!). We provide mosquito repellent and coils. Regular pest control is performed monthly.'",
+            "Complaint: 'I'm really sorry about the ant issue. Our pest control team will be there this afternoon. In the meantime, there's ant spray under the kitchen sink. Please avoid leaving food out uncovered — that's usually what attracts them. We'll also do an extra treatment after your stay to prevent this from recurring.'"
+          ],
+          "antiPatterns": [
+            "Dismissing tropical pest concerns as 'normal' — it doesn't help the guest",
+            "Not having pest control products available at the property",
+            "Waiting until the next scheduled treatment instead of addressing urgently",
+            "Not disclosing that the property is in a tropical area with typical tropical wildlife"
+          ]
+        },
+        {
+          "title": "Missing Amenities vs Listing",
+          "description": "If a guest reports a missing amenity that was listed, acknowledge the error immediately, provide a solution, and consider compensation. Update the listing immediately if the amenity is permanently unavailable. Never argue about what was listed — the guest has screenshots.",
+          "examples": [
+            "'You're absolutely right — the listing mentions a BBQ and I apologise that it's currently out of service for maintenance. I should have updated the listing and notified you before arrival. To make it right, we can bring a temporary BBQ unit tomorrow, or offer a partial refund for the inconvenience. What would you prefer?'",
+            "Immediate fix: Update the listing, contact upcoming guests with the same booking, and add the repair to the maintenance schedule."
+          ],
+          "antiPatterns": [
+            "'It was there last week' — doesn't matter, it's not there now",
+            "Not updating the listing after removing or repairing an amenity",
+            "Arguing about what the listing says — the guest can see it",
+            "Not compensating when the missing amenity was a deciding factor in their booking"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mauritius-Specific Practices",
+      "practices": [
+        {
+          "title": "Tourist Tax Requirements",
+          "description": "Mauritius introduced a tourist tax (Environment Protection Fee) that applies to all tourist accommodations. Communicate this clearly at booking and in the listing. Currently Rs 200 per room per night. This may change — keep the listing updated with current rates. Collect and remit as required by law.",
+          "examples": [
+            "Listing: 'A government-mandated tourist tax of Rs 200 per room per night applies to all stays. This is included in your total on Airbnb/Booking.com, or added to your invoice for direct bookings.'",
+            "Direct booking invoice: 'Nightly rate: Rs 5,000 x 5 = Rs 25,000 | Cleaning: Rs 2,000 | Tourist tax: Rs 200 x 5 nights x 2 rooms = Rs 2,000 | Total: Rs 29,000'"
+          ],
+          "antiPatterns": [
+            "Not disclosing the tourist tax before booking",
+            "Absorbing the tax into the rate without telling the guest — legally required to be transparent",
+            "Not keeping up with rate changes — the government adjusts this periodically",
+            "Failing to remit collected tourist tax to the authorities"
+          ]
+        },
+        {
+          "title": "Local Emergency Numbers",
+          "description": "Every property should display Mauritius emergency numbers prominently in the welcome book and on a card by the phone. Provide this information in the check-in message as well.",
+          "examples": [
+            "Emergency card:\n- SAMU (Medical Emergency): 114\n- Police: 999 / 112\n- Fire: 115\n- Coast Guard: 212-2747\n- Cyclone hotline: 96\n- Our 24/7 number: +230 5XXX XXXX\n- Nearest hospital: [Name, address, distance]\n- Nearest pharmacy: [Name, address, hours]\n- Nearest police station: [Name, address]"
+          ],
+          "antiPatterns": [
+            "Using a foreign emergency number format (e.g., 911)",
+            "Not including the coast guard for beachfront properties",
+            "Not knowing the nearest hospital to each property",
+            "Having outdated emergency numbers"
+          ]
+        },
+        {
+          "title": "Currency & Payment Norms",
+          "description": "Mauritius uses the Mauritian Rupee (MUR/Rs). Most tourists pay in foreign currency through platforms. For direct bookings, accept bank transfers in EUR/USD/GBP and MUR. Have clear exchange rate policies. Many establishments accept cards, but advise guests to carry some cash for markets and small vendors.",
+          "examples": [
+            "Direct booking: 'We accept payment in MUR, EUR, USD, or GBP via bank transfer. The exchange rate used will be the mid-market rate on the day of transfer (as per XE.com). Credit card payments incur a 3% processing fee.'",
+            "Guest advice: 'ATMs are widely available and most accept international cards. For the best exchange rates, withdraw MUR from ATMs rather than using airport exchange bureaux. Major restaurants and supermarkets accept Visa and Mastercard, but carry some cash (Rs 2,000-5,000) for local markets and beach vendors.'"
+          ],
+          "antiPatterns": [
+            "Quoting prices in foreign currency without specifying which one",
+            "Using unfavourable exchange rates for direct bookings",
+            "Not advising guests about currency before they arrive",
+            "Not accepting any form of electronic payment for direct bookings"
+          ]
+        },
+        {
+          "title": "Cultural Considerations",
+          "description": "Mauritius is a multicultural island (Hindu, Muslim, Creole, Chinese, French influences). Help guests navigate cultural norms respectfully. This enhances their experience and shows the depth of your local knowledge.",
+          "examples": [
+            "Welcome book: 'Mauritius is a beautifully diverse island. You may hear Creole, French, Hindi, and English spoken daily. When visiting temples, wear clothing that covers shoulders and knees. Remove shoes before entering. During religious festivals (like Cavadee, Diwali, or Eid), you may encounter road closures and celebrations — embrace the experience!'",
+            "Seasonal: 'Your stay coincides with Diwali — the Festival of Lights! You'll see beautiful decorations and may hear fireworks in the evenings. It's a wonderful time to visit. Local sweet shops will have special treats if you'd like to experience the celebration.'"
+          ],
+          "antiPatterns": [
+            "Not mentioning cultural events happening during the guest's stay",
+            "Stereotyping or oversimplifying the culture",
+            "Not advising about dress codes for religious sites",
+            "Ignoring the multicultural aspect entirely in guest communications"
+          ]
+        },
+        {
+          "title": "Cyclone Season Communication",
+          "description": "Cyclone season (November-April) requires proactive communication. Inform guests at booking about the season, provide reassurance about safety measures, and have a clear action plan for each warning class. Properties should be cyclone-ready: shutters, emergency supplies, generator backup for key properties.",
+          "examples": [
+            "Pre-booking (Nov-Apr): 'Your stay falls during the tropical season. While cyclones are uncommon, we want you to know we're fully prepared. All our properties have cyclone shutters, emergency supplies, and we closely monitor weather services. In the rare event of a cyclone, we'll provide step-by-step guidance and 24/7 support.'",
+            "Cyclone warning class guide:\n- Class 1: Advisory stage. Normal activities continue. We monitor.\n- Class 2: Warning stage. Secure outdoor items. Stay informed.\n- Class 3: Danger stage. Stay indoors. We provide updates every 2 hours.\n- Class 4: Imminent danger. Remain in the safest room. We're in constant contact.\n- All Clear: We check the property and assist with any issues."
+          ],
+          "antiPatterns": [
+            "Not mentioning cyclone season at all for Nov-Apr bookings",
+            "Panicking guests with overly dramatic cyclone warnings",
+            "Not having physical preparations (shutters, supplies) at properties",
+            "Going silent during a cyclone event — guests need constant reassurance"
+          ]
+        },
+        {
+          "title": "Transportation Guidance",
+          "description": "Mauritius has limited public transport. Help guests plan transportation: airport transfers, car rental, taxi services, and ride-sharing options. Recommend trusted providers and provide expected costs to prevent overcharging.",
+          "examples": [
+            "Pre-arrival: 'Getting from the airport to Villa Palma takes about 45 minutes. Options:\n- Private transfer (we can arrange): Rs 1,500 / €30\n- Taxi from airport rank: Rs 1,000-1,500 (negotiate before getting in)\n- Car rental (recommended for exploring): from Rs 1,200/day. We partner with [Company] — mention our name for 10% off.\nWe drive on the left in Mauritius, similar to the UK.'",
+            "During stay: 'For day trips, we recommend:\n- North (Grand Baie): 20 min drive, great shopping and nightlife\n- South (Chamarel/Le Morne): 45 min drive, stunning nature\n- East (Ile aux Cerfs): 30 min drive + boat, beautiful island beach\nWe can arrange a private driver for full-day tours at Rs 3,000-4,000.'"
+          ],
+          "antiPatterns": [
+            "Not mentioning that Mauritius drives on the left",
+            "Recommending public buses as the primary transport without caveats (infrequent, no AC, confusing routes)",
+            "Not warning about unofficial taxis overcharging tourists",
+            "Not offering to arrange airport transfers — it's a high-value convenience"
+          ]
+        }
+      ]
+    }
+  ]
+}

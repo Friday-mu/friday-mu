@@ -106,10 +106,12 @@ CREATE INDEX IF NOT EXISTS idx_workflow_action ON message_workflow(action);
 
 -- Insert default staff members (adjust as needed)
 INSERT INTO staff_members (name, email, role) VALUES 
-    ('Ishant', 'ishant@friday.mu', 'admin'),
-    ('Franny', 'franny@friday.mu', 'manager'),
-    ('Matias', 'matias@friday.mu', 'staff'),
-    ('Mary', 'mary@friday.mu', 'staff')
+    ('Ishant Ayadassen', 'ishant@friday.mu', 'admin'),
+    ('Franny Henri', 'franny@friday.mu', 'manager'),
+    ('Mathias Duval', 'mathias@friday.mu', 'staff'),
+    ('Mary Oladimeji', 'mary@friday.mu', 'staff'),
+    ('Bryan Henri', 'bryan@friday.mu', 'staff'),
+    ('Catherine Henri', 'catherine@friday.mu', 'staff')
 ON CONFLICT (email) DO NOTHING;
 
 -- Insert default system settings

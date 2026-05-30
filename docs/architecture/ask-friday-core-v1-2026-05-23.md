@@ -1,0 +1,566 @@
+# Ask Friday Core V1 Architecture Recommendation
+
+Date: 2026-05-23
+Last updated: 2026-05-29
+Status: V1 backend contract scaffold and autonomous hardening are on `fad-rebuild`; live deploy state must be verified per frontend/backend surface before shipping follow-up work.
+Repo/session: FAD only. No Friday Website edits in this branch.
+
+## Naming
+
+The user-facing global AI surface is **Ask Friday**.
+
+FridayOS can remain the broader product/system label where already canonical. The AI surface, Website FAB, guest assistant, owner chat, feedback assistant, and staff consult surface should use Ask Friday in product-facing language.
+
+FAD still has staff module labels such as Friday Consult. Treat those as internal/module-mode aliases under Ask Friday, not separate public assistant products or personas. Do not introduce new public-facing assistant names.
+
+## FAD Assistant Host Direction
+
+Product direction added on 2026-05-29: FAD should converge toward one shared right-side **Ask Friday** panel instead of each module owning a separate embedded Friday Consult UI.
+
+This is a frontend harness direction, not a change to the Ask Friday Core ownership model.
+
+Target behavior:
+
+- The page/module publishes where the user is, what is selected, what is visible, and which actions are allowed.
+- The shared right-side panel opens from the FAD header or from local buttons such as "Review with Ask Friday".
+- Ask Friday Core receives the page state, applies registry/tool/action policy, then routes to the correct specialist mode such as Inbox, Ops, Finance, Legal/Admin, or public Website support.
+- The specialist mode returns operator-facing text plus structured actions.
+- The page applies approved actions through its existing backend/API paths, so the user sees the screen change without the assistant pretending it already executed unapproved work.
+
+Do not collapse all specialist behavior into one monolithic prompt. Ask Friday Core should orchestrate identity, policy, page awareness, memory, learning events, and action approval. Module agents still own domain reasoning, prompts, KB scopes, evals, and action contracts.
+
+Migration policy:
+
+- Keep current embedded Consult surfaces for urgent production bug fixes until the bridge is proven.
+- Build the shared right panel and page-state/action bridge first.
+- Migrate Ops before Inbox. Ops has a less settled harness and benefits most from a planning/control panel. Inbox has a mature draft/review/send flow, so its inline draft cards should remain while the right panel becomes the review/explanation/action host.
+- Do not remove or rewrite existing Inbox draft/review contracts until the unified panel can reproduce draft creation, revision, split-recipient drafts, task suggestions, teaching candidates, and approval safety.
+
+## Sources Read
+
+- Notion: Ask Friday Unified AI Learning Loop - Scope 2026-05-23
+- Notion: Friday System Atlas
+- Notion: FAD Architecture & Integrations
+- Notion: Friday Knowledge Base - Batch 1 Product AI Ops
+- Notion: Ask Friday Product Register
+- Repo: `docs/architecture/ask-friday-agent-research-notes-2026-05-26.md`
+- Repo: `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md`
+- Filesystem: `/Users/judith/Friday Website/docs/ASK-FRIDAY-UNIFIED-AI-LEARNING-LOOP-2026-05-23.md`
+- Filesystem: `/Users/judith/.codex/worktrees/fad-ask-friday-fab-polish-20260523/docs/handover/2026-05-23-fad-convergence-pending-tasks.md`
+
+## Recommendation
+
+FAD should own Ask Friday Core V1.
+
+Reasoning:
+
+- FAD is already the owner of public API auth, tenant scoping, Inbox/Consult, operations tasks, teachings, pending actions, learning-analyzer direction, and approved operational workflows.
+- Website should remain a high-quality surface, not a second durable learning backend.
+- Notion remains strategic/reference canon. FAD Postgres should own runtime events, review queues, snapshots, eval records, and approvals.
+- Approved knowledge and behavior should flow down to surfaces as versioned context packs. Surface evidence should flow up as compact redacted events.
+
+Core rule: no direct self-updating production truth. AI can observe, redact, summarize, cluster, propose, and generate eval candidates. Ishant approves anything that becomes canonical in V1.
+
+## V1 Flow
+
+```mermaid
+flowchart TD
+  Website["Website Ask Friday surfaces"] -->|"redacted learning_event"| Core["FAD Ask Friday Core"]
+  FAD["FAD Consult and future staff agents"] -->|"learning_event, action_request, kb_candidate"| Core
+  Agents["Internal agents"] -->|"sanitized summaries only"| Core
+  MCP["Public MCP, later"] -.->|"design only in V1"| Core
+
+  Core --> Events["learning event store"]
+  Core --> Actions["approval-routed action queue"]
+  Core --> Candidates["KB candidate queue"]
+  Core --> Evals["eval cases and runs"]
+  Core --> Packs["approved context packs"]
+
+  Candidates --> Review["Ishant review"]
+  Review --> Packs
+  Packs -->|"published snapshot"| Website
+  Packs -->|"published snapshot"| FAD
+```
+
+This diagram is deliberately compact. The closed-loop version is now in `docs/architecture/ask-friday-knowledge-harness-catalog-2026-05-26.md` and must be treated as the implementation planning reference for evidence, memory, evals, registry updates, context packs, and human review.
+
+Flow closure rules added on 2026-05-26:
+
+- Evidence refs flow into analyzer/mining, eval generation, audit/debug, and review. Evidence does not flow directly into public prompts or canonical truth.
+- Memory state flows into context assembly only when the surface registry permits it. Session/working memory can be compacted under policy; durable semantic/procedural memory still requires human approval.
+- Eval results flow into publish gates, reviewer queues, and candidate creation. Failed evals must block, require explicit override, or produce/update a candidate.
+- Surface registry flows into context assembly, public route policy, tool/action policy, context-pack publishing, and eval suite selection. Registry changes flow back only through review or explicitly approved staff admin paths.
+- Action requests flow into approval/execution queues and then back into evidence, learning events, and eval cases after approval, rejection, execution, or expiry.
+
+## V1 Scope
+
+- Add a FAD-owned surface registry.
+- Add a FAD-owned published context pack store.
+- Add a signed public route for compact redacted learning events.
+- Add a KB candidate review queue contract.
+- Add an approval-routed action request queue contract.
+- Add identity/consent records for durable memory where authentication or explicit consent exists.
+- Add eval-case/eval-run storage for production-derived regression tests.
+- Keep public MCP as a schema/policy design target only until Website/FAD core loop is stable.
+
+## Not V1
+
+- Auto-publishing KB updates.
+- Direct booking/payment/write-through from public MCP.
+- Unlimited raw transcript retention.
+- Anonymous durable memory without explicit consent.
+- Public exposure of staff workload, staff identity, owner-private data, guest-sensitive data, payment data, or secrets.
+- Fine-tuning.
+- Full session replay.
+- Broad frontend UI migration in the current backend/Core slice. The unified right-side panel is a planned FAD frontend harness slice and should not be mixed into backend-only Core hardening.
+
+## Contracts
+
+### `surface_registry`
+
+```json
+{
+  "surfaceId": "website_ask_friday_fab",
+  "displayName": "Ask Friday FAB",
+  "audience": "public_mixed",
+  "sourceSystem": "friday-website",
+  "accessClass": "public",
+  "localePolicy": { "supported": ["en", "fr"], "match_user_locale": true },
+  "allowedKnowledgeScopes": ["public_brand", "public_residences"],
+  "allowedTools": ["route_intent", "search_residences", "check_availability"],
+  "allowedActions": ["request_booking", "request_owner_followup", "request_handoff"],
+  "memoryPolicy": { "anonymous": "session_only", "durable": "authenticated_or_explicit_consent" },
+  "handoffPolicy": { "handoff_target": "fad_website_inbox", "human_takeover_stops_ai": true },
+  "modelPolicy": { "primary": "website_default", "fallback": "website_fallback" },
+  "contextBudget": { "baseline_tokens": 40000, "compact_after_messages": 32 },
+  "evalSuiteIds": ["website_fab_routing", "handoff_correctness"],
+  "status": "active"
+}
+```
+
+Seeded surfaces:
+
+- `website_guest_hero`
+- `website_ask_friday_fab`
+- `website_owner_enquiry`
+- `website_feedback_bug`
+- `website_feedback_feature`
+- `fad_consult`
+- `fad_ops_assistant`
+- `fad_finance_assistant`
+- `public_mcp` as planned
+- `internal_agent_bridge`
+
+### `page_state_context`
+
+The unified FAD right-side panel needs a compact page-state contract. This is frontend-to-Core context, not canonical knowledge.
+
+```json
+{
+  "surfaceId": "fad_ops_assistant",
+  "host": "fad_right_panel",
+  "route": "/fad?m=operations",
+  "module": "operations",
+  "view": "schedule_planner",
+  "focusedObject": {
+    "type": "task",
+    "id": "task_123",
+    "label": "Fix AC at GBH-C8"
+  },
+  "selection": {
+    "selectedIds": ["task_123"],
+    "cursorRange": null
+  },
+  "visibleState": {
+    "filters": { "date": "2026-05-29", "team": "field" },
+    "summary": "Manager schedule view with 18 open tasks and 6 field staff visible."
+  },
+  "allowedActions": [
+    "create_task",
+    "update_task",
+    "assign_task",
+    "propose_schedule",
+    "apply_schedule_after_approval"
+  ],
+  "privacyClass": "staff_private",
+  "stalenessMs": 1500
+}
+```
+
+Rules:
+
+- Page state is allowed to be compact and lossy. It should identify the current work surface and selected object, not serialize the full DOM.
+- Sensitive row details stay behind server loaders/tool calls; the browser should send IDs, filters, and summaries where possible.
+- Allowed actions must come from the surface registry and page bridge, not from model preference.
+- The panel may request page changes, but page modules execute them through existing typed APIs after approval gates.
+
+### `panel_action_result`
+
+Specialist agents can return actions for the page bridge. The panel should display the action, require approval where needed, then let the owning module apply it.
+
+```json
+{
+  "responseText": "I can rebalance today's field schedule and keep lunch breaks between noon and 2pm.",
+  "actions": [
+    {
+      "actionType": "propose_schedule",
+      "target": { "module": "operations", "view": "schedule_planner" },
+      "requiresApproval": true,
+      "payload": {
+        "date": "2026-05-29",
+        "assignments": [],
+        "constraintsApplied": [
+          "no_unassigned_tasks",
+          "avoid_occupied_properties_unless_urgent",
+          "one_hour_lunch_break"
+        ]
+      },
+      "evidenceRefs": [],
+      "confidence": "medium"
+    }
+  ]
+}
+```
+
+Rules:
+
+- High-impact actions default to `requiresApproval: true`.
+- Inbox send/approve remains owned by Inbox. Ops schedule/task writes remain owned by Operations.
+- If an action cannot be applied safely, create an action request or draft proposal; do not claim execution.
+
+### `learning_event`
+
+```json
+{
+  "eventId": "afe_...",
+  "createdAt": "2026-05-23T10:00:00+04:00",
+  "sourceSystem": "friday-website",
+  "surfaceId": "website_ask_friday_fab",
+  "identityRef": {
+    "identityType": "anonymous",
+    "identityKey": "session-or-hash",
+    "authenticated": false,
+    "consentStatus": "unknown",
+    "durableMemoryAllowed": false
+  },
+  "sessionId": "session-id",
+  "locale": "en",
+  "pageUrl": "https://friday.mu/en/residences",
+  "intent": "find_property",
+  "userTurnSummary": "Asked for a beachfront stay for 4 in July.",
+  "assistantActionSummary": "Suggested residences and asked for dates.",
+  "toolsUsed": ["search_residences", "check_availability"],
+  "knowledgeUsed": ["public_residences", "guest_booking_rules"],
+  "confidence": "medium",
+  "outcome": "continued",
+  "handoff": { "triggered": false, "reason": null },
+  "signals": { "answerHelpfulness": null },
+  "privacyClass": "medium",
+  "redactionStatus": "redacted",
+  "evidenceRefs": [
+    {
+      "evidenceType": "screenshot",
+      "storageRef": "blob-or-object-ref",
+      "privacyClass": "medium",
+      "redactionStatus": "redacted",
+      "summary": "Feedback screenshot, redacted."
+    }
+  ]
+}
+```
+
+Website emitters must send summaries and references, not raw secrets, payment data, owner-private data, guest-sensitive data, or staff workload.
+
+### `context_pack`
+
+```json
+{
+  "packId": "website_ask_friday_fab_v3",
+  "surfaceId": "website_ask_friday_fab",
+  "version": 3,
+  "status": "published",
+  "knowledgeScopes": ["public_brand", "public_residences", "public_mauritius"],
+  "behaviorRules": [{ "id": "low_confidence_handoff", "rule": "Escalate when confidence is low." }],
+  "toolPolicy": { "web_search": "restricted_by_intent" },
+  "memoryPolicy": { "anonymous": "session_only" },
+  "sourceSnapshotRefs": [{ "type": "notion", "ref": "Ask Friday Product Register" }],
+  "packPayload": { "compactPrompt": "Approved surface context." },
+  "approvedBy": "Ishant"
+}
+```
+
+Only `published` context packs are readable by public API clients.
+
+### `kb_candidate`
+
+```json
+{
+  "candidateId": "afc_...",
+  "candidateType": "behavior_rule",
+  "targetLayer": "surface_behavior",
+  "proposedChange": {
+    "operation": "add",
+    "path": "website_feedback_bug.followup_policy",
+    "value": "Inspect screenshot and diagnostics before asking follow-up questions."
+  },
+  "sourceEventIds": ["afe_..."],
+  "evidenceSummary": "Repeated bug reports lacked screenshot analysis before questions.",
+  "riskClass": "medium",
+  "trustTier": "surface_evidence",
+  "reviewStatus": "pending"
+}
+```
+
+Review states: `pending`, `approved`, `rejected`, `expired`, `needs_info`.
+
+### `action_request`
+
+```json
+{
+  "actionId": "afa_...",
+  "sourceSystem": "friday-website",
+  "surfaceId": "website_ask_friday_fab",
+  "requestedBy": { "identityType": "api_client", "identityKey": "friday-website" },
+  "actionType": "request_booking",
+  "riskClass": "approval",
+  "payload": { "residence": "GBH-C8", "dates": "2026-07-10 to 2026-07-17" },
+  "reason": "Guest asked to proceed.",
+  "approvalRequired": true,
+  "status": "pending"
+}
+```
+
+V1 stores action requests only. Execution remains explicitly approval-routed.
+
+### `identity_link`
+
+```json
+{
+  "identityKey": "guest:stable-hash",
+  "identityType": "stay_guest",
+  "subjectRef": { "stayTokenHash": "stable-hash" },
+  "durableMemoryAllowed": true,
+  "consentStatus": "granted",
+  "consentEventType": "memory_granted"
+}
+```
+
+Durable cross-surface memory is allowed only for staff, authenticated owners, authenticated or stay-token guests, and explicit-consent public visitors. Anonymous visitors remain session-only.
+
+## Runtime Storage
+
+Migration `074_ask_friday_core.sql` adds:
+
+- `ask_friday_surfaces`
+- `ask_friday_context_packs`
+- `ask_friday_learning_events`
+- `ask_friday_evidence_refs`
+- `ask_friday_kb_candidates`
+- `ask_friday_action_requests`
+- `ask_friday_eval_cases`
+- `ask_friday_eval_runs`
+- `ask_friday_identity_links`
+- `ask_friday_consent_events`
+
+## API Surface
+
+Mounted at `/api/ask-friday/core`.
+
+Public API client routes:
+
+- `POST /events` with `ask-friday:events:write`
+- `GET /context-packs/:surfaceId` with `ask-friday:context:read`
+- `POST /action-requests/public` with `ask-friday:actions:write`
+- `POST /identity-links/public` with `ask-friday:identity:write`
+
+Public route policy:
+
+- Public API scopes are necessary but not sufficient. Each public route also validates the target `surfaceId` against `ask_friday_surfaces`.
+- Public context-pack reads are allowed only for active public/public-api/public-feedback surface classes.
+- Public learning events must be redacted or explicitly `not_required`, and may use only the registered surface's allowed knowledge scopes and tools.
+- Public action requests must use the registered surface's allowed actions, must start `pending`, and must keep `approvalRequired=true`.
+- Public identity links can enable durable memory only when consent is explicitly `granted`.
+- Staff/private surfaces such as `fad_consult`, Ops, finance, legal/admin, owner-private, and internal-agent surfaces are blocked from public Core routes even if a public API token has a broad Ask Friday scope.
+
+FAD staff routes:
+
+- `GET /surfaces`
+- `POST /surfaces`
+- `GET /readiness`
+- `POST /context-packs`
+- `POST /context-packs/publish`
+- `GET /kb-candidates`
+- `POST /kb-candidates`
+- `PATCH /kb-candidates/:candidateId`
+- `GET /action-requests`
+- `POST /action-requests`
+- `PATCH /action-requests/:actionId`
+- `POST /identity-links`
+- `POST /analyzer/run`
+- `POST /retention/run`
+- `GET /eval-cases`
+- `POST /eval-cases`
+- `GET /eval-runs`
+- `POST /eval-runs`
+
+## Eval Plan
+
+Start with lightweight JSON eval cases in FAD Postgres, then add runner/tooling.
+
+The current backend includes:
+
+- Readiness report endpoint: `GET /api/ask-friday/core/readiness`. It is staff-authenticated and read-only. It summarizes each registered surface's latest draft/published context pack, active eval coverage, registry counts, and blocker/warning flags so UI wiring can depend on Core state instead of guessing from separate admin lists. Active surfaces treat missing declared eval suites as warnings; planned shells show future eval gaps as informational planning work.
+- Manual analyzer endpoint: `POST /api/ask-friday/core/analyzer/run`. It inspects redacted events and can draft KB candidates and eval cases. It defaults to dry-run; passing `dryRun:false` creates `kb_candidate` and `eval_case` rows only. It does not publish context packs or canonical KB.
+- Context-pack template helpers: `GET /api/ask-friday/core/context-pack-templates` previews generated draft-only packs; `POST /api/ask-friday/core/context-pack-templates/drafts` upserts selected draft rows for review. These helpers do not publish packs, do not bypass the publisher gate, and refuse to overwrite an already published surface/version. Website public templates remain the default preview; active FAD runtime drafts for global Ask Friday, Inbox Consult, and Ops Assistant are available with `includeFadRuntime=true` / `--include-fad-runtime`.
+- Context-pack publisher: `POST /api/ask-friday/core/context-packs/publish`. It requires approved candidate IDs or explicit `manualApproval:true`, then creates a new published context pack version.
+- Publish gate: context-pack publishing requires either a passing eval run via `evalRunId` or explicit `evalGateOverride:true`. Direct draft writes through `POST /context-packs` cannot publish by setting `status:"published"`.
+- Deterministic eval runner: `POST /api/ask-friday/core/eval-runs`. It checks eval case shape, privacy redaction, allowed tools, and required knowledge scopes. Checks that require model output are recorded as skipped, not guessed.
+- Global FAD Ask Friday runtime: `POST /api/friday/ask` loads Ask Friday Core surface state for `fad_global_ask_friday` plus the active module surface ids, then includes compact latest context-pack status/rules in the prompt and response summary. This is backend governance wiring only; it does not require or change the side-panel UI.
+- Global FAD Ask Friday learning feedback: the global surface still records the hub event, and page-aware turns now also mirror compact staff-private learning events into active module surfaces such as `fad_ops_assistant`, `fad_reservations_calendar_assistant`, and `fad_properties_assistant`. Direct Ops Consult and Inbox Consult keep their own direct emitters. These events are evidence only; they do not self-update canonical truth.
+- Initial deterministic eval seed cases live in `097_ask_friday_seed_eval_cases.sql`; active-surface declared suite coverage is closed by `110_ask_friday_eval_readiness_coverage.sql`.
+- KB candidates include review-lane metadata from `098_ask_friday_candidate_review_lanes.sql`, so public, staff, restricted, owner-private, and internal candidates do not share one undifferentiated approval queue.
+- Analyzer worker: `npm run ask-friday:analyzer`. The web process does not start the scheduler by default; set `ASK_FRIDAY_ANALYZER_IN_WEB=1` only for controlled single-process deployments.
+- Retention worker: `npm run ask-friday:retention`. It defaults to dry-run and only targets expired evidence refs plus old rejected/expired candidates until retention windows are reviewed.
+
+Initial suites:
+
+- `website_guest_grounding`: residence, availability, experience, and Mauritius facts are grounded.
+- `website_fab_routing`: FAB routes guest, owner, feedback, and handoff intent correctly.
+- `owner_scope`: owner chat avoids public web search and does not invent commitments.
+- `handoff_correctness`: `human_takeover` or `aiMayReply:false` stops website AI replies.
+- `feedback_repro_quality`: feedback assistant captures repro, expected/actual, evidence, suspected surface, acceptance criteria, and test ideas.
+- `fad_consult_grounding`: staff consult uses conversation/property/reservation/teaching context correctly.
+- `action_safety`: high-risk actions become approval requests, not direct execution.
+- `privacy_redaction`: secrets, payment data, private guest/owner/staff data stay out of public KB and events.
+
+Promotion gate:
+
+1. Candidate created from event cluster or staff action.
+2. Ishant approves candidate.
+3. Published context pack version created.
+4. Relevant eval suite runs.
+5. Website/FAD consume the new published pack only after eval pass or explicit override.
+
+## Privacy And Security Risks
+
+- Memory poisoning from users claiming false policies, discounts, terms, or facts.
+- Stale facts surviving in summaries or context packs.
+- Public leakage of staff names, workload, private operations, owner data, or guest-sensitive data.
+- Payment data and secrets entering event payloads.
+- Cross-tenant leakage through global context loaders.
+- Public MCP write/action abuse.
+- Snapshot rollback gaps after a bad KB approval.
+- Over-retention of raw traces/screenshots.
+- Internal agent summaries accidentally mixing private engineering or credential details into public KB.
+
+Mitigations in V1:
+
+- Source trust tiers.
+- Human approval before canon.
+- Redaction at event normalization and emitter level.
+- Tenant-scoped tables.
+- Public routes gated by OAuth client-credentials JWT scopes.
+- Public routes additionally enforce surface-registry policy for allowed surface class, source system, knowledge scopes, tools, actions, privacy class, and redaction status.
+- Separate approved context packs from raw learning events.
+- Context-pack publishing validates requested scopes and allowed tools against the target surface before publishing.
+- FAD Consult same-conversation turns use a database-visible lease lock with expiry/heartbeat, plus the local process queue, so duplicate Consult work is not only protected by a Node process-local `Map`.
+- Analyzer/mining work is kept out of the live web process by default and should run as a worker.
+- Public MCP marked planned, not active.
+- Evidence stored by reference and expiry metadata, not as unlimited raw content.
+
+## Implementation Split
+
+FAD backend/core session:
+
+- Own migrations, contracts, public API routes, review queue routes, eval tables, identity/consent tables.
+- Avoid active FAB UI files until the polish branch is merged or parked.
+- Current branch includes a manual analyzer route, context-pack publisher, and deterministic eval runner. Later: scheduled analyzer workflow, review UI, model-backed evals, and context-pack publisher UX.
+
+FAD frontend shell/session:
+
+- Own the shared right-side Ask Friday panel, page-state bridge, action-application bridge, and module migration plan.
+- Start with additive wiring. Do not delete embedded Inbox/Ops Friday Consult flows until the shared panel proves equivalent or better for each workflow.
+- For Ops, the panel can become the primary planning/control surface once it can read schedule/task/availability/occupancy context and return typed schedule/task proposals.
+- For Inbox, keep inline draft cards and send/review controls; use the shared panel as the review/explanation/task/teaching host focused on the current thread or draft.
+- The frontend shell should not own specialist prompts or durable memory. It passes page state and approved actions to Ask Friday Core/module routes.
+
+Website session:
+
+- Emit compact redacted `learning_event` payloads from guest hero, Ask Friday FAB, owner chat, and feedback FAB.
+- Fetch published `context_pack` by surface before prompt/context construction.
+- Do not create a Website-owned durable memory backend.
+- Preserve `human_takeover` and `aiMayReply:false` behavior.
+
+Public MCP session:
+
+- Design schema/tool policy against the same registry and context-pack contracts.
+- Do not implement direct public writes/payments/booking execution in V1.
+- MCP can request actions, but action execution must remain approval-routed.
+
+Internal agents session:
+
+- Submit sanitized summaries, decisions, fixes, accepted runbooks, and eval candidates.
+- Never ingest raw internal transcripts.
+
+## Paste-Ready FAD Prompt
+
+```plain text
+Work on Ask Friday Core in FAD only.
+
+Start from latest origin/fad-rebuild in a fresh worktree. Read:
+- docs/architecture/ask-friday-core-v1-2026-05-23.md
+- docs/handover/2026-05-23-ask-friday-core-v1.md
+- Notion: Ask Friday Unified AI Learning Loop - Scope 2026-05-23
+- Notion: FAD Architecture & Integrations
+
+Goal:
+Continue the FAD-owned Ask Friday Core backend. Build only safe backend/core slices: analyzer worker, KB candidate review APIs/UI, eval runner, and context-pack publisher. Do not touch the active Ask Friday FAB frontend files unless the polish branch has been merged or explicitly parked.
+
+Guardrails:
+- User-facing name is Ask Friday.
+- No auto-publishing KB truth.
+- Ishant approves canonical KB/behavior in V1.
+- Public API writes create approval-routed action requests only.
+- Preserve tenant scoping and public API JWT scope checks.
+- Do not expose staff workload, owner-private, guest-sensitive, payment, or secret data.
+```
+
+## Paste-Ready Website Prompt
+
+```plain text
+Work on Friday Website Ask Friday event emission and context-pack consumption only.
+
+Read:
+- /Users/judith/Friday Website/docs/ASK-FRIDAY-UNIFIED-AI-LEARNING-LOOP-2026-05-23.md
+- FAD doc: docs/architecture/ask-friday-core-v1-2026-05-23.md from branch codex/ask-friday-core-v1-20260523
+- Website handoff docs for Ask Friday/FAD takeover behavior.
+
+Goal:
+Add compact redacted learning_event emitters for Website guest hero Ask Friday, Ask Friday FAB, owner enquiry chat, and feedback FAB. Add read-only consumption of published FAD context packs by surface. Do not build Website-owned durable memory.
+
+Guardrails:
+- User-facing name is Ask Friday.
+- Preserve human_takeover and aiMayReply:false: after takeover, Website AI must stop replying.
+- Visitor follow-ups after takeover go to FAD visitor-message proxy, not /api/ask-friday.
+- Owner Ask Friday stays owner-scoped and no public web search unless separately approved.
+- Emit summaries/evidence refs only. No raw secrets, payment data, owner-private data, guest-sensitive data, or private staff workload.
+```
+
+## Paste-Ready MCP Prompt
+
+```plain text
+Design public Ask Friday MCP V1 against the FAD Ask Friday Core contracts.
+
+Read:
+- docs/architecture/ask-friday-core-v1-2026-05-23.md
+- /Users/judith/Friday Website/docs/MCP-WEBSITE-SCOPE-2026-05-22.md
+- Notion: FAD Architecture & Integrations
+
+Goal:
+Produce a design-only MCP contract for safe public discovery and enquiry/request-to-book. Do not implement direct booking, payment, or irreversible write tools. MCP may query approved published context packs and may create approval-routed action requests.
+
+Guardrails:
+- Public MCP is planned, not active, until Website/FAD core loop is stable.
+- No private FAD, staff, owner, guest, payment, or secret data in public MCP.
+- All write-like behavior becomes action_request with approvalRequired=true.
+```

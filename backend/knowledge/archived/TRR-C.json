@@ -1,0 +1,112 @@
+{
+  "property_id": "68cd0e2916cfbe0013d4a4dc",
+  "display_name": "TRR-C",
+  "full_name": "5-Apt Complex, 3mins Walk to Beach - Fine Cuisine",
+  "location": "Grand Baie, Mauritius",
+  "property_type": "Apartment",
+  "bedrooms": 7,
+  "bathrooms": 7,
+  "guest_capacity": 14,
+  "priority_level": "medium",
+  "quick_responses": {
+    "wifi": {
+      "trigger_keywords": [
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]"
+      ],
+      "response": "[redacted]",
+      "priority": "[redacted]"
+    },
+    "access": {
+      "trigger_keywords": [
+        "check-in",
+        "checkin",
+        "lockbox",
+        "key",
+        "entrance",
+        "door",
+        "code",
+        "access",
+        "arrive"
+      ],
+      "response": "Address: Casse Ghoon Road, Pointe aux Canonniers, 30527 Grand Baie, Mauritius | Gate/Door Code: [redacted]| Lockbox Code: [redacted]",
+      "priority": "critical"
+    },
+    "checkout": {
+      "trigger_keywords": [
+        "check-out",
+        "checkout",
+        "departure",
+        "key return",
+        "leaving"
+      ],
+      "response": "Please note that checkout is at 10:00am, unless otherwise agreed.  Before you head out, kindly: Turn off all ACs and lights Close all windows and doors Leave the keys in the lockbox and scramble the code  If you have any questions, feel free to reach out at any time.",
+      "priority": "high"
+    },
+    "parking": {
+      "trigger_keywords": [
+        "parking",
+        "car",
+        "garage",
+        "park"
+      ],
+      "response": "Where to park the car: Each apartment has its own secure parking space inside the premises.  Access: To enter the parking area, please use the gate code 1368#.  Street parking: Allowed, but not recommended.",
+      "priority": "medium"
+    },
+    "emergency": {
+      "trigger_keywords": [
+        "urgent",
+        "emergency",
+        "help",
+        "problem",
+        "stuck",
+        "broken"
+      ],
+      "response": "🚨 URGENT: Call +2304084119 immediately | Available 24/7 | We're here to help!",
+      "priority": "critical"
+    },
+    "location": {
+      "trigger_keywords": [
+        "location",
+        "directions",
+        "beach",
+        "restaurant",
+        "shops",
+        "nearby",
+        "supermarket"
+      ],
+      "response": "Located just a 3-minute walk from Pointe aux Cannoniers Beach and close to local shops and the Bazar of Canonniers, the residence offers the perfect blend of serenity and convenience.\nThis charming apartment complex promises a restful, authentic Mauritian experience, where comfort, nature, and islan",
+      "priority": "medium"
+    }
+  },
+  "property_details": {
+    "address": "Casse Ghoon Road, Pointe aux Canonniers, 30527 Grand Baie, Mauritius",
+    "amenities": [
+      "Air conditioning",
+      "Kitchen",
+      "TV",
+      "Washer",
+      "Wireless Internet",
+      "Crib",
+      "Hair dryer"
+    ],
+    "check_in_time": "14:00",
+    "check_out_time": "10:00",
+    "description": "Peaceful apartment complex in north Mauritius featuring five thoughtfully designed units, three 1-bedroom apartments and two 2-bedroom apartment, all with private bathrooms, shared pool, and individual terraces. The residence blends comfort and privacy with the charm of tropical island living. Guests can relax in open-plan living spaces, enjoy fully equipped kitchens, or treat themselves to a premium experience with meals prepared on request by the on-site restaurant’s talented chef.",
+    "space": "This intimate residence combines the comfort of a private apartment with the warm atmosphere of a boutique stay. Each apartment is designed for relaxation, from the bright and cosy living areas to the private terraces that open onto a tranquil tropical setting.\n\nAll units feature air conditioning, high-speed Wi-Fi, and fully equipped kitchens for those who wish to cook and dine in. The 2-bedroom apartment offers an ideal setup for families or friends travelling together, while the 1-bedroom units are perfect for couples or solo travellers seeking a quiet escape.\n\nFor a more exclusive experience, guests can enjoy freshly prepared dishes from the on-site restaurant, available on request. Coordinate directly with our team to arrange a menu and savour delicious Mauritian flavours without leaving the property.\n\nThe shared swimming pool, surrounded by lush greenery, provides a peaceful retreat where guests can unwind and enjoy the island sun in a calm and respectful environment.",
+    "house_rules": null,
+    "parking": "Where to park the car:\nEach apartment has its own secure parking space inside the premises.\n\nAccess:\nTo enter the parking area, please use the gate code 1368#.\n\nStreet parking:\nAllowed, but not recommended.",
+    "guest_access": "Guests enjoy full private access to their individual apartments and terraces. The pool and garden areas are shared among the five units, creating a friendly yet peaceful atmosphere. Private parking is available on-site, and our staff are always nearby to assist or offer local recommendations."
+  },
+  "emergency_contact": "+2304084119",
+  "common_issues": [
+    "WiFi password requests",
+    "Check-in access help",
+    "Checkout procedures",
+    "Parking guidance",
+    "Local recommendations"
+  ]
+}

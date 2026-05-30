@@ -1,23 +1,84 @@
 {
   "name": "Friday Admin Dashboard",
   "short_name": "Friday Admin",
-  "description": "Friday Admin Dashboard — guest messaging and property management",
-  "start_url": "/",
+  "description": "Friday Admin Dashboard — operations, inbox, finance, and HR for Friday property management",
+  "start_url": "/fad",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
   "background_color": "#0d1117",
-  "theme_color": "#0c4a6e",
+  "theme_color": "#2B4A93",
+  "categories": ["business", "productivity"],
+  "lang": "en",
   "icons": [
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Inbox",
+      "short_name": "Inbox",
+      "description": "Guest, owner, vendor, and team threads",
+      "url": "/fad?m=inbox",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Tasks",
+      "short_name": "Tasks",
+      "description": "Assigned field work and task execution",
+      "url": "/fad?m=operations&sub=my",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Operations Dashboard",
+      "short_name": "Ops",
+      "description": "Manager operations dashboard and agenda",
+      "url": "/fad?m=operations&sub=overview",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Roster",
+      "short_name": "Roster",
+      "description": "Weekly roster — workload + grid + publish",
+      "url": "/fad?m=operations&sub=roster",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Notifications",
+      "short_name": "Alerts",
+      "description": "All notifications across modules with AI prioritisation",
+      "url": "/fad?m=notifications",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Finance",
+      "short_name": "Finance",
+      "description": "Approvals, captures, owner statements",
+      "url": "/fad?m=finance&sub=overview",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

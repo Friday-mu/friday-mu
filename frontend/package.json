@@ -3,34 +3,37 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NODE_OPTIONS='--max-old-space-size=4096' next dev --webpack",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}"
   },
   "dependencies": {
     "@heroicons/react": "^2.0.18",
-    "@tailwindcss/forms": "latest",
-    "@tailwindcss/postcss": "^4.2.2",
-    "autoprefixer": "latest",
+    "@tailwindcss/forms": "0.5.11",
+    "@tailwindcss/postcss": "4.2.2",
+    "autoprefixer": "10.4.27",
     "axios": "^1.6.2",
     "clsx": "^2.0.0",
     "date-fns": "^3.0.6",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
-    "next": "latest",
-    "postcss": "latest",
-    "react": "latest",
-    "react-dom": "latest",
+    "i18next": "^26.2.0",
+    "next": "16.2.1",
+    "postcss": "8.5.8",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
     "react-hot-toast": "^2.4.1",
+    "react-i18next": "^17.0.8",
     "react-markdown": "^10.1.0",
-    "tailwindcss": "latest"
+    "tailwindcss": "4.2.2"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "eslint": "latest",
-    "eslint-config-next": "latest",
+    "@types/node": "25.5.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.1",
     "sharp": "^0.34.5",
-    "typescript": "latest"
+    "typescript": "5.9.3"
   }
 }

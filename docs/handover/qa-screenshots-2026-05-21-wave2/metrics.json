@@ -1,0 +1,132 @@
+{
+  "generatedAt": "2026-05-21T10:58:00+04:00",
+  "browser": "standalone Playwright, serviceWorkers blocked, /api/tasks route mocked",
+  "totals": {
+    "screenshots": 10,
+    "documentOverflowCount": 0,
+    "opsOverflowCount": 0,
+    "opsSmallTargetCount": 0
+  },
+  "viewports": [
+    {
+      "label": "field-320-my-tasks",
+      "width": 320,
+      "height": 720,
+      "url": "http://localhost:3107/fad?m=operations&sub=my",
+      "documentScrollWidth": 320,
+      "documentOverflow": false,
+      "opsInteractiveCount": 10,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Assigned onlyMy tasksStart, comment, attach evidence, and complete only work assigned to you.1 active2 due0 blocked1 doneTodayTomorrowWeekAllSuggestedDue timePriorityPropertyAll departmentsCleaningInspectionMaintenanceOf"
+    },
+    {
+      "label": "field-320-tomorrow",
+      "width": 320,
+      "height": 720,
+      "url": "http://localhost:3107/fad?m=operations&sub=my",
+      "documentScrollWidth": 320,
+      "documentOverflow": false,
+      "opsInteractiveCount": 10,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Assigned onlyMy tasksStart, comment, attach evidence, and complete only work assigned to you.1 active2 due0 blocked1 doneTodayTomorrowWeekAllSuggestedDue timePriorityPropertyAll departmentsCleaningInspectionMaintenanceOf"
+    },
+    {
+      "label": "field-320-detail-drawer",
+      "width": 320,
+      "height": 720,
+      "url": "http://localhost:3107/fad?m=operations&sub=my",
+      "documentScrollWidth": 320,
+      "documentOverflow": false,
+      "opsInteractiveCount": 15,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Assigned onlyMy tasksStart, comment, attach evidence, and complete only work assigned to you.1 active2 due0 blocked1 doneTodayTomorrowWeekAllSuggestedDue timePriorityPropertyAll departmentsCleaningInspectionMaintenanceOf"
+    },
+    {
+      "label": "field-375-my-tasks",
+      "width": 375,
+      "height": 812,
+      "url": "http://localhost:3107/fad?m=operations&sub=my",
+      "documentScrollWidth": 375,
+      "documentOverflow": false,
+      "opsInteractiveCount": 15,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Assigned onlyMy tasksStart, comment, attach evidence, and complete only work assigned to you.1 active2 due0 blocked1 doneTodayTomorrowWeekAllSuggestedDue timePriorityPropertyAll departmentsCleaningInspectionMaintenanceOf"
+    },
+    {
+      "label": "field-375-search-filter",
+      "width": 375,
+      "height": 812,
+      "url": "http://localhost:3107/fad?m=operations&sub=my",
+      "documentScrollWidth": 375,
+      "documentOverflow": false,
+      "opsInteractiveCount": 15,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Assigned onlyMy tasksStart, comment, attach evidence, and complete only work assigned to you.1 active2 due0 blocked1 doneTodayTomorrowWeekAllSuggestedDue timePriorityPropertyAll departmentsCleaningInspectionMaintenanceOf"
+    },
+    {
+      "label": "field-375-history",
+      "width": 375,
+      "height": 812,
+      "url": "http://localhost:3107/fad?m=operations&sub=history",
+      "documentScrollWidth": 375,
+      "documentOverflow": false,
+      "opsInteractiveCount": 3,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Completion proofMy historyCompleted and closed tasks grouped by completion date, with duration and evidence counts visible.Last 7 daysLast 31 daysAll historyWed, May 201RC-15Completed generator restart55 min · 1 comments"
+    },
+    {
+      "label": "field-430-my-tasks",
+      "width": 430,
+      "height": 932,
+      "url": "http://localhost:3107/fad?m=operations&sub=my",
+      "documentScrollWidth": 430,
+      "documentOverflow": false,
+      "opsInteractiveCount": 16,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Assigned onlyMy tasksStart, comment, attach evidence, and complete only work assigned to you.1 active2 due0 blocked1 doneTodayTomorrowWeekAllSuggestedDue timePriorityPropertyAll departmentsCleaningInspectionMaintenanceOf"
+    },
+    {
+      "label": "manager-768-overview-dashboard",
+      "width": 768,
+      "height": 1024,
+      "url": "http://localhost:3107/fad?m=operations&sub=overview",
+      "documentScrollWidth": 768,
+      "documentOverflow": false,
+      "opsInteractiveCount": 15,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Manager agendaOperations dashboardDateOpen3Reported1Scheduled0Ready1Active1Blocked0Done0All3GBH-061 taskReplace leaking shower mixerReady · maintenance · reservation linked1 filesRC-151 taskRestore water pressure before "
+    },
+    {
+      "label": "manager-768-manager-my-tasks",
+      "width": 768,
+      "height": 1024,
+      "url": "http://localhost:3107/fad?m=operations&sub=my",
+      "documentScrollWidth": 768,
+      "documentOverflow": false,
+      "opsInteractiveCount": 9,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Assigned to meMy tasksYour own execution queue inside the manager board.0 active0 due0 blocked0 doneTodayTomorrowWeekAllSuggestedDue timePriorityPropertyAll departmentsCleaningInspectionMaintenanceOfficeAll prioritiesUrg"
+    },
+    {
+      "label": "manager-1440-overview-dashboard",
+      "width": 1440,
+      "height": 950,
+      "url": "http://localhost:3107/fad?m=operations&sub=overview",
+      "documentScrollWidth": 1440,
+      "documentOverflow": false,
+      "opsInteractiveCount": 15,
+      "opsSmallTargets": [],
+      "opsOverflow": [],
+      "visibleText": "Manager agendaOperations dashboardDateOpen3Reported1Scheduled0Ready1Active1Blocked0Done0All3GBH-061 taskReplace leaking shower mixerReady · maintenance · reservation linked1 filesRC-151 taskRestore water pressure before "
+    }
+  ]
+}

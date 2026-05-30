@@ -1,0 +1,150 @@
+{
+  "property_id": "flic_remote_work",
+  "display_name": "Flic en Flac Remote Work",
+  "full_name": "Flic en Flac Apartment - Remote Work Optimized",
+  "location": "Flic en Flac, Mauritius",
+  "property_type": "apartment",
+  "bedrooms": 1,
+  "guest_capacity": 2,
+  "priority_level": "medium",
+  "message_volume": {
+    "monthly_average": 18,
+    "peak_season": 25,
+    "low_season": 10
+  },
+  "quick_responses": {
+    "remote_work": {
+      "trigger_keywords": [
+        "internet",
+        "work",
+        "remote",
+        "speed",
+        "office"
+      ],
+      "response": "Perfect for remote work! High-speed fiber internet | Dedicated workspace | Stable connection for video calls | Speed test results available on request",
+      "priority": "high"
+    },
+    "long_term": {
+      "trigger_keywords": [
+        "monthly",
+        "long-term",
+        "extended",
+        "2 months"
+      ],
+      "response": "Long-term stays welcome (2+ months)! Special monthly rates | All utilities included | Internet, cleaning, maintenance included | Contact for custom pricing",
+      "priority": "high"
+    },
+    "location": {
+      "trigger_keywords": [
+        "flic en flac",
+        "beach",
+        "area",
+        "nearby"
+      ],
+      "response": "Flic en Flac - popular beach town | Beautiful public beach nearby | Restaurants, shops within walking distance | Perfect work-life balance location",
+      "priority": "medium"
+    }
+  },
+  "property_details": {
+    "work_features": [
+      "High-speed fiber internet",
+      "Dedicated workspace",
+      "Ergonomic setup"
+    ],
+    "long_term_friendly": true,
+    "location_benefits": [
+      "Beach town",
+      "Local amenities",
+      "Quiet area"
+    ],
+    "specializes_in": "digital nomads and remote workers"
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "Internet speed verification",
+    "Long-term rental pricing",
+    "Workspace setup details",
+    "Local area information"
+  ],
+  "conversation_intelligence": {
+    "common_guest_questions": [
+      {
+        "category": "remote_work",
+        "frequency": "high",
+        "questions": [
+          "Internet speed?",
+          "Suitable for working?",
+          "Dedicated workspace?"
+        ]
+      },
+      {
+        "category": "long_term",
+        "frequency": "medium",
+        "questions": [
+          "Monthly rate?",
+          "Long-term discounts?"
+        ]
+      },
+      {
+        "category": "location",
+        "frequency": "medium",
+        "questions": [
+          "Restaurants nearby?",
+          "Supermarket?"
+        ]
+      }
+    ],
+    "complaint_patterns": [
+      "Internet speed inconsistency during peak hours",
+      "Questions about workspace setup"
+    ],
+    "things_to_avoid": [
+      "Don't guarantee specific Mbps speeds — say \"suitable for remote work and streaming\""
+    ],
+    "operational_notes": [
+      "Popular with digital nomads and remote workers",
+      "Sunset views from balcony are a major selling point",
+      "Nearby Cascavelle mall for groceries (5 min drive)"
+    ],
+    "response_templates": {
+      "remote_work": "Our apartment is popular with remote workers! WiFi suitable for video calls and streaming. Dedicated workspace area available. Flic en Flac offers great cafes for a change of scenery."
+    }
+  },
+  "general_intelligence": {
+    "peak_message_times": [
+      "Check-in day morning",
+      "During stay evening",
+      "Check-out day"
+    ],
+    "common_pain_points": [
+      "WiFi password confusion (most common)",
+      "Lockbox/door code uncertainty",
+      "Waste disposal location unclear",
+      "Emergency contact not immediately visible"
+    ],
+    "successful_patterns": [
+      "Quick WiFi credential provision",
+      "Clear step-by-step access instructions",
+      "Immediate emergency response availability",
+      "Proactive information sharing before check-in"
+    ],
+    "brand_voice_reminders": [
+      "Always use we/our/us (not I/my)",
+      "Sign off: \"Warm regards, Friday Retreats\"",
+      "No em dashes",
+      "Paragraphs over bullet points in guest messages",
+      "Empathy without fault admission"
+    ],
+    "services_to_mention": {
+      "transfers": "Airport transfers via mauritiusattractions.com (code FRIDAYMU for 10% off)",
+      "car_rental": "Car rental services available on request",
+      "luggage": "Luggage drop-off available for early arrivals / late departures",
+      "activities": "Local tours and activities bookable through our partners"
+    },
+    "language_distribution": {
+      "english": 70,
+      "french": 25,
+      "mixed": 5
+    }
+  }
+}

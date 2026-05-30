@@ -1,0 +1,733 @@
+'use client';
+
+// Live data client + hooks for FAD's TeamInbox (Slack replacement).
+// Calls /api/team/* on fad-backend (see backend/src/team_inbox/index.js).
+//
+// Coexists with the fixture types in teamInbox.ts — the live data is
+// shape-compatible with TeamChannel / TeamDM / TeamMessage so the
+// existing TeamInbox.tsx renders against it without prop reshuffling.
+//
+// Polling strategy: useChannelMessages polls every 15s while the
+// channel is visible. useChannels polls every 30s for the unread
+// badges. Pure poll for v1; SSE upgrade in v2.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { apiFetch, API_BASE, getToken } from '../../../components/types';
+import type { ChannelKey, TeamMessage, TeamMessageKind } from './teamInbox';
+
+// FormData uploader — apiFetch hardcodes Content-Type: application/json
+// which would break multipart boundary detection. Mirrors apiFetch's
+// auth + error handling but omits the JSON header so the browser sets
+// the correct multipart/form-data; boundary=... automatically.
+async function uploadFile(path: string, formData: FormData): Promise<Record<string, unknown>> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', body: formData, headers });
+  if (res.status === 401) throw new Error('Unauthorized');
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function fetchAttachmentBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (res.status === 401) throw new Error('Unauthorized');
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || `HTTP ${res.status}`);
+  }
+  return res.blob();
+}
+
+export async function loadAttachmentPreviewBlob(attachmentId: string): Promise<Blob> {
+  return fetchAttachmentBlob(`/api/team/attachments/${attachmentId}/preview`);
+}
+
+export async function loadAttachmentDownloadBlob(attachmentId: string): Promise<Blob> {
+  return fetchAttachmentBlob(`/api/team/attachments/${attachmentId}/preview?download=1`);
+}
+
+// ─── Wire shapes (mirror backend shapeChannel / shapeMessage) ───────
+
+export interface LiveChannel {
+  id: string;
+  key: ChannelKey;
+  name: string;
+  purpose: string | null;
+  visibility: 'public' | 'private';
+  preserveUploadQuality: boolean;
+  archivedAt: string | null;
+  createdAt: string;
+  unread: number;
+  /** False only for system admins viewing a private channel they
+   *  haven't joined. UI renders these in a "join to participate"
+   *  group so admins can bootstrap membership from the drawer. */
+  isMember: boolean;
+}
+
+export interface LiveDm {
+  id: string;
+  participantIds: string[];
+  unread: number;
+  lastMessageAt: string;
+}
+
+export interface LiveAttachment {
+  id: string;
+  filename: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  url: string; // relative — render with new URL(url, location.origin)
+  width: number | null;
+  height: number | null;
+  uploadedByUserId: string | null;
+  createdAt: string;
+}
+
+export interface LiveTeamMessage {
+  id: string;
+  kind: TeamMessageKind;
+  channelKey?: ChannelKey;
+  dmId?: string;
+  authorId: string | null;
+  authorName: string;
+  text: string;
+  mentions: string[];
+  parentMessageId: string | null;
+  /** Number of replies on this message (top-level only — replies
+   *  themselves report 0). Backend populates via a LEFT JOIN LATERAL
+   *  count subquery on the list endpoints. */
+  replyCount: number;
+  /** Files / images attached to this message. Backend bulk-loads via
+   *  the same N+1-avoiding pattern as reactions. */
+  attachments: LiveAttachment[];
+  meta: Record<string, unknown> | null;
+  editedAt: string | null;
+  ts: string;
+  /** Aggregated reactions for this message — emoji → array of user IDs
+   *  who reacted with it. Bulk-fetched in the messages endpoint so we
+   *  avoid N+1. UI renders one chip per emoji with count + click to
+   *  toggle the current user's reaction. */
+  reactions: Record<string, string[]>;
+}
+
+export interface LiveUser {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  role: string | null;
+}
+
+export interface LivePresenceUser {
+  id: string;
+  displayName: string | null;
+  role: string | null;
+  status: 'online';
+  connectionCount: number;
+  connectedAt: string;
+}
+
+export interface LivePresence {
+  checkedAt: string;
+  activeConnectionCount: number;
+  activeUserCount: number;
+  users: LivePresenceUser[];
+}
+
+export interface LiveReactions {
+  // emoji → list of users who reacted
+  [emoji: string]: Array<{ userId: string; displayName: string }>;
+}
+
+export interface LiveRead {
+  userId: string;
+  displayName: string;
+  username: string;
+  readAt: string;
+}
+
+// ─── Loaders ────────────────────────────────────────────────────────
+
+export async function loadChannels(): Promise<LiveChannel[]> {
+  const data = await apiFetch('/api/team/channels') as { channels?: LiveChannel[] };
+  return data?.channels ?? [];
+}
+
+export async function createChannel(body: {
+  name: string;
+  purpose?: string;
+  visibility?: 'public' | 'private';
+}): Promise<LiveChannel> {
+  const data = await apiFetch('/api/team/channels', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as { channel: LiveChannel };
+  return data.channel;
+}
+
+export async function updateChannel(channelId: string, body: {
+  name?: string;
+  purpose?: string;
+  visibility?: 'public' | 'private';
+}): Promise<LiveChannel> {
+  const data = await apiFetch(`/api/team/channels/${channelId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }) as { channel: LiveChannel };
+  return data.channel;
+}
+
+export async function archiveChannel(channelId: string): Promise<LiveChannel> {
+  const data = await apiFetch(`/api/team/channels/${channelId}/archive`, {
+    method: 'POST',
+  }) as { channel: LiveChannel };
+  return data.channel;
+}
+
+export async function deleteChannel(channelId: string): Promise<void> {
+  await apiFetch(`/api/team/channels/${channelId}`, { method: 'DELETE' });
+}
+
+export async function loadChannelDetail(channelId: string): Promise<{
+  channel: LiveChannel;
+  members: Array<LiveUser & { channelRole: 'admin' | 'member'; joinedAt: string }>;
+}> {
+  return apiFetch(`/api/team/channels/${channelId}`) as Promise<{
+    channel: LiveChannel;
+    members: Array<LiveUser & { channelRole: 'admin' | 'member'; joinedAt: string }>;
+  }>;
+}
+
+export async function loadChannelMessages(channelId: string, opts: { limit?: number; before?: string } = {}): Promise<LiveTeamMessage[]> {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.before) params.set('before', opts.before);
+  const qs = params.toString();
+  const data = await apiFetch(`/api/team/channels/${channelId}/messages${qs ? `?${qs}` : ''}`) as { messages?: LiveTeamMessage[] };
+  return data?.messages ?? [];
+}
+
+export async function sendChannelMessage(channelId: string, body: {
+  text: string;
+  mentions?: string[];
+  kind?: TeamMessageKind;
+  meta?: Record<string, unknown>;
+  parentMessageId?: string;
+  attachmentIds?: string[];
+}): Promise<LiveTeamMessage> {
+  // Routes through /api/outbound/send (locked decision §2,
+  // 2026-05-17). Backend's team branch loops back to
+  // /api/team/channels/:id/messages — same downstream as legacy.
+  const { outboundSend } = await import('./outboundClient');
+  const meta: Record<string, unknown> = { ...(body.meta ?? {}) };
+  if (body.mentions) meta.mentions = body.mentions;
+  if (body.parentMessageId) meta.parentMessageId = body.parentMessageId;
+  if (body.attachmentIds) meta.attachmentIds = body.attachmentIds;
+  if (body.kind) meta.kind = body.kind;
+  const r = await outboundSend({
+    audience: 'team',
+    channel: 'team-channel',
+    contextId: channelId,
+    body: body.text,
+    meta,
+  });
+  return (r.upstream as { message: LiveTeamMessage })?.message;
+}
+
+export async function markChannelRead(channelId: string): Promise<void> {
+  await apiFetch(`/api/team/channels/${channelId}/read`, { method: 'POST' });
+}
+
+/**
+ * Add a user to a channel. Caller must be a channel admin; backend
+ * returns 403 otherwise. Idempotent — re-adding an existing member
+ * is a no-op.
+ */
+export async function addChannelMember(
+  channelId: string,
+  userId: string,
+  role: 'admin' | 'member' = 'member',
+): Promise<void> {
+  await apiFetch(`/api/team/channels/${channelId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ userId, role }),
+  });
+}
+
+/** Remove a user from a channel. Caller must be a channel admin. */
+export async function removeChannelMember(channelId: string, userId: string): Promise<void> {
+  await apiFetch(`/api/team/channels/${channelId}/members/${userId}`, { method: 'DELETE' });
+}
+
+export async function loadDms(): Promise<LiveDm[]> {
+  const data = await apiFetch('/api/team/dms') as { dms?: LiveDm[] };
+  return data?.dms ?? [];
+}
+
+export async function openDm(participantIds: string[]): Promise<LiveDm> {
+  const data = await apiFetch('/api/team/dms', {
+    method: 'POST',
+    body: JSON.stringify({ participantIds }),
+  }) as { dm: LiveDm };
+  return data.dm;
+}
+
+export async function loadDmMessages(dmId: string, opts: { limit?: number; before?: string } = {}): Promise<LiveTeamMessage[]> {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.before) params.set('before', opts.before);
+  const qs = params.toString();
+  const data = await apiFetch(`/api/team/dms/${dmId}/messages${qs ? `?${qs}` : ''}`) as { messages?: LiveTeamMessage[] };
+  return data?.messages ?? [];
+}
+
+export async function sendDmMessage(dmId: string, body: {
+  text: string;
+  mentions?: string[];
+  kind?: TeamMessageKind;
+  meta?: Record<string, unknown>;
+  parentMessageId?: string;
+  attachmentIds?: string[];
+}): Promise<LiveTeamMessage> {
+  // Routes through /api/outbound/send (locked decision §2,
+  // 2026-05-17). Backend's team branch loops back to
+  // /api/team/dms/:id/messages — same downstream as legacy.
+  const { outboundSend } = await import('./outboundClient');
+  const meta: Record<string, unknown> = { ...(body.meta ?? {}) };
+  if (body.mentions) meta.mentions = body.mentions;
+  if (body.parentMessageId) meta.parentMessageId = body.parentMessageId;
+  if (body.attachmentIds) meta.attachmentIds = body.attachmentIds;
+  if (body.kind) meta.kind = body.kind;
+  const r = await outboundSend({
+    audience: 'team',
+    channel: 'team-dm',
+    contextId: dmId,
+    body: body.text,
+    meta,
+  });
+  return (r.upstream as { message: LiveTeamMessage })?.message;
+}
+
+export async function markDmRead(dmId: string): Promise<void> {
+  await apiFetch(`/api/team/dms/${dmId}/read`, { method: 'POST' });
+}
+
+// ─── Search ────────────────────────────────────────────────────────
+
+export interface SearchHit {
+  kind: 'channel' | 'dm';
+  // Channel hits
+  channelId?: string;
+  channelKey?: ChannelKey;
+  channelName?: string;
+  // DM hits
+  dmId?: string;
+  participantIds?: string[];
+  // Common
+  messageId: string;
+  authorName: string;
+  text: string;
+  ts: string;
+  rank: number;
+}
+
+/**
+ * Postgres full-text search over channel messages + DMs the caller
+ * has access to. Results ranked by ts_rank_cd then recency. For
+ * `q.length < 2` returns empty + a note (server-side guard).
+ *
+ * File search hooks in later (Day 2-3 when file uploads ship).
+ * Semantic / vector search is a v2 upgrade — additive, not a
+ * replacement; both APIs will coexist.
+ */
+export async function searchTeam(q: string, limit = 30): Promise<SearchHit[]> {
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  const data = await apiFetch(`/api/team/search?${params.toString()}`) as { hits?: SearchHit[] };
+  return data?.hits ?? [];
+}
+
+export async function loadTenantUsers(): Promise<LiveUser[]> {
+  const data = await apiFetch('/api/team/users') as { users?: LiveUser[] };
+  return data?.users ?? [];
+}
+
+export async function loadTeamPresence(): Promise<LivePresence> {
+  const data = await apiFetch('/api/events/presence') as Partial<LivePresence>;
+  return {
+    checkedAt: typeof data.checkedAt === 'string' ? data.checkedAt : new Date().toISOString(),
+    activeConnectionCount: Number(data.activeConnectionCount || 0),
+    activeUserCount: Number(data.activeUserCount || 0),
+    users: Array.isArray(data.users) ? data.users : [],
+  };
+}
+
+export async function loadMessageReads(kind: 'channel' | 'dm', messageId: string): Promise<LiveRead[]> {
+  const data = await apiFetch(`/api/team/messages/${kind}/${messageId}/reads`) as { reads?: LiveRead[] };
+  return data?.reads ?? [];
+}
+
+export async function loadMessageReactions(kind: 'channel' | 'dm', messageId: string): Promise<LiveReactions> {
+  const data = await apiFetch(`/api/team/messages/${kind}/${messageId}/reactions`) as { reactions?: LiveReactions };
+  return data?.reactions ?? {};
+}
+
+/**
+ * Upload a single file to a channel. Returns the attachment row; the
+ * caller passes the id in `attachmentIds` when sending the next
+ * message to bind the upload to that message.
+ */
+export async function uploadChannelAttachment(channelId: string, file: File): Promise<LiveAttachment> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const data = await uploadFile(`/api/team/channels/${channelId}/attachments`, fd) as { attachment: LiveAttachment };
+  return data.attachment;
+}
+
+export async function uploadDmAttachment(dmId: string, file: File): Promise<LiveAttachment> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const data = await uploadFile(`/api/team/dms/${dmId}/attachments`, fd) as { attachment: LiveAttachment };
+  return data.attachment;
+}
+
+/**
+ * Fetch all replies for a top-level message. Returned in chronological
+ * order (oldest first) — threads read top-down like Slack, opposite of
+ * the main timeline.
+ */
+export async function loadMessageReplies(
+  kind: 'channel' | 'dm',
+  messageId: string,
+): Promise<LiveTeamMessage[]> {
+  const data = await apiFetch(`/api/team/messages/${kind}/${messageId}/replies`) as { replies?: LiveTeamMessage[] };
+  return data?.replies ?? [];
+}
+
+export async function addReaction(kind: 'channel' | 'dm', messageId: string, emoji: string): Promise<void> {
+  await apiFetch(`/api/team/messages/${kind}/${messageId}/reactions`, {
+    method: 'POST',
+    body: JSON.stringify({ emoji }),
+  });
+}
+
+export async function removeReaction(kind: 'channel' | 'dm', messageId: string, emoji: string): Promise<void> {
+  await apiFetch(`/api/team/messages/${kind}/${messageId}/reactions/${encodeURIComponent(emoji)}`, {
+    method: 'DELETE',
+  });
+}
+
+// ─── Hooks ──────────────────────────────────────────────────────────
+
+const CHANNELS_POLL_MS = 30_000;
+const MESSAGES_POLL_MS = 15_000;
+
+/** Live channels list with 30s polling for unread-badge updates. */
+export function useChannels(): {
+  channels: LiveChannel[] | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
+  const [channels, setChannels] = useState<LiveChannel[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    loadChannels()
+      .then((data) => { setChannels(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load channels'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refetch();
+    const id = setInterval(refetch, CHANNELS_POLL_MS);
+    return () => clearInterval(id);
+  }, [refetch]);
+
+  return { channels, loading, error, refetch };
+}
+
+/** Live DM list with same polling cadence as channels. */
+export function useDms(): {
+  dms: LiveDm[] | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
+  const [dms, setDms] = useState<LiveDm[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    loadDms()
+      .then((data) => { setDms(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load DMs'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refetch();
+    const id = setInterval(refetch, CHANNELS_POLL_MS);
+    return () => clearInterval(id);
+  }, [refetch]);
+
+  return { dms, loading, error, refetch };
+}
+
+export function useTeamPresence(): {
+  presence: LivePresence | null;
+  onlineUserIds: Set<string>;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
+  const [presence, setPresence] = useState<LivePresence | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    loadTeamPresence()
+      .then((data) => { setPresence(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load presence'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refetch();
+    const id = setInterval(refetch, CHANNELS_POLL_MS);
+    return () => clearInterval(id);
+  }, [refetch]);
+
+  const onlineUserIds = useMemo(
+    () => new Set((presence?.users || []).map((user) => user.id)),
+    [presence],
+  );
+
+  return { presence, onlineUserIds, loading, error, refetch };
+}
+
+/** Live messages for a channel or DM. Polls every 15s while mounted.
+ *  Pass null to "pause" (e.g., no channel selected). */
+export function useTeamMessages(target: { kind: 'channel' | 'dm'; id: string } | null): {
+  messages: LiveTeamMessage[] | null;
+  loading: boolean;
+  isRevalidating: boolean;
+  error: string | null;
+  refetch: () => void;
+  send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; parentMessageId?: string; kind?: TeamMessageKind; attachmentIds?: string[] }) => Promise<LiveTeamMessage | null>;
+} {
+  const [messages, setMessages] = useState<LiveTeamMessage[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Stable ref so the polling interval always reads the latest target
+  // without re-creating the interval on every render.
+  const targetRef = useRef(target);
+  useEffect(() => { targetRef.current = target; }, [target]);
+
+  // Stale-while-revalidate. Polling ticks revalidate silently; only a
+  // target-change blanks the visible messages and shows a skeleton (handled
+  // in the effect below, not here).
+  const refetch = useCallback(() => {
+    const t = targetRef.current;
+    if (!t) { setMessages(null); setLoading(false); setIsRevalidating(false); return; }
+    setIsRevalidating(true);
+    const loader = t.kind === 'channel'
+      ? loadChannelMessages(t.id)
+      : loadDmMessages(t.id);
+    loader
+      .then((data) => { setMessages(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load messages'))
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
+  }, []);
+
+  useEffect(() => {
+    // Target changed (operator picked a different channel/DM) — wipe stale
+    // messages from the previous target and surface the skeleton.
+    if (target) { setMessages(null); setLoading(true); }
+    else { setMessages(null); setLoading(false); }
+    refetch();
+    if (!target) return;
+    const id = setInterval(refetch, MESSAGES_POLL_MS);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.kind, target?.id]);
+
+  const send = useCallback(async (text: string, opts: { mentions?: string[]; meta?: Record<string, unknown>; parentMessageId?: string; kind?: TeamMessageKind; attachmentIds?: string[] } = {}) => {
+    const t = targetRef.current;
+    const hasAttachments = (opts.attachmentIds?.length ?? 0) > 0;
+    if (!t || (!text.trim() && !hasAttachments)) return null;
+    try {
+      const msg = t.kind === 'channel'
+        ? await sendChannelMessage(t.id, { text: text.trim(), ...opts })
+        : await sendDmMessage(t.id, { text: text.trim(), ...opts });
+      // Optimistic append — also refetched on next poll tick for safety.
+      setMessages((prev) => prev ? [...prev, msg] : [msg]);
+      return msg;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Send failed');
+      return null;
+    }
+  }, []);
+
+  return { messages, loading, isRevalidating, error, refetch, send };
+}
+
+/**
+ * Live thread-replies hook. Pass null target to "pause" (no thread
+ * open). Polls every 15s like the main timeline. The `send` helper
+ * posts a reply with parentMessageId set; the optimistic append keeps
+ * the thread responsive between polls.
+ *
+ * The caller owns the parent (kind+parentId); when the operator closes
+ * the thread surface, pass null to stop polling.
+ */
+export function useMessageReplies(target: { kind: 'channel' | 'dm'; parentId: string; targetId: string } | null): {
+  replies: LiveTeamMessage[] | null;
+  loading: boolean;
+  isRevalidating: boolean;
+  error: string | null;
+  refetch: () => void;
+  send: (text: string, opts?: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind; attachmentIds?: string[] }) => Promise<LiveTeamMessage | null>;
+} {
+  const [replies, setReplies] = useState<LiveTeamMessage[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const targetRef = useRef(target);
+  useEffect(() => { targetRef.current = target; }, [target]);
+
+  // Stale-while-revalidate. Polling ticks revalidate silently; target switch
+  // is handled by the effect below.
+  const refetch = useCallback(() => {
+    const t = targetRef.current;
+    if (!t) { setReplies(null); setLoading(false); setIsRevalidating(false); return; }
+    setIsRevalidating(true);
+    loadMessageReplies(t.kind, t.parentId)
+      .then((data) => { setReplies(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load replies'))
+      .finally(() => { setLoading(false); setIsRevalidating(false); });
+  }, []);
+
+  useEffect(() => {
+    // Target changed — wipe stale replies from the previous parent.
+    if (target) { setReplies(null); setLoading(true); }
+    else { setReplies(null); setLoading(false); }
+    refetch();
+    if (!target) return;
+    const id = setInterval(refetch, MESSAGES_POLL_MS);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.kind, target?.parentId, target?.targetId]);
+
+  const send = useCallback(async (text: string, opts: { mentions?: string[]; meta?: Record<string, unknown>; kind?: TeamMessageKind; attachmentIds?: string[] } = {}) => {
+    const t = targetRef.current;
+    const hasAttachments = (opts.attachmentIds?.length ?? 0) > 0;
+    if (!t || (!text.trim() && !hasAttachments)) return null;
+    try {
+      const msg = t.kind === 'channel'
+        ? await sendChannelMessage(t.targetId, { text: text.trim(), ...opts, parentMessageId: t.parentId })
+        : await sendDmMessage(t.targetId, { text: text.trim(), ...opts, parentMessageId: t.parentId });
+      setReplies((prev) => prev ? [...prev, msg] : [msg]);
+      return msg;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Send failed');
+      return null;
+    }
+  }, []);
+
+  return { replies, loading, isRevalidating, error, refetch, send };
+}
+
+/** Tenant user list, cached for the session — used by the @mention
+ *  picker and DM target picker. Refetched once on mount. */
+export function useTenantTeamUsers(): {
+  users: LiveUser[] | null;
+  byId: Map<string, LiveUser>;
+  loading: boolean;
+  error: string | null;
+} {
+  const [users, setUsers] = useState<LiveUser[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadTenantUsers()
+      .then((data) => { setUsers(data); setError(null); })
+      .catch((e: Error) => setError(e?.message || 'Failed to load users'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const byId = new Map<string, LiveUser>((users ?? []).map((u) => [u.id, u]));
+  return { users, byId, loading, error };
+}
+
+// ─── @mention text-parsing helpers (client-side) ────────────────────
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function mentionBoundaryRe(alias: string): RegExp {
+  const escaped = escapeRegExp(alias.trim()).replace(/\s+/g, '\\s+');
+  return new RegExp(`^${escaped}(?=$|[\\s.,;:!?()[\\]{}<>])`, 'i');
+}
+
+/** Resolve typed @mentions to live user UUIDs.
+ *  Supports @username, @Display Name, @DisplayName, and unique @FirstName.
+ *  The text stays verbatim; the server still validates mention IDs. */
+export function parseMentions(text: string, users: LiveUser[]): { mentions: string[]; matches: string[] } {
+  const mentions = new Set<string>();
+  const matches: string[] = [];
+
+  const firstNameCounts = new Map<string, number>();
+  for (const user of users) {
+    const first = user.displayName.trim().split(/\s+/)[0]?.toLowerCase();
+    if (first) firstNameCounts.set(first, (firstNameCounts.get(first) ?? 0) + 1);
+  }
+
+  const aliases: Array<{ userId: string; alias: string; re: RegExp }> = [];
+  const seenAliases = new Set<string>();
+  for (const user of users) {
+    const usernameHandle = user.username.includes('@') ? user.username.split('@')[0] : user.username;
+    const candidates = [
+      user.username,
+      usernameHandle,
+      user.displayName,
+      user.displayName.replace(/\s+/g, ''),
+    ];
+    const first = user.displayName.trim().split(/\s+/)[0];
+    if (first && firstNameCounts.get(first.toLowerCase()) === 1) candidates.push(first);
+
+    for (const raw of candidates) {
+      const alias = raw.trim();
+      if (!alias) continue;
+      const key = `${user.id}:${alias.toLowerCase()}`;
+      if (seenAliases.has(key)) continue;
+      seenAliases.add(key);
+      aliases.push({ userId: user.id, alias, re: mentionBoundaryRe(alias) });
+    }
+  }
+  aliases.sort((a, b) => b.alias.length - a.alias.length);
+
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== '@') continue;
+    if (i > 0 && /[\w.-]/.test(text[i - 1])) continue;
+    const tail = text.slice(i + 1);
+    const hit = aliases.find((a) => a.re.test(tail));
+    if (hit) {
+      const matched = tail.match(hit.re)?.[0] ?? hit.alias;
+      mentions.add(hit.userId);
+      matches.push(`@${matched}`);
+    }
+  }
+  return { mentions: [...mentions], matches };
+}

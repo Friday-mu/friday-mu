@@ -1,0 +1,157 @@
+{
+  "property_id": "family_friendly",
+  "display_name": "Family Friendly Apartment",
+  "full_name": "Child-Friendly Apartment with Baby Equipment",
+  "location": "Mauritius",
+  "property_type": "apartment",
+  "bedrooms": 2,
+  "guest_capacity": "4-6",
+  "priority_level": "medium",
+  "message_volume": {
+    "monthly_average": 12,
+    "peak_season": 20,
+    "low_season": 6
+  },
+  "quick_responses": {
+    "child_amenities": {
+      "trigger_keywords": [
+        "baby",
+        "crib",
+        "high chair",
+        "child",
+        "lit parapluie"
+      ],
+      "response": "Child-friendly setup available! Baby crib (lit parapluie) and high chair provided | Child-safe features throughout | Please request baby equipment when booking",
+      "priority": "high"
+    },
+    "bed_setup": {
+      "trigger_keywords": [
+        "king",
+        "queen",
+        "bed size",
+        "family room",
+        "extra beds"
+      ],
+      "response": "Flexible bed configuration available | Both king and queen options | Family rooms can accommodate additional bedding | Setup arranged based on your needs",
+      "priority": "medium"
+    },
+    "safety": {
+      "trigger_keywords": [
+        "child safe",
+        "baby proof",
+        "safety",
+        "secure"
+      ],
+      "response": "Property is child-proofed with safety features | Balcony barriers, outlet covers, sharp corner protection | Safe environment for families with young children",
+      "priority": "medium"
+    }
+  },
+  "property_details": {
+    "child_equipment": [
+      "Baby crib (lit parapluie)",
+      "High chair",
+      "Baby bath"
+    ],
+    "safety_features": [
+      "Child-proofed outlets",
+      "Balcony safety",
+      "Corner guards"
+    ],
+    "bed_options": [
+      "King size",
+      "Queen size",
+      "Additional bedding available"
+    ],
+    "target_guests": "families with children 0-12 years"
+  },
+  "emergency_contact": "+230 4084119",
+  "common_issues": [
+    "Baby equipment requests",
+    "Child safety questions",
+    "Bed configuration for families",
+    "Age-appropriate amenities"
+  ],
+  "conversation_intelligence": {
+    "common_guest_questions": [
+      {
+        "category": "child_amenities",
+        "frequency": "high",
+        "questions": [
+          "Baby crib available?",
+          "High chair?",
+          "Is it child-safe?"
+        ]
+      },
+      {
+        "category": "bed_setup",
+        "frequency": "medium",
+        "questions": [
+          "King or queen beds?",
+          "Extra beds for children?"
+        ]
+      },
+      {
+        "category": "rooftop",
+        "frequency": "medium",
+        "questions": [
+          "Rooftop pool hours?",
+          "Sunset views?"
+        ]
+      }
+    ],
+    "complaint_patterns": [
+      "Baby equipment requests not always fulfilled",
+      "Questions about child-proofing"
+    ],
+    "things_to_avoid": [
+      "Don't assume all baby equipment is available — check stock first",
+      "Avoid guaranteeing sunset views from apartment (visible from rooftop only)"
+    ],
+    "operational_notes": [
+      "Popular with families traveling with young children",
+      "Baby crib (lit parapluie) and high chair available on request",
+      "Rooftop pool is the main amenity — mention it proactively",
+      "Kensington Square complex has security gate"
+    ],
+    "response_templates": {
+      "family": "Great choice for families! We provide baby cribs and high chairs on request. The rooftop pool offers stunning sunset views — perfect for the little ones to splash around safely."
+    }
+  },
+  "general_intelligence": {
+    "peak_message_times": [
+      "Check-in day morning",
+      "During stay evening",
+      "Check-out day"
+    ],
+    "common_pain_points": [
+      "WiFi password confusion (most common)",
+      "Lockbox/door code uncertainty",
+      "Waste disposal location unclear",
+      "Emergency contact not immediately visible"
+    ],
+    "successful_patterns": [
+      "Quick WiFi credential provision",
+      "Clear step-by-step access instructions",
+      "Immediate emergency response availability",
+      "Proactive information sharing before check-in"
+    ],
+    "brand_voice_reminders": [
+      "Always use we/our/us (not I/my)",
+      "Sign off: \"Warm regards, Friday Retreats\"",
+      "No em dashes",
+      "Paragraphs over bullet points in guest messages",
+      "Empathy without fault admission"
+    ],
+    "services_to_mention": {
+      "transfers": "Airport transfers via mauritiusattractions.com (code FRIDAYMU for 10% off)",
+      "car_rental": "Car rental services available on request",
+      "luggage": "Luggage drop-off available for early arrivals / late departures",
+      "activities": "Local tours and activities bookable through our partners"
+    },
+    "language_distribution": {
+      "english": 70,
+      "french": 25,
+      "mixed": 5
+    }
+  }
+}
