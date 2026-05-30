@@ -15,8 +15,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { PriD, GmShell, FridayBar, AskPanel, type GmTab, type AskMsg } from '../kit';
+import { PriD, GmShell, FridayBar, AskPanel, type GmTab, type LiveAsk, type LiveAskMsg } from '../kit';
 import { DI } from '../icons';
+import { useFridayChat } from '../../FridayDrawer';
+import { deriveAIHealth } from '../../ai/aiHealth';
 import { useApiTasks } from '../../../_data/useApiTasks';
 import { loadOperationsStaffUsers, type OperationsStaffUser } from '../../../_data/operationsStaffClient';
 import { fetchScheduleReservations, type ScheduleReservation } from '../../../_data/reservationsClient';
@@ -188,6 +190,8 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
 
   // Ask-Friday panel: opened by the FridayBar "Review" button, closed by panel ×.
   const [review, setReview] = useState(false);
+  // AF7 — live Ask Friday chat (real /api/friday/ask + /actions/execute), scoped to Operations.
+  const friday = useFridayChat('Operations · Overview');
 
   const today = todayIso();
 
@@ -242,17 +246,45 @@ export function ScreenOps(props: { subPage?: string; onChangeSubPage?: (s: strin
     onClick: onChangeSubPage ? () => onChangeSubPage(t.id) : undefined,
   }));
 
-  // Ask-Friday side panel opener — seeded from REAL counts (no fabricated
-  // data). The parallel Ask-Friday session wires the live chat/actions to
-  // Ask Friday Core. Tag: PROD-GM-ASKPANEL-1.
-  const askMsgs: AskMsg[] = [
-    { t: `Today: <b>${todayCount} task${todayCount === 1 ? '' : 's'}</b> due · ${openCount} open · ${overdueCount} overdue · ${reportedCount} report${reportedCount === 1 ? '' : 's'} to approve. Ask me to triage, reassign, or draft the day — I'll show the plan before anything is applied.` },
-  ];
+  // AF7 — live Ask Friday. A real-counts intro greets the operator; subsequent
+  // turns + action cards come from useFridayChat (real /api/friday/ask + execute).
+  const intro: LiveAskMsg = {
+    id: 'ops-intro',
+    html: `Today: ${todayCount} task${todayCount === 1 ? '' : 's'} due · ${openCount} open · ${overdueCount} overdue · ${reportedCount} report${reportedCount === 1 ? '' : 's'} to approve. Ask me to triage, reassign, or draft the day — I'll show the plan before anything is applied.`,
+  };
+  const liveMsgs: LiveAskMsg[] = friday.msgs.map((m): LiveAskMsg => {
+    if (m.role === 'user') return { id: m.id, me: true, html: m.body };
+    const failed = deriveAIHealth({
+      error: !!m.error,
+      fallbackUsed: m.fallbackUsed,
+      sourceStatus: m.sourceStatus,
+    }) === 'failed';
+    return {
+      id: m.id,
+      html: m.text,
+      failed,
+      actions: m.actions.map((a) => ({
+        id: a.id,
+        label: a.label,
+        summary: a.summary,
+        type: a.type,
+        status: a.status,
+        resultSummary: a.resultSummary,
+        error: a.error,
+      })),
+    };
+  });
+  const liveAsk: LiveAsk = {
+    msgs: [intro, ...liveMsgs],
+    thinking: friday.isThinking,
+    onSend: (t) => friday.submit(t),
+    onExecuteAction: (mid, aid) => friday.executeAction(mid, aid),
+  };
   const panel = review ? (
     <AskPanel
       scope="Operations · Overview"
       aware={`Aware of: today's ${todayCount} tasks, ${topStaff.length} staff, ${overdueCount} overdue, ${reportedCount} to approve.`}
-      msgs={askMsgs}
+      live={liveAsk}
       onClose={() => setReview(false)}
     />
   ) : undefined;

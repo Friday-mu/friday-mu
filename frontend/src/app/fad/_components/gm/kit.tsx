@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { DI, DP } from './icons';
 import type { TaskPriority } from '../../_data/tasks';
 
@@ -74,13 +74,43 @@ export function FridayBar({ children, badge, actions }: { children: ReactNode; b
 
 export interface AskMsg { me?: boolean; t: string; action?: { t: string; d: string; btn: string }; done?: string; }
 
+/* AF7 — live mode. When `live` is provided, the AskPanel runs as a real Ask Friday
+   surface (composer + per-action Approve wired to Core), instead of the static demo.
+   The shape is intentionally generic so kit.tsx stays decoupled from FridayDrawer —
+   the GM screen adapts `useFridayChat` output into this. */
+export interface LiveAskAction {
+  id: string;
+  label: string;
+  summary?: string;
+  type: string;            // 'navigate' | 'create_task' | 'send_team_message' | 'request_approval'
+  status?: 'idle' | 'running' | 'done' | 'failed';
+  resultSummary?: string;
+  error?: string;
+}
+export interface LiveAskMsg {
+  id: string;
+  me?: boolean;            // true = operator turn
+  html: string;            // rendered body (FridayDrawer already produces plain text; we treat as text)
+  actions?: LiveAskAction[];
+  failed?: boolean;        // AI health === 'failed' → disable mutating actions
+}
+export interface LiveAsk {
+  msgs: LiveAskMsg[];
+  thinking?: boolean;
+  onSend: (text: string) => void;
+  onExecuteAction: (messageId: string, actionId: string) => void;
+}
+
 /**
- * Universal Ask Friday right-side panel (thin, squeezes content left). Presentational
- * only — opened by a "Review" button. Wiring it to Ask Friday Core is owned by the
- * parallel Ask-Friday session.
- * @demo:ui — static panel; wire to Ask Friday Core later. Tag: PROD-GM-ASKPANEL-1.
+ * Universal Ask Friday right-side panel (thin, squeezes content left), opened by a
+ * "Review" button. Two modes:
+ *   • static demo — pass `msgs` (AskMsg[]); presentational only.
+ *   • LIVE (AF7) — pass `live` (LiveAsk); composer + per-action Approve are wired to
+ *     real Ask Friday Core (the GM screen drives it via useFridayChat). Failed AI
+ *     health disables mutating actions; navigate stays enabled.
+ * Tag: PROD-GM-ASKPANEL-1 (the static path is still @demo:ui until all 3 screens go live).
  */
-export function AskPanel({ scope, aware, msgs, onClose }: { scope: string; aware: string; msgs: AskMsg[]; onClose?: () => void }) {
+export function AskPanel({ scope, aware, msgs, live, onClose }: { scope: string; aware: string; msgs?: AskMsg[]; live?: LiveAsk; onClose?: () => void }) {
   return (
     <div className="daside">
       <div className="afp-h">
@@ -94,28 +124,101 @@ export function AskPanel({ scope, aware, msgs, onClose }: { scope: string; aware
         </div>
         <div className="afp-aware">{aware}</div>
       </div>
+      {live ? <AskPanelLiveBody live={live} /> : (
+        <>
+          <div className="afp-body">
+            {(msgs || []).map((m, i) => m.me ? (
+              <div key={i} className="afm me"><span className="ava me">FG</span><div className="bub" dangerouslySetInnerHTML={{ __html: m.t }} /></div>
+            ) : (
+              <div key={i} className="afm">
+                <span className="ava fr"><DI n="spark" s={1.5} /></span>
+                <div style={{ minWidth: 0 }}>
+                  <div className="bub" dangerouslySetInnerHTML={{ __html: m.t }} />
+                  {m.action && (
+                    <div className="afact">
+                      <div className="at"><DI n="shield" s={1.7} style={{ color: 'var(--indigo-bright)' }} /> {m.action.t}</div>
+                      <div className="adesc">{m.action.d}</div>
+                      <div className="arow"><button className="dbtn primary sm"><DI n="check" s={2} /> {m.action.btn}</button><button className="dbtn ghost sm">Tweak</button></div>
+                    </div>
+                  )}
+                  {m.done && <div className="afdone" style={{ marginTop: 8 }}><DI n="check" s={2} /> {m.done}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="afp-comp"><div className="afp-in"><DI n="spark" s={1.6} style={{ color: 'var(--tx-3)' }} /> <span>Ask or tell Friday to act…</span><span className="snd"><DI n="chevR" s={2.2} /></span></div></div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* AF7 live body — real chat against Ask Friday Core. Mirrors FridayDrawer's render
+   of action cards (running/done/failed) using the generic LiveAsk shape. */
+function AskPanelLiveBody({ live }: { live: LiveAsk }) {
+  const [draft, setDraft] = useState('');
+  const send = () => {
+    const t = draft.trim();
+    if (!t) return;
+    live.onSend(t);
+    setDraft('');
+  };
+  return (
+    <>
       <div className="afp-body">
-        {msgs.map((m, i) => m.me ? (
-          <div key={i} className="afm me"><span className="ava me">FG</span><div className="bub" dangerouslySetInnerHTML={{ __html: m.t }} /></div>
+        {live.msgs.map((m) => m.me ? (
+          <div key={m.id} className="afm me"><span className="ava me">FG</span><div className="bub">{m.html}</div></div>
         ) : (
-          <div key={i} className="afm">
+          <div key={m.id} className="afm">
             <span className="ava fr"><DI n="spark" s={1.5} /></span>
             <div style={{ minWidth: 0 }}>
-              <div className="bub" dangerouslySetInnerHTML={{ __html: m.t }} />
-              {m.action && (
-                <div className="afact">
-                  <div className="at"><DI n="shield" s={1.7} style={{ color: 'var(--indigo-bright)' }} /> {m.action.t}</div>
-                  <div className="adesc">{m.action.d}</div>
-                  <div className="arow"><button className="dbtn primary sm"><DI n="check" s={2} /> {m.action.btn}</button><button className="dbtn ghost sm">Tweak</button></div>
-                </div>
-              )}
-              {m.done && <div className="afdone" style={{ marginTop: 8 }}><DI n="check" s={2} /> {m.done}</div>}
+              <div className="bub">{m.html}</div>
+              {(m.actions || []).map((a) => {
+                const isNav = a.type === 'navigate';
+                const disabled = a.status === 'running' || a.status === 'done' || (m.failed && !isNav);
+                return (
+                  <div key={a.id} className="afact">
+                    <div className="at"><DI n="shield" s={1.7} style={{ color: 'var(--indigo-bright)' }} /> {a.label}</div>
+                    {a.summary && <div className="adesc">{a.summary}</div>}
+                    {a.status === 'done' ? (
+                      <div className="afdone" style={{ marginTop: 8 }}><DI n="check" s={2} /> {a.resultSummary || 'Done'}</div>
+                    ) : a.status === 'failed' ? (
+                      <div className="arow">
+                        <span className="bdg red" style={{ fontSize: 10.5 }}>{a.error || 'Action failed'}</span>
+                        <button className="dbtn ghost sm" onClick={() => live.onExecuteAction(m.id, a.id)}><DI n="undo" s={2} /> Retry</button>
+                      </div>
+                    ) : (
+                      <div className="arow">
+                        <button className="dbtn primary sm" disabled={disabled} onClick={() => live.onExecuteAction(m.id, a.id)}>
+                          <DI n="check" s={2} /> {a.status === 'running' ? 'Working…' : isNav ? a.label : 'Approve'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
+        {live.thinking && (
+          <div className="afm"><span className="ava fr"><DI n="spark" s={1.5} /></span><div className="bub" style={{ color: 'var(--tx-3)' }}>Friday is thinking…</div></div>
+        )}
       </div>
-      <div className="afp-comp"><div className="afp-in"><DI n="spark" s={1.6} style={{ color: 'var(--tx-3)' }} /> <span>Ask or tell Friday to act…</span><span className="snd"><DI n="chevR" s={2.2} /></span></div></div>
-    </div>
+      <div className="afp-comp">
+        <div className="afp-in">
+          <DI n="spark" s={1.6} style={{ color: 'var(--tx-3)' }} />
+          <input
+            className="afp-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Ask or tell Friday to act…"
+            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--tx)', font: 'inherit' }}
+          />
+          <span className="snd" onClick={send} style={{ cursor: 'pointer' }}><DI n="chevR" s={2.2} /></span>
+        </div>
+      </div>
+    </>
   );
 }
 
