@@ -40,6 +40,8 @@ const IntelligenceModule = dynamic(() => import('./modules/Tier3Modules').then((
 const LeadsModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.LeadsModule })), { ssr: false, loading: ModuleLoading });
 const MarketingModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.MarketingModule })), { ssr: false, loading: ModuleLoading });
 const AgencyModule = dynamic(() => import('./modules/AgencyModule').then((m) => ({ default: m.AgencyModule })), { ssr: false, loading: ModuleLoading });
+// V2 parallel module (P0.4) — rendered only when uiVersion === 'v2' (see V2_MODULE_RENDERERS).
+const PropertiesModuleV2 = dynamic(() => import('./modules/v2/PropertiesModuleV2').then((m) => ({ default: m.PropertiesModuleV2 })), { ssr: false, loading: ModuleLoading });
 const ReviewsModule = dynamic(() => import('./modules/ReviewsModule').then((m) => ({ default: m.ReviewsModule })), { ssr: false, loading: ModuleLoading });
 const AnalyticsModule = dynamic(() => import('./modules/AnalyticsModule').then((m) => ({ default: m.AnalyticsModule })), { ssr: false, loading: ModuleLoading });
 const ReservationsModule = dynamic(() => import('./modules/ReservationsModule').then((m) => ({ default: m.ReservationsModule })), { ssr: false, loading: ModuleLoading });
@@ -455,8 +457,8 @@ type ModuleCtx = {
 };
 
 const V2_MODULE_RENDERERS: Record<string, (subPage: string | null, ctx: ModuleCtx) => ReactNode> = {
-  // Populated per module migration (M-series). Example shape:
-  // properties: (subPage, ctx) => <PropertiesModuleV2 subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} />,
+  // Populated per module migration (M-series).
+  properties: (subPage, ctx) => <PropertiesModuleV2 subPage={subPage || 'overview'} onChangeSubPage={ctx.setSubPage} />,
 };
 
 function renderModule(
