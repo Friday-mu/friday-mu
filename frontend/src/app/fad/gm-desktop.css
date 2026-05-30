@@ -128,3 +128,21 @@
 
 .aitrust{display:flex;flex-direction:column;gap:7px;margin-top:8px}
 .aitrust-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* Source / provenance per-field treatment (SPEC-Remaining-Modules.md §1.1). Tag: PROD-AI-TRUST-2.
+   FAD unifies Guesty (commercial) + Breezeway (ops) + FAD-owned + modeled; every critical
+   field declares its source + freshness. Six kinds; clean base so usage is one class+kind. */
+.srctag{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;letter-spacing:.02em;border:1px solid var(--line);border-radius:6px;padding:2px 7px;white-space:nowrap;color:var(--tx-2)}
+.srctag-dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex:0 0 5px}
+.srctag.guesty{color:#5fd09a;border-color:rgba(95,208,154,.3)}
+.srctag.breezeway{color:var(--teal);border-color:rgba(76,166,170,.32)}
+.srctag.friday{color:var(--indigo-bright);border-color:var(--indigo-line)}
+.srctag.modeled{color:var(--violet);border-color:rgba(135,115,192,.34);border-style:dashed}
+.srctag.stale{color:var(--amber);border-color:rgba(193,154,87,.4)}
+.srctag.failed{color:var(--red);border-color:rgba(207,102,96,.4);background:var(--red-ghost)}
+.srctag-act{margin-left:3px;text-decoration:underline;cursor:pointer;font-weight:600}
+
+.field{display:flex;flex-direction:column;gap:3px}
+.field-label{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx-3)}
+.field-value{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--tx)}
+.field-v{font-weight:500}
