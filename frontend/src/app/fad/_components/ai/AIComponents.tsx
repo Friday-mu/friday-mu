@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { IconSparkle } from '../icons';
+import { confidenceBandOf } from './aiHealth';
 
 // ───────────────── AIBadge ─────────────────
 
@@ -31,11 +32,16 @@ export function AIBadge({ size = 'sm', prefix }: { size?: 'sm' | 'md'; prefix?: 
 
 // ───────────────── AIConfidenceChip ─────────────────
 
+// Confidence is shown as a qualitative BAND (Low/Medium/High), never a number
+// (locked decision; finalised design fad-states.jsx → CONF_BANDS). Keeps the
+// numeric `percent` prop so callers are unchanged — it's coerced to a band here.
+const CONF_LABEL: Record<'high' | 'medium' | 'low', string> = { high: 'High', medium: 'Medium', low: 'Low' };
 export function AIConfidenceChip({ percent }: { percent: number }) {
+  const band = confidenceBandOf(percent) ?? 'high';
   const tone =
-    percent >= 80
+    band === 'high'
       ? { bg: 'var(--color-bg-success)', fg: 'var(--color-text-success)' }
-      : percent >= 50
+      : band === 'medium'
         ? { bg: 'var(--color-bg-warning)', fg: 'var(--color-text-warning)' }
         : { bg: 'var(--color-bg-danger)', fg: 'var(--color-text-danger)' };
   return (
@@ -47,11 +53,13 @@ export function AIConfidenceChip({ percent }: { percent: number }) {
         color: tone.fg,
         borderRadius: 4,
         fontWeight: 500,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
         fontFamily: 'var(--font-mono-fad, monospace)',
       }}
-      title={`AI confidence ${percent}%`}
+      title={`Friday confidence: ${CONF_LABEL[band]}`}
     >
-      {percent}%
+      {CONF_LABEL[band]}
     </span>
   );
 }
