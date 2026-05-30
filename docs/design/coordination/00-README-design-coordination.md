@@ -6,6 +6,15 @@
 > house format) under `docs/design/coordination/`. Briefs sit **on top of** the Notion scoping packs (source of
 > truth for data/rules) and our code reality — they don't replace either.
 
+## 0. How the design session gets this
+Two ways — pick one:
+- **Link the repo** to the Claude Design session, **scoped to `frontend/src/app/fad/` + `docs/design/`** (Claude
+  Design lags/breaks on very large repos — do NOT link the whole monorepo). It then reads these briefs, the
+  prototype (`docs/design/fad-v2/prototype/`), and our actual V2 components + tokens. **Best option.**
+- **Or paste** the relevant brief markdown (these files are written paste-ready) into the design chat + point it
+  at the prototype.
+Hand it **this file (`00-README`) first**, then the per-module brief(s).
+
 ## 1. The job, in one line
 We built a real, working FAD already. We're redesigning it to be better. Design the **full intended vision** of
 every surface; we then move our backend toward it gradually. The design must understand our **current reality**
