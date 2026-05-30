@@ -164,3 +164,15 @@
 .dwrap .lq-conf i{display:block;height:100%;border-radius:3px}
 .dwrap .portal-pill{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--tx-3);background:var(--card);cursor:pointer;white-space:nowrap}
 .dwrap .portal-pill.on{color:var(--green);border-color:rgba(74,155,118,.4);background:var(--green-ghost)}
+
+/* ── P0.3 — V2 state-matrix primitives (empty / loading skeleton / permission).
+   partial/stale/fallback/failed banners reuse .statebanner. Tag: PROD-AI-TRUST-1. */
+.dwrap .vstate{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;padding:48px 24px;color:var(--tx-3)}
+.dwrap .vstate-ic{color:var(--tx-4);margin-bottom:2px}
+.dwrap .vstate-ttl{font-size:14px;color:var(--tx-2);font-weight:500}
+.dwrap .vstate-hint{font-size:12.5px;color:var(--tx-3);max-width:340px;line-height:1.5}
+.dwrap .vstate-act{margin-top:10px}
+.dwrap .vskel{display:flex;flex-direction:column;gap:8px;padding:8px 0}
+.dwrap .vskel-row{height:38px;border-radius:8px;background:linear-gradient(90deg,var(--card) 25%,var(--card-2) 37%,var(--card) 63%);background-size:400% 100%;animation:vskelShimmer 1.4s ease infinite}
+.dwrap .vperm{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;letter-spacing:.03em;padding:2px 7px;border-radius:6px;background:var(--card-2);border:1px solid var(--line-2);color:var(--tx-3);white-space:nowrap}
+@keyframes vskelShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
