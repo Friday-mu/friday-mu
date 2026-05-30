@@ -804,11 +804,58 @@ function shouldLoad({ question, scope }, module) {
   return false;
 }
 
-function sectionSource(name) {
+// AF1 (2026-05-30) — real staleness. Sections whose data carries a Guesty-cache
+// SYNC timestamp (synced_at / fetched_at / calendar_synced_at) reflect actual
+// sync-lag; FAD-native live sources carry none and stay 'live' — we never
+// fabricate staleness. Activity timestamps (last_event_at / updated_at) measure
+// record activity, NOT sync-lag, and are deliberately excluded (a quiet inbox is
+// not stale). This is what makes deriveAIHealth's 'stale' state reachable
+// (aiHealth.ts STALE_FRESHNESS = stale|cached|expired|lagging).
+const FRESHNESS_LAGGING_MS = 30 * 60 * 1000; // > 30 min behind source
+const FRESHNESS_STALE_MS = 2 * 60 * 60 * 1000; // > 2 h behind
+const FRESHNESS_EXPIRED_MS = 24 * 60 * 60 * 1000; // > 24 h behind
+const FRESHNESS_SYNC_KEYS = ['synced_at', 'syncedAt', 'calendar_synced_at', 'fetched_at'];
+
+function latestSyncMs(node, depth = 0) {
+  if (!node || depth > 2) return 0;
+  let best = 0;
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length && i < 300; i += 1) {
+      best = Math.max(best, latestSyncMs(node[i], depth + 1));
+    }
+    return best;
+  }
+  if (typeof node === 'object') {
+    for (const k of FRESHNESS_SYNC_KEYS) {
+      const raw = node[k];
+      if (!raw) continue;
+      const t = raw instanceof Date ? raw.getTime() : Date.parse(raw);
+      if (Number.isFinite(t) && t > best) best = t;
+    }
+    if (depth < 2) {
+      for (const key of ['results', 'data', 'items', 'rows', 'reservations', 'listings']) {
+        if (node[key]) best = Math.max(best, latestSyncMs(node[key], depth + 1));
+      }
+    }
+  }
+  return best;
+}
+
+function freshnessFromData(data) {
+  const ts = latestSyncMs(data);
+  if (!ts) return 'live'; // no sync timestamp available → do not fabricate staleness
+  const age = Date.now() - ts;
+  if (age <= FRESHNESS_LAGGING_MS) return 'live';
+  if (age <= FRESHNESS_STALE_MS) return 'lagging';
+  if (age <= FRESHNESS_EXPIRED_MS) return 'stale';
+  return 'expired';
+}
+
+function sectionSource(name, freshness = 'live') {
   return {
     kind: SECTION_SOURCE_KIND[name] || 'live_api',
     demo: false,
-    freshness: 'live',
+    freshness,
     checkedAt: new Date().toISOString(),
   };
 }
@@ -908,11 +955,12 @@ async function loadAskFridayCoreSurfaceState(tenantId, modules, focus = null) {
 }
 
 async function safeSection(name, loader) {
-  const source = sectionSource(name);
   try {
-    return { name, ok: true, source, data: await loader() };
+    const data = await loader();
+    // AF1: derive freshness from the loaded data's real sync timestamps.
+    return { name, ok: true, source: sectionSource(name, freshnessFromData(data)), data };
   } catch (e) {
-    return { name, ok: false, source, error: cleanString(e.message, 240) };
+    return { name, ok: false, source: sectionSource(name), error: cleanString(e.message, 240) };
   }
 }
 
@@ -1559,7 +1607,7 @@ async function loadReservationsContext(tenantId) {
     `SELECT r.guesty_id, r.confirmation_code, r.status, r.source, r.channel,
             r.check_in_date, r.check_out_date, r.guests_count, r.adults,
             r.children, r.infants, r.guest_first_name, r.guest_last_name,
-            r.total_amount_minor, r.currency_code, l.nickname AS listing_nickname
+            r.total_amount_minor, r.currency_code, r.synced_at, l.nickname AS listing_nickname
        FROM guesty_reservations r
        LEFT JOIN guesty_listings l
          ON l.tenant_id = r.tenant_id AND l.guesty_id = r.listing_guesty_id
