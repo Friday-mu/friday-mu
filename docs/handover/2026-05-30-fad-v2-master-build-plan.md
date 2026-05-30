@@ -220,7 +220,13 @@ Friday done"): eval-mining/analyzer operating cadence (Plan 2/6), KB harness fac
   M-slice (live-selectable → V2 surfaces, never legacy). AF6 satisfied-by-design (real numeric for consult/draft,
   honest band for global; no fabricated precision).
 - [DONE] M1 Properties spine (V2, parallel) — `PropertiesModuleV2` + FadApp registry; tsc+build green; harness QA desktop+mobile+error. OPEN: wifi_tech masking decision (Ishant). **PAUSED for review.**
-- [ ] M2–M17 (pause after each) · F1–F6.
+- [DONE] V2 shell reskin (shipped FridayOS Claude Design) — tokens+fonts `1e14e07e` · chrome gate `935b0ecb` · wordmark→FridayOS `72d10158`. Gated on `ui_version` (`.fad-ui-v2`), v1 byte-identical. Harness-verified desktop+mobile, both versions isolated; build green.
+- [DONE] ConfBar → qualitative band (no %) `78ef3bf1`, per the finalised design (locked decision #1). `confidenceBandOf()` added.
+- [DONE] AF7 — GM AskPanel wired to real Ask Friday Core (Operations) `cf848908`: live composer + per-action Approve via `executeAskFridayAction`, failed-state gating. Static path preserved for schedule/roster.
+- [DONE] AF8 — Ops AISuggestionRow Accept applies the suggestion `6139a50e`: assign→assignee, urgency_bump→priority via `updateTask`; advisory kinds telemetry-only; kind→patch logic unit-verified 9/9.
+- [DONE] Design refresh to the authoritative 2026-05-30 handoff (`8d3eb93d` + JQ export `98d99cf0`); brand-blue locked (cyan stale). All shell + brand confirmed correct across 3 export iterations.
+- [SPUN OFF] `AIConfidenceChip` still renders a literal % (TaskDetail.tsx ~2069) — same locked-decision violation as ConfBar; flagged as a separate background task (presentation-only fix).
+- [ ] M2–M17 module-body migrations (pause after each, await per-module design lock) · F1–F6 finalization.
 
 ---
 
