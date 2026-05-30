@@ -152,7 +152,7 @@ A context-aware right drawer present on every screen. Header shows scope chips (
 
 ## Design tokens
 
-Defined in `:root` of `fad-desktop.css` (desktop) and `fad.css` (field PWA) — values are identical. **The live palette is INDIGO** (below). A future migration to a cyan accent is planned but **not applied** — see § Brand migration.
+Defined in `:root` of `fad-desktop.css` (desktop) and `fad.css` (field PWA) — values are identical. The accent is **Brand Blue `#3E74D9`** (locked — see § Brand). In the CSS it lives under legacy `--indigo*` var names; same color.
 
 ### Color — dark theme (default)
 ```
@@ -172,13 +172,13 @@ Defined in `:root` of `fad-desktop.css` (desktop) and `fad.css` (field PWA) — 
 --tx-2:      #8FA0C2   /* secondary */
 --tx-3:      #5d6f93   /* tertiary / labels */
 --tx-4:      #3d4d6b   /* faint */
-/* accent (indigo — LIVE) */
+/* accent — Brand Blue (locked); legacy var names below */
 --indigo:        #3E74D9
 --indigo-bright: #6BA3F2
 --indigo-dim:    #11356F
 --indigo-ghost:  rgba(62,116,217,.10)   /* .12 in field css */
 --indigo-line:   rgba(62,116,217,.24)   /* .35 in field css */
---accent:    #3E74D9   /* alias of indigo */
+--accent:    #3E74D9   /* Brand Blue (locked); --indigo* are the same color */
 --royal:     #11356F   --royal-2:#1A4A9E   --ink:#04121f
 /* status */
 --green: #3fb389   --green-ghost: rgba(63,179,137,.12)
@@ -204,22 +204,20 @@ This is a deliberate **three-voice** system: Archivo (display/headlines), Space 
 --r-sm:  9px  / 10px
 --pill: 999px
 ```
-Buttons: desktop `.dbtn` 30px tall / radius 8px; field `.btn` 34px / radius 9px. Primary = indigo fill, white text. Grid gaps 9–12px. Drawer/sheet shadows `0 14px 40px rgba(0,0,0,.45)`. Card hover lifts border to `--line-3` / `--indigo-line`.
+Buttons: desktop `.dbtn` 30px tall / radius 8px; field `.btn` 34px / radius 9px. Primary = Brand-Blue (`#3E74D9`) fill, white text. Grid gaps 9–12px. Drawer/sheet shadows `0 14px 40px rgba(0,0,0,.45)`. Card hover lifts border to `--line-3` / `--indigo-line`.
 
 ### Light theme
 A `[data-theme="light"]` variant is specified in the brand spec (bg `#F4F6FB`, surface `#FFFFFF`, surface-2 `#EEF2FA`, fg `#0A1834`, muted `#5A6A88`) — the sun toggle in the topbar is its entry point. Build it as a true theme (token swap), not a separate stylesheet.
 
 ---
 
-## Brand migration (planned, NOT yet applied — confirm before doing)
+## Brand — accent is locked, no migration needed
 
-`fridayos-brand-spec.md` (included) documents a **target brand** the prototype has not migrated to:
-- **Accent: bright cyan `#3DE0FF`** replacing indigo `#3E74D9` (with `--royal #11356F`, `--royal-2 #1A4A9E` as deeper companions). The plan is to keep existing CSS var *names* and remap `--indigo*` → cyan, or add aliases, so classes pick up the new accent.
-- Background shifts slightly toward `#070C1A` base / `#0C1428` / `#111C36` surfaces (close to current).
-- Fonts stay Archivo / Space Grotesk / JetBrains Mono.
-- Boot splashes, voice orb, thinking dots, route-sweep would recolor to cyan.
+The accent is **Brand Blue `#3E74D9`** (a royal blue), **locked** per the FridayOS Brand Brief §9. The prototype's `--indigo*` tokens already *are* this color (legacy var names), alongside Royal `#11356F` and Royal Lift `#1A4A9E`. **The design is already on-brand — there is no color migration to perform.**
 
-**Decision needed:** ship on the current indigo, or apply the cyan target as part of this build? The included spec has the full token list and an apply plan. Don't assume — flag it.
+Clarification (a stale doc previously implied otherwise): **Electric Cyan `#3DE0FF` is NOT the brand accent** — it is only one of several non-default *switchable alts* (Sky `#5AA0F0` · Deep Azure `#2B5BC4` · Electric Cyan `#3DE0FF` · Tonal Steel `#6E8FD6`). Do not ship cyan as the primary. If you rename tokens in production, map `--indigo*` → an `--accent`/brand-blue family keeping value `#3E74D9`.
+
+Other locked brand identity (Brand Brief §9): wordmark = the real Friday.mu logotype + "OS" (never re-typeset) · OS treatment = **Fused** · AI signal = **"Pulse"** (breathing node + ring, bottom-right of the app tile; the F mark is never modified) · icon = authentic blade-cut F, white on royal tile, never redrawn · signature motion = **draw-on** (the F strokes itself) for boot/splash + loading. See the included `fridayos-brand-spec.md`.
 
 ---
 
@@ -262,7 +260,7 @@ A `[data-theme="light"]` variant is specified in the brand spec (bg `#F4F6FB`, s
 
 **Field app:** `fad-kit.jsx` (field UI kit) · `fad-data.jsx` (mock data) · `fad-screens-a.jsx`…`fad-screens-f.jsx` (field PWA screens) · `fad-proto.jsx` (field PWA router/app) · `fad-field-desktop.jsx` · `fad-field-screens.jsx` · `fad-field-screens2.jsx` · `fad-field-router.jsx`.
 
-**Other:** `fad-demo.jsx` (standalone demo helper — likely unused by the five prototypes; verify before relying on it). `fridayos-brand-spec.md` (brand + cyan migration plan).
+**Other:** `fad-demo.jsx` (standalone demo helper — likely unused by the five prototypes; verify before relying on it). `fridayos-brand-spec.md` (locked brand tokens + identity; corrected).
 
 ---
 
@@ -273,6 +271,6 @@ A `[data-theme="light"]` variant is specified in the brand spec (bg `#F4F6FB`, s
 3. Build the **Shell** (topbar + rail + role gating + main/tabs) and the **AI trust components** (with the two locked corrections: confidence band, no model picker).
 4. Build the **Ask Friday drawer** + approval-gate pattern (the team's AF7/AF8 wire these to mutations).
 5. Implement P1 modules first — **Inbox** and **Operations** (incl. Approvals AI-suggestion → accept → mutation) — then P2/P3 per the coordination pack.
-6. Resolve the **cyan brand migration** and **light theme** decisions before locking visual QA.
+6. Build the **light theme** (`[data-theme="light"]` token swap; the sun toggle is its entry point) before locking visual QA. (Brand accent is already correct — no color migration.)
 
 Questions on data shape, mutation payloads, or which routes are in-scope for v2 → raise against the real code/APIs. Honest failure/stale/empty states are part of the spec — build them.
