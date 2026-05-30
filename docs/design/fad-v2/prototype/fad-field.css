@@ -1,0 +1,65 @@
+/* FAD V2 — Field desktop: extra classes layered on top of fad-desktop.css */
+
+/* setrow has no layout rule in fad-desktop.css — give it flex here */
+.setrow{display:flex;align-items:center;gap:11px}
+
+/* task detail two-column layout */
+.ftask-lay{display:grid;grid-template-columns:1fr 326px;gap:18px;align-items:start}
+@media (max-width:1180px){ .ftask-lay{grid-template-columns:1fr} }
+
+/* checklist check circle */
+.fcheck{flex:0 0 22px;width:22px;height:22px;border-radius:7px;border:1.5px solid var(--line-3);
+  display:flex;align-items:center;justify-content:center;color:#fff;margin-top:1px;transition:all .14s}
+.fcheck.on{background:var(--green);border-color:var(--green);color:#06231a}
+
+/* inventory stepper buttons */
+.stepbtn{width:28px;height:28px;border-radius:7px;border:1px solid var(--line);background:var(--card-2);
+  color:var(--tx);font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+.stepbtn:hover{border-color:var(--line-3);background:var(--card)}
+.stepbtn:active{transform:scale(.94)}
+
+/* map placeholder */
+.mapph{height:108px;border-radius:10px;border:1px solid var(--line-2);
+  background:
+    repeating-linear-gradient(45deg, rgba(62,116,217,.05) 0 12px, transparent 12px 24px),
+    linear-gradient(150deg,#1a2334,#121826);
+  position:relative}
+.mapph::after{content:"";position:absolute;left:50%;top:54%;width:12px;height:12px;border-radius:50%;
+  background:var(--indigo);box-shadow:0 0 0 6px rgba(62,116,217,.22);transform:translate(-50%,-50%)}
+
+/* key-value list (sidebar panels) */
+.kvlist{display:flex;flex-direction:column}
+.kv{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line-2);font-size:12.5px}
+.kv:last-child{border-bottom:none}
+.kv .k{color:var(--tx-3);font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+.kv .v{color:var(--tx);text-align:right;display:flex;align-items:center}
+.kv .v.mono{font-family:var(--mono);font-size:12px}
+
+/* personal week strip */
+.fweek{display:grid;grid-template-columns:repeat(7,1fr);gap:9px;margin-bottom:8px}
+.fday{background:var(--card);border:1px solid var(--line-2);border-radius:11px;padding:12px 8px;text-align:center}
+.fday.off{background:transparent;border-style:dashed}
+.fday.on{border-color:var(--indigo-line);box-shadow:0 0 0 1px var(--indigo-line) inset}
+.fday-d{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx-3)}
+.fday-n{font-family:var(--serif);font-weight:300;font-size:22px;color:#f3f6fb;margin:3px 0 8px;line-height:1}
+.fday-shift{font-size:11px;font-weight:600;border-radius:6px;padding:3px 0}
+.fday-shift.on{background:rgba(62,116,217,.16);color:#6BA3F2}
+.fday-shift.off{background:var(--card-2);color:var(--tx-3)}
+.fday-time{font-family:var(--mono);font-size:9px;color:var(--tx-3);margin-top:6px}
+
+/* chat composer input */
+.finput{flex:1;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--card);
+  color:var(--tx);font-family:var(--ui);font-size:13px;padding:0 13px;outline:none}
+.finput:focus{border-color:var(--indigo-line)}
+.finput::placeholder{color:var(--tx-3)}
+
+/* notification icon chip */
+.n-ico{font-size:15px}
+
+/* field toast */
+#field-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;align-items:center}
+.ftoast{font-family:var(--ui);font-size:12.5px;font-weight:600;color:var(--tx);background:var(--card);
+  border:1px solid var(--line-3);border-radius:10px;padding:10px 16px;box-shadow:0 12px 40px rgba(0,0,0,.5);
+  transition:opacity .3s,transform .3s}
+.ftoast.green{border-color:rgba(74,155,118,.5);color:var(--green)}
+.ftoast.red{border-color:var(--red-ghost);color:var(--red)}

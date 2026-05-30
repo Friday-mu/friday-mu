@@ -141,7 +141,7 @@ function TabBar({active="tasks"}){
   return (
     <div className="tabbar">
       {items.map(it => it.fab ? (
-        <div key={it.k} className="fab tap" onClick={()=>nav.go('report',null,'up')}><Icon n="plus" s={2.4}/></div>
+        <div key={it.k} className="fab tap" title="Ask Friday" onClick={()=>nav.go('aihelp')} ref={el=>{ if(!el || el.dataset.drawn==='1') return; if(window.fosDrawF){ el.dataset.drawn='1'; window.fosDrawF(el,{size:40,color:'#fff',width:3.4,dur:2.6,ghost:true}); } else { el.dataset.drawn='1'; el.innerHTML='<img src="friday-f.png" alt="Ask Friday" style="width:42px;height:42px;border-radius:12px;object-fit:cover"/>'; } }}></div>
       ) : (
         <div key={it.k} className={"tabitem tap"+(active===it.k?" on":"")} onClick={()=>nav.tab(it.k)}>
           <Icon n={it.n} s={2}/><span>{it.l}</span>

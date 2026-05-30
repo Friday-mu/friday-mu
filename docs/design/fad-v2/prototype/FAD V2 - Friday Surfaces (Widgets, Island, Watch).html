@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAD V2 — Friday Surfaces · Widgets · Dynamic Island · Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@1,800;1,900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="icon" href="friday-f.png">
+<style>
+:root{
+  --indigo:#3E74D9; --indigo-br:#6BA3F2; --indigo-dk:#2B5BC4; --navy:#11356F;
+  --bg:#070C1A; --ink:#0F1A33; --tx:#EAF0FB; --tx2:#8FA0C2; --tx3:#5d6f93;
+  --green:#46c08a; --amber:#e0a83e; --red:#e5635e;
+  --ui:"Space Grotesk",system-ui,sans-serif; --mono:"JetBrains Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:radial-gradient(130% 100% at 50% 0%,#0C1428,#070C1A 70%);color:var(--tx);font-family:var(--ui);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto;padding:40px 28px 80px}
+.head{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.wm{display:inline-flex;align-items:center;gap:.5em;font:italic 800 26px/1 'Archivo',var(--ui);letter-spacing:-.01em}
+.wm img{width:34px;height:34px;border-radius:9px;box-shadow:0 3px 12px rgba(0,0,0,.4)}
+.lede{color:var(--tx2);font-size:14px;max-width:640px;line-height:1.6;margin:0 0 34px}
+.sec{margin:46px 0 18px;display:flex;align-items:center;gap:12px}
+.sec h2{font-size:13px;font-weight:700;letter-spacing:.02em;margin:0;color:#f3f6fb}
+.sec .tag{font-family:var(--mono);font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.12em}
+.sec .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--indigo-line,#26314a),transparent)}
+.row{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+.cap{font-size:11.5px;color:var(--tx3);margin-top:10px;text-align:center}
+.cap b{color:var(--tx2);font-weight:600}
+.stack{display:flex;flex-direction:column;align-items:center}
+
+/* ===== shared Friday orb ===== */
+.orb{position:relative;border-radius:50%;background:radial-gradient(circle at 38% 30%,#DCE9FF,#7CA6F0 30%,#2B5BC4 65%,#11356F);box-shadow:0 0 18px 2px rgba(62,116,217,.5),inset 0 -4px 10px rgba(10,15,40,.5),inset 0 4px 8px rgba(255,255,255,.35);animation:breath 3s ease-in-out infinite}
+@keyframes breath{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+.wave{display:inline-flex;align-items:flex-end;gap:2px;height:14px}
+.wave i{width:2.5px;border-radius:2px;background:#fff;animation:wv .8s ease-in-out infinite}
+.wave i:nth-child(2){animation-delay:.1s}.wave i:nth-child(3){animation-delay:.2s}.wave i:nth-child(4){animation-delay:.3s}.wave i:nth-child(5){animation-delay:.15s}
+@keyframes wv{0%,100%{height:4px;opacity:.6}50%{height:14px;opacity:1}}
+
+/* ===== Dynamic Island ===== */
+.di-phone{width:300px;height:150px;border-radius:30px;background:linear-gradient(160deg,#1a2231,#0c1018);border:1px solid #232c3c;position:relative;display:flex;align-items:flex-start;justify-content:center;padding-top:14px;overflow:hidden}
+.di{background:#000;border-radius:22px;display:flex;align-items:center;transition:all .4s cubic-bezier(.2,.7,.3,1)}
+.di.compact{height:37px;padding:0 12px;gap:54px}
+.di.expanded{height:88px;width:264px;padding:12px 16px;gap:12px;flex-direction:column;align-items:stretch}
+.di-side{display:flex;align-items:center;gap:7px}
+.di-side .orb{width:20px;height:20px}
+.di-side .lbl{font-size:11px;font-weight:600;color:#fff}
+.di-exp-top{display:flex;align-items:center;gap:10px}
+.di-exp-top .orb{width:30px;height:30px;flex:0 0 30px}
+.di-exp-top .t{font-size:12px;font-weight:600;color:#fff}
+.di-exp-top .s{font-size:10.5px;color:#9aa6bb}
+.di-exp-actions{display:flex;gap:8px;margin-top:auto}
+.di-btn{flex:1;height:28px;border-radius:9px;border:none;font:600 11px var(--ui);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}
+.di-btn.primary{background:var(--indigo);color:#fff}
+.di-btn.ghost{background:rgba(255,255,255,.12);color:#fff}
+
+/* ===== phone shell (lockscreen) ===== */
+.phone{width:268px;height:560px;border-radius:42px;background:#05070b;border:1px solid #20262f;box-shadow:0 0 0 7px #12161d,0 30px 70px rgba(0,0,0,.5);padding:9px;position:relative}
+.screen{width:100%;height:100%;border-radius:34px;overflow:hidden;position:relative}
+.lockwall{position:absolute;inset:0;background:linear-gradient(170deg,#243049,#121a2b 55%,#0b1018)}
+.notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:90px;height:26px;border-radius:16px;background:#000;z-index:5;display:flex;align-items:center;justify-content:center;gap:30px}
+.notch .orb{width:15px;height:15px}
+.lock-time{position:absolute;top:58px;left:0;right:0;text-align:center;color:#fff}
+.lock-time .d{font-size:13px;font-weight:600;opacity:.85}
+.lock-time .t{font-size:62px;font-weight:600;letter-spacing:-2px;line-height:1}
+/* lock widgets row */
+.lockw-row{position:absolute;top:150px;left:16px;right:16px;display:flex;gap:9px}
+.lockw{flex:1;background:rgba(10,14,22,.55);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:9px 11px}
+.lockw .lbl{font-size:9px;color:#aeb8c8;text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;gap:5px}
+.lockw .big{font-size:20px;font-weight:700;color:#fff;margin-top:3px}
+.lockw .sub{font-size:10px;color:#9aa6bb}
+/* live activity on lock */
+.liveact{position:absolute;left:16px;right:16px;top:230px;background:rgba(8,11,18,.82);backdrop-filter:blur(14px);border:1px solid rgba(124,155,255,.25);border-radius:20px;padding:13px 14px}
+.la-top{display:flex;align-items:center;gap:10px}
+.la-top .orb{width:30px;height:30px;flex:0 0 30px}
+.la-top .t{font-size:12.5px;font-weight:600;color:#fff}
+.la-top .s{font-size:11px;color:#9aa6bb}
+.la-quote{font-size:12px;color:#cdd6e6;line-height:1.5;margin-top:9px;background:rgba(255,255,255,.05);border-radius:11px;padding:8px 10px}
+.la-actions{display:flex;gap:8px;margin-top:10px}
+.lock-foot{position:absolute;bottom:20px;left:0;right:0;display:flex;justify-content:space-between;padding:0 30px}
+.lock-foot span{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;color:#fff}
+.homebar{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:108px;height:4px;border-radius:3px;background:rgba(255,255,255,.5)}
+
+/* ===== iOS home widgets ===== */
+.hs-bg{background:linear-gradient(170deg,#2b3a57,#1a2233);border-radius:26px;padding:18px}
+.wgrid{display:flex;gap:16px;align-items:flex-start}
+.widget{background:rgba(15,20,30,.92);border-radius:22px;box-shadow:0 10px 30px rgba(0,0,0,.4);overflow:hidden;color:var(--tx)}
+.w-sm{width:148px;height:148px;padding:14px}
+.w-md{width:322px;height:148px;padding:15px}
+.w-lg{width:322px;height:322px;padding:16px}
+.w-h{display:flex;align-items:center;gap:7px;margin-bottom:9px}
+.w-h img{width:18px;height:18px;border-radius:5px}
+.w-h .nm{font:italic 800 12px 'Archivo',var(--ui);color:#fff}
+.w-h .tm{margin-left:auto;font-size:9.5px;color:var(--tx3);font-family:var(--mono)}
+.w-big{font-size:30px;font-weight:800;color:#fff;line-height:1}
+.w-lbl{font-size:11px;color:var(--tx2);margin-top:2px}
+.w-tasklist{display:flex;flex-direction:column;gap:7px}
+.w-task{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--tx)}
+.w-dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
+.w-pill{display:inline-flex;align-items:center;gap:5px;background:var(--indigo);color:#fff;border-radius:9px;padding:6px 9px;font-size:11px;font-weight:600;margin-top:auto}
+.w-brief{font-size:11.5px;line-height:1.5;color:var(--tx2)}
+.w-brief b{color:#fff;font-weight:600}
+.w-stat-row{display:flex;gap:8px;margin-top:10px}
+.w-stat{flex:1;background:rgba(255,255,255,.05);border-radius:11px;padding:8px}
+.w-stat .n{font-size:17px;font-weight:700;color:#fff}
+.w-stat .l{font-size:8.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em}
+.w-divider{height:1px;background:rgba(255,255,255,.07);margin:11px 0}
+.dock{display:flex;justify-content:center;gap:10px;margin-top:16px}
+.dock i{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.12);display:block}
+
+/* ===== Apple Watch ===== */
+.watch{width:180px;height:216px;border-radius:50px;background:#05070b;border:1px solid #20262f;box-shadow:0 0 0 6px #161a20,0 24px 50px rgba(0,0,0,.5);padding:16px 12px;position:relative}
+.watch .crown{position:absolute;right:-9px;top:74px;width:7px;height:34px;border-radius:4px;background:#2a3340}
+.watch-screen{width:100%;height:100%;border-radius:38px;background:#000;overflow:hidden;position:relative;padding:13px 12px;display:flex;flex-direction:column}
+.wf-time{font-size:15px;font-weight:700;color:#fff;text-align:right;font-family:var(--mono)}
+.wf-orb{display:flex;justify-content:center;margin:4px 0}
+.wf-orb .orb{width:38px;height:38px}
+.wf-orb .orb{width:46px;height:46px}
+
+.wf-comp{display:flex;gap:7px;margin-top:8px}
+.wf-c{flex:1;background:rgba(255,255,255,.07);border-radius:12px;padding:7px;text-align:center}
+.wf-c .n{font-size:15px;font-weight:700;color:#fff}
+.wf-c .l{font-size:7.5px;color:#8896ad;text-transform:uppercase}
+.wf-talk{position:static;margin-top:auto;height:34px;border-radius:18px;background:var(--indigo);color:#fff;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:600}
+.watch-app .wa-card{background:rgba(255,255,255,.06);border-radius:13px;padding:9px 10px;margin-bottom:7px}
+.watch-app .wa-t{font-size:11px;font-weight:600;color:#fff}
+.watch-app .wa-s{font-size:9.5px;color:#8896ad;margin-top:1px}
+.wa-actions{display:flex;gap:6px;margin-top:7px}
+.wa-btn{flex:1;height:26px;border-radius:13px;font:600 10px var(--ui);border:none}
+.wa-btn.ok{background:var(--green);color:#06231a}.wa-btn.no{background:rgba(255,255,255,.12);color:#fff}
+
+/* ===== Android (Material You) ===== */
+.and-bg{background:linear-gradient(170deg,#1b2e2a,#15211c);border-radius:26px;padding:18px}
+.m3{border-radius:26px;color:#e7f0ea;background:#1b3a32;overflow:hidden}
+.m3-you{background:#c7e8d6;color:#0d2820}
+.m3-lg{width:322px;padding:18px}
+.m3-sm{width:148px;height:148px;padding:15px}
+.m3-h{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.m3-h img{width:20px;height:20px;border-radius:7px}
+.m3-h .nm{font:italic 800 12px 'Archivo',var(--ui)}
+.m3-h .tm{margin-left:auto;font:500 10px var(--mono);opacity:.65}
+.m3-big{font-size:26px;font-weight:700;line-height:1.05}
+.m3-brief{font-size:12px;line-height:1.5;opacity:.85}
+.m3-chiprow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.m3-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);border-radius:18px;padding:7px 13px;font-size:11.5px;font-weight:600}
+.m3-you .m3-chip{background:rgba(13,40,32,.12)}
+.m3-task{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12px;border-top:1px solid rgba(255,255,255,.1)}
+/* At a glance pill */
+.glance{width:322px;background:linear-gradient(120deg,#172033,#10182a);border:1px solid #24304a;border-radius:24px;padding:13px 16px;display:flex;align-items:center;gap:12px;color:#dbe4f3}
+.glance .orb{width:30px;height:30px;flex:0 0 30px}
+.glance .g-t{font-size:12.5px;font-weight:600}
+.glance .g-s{font-size:11px;color:#9aa6bb}
+/* assistant chip / pill */
+.asschip{width:322px;background:#0f1521;border:1px solid #243044;border-radius:30px;padding:9px 9px 9px 16px;display:flex;align-items:center;gap:10px}
+.asschip .txt{flex:1;font-size:12.5px;color:#8896ad}
+.asschip .mic{width:42px;height:42px;border-radius:50%;background:conic-gradient(from 0deg,#4285F4,#9b72f0,#d96570,#f5a742,#4285F4);display:flex;align-items:center;justify-content:center}
+.asschip .mic span{width:34px;height:34px;border-radius:50%;background:#0f1521;display:flex;align-items:center;justify-content:center}
+.notif-and{width:322px;background:#11161d;border-radius:20px;padding:13px 15px;border:1px solid #232c3c}
+.na-h{display:flex;align-items:center;gap:9px}
+.na-h img{width:20px;height:20px;border-radius:6px}
+.na-h .ap{font-size:10px;color:#8896ad;font-weight:600;letter-spacing:.04em}
+.na-h .tm{margin-left:auto;font-size:10px;color:#8896ad}
+.na-t{font-size:13px;font-weight:600;color:#fff;margin-top:7px}
+.na-s{font-size:12px;color:#aeb8c8;margin-top:2px;line-height:1.45}
+.na-actions{display:flex;gap:18px;margin-top:11px;padding-top:10px;border-top:1px solid #232c3c}
+.na-actions span{font-size:12px;font-weight:600;color:#8fabf2}
+svg.ic{width:1em;height:1em;display:block}
+/* watch talking state */
+.wt-orb{display:flex;justify-content:center;align-items:center;flex:1;margin:4px 0}
+.wt-orb .orb{width:66px;height:66px}
+.wt-tx{text-align:center;font-size:10.5px;color:#cdd6e6;line-height:1.4;min-height:28px}
+.wt-end{margin-top:auto;height:30px;border-radius:16px;background:#e5635e;color:#fff;display:flex;align-items:center;justify-content:center;gap:5px;font-size:10.5px;font-weight:600}
+.wt-wave{display:inline-flex;align-items:flex-end;gap:2px;height:12px;justify-content:center;margin-top:4px}
+.wt-wave i{width:2.5px;border-radius:2px;background:#7CA6F0;animation:wv .7s ease-in-out infinite}
+/* iOS notifications */
+.notif-ios{width:300px;background:rgba(28,33,42,.72);backdrop-filter:blur(16px);border-radius:20px;padding:11px 14px;margin-bottom:9px;border:1px solid rgba(255,255,255,.09);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.notif-ios .nh{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.notif-ios .nh img{width:18px;height:18px;border-radius:5px}
+.notif-ios .nh .ap{font-size:10px;font-weight:700;color:#cdd6e6;letter-spacing:.05em;text-transform:uppercase}
+.notif-ios .nh .tm{margin-left:auto;font-size:10px;color:#8896ad}
+.notif-ios .nt{font-size:13px;font-weight:600;color:#fff}
+.notif-ios .ns{font-size:12px;color:#aeb8c8;line-height:1.45;margin-top:2px}
+.notif-ios .nq{font-size:11.5px;color:#cdd6e6;background:rgba(255,255,255,.06);border-radius:10px;padding:7px 9px;margin-top:8px}
+/* email */
+.email{width:360px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.45);color:#1a2230;font-family:var(--ui)}
+.email-top{background:linear-gradient(160deg,#1a2740,#0f1830);padding:20px;color:#fff;text-align:center}
+.email-top .wm2{font:italic 800 17px 'Archivo',var(--ui);display:inline-flex;align-items:center;gap:8px}
+.email-top .wm2 img{width:24px;height:24px;border-radius:7px}
+.email-body{padding:20px}
+.email h3{margin:0 0 5px;font-size:18px;font-weight:700}
+.email .muted{color:#6b7688;font-size:13px;line-height:1.5}
+.email-card{background:#f3f6fb;border-radius:12px;padding:13px 15px;margin:15px 0}
+.email-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0}
+.email-row .k{color:#6b7688}.email-row .v{font-weight:600}
+.email-cta{display:block;background:#2a6fdb;color:#fff;text-align:center;padding:12px;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none;margin-top:6px}
+.email-foot{padding:13px 20px;border-top:1px solid #e6ebf2;font-size:11px;color:#8b96a8;text-align:center}
+/* prevent label/time overlaps in tight widgets */
+.w-task{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.la-top .t,.di-exp-top .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.la-top .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m3-task{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lockw .lbl{white-space:nowrap;overflow:hidden}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head"><span class="wm"><img src="friday-f.png" alt="">FridayOS</span></div>
+  <p class="lede">Friday lives where you already look — the Dynamic Island, lock screen, home-screen widgets, your wrist, and the Android equivalents. Every surface is glanceable and acts with one tap.</p>
+
+  <!-- DYNAMIC ISLAND -->
+  <div class="sec"><h2>Dynamic Island · Live Activity</h2><span class="tag">iOS</span><span class="rule"></span></div>
+  <div class="row">
+    <div class="stack">
+      <div class="di-phone"><div class="di compact"><span class="di-side"><span class="orb"></span><span class="lbl">Friday</span></span><span class="di-side"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+      <div class="cap"><b>Listening</b> · compact — server VAD handles turns</div>
+    </div>
+    <div class="stack">
+      <div class="di-phone"><div class="di expanded">
+        <div class="di-exp-top"><span class="orb"></span><div style="min-width:0"><div class="t">Drafted a reply to Marie</div><div class="s">GBH-B4 · offers bag drop + 3pm check-in</div></div></div>
+        <div class="di-exp-actions"><button class="di-btn primary"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Approve &amp; send</button><button class="di-btn ghost">Open</button></div>
+      </div></div>
+      <div class="cap"><b>Result</b> · expanded live activity with one-tap approve</div>
+    </div>
+  </div>
+
+  <!-- LOCK SCREEN -->
+  <div class="sec"><h2>Lock Screen · Live Activity &amp; widgets</h2><span class="tag">iOS</span><span class="rule"></span></div>
+  <div class="row">
+    <div class="stack">
+      <div class="phone"><div class="screen"><div class="lockwall"></div>
+        <div class="notch"><span class="orb"></span></div>
+        <div class="lock-time"><div class="d">Friday, 30 May</div><div class="t">9:41</div></div>
+        <div class="lockw-row">
+          <div class="lockw"><div class="lbl"><span class="orb" style="width:11px;height:11px"></span> Today</div><div class="big">4</div><div class="sub">jobs · 1 urgent</div></div>
+          <div class="lockw"><div class="lbl">Approvals</div><div class="big">3</div><div class="sub">field reports</div></div>
+        </div>
+        <div class="liveact">
+          <div class="la-top"><span class="orb"></span><div style="min-width:0"><div class="t">Friday · drafted a reply</div><div class="s">Marie L. · GBH-B4</div></div></div>
+          <div class="la-quote">"Hi Marie! Check-in is from 3pm — you're welcome to drop bags at reception from 1pm 🌴"</div>
+          <div class="la-actions"><button class="di-btn primary" style="flex:1"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Approve</button><button class="di-btn ghost" style="flex:1">Edit</button></div>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <div class="cap"><b>Lock screen</b> · Friday live activity + two glance widgets</div>
+    </div>
+
+    <!-- HOME WIDGETS -->
+    <div class="stack">
+      <div class="hs-bg">
+        <div class="wgrid" style="margin-bottom:16px">
+          <div class="widget w-sm" style="display:flex;flex-direction:column">
+            <div class="w-h"><img src="friday-f.png" alt=""><span class="nm">Friday</span></div>
+            <div class="w-big">SD-10</div><div class="w-lbl">water fault · urgent</div>
+            <span class="w-pill" style="margin-top:auto"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 3l14 9-14 9z"/></svg> Start</span>
+          </div>
+          <div class="widget w-md" style="display:flex;flex-direction:column">
+            <div class="w-h"><img src="friday-f.png" alt=""><span class="nm">Friday brief</span><span class="tm">9:41</span></div>
+            <div class="w-brief"><b>4 jobs today</b>, 1 overdue. SD-10 water fault is urgent &amp; recurring — check the breaker first.</div>
+            <div class="w-stat-row" style="margin-top:auto">
+              <div class="w-stat"><div class="n">4</div><div class="l">Today</div></div>
+              <div class="w-stat"><div class="n">3</div><div class="l">Approvals</div></div>
+              <div class="w-stat"><div class="n">2</div><div class="l">Arrivals</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="wgrid">
+          <div class="widget w-lg" style="display:flex;flex-direction:column">
+            <div class="w-h"><img src="friday-f.png" alt=""><span class="nm">Friday · your day</span><span class="tm">updated 6m</span></div>
+            <div class="w-brief" style="margin-bottom:11px"><b>Good morning, Ishant.</b> 4 jobs across West zone. Best route: GBH-B4 turnover, then SD-10.</div>
+            <div class="w-tasklist">
+              <div class="w-task"><span class="w-dot" style="background:var(--red)"></span> SD-10 · Water fault <span style="margin-left:auto;color:var(--tx3);font-size:10px">urgent</span></div>
+              <div class="w-task"><span class="w-dot" style="background:var(--amber)"></span> GBH-B4 · Turnover clean <span style="margin-left:auto;color:var(--tx3);font-size:10px">by 15:00</span></div>
+              <div class="w-task"><span class="w-dot" style="background:var(--indigo)"></span> RC-7 · Lower dining table <span style="margin-left:auto;color:var(--tx3);font-size:10px">11:00</span></div>
+              <div class="w-task"><span class="w-dot" style="background:var(--green)"></span> GBH-C5 · Shower head <span style="margin-left:auto;color:var(--tx3);font-size:10px">done</span></div>
+            </div>
+            <div class="w-divider"></div>
+            <div style="display:flex;gap:8px">
+              <span class="w-pill" style="margin:0;background:var(--indigo)"><img src="friday-f.png" style="width:14px;height:14px;border-radius:4px"> Ask Friday</span>
+              <span class="w-pill" style="margin:0;background:rgba(255,255,255,.1)">Report an issue</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-end">
+            <div class="dock" style="margin:0"><i></i><i></i><i></i><i style="background:var(--indigo)"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>Home-screen widgets</b> · small (next job) · medium (brief) · large (full day)</div>
+    </div>
+  </div>
+
+  <!-- APPLE WATCH -->
+  <div class="sec"><h2>Apple Watch</h2><span class="tag">watchOS</span><span class="rule"></span></div>
+  <div class="row">
+    <div class="stack">
+      <div class="watch"><span class="crown"></span><div class="watch-screen">
+        <div class="wf-time">9:41</div>
+        <div class="wf-orb"><span class="orb"></span></div>
+        <div class="wf-status">Tap to talk to Friday</div>
+        <div class="wf-comp"><div class="wf-c"><div class="n">4</div><div class="l">Jobs</div></div><div class="wf-c"><div class="n">1</div><div class="l">Urgent</div></div></div>
+        <div class="wf-talk"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4"/></svg> Talk</div>
+      </div></div>
+      <div class="cap"><b>Watch face</b> · Friday complication + tap-to-talk</div>
+    </div>
+    <div class="stack">
+      <div class="watch"><div class="watch-screen watch-app" style="padding:13px 11px">
+        <div class="wf-time" style="text-align:left;font-size:12px;color:#8896ad;margin-bottom:8px">FRIDAY</div>
+        <div class="wa-card"><div class="wa-t">Drafted reply · Marie L.</div><div class="wa-s">offers bag drop + 3pm</div>
+          <div class="wa-actions"><button class="wa-btn ok">Send</button><button class="wa-btn no">Edit</button></div></div>
+        <div class="wa-card"><div class="wa-t">SD-10 water fault</div><div class="wa-s">urgent · recurring</div></div>
+      </div></div>
+      <div class="cap"><b>Watch app</b> · approve a draft from the wrist</div>
+    </div>
+  </div>
+
+  <!-- ANDROID -->
+  <div class="sec"><h2>Android · Material You &amp; Assistant</h2><span class="tag">Android</span><span class="rule"></span></div>
+  <div class="row">
+    <div class="stack">
+      <div class="and-bg">
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px">
+          <div class="m3 m3-sm" style="display:flex;flex-direction:column">
+            <div class="m3-h"><img src="friday-f.png" alt=""><span class="nm">Friday</span></div>
+            <div class="m3-big">4</div><div style="font-size:11px;opacity:.8">jobs today · 1 urgent</div>
+            <div class="m3-chiprow" style="margin-top:auto"><span class="m3-chip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-14 9z"/></svg> Start</span></div>
+          </div>
+          <div class="m3 m3-you m3-lg" style="width:206px">
+            <div class="m3-h"><img src="friday-f.png" alt=""><span class="nm">Friday brief</span><span class="tm">9:41</span></div>
+            <div class="m3-brief"><b>4 jobs today</b>, 1 overdue. SD-10 water fault is urgent — check the breaker first.</div>
+            <div class="m3-task" style="border-top:none;padding-top:10px"><span class="w-dot" style="background:var(--red)"></span> SD-10 · Water fault</div>
+            <div class="m3-task"><span class="w-dot" style="background:var(--amber)"></span> GBH-B4 · Turnover</div>
+            <div class="m3-chiprow"><span class="m3-chip">Open route</span></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="glance"><span class="orb"></span><div style="min-width:0"><div class="g-t">Friday · at a glance</div><div class="g-s">GBH-B4 turnover due 3pm · then SD-10</div></div></div>
+          <div class="asschip"><img src="friday-f.png" style="width:24px;height:24px;border-radius:7px"><span class="txt">Ask Friday…</span><span class="mic"><span><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" style="width:16px;height:16px"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4"/></svg></span></span></div>
+        </div>
+      </div>
+      <div class="cap"><b>Material You widgets</b> · monochrome-themed brief, At-a-Glance strip &amp; Assistant chip</div>
+    </div>
+    <div class="stack">
+      <div class="notif-and">
+        <div class="na-h"><img src="friday-f.png" alt=""><span class="ap">FRIDAY</span><span class="tm">now</span></div>
+        <div class="na-t">Drafted a reply to Marie</div>
+        <div class="na-s">GBH-B4 · offers bag drop + 3pm check-in. Approve to send.</div>
+        <div class="na-actions"><span>Approve &amp; send</span><span>Edit</span><span style="color:#8896ad">Snooze</span></div>
+      </div>
+      <div class="cap"><b>Notification</b> · inline actions (Android heads-up)</div>
+    </div>
+  </div>
+  <!-- APPLE WATCH · TAP TO TALK -->
+  <div class="sec"><h2>Apple Watch · Tap to talk</h2><span class="tag">watchOS</span><span class="rule"></span></div>
+  <div class="row">
+    <div class="stack">
+      <div class="watch"><span class="crown"></span><div class="watch-screen">
+        <div class="wf-time" style="text-align:center;font-size:11px;color:#8896ad">LISTENING</div>
+        <div class="wt-orb"><span class="orb"></span></div>
+        <div class="wt-wave"><i style="height:8px"></i><i style="height:12px"></i><i style="height:6px"></i><i style="height:11px"></i><i style="height:7px"></i></div>
+        <div class="wt-tx">"What's blocked by guests today?"</div>
+        <div class="wt-end"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M10.7 13.3a16 16 0 0 0 3.4 2.6M1 1l22 22"/></svg> End</div>
+      </div></div>
+      <div class="cap"><b>Listening</b> · raise wrist, tap & speak — server VAD ends the turn</div>
+    </div>
+    <div class="stack">
+      <div class="watch"><div class="watch-screen" style="justify-content:flex-start">
+        <div class="wf-time" style="text-align:left;font-size:11px;color:#8896ad;margin-bottom:6px"><span class="orb" style="width:13px;height:13px;display:inline-block;vertical-align:middle"></span> FRIDAY</div>
+        <div style="font-size:12px;color:#dbe4f3;line-height:1.45">Two jobs are guest-blocked: <b style="color:#fff">SD-10</b> &amp; <b style="color:#fff">RC-7</b>. Want me to reschedule them after check-out?</div>
+        <div class="wa-actions" style="margin-top:auto"><button class="wa-btn ok">Yes, do it</button><button class="wa-btn no">Later</button></div>
+      </div></div>
+      <div class="cap"><b>Friday answers</b> · spoken back + a tap-to-confirm action</div>
+    </div>
+  </div>
+
+  <!-- iOS NOTIFICATIONS -->
+  <div class="sec"><h2>Notifications</h2><span class="tag">iOS · push</span><span class="rule"></span></div>
+  <div class="row">
+    <div class="notif-stack">
+      <div class="notif-ios">
+        <div class="nh"><img src="friday-f.png" alt=""><span class="ap">Friday</span><span class="tm">now</span></div>
+        <div class="nt">New message · Marie L.</div>
+        <div class="ns">GBH-B4 · "Is early check-in possible?"</div>
+        <div class="nq">Friday drafted a reply — hold to Approve &amp; send</div>
+      </div>
+      <div class="notif-ios">
+        <div class="nh"><img src="friday-f.png" alt=""><span class="ap">Friday</span><span class="tm">6m ago</span></div>
+        <div class="nt">⚡ SD-10 flagged urgent</div>
+        <div class="ns">Recurring pump fault — check the breaker before resetting.</div>
+      </div>
+      <div class="notif-ios">
+        <div class="nh"><img src="friday-f.png" alt=""><span class="ap">Friday · Approvals</span><span class="tm">28m ago</span></div>
+        <div class="nt">3 field reports waiting</div>
+        <div class="ns">1 urgent · pool pump, AC, internet</div>
+      </div>
+      <div class="cap" style="text-align:left"><b>Push notifications</b> · grouped by Friday, with inline reply &amp; approve</div>
+    </div>
+    <div class="notif-stack">
+      <div class="notif-ios" style="background:rgba(74,155,118,.16);border-color:rgba(74,155,118,.3)">
+        <div class="nh"><img src="friday-f.png" alt=""><span class="ap" style="color:#8fe0b6">Friday · Owners</span><span class="tm">2h ago</span></div>
+        <div class="nt">April statement ready</div>
+        <div class="ns">Beaumont Trust · net payout €5,127 — review &amp; send</div>
+      </div>
+      <div class="notif-ios">
+        <div class="nh"><img src="friday-f.png" alt=""><span class="ap">Friday</span><span class="tm">yesterday</span></div>
+        <div class="nt">⭐ New 5★ review · GBH-B4</div>
+        <div class="ns">"Spotless on arrival…" — Marie L. · Friday drafted a thank-you.</div>
+      </div>
+      <div class="cap" style="text-align:left"><b>Smart grouping</b> · Friday mutes low-signal alerts, surfaces what needs you</div>
+    </div>
+  </div>
+
+  <!-- EMAIL -->
+  <div class="sec"><h2>Email</h2><span class="tag">Branded</span><span class="rule"></span></div>
+  <div class="row">
+    <div class="stack">
+      <div class="email">
+        <div class="email-top"><span class="wm2"><img src="friday-f.png" alt="">Friday Retreats</span></div>
+        <div class="email-body">
+          <h3>You're all set, Marie! 🌴</h3>
+          <p class="muted">Your stay at <b>Apt with Pool &amp; Gym</b>, Grand Baie is confirmed. We can't wait to host you.</p>
+          <div class="email-card">
+            <div class="email-row"><span class="k">Check-in</span><span class="v">Sun 1 Jun · from 3:00 PM</span></div>
+            <div class="email-row"><span class="k">Check-out</span><span class="v">Wed 4 Jun · by 10:00 AM</span></div>
+            <div class="email-row"><span class="k">Guests</span><span class="v">2 adults</span></div>
+            <div class="email-row"><span class="k">Access code</span><span class="v">on day of arrival</span></div>
+          </div>
+          <a class="email-cta" href="#">View your stay &amp; directions</a>
+          <p class="muted" style="margin-top:14px">Bags can be dropped at reception from 1pm. Reply to this email any time — it reaches our team instantly.</p>
+        </div>
+        <div class="email-foot">Friday Retreats Ltd · Grand Baie, Mauritius · powered by FridayOS</div>
+      </div>
+      <div class="cap"><b>Guest confirmation</b> · Friday-drafted, on-brand, reply lands in the Inbox</div>
+    </div>
+    <div class="stack">
+      <div class="email">
+        <div class="email-top" style="background:linear-gradient(160deg,#243049,#11356F)"><span class="wm2"><img src="friday-f.png" alt="">Friday Retreats · Owners</span></div>
+        <div class="email-body">
+          <h3>April owner statement</h3>
+          <p class="muted">Beaumont Family Trust · 2 units · period 1–30 April 2026</p>
+          <div class="email-card">
+            <div class="email-row"><span class="k">Rental income</span><span class="v">€6,840</span></div>
+            <div class="email-row"><span class="k">Management commission</span><span class="v">−€1,026</span></div>
+            <div class="email-row"><span class="k">Expenses</span><span class="v">−€687</span></div>
+            <div class="email-row" style="border-top:1px solid #e6ebf2;margin-top:4px;padding-top:9px"><span class="k" style="font-weight:700;color:#1a2230">Net payout</span><span class="v" style="color:#1b8a5b">€5,127</span></div>
+          </div>
+          <a class="email-cta" href="#" style="background:#11356F">Open full statement (PDF)</a>
+          <p class="muted" style="margin-top:14px">Questions? Just reply — Franny and the team are on it.</p>
+        </div>
+        <div class="email-foot">Reconciled by FridayOS · auto-generated &amp; verified before sending</div>
+      </div>
+      <div class="cap"><b>Owner statement</b> · reconciled figures, branded, one-tap to the PDF</div>
+    </div>
+    <div class="stack">
+      <div class="email">
+        <div class="email-top" style="background:linear-gradient(160deg,#1a2740,#11233a)"><span class="wm2"><img src="friday-f.png" alt="">FridayOS · Team</span></div>
+        <div class="email-body">
+          <h3>3 jobs assigned to you today</h3>
+          <p class="muted">Morning Ishant — Friday planned your day across West zone. Your route saves ~18 min.</p>
+          <div class="email-card" style="padding:0;overflow:hidden">
+            <div class="email-row" style="padding:11px 14px;border-bottom:1px solid #e6ebf2"><span class="k" style="color:#1a2230;font-weight:600">SD-10 · Water fault</span><span class="v" style="color:#c0392b">urgent</span></div>
+            <div class="email-row" style="padding:11px 14px;border-bottom:1px solid #e6ebf2"><span class="k" style="color:#1a2230;font-weight:600">GBH-B4 · Turnover</span><span class="v" style="color:#6b7688">by 3:00 PM</span></div>
+            <div class="email-row" style="padding:11px 14px"><span class="k" style="color:#1a2230;font-weight:600">RC-7 · Lower dining table</span><span class="v" style="color:#6b7688">11:00 AM</span></div>
+          </div>
+          <a class="email-cta" href="#" style="background:#3E74D9">Open in FridayOS Field</a>
+          <p class="muted" style="margin-top:14px">Access codes &amp; checklists are in the app. Reply here to message your manager.</p>
+        </div>
+        <div class="email-foot">Sent by FridayOS · you can manage notifications in the app</div>
+      </div>
+      <div class="cap"><b>Team notification</b> · daily plan / new job assignment to field staff</div>
+    </div>
+  </div>
+</div>
+
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" rx="22" fill="#0a0d12"/><rect x="30" y="16" width="40" height="15" rx="7.5" fill="#000" stroke="#3E74D9" stroke-width="1.5"/><circle cx="50" cy="56" r="15" fill="url(#g)"/><rect x="22" y="78" width="56" height="10" rx="5" fill="#1b3a32"/><defs><radialGradient id="g" cx="40%" cy="35%"><stop offset="0%" stop-color="#cdd8ff"/><stop offset="60%" stop-color="#3E74D9"/><stop offset="100%" stop-color="#243b9a"/></radialGradient></defs></svg>
+</template>
+
+<script>
+// cycle the Dynamic Island compact between listening / idle to feel alive
+(function(){
+  var di=document.querySelector('.di.compact'); if(!di) return;
+  var states=[['Listening','wave'],['Thinking','dots'],['Friday','idle']]; var i=0;
+  setInterval(function(){ i=(i+1)%states.length; var lbl=di.querySelector('.lbl'); if(lbl) lbl.textContent=states[i][0]; },2600);
+})();
+</script>
+</body>
+</html>

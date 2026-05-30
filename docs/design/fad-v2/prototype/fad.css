@@ -3,38 +3,40 @@
    Three-voice type system: serif titles · grotesk UI · mono meta
    =========================================================================== */
 :root{
+  /* brand */
+  --ink:#04121f; --royal:#11356F; --royal-2:#1A4A9E; --accent:#3E74D9;
   /* surfaces */
-  --bg:#0a0d12;            /* app base */
-  --bg-2:#0d1118;          /* status/tab chrome */
-  --surface:#121826;       /* panel */
-  --card:#151c2b;          /* raised card */
-  --card-2:#1a2230;        /* nested / hover */
-  --line:#243044;          /* hairline border */
-  --line-2:#1c2536;
+  --bg:#070C1A;            /* app base */
+  --bg-2:#0a1124;          /* status/tab chrome */
+  --surface:#0C1428;       /* panel */
+  --card:#0F1A33;          /* raised card */
+  --card-2:#15223f;        /* nested / hover */
+  --line:#1d2b46;          /* hairline border */
+  --line-2:#162238;
   /* text */
-  --tx:#e8ecf3;            /* primary */
-  --tx-2:#97a1b3;          /* secondary */
-  --tx-3:#5e6a7e;          /* tertiary / labels */
-  --tx-4:#414c5e;          /* faint */
+  --tx:#EAF0FB;            /* primary */
+  --tx-2:#8FA0C2;          /* secondary */
+  --tx-3:#5d6f93;          /* tertiary / labels */
+  --tx-4:#3d4d6b;          /* faint */
   /* accent */
-  --indigo:#5681ff;
-  --indigo-bright:#6f93ff;
-  --indigo-dim:#2a3a6b;
-  --indigo-ghost:rgba(86,129,255,0.12);
-  --indigo-line:rgba(86,129,255,0.35);
+  --indigo:#3E74D9;
+  --indigo-bright:#6BA3F2;
+  --indigo-dim:#11356F;
+  --indigo-ghost:rgba(62,116,217,0.12);
+  --indigo-line:rgba(62,116,217,0.35);
   /* status */
-  --green:#46c08a;
-  --green-ghost:rgba(70,192,138,0.13);
-  --red:#f06a63;
-  --red-ghost:rgba(240,106,99,0.13);
-  --amber:#e6ad52;
-  --amber-ghost:rgba(230,173,82,0.13);
-  --violet:#9b7cf0;
-  --violet-ghost:rgba(155,124,240,0.15);
-  --teal:#54c2c7;
+  --green:#3fb389;
+  --green-ghost:rgba(63,179,137,0.13);
+  --red:#ef6b66;
+  --red-ghost:rgba(239,107,102,0.13);
+  --amber:#d6a85a;
+  --amber-ghost:rgba(214,168,90,0.13);
+  --violet:#9a82e0;
+  --violet-ghost:rgba(154,130,224,0.15);
+  --teal:#3ec6cf;
   /* type */
-  --serif:"Newsreader",Georgia,serif;
-  --ui:"Hanken Grotesk",-apple-system,system-ui,sans-serif;
+  --serif:"Archivo",Georgia,sans-serif;
+  --ui:"Space Grotesk",-apple-system,system-ui,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,monospace;
   --r:14px;   /* card radius */
   --r-sm:10px;
@@ -89,7 +91,7 @@
 
 /* ---- Ask Friday bar ----------------------------------------------------- */
 .askbar{margin:0 16px 10px;display:flex;align-items:center;gap:10px;
-  background:linear-gradient(180deg,rgba(86,129,255,0.14),rgba(86,129,255,0.06));
+  background:linear-gradient(180deg,rgba(62,116,217,0.14),rgba(62,116,217,0.06));
   border:1px solid var(--indigo-line);border-radius:13px;padding:10px 13px;cursor:pointer}
 .askbar .spark{color:var(--indigo-bright)}
 .askbar .ask-tx{flex:1;color:var(--indigo-bright);font-weight:500;font-size:13.5px}
@@ -131,7 +133,7 @@
   font-family:var(--mono);font-size:9.5px;letter-spacing:0.03em;border:1px solid var(--line);
   color:var(--tx-2);background:transparent}
 .srcchip .lock{opacity:0.7}
-.srcchip.bz{color:#86b6ff}      /* breezeway operational */
+.srcchip.bz{color:#7FB0F2}      /* breezeway operational */
 .srcchip.gy{color:#5fd09a}      /* guesty commercial (green) */
 
 /* occupancy */
@@ -181,7 +183,7 @@
 .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--tx-3);margin-top:5px}
 
 /* ---- Friday brief / AI panels ------------------------------------------ */
-.brief{background:linear-gradient(180deg,rgba(86,129,255,0.13),rgba(86,129,255,0.04));
+.brief{background:linear-gradient(180deg,rgba(62,116,217,0.13),rgba(62,116,217,0.04));
   border:1px solid var(--indigo-line);border-radius:var(--r);padding:11px;position:relative}
 .brief .bh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .brief .bh .ttl{font-family:var(--mono);font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--indigo-bright);font-weight:600}
@@ -217,7 +219,7 @@
 .tabitem svg{width:21px;height:21px}
 .tabitem.on{color:var(--indigo-bright)}
 .tabbar .fab{width:50px;height:50px;border-radius:16px;background:var(--indigo);color:#fff;
-  display:flex;align-items:center;justify-content:center;margin-top:-18px;box-shadow:0 8px 22px rgba(86,129,255,0.45);flex:0 0 50px}
+  display:flex;align-items:center;justify-content:center;margin-top:-18px;box-shadow:0 8px 22px rgba(62,116,217,0.45);flex:0 0 50px}
 
 /* ---- timer / execution -------------------------------------------------- */
 .timer{display:flex;align-items:baseline;gap:8px}
@@ -286,7 +288,7 @@
 .btn.primary:active,.btn:active{transform:scale(.97)}
 .seclink:hover,.chrow:hover{border-color:var(--indigo-line)}
 .askbar{position:relative;overflow:hidden}
-.askbar::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(124,155,255,.16) 50%,transparent 70%);background-size:220% 100%;animation:sheenF 4.5s ease-in-out infinite}
+.askbar::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(110,160,235,.16) 50%,transparent 70%);background-size:220% 100%;animation:sheenF 4.5s ease-in-out infinite}
 @keyframes sheenF{0%{background-position:-160% 0}100%{background-position:260% 0}}
 
 /* ---- chat list ---------------------------------------------------------- */
@@ -442,7 +444,7 @@
 /* ===========================================================================
    PROTOTYPE — phone frame, router transitions, interactive states
    =========================================================================== */
-.proto-stage{position:fixed;inset:0;background:radial-gradient(circle at 50% -10%,#121826,#06080c 70%);
+.proto-stage{position:fixed;inset:0;background:radial-gradient(circle at 50% -10%,#121826,#070C1A 70%);
   display:flex;align-items:center;justify-content:center;font-family:var(--ui)}
 .phone{width:402px;height:858px;border-radius:52px;background:#04060a;position:relative;
   box-shadow:0 50px 140px rgba(0,0,0,.75),0 0 0 2px #232c3e,0 0 0 8px #0c0f16;overflow:hidden}
@@ -592,7 +594,7 @@
 .scandoc .ln{position:absolute;left:14px;right:14px;height:5px;border-radius:3px;background:var(--tx-4);opacity:.5}
 .scandoc .ln.s{background:var(--green);opacity:.9}
 .scanbeam{position:absolute;left:0;right:0;height:46px;top:-46px;
-  background:linear-gradient(180deg,rgba(86,129,255,0),rgba(86,129,255,.45));border-bottom:2px solid var(--indigo-bright);
+  background:linear-gradient(180deg,rgba(62,116,217,0),rgba(62,116,217,.45));border-bottom:2px solid var(--indigo-bright);
   animation:scanmove 1.7s cubic-bezier(.45,0,.55,1) infinite}
 @keyframes scanmove{0%{top:-46px}100%{top:200px}}
 .scandoc.captured .scanbeam{display:none}
@@ -661,7 +663,7 @@
 .roday.off{opacity:.6}
 .roday .grow{flex:1}
 .zpill{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:7px;font-size:11.5px;font-weight:600}
-.zpill.west{background:rgba(86,129,255,.16);color:#8fabf2}
+.zpill.west{background:rgba(62,116,217,.16);color:#8fabf2}
 .zpill.north{background:rgba(70,192,138,.14);color:#5cc090}
 .zpill.off{background:rgba(207,102,96,.12);color:#d07d78}
 .stars{display:inline-flex;gap:1px;color:var(--amber)}

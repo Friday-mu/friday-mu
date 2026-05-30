@@ -1,5 +1,7 @@
 /* FAD V2 — Manager/GM desktop screens (static) */
 const { DI, PriD, Shell, AskPanel } = window.FADD;
+/* health hook shim — works whether or not fad-states.jsx is loaded on the page */
+const useHealth = (window.FADSTATE && window.FADSTATE.useHealth) || (()=>{ React.useState(0); return 'healthy'; });
 
 const opsTabs = (on)=>[
   {l:'Overview',on:on==='ov',k:'ops'},{l:'Schedule',on:on==='sc',k:'schedule'},{l:'All tasks',on:on==='ta',k:'tasks'},
@@ -124,6 +126,27 @@ function Donut({segs, total}){
     </div>
   );
 }
+function OpsBriefText(){
+  const H=useHealth();
+  const M={
+    healthy:<span className="ft"><b>Friday Daily Brief.</b> 32 tasks queued · Bryan on North, Ishant on the SD-10 leak · 2 jobs guest-blocked · lunch protected.</span>,
+    stale:<span className="ft"><b>Friday Daily Brief.</b> 32 tasks queued · Bryan on North, Ishant on the SD-10 leak · 2 jobs guest-blocked. <span style={{color:'var(--amber)'}}>Last synced 12m ago — live data catching up.</span></span>,
+    partial:<span className="ft"><b>Friday Daily Brief.</b> 32 tasks queued · 2 jobs guest-blocked. <span style={{color:'var(--amber)'}}>Roster data unavailable — staff-overload check skipped.</span></span>,
+    fallback:<span className="ft"><b>Friday Daily Brief.</b> <span style={{color:'var(--indigo-bright)'}}>General morning shape — not grounded in today's data.</span> Verify task counts before acting.</span>,
+    failed:<span className="ft"><b>Friday Daily Brief.</b> <span style={{color:'var(--red)'}}>Can't reach ops data — brief is read-only until sync recovers.</span></span>,
+  };
+  return M[H]||M.healthy;
+}
+function OpsBriefActions(){
+  const H=useHealth(); const T=t=>window.fadToast&&window.fadToast(t);
+  const dis = H==='failed';
+  return <span className="fb"><button className="dbtn sm" disabled={dis} style={dis?{opacity:.5}:null} onClick={()=>T('Plan applied','green')}>Apply plan</button><button className="dbtn ghost sm" onClick={()=>T('Opened brief detail')}>Review <DI n="chevR" s={2}/></button></span>;
+}
+function OpsBriefProvenance(){
+  const H=useHealth(), FS=window.FADSTATE;
+  if(!FS || H==='healthy') return null;
+  return <div style={{marginTop:8}}><FS.Provenance items={[['ops','32 tasks · today'],['users','4 staff on shift'],['box','West store supplies']]} health={H}/></div>;
+}
 function ScreenOps(){
   const segs=[{v:32,c:'var(--indigo)',l:'Open'},{v:3,c:'var(--red)',l:'Overdue'},{v:6,c:'var(--amber)',l:'Urgent'},{v:14,c:'var(--green)',l:'Done'}];
   const panel=<AskPanel scope="Operations · Overview"
@@ -137,6 +160,7 @@ function ScreenOps(){
     <Shell active="ops" eyebrow="OPERATIONS" title="Overview" sub="Mon 1 June · North + West · 4 staff on"
       tabs={opsTabs('ov')} panel={panel}
       actions={<><button className="dbtn ghost"><DI n="pin" s={1.9}/> Map</button><button className="dbtn primary"><DI n="plus" s={2}/> New task</button></>}>
+      {window.FADSTATE && <window.FADSTATE.StateBanner surface="Operations"/>}
       <div style={{display:'grid',gridTemplateColumns:'1.55fr 1fr',gap:10}}>
         <div className="donutwrap">
           <Donut segs={segs} total={55}/>
@@ -157,8 +181,22 @@ function ScreenOps(){
       </div>
       <div className="fbar" style={{marginTop:12}}>
         <span className="fi"><DI n="spark" s={1.6}/></span>
-        <span className="ft"><b>Friday Daily Brief.</b> 32 tasks queued · Bryan on North, Ishant on the SD-10 leak · 2 jobs guest-blocked · lunch protected.</span>
-        <span className="fb"><button className="dbtn sm">Apply plan</button><button className="dbtn ghost sm">Review <DI n="chevR" s={2}/></button></span>
+        <OpsBriefText/>
+        <OpsBriefActions/>
+      </div>
+      <OpsBriefProvenance/>
+      <div className="dml" style={{marginTop:16}}>My tasks <span className="ct">4</span><span className="rule"/></div>
+      <div className="grid2" style={{gap:8}}>
+        {[
+          {t:'Approve 3 field reports',meta:'pool pump · AC · internet',pri:'high',ic:'flag',go:()=>window.FADGO('approvals')},
+          {t:'Call owner — GBH-B4 pump approval',meta:'preventive service · Rs 3,500',pri:'high',ic:'phone',go:()=>window.FADTASK&&window.FADTASK.open({code:'GBH-B4',title:'Call owner — pump approval',dept:'admin',due:'today',occ:'',occTone:'green',pri:'high',status:'Open',statusTone:'gray',who:'FG'})},
+          {t:'Review April owner statement',meta:'Beaumont Trust · ready to send',pri:'med',ic:'coin',go:()=>window.FADGO('ownerstmt')},
+          {t:'Counter-sign cleaning contract',meta:'CleanCo · via Xodo Sign',pri:'med',ic:'shield',go:()=>window.FADGO('legal')},
+        ].map((m,i)=>(
+          <div key={i} className="panel tap" style={{padding:11,cursor:'pointer'}} onClick={m.go}>
+            <div className="between"><div className="row" style={{gap:10}}><span className={"pri "+m.pri}><DI n={m.ic} s={2} style={{width:11,height:11}}/></span><div><div className="tt" style={{fontSize:13}}>{m.t}</div><div className="sub">{m.meta}</div></div></div><DI n="chevR" s={2} style={{color:'var(--tx-3)'}}/></div>
+          </div>
+        ))}
       </div>
       <div className="grid2" style={{marginTop:16,alignItems:'start'}}>
         <div>
@@ -202,9 +240,14 @@ function ScreenOps(){
 /* ---------- 3 · Schedule draft-plan ---------- */
 function SCell({type, title, sub, span}){
   if(!type) return <div className="sgcell"/>;
-  return <div className="sgcell" style={span?{gridColumn:'span '+span}:null}><div className={"sblock "+type}><span className="grip">⠿</span>{title}{sub&&<span className="sm">{sub}</span>}</div></div>;
+  const open=()=>window.FADTASK&&window.FADTASK.open({title, code:(title||'').split(' ')[0], dept:'operations', due:sub||'today', status:'Scheduled', statusTone:'violet', occ:'', occTone:'green', pri:'med', who:''});
+  return <div className="sgcell" style={span?{gridColumn:'span '+span}:null}><div className={"sblock "+type} onClick={open} style={{cursor:'pointer'}}><span className="grip">⠿</span>{title}{sub&&<span className="sm">{sub}</span>}</div></div>;
 }
-function ScreenSchedule({view='user'}){
+function ScreenSchedule(){
+  const [view,setView]=React.useState('user');
+  const [applied,setApplied]=React.useState(false);
+  const [unassigned,setUnassigned]=React.useState([['LB-2','Syndic fee readjust'],['OSA','Photographer deal']]);
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
   const times=['08','09','10','11','12','13','14','15','16'];
   const userRows=[
     {who:'BR',nm:'Bryan',cells:[['ind','BW-C4 leak','maint'],0,['grn','GBH-C5 shower'],0,'lunch',['ind','RCN-4 valve'],0,['amb','Inspection','GBH-C8'],0]},
@@ -229,22 +272,24 @@ function ScreenSchedule({view='user'}){
     <Shell active="ops" eyebrow="OPERATIONS" title="Schedule"
       sub="Mon 1 June · draft ready for review"
       tabs={opsTabs('sc')}
-      actions={<><button className="dbtn ghost"><DI n="undo" s={1.9}/> Undo</button><button className="dbtn ghost">Clear</button><button className="dbtn primary"><DI n="check" s={2}/> Apply draft</button></>}>
+      actions={<><button className="dbtn ghost" onClick={()=>{setApplied(false);T('Reverted to draft');}}><DI n="undo" s={1.9}/> Undo</button><button className="dbtn ghost" onClick={()=>T('Schedule cleared')}>Clear</button><button className="dbtn primary" onClick={()=>{setApplied(true);T('Draft applied · 18 jobs scheduled','green');}}><DI n="check" s={2}/> {applied?'Re-apply':'Apply draft'}</button></>}>
       <div className="fbar">
         <span className="fi"><DI n="spark" s={1.6}/></span>
-        <span className="ft"><b>Friday drafted the day.</b> 18 jobs across 4 staff · lunch protected · 0 guest conflicts · Tuesday left light for the SD-10 follow-up.</span>
-        <span className="bdg amber">Draft</span>
-        <span className="fb"><button className="dbtn primary sm"><DI n="check" s={2}/> Apply</button><button className="dbtn ghost sm"><DI n="undo" s={1.9}/> Undo</button><button className="dbtn ghost sm">Review <DI n="chevR" s={2}/></button></span>
+        <span className="ft">{applied?<><b>Schedule applied.</b> 18 jobs live across 4 staff · everyone notified · lunch protected · 0 guest conflicts.</>:<><b>Friday drafted the day.</b> 18 jobs across 4 staff · lunch protected · 0 guest conflicts · Tuesday left light for the SD-10 follow-up.</>}</span>
+        <span className={"bdg "+(applied?'green':'amber')}>{applied?'Applied':'Draft'}</span>
+        {!applied && <span className="fb"><button className="dbtn primary sm" onClick={()=>{setApplied(true);T('Draft applied · 18 jobs scheduled','green');}}><DI n="check" s={2}/> Apply</button><button className="dbtn ghost sm">Review <DI n="chevR" s={2}/></button></span>}
       </div>
       <div className="between" style={{margin:'16px 0 9px'}}>
         <div className="vseg">
-          <span className={"vs"+(view==='user'?' on':'')}><DI n="users" s={1.8}/> By staff · day</span>
-          <span className={"vs"+(view==='prop'?' on':'')}><DI n="home" s={1.8}/> By property</span>
-          <span className="vs"><DI n="cal" s={1.8}/> By staff · week</span>
+          <span className={"vs"+(view==='user'?' on':'')} onClick={()=>setView('user')}><DI n="users" s={1.8}/> By staff · day</span>
+          <span className={"vs"+(view==='prop'?' on':'')} onClick={()=>setView('prop')}><DI n="home" s={1.8}/> By property</span>
+          <span className={"vs"+(view==='week'?' on':'')} onClick={()=>setView('week')}><DI n="cal" s={1.8}/> By staff · week</span>
         </div>
         <span className="draghint"><span style={{fontSize:12}}>⠿</span> Drag a block to reschedule · drop unscheduled jobs onto the grid</span>
       </div>
-      <div className="sgrid">
+      {view==='week'
+        ? <div className="panel" style={{padding:'30px 0',textAlign:'center'}}><div className="tdempty-ic" style={{margin:'0 auto 10px'}}><DI n="cal" s={1.6}/></div><div style={{fontWeight:600,fontSize:14}}>Week view</div><div className="faint" style={{fontSize:12,marginTop:3}}>Mon–Sun coverage across all staff · switch back to a day view to edit blocks.</div></div>
+        : <div className="sgrid">
         <div className="sgrow head"><div className="sgname faint" style={{fontWeight:600}}>{view==='prop'?'Property':'Staff'}</div>{times.map((t,i)=><div key={i} className="sgtime">{t}:00</div>)}</div>
         {rows.map((r,i)=>(
           <div key={i} className="sgrow">
@@ -252,13 +297,14 @@ function ScreenSchedule({view='user'}){
             {r.cells.map((c,j)=>cell(c,j))}
           </div>
         ))}
-      </div>
-      <div className="dml">Unassigned <span className="ct">2 · drag onto the grid</span><span className="rule"/></div>
-      <div className="dropzone row" style={{gap:9,padding:11,flexWrap:'wrap'}}>
-        <div className="panel" style={{padding:'8px 11px',flex:'0 0 auto'}}><span className="row" style={{gap:9}}><span className="grip faint">⠿</span><span className="pcodeD">LB-2</span> Syndic fee readjust <span className="bdg amber">unassigned</span></span></div>
-        <div className="panel" style={{padding:'8px 11px',flex:'0 0 auto'}}><span className="row" style={{gap:9}}><span className="grip faint">⠿</span><span className="pcodeD">OSA</span> Photographer deal <span className="bdg amber">unassigned</span></span></div>
-        <button className="dbtn sm ghost"><DI n="spark" s={1.7}/> Let Friday place these</button>
-      </div>
+      </div>}
+      <div className="dml">Unassigned <span className="ct">{unassigned.length?unassigned.length+' · drag onto the grid':'all placed'}</span><span className="rule"/></div>
+      {unassigned.length
+        ? <div className="dropzone row" style={{gap:9,padding:11,flexWrap:'wrap'}}>
+            {unassigned.map((u,i)=>(<div key={i} className="panel" style={{padding:'8px 11px',flex:'0 0 auto'}}><span className="row" style={{gap:9}}><span className="grip faint">⠿</span><span className="pcodeD">{u[0]}</span> {u[1]} <span className="bdg amber">unassigned</span></span></div>))}
+            <button className="dbtn sm ghost" onClick={()=>{setUnassigned([]);T('Friday placed 2 jobs into open slots','green');}}><DI n="spark" s={1.7}/> Let Friday place these</button>
+          </div>
+        : <div className="afdone"><DI n="check" s={2}/> All jobs placed — Friday slotted them into open windows.</div>}
     </Shell>
   );
 }
@@ -345,7 +391,7 @@ function PWAShell(){
   return (
     <div className="dwrap">
       <div className="pwaframe">
-        <div className="pwa-top"><span className="wm">FAD</span><span className="faint" style={{fontSize:11,fontFamily:'var(--mono)'}}>GM · Friday Retreats</span><span className="grow"/><span className="icbtn alert" style={{width:30,height:30}}><DI n="bell" s={2}/></span></div>
+        <div className="pwa-top"><span className="wm">FridayOS</span><span className="faint" style={{fontSize:11,fontFamily:'var(--mono)'}}>GM · Friday Retreats</span><span className="grow"/><span className="icbtn alert" style={{width:30,height:30}}><DI n="bell" s={2}/></span></div>
         <div className="pwa-body">
           <div className="eyebrow" style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--tx-3)',marginBottom:6}}>OPERATIONS</div>
           <div style={{fontFamily:'var(--serif)',fontWeight:300,fontSize:26,marginBottom:12}}>Overview</div>
@@ -380,19 +426,26 @@ function ScreenOwnerStatement(){
     ['SD-10 · James O.','r-1188','+€2,210','pos'],['GBH-B4 · Marie L.','r-1192','+€1,840','pos'],
     ['RC-7 · Priya & Sam','r-1199','+€1,560','pos'],['KS-5 · B. Adeyemi','r-1204','+€2,040','pos'],
   ];
+  const OWSTATE={draft:['amber','Draft'],review:['indigo','In review'],sent:['green','Sent'],viewed:['green','Viewed']};
+  const [status,setStatus]=React.useState('draft');
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
   return (
     <Shell active="own" bare>
-      <div className="faint mono" style={{fontSize:11,marginBottom:14}}>Owners <span style={{color:'var(--tx-4)'}}>›</span> Beaumont Family Trust <span style={{color:'var(--tx-4)'}}>›</span> April 2026 statement</div>
+      <div className="row" style={{gap:11,marginBottom:14}}>
+        <button className="dbtn ghost sm" onClick={()=>window.FADGO('own')}><DI n="chevL" s={2}/> Back</button>
+        <span className="faint mono" style={{fontSize:11}}>Owners <span style={{color:'var(--tx-4)'}}>›</span> Beaumont Family Trust <span style={{color:'var(--tx-4)'}}>›</span> April 2026 statement</span>
+      </div>
       <div className="rdgrid">
         <div className="rdctx">
           <div className="row between"><span style={{fontWeight:700,fontSize:13.5}}>Beaumont Family Trust</span><span className="bdg gray">current</span></div>
           <div className="faint" style={{fontSize:11,marginTop:3}}>2 properties · GBH-B4 · KS-5</div>
-          <div className="row between" style={{margin:'12px 0',paddingTop:10,borderTop:'1px solid var(--line-2)'}}><div><div className="faint mono" style={{fontSize:9}}>STATEMENT</div><div style={{fontSize:13,fontWeight:600}}>April 2026</div></div><span className="bdg amber dot">Draft</span></div>
+          <div className="row between" style={{margin:'12px 0',paddingTop:10,borderTop:'1px solid var(--line-2)'}}><div><div className="faint mono" style={{fontSize:9}}>STATEMENT</div><div style={{fontSize:13,fontWeight:600}}>April 2026</div></div><span className={"bdg "+OWSTATE[status][0]+" dot"}>{OWSTATE[status][1]}</span></div>
           <PField l="Period">1 – 30 Apr</PField>
           <PField l="Issued">May 3, 2026</PField>
           <PField l="Net payout" last><b style={{color:'var(--green)'}}>€5,127.40</b></PField>
-          <button className="dbtn primary sm" style={{width:'100%',marginTop:12}}><DI n="doc" s={1.7}/> Generate PDF</button>
-          <button className="dbtn ghost sm" style={{width:'100%',marginTop:7}}><DI n="msg" s={1.7}/> Send to owner</button>
+          {status==='draft' && <button className="dbtn primary sm" style={{width:'100%',marginTop:12}} onClick={()=>{setStatus('review');T('Moved to review — verify the held expense');}}><DI n="check" s={1.7}/> Submit for review</button>}
+          {status==='review' && <><button className="dbtn primary sm" style={{width:'100%',marginTop:12}} onClick={()=>{setStatus('sent');T('Statement sent to owner','green');setTimeout(()=>setStatus('viewed'),2600);}}><DI n="msg" s={1.7}/> Send to owner</button><div className="faint" style={{fontSize:10.5,marginTop:7,textAlign:'center'}}>Review the BL-12 held expense before sending</div></>}
+          {(status==='sent'||status==='viewed') && <><button className="dbtn ghost sm" style={{width:'100%',marginTop:12}} onClick={()=>T('PDF downloaded')}><DI n="doc" s={1.7}/> Download PDF</button><div className="afdone" style={{marginTop:8}}><DI n="check" s={2}/> {status==='viewed'?'Owner opened this statement just now':'Sent — awaiting owner open'}</div></>}
           <div className="rdnav">
             <div className="it on"><DI n="coin" s={1.7}/> Statement</div>
             <div className="it"><DI n="list" s={1.7}/> Transactions</div>
@@ -509,6 +562,8 @@ function ScreenAllReservations(){
 
 /* ---------- 18 · Owners ---------- */
 function ScreenOwners(){
+  const [tab,setTab]=React.useState('all');
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
   const rows=[
     ['Nitzana Holdings SA','1','€142,500','May 3','current'],['Beaumont Family Trust','2','€88,200','May 3','current'],
     ['Harrington, D.','1','€51,600','May 3','renewal'],['Chen, Y.','1','€34,100','May 3','current'],
@@ -517,27 +572,156 @@ function ScreenOwners(){
   ];
   const openOwner=r=>window.FADTASK&&window.FADTASK.openOwner({name:r[0],status:r[4],ytd:r[2],units:+r[1],
     props:Array.from({length:+r[1]},(_,k)=>[['GBH-B4','SD-10','RC-7','VA-3','LB-2'][k]||'PR-'+k,['Apt with Pool & Gym','Villa Sud','Beach Bungalow','Hillside Studio','Garden Suite'][k]||'Unit '+k,['Grand Baie','Tamarin','Pereybère','Vacoas','Bel Ombre'][k]||'\u2014',['92%','78%','85%','71%','88%'][k]||'80%'])});
+  const tabs=[{k:'all',l:'All owners',ct:38},{k:'statements',l:'Statements',ct:38},{k:'payouts',l:'Payouts',ct:5},{k:'documents',l:'Documents'},{k:'insights',l:'Insights'}];
   return (
-    <Shell active="own" eyebrow="OWNERS" title="Owners" sub="Owner relationships & monthly statements"
-      tabs={[{l:'All owners',ct:38,on:true},{l:'Statements'},{l:'Payouts'},{l:'Documents'},{l:'Insights'}]}
-      actions={<><button className="dbtn ghost"><DI n="filter" s={2}/> Filter</button><button className="dbtn primary"><DI n="plus" s={2}/> Add owner</button></>}>
+    <Shell active="own" eyebrow="OWNERS" title="Owners" sub="Owner relationships · monthly statements · payouts · documents"
+      tabs={tabs.map(t=>({l:t.l,ct:t.ct,on:tab===t.k,fn:()=>setTab(t.k)}))}
+      actions={<><button className="dbtn ghost" onClick={()=>T('Filter owners')}><DI n="filter" s={2}/> Filter</button><button className="dbtn primary" onClick={()=>T('Add owner — invite to portal')}><DI n="plus" s={2}/> Add owner</button></>}>
       <div className="grid4">
-        <div className="statc"><div className="n">38</div><div className="l">Owners</div></div>
+        <div className="statc"><div className="n">38</div><div className="l">Owners</div><div className="d">+2 this quarter</div></div>
         <div className="statc"><div className="n">27</div><div className="l">Units managed</div></div>
-        <div className="statc"><div className="n">€166k</div><div className="l">YTD payouts</div></div>
-        <div className="statc amber"><div className="n">38</div><div className="l">Statements · May 3</div></div>
+        <div className="statc"><div className="n">€166k</div><div className="l">Payouts · April</div></div>
+        <div className="statc amber"><div className="n">38</div><div className="l">Statements ready · May 3</div></div>
       </div>
-      <div className="panel" style={{padding:'4px 4px',marginTop:16}}>
-        {rows.map((r,i)=>(
-          <div key={i} className="row between tdrow" style={{padding:'13px 12px',borderBottom:i<rows.length-1?'1px solid var(--line-2)':'none',cursor:'pointer'}} onClick={()=>openOwner(r)}>
-            <div className="row" style={{gap:11}}><span className="av1" style={{width:30,height:30,fontSize:9}}>{r[0].split(/[ ,]/).filter(Boolean).map(w=>w[0]).slice(0,2).join('')}</span>
-              <div><div style={{fontSize:13.5,fontWeight:600}}>{r[0]}</div><div className="faint mono" style={{fontSize:10.5,marginTop:2}}>{r[1]} {r[1]==='1'?'property':'properties'} · YTD {r[2]} · next statement {r[3]}</div></div></div>
-            <span className={"bdg "+(r[4]==='renewal'?'amber':'gray')}>{r[4]}</span>
-          </div>
-        ))}
+      <div className="fai" style={{marginTop:13}}>
+        <div className="fh"><span className="bdg indigo"><DI n="spark" s={1.6}/> Friday · owners</span></div>
+        <p><b>38 April statements</b> are reconciled and ready to release — the period was locked Apr 27. <b>2 owners</b> are up for mandate renewal in 30 days (Harrington, Solheim); both are below-target on occupancy, worth a call before they shop around. <b>Nitzana Holdings</b> is your top relationship at €142.5k YTD.</p>
+        <div className="acts"><button className="dbtn primary sm" onClick={()=>{setTab('statements');T('Jumped to statements');}}><DI n="coin" s={1.7}/> Release 38 statements</button><button className="dbtn ghost sm" onClick={()=>setTab('insights')}>See retention risk</button></div>
       </div>
+
+      {tab==='all' && <>
+        <div className="row between" style={{margin:'16px 0 8px'}}>
+          <span className="vseg"><span className="vs on">All <span className="mono" style={{opacity:.6,fontSize:10}}>38</span></span><span className="vs" onClick={()=>T('Filtered: renewal due')}>Renewal due <span className="mono" style={{opacity:.6,fontSize:10}}>2</span></span><span className="vs" onClick={()=>T('Filtered: multi-unit')}>Multi-unit <span className="mono" style={{opacity:.6,fontSize:10}}>9</span></span></span>
+          <span className="faint mono" style={{fontSize:10,alignSelf:'center'}}>Sorted by YTD payout ↓</span>
+        </div>
+        <div className="panel" style={{padding:'4px 4px'}}>
+          {rows.map((r,i)=>(
+            <div key={i} className="row between tdrow" style={{padding:'13px 12px',borderBottom:i<rows.length-1?'1px solid var(--line-2)':'none',cursor:'pointer'}} onClick={()=>openOwner(r)}>
+              <div className="row" style={{gap:11}}><span className="av1" style={{width:30,height:30,fontSize:9}}>{r[0].split(/[ ,]/).filter(Boolean).map(w=>w[0]).slice(0,2).join('')}</span>
+                <div><div style={{fontSize:13.5,fontWeight:600}}>{r[0]}</div><div className="faint mono" style={{fontSize:10.5,marginTop:2}}>{r[1]} {r[1]==='1'?'property':'properties'} · YTD {r[2]} · next statement {r[3]}</div></div></div>
+              <span className="row" style={{gap:8}}><span className={"bdg "+(r[4]==='renewal'?'amber':'gray')}>{r[4]}</span><DI n="chevR" s={2} style={{color:'var(--tx-3)'}}/></span>
+            </div>
+          ))}
+        </div>
+      </>}
+
+      {tab==='statements' && <OwnersStatements T={T}/>}
+      {tab==='payouts' && <OwnersPayouts T={T}/>}
+      {tab==='documents' && <OwnersDocuments T={T}/>}
+      {tab==='insights' && <OwnersInsights/>}
     </Shell>
   );
+}
+function OwnersStatements({T}){
+  const init=[
+    {own:'Nitzana Holdings SA',unit:'RC-7 · RC-15',gross:'€11,420',fee:'−€2,284',net:'€8,910',state:'ready'},
+    {own:'Beaumont Family Trust',unit:'GBH-B4 · SD-10',gross:'€7,200',fee:'−€1,440',net:'€5,610',state:'ready'},
+    {own:'Harrington, D.',unit:'VA-3',gross:'€3,980',fee:'−€796',net:'€3,120',state:'review'},
+    {own:'Chen, Y.',unit:'LB-2',gross:'€2,640',fee:'−€528',net:'€2,070',state:'ready'},
+    {own:'Mauritius Coastal Ltd',unit:'KS-5 · PT-3',gross:'€6,310',fee:'−€1,262',net:'€4,920',state:'ready'},
+    {own:'Solheim, H.',unit:'LB-C',gross:'€1,540',fee:'−€308',net:'€1,200',state:'sent'},
+  ];
+  const [st,setSt]=React.useState(init);
+  const send=i=>{setSt(s=>s.map((x,k)=>k===i?{...x,state:'sent'}:x));T('Statement sent to owner portal','green');};
+  const tone={ready:'green',review:'amber',sent:'gray'};
+  const ready=st.filter(s=>s.state==='ready').length;
+  return (<>
+    <div className="row between" style={{margin:'16px 0 8px'}}>
+      <div className="dml" style={{margin:0,flex:1}}>April 2026 statements <span className="ct">{st.length} · period locked Apr 27</span><span className="rule"/></div>
+      <button className="dbtn primary sm" onClick={()=>{setSt(s=>s.map(x=>x.state==='ready'?{...x,state:'sent'}:x));T('Released '+ready+' statements','green');}}><DI n="check" s={2}/> Release {ready} ready</button>
+    </div>
+    <div className="panel" style={{padding:'10px 6px'}}>
+      <table className="tbl"><thead><tr><th>Owner</th><th>Units</th><th style={{textAlign:'right'}}>Gross</th><th style={{textAlign:'right'}}>Mgmt fee</th><th style={{textAlign:'right'}}>Net payout</th><th>Status</th><th></th></tr></thead>
+        <tbody>{st.map((s,i)=>(<tr key={i} className="tdrow">
+          <td className="tt">{s.own}</td><td><span className="pcodeD">{s.unit}</span></td>
+          <td className="mono" style={{textAlign:'right'}}>{s.gross}</td>
+          <td className="mono faint" style={{textAlign:'right'}}>{s.fee}</td>
+          <td className="mono" style={{textAlign:'right',fontWeight:700}}>{s.net}</td>
+          <td><span className={"bdg "+tone[s.state]+" dot"}>{s.state}</span></td>
+          <td style={{textAlign:'right'}}>{s.state==='sent'? <button className="dbtn sm ghost" onClick={()=>window.FADGO('ownerstmt')}>View</button> : s.state==='review'? <button className="dbtn sm ghost" onClick={()=>T('Opened for review')}>Review</button> : <button className="dbtn sm primary" onClick={()=>send(i)}>Send</button>}</td>
+        </tr>))}</tbody>
+      </table>
+    </div>
+    <div className="gate" style={{borderStyle:'solid',marginTop:12}}><span style={{color:'var(--amber)'}}><DI n="alert" s={1.6}/></span><span><b>Harrington needs review:</b> a Rs 8,700 water-heater repair on VA-3 lands in this period — Friday flagged it because it crosses the owner-approval threshold. Approve it and the statement moves to ready.</span></div>
+  </>);
+}
+function OwnersPayouts({T}){
+  const runs=[
+    {when:'May 3, 2026','m':'April period',owners:38,amt:'€166,074',state:'scheduled',via:'SEPA · 2 batches'},
+    {when:'Apr 3, 2026','m':'March period',owners:36,amt:'€151,210',state:'paid',via:'SEPA'},
+    {when:'Mar 3, 2026','m':'February period',owners:35,amt:'€118,940',state:'paid',via:'SEPA'},
+  ];
+  const pend=[
+    ['Nitzana Holdings SA','€8,910','EUR · Barclays','ready'],
+    ['Beaumont Family Trust','€5,610','EUR · HSBC','ready'],
+    ['Harrington, D.','€3,120','MUR · MCB','on hold'],
+    ['Mauritius Coastal Ltd','€4,920','EUR · MCB','ready'],
+  ];
+  return (<>
+    <div className="dml" style={{marginTop:16}}>Payout runs<span className="rule"/></div>
+    <div className="panel" style={{padding:'10px 6px'}}>
+      <table className="tbl"><thead><tr><th>Run date</th><th>Period</th><th style={{textAlign:'right'}}>Owners</th><th style={{textAlign:'right'}}>Amount</th><th>Method</th><th>Status</th></tr></thead>
+        <tbody>{runs.map((r,i)=>(<tr key={i} className="tdrow" onClick={()=>T('Opened payout run · '+r.m)}>
+          <td className="mono">{r.when}</td><td className="faint">{r.m}</td><td className="mono" style={{textAlign:'right'}}>{r.owners}</td>
+          <td className="mono" style={{textAlign:'right',fontWeight:700}}>{r.amt}</td><td className="faint" style={{fontSize:11.5}}>{r.via}</td>
+          <td><span className={"bdg "+(r.state==='paid'?'green':'amber')+" dot"}>{r.state}</span></td>
+        </tr>))}</tbody>
+      </table>
+    </div>
+    <div className="dml" style={{marginTop:16}}>Pending this run · May 3 <span className="ct">{pend.length}</span><span className="rule"/></div>
+    <div className="panel" style={{padding:'4px 4px'}}>
+      {pend.map((p,i)=>(<div key={i} className="row between" style={{padding:'12px',borderBottom:i<pend.length-1?'1px solid var(--line-2)':'none'}}>
+        <div className="row" style={{gap:11}}><span className="av1" style={{width:28,height:28,fontSize:9}}>{p[0].split(/[ ,]/).filter(Boolean).map(w=>w[0]).slice(0,2).join('')}</span><div><div style={{fontSize:13,fontWeight:600}}>{p[0]}</div><div className="faint mono" style={{fontSize:10.5,marginTop:2}}>{p[2]}</div></div></div>
+        <span className="row" style={{gap:10}}><span className="mono" style={{fontWeight:700}}>{p[1]}</span><span className={"bdg "+(p[3]==='on hold'?'amber':'green')+" dot"}>{p[3]}</span></span>
+      </div>))}
+    </div>
+    <div className="gate" style={{borderStyle:'solid',marginTop:12}}><span style={{color:'var(--amber)'}}><DI n="alert" s={1.6}/></span><span><b>Harrington is on hold</b> — bank details failed validation on the MCB feed. I drafted a request for updated IBAN; send it and the payout clears for May 3.</span></div>
+  </>);
+}
+function OwnersDocuments({T}){
+  const docs=[
+    ['Owner mandate · Nitzana Holdings','Management agreement','signed','12 Jan 2026','green'],
+    ['Owner mandate · Beaumont Trust','Management agreement','signed','3 Feb 2026','green'],
+    ['Owner mandate · Harrington','Management agreement','renewal due','expires 14 Jun','amber'],
+    ['Owner mandate · Solheim','Management agreement','renewal due','expires 28 Jun','amber'],
+    ['Tax residency · Chen, Y.','Compliance · KYC','on file','—','gray'],
+    ['Bank mandate · Mauritius Coastal','Payout authorisation','signed','9 Mar 2026','green'],
+  ];
+  return (<>
+    <div className="dml" style={{marginTop:16}}>Owner documents <span className="ct">{docs.length} · 2 need renewal</span><span className="rule"/></div>
+    <div className="panel" style={{padding:'4px 4px'}}>
+      {docs.map((d,i)=>(<div key={i} className="row between tdrow" style={{padding:'12px',borderBottom:i<docs.length-1?'1px solid var(--line-2)':'none',cursor:'pointer'}} onClick={()=>T('Opened '+d[0])}>
+        <div className="row" style={{gap:11}}><span className="statc" style={{padding:7,border:'none',background:'var(--card-2)',color:'var(--tx-2)'}}><DI n="doc" s={1.7}/></span>
+          <div><div style={{fontSize:13,fontWeight:600}}>{d[0]}</div><div className="faint" style={{fontSize:11,marginTop:2}}>{d[1]} · {d[3]}</div></div></div>
+        <span className="row" style={{gap:8}}><span className={"bdg "+d[4]+(d[4]==='green'?' dot':'')}>{d[2]}</span>{d[2]==='renewal due'? <button className="dbtn sm" onClick={(e)=>{e.stopPropagation();window.FADGO('legal');}}>Renew</button> : <button className="dbtn sm ghost" onClick={(e)=>{e.stopPropagation();T('Downloading PDF…');}}>PDF</button>}</span>
+      </div>))}
+    </div>
+  </>);
+}
+function OwnersInsights(){
+  const top=[['Nitzana Holdings SA','€142,500',96],['Beaumont Family Trust II','€121,000',82],['Beaumont Family Trust','€88,200',60],['Mauritius Coastal Ltd','€77,900',53],['Harrington, D.','€51,600',35]];
+  const maxv=142500;
+  return (<>
+    <div className="grid3" style={{marginTop:16}}>
+      <div className="statc green"><div className="n">94%</div><div className="l">Owner retention · 12mo</div><div className="d">2 churned this year</div></div>
+      <div className="statc amber"><div className="n">2</div><div className="l">Mandates expiring · 30d</div></div>
+      <div className="statc"><div className="n">€4,370</div><div className="l">Avg payout / owner · April</div></div>
+    </div>
+    <div className="dtwocol" style={{marginTop:14,display:'grid',gridTemplateColumns:'1.2fr 1fr',gap:14}}>
+      <div className="panel">
+        <div className="dml" style={{margin:'0 0 12px'}}>Top owners by YTD payout<span className="rule"/></div>
+        {top.map((t,i)=>(<div key={i} className="row" style={{gap:10,marginBottom:11}}><span style={{width:150,fontSize:12.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t[0]}</span><span style={{flex:1,height:8,borderRadius:4,background:'var(--card-2)',overflow:'hidden'}}><i style={{display:'block',height:'100%',width:t[2]+'%',background:'linear-gradient(90deg,var(--indigo-bright),var(--indigo))',borderRadius:4}}/></span><span className="mono" style={{width:62,textAlign:'right',fontSize:11.5,fontWeight:600}}>{t[1]}</span></div>))}
+        <div className="faint mono" style={{fontSize:10,marginTop:6}}>Top 5 owners = 58% of YTD payouts · concentration risk: moderate</div>
+      </div>
+      <div className="panel">
+        <div className="dml" style={{margin:'0 0 8px'}}>Retention watch<span className="rule"/></div>
+        <div className="fbar" style={{marginBottom:10}}><span className="fi"><DI n="spark" s={1.5}/></span><span className="ft" style={{fontSize:11.5}}><b>Friday.</b> Harrington & Solheim are both up for renewal and below occupancy target — a proactive call protects €71k of YTD payout.</span></div>
+        {[['Harrington, D.','VA-3 · 71% occ · renewal 14 Jun','at risk','red'],['Solheim, H.','LB-C · 74% occ · renewal 28 Jun','at risk','red'],['Chen, Y.','LB-2 · 85% occ','stable','green']].map((r,i)=>(
+          <div key={i} className="row between" style={{padding:'10px 0',borderBottom:i<2?'1px solid var(--line-2)':'none'}}><div><div style={{fontSize:12.5,fontWeight:600}}>{r[0]}</div><div className="faint mono" style={{fontSize:10,marginTop:2}}>{r[1]}</div></div><span className={"bdg "+r[3]+(r[3]==='green'?' dot':'')}>{r[2]}</span></div>
+        ))}
+      </div>
+    </div>
+  </>);
 }
 
 /* ---------- 19 · Reviews ---------- */
@@ -546,9 +730,13 @@ function ScreenReviews(){
   const dist=[[5,7,'var(--green)'],[4,1,'var(--green)'],[3,0,'var(--tx-3)'],[2,1,'var(--red)'],[1,0,'var(--tx-3)']];
   const cohorts=[['Flic en Flac','4.65','68'],['Grand Baie / Mont Choisy','4.60','29'],['West Coast','5.00','3'],['Pereybère','—','0'],['Bel Ombre','—','0']];
   const latest=[['G4','Guest 48fb87','RC-15','Airbnb','4.0'],['GD','Guest d6143a','LB-C','Airbnb','2.0'],['G9','Guest 8bad11','RC-14','Airbnb','5.0'],['GB','Guest 6760ff','LF-7','Airbnb','5.0'],['G7','Guest 7a68af','RC-16','Airbnb','5.0']];
+  const [rtab,setRtab]=React.useState('overview');
   return (
-    <Shell active="rev" eyebrow="REVIEWS" title="Reviews" sub="Aggregate ratings · per-stay reviews · staff attribution · trending themes"
-      tabs={[{l:'Overview',on:true},{l:'All reviews'},{l:'Trends'},{l:'Staff performance'},{l:'Insights'}]}>
+    <Shell active="rev" eyebrow="REVIEWS" title="Reviews" sub="Aggregate ratings · per-stay reviews · staff attribution · trending themes">
+      <div className="dtabs" style={{marginTop:2,marginBottom:6}}>{[['overview','Overview'],['all','All reviews'],['staff','Staff performance']].map(t=><span key={t[0]} className={"dtab"+(rtab===t[0]?' on':'')} onClick={()=>setRtab(t[0])}>{t[1]}</span>)}</div>
+      {rtab==='all' && <ReviewsAll/>}
+      {rtab==='staff' && <ReviewsStaff/>}
+      {rtab==='overview' && <>
       <div className="grid4">
         <div className="statc"><div className="n">4.56</div><div className="l" style={{color:'var(--red)'}}>−0.33 vs prior 30d</div></div>
         <div className="statc"><div className="n">9</div><div className="l">Reviews · 30d</div></div>
@@ -556,6 +744,13 @@ function ScreenReviews(){
         <div className="statc amber"><div className="n">100</div><div className="l">Unreplied</div></div>
       </div>
       <div className="fbar" style={{marginTop:12}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> 100 reviews unreplied (reply-rate is hurting ranking). I drafted on-brand responses for all — bulk-approve or edit individually.</span><span className="fb"><button className="dbtn sm">Review drafts</button></span></div>
+      <div className="row" style={{gap:8,flexWrap:'wrap',marginTop:12}}>
+        <span className="faint mono" style={{fontSize:9,letterSpacing:'.1em',textTransform:'uppercase',alignSelf:'center'}}>Review sources</span>
+        {window.FADSTATE && <><window.FADSTATE.SyncChip source="Airbnb"/><window.FADSTATE.SyncChip source="Booking.com"/></>}
+        <span className="srctag"><span className="st-dot" style={{background:'var(--tx-4)'}}/>Google · not connected</span>
+        <span className="srctag"><span className="st-dot" style={{background:'var(--tx-4)'}}/>Vrbo · not connected</span>
+        <span className="aichip ai" style={{cursor:'pointer'}} onClick={()=>window.fadToast&&window.fadToast('Connect a review source')}><DI n="plus" s={1.6}/> Connect source</span>
+      </div>
       <div className="dtwocol" style={{marginTop:14,display:'grid',gridTemplateColumns:'1.3fr 1fr',gap:14}}>
         <div className="panel">
           <div className="dml" style={{margin:'0 0 10px'}}>Star distribution · 30d<span className="rule"/></div>
@@ -574,8 +769,76 @@ function ScreenReviews(){
         <div className="dml" style={{margin:'0 0 6px'}}>Latest reviews<span className="rule"/></div>
         {latest.map((r,i)=>(<div key={i} className="row between tdrow" style={{padding:'10px 0',borderBottom:i<latest.length-1?'1px solid var(--line-2)':'none',cursor:'pointer'}} onClick={()=>window.FADTASK&&window.FADTASK.openReview({guest:r[1],prop:r[2],channel:r[3],rating:+r[4],ago:'2d ago',text:+r[4]<=3?"The apartment is in a great spot but the AC stopped cooling on the second night and it took a while to reach someone. Otherwise the stay was fine.":"Lovely stay — spotless apartment, smooth check-in and quick replies to every question. The location is perfect. We'd happily book again.",draft:+r[4]<=3?"Thank you for taking the time to share this, and apologies the AC fell short during your stay. We've since serviced the unit and reviewed our response times. We'd genuinely value the chance to host you again.":"Thank you so much for the kind words. It was a pleasure having you, and you're welcome back any time."})}><span className="row" style={{gap:9}}><span className="av1" style={{width:24,height:24,fontSize:8}}>{r[0]}</span><span style={{fontSize:12.5}}>{r[1]} · <span className="pcodeD">{r[2]}</span> · <span className="faint">{r[3]}</span></span></span><span className="mono" style={{color:+r[4]<3?'var(--red)':'var(--amber)',fontSize:12}}>★ {r[4]}</span></div>))}
       </div>
+      </>}
     </Shell>
   );
+}
+
+/* Reviews — all reviews + reply management */
+function ReviewsAll(){
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
+  const [seg,setSeg]=React.useState('reply');
+  const all=[
+    {av:'AB',guest:'Anaïs B.',prop:'GBH-C8',ch:['Airbnb','#e08e89'],stars:2,when:'2h ago',state:'reply',txt:'Great spot but the AC stopped cooling on the second night and it took a while to reach someone.',draft:'Thank you for flagging this, Anaïs — apologies the AC fell short. We’ve since serviced the unit and tightened our response times. We’d love the chance to host you again.'},
+    {av:'TR',guest:'Tomás R.',prop:'VA-3',ch:['Direct','#6cc79c'],stars:4,when:'5h ago',state:'reply',txt:'Lovely and clean, smooth check-in. Only the wifi dropped a couple of times.',draft:'Thanks so much, Tomás! Glad the stay was smooth — we’ve since boosted the wifi at VA-3. Come back any time!'},
+    {av:'JO',guest:'James O.',prop:'SD-10',ch:['Booking','#9fb4ee'],stars:5,when:'1d ago',state:'reply',txt:'Had a water issue sorted within the hour. Super responsive team.',draft:'Thank you, James! Our team takes pride in fast fixes — it was a pleasure hosting you.'},
+    {av:'ML',guest:'Marie L.',prop:'GBH-B4',ch:['Airbnb','#e08e89'],stars:5,when:'2d ago',state:'replied',txt:'Spotless on arrival — best cleaned villa we’ve stayed in.',draft:''},
+    {av:'PS',guest:'Priya & Sam',prop:'RC-7',ch:['Airbnb','#e08e89'],stars:4,when:'1w ago',state:'replied',txt:'Lovely and clean, table was a bit high for the kids — fixed same day.',draft:''},
+  ];
+  const segs=[['reply','Needs reply',3],['replied','Replied',2],['low','Low ratings',1],['all','All',5]];
+  const shown=all.filter(r=> seg==='all' || (seg==='low'? r.stars<=3 : r.state===seg));
+  return (<>
+    <div className="fbar" style={{marginTop:4}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> 3 reviews need a reply — I drafted on-brand responses in each guest’s language. Approve individually or bulk-approve the 5-stars.</span><span className="fb"><button className="dbtn primary sm" onClick={()=>T('Approved & posted 1 reply','green')}>Approve 5-stars</button></span></div>
+    <div className="row between" style={{margin:'14px 0 8px'}}>
+      <span className="vseg">{segs.map(s=><span key={s[0]} className={"vs"+(seg===s[0]?' on':'')} onClick={()=>setSeg(s[0])}>{s[1]} <span className="mono" style={{opacity:.6,fontSize:10}}>{s[2]}</span></span>)}</span>
+    </div>
+    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+      {shown.map((r,i)=>(
+        <div key={i} className="panel" style={{padding:'13px 15px'}}>
+          <div className="between" style={{alignItems:'flex-start',gap:12}}>
+            <div className="row" style={{gap:11,minWidth:0}}>
+              <span className="av1">{r.av}</span>
+              <div style={{minWidth:0}}>
+                <div className="row" style={{gap:8,flexWrap:'wrap'}}><span className="tt" style={{fontSize:13.5}}>{r.guest}</span><span className="pcodeD">{r.prop}</span><span className="row" style={{gap:5,fontSize:11.5}}><span className="mdot" style={{background:r.ch[1],width:8,height:8,borderRadius:3}}/>{r.ch[0]}</span><span className="mono" style={{color:r.stars<3?'var(--red)':'var(--amber)',fontSize:12}}>{'★'.repeat(r.stars)}<span style={{color:'var(--tx-4)'}}>{'★'.repeat(5-r.stars)}</span></span></div>
+                <div style={{fontSize:13,lineHeight:1.55,marginTop:7}}>“{r.txt}”</div>
+              </div>
+            </div>
+            <span className="faint mono" style={{fontSize:10,whiteSpace:'nowrap'}}>{r.when}</span>
+          </div>
+          {r.state==='reply' ? (
+            <div className="ibdraft" style={{marginTop:11}}><div className="ibdraft-tag" style={{marginBottom:7}}><span className="bdg indigo"><DI n="spark" s={1.5}/> Friday reply draft</span></div>{r.draft}
+              <div className="ibcomp-actions" style={{marginTop:9}}><button className="dbtn primary sm" onClick={()=>T('Reply posted to '+r.ch[0],'green')}><DI n="check" s={2}/> Approve &amp; post</button><button className="dbtn ghost sm" onClick={()=>T('Editing reply')}>Edit</button><button className="dbtn ghost sm" onClick={()=>T('Skipped')}>Skip</button></div>
+            </div>
+          ) : <div className="afdone" style={{marginTop:10}}><DI n="check" s={2}/> Replied · posted to {r.ch[0]}</div>}
+        </div>
+      ))}
+    </div>
+  </>);
+}
+
+/* Reviews — staff performance attribution */
+function ReviewsStaff(){
+  const staff=[
+    {av:'IA',nm:'Ishant Ayadassen',role:'Field · West',n:23,avg:4.8,trend:'+0.2',top:'fast maintenance'},
+    {av:'BR',nm:'Bryan Ramluckun',role:'Field · North',n:19,avg:4.6,trend:'+0.1',top:'spotless turnovers'},
+    {av:'CA',nm:'Catherine Appadoo',role:'Field · North',n:17,avg:4.9,trend:'+0.3',top:'warm welcome'},
+    {av:'MD',nm:'Mathias Duval',role:'Field · North',n:11,avg:4.4,trend:'−0.1',top:'thorough'},
+  ];
+  return (<>
+    <div className="fbar" style={{marginTop:4}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> Reviews are attributed to whoever did the turnover or maintenance on that stay. Catherine leads at 4.9 — guests repeatedly mention her welcome. Mathias dipped 0.1; worth a check-in.</span></div>
+    <div className="panel" style={{padding:'10px 6px',marginTop:14}}>
+      <table className="tbl"><thead><tr><th>Staff</th><th>Role</th><th style={{textAlign:'right'}}>Reviews</th><th style={{textAlign:'right'}}>Avg rating</th><th style={{textAlign:'right'}}>Trend</th><th>Guests mention</th></tr></thead>
+        <tbody>{staff.map((s,i)=>(<tr key={i} className="tdrow" onClick={()=>window.fadToast&&window.fadToast('Opened '+s.nm)}>
+          <td><span className="row" style={{gap:8}}><span className="av1" style={{width:26,height:26,fontSize:9}}>{s.av}</span><span className="tt">{s.nm}</span></span></td>
+          <td className="faint">{s.role}</td>
+          <td className="mono faint" style={{textAlign:'right'}}>{s.n}</td>
+          <td className="mono" style={{textAlign:'right',fontWeight:700,color:s.avg>=4.7?'var(--green)':'var(--amber)'}}>{s.avg} ★</td>
+          <td className="mono" style={{textAlign:'right',color:s.trend.startsWith('−')?'var(--red)':'var(--green)'}}>{s.trend}</td>
+          <td className="faint" style={{fontSize:11.5}}>“{s.top}”</td>
+        </tr>))}</tbody>
+      </table>
+    </div>
+  </>);
 }
 
 /* ---------- 20 · Analytics ---------- */
@@ -593,13 +856,14 @@ function ScreenAnalytics(){
   const COL=['#e08e89','#9fb4ee','#6cc79c','var(--tx-3)'];
   const [range,setRange]=React.useState('30d');
   const [open,setOpen]=React.useState(false);
+  const [atab,setAtab]=React.useState('Overview');
   const d=DATA[range];
   const top=[['RC-15','Mountain View Penthouse','9','47','100%','€4.7k'],['RC-16','Sea View Penthouse','7','50','100%','€5.7k'],['GBH-C5','Apt · Pool & Gym','5','42','100%','€1.9k'],['LB-C','3-Villa Complex','4','30','100%','€9.2k'],['SD-10','Beachfront · Sea View','4','37','100%','€2.7k']];
   const RL={'7d':'Last 7 days','30d':'Last 30 days','90d':'Last 90 days','ytd':'Year to date'};
   const T=t=>window.fadToast&&window.fadToast(t);
   return (
     <Shell active="an" eyebrow="ANALYTICS" title="Analytics" sub="Portfolio dashboards · scan-first · data across every module"
-      tabs={[{l:'Overview',on:true},{l:'Revenue'},{l:'Occupancy'},{l:'Channels'},{l:'Reviews'},{l:'Team'},{l:'Margin'}]}
+      tabs={['Overview','Revenue','Occupancy','Channels','Reviews','Team','Margin'].map(l=>({l,on:atab===l,fn:()=>setAtab(l)}))}
       actions={<><span className="aichip" style={{position:'relative'}} onClick={()=>setOpen(o=>!o)}>{RL[range]} <DI n="chevD" s={2} style={{width:11,height:11}}/>
         {open && <div className="tdmenu" style={{minWidth:150}} onClick={e=>e.stopPropagation()}>{Object.keys(RL).map(k=><div key={k} className="tdmenu-it" onClick={()=>{setRange(k);setOpen(false);T('Range: '+RL[k]);}}><span style={{fontSize:12.5}}>{RL[k]}</span></div>)}</div>}
       </span><button className="dbtn ghost" onClick={()=>T('Exporting analytics PDF\u2026')}><DI n="doc" s={1.8}/> Export PDF</button></>}>
@@ -609,6 +873,7 @@ function ScreenAnalytics(){
         <div className="statc"><div className="n">{d.occ}</div><div className="l">Paid occupancy</div></div>
         <div className="statc"><div className="n">{d.adr}</div><div className="l">ADR · RevPAR {d.revpar}</div></div>
       </div>
+      {atab==='Overview' && <>
       <div className="dtwocol" style={{marginTop:14,display:'grid',gridTemplateColumns:'1.6fr 1fr',gap:14}}>
         <div className="panel">
           <div className="dml" style={{margin:'0 0 12px'}}>Revenue trend · {RL[range].toLowerCase()}<span className="rule"/></div>
@@ -625,8 +890,115 @@ function ScreenAnalytics(){
         <table className="tbl"><thead><tr><th>Property</th><th>Listing</th><th style={{textAlign:'right'}}>Bookings</th><th style={{textAlign:'right'}}>Nights</th><th style={{textAlign:'right'}}>Occ</th><th style={{textAlign:'right'}}>Revenue</th></tr></thead>
         <tbody>{top.map((t,i)=>(<tr key={i} className="tdrow" onClick={()=>window.FADGO('property')}><td><span className="pcodeD">{t[0]}</span></td><td className="faint" style={{fontSize:11.5}}>{t[1]}</td><td className="mono" style={{textAlign:'right'}}>{t[2]}</td><td className="mono faint" style={{textAlign:'right'}}>{t[3]}</td><td className="mono" style={{textAlign:'right',color:'var(--green)'}}>{t[4]}</td><td className="mono" style={{textAlign:'right',fontWeight:600}}>{t[5]}</td></tr>))}</tbody></table>
       </div>
+      </>}
+      {atab!=='Overview' && <AnalyticsPane tab={atab} d={d} RL={RL} range={range} top={top} COL={COL}/>}
     </Shell>
   );
+}
+
+function AnalyticsPane({tab,d,RL,range,top,COL}){
+  const T=t=>window.fadToast&&window.fadToast(t);
+  if(tab==='Revenue'){
+    const lines=[['Gross booking value',d.rev],['Channel commission (~15%)','−'+(parseFloat(d.rev.replace(/[€k]/g,''))*0.15).toFixed(1)+'k'],['Cleaning & turnover recovered','+€'+(parseFloat(d.rev.replace(/[€k]/g,''))*0.08).toFixed(1)+'k'],['Tourist tax collected','€'+(parseFloat(d.rev.replace(/[€k]/g,''))*0.07).toFixed(1)+'k'],['Net to owners',d.rev]];
+    return (<>
+      <div className="panel" style={{marginTop:14}}>
+        <div className="dml" style={{margin:'0 0 12px'}}>Revenue trend · {RL[range].toLowerCase()}<span className="rule"/></div>
+        <div className="row" style={{gap:5,alignItems:'flex-end',height:190}}>{d.trend.map((t,i)=><div key={range+i} style={{flex:1,height:t+'%',background:'linear-gradient(180deg,var(--indigo-bright),var(--indigo))',borderRadius:'3px 3px 0 0',opacity:.55+t/250,animation:'barGrow .5s cubic-bezier(.2,.7,.3,1)',transformOrigin:'bottom'}}/>)}</div>
+        <div className="row between faint mono" style={{fontSize:9,marginTop:6}}><span>{d.lbl[0]}</span><span>{d.lbl[1]}</span></div>
+      </div>
+      <div className="dtwocol" style={{marginTop:14,display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        <div className="panel"><div className="dml" style={{margin:'0 0 6px'}}>Revenue bridge · {RL[range].toLowerCase()}<span className="rule"/></div>
+          {lines.map((l,i)=>(<div key={i} className="between" style={{padding:'11px 2px',borderBottom:i<lines.length-1?'1px solid var(--line-2)':'none'}}><span style={{fontSize:12.5,fontWeight:i===lines.length-1?700:400}}>{l[0]}</span><span className="mono" style={{fontWeight:i===lines.length-1?700:500}}>{l[1]}</span></div>))}
+        </div>
+        <div className="panel"><div className="dml" style={{margin:'0 0 6px'}}>Rate metrics<span className="rule"/></div>
+          <div className="grid2" style={{marginTop:8}}>
+            <div className="statc"><div className="n">{d.adr}</div><div className="l">ADR</div></div>
+            <div className="statc"><div className="n">{d.revpar}</div><div className="l">RevPAR</div></div>
+            <div className="statc"><div className="n">{d.occ}</div><div className="l">Paid occupancy</div></div>
+            <div className="statc green"><div className="n">{d.revD.split(' ')[0]}</div><div className="l">vs prior period</div></div>
+          </div>
+        </div>
+      </div>
+      <div className="fbar" style={{marginTop:14}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> ADR is holding at {d.adr} while occupancy climbs — the channel mix is healthy. Pushing direct bookings 5pts would add roughly €2.4k/mo in recovered commission.</span><span className="fb"><button className="dbtn sm" onClick={()=>window.FADGO('marketing')}>Direct-book plan</button></span></div>
+    </>);
+  }
+  if(tab==='Occupancy'){
+    const occ=[['RC-15','Mountain View Penthouse',100],['RC-16','Sea View Penthouse',100],['GBH-C5','Apt · Pool & Gym',100],['SD-10','Beachfront · Sea View',96],['VA-3','Villa Sud',78],['LB-2','Hillside Studio',74],['KS-5','Garden Suite',71]];
+    return (<>
+      <div className="grid4" style={{marginTop:14}}>
+        <div className="statc"><div className="n">{d.occ}</div><div className="l">Portfolio occupancy</div></div>
+        <div className="statc green"><div className="n">3</div><div className="l">At 100% · sold out</div></div>
+        <div className="statc amber"><div className="n">3</div><div className="l">Below 80% target</div></div>
+        <div className="statc"><div className="n">{d.nights}</div><div className="l">Booked nights</div></div>
+      </div>
+      <div className="panel" style={{marginTop:14}}>
+        <div className="dml" style={{margin:'0 0 12px'}}>Occupancy by property · {RL[range].toLowerCase()}<span className="rule"/></div>
+        {occ.map((o,i)=>(<div key={i} className="row" style={{gap:10,marginBottom:11}}><span className="pcodeD" style={{width:62}}>{o[0]}</span><span className="faint" style={{width:150,fontSize:11.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{o[1]}</span><span style={{flex:1,height:8,borderRadius:4,background:'var(--card-2)',overflow:'hidden'}}><i style={{display:'block',height:'100%',width:o[2]+'%',background:o[2]>=80?'var(--green)':'var(--amber)',borderRadius:4}}/></span><span className="mono" style={{width:42,textAlign:'right',fontSize:12,fontWeight:600,color:o[2]>=80?'var(--green)':'var(--amber)'}}>{o[2]}%</span></div>))}
+      </div>
+      <div className="fbar" style={{marginTop:14}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> KS-5, LB-2 and VA-3 are dragging the average. Two are on owners up for renewal — a small rate cut on midweek nights could lift them above target before the renewal conversation.</span></div>
+    </>);
+  }
+  if(tab==='Channels'){
+    return (<>
+      <div className="dtwocol" style={{marginTop:14,display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        <div className="panel"><div className="dml" style={{margin:'0 0 10px'}}>Channel mix · bookings<span className="rule"/></div>
+          {d.chan.map((c,i)=>(<div key={i} className="row" style={{gap:10,marginBottom:10}}><span style={{width:110,fontSize:12.5}}><span className="mdot" style={{background:COL[i],width:8,height:8,borderRadius:3,marginRight:7}}/>{c[0]}</span><span style={{flex:1,height:8,borderRadius:4,background:'var(--card-2)',overflow:'hidden'}}><i style={{display:'block',height:'100%',width:c[2]+'%',background:COL[i],borderRadius:4}}/></span><span className="mono" style={{width:48,textAlign:'right',fontSize:12,fontWeight:600}}>{c[2]}%</span></div>))}
+        </div>
+        <div className="panel"><div className="dml" style={{margin:'0 0 6px'}}>Commission cost by channel<span className="rule"/></div>
+          <table className="tbl"><thead><tr><th>Channel</th><th style={{textAlign:'right'}}>Rate</th><th style={{textAlign:'right'}}>Est. fee</th></tr></thead>
+            <tbody>{[['Airbnb','15%','€5.9k'],['Booking.com','17%','€1.2k'],['Manual / Direct','0%','€0'],['Vrbo','8%','€0']].map((r,i)=>(<tr key={i}><td className="tt">{r[0]}</td><td className="mono faint" style={{textAlign:'right'}}>{r[1]}</td><td className="mono" style={{textAlign:'right',fontWeight:600,color:r[2]==='€0'?'var(--green)':'var(--tx)'}}>{r[2]}</td></tr>))}</tbody>
+          </table>
+          <div className="faint mono" style={{fontSize:10,marginTop:8}}>Direct share grows margin — every point shifted from Airbnb saves ~15%.</div>
+        </div>
+      </div>
+      <div className="fbar" style={{marginTop:14}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> Airbnb drives 60% of bookings but ~€5.9k/period in commission. A returning-guest direct-book nudge is your highest-ROI margin lever.</span><span className="fb"><button className="dbtn sm" onClick={()=>window.FADGO('marketing')}>Draft nudge</button></span></div>
+    </>);
+  }
+  if(tab==='Reviews'){
+    return (<>
+      <div className="grid4" style={{marginTop:14}}>
+        <div className="statc"><div className="n">4.56</div><div className="l" style={{color:'var(--red)'}}>−0.33 vs prior 30d</div></div>
+        <div className="statc"><div className="n">9</div><div className="l">Reviews · 30d</div></div>
+        <div className="statc amber"><div className="n">100</div><div className="l">Unreplied</div></div>
+        <div className="statc"><div className="n">4.76</div><div className="l">Airbnb avg · 82 reviews</div></div>
+      </div>
+      <div className="fbar" style={{marginTop:14}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> Reply-rate is hurting ranking — 100 reviews are unreplied. Drafts are ready in the Reviews module.</span><span className="fb"><button className="dbtn sm primary" onClick={()=>window.FADGO('rev')}>Open Reviews</button></span></div>
+    </>);
+  }
+  if(tab==='Team'){
+    const team=[['IA','Ishant Ayadassen','West',64,'96%',4.8],['BR','Bryan Ramluckun','North',58,'94%',4.6],['CA','Catherine Appadoo','North',47,'98%',4.9],['MD','Mathias Duval','North',31,'90%',4.4]];
+    return (<>
+      <div className="grid4" style={{marginTop:14}}>
+        <div className="statc"><div className="n">180</div><div className="l">Jobs completed · 30d</div></div>
+        <div className="statc green"><div className="n">95%</div><div className="l">On-time rate</div></div>
+        <div className="statc"><div className="n">2.1h</div><div className="l">Avg job duration</div></div>
+        <div className="statc"><div className="n">4.7 ★</div><div className="l">Guest-attributed rating</div></div>
+      </div>
+      <div className="panel" style={{marginTop:14,padding:'10px 6px'}}>
+        <div className="dml" style={{margin:'2px 12px 6px'}}>Field productivity · 30d<span className="rule"/></div>
+        <table className="tbl"><thead><tr><th>Staff</th><th>Zone</th><th style={{textAlign:'right'}}>Jobs</th><th style={{textAlign:'right'}}>On-time</th><th style={{textAlign:'right'}}>Rating</th></tr></thead>
+          <tbody>{team.map((s,i)=>(<tr key={i} className="tdrow" onClick={()=>window.FADGO('hr')}><td><span className="row" style={{gap:8}}><span className="av1" style={{width:24,height:24,fontSize:8}}>{s[0]}</span><span className="tt">{s[1]}</span></span></td><td className="faint">{s[2]}</td><td className="mono" style={{textAlign:'right'}}>{s[3]}</td><td className="mono" style={{textAlign:'right',color:'var(--green)'}}>{s[4]}</td><td className="mono" style={{textAlign:'right',fontWeight:600,color:s[5]>=4.7?'var(--green)':'var(--amber)'}}>{s[5]} ★</td></tr>))}</tbody>
+        </table>
+      </div>
+    </>);
+  }
+  if(tab==='Margin'){
+    const cats=[['Cleaning & turnover','Rs 84,200',40],['Maintenance & repairs','Rs 62,100',30],['Supplies & consumables','Rs 31,400',15],['Utilities recharged','Rs 18,700',9],['Other opex','Rs 11,992',6]];
+    return (<>
+      <div className="grid4" style={{marginTop:14}}>
+        <div className="statc"><div className="n">€166k</div><div className="l">Gross revenue</div></div>
+        <div className="statc"><div className="n">Rs 208k</div><div className="l">Operating expenses</div></div>
+        <div className="statc green"><div className="n">62%</div><div className="l">Net margin</div></div>
+        <div className="statc"><div className="n">€2.6k</div><div className="l">Avg mgmt fee / unit</div></div>
+      </div>
+      <div className="panel" style={{marginTop:14}}>
+        <div className="dml" style={{margin:'0 0 12px'}}>Operating expense breakdown · this period<span className="rule"/></div>
+        {cats.map((c,i)=>(<div key={i} className="row" style={{gap:10,marginBottom:11}}><span style={{width:190,fontSize:12.5}}>{c[0]}</span><span style={{flex:1,height:8,borderRadius:4,background:'var(--card-2)',overflow:'hidden'}}><i style={{display:'block',height:'100%',width:c[2]+'%',background:'linear-gradient(90deg,var(--indigo-bright),var(--indigo))',borderRadius:4}}/></span><span className="mono" style={{width:90,textAlign:'right',fontSize:11.5,fontWeight:600}}>{c[1]}</span></div>))}
+      </div>
+      <div className="fbar" style={{marginTop:14}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> Maintenance is 30% of opex this period — driven by the LC-9 roof and BL-12 retile. Excluding those one-offs, margin would be 68%.</span></div>
+    </>);
+  }
+  return null;
 }
 
 /* ---------- 21 · HR ---------- */
@@ -647,14 +1019,103 @@ function ScreenHR(){
         <table className="tbl"><thead><tr><th>Name</th><th>Role</th><th>Status</th><th style={{textAlign:'right'}}>Open tasks</th><th></th></tr></thead>
         <tbody>{staff.map((s,i)=>(<tr key={i} className="tdrow" onClick={()=>window.FADTASK&&window.FADTASK.openStaff({av:s[0],name:s[1],role:s[2],status:'active',zone:s[2].split('· ')[1]||'north',tasks:s[4]==='—'?null:+s[4],load:['64%','52%','—','—','—','—'][i]})}><td><span className="row" style={{gap:8}}><span className="av1" style={{width:26,height:26,fontSize:9}}>{s[0]}</span><span className="tt">{s[1]}</span></span></td><td className="faint">{s[2]}</td><td><span className="bdg green dot">Active</span></td><td className="mono" style={{textAlign:'right',color:s[4]!=='0'&&s[4]!=='—'?'var(--amber)':'var(--tx-3)'}}>{s[4]}</td><td style={{textAlign:'right'}}><button className="dbtn sm ghost">View</button></td></tr>))}</tbody></table>
       </div>
-      <div className="dml" style={{marginTop:18}}>Time-off requests <span className="ct">1 pending</span><span className="rule"/></div>
-      <div className="panel"><div className="row between" style={{padding:'4px 2px'}}><div><div style={{fontSize:13,fontWeight:600}}>Catherine Henri · Annual leave</div><div className="faint mono" style={{fontSize:10.5,marginTop:2}}>12–14 Jun · 3 days · coverage: Mathias on West</div></div><span className="row" style={{gap:7}}><button className="dbtn green sm"><DI n="check" s={2}/> Approve</button><button className="dbtn ghost sm">Decline</button></span></div></div>
+      <div className="dml" style={{marginTop:18}}>Time-off requests <span className="ct">queue · 3 pending</span><span className="rule"/></div>
+      <LeaveQueue/>
     </Shell>
+  );
+}
+function LeaveQueue(){
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
+  const init=[
+    {who:'Catherine Henri',av:'CH',type:'Annual leave',dates:'12–14 Jun · 3 days',cover:'Mathias on West',ok:true,state:'pending'},
+    {who:'Bryan Henri',av:'BH',type:'Sick leave',dates:'31 May · 1 day',cover:'No cover on North — gap',ok:false,state:'pending'},
+    {who:'Mathias Duval',av:'MD',type:'Annual leave',dates:'24–28 Jun · 5 days',cover:'Bryan + Catherine on North',ok:true,state:'pending'},
+  ];
+  const [rows,setRows]=React.useState(init);
+  const set=(i,state)=>setRows(r=>r.map((x,k)=>k===i?{...x,state}:x));
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+      {rows.map((r,i)=>(
+        <div key={i} className="panel" style={{padding:'12px 14px',opacity:r.state==='pending'?1:.6}}>
+          <div className="between">
+            <div className="row" style={{gap:11,minWidth:0}}>
+              <span className="av1">{r.av}</span>
+              <div style={{minWidth:0}}>
+                <div className="row" style={{gap:8}}><span className="tt" style={{fontSize:13.5}}>{r.who}</span><span className="bdg gray">{r.type}</span></div>
+                <div className="faint mono" style={{fontSize:10.5,marginTop:3}}>{r.dates}</div>
+                <div className="row" style={{gap:5,marginTop:5,fontSize:11}}><span className={"adot "+(r.ok?'ok':'rev')}/><span style={{color:r.ok?'var(--tx-2)':'var(--red)'}}>Coverage: {r.cover}</span></div>
+              </div>
+            </div>
+            {r.state==='pending'
+              ? <span className="row" style={{gap:7,flex:'0 0 auto'}}><button className="dbtn green sm" onClick={()=>{set(i,'approved');T('Leave approved','green');}}><DI n="check" s={2}/> Approve</button><button className="dbtn ghost sm" onClick={()=>{set(i,'declined');T('Leave declined');}}>Decline</button></span>
+              : <span className={"bdg "+(r.state==='approved'?'green':'gray')+" dot"}>{r.state}</span>}
+          </div>
+          {!r.ok && r.state==='pending' && <div className="gate" style={{borderStyle:'solid',marginTop:10}}><DI n="alert" s={1.6} style={{color:'var(--amber)',flex:'0 0 auto'}}/><span><b>Friday:</b> approving this leaves North uncovered on 31 May. I can pull Mathias from standby — want me to draft the swap?</span></div>}
+        </div>
+      ))}
+    </div>
   );
 }
 
 /* ---------- 17 · Finance (overview / period close) ---------- */
+function FinanceCloseWizard({ start, onClose }){
+  const STEPS=[
+    {t:'Pre-flight checks',d:'Confirm all field reports are vetted and no captures are stuck in review.',body:[['Unvetted reports','0','ok'],['Receipts pending OCR','0','ok'],['Float cards reconciled','6 / 6','ok']]},
+    {t:'FX rate lock',d:'Lock the EUR↔MUR rate used for this period\u2019s owner payouts.',body:[['Period rate (EUR→MUR)','48.62','ok'],['Source','Bank of Mauritius · 27 Apr','ok'],['Variance vs March','+0.4%','ok']]},
+    {t:'Bank reconciliation',d:'Match platform payouts and card settlements to the bank feed.',body:[['Airbnb payouts matched','41 / 41','ok'],['Booking.com matched','18 / 18','ok'],['Unmatched lines','0','ok']]},
+    {t:'Revenue reconciliation',d:'Reconcile gross booking value against recognised revenue.',body:[['Bookings recognised','72','ok'],['Discounts absorbed','Rs 1,250','warn'],['Fare-collapse splits','2','warn']]},
+    {t:'Per-property roll-up',d:'Confirm each property\u2019s net before owner statements generate.',body:[['Properties rolled up','27 / 27','ok'],['Below-target flags','3','warn'],['Manual adjustments','1','warn']]},
+    {t:'Tourist tax',d:'Generate and reconcile the MRA tourist-tax remittance.',body:[['Nights taxable','721','ok'],['Tax owed','€11,847','warn'],['MRA packet','Generated','ok']]},
+    {t:'P&L preview',d:'Review the period P&L before locking.',body:[['Gross revenue','€166,074','ok'],['Expenses posted','Rs 208,392','ok'],['Net margin','62%','ok']]},
+    {t:'Lock + post',d:'Lock the period, post to the ledger, and release the 38 owner statements.',body:[['Owner statements','38 ready','ok'],['Ledger entries','posted on lock','ok'],['Reopen','requires admin','warn']]},
+  ];
+  const [i,setI]=React.useState(start||0);
+  const s=STEPS[i], last=i===STEPS.length-1;
+  const T=t=>window.fadToast&&window.fadToast(t,'green');
+  return (
+    <>
+      <div className="tdscrim" onClick={onClose}/>
+      <div className="wiz" role="dialog" aria-label="Period close">
+        <div className="wiz-side">
+          <div className="wiz-eyebrow"><DI n="coin" s={1.6}/> PERIOD CLOSE</div>
+          <div className="wiz-title">April 2026</div>
+          <div className="wiz-steps">
+            {STEPS.map((st,k)=>(
+              <div key={k} className={"wiz-step"+(k===i?' on':'')+(k<i?' done':'')} onClick={()=>k<=i&&setI(k)}>
+                <span className="ws-dot">{k<i?<DI n="check" s={3}/>:k+1}</span>
+                <span>{st.t}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="wiz-main">
+          <div className="between" style={{marginBottom:4}}>
+            <span className="faint mono" style={{fontSize:10}}>STEP {i+1} OF {STEPS.length}</span>
+            <span className="icbtn" style={{cursor:'pointer'}} onClick={onClose}><DI n="x" s={2}/></span>
+          </div>
+          <h2 className="wiz-h">{s.t}</h2>
+          <p className="wiz-d">{s.d}</p>
+          <div className="wiz-prog"><i style={{width:((i+1)/STEPS.length*100)+'%'}}/></div>
+          <div className="panel" style={{padding:'4px 14px',marginTop:16}}>
+            {s.body.map((b,k)=>(
+              <div key={k} className="drow"><span className="faint">{b[0]}</span><span className="row" style={{gap:8}}><span className="mono" style={{color:b[2]==='warn'?'var(--amber)':'var(--tx)'}}>{b[1]}</span><span className={"adot "+(b[2]==='warn'?'rev':'ok')}/></span></div>
+            ))}
+          </div>
+          {s.body.some(b=>b[2]==='warn') && <div className="fbar" style={{marginTop:12}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>Friday.</b> The flagged items are explained and within tolerance — safe to continue, or open them first.</span></div>}
+          <div className="wiz-foot">
+            {i>0 && <button className="dbtn ghost" onClick={()=>setI(i-1)}><DI n="chevL" s={2}/> Back</button>}
+            <span className="grow"/>
+            {last
+              ? <button className="dbtn green" onClick={()=>{T('Period locked · 38 statements released');onClose();}}><DI n="lock" s={1.8}/> Lock + post</button>
+              : <button className="dbtn primary" onClick={()=>{setI(i+1);}}><DI n="check" s={2}/> Mark complete &amp; continue</button>}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 function ScreenFinance(){
+  const [wiz,setWiz]=React.useState(null);
   const brief=[
     ['red','COMPLIANCE','MRA tourist-tax window opens in 8 days','€11,847 unremitted across 7 months. Friday auto-generated the registration packet — Mary files before May 5 to avoid late-filing penalty stacking.'],
     ['amber','APPROVAL URGENCY','3 medium-tier approvals expire in <24h','Climate Tech · Aqua Plumbing · Pereybere Hardware (LC-9 roof). Deemed-approval fires automatically — nudge personally if you want a look first.'],
@@ -670,7 +1131,7 @@ function ScreenFinance(){
   return (
     <Shell active="fin" eyebrow="FINANCE" title="Overview" sub="April 2026 · period closing"
       tabs={[{l:'Overview',on:true},{l:'Transactions'},{l:'Approvals',ct:5},{l:'Owner statements'},{l:'Tourist tax'},{l:'P&L'},{l:'Float ledger'}]}
-      actions={<><span className="aichip">ADMIN · Admin <DI n="chevD" s={2} style={{width:11,height:11}}/></span><button className="dbtn ghost" onClick={()=>T('Resuming period close')}>Close period</button><button className="dbtn primary" onClick={()=>T('Capture expense — scan a receipt')}><DI n="plus" s={2}/> Capture expense</button></>}>
+      actions={<><span className="aichip">ADMIN · Admin <DI n="chevD" s={2} style={{width:11,height:11}}/></span><button className="dbtn ghost" onClick={()=>setWiz(0)}>Close period</button><button className="dbtn primary" onClick={()=>T('Capture expense — scan a receipt')}><DI n="plus" s={2}/> Capture expense</button></>}>
       <div className="fai" style={{padding:'13px 15px'}}>
         <div className="fh"><span className="bdg indigo"><DI n="spark" s={1.6}/> Friday brief</span><span className="faint mono" style={{fontSize:10}}>2 urgent · 3 notice · 1 info · refreshed just now</span></div>
         <div className="grid3" style={{marginTop:12,gap:10}}>
@@ -684,10 +1145,10 @@ function ScreenFinance(){
         </div>
       </div>
       <div className="grid4" style={{marginTop:14}}>
-        <div className="statc"><div className="n">€166,074</div><div className="l">Payouts this period</div></div>
-        <div className="statc"><div className="n">Rs 208,392</div><div className="l">Expenses posted</div></div>
-        <div className="statc amber"><div className="n">5</div><div className="l">Pending approvals</div></div>
-        <div className="statc red"><div className="n">€11,847</div><div className="l">Tourist tax owed</div></div>
+        <div className="statc"><div className="n">€166,074</div><div className="l">Payouts this period</div>{window.FADSTATE&&<div style={{marginTop:6}}><window.FADSTATE.SourceTag kind="guesty" note="Guesty accounting truth"/></div>}</div>
+        <div className="statc"><div className="n">Rs 208,392</div><div className="l">Expenses posted</div>{window.FADSTATE&&<div style={{marginTop:6}}><window.FADSTATE.SourceTag kind="friday" note="FAD ledger"/></div>}</div>
+        <div className="statc amber"><div className="n">5</div><div className="l">Pending approvals</div>{window.FADSTATE&&<div style={{marginTop:6}}><window.FADSTATE.SourceTag kind="friday" note="awaiting approval"/></div>}</div>
+        <div className="statc red"><div className="n">€11,847</div><div className="l">Tourist tax owed</div>{window.FADSTATE&&<div style={{marginTop:6}}><window.FADSTATE.SourceTag kind="modeled" note="forecast remittance"/></div>}</div>
       </div>
       <div className="panel" style={{marginTop:14}}>
         <div className="row between"><div className="dml" style={{margin:0,flex:1}}>Open reconciliation items <span className="ct">5</span><span className="rule"/></div><button className="dbtn sm ghost" onClick={()=>T('Moved to period close')}>Resolve in period close</button></div>
@@ -700,7 +1161,7 @@ function ScreenFinance(){
       </div>
       <div className="dtwocol" style={{marginTop:14,display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
         <div className="panel">
-          <div className="row between"><div className="dml" style={{margin:0}}>Period close — April 2026<span className="rule"/></div><button className="dbtn sm" onClick={()=>T('Resuming close at step 5')}>Resume close</button></div>
+          <div className="row between"><div className="dml" style={{margin:0}}>Period close — April 2026<span className="rule"/></div><button className="dbtn sm" onClick={()=>setWiz(4)}>Resume close</button></div>
           <div className="faint mono" style={{fontSize:10,margin:'2px 0 12px'}}>Locked by Mary · 2026-04-27 14:32</div>
           {steps.map((s,i)=>(
             <div key={i} className="row" style={{gap:11,padding:'8px 0',borderBottom:i<steps.length-1?'1px solid var(--line-2)':'none'}}>
@@ -722,6 +1183,7 @@ function ScreenFinance(){
           </div>
         </div>
       </div>
+      {wiz!=null && <FinanceCloseWizard start={wiz} onClose={()=>setWiz(null)}/>}
     </Shell>
   );
 }
@@ -737,20 +1199,39 @@ function ScreenGuests(){
     ['B. Adeyemi','KS-5','6','Upcoming','4.9','book',['VIP'],'Rs 240k'],
   ];
   const ch={air:['Airbnb','#e08e89'],book:['Booking','#9fb4ee'],dir:['Direct','#6cc79c']};
+  const [seg,setSeg]=React.useState('all');
+  const segs=[['all','All',1240],['vip','VIP',38],['ret','Returning',412],['inh','In-house',11],['new','New',24]];
+  const shown=rows.filter(r=> seg==='all' ? true : seg==='vip'?r[6].includes('VIP') : seg==='ret'?r[6].includes('Returning') : seg==='inh'?r[3]==='In-house' : r[6].includes('New'));
+  const mix=[['Airbnb',52,'#e08e89'],['Booking.com',31,'#9fb4ee'],['Direct',17,'#6cc79c']];
   return (
-    <Shell active="ppl" eyebrow="GUESTS" title="Guests" sub="1,240 guest profiles · synced from Guesty"
-      tabs={[{l:'All',ct:1240,on:true},{l:'VIP',ct:38},{l:'Returning',ct:412},{l:'In-house',ct:11},{l:'New',ct:24}]}
-      actions={<><button className="dbtn ghost"><DI n="filter" s={2}/> Filter</button><button className="dbtn primary"><DI n="plus" s={2}/> Add guest</button></>}>
+    <Shell active="ppl" eyebrow="GUESTS" title="Guests" sub="1,240 guest profiles · synced from Guesty · CRM"
+      actions={<><button className="dbtn ghost"><DI n="filter" s={2}/> Filter</button><button className="dbtn ghost" onClick={()=>window.fadToast&&window.fadToast('Exported guest list')}><DI n="doc" s={1.8}/> Export</button><button className="dbtn primary"><DI n="plus" s={2}/> Add guest</button></>}>
       <div className="grid4">
-        <div className="statc"><div className="n">1,240</div><div className="l">Guests</div></div>
-        <div className="statc green"><div className="n">33%</div><div className="l">Returning</div></div>
-        <div className="statc"><div className="n">4.8</div><div className="l">Avg rating</div></div>
-        <div className="statc"><div className="n">11</div><div className="l">In-house now</div></div>
+        <div className="statc"><div className="n">1,240</div><div className="l">Guest profiles</div><div className="d">+38 this month</div></div>
+        <div className="statc green"><div className="n">33%</div><div className="l">Repeat-booker rate</div><div className="d">vs 28% last yr</div></div>
+        <div className="statc"><div className="n">Rs 142k</div><div className="l">Avg lifetime value</div></div>
+        <div className="statc amber"><div className="n">17%</div><div className="l">Direct-book share</div><div className="d">grow to cut fees</div></div>
       </div>
-      <div className="panel" style={{padding:'12px 6px',marginTop:16}}>
+      <div className="fai" style={{marginTop:13}}>
+        <div className="fh"><span className="bdg indigo"><DI n="spark" s={1.6}/> Friday · guest CRM</span></div>
+        <p><b>38 VIPs</b> drive 24% of revenue. <b>412 repeat guests</b> haven't booked in 6+ months — a win-back email could recover an estimated <b>Rs 480k</b>. Direct-book share is low at 17%; nudging returning guests to book direct would save channel fees.</p>
+        <div className="acts"><button className="dbtn primary sm" onClick={()=>window.FADGO('marketing')}><DI n="spark" s={1.7}/> Draft win-back campaign</button><button className="dbtn ghost sm" onClick={()=>window.fadToast&&window.fadToast('Opened VIP segment')}>View VIPs</button></div>
+      </div>
+      <div className="dtwocol" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginTop:14}}>
+        <div className="panel"><div className="dml" style={{margin:'0 0 10px'}}>Acquisition channel mix<span className="rule"/></div>
+          {mix.map((m,i)=>(<div key={i} className="row" style={{gap:10,marginBottom:9}}><span style={{width:74,fontSize:12}}>{m[0]}</span><span style={{flex:1,height:8,borderRadius:4,background:'var(--card-2)',overflow:'hidden'}}><i style={{display:'block',height:'100%',width:m[1]+'%',background:m[2],borderRadius:4}}/></span><span className="mono faint" style={{width:34,textAlign:'right',fontSize:11}}>{m[1]}%</span></div>))}
+        </div>
+        <div className="panel"><div className="dml" style={{margin:'0 0 6px'}}>Top guests by lifetime value<span className="rule"/></div>
+          <table className="tbl"><tbody>{[...rows].sort((a,b)=>parseInt(b[7].replace(/\D/g,''))-parseInt(a[7].replace(/\D/g,''))).slice(0,4).map((r,i)=>(<tr key={i} className="tdrow" onClick={()=>window.FADTASK&&window.FADTASK.openGuest({name:r[0],prop:r[1],stays:r[2],last:r[3],rating:r[4],channel:ch[r[5]][0],tags:r[6],ltv:r[7]})}><td><span className="row" style={{gap:7}}><span className="av1" style={{width:22,height:22,fontSize:8}}>{r[0].split(' ').map(w=>w[0]).slice(0,2).join('')}</span><span className="tt">{r[0]}</span></span></td><td>{r[6].includes('VIP')&&<span className="bdg amber">VIP</span>}</td><td className="mono" style={{textAlign:'right',fontWeight:600}}>{r[7]}</td></tr>))}</tbody></table>
+        </div>
+      </div>
+      <div className="row between" style={{margin:'16px 0 8px'}}>
+        <span className="vseg">{segs.map(s=><span key={s[0]} className={"vs"+(seg===s[0]?' on':'')} onClick={()=>setSeg(s[0])}>{s[1]} <span className="mono" style={{opacity:.6,fontSize:10}}>{s[2]}</span></span>)}</span>
+      </div>
+      <div className="panel" style={{padding:'12px 6px'}}>
         <table className="tbl">
           <thead><tr><th>Guest</th><th>Home unit</th><th style={{textAlign:'right'}}>Stays</th><th>Last stay</th><th style={{textAlign:'right'}}>Rating</th><th>Channel</th><th>Tags</th><th style={{textAlign:'right'}}>Lifetime</th></tr></thead>
-          <tbody>{rows.map((r,i)=>(
+          <tbody>{shown.map((r,i)=>(
             <tr key={i} className="tdrow" onClick={()=>window.FADTASK&&window.FADTASK.openGuest({name:r[0],prop:r[1],stays:r[2],last:r[3],rating:r[4],channel:ch[r[5]][0],tags:r[6],ltv:r[7]})}>
               <td><span className="row" style={{gap:7}}><span className="av1" style={{width:24,height:24,fontSize:8}}>{r[0].split(' ').map(w=>w[0]).slice(0,2).join('')}</span><span className="tt">{r[0]}</span></span></td>
               <td><span className="pcodeD">{r[1]}</span></td>
@@ -772,9 +1253,77 @@ function ScreenGuests(){
 function SetSec({t,children}){return (<><div className="dml">{t}<span className="rule"/></div><div className="panel">{children}</div></>);}
 function Tgl({on}){const [v,setV]=React.useState(on);return <span className={"tgl"+(v?' on':'')} onClick={()=>{setV(!v);window.fadToast&&window.fadToast(v?'Turned off':'Turned on');}}><span className="knob"/></span>;}
 function SetLn({l,d,r,last}){return (<div className="between" style={{padding:'12px 2px',borderBottom:last?'none':'1px solid var(--line-2)'}}><div><div style={{fontSize:13,fontWeight:600}}>{l}</div>{d&&<div className="faint" style={{fontSize:11.5,marginTop:2}}>{d}</div>}</div>{r}</div>);}
+function IntegrationsPlane(){
+  const SyncChip = window.FADSTATE && window.FADSTATE.SyncChip;
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
+  const conns=[
+    {nm:'Guesty',dom:'Reservations · properties · guests · financials',dir:'two-way',owner:'Ishant A.',health:'healthy'},
+    {nm:'Breezeway',dom:'Tasks · supplies · access codes · evidence',dir:'two-way',owner:'Franny H.',health:'healthy'},
+    {nm:'Airbnb',dom:'Listings · rates · availability · reviews',dir:'two-way',owner:'Mary O.',health:'healthy'},
+    {nm:'Booking.com',dom:'Listings · rates · availability',dir:'two-way',owner:'Mary O.',health:'healthy'},
+    {nm:'WhatsApp Business',dom:'Guest messaging into Inbox',dir:'two-way',owner:'Franny H.',health:'failed'},
+    {nm:'Xodo Sign',dom:'E-signature · contracts',dir:'one-way',owner:'Ishant A.',health:'healthy'},
+    {nm:'lExpress Property',dom:'Agency listings · leads',dir:'one-way',owner:'Mary O.',health:'failed'},
+    {nm:'Property Cloud',dom:'Agency listings',dir:'one-way',owner:'Mary O.',health:'stale'},
+  ];
+  return (<>
+    <div className="dml">Connectors <span className="ct">{conns.length} · {conns.filter(c=>c.health!=='healthy').length} need attention</span><span className="rule"/></div>
+    <div className="panel" style={{padding:'10px 6px'}}>
+      <table className="tbl"><thead><tr><th>Connector</th><th>Data domains</th><th>Direction</th><th>Owner</th><th>Sync</th><th></th></tr></thead>
+        <tbody>{conns.map((c,i)=>(<tr key={i} className="tdrow" onClick={()=>T('Opened '+c.nm+' connector')}>
+          <td><span className="tt">{c.nm}</span></td>
+          <td className="faint" style={{fontSize:11.5}}>{c.dom}</td>
+          <td><span className="bdg gray">{c.dir}</span></td>
+          <td className="faint">{c.owner}</td>
+          <td>{SyncChip ? <SyncChip source={c.nm.split(' ')[0]} health={c.health}/> : <span className={"bdg "+(c.health==='failed'?'red':c.health==='stale'?'amber':'green')+" dot"}>{c.health}</span>}</td>
+          <td style={{textAlign:'right'}}>{c.health==='failed' ? <button className="dbtn ghost sm" onClick={(e)=>{e.stopPropagation();T('Reconnecting '+c.nm+'\u2026');}}>Reconnect</button> : <button className="dbtn ghost sm" onClick={(e)=>{e.stopPropagation();T('Synced '+c.nm,'green');}}>Sync</button>}</td>
+        </tr>))}</tbody>
+      </table>
+    </div>
+    <div className="gate" style={{borderStyle:'solid',marginTop:12}}><DI n="alert" s={1.7} style={{color:'var(--amber)',flex:'0 0 auto'}}/><span><b>2 connectors failed</b> (WhatsApp, lExpress Property) and Property Cloud is stale. Each field across FAD shows where it came from — fix a connector here and dependent modules recover automatically.</span></div>
+  </>);
+}
+function AccountPane(){
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
+  return (<>
+    <div className="panel" style={{display:'flex',alignItems:'center',gap:16,marginTop:6}}>
+      <span className="av1" style={{width:58,height:58,fontSize:20,flex:'0 0 58px'}}>FH</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontFamily:'var(--serif)',fontSize:21,fontWeight:400,color:'#f3f6fb',lineHeight:1.1}}>Franny Henri</div>
+        <div className="faint" style={{fontSize:12.5,marginTop:3}}>GM / Ops Manager · North zone · Friday Retreats</div>
+        <div className="row" style={{gap:7,marginTop:8}}><span className="bdg indigo">GM / Ops</span><span className="bdg green dot">Active</span><span className="faint mono" style={{fontSize:10.5,alignSelf:'center'}}>member since Jan 2025</span></div>
+      </div>
+      <button className="dbtn ghost" onClick={()=>T('Edit profile')}><DI n="gear" s={1.8}/> Edit profile</button>
+    </div>
+    <SetSec t="Contact">
+      <SetLn l="Email" d="Used for sign-in & notifications" r={<span className="mono" style={{fontSize:12.5}}>franny@fridayretreats.mu</span>}/>
+      <SetLn l="Mobile" d="For push & 2FA codes" r={<span className="mono" style={{fontSize:12.5}}>+230 5xxx xxxx</span>} last/>
+    </SetSec>
+    <SetSec t="Security">
+      <SetLn l="Password" d="Last changed 2 months ago" r={<button className="dbtn sm ghost" onClick={()=>T('Change password')}>Change</button>}/>
+      <SetLn l="Two-factor authentication" d="Authenticator app + SMS fallback" r={<Tgl on={true}/>}/>
+      <SetLn l="Recovery codes" d="8 unused codes remaining" r={<button className="dbtn sm ghost" onClick={()=>T('Recovery codes')}>View</button>} last/>
+    </SetSec>
+    <div className="dml">Active sessions <span className="rule"/></div>
+    <div className="panel" style={{padding:'4px 4px'}}>
+      {[['MacBook Pro · Grand Baie','Chrome · this device','now','curr'],['iPhone 15 · FridayOS PWA','Mobile · Mauritius','2h ago',''],['iPad · Office','Safari · Port Louis','Yesterday','']].map((s,i)=>(
+        <div key={i} className="row between" style={{padding:'12px',borderBottom:i<2?'1px solid var(--line-2)':'none'}}>
+          <div className="row" style={{gap:11}}><span className="statc" style={{padding:7,border:'none',background:'var(--card-2)',color:'var(--tx-2)'}}><DI n={i===1?'phone':'home'} s={1.7}/></span><div><div style={{fontSize:13,fontWeight:600}}>{s[0]}</div><div className="faint mono" style={{fontSize:10.5,marginTop:2}}>{s[1]} · {s[2]}</div></div></div>
+          {s[3]==='curr'? <span className="bdg green dot">this device</span> : <button className="dbtn sm ghost danger" onClick={()=>T('Signed out session')}>Sign out</button>}
+        </div>
+      ))}
+    </div>
+    <SetSec t="Preferences">
+      <SetLn l="Theme" d="Dark is the FridayOS default" r={<span className="vseg"><span className="vs on">Dark</span><span className="vs" onClick={()=>T('Light theme is a preview')}>Light</span></span>}/>
+      <SetLn l="Language" r={<span className="mono" style={{fontSize:12.5}}>English (UK)</span>}/>
+      <SetLn l="Quiet hours" d="Mute non-urgent push overnight" r={<span className="row" style={{gap:8}}><span className="mono faint" style={{fontSize:11.5}}>21:00 – 06:30</span><Tgl on={true}/></span>} last/>
+    </SetSec>
+    <div className="gate" style={{borderStyle:'solid',marginTop:4}}><span style={{color:'var(--indigo-bright)'}}><DI n="spark" s={1.6}/></span><span><b>Friday respects your hours.</b> During quiet hours I hold everything except safety and guest-blocked jobs — those always reach you.</span></div>
+  </>);
+}
 function ScreenSettings(){
   const [tab,setTab]=React.useState('roles');
-  const tabs=[['roles','Roles & access'],['integ','Integrations'],['notif','Notifications'],['brand','Branding'],['billing','Billing']];
+  const tabs=[['account','My account'],['roles','Roles & access'],['integ','Integrations'],['notif','Notifications'],['brand','Branding'],['billing','Billing']];
   const matrix=[
     ['Safety & guest-blocked jobs',true,true,true],
     ['Task assigned to me',true,true,false],
@@ -790,6 +1339,8 @@ function ScreenSettings(){
         {tabs.map(t=><span key={t[0]} className={"dtab"+(tab===t[0]?' on':'')} onClick={()=>setTab(t[0])}>{t[1]}</span>)}
       </div>
 
+      {tab==='account' && <AccountPane/>}
+
       {tab==='roles' && <>
         <SetSec t="Roles & permissions">
           <SetLn l="Director" d="Full access · all modules, finance, settings" r={<span className="bdg indigo">3 people</span>}/>
@@ -802,12 +1353,7 @@ function ScreenSettings(){
         </SetSec>
       </>}
 
-      {tab==='integ' && <SetSec t="Integrations">
-        <SetLn l="Guesty" d="Reservations · properties · guests · financials" r={<span className="row" style={{gap:9}}><span className="bdg green dot">Connected</span><button className="dbtn sm ghost" onClick={()=>window.fadToast&&window.fadToast('Synced from Guesty')}>Sync now</button></span>}/>
-        <SetLn l="Breezeway" d="Tasks · supplies · access codes · evidence" r={<span className="bdg green dot">Connected</span>}/>
-        <SetLn l="Channels" d="Airbnb · Booking.com · direct site" r={<span className="bdg green dot">3 live</span>}/>
-        <SetLn l="WhatsApp Business" d="Guest messaging into Inbox" r={<span className="row" style={{gap:9}}><span className="bdg amber dot">Action needed</span><button className="dbtn sm" onClick={()=>window.fadToast&&window.fadToast('Reconnecting WhatsApp…')}>Reconnect</button></span>} last/>
-      </SetSec>}
+      {tab==='integ' && <IntegrationsPlane/>}
 
       {tab==='notif' && <>
         <div className="dml">Notification policy <span className="rule"/></div>
@@ -829,7 +1375,7 @@ function ScreenSettings(){
       {tab==='brand' && <SetSec t="Branding">
         <SetLn l="Organisation name" d="Shown across the app & owner portal" r={<span className="mono" style={{fontSize:12.5}}>Friday Retreats</span>}/>
         <SetLn l="Guest-message sign-off" d="Appended to outbound guest replies" r={<span className="mono" style={{fontSize:12.5}}>— The Friday Retreats team</span>}/>
-        <SetLn l="Accent colour" d="Used for highlights & the Friday mark" r={<span className="row" style={{gap:6}}><span style={{width:18,height:18,borderRadius:5,background:'var(--indigo)',border:'1px solid var(--line-3)'}}/><span className="mono faint" style={{fontSize:11}}>#4f72cf</span></span>}/>
+        <SetLn l="Accent colour" d="Used for highlights & the Friday mark" r={<span className="row" style={{gap:6}}><span style={{width:18,height:18,borderRadius:5,background:'var(--indigo)',border:'1px solid var(--line-3)'}}/><span className="mono faint" style={{fontSize:11}}>#3E74D9</span></span>}/>
         <SetLn l="Logo" d="SVG or PNG · shown in the rail & exports" r={<button className="dbtn sm ghost" onClick={()=>window.fadToast&&window.fadToast('Upload a logo')}>Upload</button>} last/>
       </SetSec>}
 
@@ -856,7 +1402,7 @@ function ScreenHelp(){
     <Shell active="" eyebrow="HELP" title="Help & knowledge base" sub="Guides, STR best-practice & Ask Friday">
       <div className="fai">
         <div className="fh"><span className="bdg indigo"><DI n="spark" s={1.6}/> Ask Friday</span></div>
-        <p>Ask anything about FAD or short-term rental ops — “how do I split an owner payout?”, “what's our cancellation policy?”</p>
+        <p>Ask anything about FridayOS or short-term rental ops — “how do I split an owner payout?”, “what's our cancellation policy?”</p>
         <div className="dsearch" style={{maxWidth:'none',margin:'12px 0 0',background:'var(--bg-2)'}}><DI n="search" s={2}/> <span>Search help or ask Friday…</span></div>
       </div>
       <div className="dml">Browse by topic <span className="rule"/></div>
@@ -871,19 +1417,27 @@ function ScreenHelp(){
 
 /* ---------- 15 · Ask Friday (full page) ---------- */
 function ScreenAskFull(){
+  const H = useHealth();
+  const FS = window.FADSTATE;
+  const [voice,setVoice] = React.useState(false);
   const groups=[['Operations',["What's blocked by guests today?","Rebalance the SD-10 follow-up","Who's overloaded this week?"]],['Reservations',["Show arrivals needing turnovers","Any double-bookings this month?"]],['Finance',["Draft this month's owner statements","Which properties are below target?"]]];
   return (
-    <Shell active="" eyebrow={<><DI n="spark" s={1.6} style={{color:'var(--indigo-bright)'}}/> ASK FRIDAY</>} title="What can I help with?" sub="Aware of every module · acts with your approval"
-      actions={<><span className="aichip ai"><DI n="pin" s={1.6}/> All of FAD</span><button className="dbtn ghost">History</button></>}>
+    <Shell active="" eyebrow={<><img className="askmk" src="friday-f.png" alt="" style={{width:14,height:14}}/> ASK FRIDAY</>} title="What can I help with?" sub="Aware of every module · acts with your approval"
+      actions={<><span className="aichip ai"><DI n="pin" s={1.6}/> All of FridayOS</span><button className="dbtn primary" onClick={()=>setVoice(true)}><DI n="mic" s={1.7}/> Voice</button><button className="dbtn ghost">History</button></>}>
+      {voice && window.FADVOICE && <window.FADVOICE.VoiceOverlay onClose={()=>setVoice(false)}/>}
+      {FS && <FS.StateBanner surface="Ask Friday" health={H}/>}
       <div className="fai">
-        <div className="fh"><span className="bdg indigo"><DI n="spark" s={1.6}/> Friday</span><span className="grow"/><span className="faint mono" style={{fontSize:10}}>conf. 92%</span></div>
-        <p>This morning: <span className="hl">32 tasks</span>, 3 reports to approve, 2 arrivals needing turnovers, and the West store is low on 4 items. Want me to <span className="hl">draft the day's plan</span> and a restock order?</p>
-        <div className="acts"><button className="dbtn primary sm"><DI n="check" s={2}/> Draft plan + order</button><button className="dbtn ghost sm">Just the plan</button></div>
+        <div className="fh"><span className="bdg indigo"><img className="askmk" src="friday-f.png" alt="" style={{width:13,height:13,marginRight:2}}/> Friday</span><span className="grow"/>{FS? <FS.ConfBar pct={92} health={H}/> : <span className="faint mono" style={{fontSize:10}}>conf. 92%</span>}</div>
+        {H==='failed'
+          ? <p style={{color:'var(--tx-2)'}}>I can't reach the operations data right now, so I won't guess. The morning brief will refresh as soon as the connection recovers.</p>
+          : H==='fallback'
+          ? <p>I couldn't load today's live figures, so here's the <b className="hl">general shape</b> of a morning: review overnight messages, confirm turnovers for arrivals, and clear any approvals. <span className="faint">(Not from your data — verify.)</span></p>
+          : <p>This morning: <span className="hl">32 tasks</span>, 3 reports to approve, 2 arrivals needing turnovers, and the West store is low on 4 items. Want me to <span className="hl">draft the day's plan</span> and a restock order?{H==='partial' && <span className="faint"> (Roster data was unavailable — overload check skipped.)</span>}</p>}
+        {FS && H!=='healthy' && <div style={{marginTop:10}}><FS.Provenance items={[['ops','operations · 32 tasks'],['doc','reservations · 2 arrivals'],['box','supplies · West store']]} health={H}/></div>}
+        {H!=='failed' && <div className="acts"><button className="dbtn primary sm" onClick={()=>window.fadToast&&window.fadToast(H==='fallback'?'Drafted — flagged ungrounded':'Plan + order drafted','green')}><DI n="check" s={2}/> Draft plan + order</button><button className="dbtn ghost sm">Just the plan</button></div>}
+        {H==='failed' && <div className="acts"><button className="dbtn ghost sm" onClick={()=>window.fadToast&&window.fadToast('Retrying connection\u2026')}><DI n="undo" s={1.7}/> Retry connection</button></div>}
       </div>
-      <div className="grid3" style={{marginTop:16}}>
-        {groups.map((g,i)=>(<div key={i}><div className="dml" style={{margin:'0 0 9px'}}>{g[0]}<span className="rule"/></div><div style={{display:'flex',flexDirection:'column',gap:8}}>{g[1].map((q,j)=>(<div key={j} className="panel" style={{padding:'11px 13px',cursor:'pointer',display:'flex',alignItems:'center',gap:9}}><span style={{color:'var(--indigo-bright)'}}><DI n="spark" s={1.5}/></span><span style={{flex:1,fontSize:12.5}}>{q}</span><DI n="chevR" s={2} style={{color:'var(--tx-3)'}}/></div>))}</div></div>))}
-      </div>
-      <div className="dsearch" style={{maxWidth:'none',marginTop:20,padding:'13px 15px',background:'var(--card)'}}><DI n="spark" s={1.7} style={{color:'var(--tx-3)'}}/> <span>Ask or tell Friday to do something across FAD…</span><span className="k">⏎</span></div>
+      {H!=="failed" && <div className="askfull-conv">{window.FADASKUI && <window.FADASKUI.AskConversation/>}</div>}
     </Shell>
   );
 }
@@ -959,6 +1513,7 @@ function ScreenNotifsMgr(){
 
 /* ---------- 10 · Reservations ---------- */
 function ScreenReservations(){
+  const [seg,setSeg]=React.useState('all');
   const rows=[
     ['Marie L.','GBH-B4','air','1 Jun','4 Jun','3','Arriving today','amber','Turnover due','Rs 42,000'],
     ['Tom W.','KS-5','book','1 Jun','6 Jun','5','Arriving today','amber','Turnover due','Rs 71,500'],
@@ -1012,11 +1567,16 @@ function ScreenReservations(){
         <span className="ft"><b>Friday.</b> 2 arrivals today both need turnovers done by 15:00 — both scheduled. James O. checks out at 11:00, clean is booked with Ishant.</span>
         <span className="fb"><button className="dbtn ghost sm">Open Calendar</button></span>
       </div>
-      <div className="panel" style={{padding:'12px 6px',marginTop:16}}>
+      <div className="row between" style={{margin:'16px 0 0'}}>
+        <span className="vseg">{[['all','All',8],['arr','Arrivals',2],['inh','In-house',2],['dep','Departures',2],['up','Upcoming',2],['inq','Inquiries',3]].map(s=><span key={s[0]} className={"vs"+(seg===s[0]?' on':'')} onClick={()=>setSeg(s[0])}>{s[1]} <span className="mono" style={{opacity:.6,fontSize:10}}>{s[2]}</span></span>)}</span>
+        <span className="faint mono" style={{fontSize:10}}>{(()=>{const f={all:rows.length,arr:rows.filter(r=>/Arriving/.test(r[6])).length,inh:rows.filter(r=>r[6]==='In-house').length,dep:rows.filter(r=>/Checkout/.test(r[6])).length,up:rows.filter(r=>r[6]==='Upcoming').length};return f[seg];})()} shown</span>
+      </div>
+      {seg==='inq' && <ResInquiries/>}
+      {seg!=='inq' && <div className="panel" style={{padding:'12px 6px',marginTop:10}}>
         <table className="tbl">
           <thead><tr><th>Guest</th><th>Property</th><th>Channel</th><th>Check-in</th><th>Check-out</th><th style={{textAlign:'right'}}>Nights</th><th>Status</th><th>Ops</th><th style={{textAlign:'right'}}>Payout</th></tr></thead>
           <tbody>
-            {rows.map((r,i)=>(
+            {rows.filter(r=> seg==='all' || (seg==='arr'&&/Arriving/.test(r[6])) || (seg==='inh'&&r[6]==='In-house') || (seg==='dep'&&/Checkout/.test(r[6])) || (seg==='up'&&r[6]==='Upcoming') ).map((r,i)=>(
               <tr key={i} className="tdrow" onClick={()=>window.FADGO('reservation')}>
                 <td><span className="row" style={{gap:7}}><span className="av1" style={{width:24,height:24,fontSize:8}}>{r[0].split(' ').map(w=>w[0]).slice(0,2).join('')}</span><span className="tt">{r[0]}</span></span></td>
                 <td><span className="pcodeD">{r[1]}</span></td>
@@ -1030,12 +1590,45 @@ function ScreenReservations(){
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
     </Shell>
   );
 }
 
-/* ---------- 11 · Properties ---------- */
+/* Reservations — inquiries pipeline (pre-booking) */
+function ResInquiries(){
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
+  const INQ=[
+    {av:'AM',nm:'Anita Marivaux',ch:'air',prop:'GBH-B4',dates:'12–19 Jul · 7n',guests:'2 adults',state:'new',val:'Rs 84k',ask:'Is late check-in possible? Travelling with an infant.'},
+    {av:'NL',nm:'Nadia Lim',ch:'book',prop:'SD-10',dates:'2–6 Aug · 4n',guests:'4 adults',state:'replied',val:'Rs 46k',ask:'Flexible on dates in early August — best rate?'},
+    {av:'JV',nm:'Johan Visser',ch:'dir',prop:'KS-5',dates:'20–27 Jun · 7n',guests:'2 adults',state:'awaiting',val:'Rs 132k',ask:'Holding the dates — will confirm once flights are booked.'},
+  ];
+  const ch={air:['Airbnb','#e08e89'],book:['Booking','#9fb4ee'],dir:['Direct','#6cc79c']};
+  const SST={new:['indigo','new · needs reply'],replied:['amber','replied · awaiting guest'],awaiting:['green','hold · will confirm']};
+  return (<>
+    <div className="fbar" style={{marginTop:10}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday.</b> 3 open inquiries · 1 needs a first reply (drafted), 1 awaiting the guest, 1 soft-hold. None conflict with the calendar — safe to convert.</span><span className="fb"><button className="dbtn sm" onClick={()=>T('Drafted replies for all inquiries')}>Draft all</button></span></div>
+    <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:14}}>
+      {INQ.map((q,i)=>(
+        <div key={i} className="panel" style={{padding:'13px 15px'}}>
+          <div className="between" style={{alignItems:'flex-start',gap:14}}>
+            <div className="row" style={{gap:11,minWidth:0}}>
+              <span className="av1">{q.av}</span>
+              <div style={{minWidth:0}}>
+                <div className="row" style={{gap:8,flexWrap:'wrap'}}><span className="tt" style={{fontSize:14}}>{q.nm}</span><span className="pcodeD">{q.prop}</span><span className="row" style={{gap:5,fontSize:11.5}}><span className="mdot" style={{background:ch[q.ch][1],width:8,height:8,borderRadius:3}}/>{ch[q.ch][0]}</span><span className={"bdg "+SST[q.state][0]+(q.state==='replied'||q.state==='awaiting'?' dot':'')}>{SST[q.state][1]}</span></div>
+                <div className="qmeta" style={{marginTop:6}}><span>{q.dates}</span><span className="d">·</span><span>{q.guests}</span><span className="d">·</span><span className="mono">{q.val}</span></div>
+                <div className="gate" style={{borderStyle:'solid',marginTop:9}}><span style={{color:'var(--indigo-bright)',marginTop:1}}><DI n="msg" s={1.6}/></span><span>“{q.ask}”</span></div>
+              </div>
+            </div>
+            <div className="row" style={{gap:7,flex:'0 0 auto'}}>
+              <button className="dbtn primary sm" onClick={()=>T('Friday reply opened for '+q.nm)}><DI n="spark" s={1.7}/> {q.state==='new'?'Send draft':'Reply'}</button>
+              <button className="dbtn green sm" onClick={()=>T('Inquiry converted to booking','green')}><DI n="check" s={2}/> Convert</button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </>);
+}
 function ScreenProperties(){
   const props=[
     ['GBH-B4','Apt with Pool & Gym','Grand Baie','red','In-house · out 4 Jun','2 open','low'],
@@ -1078,9 +1671,12 @@ function ScreenProperties(){
       </div>
     </div>
   );
+  const [ptab,setPtab]=React.useState('all');
+  const PLOC={gb:'Grand Baie',tm:'Tamarin',ff:'Flic en Flac'};
+  const shownP=(ptab==='all'||ptab==='onb')?props:props.filter(p=>p[2]===PLOC[ptab]);
   return (
     <Shell active="prop" eyebrow="PORTFOLIO" title="Properties" sub="27 active units · North + West"
-      tabs={[{l:'All',ct:27,on:true},{l:'Grand Baie',ct:14},{l:'Tamarin',ct:7},{l:'Flic en Flac',ct:6},{l:'Onboarding',ct:1}]}
+      tabs={[{l:'All',ct:27,on:ptab==='all',fn:()=>setPtab('all')},{l:'Grand Baie',ct:14,on:ptab==='gb',fn:()=>setPtab('gb')},{l:'Tamarin',ct:7,on:ptab==='tm',fn:()=>setPtab('tm')},{l:'Flic en Flac',ct:6,on:ptab==='ff',fn:()=>setPtab('ff')},{l:'Onboarding',ct:1,on:ptab==='onb',fn:()=>setPtab('onb')}]}
       panel={panel}
       actions={<><button className="dbtn ghost"><DI n="filter" s={2}/> Filter</button><button className="dbtn primary"><DI n="plus" s={2}/> Add property</button></>}>
       <div className="grid4">
@@ -1089,9 +1685,16 @@ function ScreenProperties(){
         <div className="statc amber"><div className="n">5</div><div className="l">Open tasks</div></div>
         <div className="statc"><div className="n">4.8</div><div className="l">Avg rating</div></div>
       </div>
-      <div className="dml">All properties <span className="ct">9 of 27</span><span className="rule"/></div>
+      {ptab==='onb' ? (
+        <div className="panel" style={{maxWidth:620}}>
+          <div className="dml" style={{margin:'0 0 8px'}}>Onboarding · GBH-C9 — Apt with Pool &amp; Gym <span className="bdg amber">4 of 7</span><span className="rule"/></div>
+          {steps.map((s2,si)=>(<div key={si} className="row" style={{gap:11,padding:'11px 0',borderBottom:si<steps.length-1?'1px solid var(--line-2)':'none'}}><span style={{width:24,height:24,flex:'0 0 24px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:s2[1]==='done'?'var(--green-ghost)':'var(--card-2)',color:sc[s2[1]][0]}}>{s2[1]==='done'?<DI n="check" s={2.4}/>:s2[1]==='lock'?<DI n="lock" s={1.9}/>:<span style={{width:7,height:7,borderRadius:'50%',background:sc[s2[1]][0]}}/>}</span><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{s2[0]}</div><div className="faint" style={{fontSize:11}}>{s2[2]}</div></div><span className="faint mono" style={{fontSize:9,color:sc[s2[1]][0]}}>{sc[s2[1]][1]}</span></div>))}
+          <button className="dbtn primary sm" style={{marginTop:12}} onClick={()=>window.fadToast&&window.fadToast('Continuing onboarding…')}><DI n="chevR" s={2}/> Continue setup</button>
+        </div>
+      ) : <React.Fragment>
+      <div className="dml">{ptab==='all'?'All properties':PLOC[ptab]} <span className="ct">{shownP.length} shown</span><span className="rule"/></div>
       <div className="grid3">
-        {props.map((p,i)=>(
+        {shownP.map((p,i)=>(
           <div key={i} className="panel" style={{padding:0,overflow:'hidden',cursor:'pointer'}} onClick={()=>window.FADGO('property')}>
             <div style={{height:74,background:'linear-gradient(150deg,#222b3c,#141b27)',position:'relative'}}>
               <span style={{position:'absolute',top:9,left:10}} className="pcodeD">{p[0]}</span>
@@ -1108,6 +1711,7 @@ function ScreenProperties(){
           </div>
         ))}
       </div>
+      </React.Fragment>}
     </Shell>
   );
 }
@@ -1195,18 +1799,19 @@ function ScreenInventory(){
 
 /* ---------- 8 · Calendar (multi-property reservation timeline) ---------- */
 function ScreenCalendar(){
+  const [ch,setCh]=React.useState('all');
   const N=14, pct=(c)=>c/N*100;
   const days=Array.from({length:N},(_,i)=>{const d=25+i; const mo=d>31?'Jun':'May'; const n=d>31?d-31:d; const wd=['Su','Mo','Tu','We','Th','Fr','Sa'][(i+0)%7]; return [wd,n,mo,((i+0)%7===0||(i+0)%7===6)]; });
   const props=[
     {c:'GBH-B4',n:'Pool & Gym',occ:'red',bars:[['air',0,3,'Marie L.'],['book',4,3,'D. Kraus'],['air',8,4,'The Lees']],tasks:[3,7]},
-    {c:'SD-10',n:'Sunset Dr',occ:'green',bars:[['dir',1,2,'J. Owusu'],['air',9,5,'Berg']],tasks:[1,9]},
+    {c:'SD-10',n:'Sunset Dr',occ:'green',bars:[['dir',1,2,'J. Owusu'],['block',4,3,'Maintenance'],['air',9,5,'Berg']],tasks:[1,9]},
     {c:'RC-7',n:'Royal Court',occ:'amber',bars:[['air',0,2,'Priya & Sam'],['air',5,3,'New'],['book',11,3,'Cho']],tasks:[0]},
     {c:'BW-C4',n:'Beachfront',occ:'red',bars:[['book',0,7,'Long stay · in-house']],tasks:[2,5]},
     {c:'VA-3',n:'Géranium',occ:'green',bars:[['dir',2,3,'Family'],['air',8,4,'Mensah']],tasks:[]},
-    {c:'KS-5',n:'Rooftop',occ:'green',bars:[['air',3,4,'Honeymoon'],['book',10,4,'Adeyemi']],tasks:[4]},
+    {c:'KS-5',n:'Rooftop',occ:'green',bars:[['air',3,4,'Honeymoon'],['block',8,2,'Owner stay'],['book',10,4,'Adeyemi']],tasks:[4]},
     {c:'GBH-C3',n:'Pool & Gym',occ:'amber',bars:[['book',0,4,'Okafor'],['dir',6,5,'Reunion']],tasks:[6]},
     {c:'LB-2',n:'Bougainvilliers',occ:'green',bars:[['air',1,5,'Dubois'],['air',9,3,'Smit']],tasks:[]},
-    {c:'TM-3',n:'Tamarin Bay',occ:'red',bars:[['dir',0,6,'In-house']],tasks:[8]},
+    {c:'TM-3',n:'Tamarin Bay',occ:'red',bars:[['dir',0,6,'In-house']],tasks:[8],block:1},
     {c:'FF-7',n:'Flic Studio',occ:'green',bars:[['book',2,3,'Patel'],['air',7,4,'Nkosi']],tasks:[7]},
   ];
   const panel=(
@@ -1246,7 +1851,8 @@ function ScreenCalendar(){
       panel={panel}
       actions={<><button className="dbtn ghost"><DI n="search" s={2}/> Availability</button><button className="dbtn ghost"><DI n="lock" s={1.8}/> Block</button><button className="dbtn primary"><DI n="plus" s={2}/> New reservation</button></>}>
       <div className="row between" style={{marginBottom:9}}>
-        <span className="row" style={{gap:8}}><button className="dbtn sm ghost"><DI n="chevL" s={2}/></button><span style={{fontWeight:600,fontSize:13}}>25 May – 7 Jun</span><button className="dbtn sm ghost"><DI n="chevR" s={2}/></button><button className="dbtn sm ghost">Today</button></span>
+        <span className="row" style={{gap:8}}><button className="dbtn sm ghost"><DI n="chevL" s={2}/></button><span style={{fontWeight:600,fontSize:13}}>25 May – 7 Jun</span><button className="dbtn sm ghost"><DI n="chevR" s={2}/></button><button className="dbtn sm ghost">Today</button>
+        <span className="vseg" style={{marginLeft:6}}>{[['all','All'],['air','Airbnb'],['book','Booking'],['dir','Direct']].map(c=><span key={c[0]} className={"vs"+(ch===c[0]?' on':'')} onClick={()=>setCh(c[0])}>{c[1]}</span>)}</span></span>
         <span className="row" style={{gap:12,fontSize:10.5,color:'var(--tx-2)'}}>
           <span className="row" style={{gap:5}}><span className="mdot" style={{background:'#e08e89',width:8,height:8,borderRadius:3}}/>Airbnb</span>
           <span className="row" style={{gap:5}}><span className="mdot" style={{background:'#9fb4ee',width:8,height:8,borderRadius:3}}/>Booking</span>
@@ -1254,6 +1860,7 @@ function ScreenCalendar(){
           <span className="row" style={{gap:5}}><span className="mdot" style={{background:'var(--indigo)',width:13,height:5,borderRadius:3}}/>Task</span>
         </span>
       </div>
+      <div className="fbar" style={{marginBottom:10}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft"><b>Friday spotted 2 orphan nights</b> — RC-7 (2 Jun) &amp; KS-5 (9 Jun) sit between bookings, plus a 1-night gap at GBH-B4. Auto-discount them or drop the min-stay to fill.</span><span className="fb"><button className="dbtn sm" onClick={()=>window.fadToast&&window.fadToast('Applied −15% orphan-night rule to 3 gaps','green')}>Fill gaps</button></span></div>
       <div className="panel" style={{padding:0,overflowX:'auto'}}>
         <div style={{minWidth:1180}}>
           <div className="mcalbar-h">
@@ -1264,13 +1871,13 @@ function ScreenCalendar(){
           </div>
           {props.map((p,i)=>(
             <div key={i} className="mcalrow">
-              <div style={{flex:'0 0 170px',position:'sticky',left:0,background:'var(--card)',zIndex:2,borderRight:'1px solid var(--line-2)',display:'flex',alignItems:'center',gap:8,padding:'0 11px',cursor:'pointer'}} onClick={()=>window.FADGO('property')}>
+              <div style={{flex:'0 0 170px',position:'sticky',left:0,background:'var(--card)',zIndex:2,borderRight:'1px solid var(--line-2)',display:'flex',alignItems:'center',gap:8,padding:'0 11px',cursor:'pointer'}} onClick={()=>{window.__FADBACK='cal';window.FADGO('property');}}>
                 <span className="mdot" style={{background:p.occ==='red'?'var(--red)':p.occ==='amber'?'var(--amber)':'var(--green)',width:7,height:7}}/>
                 <div style={{minWidth:0}}><div style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600}}>{p.c}</div><div className="faint" style={{fontSize:9.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{p.n}</div></div>
               </div>
               <div className="mcaltrack" style={{minWidth:1010,height:48}}>
                 {Array.from({length:13},(_,g)=><span key={g} className="gl" style={{left:pct(g+1)+'%'}}/>)}
-                {p.bars.map((b,j)=><div key={j} className={"mcalbar "+b[0]} style={{top:10,left:'calc('+pct(b[1])+'% + 2px)',width:'calc('+pct(b[2])+'% - 4px)',cursor:'pointer'}} onClick={()=>window.FADGO('reservation')}>{b[3]}</div>)}
+                {p.bars.map((b,j)=><div key={j} className={"mcalbar "+b[0]} style={{top:10,left:'calc('+pct(b[1])+'% + 2px)',width:'calc('+pct(b[2])+'% - 4px)',cursor:'pointer',opacity:(ch==='all'||ch===b[0])?1:0.16,transition:'opacity .2s'}} onClick={()=>{window.__FADBACK='cal';window.FADGO('reservation');}}>{b[3]}</div>)}
                 {p.tasks.map((t,j)=><span key={j} className="mcaltask" style={{left:'calc('+pct(t)+'% + 3px)',width:'calc('+pct(1)+'% - 6px)'}}/>)}
               </div>
             </div>
@@ -1339,19 +1946,34 @@ function ScreenAllTasks(){
 
 /* ---------- 6 · Inbox (editable draft, AI in side panel) ---------- */
 function ScreenInbox(){
+  const H = useHealth();
+  const FS = window.FADSTATE;
+  const [itab,setItab] = React.useState('all');
+  const [typeF,setTypeF] = React.useState('all');
+  const [iq,setIq] = React.useState('');
+  const [showOrig,setShowOrig] = React.useState(false);
   const threads=[
-    {av:'ML',nm:'Marie L.',prop:'GBH-B4',pv:"Hi! What time can we check in? Flight lands 1pm",t:'4m',ch:'Airbnb',draft:true,on:true,unread:true},
-    {av:'DK',nm:'Dieter K.',prop:'BW-C4',pv:'Is early check-out possible on Sunday?',t:'22m',ch:'Airbnb',draft:true,unread:true},
-    {av:'JO',nm:'James O.',prop:'SD-10',pv:"You: water's sorted, sorry for the trouble!",t:'1h',ch:'Booking'},
-    {av:'AB',nm:'Anaïs B.',prop:'GBH-C8',pv:'The AC in the bedroom is quite loud at night',t:'2h',ch:'Airbnb',draft:true,unread:true},
-    {av:'PS',nm:'Priya & Sam',prop:'RC-7',pv:'Thanks, the table is perfect now 🙏',t:'3h',ch:'Direct'},
-    {av:'TR',nm:'Tomás R.',prop:'VA-3',pv:'Can you recommend a driver for the airport?',t:'5h',ch:'Direct'},
-    {av:'GM',nm:'# Announcements',prop:'Team',pv:'Franny: water shut-off in Tamarin 2–4pm',t:'7h',team:true},
+    {av:'ML',nm:'Marie L.',prop:'GBH-B4',pv:"Hi! What time can we check in? Flight lands 1pm",t:'4m',ch:'Airbnb',type:'guest',status:'unread',draft:true,on:true},
+    {av:'DK',nm:'Dieter K.',prop:'BW-C4',pv:'Is early check-out possible on Sunday?',t:'22m',ch:'Airbnb',type:'guest',status:'unread',draft:true},
+    {av:'NH',nm:'Nitzana Holdings',prop:'SD-10',pv:'When will the April payout land?',t:'40m',ch:'Owner',type:'owner',status:'pending'},
+    {av:'CL',nm:'Cleanline Supplies',prop:'—',pv:'Invoice #2208 attached — Rs 2,708',t:'1h',ch:'Vendor',type:'vendor',status:'pending'},
+    {av:'AB',nm:'Anaïs B.',prop:'GBH-C8',pv:'The AC in the bedroom is quite loud at night',t:'2h',ch:'Airbnb',type:'guest',status:'unread',draft:true},
+    {av:'GB',nm:'GBH Co-ownership',prop:'GBH',pv:'Can we move the AGM to the 14th?',t:'2h',ch:'Syndic',type:'syndic',status:'unread'},
+    {av:'NH',nm:'N. Holdings · Design',prop:'SD-10',pv:'Approving the living-room moodboard?',t:'4h',ch:'Design',type:'design',status:'pending'},
+    {av:'JO',nm:'James O.',prop:'SD-10',pv:"You: water's sorted, sorry for the trouble!",t:'1h',ch:'Booking',type:'guest',status:'done'},
+    {av:'TR',nm:'Tomás R.',prop:'VA-3',pv:'Can you recommend a driver for the airport?',t:'5h',ch:'Direct',type:'guest',status:'pending'},
+    {av:'MR',nm:'MRA · Tourism Tax',prop:'—',pv:'Q2 remittance reminder',t:'1d',ch:'Other',type:'other',status:'done'},
+    {av:'PS',nm:'Priya & Sam',prop:'RC-7',pv:'Thanks, the table is perfect now 🙏',t:'3h',ch:'Direct',type:'guest',status:'done'},
   ];
+  const TYPES={guest:['Guest','green'],owner:['Owner','violet'],vendor:['Vendor','amber'],syndic:['Syndic','indigo'],design:['Design','indigo'],other:['Other','gray']};
+  const typeFilters=[['all','All types'],['guest','Guests'],['owner','Owners'],['vendor','Vendors'],['syndic','Syndic'],['design','Design'],['other','Other']];
+  const needsCount=threads.filter(t=>t.status!=='done').length;
+  const shownThreads=threads.filter(t=> (itab==='needs'?t.status!=='done':true) && (typeF==='all'||t.type===typeF) && (!iq || (t.nm+' '+t.pv+' '+t.prop+' '+t.ch).toLowerCase().includes(iq.toLowerCase())));
   const panel=(
     <div className="daside">
-      <div className="afp-h"><div className="r1"><span className="tt"><DI n="doc" s={1.6} style={{color:'var(--indigo-bright)'}}/> Reservation</span><span className="srcgy srcbz" style={{color:'#5fd09a'}}>guesty</span></div></div>
+      <div className="afp-h"><div className="r1"><span className="tt"><DI n="doc" s={1.6} style={{color:'var(--indigo-bright)'}}/> Reservation</span>{FS? <FS.SyncChip source="Guesty" health={H}/> : <span className="srcgy srcbz" style={{color:'#5fd09a'}}>guesty</span>}</div></div>
       <div className="afp-body" style={{gap:0}}>
+        {FS && H==='failed' && <div className="prov failed" style={{marginBottom:10}}><DI n="alert" s={1.6}/><span>Reservation data unavailable — Guesty didn't respond. Showing nothing rather than guessing.</span></div>}
         <div className="ibctx"><span className="cl">Property</span><span className="cv"><span className="pcodeD" style={{fontSize:10}}>GBH-B4</span> Apt with Pool &amp; Gym</span></div>
         <div className="ibctx"><span className="cl">Guest</span><span className="cv">Marie L. · 2 guests <span className="bdg gray" style={{marginLeft:4}}>★ 4.9 · returning</span></span></div>
         <div className="ibctx"><span className="cl">Stay</span><span className="cv">1 – 4 Jun · 3 nights</span></div>
@@ -1366,17 +1988,21 @@ function ScreenInbox(){
   );
   return (
     <Shell active="inbox" eyebrow="INBOX" title="Inbox" sub="Guest conversations · 3 open"
-      tabs={[{l:'All',ct:8,on:true},{l:'Guest',ct:5},{l:'Needs reply',ct:3},{l:'Team',ct:2}]} panel={panel}
+      tabs={[{l:'All',ct:threads.length,on:itab==='all',fn:()=>setItab('all')},{l:'Needs reply',ct:needsCount,on:itab==='needs',fn:()=>setItab('needs')},{l:'Team',ct:2,on:itab==='team',fn:()=>setItab('team')}]} panel={panel} panelLabel={['Reservation','doc']}
       actions={<><button className="dbtn ghost"><DI n="filter" s={2}/> Filter</button><button className="dbtn primary"><DI n="plus" s={2}/> Compose</button></>}>
       <div className="inboxlay">
+        {itab==='team' ? <window.FADTEAM.ScreenTeamChat inline/> : <React.Fragment>
         <div className="ibthreads">
-          {threads.map((th,i)=>(
-            <div key={i} className={"ibth"+(th.on?' on':'')}>
+          <div className="ibsearch"><DI n="search" s={2} style={{color:'var(--tx-3)',flex:'0 0 auto'}}/><input className="finput" value={iq} onChange={e=>setIq(e.target.value)} placeholder="Search conversations…"/>{iq&&<span className="ibsearch-x" onClick={()=>setIq('')}><DI n="x" s={2}/></span>}</div>
+          <div className="ibfilters">{typeFilters.map(f=><span key={f[0]} className={"ibfilter"+(typeF===f[0]?' on':'')} onClick={()=>setTypeF(f[0])}>{f[1]}</span>)}</div>
+          {shownThreads.length===0 && <div className="faint" style={{padding:'24px 14px',fontSize:12.5,textAlign:'center'}}>Nothing here — all caught up.</div>}
+          {shownThreads.map((th,i)=>(
+            <div key={i} className={"ibth"+(th.on?' on':'')} onClick={()=>window.__FADPANELOPEN&&window.__FADPANELOPEN(true)} style={{cursor:'pointer'}}>
               <span className="av1" style={{flex:'0 0 30px',width:30,height:30}}>{th.av}</span>
               <div className="ibm">
-                <div className="nm">{th.nm}{th.unread&&<span className="mdot" style={{background:'var(--indigo)',width:7,height:7}}/>}<span className="t">{th.t}</span></div>
+                <div className="nm" style={{fontWeight:th.status==='unread'?700:500}}>{th.nm}{th.status==='unread'&&<span className="mdot" style={{background:'var(--indigo)',width:7,height:7}}/>}{th.status==='pending'&&<span className="ib-pending" title="Read but not yet addressed">awaiting</span>}<span className="t">{th.t}</span></div>
                 <div className="pv">{th.pv}</div>
-                <div className="mt2"><span className="pcodeD" style={{padding:'1px 5px',fontSize:9}}>{th.prop}</span><span>{th.team?'team':th.ch}</span>{th.draft&&<span className="bdg indigo" style={{height:16}}>AI draft</span>}</div>
+                <div className="mt2"><span className={"bdg "+TYPES[th.type][1]} style={{height:15,fontSize:8.5}}>{TYPES[th.type][0]}</span>{th.prop!=='—'&&<span className="pcodeD" style={{padding:'1px 5px',fontSize:9}}>{th.prop}</span>}<span>{th.ch}</span>{th.draft&&<span className="bdg indigo" style={{height:16}}>AI draft</span>}</div>
               </div>
             </div>
           ))}
@@ -1385,27 +2011,45 @@ function ScreenInbox(){
           <div className="ibconv-h">
             <span className="av1" style={{width:30,height:30}}>ML</span>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:13.5}}>Marie L.</div><div className="faint" style={{fontSize:11}}>GBH-B4 · check-in today 15:00 · Airbnb</div></div>
-            <button className="dbtn sm ghost"><DI n="ops" s={1.8}/> Create task</button>
+            <span className="wa-timer" title="WhatsApp 24-hour customer-service window — free-form replies allowed until it closes"><DI n="clock" s={1.7}/> WhatsApp · 19h 42m</span>
+            <span className={"lang-tog"+(showOrig?' on':'')} onClick={()=>setShowOrig(o=>!o)} title="Marie writes in French — Friday shows an English translation"><DI n="msg" s={1.6}/> {showOrig?'FR · original':'FR → EN'}</span>
+            <button className="dbtn sm ghost"><DI n="ops" s={1.8}/> Task</button>
             <button className="dbtn sm ghost"><DI n="doc" s={1.8}/> Reservation</button>
-            <span className="srcgy srcbz" style={{color:'#5fd09a'}}>guesty</span>
+            <span className="ibconv-actions">
+              <span className="ib-act" title="Assign to teammate" onClick={()=>window.fadToast&&window.fadToast('Assigned to Mary')}><DI n="users" s={1.7}/></span>
+              <span className="ib-act" title="Snooze until tomorrow" onClick={()=>window.fadToast&&window.fadToast('Snoozed until 9am tomorrow')}><DI n="clock" s={1.7}/></span>
+              <span className="ib-act" title="Mark unread" onClick={()=>window.fadToast&&window.fadToast('Marked unread')}><DI n="unread" s={1.7}/></span>
+              <span className="ib-act resolve" title="Resolve conversation" onClick={()=>window.fadToast&&window.fadToast('Conversation resolved','green')}><DI n="check" s={2}/></span>
+            </span>
           </div>
           <div className="ibmsgs">
-            <div className="ibmsg"><div className="who">Marie L. · 09:02</div><div className="b">Hi! We're so excited for our stay 😊 What time can we check in? Our flight lands around 1pm.</div><div className="mt">09:02</div></div>
-            <div className="ibmsg me"><div className="b">Hi Marie! Welcome — we can't wait to host you. Let me check the turnover timing for your apartment.</div><div className="mt">09:05 · you</div></div>
-            <div className="ibmsg"><div className="who">Marie L. · 09:06</div><div className="b">Amazing, thank you! Is early check-in possible?</div><div className="mt">09:06</div></div>
+            {FS && <FS.StateBanner surface="this inbox" health={H}/>}
+            <div className="ibmsg">
+              <div className="who">Marie L. · 09:02 {!showOrig&&<span className="tr-tag"><DI n="spark" s={1.5}/> translated · FR</span>}</div>
+              <div className="b">{showOrig?'Bonjour ! Nous sommes ravis de notre séjour 😊 À quelle heure pouvons-nous arriver ? Notre vol atterrit vers 13h.':"Hi! We're so excited for our stay 😊 What time can we check in? Our flight lands around 1pm."}</div>
+              <div className="mt">09:02</div>
+            </div>
+            <div className="ibmsg me"><div className="b">Bonjour Marie ! Bienvenue — nous avons hâte de vous accueillir. Je vérifie l'horaire de préparation de votre appartement.</div><div className="mt">09:05 · you</div></div>
+            <div className="ibmsg">
+              <div className="who">Marie L. · 09:06 {!showOrig&&<span className="tr-tag"><DI n="spark" s={1.5}/> translated · FR</span>}</div>
+              <div className="b">{showOrig?'Parfait, merci ! Une arrivée anticipée est-elle possible ?':'Amazing, thank you! Is early check-in possible?'}</div>
+              <div className="mt">09:06</div>
+            </div>
           </div>
           <div className="ibcomp">
-            <div className="ibdraft-tag"><span className="bdg indigo"><DI n="spark" s={1.5}/> Friday draft</span><span className="faint">editable — or just type your own</span><span className="grow" style={{flex:1}}/><span className="faint mono" style={{fontSize:9}}>REV 1 · conf 88%</span></div>
-            <div className="ibdraft">Hi Marie! Check-in is from <b>3:00 pm</b> today. Your apartment has a same-day turnover so we can't open it earlier, but you're very welcome to <b>drop your bags at reception from 1pm</b> and explore Grand Baie in the meantime. See you soon! 🌴<span className="cur"/></div>
+            <div className="ibdraft-tag"><span className="bdg indigo"><DI n="spark" s={1.5}/> Friday draft</span><span className="faint">replies in Marie's language · Français</span><span className="grow" style={{flex:1}}/>{FS? <FS.ConfBar pct={88} health={H}/> : <span className="faint mono" style={{fontSize:9}}>conf 88%</span>}</div>
+            <div className="ibdraft">Bonjour Marie ! L'arrivée se fait à partir de <b>15h00</b> aujourd'hui. Votre appartement a une rotation le jour même, nous ne pouvons donc pas ouvrir plus tôt — mais vous pouvez <b>déposer vos bagages à la réception dès 13h</b> et profiter de Grand Baie en attendant. À très bientôt ! 🌴<span className="cur"/></div>
+            {FS && <div style={{marginTop:9}}><FS.Provenance health={H}/></div>}
             <div className="ibcomp-actions">
-              <button className="dbtn primary sm"><DI n="msg" s={1.8}/> Send</button>
-              <span className="aichip">Polish</span>
-              <span className="aichip">Shorter</span>
-              <span className="grow" style={{flex:1}}/>
               <span className="aichip ai"><DI n="spark" s={1.6}/> Ask Friday</span>
+              <span className="grow" style={{flex:1}}/>
+              {H==='failed'
+                ? <button className="dbtn sm" disabled style={{opacity:.5,cursor:'not-allowed'}}><DI n="alert" s={1.8}/> Send unavailable</button>
+                : <button className="dbtn primary" onClick={()=>window.fadToast&&window.fadToast(H==='fallback'?'Sent — flagged for review (ungrounded)':'Reply sent to Marie','green')}><DI n="msg" s={1.8}/> Send</button>}
             </div>
           </div>
         </div>
+        </React.Fragment>}
       </div>
     </Shell>
   );

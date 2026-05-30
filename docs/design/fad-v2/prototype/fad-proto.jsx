@@ -78,9 +78,10 @@ function FadApp(){
   const showPill = runTask && !onOwnTask;
 
   const sheetOpts = [
-    {ic:'flag', cls:'task', t:'Report an issue', d:'Snap it — Friday drafts the task', go:()=>{nav.closeSheet(); nav.go('report',null,'up');}},
-    {ic:'plus', cls:'ment', t:'Create a task', d:'Fill in a new job yourself', go:()=>{nav.closeSheet(); nav.go('create',null,'up');}},
-    {ic:'msg', cls:'ok', t:'Message the team', d:'Open team chat', go:()=>{nav.closeSheet(); nav.tab('chat');}},
+    {ic:'sparkle', cls:'task', t:'Ask Friday', d:'Scoped to your day, tasks & properties', go:()=>{nav.closeSheet(); nav.go('aihelp');}},
+    {ic:'flag', cls:'ment', t:'Report an issue', d:'Snap it — Friday drafts the task', go:()=>{nav.closeSheet(); nav.go('report',null,'up');}},
+    {ic:'plus', cls:'ok', t:'Create a task', d:'Fill in a new job yourself', go:()=>{nav.closeSheet(); nav.go('create',null,'up');}},
+    {ic:'msg', cls:'cal', t:'Message the team', d:'Open team chat', go:()=>{nav.closeSheet(); nav.tab('chat');}},
   ];
 
   return (
@@ -105,7 +106,7 @@ function FadApp(){
               <div className="sheet-ov" onClick={nav.closeSheet}>
                 <div className="sheet" onClick={e=>e.stopPropagation()}>
                   <div className="sheet-handle"/>
-                  <div style={{fontFamily:'var(--serif)',fontWeight:300,fontSize:22,padding:'6px 6px 4px'}}>New</div>
+                  <div style={{fontFamily:'var(--serif)',fontWeight:300,fontSize:22,padding:'6px 6px 4px'}}>Quick actions</div>
                   {sheetOpts.map((o,i)=>(
                     <div key={i} className="sheet-opt tap" onClick={o.go}>
                       <span className={"oi n-ic "+o.cls}><Icon n={o.ic} s={1.9}/></span>

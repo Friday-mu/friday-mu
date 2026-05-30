@@ -2,8 +2,8 @@
    FAD · Reservation detail — full tabbed workspace (Guesty-structure parity)
    Reuses Shell, DI from fad-desktop.jsx. Interactive tabs via useState.
    ========================================================================== */
-const RTABS = ['Overview','Booking details','Guests','Operations','Guest folio & invoice','Accounting','Payments','Activity log'];
-const RICON = {'Overview':'home','Booking details':'doc','Guests':'users','Operations':'ops','Guest folio & invoice':'coin','Accounting':'list','Payments':'shield','Activity log':'clock'};
+const RTABS = ['Overview','Booking details','Guests','Messages','Operations','Guest folio & invoice','Accounting','Payments','Activity log'];
+const RICON = {'Overview':'home','Booking details':'doc','Guests':'users','Messages':'msg','Operations':'ops','Guest folio & invoice':'coin','Accounting':'list','Payments':'shield','Activity log':'clock'};
 
 function RField({l,children,last}){
   return <div className="drow" style={last?{borderBottom:'none'}:null}><span className="faint">{l}</span><span style={{textAlign:'right'}}>{children}</span></div>;
@@ -20,9 +20,14 @@ function Ledger({title,total,rows,grp}){
 
 function ScreenReservation(){
   const [tab,setTab] = React.useState('Overview');
+  const backRef = React.useRef((window.__FADBACK)||'res');
+  React.useEffect(()=>{ window.__FADBACK=null; },[]);
   return (
     <Shell active="res" bare>
-      <div className="faint mono" style={{fontSize:11,marginBottom:14}}>Reservations <span style={{color:'var(--tx-4)'}}>›</span> GY-FmncsBH5</div>
+      <div className="row" style={{gap:11,marginBottom:14}}>
+        <button className="dbtn ghost sm" onClick={()=>window.FADGO(backRef.current)}><DI n="chevL" s={2}/> Back</button>
+        <span className="faint mono" style={{fontSize:11}}>Reservations <span style={{color:'var(--tx-4)'}}>›</span> GY-FmncsBH5</span>
+      </div>
       <div className="rdgrid">
         {/* ---- left: context + tab nav ---- */}
         <div className="rdctx">
@@ -49,6 +54,7 @@ function ScreenReservation(){
           {tab==='Overview' && <ROverview/>}
           {tab==='Booking details' && <RBooking/>}
           {tab==='Guests' && <RGuests/>}
+          {tab==='Messages' && <RMessages/>}
           {tab==='Operations' && <ROps/>}
           {tab==='Guest folio & invoice' && <RFolio/>}
           {tab==='Accounting' && <RAccounting/>}
@@ -197,6 +203,34 @@ function RActivity(){
     <table className="tbl"><thead><tr><th>Date</th><th>Activity type</th><th>Details</th><th>Team member</th></tr></thead>
     <tbody>{log.map((r,i)=>(<tr key={i}><td className="mono faint" style={{fontSize:10.5}}>{r[0]}</td><td><span className={"bdg "+r[4]}>{r[1]}</span></td><td className="faint">{r[2]}</td><td className="mono faint" style={{fontSize:10.5}}>{r[3]}</td></tr>))}</tbody></table>
   </div>);
+}
+
+function RMessages(){
+  const msgs=[
+    {day:'Feb 16'},
+    {from:'Cyril',av:'CY',t:'18:02',tx:'Hi! Just booked for May 1–10. Is early check-in possible? We land at 09:30.'},
+    {me:true,t:'18:20',tx:'Welcome Cyril! Check-in is from 12:00, but you’re welcome to drop bags from 10:00. I’ll confirm closer to the date.',by:'Mary'},
+    {day:'Apr 28'},
+    {from:'friday',t:'08:10',tx:'Draft: “Hi Cyril — your access code and directions are ready. Check-in from 12:00, bag drop from 10:00. Anything else before you arrive?”',draft:true},
+    {from:'Cyril',av:'CY',t:'11:42',tx:'Perfect, thank you! One of us travels with an infant — is a cot available?'},
+  ];
+  const [draft,setDraft]=React.useState('');
+  return (
+    <div className="panel" style={{padding:0,overflow:'hidden',display:'flex',flexDirection:'column',height:540}}>
+      <div className="row between" style={{padding:'11px 14px',borderBottom:'1px solid var(--line-2)'}}>
+        <span className="row" style={{gap:9}}><span className="av1" style={{width:30,height:30,fontSize:10}}>CY</span><span><span className="tt" style={{fontSize:13}}>Cyril</span><span className="faint" style={{fontSize:10.5,display:'block'}}>Airbnb thread · LB-C · May 1–10</span></span></span>
+        <span className="row" style={{gap:6}}><span className="bdg amber">1 unanswered</span><button className="dbtn ghost sm" onClick={()=>window.FADGO('inbox')}>Open in Inbox</button></span>
+      </div>
+      <div className="ibmsgs" style={{flex:1,overflowY:'auto'}}>
+        {msgs.map((m,i)=>{
+          if(m.day) return <div key={i} className="slackday"><span>{m.day}</span></div>;
+          if(m.draft) return <div key={i} className="ibdraft" style={{margin:'4px 0'}}><div className="ibdraft-tag" style={{marginBottom:6}}><span className="bdg indigo"><img className="askmk" src="friday-f.png" alt="" style={{width:13,height:13,marginRight:2}}/> Friday draft</span><span className="faint" style={{fontSize:10}}>ready to send</span></div>{m.tx}<div className="row" style={{gap:7,marginTop:9}}><button className="dbtn primary sm" onClick={()=>window.fadToast&&window.fadToast('Reply sent to Cyril','green')}><DI n="msg" s={1.7}/> Send</button><button className="dbtn ghost sm">Edit</button></div></div>;
+          return <div key={i} className={"ibmsg"+(m.me?' me':'')}>{!m.me&&<div className="who">{m.from} · {m.t}</div>}<div className="b">{m.tx}</div><div className="mt">{m.me?m.t+' · '+m.by:''}</div></div>;
+        })}
+      </div>
+      <div className="ibcomp"><div className="slackcomp"><div className="row" style={{gap:9}}><input className="finput" value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Reply to Cyril…"/><button className="dbtn primary" onClick={()=>{window.fadToast&&window.fadToast('Reply sent');setDraft('');}}><DI n="chevR" s={2}/> Send</button></div></div></div>
+    </div>
+  );
 }
 
 window.FADRES = { ScreenReservation };

@@ -125,6 +125,7 @@ function ScreenTraining(){
         : null}>
 
       <TrTabs tab={tab} setTab={setTab} counts={counts}/>
+      {window.FADSTATE && <window.FADSTATE.StateBanner surface="Training sources"/>}
 
       {/* ---------------- TEACHINGS ---------------- */}
       {tab==='teach' && <>

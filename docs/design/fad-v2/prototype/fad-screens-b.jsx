@@ -134,7 +134,7 @@ function ScreenAccount(){
           <SetRow ic="out" label="Sign out" danger last/>
         </div>
         <div className="faint" style={{textAlign:'center',fontFamily:'var(--mono)',fontSize:10,marginTop:16,lineHeight:1.6}}>
-          Friday Retreats Ltd · FridayOS<br/>FAD v2.0 · build 2026.06
+          Friday Retreats Ltd · FridayOS<br/>FridayOS v2.0 · build 2026.06
         </div>
       </div></div>
       <TabBar active="account"/>

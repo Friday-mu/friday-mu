@@ -1,5 +1,22 @@
 /* FAD V2 — Manager mobile-web: Inbox (list · thread · context sheet) */
 const { DI } = window.FADD;
+const useHealth = (window.FADSTATE && window.FADSTATE.useHealth) || (()=>{ React.useState(0); return 'healthy'; });
+
+/* iOS/Android status bar with proper safe-area handling.
+   Device type comes from the .device[data-device] frame (default dynamic-island). */
+function MStatusBar(){
+  return (
+    <div className="msb">
+      <span className="msb-time">9:41</span>
+      <span className="msb-island"><span className="msb-cam"/></span>
+      <span className="msb-right">
+        <svg className="msb-i" viewBox="0 0 18 12" width="17" height="11"><g fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2.5" width="3" height="9.5" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></g></svg>
+        <svg className="msb-i" viewBox="0 0 18 14" width="16" height="12"><path d="M9 3.5c2.6 0 5 1 6.8 2.7l1.4-1.5A11.5 11.5 0 0 0 9 1.2 11.5 11.5 0 0 0 .8 4.7l1.4 1.5A9.5 9.5 0 0 1 9 3.5zm0 3.6c1.5 0 3 .6 4.1 1.7l1.4-1.5A8 8 0 0 0 9 5a8 8 0 0 0-5.5 2.3l1.4 1.5A6 6 0 0 1 9 7.1zm0 3.5c.6 0 1.2.3 1.7.7L9 12.8l-1.7-1.9c.5-.4 1.1-.7 1.7-.7z" fill="currentColor"/></svg>
+        <span className="msb-batt"><span className="msb-batt-fill"/></span>
+      </span>
+    </div>
+  );
+}
 
 function MTabbar({on}){
   const items=[['inbox','inbox','Inbox'],['ops','ops','Ops'],['fab','spark',''],['cal','cal','Calendar'],['mmore','more','More']];
@@ -7,7 +24,7 @@ function MTabbar({on}){
   return (
     <div className="pwa-tab" style={{flex:'0 0 auto'}}>
       {items.map((it,i)=> it[0]==='fab'
-        ? <div key={i} className="pwa-fab" onClick={()=>go('askm')} style={{cursor:'pointer'}}><DI n="spark" s={1.7}/></div>
+        ? <div key={i} className="pwa-fab" onClick={()=>go('askm')} style={{cursor:'pointer'}} ref={el=>{ if(!el || el.dataset.drawn==='1') return; if(window.fosDrawF){ el.dataset.drawn='1'; window.fosDrawF(el,{size:40,color:'#fff',width:3.4,dur:2.6,ghost:true}); } else { el.dataset.drawn='1'; el.innerHTML='<img class="pwa-fab-mk" src="friday-f.png" alt="Ask Friday"/>'; } }}></div>
         : <div key={i} className={"pwa-ti"+(on===it[0]||(it[0]==='mmore'&&on==='more')?' on':'')} onClick={()=>go(it[0])} style={{cursor:'pointer'}}><DI n={it[1]} s={2}/><span>{it[2]}</span></div>)}
     </div>
   );
@@ -22,8 +39,8 @@ function MobileInbox(){
     {av:'DK',nm:'Dieter K.',prop:'BW-C4',pv:'Is early check-out possible on Sunday?',t:'1d',ch:'Airbnb'},
   ];
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Inbox</span><span className="icbtn alert" style={{width:30,height:30}}><DI n="bell" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Inbox</span><span className="icbtn alert" style={{width:30,height:30,cursor:'pointer'}} onClick={()=>window.FADGO&&window.FADGO('notif')}><DI n="bell" s={2}/></span></div>
       <div className="body">
         <div className="mchips">
           <span className="mchip on">All <span className="c">8</span></span>
@@ -50,51 +67,65 @@ function MobileInbox(){
 }
 
 function MobileThread(){
+  const H=useHealth(), FS=window.FADSTATE;
+  const SyncChip=FS&&FS.SyncChip, StateBanner=FS&&FS.StateBanner, Provenance=FS&&FS.Provenance, ConfBar=FS&&FS.ConfBar;
+  const [showOrig,setShowOrig]=React.useState(false);
+  const T=(t,tone)=>window.fadToast&&window.fadToast(t,tone);
+  const g1=showOrig?'Bonjour ! Nous sommes ravis. A quelle heure pouvons-nous arriver ? Vol vers 13h.':"Hi! We're so excited. What time can we check in? Flight lands ~1pm.";
+  const g2=showOrig?'Parfait, merci ! Une arrivee anticipee est-elle possible ?':'Amazing, thank you! Is early check-in possible?';
   return (
-    <div className="mphone">
+    <div className="mphone"><MStatusBar/>
       <div className="top">
         <span className="icbtn" style={{width:30,height:30,border:'none',background:'transparent',cursor:'pointer'}} onClick={()=>window.FADGO&&window.FADGO('inbox')}><DI n="chevL" s={2.2}/></span>
         <span className="av1" style={{width:30,height:30}}>ML</span>
         <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:14}}>Marie L.</div><div className="faint" style={{fontSize:10.5,fontFamily:'var(--mono)'}}>GBH-B4 · Airbnb</div></div>
-        <span className="icbtn" style={{width:30,height:30}}><DI n="ops" s={1.9}/></span>
+        <span className={"lang-tog"+(showOrig?' on':'')} style={{padding:'3px 8px',fontSize:10}} onClick={()=>setShowOrig(o=>!o)}><DI n="msg" s={1.5}/> {showOrig?'FR':'FR-EN'}</span>
       </div>
-      <div className="mctx"><span style={{color:'var(--indigo-bright)'}}><DI n="doc" s={1.7}/></span><span style={{flex:1,fontSize:11.5}}>Check-in today 15:00 · 3 nights · turnover due 15:00</span><DI n="chevD" s={2} style={{color:'var(--tx-3)'}}/></div>
+      <div className="mctx" style={{justifyContent:'space-between'}}>
+        <span className="wa-timer"><DI n="clock" s={1.6}/> WhatsApp · 19h 42m</span>
+        {SyncChip ? <SyncChip source="Guesty" health={H}/> : <span className="faint" style={{fontSize:11}}>check-in 15:00 · 3 nights</span>}
+      </div>
       <div className="mthread">
-        <div className="ibmsg"><div className="who">Marie L. · 09:02</div><div className="b">Hi! We're so excited for our stay 😊 What time can we check in? Our flight lands around 1pm.</div><div className="mt">09:02</div></div>
-        <div className="ibmsg me"><div className="b">Hi Marie! Welcome — let me check the turnover timing for your apartment.</div><div className="mt">09:05 · you</div></div>
-        <div className="ibmsg"><div className="who">Marie L. · 09:06</div><div className="b">Amazing, thank you! Is early check-in possible?</div><div className="mt">09:06</div></div>
+        {StateBanner && <StateBanner surface="this chat" health={H}/>}
+        <div className="ibmsg"><div className="who">Marie L. · 09:02 {!showOrig&&FS&&<span className="tr-tag"><DI n="spark" s={1.4}/> FR</span>}</div><div className="b">{g1}</div><div className="mt">09:02</div></div>
+        <div className="ibmsg me"><div className="b">Bonjour Marie ! Bienvenue. Je verifie l horaire de votre appartement.</div><div className="mt">09:05 · you</div></div>
+        <div className="ibmsg"><div className="who">Marie L. · 09:06 {!showOrig&&FS&&<span className="tr-tag"><DI n="spark" s={1.4}/> FR</span>}</div><div className="b">{g2}</div><div className="mt">09:06</div></div>
       </div>
       <div className="ibcomp" style={{flex:'0 0 auto'}}>
-        <div className="ibdraft-tag"><span className="bdg indigo"><DI n="spark" s={1.5}/> Friday draft</span><span className="faint" style={{fontSize:10}}>editable</span></div>
-        <div className="ibdraft" style={{minHeight:48,fontSize:12}}>Hi Marie! Check-in is from <b>3pm</b> today — your apartment has a same-day turnover. You're welcome to <b>drop bags at reception from 1pm</b>! 🌴</div>
-        <div className="ibcomp-actions"><button className="dbtn primary sm"><DI n="msg" s={1.8}/> Send</button><span className="aichip">Polish</span><span className="grow" style={{flex:1}}/><span className="aichip ai"><DI n="spark" s={1.6}/> Ask Friday</span></div>
+        <div className="ibdraft-tag"><span className="bdg indigo"><DI n="spark" s={1.5}/> Friday draft</span><span className="faint" style={{fontSize:10}}>repond en Francais</span><span className="grow" style={{flex:1}}/>{ConfBar&&<ConfBar pct={88} health={H}/>}</div>
+        <div className="ibdraft" style={{minHeight:48,fontSize:12}}>Bonjour Marie ! L arrivee est a partir de <b>15h</b> (rotation le jour meme). Vous pouvez <b>deposer vos bagages des 13h</b>.</div>
+        {Provenance && <div style={{marginTop:8}}><Provenance health={H}/></div>}
+        <div className="ibcomp-actions"><span className="aichip ai"><DI n="spark" s={1.6}/> Ask Friday</span><span className="grow" style={{flex:1}}/>{H==='failed'?<button className="dbtn sm" disabled style={{opacity:.5}}><DI n="alert" s={1.7}/> Unavailable</button>:<button className="dbtn primary sm" onClick={()=>T('Reply sent','green')}><DI n="msg" s={1.8}/> Send</button>}</div>
       </div>
     </div>
   );
 }
 
 function MobileAsk(){
+  const [voice,setVoice]=React.useState(false);
   return (
-    <div className="mphone" style={{position:'relative'}}>
-      <div className="top"><span className="icbtn" style={{width:30,height:30,border:'none',background:'transparent',cursor:'pointer'}} onClick={()=>window.FADGO&&window.FADGO('inbox')}><DI n="chevL" s={2.2}/></span><span className="ttl" style={{flex:1,fontSize:19}}>Ask Friday</span><span className="bdg indigo"><DI n="spark" s={1.5}/> Marie · GBH-B4</span></div>
+    <div className="mphone" style={{position:'relative'}}><MStatusBar/>
+      <div className="top"><span className="icbtn" style={{width:30,height:30,border:'none',background:'transparent',cursor:'pointer'}} onClick={()=>window.FADGO&&window.FADGO('inbox')}><DI n="chevL" s={2.2}/></span><span className="ttl" style={{flex:1,fontSize:19}}>Ask Friday</span><span className="icbtn" style={{width:32,height:32,cursor:'pointer'}} onClick={()=>setVoice(true)}><DI n="mic" s={1.8}/></span></div>
       <div className="mthread">
-        <div className="afm"><span className="ava fr"><DI n="spark" s={1.5}/></span><div className="bub">Marie's check-in is <b>15:00</b> with a same-day turnover. Early entry isn't safe, but bag drop at reception is fine.</div></div>
+        <div className="afm"><span className="ava fr"><img className="askmk" src="friday-f.png" alt="" style={{width:"100%",height:"100%",borderRadius:"inherit"}}/></span><div className="bub">Marie's check-in is <b>15:00</b> with a same-day turnover. Early entry isn't safe, but bag drop at reception is fine.</div></div>
         <div className="afm me"><span className="ava me">FG</span><div className="bub">Draft a warm reply offering bag drop + 3pm.</div></div>
-        <div className="afm"><span className="ava fr"><DI n="spark" s={1.5}/></span><div style={{minWidth:0}}><div className="bub">Done — drafted your reply below. She also mentioned the AC was loud last stay; want a maintenance task?</div>
+        <div className="afm"><span className="ava fr"><img className="askmk" src="friday-f.png" alt="" style={{width:"100%",height:"100%",borderRadius:"inherit"}}/></span><div style={{minWidth:0}}><div className="bub">Done — drafted your reply below. She also mentioned the AC was loud last stay; want a maintenance task?</div>
           <div className="afact" style={{marginTop:8}}><div className="at"><DI n="ops" s={1.6} style={{color:'var(--indigo-bright)'}}/> Create &amp; link task</div><div className="adesc">Maintenance · AC service · GBH-B4 · linked to this thread.</div><div className="arow"><button className="dbtn primary sm"><DI n="check" s={2}/> Create &amp; link</button><button className="dbtn ghost sm">Not now</button></div></div>
           </div></div>
-        <div className="afm"><span className="ava fr"><DI n="spark" s={1.5}/></span><div style={{minWidth:0,width:'100%'}}>
+        <div className="afm"><span className="ava fr"><img className="askmk" src="friday-f.png" alt="" style={{width:"100%",height:"100%",borderRadius:"inherit"}}/></span><div style={{minWidth:0,width:'100%'}}>
           <div className="ibdraft-tag"><span className="bdg indigo"><DI n="spark" s={1.5}/> Reply draft</span><span className="faint" style={{fontSize:10}}>editable · send from here</span></div>
           <div className="ibdraft" style={{minHeight:48,fontSize:12}}>Hi Marie! Check-in is from <b>3pm</b> today — your apartment has a same-day turnover. You're welcome to <b>drop bags at reception from 1pm</b>! 🌴</div>
           <div className="ibcomp-actions"><button className="dbtn primary sm"><DI n="msg" s={1.8}/> Send reply</button><span className="aichip">Polish</span><span className="aichip">Shorter</span></div>
         </div></div>
       </div>
-      <div className="afp-comp" style={{flex:'0 0 auto'}}><div className="afp-in"><DI n="spark" s={1.6} style={{color:'var(--tx-3)'}}/> <span>Ask or tell Friday to act…</span><span className="snd"><DI n="chevR" s={2.2}/></span></div></div>
+      <div className="afp-comp" style={{flex:'0 0 auto'}}><div className="afp-in real" data-no-dictate><input className="finput" style={{flex:1,border:'none',background:'transparent',height:36,padding:0}} placeholder="Ask or tell Friday to act…" onKeyDown={e=>{ if(e.key==='Enter'&&e.target.value.trim()){ window.fadToast&&window.fadToast('Sent to Friday'); e.target.value=''; } }}/><button className="askc-mic" style={{width:34,height:34}} onClick={e=>{var inp=e.currentTarget.parentElement.querySelector('input'); window.FADDICTATE&&window.FADDICTATE.toggleFor(inp);}}><DI n="mic" s={1.8}/></button><span className="snd"><DI n="chevR" s={2.2}/></span></div></div>
+      {voice && window.FADVOICE && <window.FADVOICE.VoiceOverlay compact onClose={()=>setVoice(false)}/>}
+      <MTabbar/>
     </div>
   );
 }
 
-window.FADMOBILE = { MobileInbox, MobileThread, MobileAsk, MTabbar };
+window.FADMOBILE = { MobileInbox, MobileThread, MobileAsk, MTabbar, MStatusBar };
 
 function MiniDonut(){
   const segs=[{v:32,c:'var(--indigo)'},{v:3,c:'var(--red)'},{v:6,c:'var(--amber)'},{v:14,c:'var(--green)'}];
@@ -117,8 +148,8 @@ function MobileOps(){
     ['VA-3','Internet top up','high','Blocked','red','IA'],
   ];
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Operations</span><span className="icbtn alert" style={{width:30,height:30}}><DI n="bell" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Operations</span><span className="icbtn alert" style={{width:30,height:30,cursor:'pointer'}} onClick={()=>window.FADGO&&window.FADGO('notif')}><DI n="bell" s={2}/></span></div>
       <div className="body" style={{overflowY:'auto'}}>
         <div style={{padding:'14px 14px 0'}}>
           <div className="donutwrap" style={{padding:13,gap:14}}>
@@ -171,8 +202,8 @@ function MobileCalendar(){
   ];
   const occc={red:'var(--red)',green:'var(--green)',amber:'var(--amber)'};
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Calendar</span><span className="icbtn" style={{width:30,height:30}}><DI n="filter" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Calendar</span><span className="icbtn" style={{width:30,height:30}}><DI n="filter" s={2}/></span></div>
       <div className="mchips">
         <span className="mchip on">All</span><span className="mchip">Reservations</span><span className="mchip">Tasks</span><span className="mchip">Mine</span>
       </div>
@@ -222,8 +253,8 @@ function MobileSchedule(){
     {av:'MD',nm:'Matthieu',jobs:[],sb:true},
   ];
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Schedule</span><span className="bdg amber">Draft</span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Schedule</span><span className="bdg amber">Draft</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>Friday drafted the day.</b> 18 jobs · lunch protected · 0 conflicts.</span></div>
         <div className="row" style={{gap:7,marginTop:10}}><button className="dbtn sm" style={{flex:1}}><DI n="check" s={2}/> Apply</button><button className="dbtn ghost sm" style={{flex:1}}>Review <DI n="chevR" s={2}/></button></div>
@@ -263,8 +294,8 @@ function MobileRoster(){
     {av:'MD',nm:'Mathias D.',wk:['north','north','sb','north','north','off','off']},
   ];
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Roster</span><span className="bdg amber">Draft</span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Roster</span><span className="bdg amber">Draft</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>Coverage balanced.</b> 87 unassigned · Tue busiest — ask to rebalance.</span></div>
         <div className="row" style={{gap:7,marginTop:10}}><div className="statc" style={{flex:1,padding:'8px 10px'}}><div className="n" style={{fontSize:17}}>87</div><div className="l">Unassigned</div></div><div className="statc" style={{flex:1,padding:'8px 10px'}}><div className="n" style={{fontSize:17}}>17</div><div className="l">High pri</div></div><div className="statc" style={{flex:1,padding:'8px 10px'}}><div className="n" style={{fontSize:17}}>Tue</div><div className="l">Busiest</div></div></div>
@@ -305,8 +336,8 @@ function MobileReservations(){
     ]},
   ];
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Reservations</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Reservations</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
       <div className="mchips"><span className="mchip on">Today</span><span className="mchip">In-house</span><span className="mchip">Upcoming</span><span className="mchip">All</span></div>
       <div className="body" style={{overflowY:'auto'}}>
         <div style={{padding:'12px 14px 0'}}>
@@ -346,8 +377,8 @@ function MobileApprovals(){
     {t:'Internet keeps dropping',c:'VA-4',by:'Ishant',d:'Admin · Low · office'},
   ];
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Approvals</span><span className="bdg amber">3</span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Approvals</span><span className="bdg amber">3</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>Friday triage.</b> 2 routine, 1 likely pump fault — pre-drafted.</span></div>
         <div className="dml" style={{margin:'14px 0 8px'}}>Waiting on you <span className="ct">3</span><span className="rule"/></div>
@@ -371,8 +402,8 @@ function MobileAllTasks(){
   const rows=[['BW-C4','Investigate leak','urgent','In progress','indigo','BR'],['SD-10','Water Issue','urgent','Open','gray','IA'],['GBH-B4','Turnover clean','high','Scheduled','violet','IA'],['RC-7','Lower table','med','Open','gray','CA'],['VA-3','Internet top up','high','Blocked','red','IA'],['GBH-C5','Shower head','med','Done','green','BR']];
   const pc={urgent:'var(--red)',high:'var(--amber)',med:'var(--green)',low:'var(--tx-3)'};
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>All tasks</span><span className="icbtn" style={{width:30,height:30}}><DI n="filter" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>All tasks</span><span className="icbtn" style={{width:30,height:30}}><DI n="filter" s={2}/></span></div>
       <div className="mchips"><span className="mchip on">All</span><span className="mchip">Open</span><span className="mchip">Overdue</span><span className="mchip">Done</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
@@ -393,8 +424,8 @@ function MobileSupplies(){
   const low=[['Bath towels','4 / 12','West','low'],['Pipe sealant','1 / 6','West','low'],['Toilet rolls','0 / 24','West','out'],['LED bulbs','6 / 8','Van · BR','low'],['Wine glasses','22 / 24','North','low']];
   const sm={low:'amber',out:'red'};
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Supplies</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Supplies</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="row" style={{gap:7}}><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:17}}>214</div><div className="l">SKUs</div></div><div className="statc amber" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:17}}>5</div><div className="l">Below par</div></div><div className="statc red" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:17}}>1</div><div className="l">Out</div></div></div>
         <div className="fbar" style={{marginTop:11}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>5 below par.</b> Restock order drafted · Rs 2,708.</span></div>
@@ -413,8 +444,8 @@ function MobileProperties(){
   const props=[['GBH-B4','Apt with Pool & Gym','Grand Baie','red','Occupied','2 open'],['SD-10','Sunset Drive Villa','Tamarin','green','Vacant','1 urgent'],['RC-7','Royal Court','Pereybère','amber','Check-in 15:00','0 open'],['KS-5','Rooftop Pool Apt','Grand Baie','green','Arriving today','1 open']];
   const oc={red:'var(--red)',amber:'var(--amber)',green:'var(--green)'};
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Properties</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Properties</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
       <div className="mchips"><span className="mchip on">All</span><span className="mchip">Grand Baie</span><span className="mchip">Tamarin</span><span className="mchip">Flic en Flac</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -436,8 +467,8 @@ function MobileMap(){
   const stcol={on:'var(--green)',enr:'var(--amber)',urgent:'var(--red)',idle:'var(--tx-3)'};
   const list=[['BR','Bryan','GBH-C5 · shower','green'],['CA','Catherine','En route · GBH-C8','amber'],['IA','Ishant','SD-10 · urgent','red'],['MD','Matthieu','Stand-by','gray']];
   return (
-    <div className="mphone">
-      <div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Live map</span><span className="icbtn" style={{width:30,height:30}}><DI n="filter" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/>
+      <div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Live map</span><span className="icbtn" style={{width:30,height:30}}><DI n="filter" s={2}/></span></div>
       <div className="body" style={{overflowY:'auto'}}>
         <div className="mapcanvas" style={{margin:14,height:230,borderRadius:14}}>
           <div className="grid"/>
@@ -458,7 +489,7 @@ Object.assign(window.FADMOBILE, { MobileApprovals, MobileAllTasks, MobileSupplie
 function MobileFinance(){
   const appr=[['Climate Tech Ltd','VV-47 · aircon','Rs 12,500'],['Aqua Plumbing','PT-3 · water heater','Rs 8,700'],['Pereybere Hardware','LC-9 · roof','Rs 225,000']];
   return (
-    <div className="mphone"><div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Finance</span><span className="bdg amber">closing</span></div>
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Finance</span><span className="bdg amber">closing</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>2 urgent.</b> Tourist-tax window opens in 8 days · 3 approvals expire &lt;24h.</span></div>
         <div className="row" style={{gap:6,marginTop:11}}><div className="statc" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>€166k</div><div className="l">Payouts</div></div><div className="statc amber" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>5</div><div className="l">Approvals</div></div><div className="statc red" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>€11.8k</div><div className="l">Tax owed</div></div></div>
@@ -472,7 +503,7 @@ function MobileFinance(){
 function MobileOwners(){
   const rows=[['Nitzana Holdings SA','1','€142,500','current'],['Beaumont Family Trust','2','€88,200','current'],['Harrington, D.','1','€51,600','renewal'],['Chen, Y.','1','€34,100','current'],['Mauritius Coastal Ltd','2','€77,900','current']];
   return (
-    <div className="mphone"><div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Owners</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Owners</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
       <div className="mchips"><span className="mchip on">All</span><span className="mchip">Statements</span><span className="mchip">Payouts</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="row" style={{gap:7}}><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>38</div><div className="l">Owners</div></div><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>€166k</div><div className="l">YTD payouts</div></div><div className="statc amber" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>38</div><div className="l">Due May 3</div></div></div>
@@ -485,7 +516,7 @@ function MobileReviews(){
   const dist=[[5,7],[4,1],[3,0],[2,1],[1,0]];
   const latest=[['Guest 48fb87','RC-15','4.0'],['Guest d6143a','LB-C','2.0'],['Guest 8bad11','RC-14','5.0'],['Guest 6760ff','LF-7','5.0']];
   return (
-    <div className="mphone"><div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Reviews</span></div>
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Reviews</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="panel" style={{padding:14,textAlign:'center'}}><div style={{fontFamily:'var(--serif)',fontWeight:300,fontSize:38}}>4.56</div><div className="stars" style={{justifyContent:'center',margin:'4px 0'}}>{[1,2,3,4,5].map(s=><DI key={s} n="star" s={1.5} style={{color:s<=4?'var(--amber)':'var(--line-3)'}}/>)}</div><div className="faint" style={{fontSize:11}}>9 reviews · 30d · <span style={{color:'var(--red)'}}>−0.33</span></div></div>
         <div className="row" style={{gap:7,marginTop:11}}><div className="statc" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>4.76</div><div className="l">Airbnb</div></div><div className="statc" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>4.17</div><div className="l">Booking</div></div><div className="statc red" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>100</div><div className="l">Unreplied</div></div></div>
@@ -500,7 +531,7 @@ function MobileAnalytics(){
   const trend=[28,62,70,88,60,54,66,72,68,58,62,76];
   const chan=[['Airbnb',57,'#e08e89'],['Manual',35,'#9fb4ee'],['Booking',6,'#6cc79c'],['Scraped',3,'var(--tx-3)']];
   return (
-    <div className="mphone"><div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Analytics</span><span className="aichip">30d</span></div>
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Analytics</span><span className="aichip">30d</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="row" style={{gap:6}}><div className="statc" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>€40k</div><div className="l">Revenue</div></div><div className="statc" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>72</div><div className="l">Bookings</div></div><div className="statc" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>88%</div><div className="l">Occ</div></div><div className="statc" style={{flex:1,padding:'9px 8px'}}><div className="n" style={{fontSize:15}}>€71</div><div className="l">ADR</div></div></div>
         <div className="panel" style={{marginTop:12,padding:13}}><div className="dml" style={{margin:'0 0 10px'}}>Revenue trend<span className="rule"/></div><div className="row" style={{gap:4,alignItems:'flex-end',height:90}}>{trend.map((t,i)=><div key={i} style={{flex:1,height:t+'%',background:'linear-gradient(180deg,var(--indigo-bright),var(--indigo))',borderRadius:'2px 2px 0 0',opacity:.55+t/250}}/>)}</div></div>
@@ -512,7 +543,7 @@ function MobileAnalytics(){
 function MobileHR(){
   const staff=[['BH','Bryan Henri','Field · north','0'],['CH','Catherine Henri','Field · north','1'],['FH','Franny Henri','Ops Manager','—'],['MD','Mathias Duval','Commercial','—']];
   return (
-    <div className="mphone"><div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>HR</span><span className="icbtn" style={{width:30,height:30}}><DI n="plus" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>HR</span><span className="icbtn" style={{width:30,height:30}}><DI n="plus" s={2}/></span></div>
       <div className="mchips"><span className="mchip on">Staff</span><span className="mchip">Time-off</span><span className="mchip">Stats</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="row" style={{gap:7}}><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>18</div><div className="l">Team</div></div><div className="statc green" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>4</div><div className="l">On shift</div></div><div className="statc amber" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>1</div><div className="l">Time-off</div></div></div>
@@ -526,7 +557,7 @@ function MobileHR(){
 function MobileGuests(){
   const rows=[['TM','Thibault Marchand','3','€18,420','returning'],['PI','Priya Iyer','5','€31,200','vip'],['LO','Linde Okonkwo','2','€14,800','returning'],['IF','Isabella Fonseca','1','€3,680','new'],['AD','Amélie Dubois','4','€22,100','vip']];
   return (
-    <div className="mphone"><div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Guests</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Guests</span><span className="icbtn" style={{width:30,height:30}}><DI n="search" s={2}/></span></div>
       <div className="mchips"><span className="mchip on">All</span><span className="mchip">VIP</span><span className="mchip">Returning</span><span className="mchip">New</span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="row" style={{gap:7}}><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>184</div><div className="l">Guests</div></div><div className="statc green" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>33%</div><div className="l">Returning</div></div><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>21</div><div className="l">VIP</div></div></div>
@@ -538,7 +569,7 @@ function MobileGuests(){
 function MobileNotifs(){
   const need=[['flag','red','GBH-C5','Recurring pump fault — 3rd time. Friday suggests preventive service.'],['alert','amber','approvals','3 field reports waiting (1 urgent).'],['users','indigo','roster','Bryan at 88% load Tuesday — rebalance suggested.'],['coin','green','owners','GBH-B4 owner statement ready to send.']];
   return (
-    <div className="mphone"><div className="top"><span className="wm">FAD</span><span className="ttl" style={{flex:1}}>Notifications</span><span className="icbtn" style={{width:30,height:30}}><DI n="spark" s={1.7}/></span></div>
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Notifications</span><span className="icbtn" style={{width:30,height:30}}><DI n="spark" s={1.7}/></span></div>
       <div className="body" style={{overflowY:'auto',padding:14}}>
         <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>Friday filtered</b> 3,847 low-signal alerts — here are the 4 that need you.</span></div>
         <div className="dml" style={{margin:'14px 0 8px'}}>Needs you <span className="ct">4</span><span className="rule"/></div>
@@ -548,3 +579,159 @@ function MobileNotifs(){
   );
 }
 Object.assign(window.FADMOBILE, { MobileFinance, MobileOwners, MobileReviews, MobileAnalytics, MobileHR, MobileGuests, MobileNotifs });
+
+function MobileTraining(){
+  const teach=[["Don't use em dashes in guest messages.",'Global','dashboard'],["Frame the cleaning fee as pre-arrival prep, not post-departure.",'Global','9×'],["Building name is \u201cResidence Camelia\u201d, not Royal Coast.",'3 props','dashboard'],["Keep checkout acknowledgments neutral — property not yet inspected.",'Global','6×']];
+  const queue=[['Offer 1pm late checkout at GBH-B4 when next day is vacant.',86],['Stop apologising twice in one message.',78]];
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Training</span><span className="icbtn" style={{width:30,height:30}}><DI n="spark" s={1.7}/></span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>Govern how Friday learns.</b> 140 active teachings · {queue.length} awaiting your approval.</span></div>
+        <div className="dml" style={{margin:'14px 0 8px'}}>Learning queue <span className="ct">{queue.length}</span><span className="rule"/></div>
+        {queue.map((q,i)=>(<div key={i} className="panel" style={{padding:'12px',marginBottom:8}}><div style={{fontSize:12.5,fontWeight:500,lineHeight:1.45}}>{q[0]}</div><div className="between" style={{marginTop:9}}><span className="faint mono" style={{fontSize:10}}>confidence {q[1]}%</span><span className="row" style={{gap:6}}><button className="dbtn green sm" onClick={()=>window.fadToast&&window.fadToast('Approved — now a teaching','green')}><DI n="check" s={2}/></button><button className="dbtn ghost sm" onClick={()=>window.fadToast&&window.fadToast('Dismissed')}>Skip</button></span></div></div>))}
+        <div className="dml" style={{margin:'16px 0 8px'}}>Active teachings <span className="ct">140</span><span className="rule"/></div>
+        {teach.map((t,i)=>(<div key={i} className="panel" style={{padding:'11px 12px',marginBottom:7}}><div style={{fontSize:12,lineHeight:1.45}}>{t[0]}</div><div className="row" style={{gap:6,marginTop:7}}><span className="bdg gray">{t[1]}</span><span className="faint mono" style={{fontSize:9.5}}>{t[2]}</span></div></div>))}
+      </div><MTabbar on="more"/></div>
+  );
+}
+function MobileSettings(){
+  const Tg=({on})=>{const[v,setV]=React.useState(on);return <span className={"tgl"+(v?' on':'')} onClick={()=>setV(!v)}><span className="knob"/></span>;};
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Settings</span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="dml" style={{margin:'2px 0 8px'}}>Roles <span className="rule"/></div>
+        <div className="panel" style={{padding:'4px 13px'}}>
+          {[['Director','3'],['GM / Ops','5'],['Field staff','18'],['Owner','27']].map((r,i)=>(<div key={i} className="drow"><span style={{fontWeight:600,fontSize:12.5}}>{r[0]}</span><span className="bdg indigo">{r[1]} people</span></div>))}
+        </div>
+        <div className="dml" style={{margin:'16px 0 8px'}}>Integrations <span className="rule"/></div>
+        <div className="panel" style={{padding:'4px 13px'}}>
+          {[['Guesty','green dot','Connected'],['Breezeway','green dot','Connected'],['WhatsApp','amber dot','Action needed']].map((r,i)=>(<div key={i} className="drow"><span style={{fontSize:12.5}}>{r[0]}</span><span className={"bdg "+r[1]}>{r[2]}</span></div>))}
+        </div>
+        <div className="dml" style={{margin:'16px 0 8px'}}>Notifications <span className="rule"/></div>
+        <div className="panel" style={{padding:'4px 13px'}}>
+          {[['Safety & guest-blocked',true],['Task assigned to me',true],['Report needs approval',false],['Supplies below par',true]].map((r,i)=>(<div key={i} className="drow"><span style={{fontSize:12.5}}>{r[0]}</span><Tg on={r[1]}/></div>))}
+        </div>
+      </div><MTabbar on="more"/></div>
+  );
+}
+function MobileSyndic(){
+  const [b,setB]=React.useState(null);
+  const blds=[{c:'GBH',n:'Grand Baie Heights',col:'36.8%',out:'Rs 301k',tone:'red',st:'mandate draft'},{c:'RC',n:'Résidence Camelia',col:'74%',out:'Rs 140k',tone:'green',st:'mandate signed'}];
+  if(b){const x=blds.find(z=>z.c===b);return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="icbtn" style={{width:30,height:30,border:'none',background:'transparent',cursor:'pointer'}} onClick={()=>setB(null)}><DI n="chevL" s={2.2}/></span><span className="ttl" style={{flex:1,fontSize:18}}>{x.n}</span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="row" style={{gap:7}}><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:15}}>{x.col}</div><div className="l">Collected</div></div><div className={"statc "+x.tone} style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:15}}>{x.out}</div><div className="l">Outstanding</div></div><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:15}}>{x.c==='GBH'?'12 Jun':'4 Sep'}</div><div className="l">Next AGM</div></div></div>
+        <div className="fbar" style={{marginTop:12}}><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}>{x.c==='GBH'?<><b>Needs attention.</b> Collection low, insurance lapsed, AGM convocation due.</>:<><b>Healthy.</b> Signed mandate, current insurance, one lot in arrears.</>}</span></div>
+        <div className="dml" style={{margin:'16px 0 8px'}}>Sections <span className="rule"/></div>
+        {[['Owners & lots','users'],['Charges & statements','coin'],['Payments','doc'],['Arrears','flag'],['AGM / meetings','cal'],['Documents','doc']].map((s,i)=>(<div key={i} className="panel" style={{padding:'12px',marginBottom:7,display:'flex',alignItems:'center',gap:11,cursor:'pointer'}} onClick={()=>window.fadToast&&window.fadToast('Opening '+s[0])}><span style={{color:'var(--indigo-bright)'}}><DI n={s[1]} s={1.7}/></span><span style={{flex:1,fontSize:13,fontWeight:500}}>{s[0]}</span><DI n="chevR" s={2} style={{color:'var(--tx-3)'}}/></div>))}
+      </div><MTabbar on="more"/></div>
+  );}
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Syndic</span><span className="icbtn" style={{width:30,height:30}}><DI n="plus" s={2}/></span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="faint" style={{fontSize:12,marginBottom:10}}>Co-ownership buildings under management</div>
+        {blds.map((x,i)=>(<div key={i} className="panel" style={{padding:'13px',marginBottom:9,cursor:'pointer'}} onClick={()=>setB(x.c)}><div className="between"><div className="row" style={{gap:9}}><span className="statc" style={{padding:8,border:'none',background:'var(--indigo-ghost)',color:'var(--indigo-bright)'}}><DI n="building" s={1.6}/></span><div><div style={{fontWeight:600,fontSize:13.5}}>{x.n}</div><div className="faint mono" style={{fontSize:10,marginTop:1}}>{x.c} · {x.st}</div></div></div><DI n="chevR" s={2} style={{color:'var(--tx-3)'}}/></div><div className="row" style={{gap:16,marginTop:10}}><span className="faint mono" style={{fontSize:10}}>Collected <b style={{color:'var(--tx)'}}>{x.col}</b></span><span className="faint mono" style={{fontSize:10}}>Outstanding <b style={{color:'var(--'+x.tone+')'}}>{x.out}</b></span></div></div>))}
+      </div><MTabbar on="more"/></div>
+  );
+}
+Object.assign(window.FADMOBILE, { MobileTraining, MobileSettings, MobileSyndic });
+
+function MobileDesign(){
+  const [seg,setSeg]=React.useState('me');
+  const T=t=>window.fadToast&&window.fadToast(t);
+  const segs=[['me','Waiting on me'],['blocked','Blocked'],['owner','Owner replied'],['vendor','Vendor delay'],['appr','Approval'],['pay','Payment']];
+  const cards=[
+    {seg:'blocked',tone:'red',ic:'flag',ttl:'SD-10 · Master suite',sub:'Sofa delayed 3wk — install blocked',age:'1d',act:'Re-route'},
+    {seg:'appr',tone:'amber',ic:'shield',ttl:'VA-3 · Studio styling',sub:'Final styling awaiting owner approval',age:'30m',act:'Nudge'},
+    {seg:'owner',tone:'amber',ic:'msg',ttl:'RC-7 · Living + kitchen',sub:'Owner wants warmer tones (R2)',age:'4h',act:'Revise'},
+    {seg:'pay',tone:'amber',ic:'coin',ttl:'GBH-B4 · Full refresh',sub:'Rs 480k balance before ordering',age:'2h',act:'Request'},
+    {seg:'me',tone:'indigo',ic:'ops',ttl:'KS-5 · Penthouse',sub:'Finalise budget for approval',age:'3h',act:'Open'},
+  ];
+  const shown=cards.filter(c=>seg==='me'?true:c.seg===seg);
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Design</span><span className="icbtn" style={{width:30,height:30}}><DI n="spark" s={1.7}/></span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>4 projects need you.</b> 1 blocked, 1 awaiting owner, 1 revision, 1 payment.</span></div>
+        <div className="mscroll-x" style={{display:'flex',gap:7,overflowX:'auto',margin:'12px 0'}}>{segs.map(s=><span key={s[0]} className={"vs"+(seg===s[0]?' on':'')} style={{flex:'0 0 auto',padding:'6px 11px',borderRadius:999,border:'1px solid var(--line-2)',fontSize:11.5,fontWeight:500,whiteSpace:'nowrap',background:seg===s[0]?'var(--indigo-ghost)':'var(--card)',color:seg===s[0]?'var(--indigo-bright)':'var(--tx-2)'}} onClick={()=>setSeg(s[0])}>{s[1]}</span>)}</div>
+        {shown.map((c,i)=>(<div key={i} className="panel" style={{padding:'12px',marginBottom:8,display:'flex',gap:11,alignItems:'flex-start'}}><span className="adot" style={{background:'var(--'+c.tone+')',marginTop:5}}/><div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:13}}>{c.ttl}</div><div className="faint" style={{fontSize:11.5,marginTop:2,lineHeight:1.4}}>{c.sub}</div><div className="faint mono" style={{fontSize:9.5,marginTop:4}}>{c.age} ago</div></div><button className="dbtn sm primary" onClick={()=>T(c.act)}>{c.act}</button></div>))}
+      </div><MTabbar on="more"/></div>
+  );
+}
+Object.assign(window.FADMOBILE, { MobileDesign });
+
+/* ---- Growth & admin: Leads / Marketing / Legal (mobile) ---- */
+function MobileLeads(){
+  const T=t=>window.fadToast&&window.fadToast(t);
+  const [seg,setSeg]=React.useState('new');
+  const INT={stay:'green',syndic:'violet',design:'amber',agency:'indigo'};
+  const leads=[
+    {seg:'new',av:'AM',nm:'Anita Marivaux',int:'stay',src:'Airbnb',val:'Rs 84k',next:'Draft reply'},
+    {seg:'new',av:'RT',nm:'Raj Teelock',int:'syndic',src:'Website',val:'Rs 320k',next:'Qualify'},
+    {seg:'prog',av:'SB',nm:'Sophie Brun',int:'design',src:'Referral',val:'Rs 480k',next:'Book call'},
+    {seg:'qual',av:'KP',nm:'Kevin Pillay',int:'agency',src:'lExpress',val:'Rs 12.2M',next:'Match'},
+    {seg:'prog',av:'NL',nm:'Nadia Lim',int:'stay',src:'Booking',val:'Rs 46k',next:'Send quote'},
+  ];
+  const segs=[['new','New'],['prog','In progress'],['qual','Qualified']];
+  const shown=leads.filter(l=>l.seg===seg);
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Leads</span><span className="icbtn" style={{width:30,height:30}}><DI n="plus" s={2}/></span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>2 new leads.</b> Auto-qualified 1 syndic lead, drafted 1 stay reply.</span></div>
+        <div className="mscroll-x" style={{display:'flex',gap:7,overflowX:'auto',margin:'12px 0'}}>{segs.map(s=><span key={s[0]} className={"vs"+(seg===s[0]?' on':'')} style={{flex:'0 0 auto',padding:'6px 11px',borderRadius:999,border:'1px solid var(--line-2)',fontSize:11.5,fontWeight:500,whiteSpace:'nowrap',background:seg===s[0]?'var(--indigo-ghost)':'var(--card)',color:seg===s[0]?'var(--indigo-bright)':'var(--tx-2)'}} onClick={()=>setSeg(s[0])}>{s[1]}</span>)}</div>
+        {shown.map((l,i)=>(<div key={i} className="panel" style={{padding:'12px',marginBottom:8}}><div className="between"><div className="row" style={{gap:9,minWidth:0}}><span className="av1" style={{width:28,height:28,fontSize:9}}>{l.av}</span><div style={{minWidth:0}}><div style={{fontWeight:600,fontSize:13}}>{l.nm}</div><div className="row" style={{gap:6,marginTop:3}}><span className={"bdg "+INT[l.int]} style={{textTransform:'capitalize'}}>{l.int}</span><span className="faint mono" style={{fontSize:10}}>{l.src} · {l.val}</span></div></div></div></div><button className="dbtn sm primary" style={{marginTop:9,width:'100%'}} onClick={()=>T(l.next)}><DI n="spark" s={1.6}/> {l.next}</button></div>))}
+      </div><MTabbar on="more"/></div>
+  );
+}
+function MobileMarketing(){
+  const T=t=>window.fadToast&&window.fadToast(t);
+  const GOAL={guest:'green',owner:'violet',rebook:'indigo',brand:'gray'};
+  const camps=[['Winter in Mauritius','guest','live','138 leads'],['List with Friday — owner drive','owner','live','21 leads'],['Last-minute long weekend','guest','live','64 leads'],['Come back to West Coast','rebook','scheduled','—']];
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Marketing</span><span className="icbtn" style={{width:30,height:30}}><DI n="star" s={1.7}/></span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>Owner drive is converting.</b> Best ROI: Winter guest push. 8 posts queued this week.</span></div>
+        <div className="row" style={{gap:7,marginTop:12}}><div className="statc" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>4</div><div className="l">Live</div></div><div className="statc green" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>202</div><div className="l">Guest leads</div></div><div className="statc violet" style={{flex:1,padding:'9px 10px'}}><div className="n" style={{fontSize:16}}>38</div><div className="l">Owner leads</div></div></div>
+        <div className="dml" style={{margin:'16px 0 8px'}}>Campaigns <span className="rule"/></div>
+        {camps.map((c,i)=>(<div key={i} className="panel" style={{padding:'11px 12px',marginBottom:7}}><div className="between"><span style={{fontSize:12.5,fontWeight:600,minWidth:0}}>{c[0]}</span><span className={"bdg "+GOAL[c[1]]}>{c[1]}</span></div><div className="row between" style={{marginTop:6}}><span className={"bdg "+(c[2]==='live'?'green dot':'amber dot')}>{c[2]}</span><span className="faint mono" style={{fontSize:10.5}}>{c[3]}</span></div></div>))}
+        <button className="dbtn sm primary" style={{width:'100%',marginTop:6}} onClick={()=>T('New campaign')}><DI n="plus" s={2}/> New campaign</button>
+      </div><MTabbar on="more"/></div>
+  );
+}
+function MobileLegal(){
+  const T=t=>window.fadToast&&window.fadToast(t);
+  const sigs=[['Syndic mandate · GBH','3 of 5 signed','amber'],['Design agreement · SD-10','sent today','indigo'],['Cleaning contractor','declined','red'],['Owner mandate · GBH-B4','completed','green']];
+  const comp=[['Co-ownership insurance','overdue · 3 Jun','red'],['VAT return Q2','due 15 Jul','amber'],['Public liability','due 21 Jun','amber']];
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Legal & Admin</span><span className="icbtn" style={{width:30,height:30}}><DI n="shield" s={1.7}/></span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="fbar"><span className="fi"><DI n="alert" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>1 compliance item overdue</b> + 2 due soon. 2 signatures awaiting.</span></div>
+        <div className="dml" style={{margin:'14px 0 8px'}}>Signatures <span className="rule"/></div>
+        {sigs.map((s,i)=>(<div key={i} className="panel" style={{padding:'11px 12px',marginBottom:7}}><div className="between"><span style={{fontSize:12.5,fontWeight:600,minWidth:0}}>{s[0]}</span><span className={"bdg "+s[2]+(s[2]==='green'||s[2]==='red'?' dot':' dot')}>{s[1]}</span></div></div>))}
+        <div className="dml" style={{margin:'16px 0 8px'}}>Compliance <span className="rule"/></div>
+        {comp.map((c,i)=>(<div key={i} className="panel" style={{padding:'11px 12px',marginBottom:7}}><div className="between"><span style={{fontSize:12.5,fontWeight:600}}>{c[0]}</span><span className={"bdg "+c[2]+" dot"}>{c[1]}</span></div></div>))}
+      </div><MTabbar on="more"/></div>
+  );
+}
+Object.assign(window.FADMOBILE, { MobileLeads, MobileMarketing, MobileLegal });
+
+/* ---- Agency (mobile) — listings + buyers + hot matches + quick valuation ---- */
+function MobileAgency(){
+  const T=t=>window.fadToast&&window.fadToast(t);
+  const [seg,setSeg]=React.useState('listings');
+  const AST={live:'green','under-offer':'amber',draft:'gray',sold:'indigo'};
+  const listings=[['GBH-B4','Apt · Pool & Gym','Rs 8.5M','live'],['SD-10','Beachfront Villa','Rs 28M','under-offer'],['RC-7','Royal Court Apt','Rs 12.2M','live'],['KS-5','Rooftop Penthouse','Rs 18.9M','live']];
+  const buyers=[['PK','Priya Kapoor','Rs 30M · Villa','offer'],['TM','Thomas Müller','Rs 9M · Apt','viewing'],['JD','Jean Dupont','Rs 13M · Apt','qualified']];
+  const matches=[['Priya Kapoor','SD-10',94],['Thomas Müller','GBH-B4',88],['Jean Dupont','RC-7',82]];
+  const segs=[['listings','Listings'],['buyers','Buyers'],['matches','Matches']];
+  return (
+    <div className="mphone"><MStatusBar/><div className="top"><span className="wm">FridayOS</span><span className="ttl" style={{flex:1}}>Agency</span><span className="icbtn" style={{width:30,height:30}}><DI n="users" s={1.7}/></span></div>
+      <div className="body" style={{overflowY:'auto',padding:14}}>
+        <div className="fbar"><span className="fi"><DI n="spark" s={1.6}/></span><span className="ft" style={{fontSize:11.5}}><b>2 hot matches</b> ready to intro. RC-7 underperforming — suggest a price drop.</span></div>
+        <div className="mscroll-x" style={{display:'flex',gap:7,overflowX:'auto',margin:'12px 0'}}>{segs.map(s=><span key={s[0]} className={"vs"+(seg===s[0]?' on':'')} style={{flex:'0 0 auto',padding:'6px 12px',borderRadius:999,border:'1px solid var(--line-2)',fontSize:11.5,fontWeight:500,whiteSpace:'nowrap',background:seg===s[0]?'var(--indigo-ghost)':'var(--card)',color:seg===s[0]?'var(--indigo-bright)':'var(--tx-2)'}} onClick={()=>setSeg(s[0])}>{s[1]}</span>)}</div>
+        {seg==='listings' && listings.map((l,i)=>(<div key={i} className="panel" style={{padding:'12px',marginBottom:8}}><div className="between"><div className="row" style={{gap:8,minWidth:0}}><span className="pcodeD">{l[0]}</span><span style={{fontSize:12.5,fontWeight:600,minWidth:0}}>{l[1]}</span></div><span className={"bdg "+AST[l[3]]+(l[3]==='draft'?'':' dot')}>{l[3]}</span></div><div className="row between" style={{marginTop:8}}><span className="mono" style={{fontWeight:700,fontSize:13}}>{l[2]}</span><button className="dbtn sm ghost" onClick={()=>T('Pushed to portals','green')}>Push to portals</button></div></div>))}
+        {seg==='buyers' && buyers.map((b,i)=>(<div key={i} className="panel" style={{padding:'12px',marginBottom:8}}><div className="between"><div className="row" style={{gap:9,minWidth:0}}><span className="av1" style={{width:28,height:28,fontSize:9}}>{b[0]}</span><div style={{minWidth:0}}><div style={{fontWeight:600,fontSize:13}}>{b[1]}</div><div className="faint mono" style={{fontSize:10,marginTop:2}}>{b[2]}</div></div></div><span className="bdg indigo" style={{textTransform:'capitalize'}}>{b[3]}</span></div></div>))}
+        {seg==='matches' && matches.map((m,i)=>(<div key={i} className="panel" style={{padding:'12px',marginBottom:8}}><div className="between"><div className="row" style={{gap:8,minWidth:0}}><span style={{fontSize:12.5,fontWeight:600}}>{m[0]}</span><DI n="chevR" s={2} style={{color:'var(--tx-3)',width:13,height:13}}/><span className="pcodeD">{m[1]}</span></div><span className="mono" style={{fontWeight:700,color:m[2]>=85?'var(--green)':'var(--amber)'}}>{m[2]}%</span></div><button className="dbtn sm primary" style={{marginTop:9,width:'100%'}} onClick={()=>T('Intro sent','green')}><DI n="msg" s={1.6}/> Introduce</button></div>))}
+      </div><MTabbar on="more"/></div>
+  );
+}
+Object.assign(window.FADMOBILE, { MobileAgency });
