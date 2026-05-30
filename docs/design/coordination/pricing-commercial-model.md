@@ -11,15 +11,30 @@
 > - **Product Architecture & Control Memo v1** ([36143ca884928184bddfe47c9bf8cbf0](https://www.notion.so/36143ca884928184bddfe47c9bf8cbf0)) — the 15/20/25 managed-service ladder + control doctrine.
 > - **FridayOS Architecture Doctrine** ([36843ca8849281b0bbd2dcd651517fd3](https://www.notion.so/36843ca8849281b0bbd2dcd651517fd3)) — "the playbook is the product."
 
-## 1. The one-line frame (and the positioning trap)
-FridayOS is **the operating system and distribution channel for STR managers in underserved regions** — given away
-free as an acquisition wedge, monetised through marketplace commission, paid usage tiers, AI credits, and managed
-services. **It is ONE business** (FAD is tenant-zero of FridayOS — same codebase), not two.
+## 0. Three-domain architecture (LOCKED 2026-05-30 — read first)
+The earlier "one business" framing is refined into **three distinct brands/surfaces:**
+- **FridayOS** — own site + domain; the **software**, sold to PMs globally (free self-serve + per-unit tiers + AI
+  credits + module add-ons). *This doc's primary subject.*
+- **friday.mu** — **Friday Retreats**, a *separate business*: the Mauritius STR company + managed services (Online 15
+  / Standard 20 / Full 25). Mauritian guest bookings.
+- **friday.travel** — the **new global guest marketplace** (flights + accommodation + activities worldwide). The
+  distribution flywheel: international FridayOS clients list here only; Mauritian clients on both friday.mu +
+  friday.travel.
 
-**⚠ The headline is NOT "AI PMS."** Per the pivot memo: AI is **paid table-stakes** — "the one door the giants are
-actively guarding" (Guesty shipped an embedded AI revenue agent Dec 2025; ~84% of operators already use AI). A model
-wrapper is **not** the moat. The marketing site and the product must **not** lead with "AI." Lead with the **unbundle
-+ the incumbent's dilemma + geography** (§5).
+FAD is still **tenant-zero of FridayOS** (same codebase, the live proof). The managed-service ladder (layers 3–4
+below) is the *Friday Retreats / friday.mu* offer, **not** the FridayOS pitch — kept here for completeness + the
+control doctrine, but it does not appear on the FridayOS site.
+
+## 1. The one-line frame (and the positioning sharpening)
+FridayOS is **the AI that runs your rentals end to end, on free software** — proven on a live 25+-property operation,
+defensible because Friday owns all the surfaces (the unbundle) and is built local-first for regions the giants ignore.
+
+**⚠ The sharpening (decided 2026-05-30):** lead with the **autonomous end-to-end AI + free software**, NOT the bare
+"AI-powered" claim. Per the pivot memo, *"we have AI"* is **paid table-stakes** — "the one door the giants are
+guarding" (Guesty shipped an AI revenue agent Dec 2025; ~84% of operators use AI); a model wrapper is commodity. But
+**"the AI that *runs* your rentals end to end"** is a different, defensible claim: autonomous + multi-agent + **proven
+on a real operation** (the giants' AI is a bolt-on that only advises). The **unbundle + local-first + the incumbent's
+dilemma (§5)** are the *proof beneath* the AI headline — the reason the autonomy is real — not a competing headline.
 
 ## 2. The five-layer model (canonical)
 | Layer | What it is | Commercial model | Who controls money/ops |
@@ -31,9 +46,10 @@ wrapper is **not** the moat. The marketing site and the product must **not** lea
 | **3. Online — 15%** | Friday runs the online revenue layer on the owner's behalf via FridayOS (listings, pricing, bookings, payments, guest comms, refunds, reporting). | **15% commission, €45/unit/mo floor, €100 setup.** | **Friday** controls money + guest recovery. |
 | **4. Standard 20% / Full Service 25%** | Online + physical ops (cleaning rhythm → maintenance, procurement, inspections). | **20% / 25% commission.** | Friday controls money, recovery, physical ops. |
 
-Layers 3–4 (managed services) are **Mauritius-now, partner-regions-later** and live mostly in the *Friday Retreats*
-marketing story; the **self-serve SaaS (layers 1–2 + AI credits + marketplace)** is what the **FridayOS website +
-the multi-tenant app** sell. Keep the two stories distinct but consistent (see `website-fridayos.md`).
+**Domain mapping (per §0):** the **marketplace layer** is **friday.travel** (global) + **friday.mu** (Mauritius);
+**managed services (3–4)** are **friday.mu / Friday Retreats** only. The **FridayOS site + app** sell the **self-serve
+software (layers 1–2) + AI credits**, with the friday.travel listing as a *distribution benefit*. Keep the three
+brands distinct but consistent (see `website-fridayos.md` §1a).
 
 ## 3. The self-serve tier ladder (the part the app + site design around)
 Hybrid is the proven 2025-26 shape — **base + per-unit + included AI allowance + overage + add-ons** (Bessemer: hybrid
@@ -42,7 +58,7 @@ the sweet spot** (3-tier converts 1.4× vs 2-tier, 1.8× vs 4+).
 
 | Tier | For | Gets | Role in the funnel |
 |---|---|---|---|
-| **Free forever** | 1–2 units (land-grab) | Core *reactive* Friday (metered), core modules, **friday.mu listing + direct bookings**, **cold** (on-demand sync, no background jobs, no Growth loop). **No external OTA connect** (the conversion trigger). | Acquisition wedge + marketplace inventory + the playbook/data loop. Permanent free (never a trial). |
+| **Free forever** | 1–2 units (land-grab) | Core *reactive* Friday (metered), core modules, **friday.travel listing (friday.mu too for MU) + direct bookings**, **cold** (on-demand sync, no background jobs, no Growth loop). **No external OTA connect** (the conversion trigger). | Acquisition wedge + marketplace inventory + the playbook/data loop. Permanent free (never a trial). |
 | **Starter** ("good") | small portfolios | Fuller AI allowance, **external OTA connect** (Channex), warm sync, basic proactive. | Entry paid (the OTA-gate converts here). |
 | **Pro** ("hero/better") | growing | **+ the Growth layer** (proactive intelligence, analytics), more AI, premium modules. | The tier we push. |
 | **Portfolio/Max** ("best" — anchor) | larger | Everything, all modules, highest AI allowance, priority. | Anchors Pro (anchoring lifts mid-tier 25–60%). |
@@ -63,7 +79,7 @@ Most STR PMSs are base + per-unit (OwnerRez, Uplisting, Hospitable) or pure per-
 **No model-power axis, no user-facing model picker** (decided 2026-05-30 — supersedes the pivot memo's D8). One
 "Friday"; invisible internal routing; swappable models incl. Friday's own future model. See `ask-friday.md` §4.
 
-## 5. The moat (what the website must say instead of "AI")
+## 5. The moat (the proof beneath the AI headline — why the autonomy is real + defensible)
 - **The unbundle** — Guesty/Hostaway/Breezeway each sell *one* fragmented layer; none does software + online management
   + physical management + a consumer marketplace under one roof. They optimise for SaaS margins and won't touch the
   messy low-margin layers. Friday will. **That bundle is the moat.**
@@ -90,9 +106,10 @@ Most STR PMSs are base + per-unit (OwnerRez, Uplisting, Hospitable) or pure per-
 ## 7. Risks designed-around (from the pivot memo — not discovered later)
 - **No price-raise-later / bait-and-switch.** Free stays **permanently** free; monetise adjacent surfaces (overage,
   AI credits, marketplace commission, managed services). YouTube/Airbnb kept free genuinely free — we do too.
-- **friday.mu neutrality conflict.** FridayOS serves managers who may compete with Friday Retreats, on a marketplace
-  Friday also lists on. Needs a **data wall + explicit neutrality commitment** (friday.mu = *additional demand*, not a
-  competitive channel). Design deliberately; surface the commitment in the product + site.
+- **Marketplace neutrality conflict (friday.travel / friday.mu).** FridayOS serves managers who may compete with
+  Friday Retreats, on marketplaces (friday.travel global, friday.mu MU) Friday also lists its own inventory on. Needs
+  a **data wall + explicit neutrality commitment** (the marketplace = *additional demand*, not a competitive channel).
+  Design deliberately; surface the commitment in the product + site.
 - **Free-tier economics = cold tenants.** Free must be **near-zero marginal cost**: no background jobs/polling for free
   tenants (on-demand sync only), storage retention caps, ruthless metering. Plan to a **2–5% free→paid** conversion.
 - **OTA gating as the honest conversion trigger** — free includes friday.mu + direct bookings (near-zero cost);
@@ -107,7 +124,9 @@ Most STR PMSs are base + per-unit (OwnerRez, Uplisting, Hospitable) or pure per-
 ## 8. What's settled vs open
 **Settled (2026-05-30):** one Friday, no model picker · gate on units/modules/AI-qty/proactivity · hybrid
 base+per-unit+allowance+overage · free-forever-but-cold · 3–4 tiers + add-ons · core AI unmetered, optional AI metered
-to outcomes with visible caps · headline is the unbundle/geography, not "AI" · attribute external-PMS limits honestly.
+to outcomes with visible caps · **headline = the autonomous end-to-end AI + free software** (unbundle/geography as the
+proof beneath, not the bare "we have AI" claim) · three-domain split (FridayOS / friday.mu / friday.travel) · attribute
+external-PMS limits honestly.
 **Open (carry — pitch-tier, don't block design):** exact price points + per-unit curve (validate live) · the free-AI
 allocation math (cost against live inference rates) · D2 revenue-mix target (marketplace vs managed vs software — the
 most consequential, Ishant's call) · friday.mu data-wall + neutrality wording · sequencing (Mauritius → neighbour →

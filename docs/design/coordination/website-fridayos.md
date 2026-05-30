@@ -13,37 +13,52 @@
 
 ## 1. The brief in one line
 Design the FridayOS marketing site that converts STR property managers — in Mauritius first, underserved regions next
-— from "what is this" to "signed up free," by leading with **the unbundle + the incumbent's dilemma + local-first**
-(NOT "AI"), proving it with the **live Friday Retreats operation as reference**, and routing cleanly into the
-free-forever sign-up.
+— from "what is this" to "signed up free," by leading with **the AI that runs your rentals end to end + free
+software**, proven by the **live 25+-property Friday Retreats operation**, with the unbundle / local-first / global
+distribution (friday.travel) as the reasons it's real, routing cleanly into the free-forever sign-up.
+
+## 1a. Brand & domain architecture (LOCKED 2026-05-30 — read first)
+Three distinct surfaces — **this brief is ONLY the FridayOS one:**
+- **FridayOS** — its **own site + domain** (e.g. fridayos.com / app.fridayos.com). The **software**, sold to property
+  managers globally. **← this brief.**
+- **friday.mu** — **Friday Retreats**, a *separate business*: the Mauritius STR-management company + the managed
+  services (Online 15 / Standard 20 / Full 25). Mauritian guest bookings. **Not designed here; not on the FridayOS
+  site.** Don't put managed-service tiers on the FridayOS site.
+- **friday.travel** — the **new global guest marketplace** (flights + accommodation + activities worldwide). The
+  distribution flywheel for FridayOS clients: **international clients list on friday.travel only; Mauritian clients on
+  both friday.mu + friday.travel.** A separate guest-facing site (future design effort) — referenced here only as the
+  *distribution benefit* a FridayOS client gets.
 
 ## 2. Source of truth & positioning (read before designing)
-- **Pricing/commercial:** `pricing-commercial-model.md` (canonical). The site sells **self-serve layers 1–2 + AI
-  credits + the friday.mu marketplace** (free-forever, per-unit paid tiers, add-ons). The **managed-service ladder
-  (Online 15% / Standard 20% / Full 25%)** is the *Friday Retreats* offer — present it as an optional "let Friday run
-  it for you" path, regionally gated, not the core SaaS pitch.
-- **⚠ Positioning — do NOT lead with "AI."** AI is **paid table-stakes** and "the one door the giants are guarding"
-  (Freemium Pivot Memo). A model wrapper isn't the moat. **Lead with:**
-  1. **The unbundle** — software + online management + physical ops + a consumer marketplace, under one roof. Nobody
-     else does all four.
-  2. **The incumbent's dilemma** — the giants *can't* give the PMS away without breaking their own model; FridayOS is
-     free.
-  3. **Local-first / geography** — built for underserved regions the giants ignore (Indian Ocean, East/Southern
-     Africa, Bali, Seychelles, Réunion): local tax/VAT/syndic law, local payment rails, local OTA quirks, real
-     on-the-ground support in-timezone.
-- **Proof, not claims** — Friday Retreats is **tenant-zero**: a real 25+-property operation in Mauritius runs on this.
-  "Live reference, not a demo" is the credibility wedge the giants can't fake. Use it.
-- **Honesty doctrine** carries to marketing — no overclaiming. Conditional language where reality is conditional
-  (e.g. tourist-tax: *"collection, filing and remittance where applicable, where Friday collects the funds and is
-  legally authorised or required to do so"* — use this exact framing, per the Product Architecture memo).
+- **Pricing/commercial:** `pricing-commercial-model.md` (canonical). The FridayOS site sells the **software**:
+  free-forever self-serve + per-unit paid tiers + AI credits + module add-ons, and the **distribution** benefit
+  (your inventory on friday.travel, 13% on bookings it brings you). The **managed-service ladder is NOT on this site**
+  (that's friday.mu / Friday Retreats).
+- **Positioning — LEAD WITH THE AI (the *right* framing).** Decided 2026-05-30: the AI + free software **is** the
+  advantage. **But the defensible claim is "the AI that runs your rentals end to end," not "we have AI"** (a model
+  wrapper is commodity — the giants have AI too). Lead with autonomy + proof:
+  1. **The AI that runs your rentals end to end** — autonomous, multi-agent, acts across the whole operation
+     (inbox, ops, pricing, guests, finance) — *not* an assist-you chatbot. "Runs it while you sleep."
+  2. **Proven, not promised** — it already runs a **real 25+-property operation** (Friday Retreats, tenant-zero).
+     **Live reference, not a demo** — the one claim the giants structurally cannot make (their AI is a bolt-on).
+  3. **Free software** — the OS itself is free; you only pay for usage/AI-credits/distribution. The giants can't
+     match free without breaking their own model (the incumbent's dilemma).
+  - **The unbundle is the *reason the AI is real*, not a separate headline:** a single-layer tool's AI can only
+    *advise*; FridayOS's AI can *act* end-to-end because FridayOS owns all the surfaces (software + ops +
+    distribution). Use the unbundle + local-first as the proof beneath the AI claim.
+- **Honesty doctrine** carries to marketing — no overclaiming. The autonomy claim is backed by the live operation;
+  surface the AI's **trust-states as a feature** (Friday shows its work + confidence + sources), which *reinforces*
+  "trustworthy autonomy" rather than "magic." Conditional language where reality is conditional (tourist-tax etc.).
 
 ## 3. Who it's for (audiences → site paths)
-- **Primary: independent / small-portfolio STR managers** in target regions hitting the limits of spreadsheets,
-  Guesty cost, or fragmented tools → the **free-forever** wedge.
-- **Growing managers (5–10+ units)** → the **paid per-unit tiers** (the OTA-connect + Growth-layer story).
-- **Owners who'd rather Friday run it** → the **managed-service** path (regionally gated; routes to a contact/qualify
-  flow, not self-serve sign-up).
-- **Investors / partners / press** (secondary) → an about/vision surface (the platform + marketplace ambition).
+- **Primary: independent / small-portfolio STR managers** (Mauritius first, underserved regions next) hitting the
+  limits of spreadsheets, Guesty cost, or fragmented tools → the **free-forever** wedge + the **autonomous-AI** pitch.
+- **Growing managers (5–10+ units)** → the **paid per-unit tiers** (the OTA-connect + Growth-layer + AI-credits story).
+- **Managers wanting global distribution** → list inventory on **friday.travel** (the booking flywheel benefit).
+- **Investors / partners / press** (secondary) → an about/vision surface (the global platform ambition).
+- **NOT here:** owners who want Friday to *run* their rental → that's **Friday Retreats on friday.mu** (managed
+  services), a separate business + site. The FridayOS site can carry at most a small "based in Mauritius? Friday
+  Retreats can run it for you → friday.mu" pointer, not the managed-service pitch.
 
 ## 4. Brand & system
 - **Defer to the FridayOS Brand Kit in the CD account.** It governs logo, type, color, tone.
@@ -51,26 +66,25 @@ free-forever sign-up.
   precise, intelligent aesthetic; the `spark` Friday mark; the trust/precision feel. The marketing site is the
   product's front door — a visitor should recognise the app when they land in it.
 - **Backup palette (only if the Brand Kit is silent):** the FridayOS dark identity from the company deck —
-  bg `#060810`, blue `#6395ff`, amber `#f59e0b`; Friday Retreats corporate is navy `#1a2744` + gold `#c9960f` on cream
-  `#f8f7f4` (use the corporate palette for the *Friday Retreats managed-service* framing, the dark FridayOS palette for
-  the *FridayOS SaaS* framing — they're two related brands).
+  bg `#060810`, blue `#6395ff`, amber `#f59e0b`. *(Friday Retreats' navy `#1a2744` + gold `#c9960f` on cream is a
+  **different** brand for friday.mu — don't mix it into the FridayOS site.)*
 - **Type (deck-locked, pending Brand Kit):** Display **Fraunces**, body **DM Sans**, mono **JetBrains Mono**. Logo is
   typographic ("Friday" + accent).
-- **Bilingual EN/FR** (Mauritius), responsive, fast. Marketing site stack is the **Friday website** (Next.js), separate
-  from the app — but consistent design language.
+- **Bilingual EN/FR**, responsive, fast. Its own site/domain (Next.js), separate from the app — consistent design
+  language with the SaaS project.
 
 ## 5. Pages to design (P0 first)
 | # | Page | Purpose & key content | Priority |
 |---|---|---|---|
-| A | **Home / hero** | The unbundle + incumbent's-dilemma + local-first thesis; "free forever" CTA; the live-Friday-Retreats proof; the one-product-many-layers story. **Not "AI" first.** | **P0** |
-| B | **Pricing** | The self-serve ladder (free + per-unit tiers + add-ons + AI credits), the **visible-meter/no-silent-overage** promise, marketplace 13% line, managed-service tiers as a separate "done-for-you" block. Mirrors `pricing-commercial-model.md`; must read consistently with the in-app billing. | **P0** |
-| C | **Product / how it works** | The modules (Inbox, Operations, Properties, Reservations, Reviews, Owners, Finance, Analytics…) + **Ask Friday** as the spine — shown honestly (the trust-states are a *feature*, not hidden). Pull real screens/feel from the SaaS project. | **P0** |
-| D | **Sign-up / onboarding entry** | The free-forever sign-up funnel start (the actual flow lives in-app — see §6); the OTA-connect-as-upgrade framing. | **P0** |
-| E | **The moat / why FridayOS** | The unbundle vs Guesty/Hostaway/Breezeway, the local-first wedge, the friday.mu marketplace + neutrality commitment. | **P1** |
-| F | **Managed services (Friday Retreats)** | Online 15 / Standard 20 / Full 25, regionally gated, control doctrine framing, conditional tourist-tax language. Routes to contact/qualify. | **P1** |
-| G | **For owners / for managers split** | Audience-routed landing variants (a manager wants software; an owner wants someone to run it). | **P1** |
-| H | **About / vision / investors** | The platform + marketplace + underserved-regions ambition; the live-operation credibility. | **P2** |
-| I | **Trust / legal surfaces** | Neutrality commitment, data handling, the honest "limited-by-external-PMS" explainer. | **P2** |
+| A | **Home / hero** | **"The AI that runs your rentals end to end" + free software**; the live-25+-property proof ("not a demo"); free-forever CTA. The unbundle/local-first as the *proof beneath* the AI claim, not the headline. | **P0** |
+| B | **Pricing** | The self-serve ladder (free + per-unit tiers + add-ons + **AI credits**), the **visible-meter/no-silent-overage** promise, the friday.travel distribution line (13% on bookings it brings). **No managed-service tiers** (those are friday.mu). Mirrors `pricing-commercial-model.md`; consistent with in-app billing (§6). | **P0** |
+| C | **Product / how it works** | The autonomous AI running the operation end-to-end across the modules (Inbox, Operations, Properties, Reservations, Reviews, Owners, Finance, Analytics) + **Ask Friday** as the spine — trust-states shown as a *feature* (trustworthy autonomy, not magic). Pull real screens/feel from the SaaS project. | **P0** |
+| D | **Sign-up / onboarding entry** | The free-forever sign-up funnel start (flow lives in-app — §6); OTA-connect-as-upgrade framing. | **P0** |
+| E | **Why FridayOS** | Why the autonomy is *real* + defensible: the unbundle (AI can *act*, not just advise, because we own all surfaces) vs Guesty/Hostaway/Breezeway; local-first; the incumbent's dilemma (free, they can't match). | **P1** |
+| F | **Distribution (friday.travel)** | The global guest marketplace benefit — list once, get booked worldwide; 13% on bookings it brings. Links to friday.travel (separate guest site). | **P1** |
+| G | **For managers (audience focus)** | The site is manager-facing throughout; this sharpens the by-size story (solo → portfolio). *(No "for owners" path — that's friday.mu.)* | **P1** |
+| H | **About / vision / investors** | The global platform + distribution + underserved-regions ambition; the live-operation credibility. | **P2** |
+| I | **Trust / legal surfaces** | Data handling, the honest "limited-by-external-PMS" explainer, the autonomy/authority boundaries. | **P2** |
 
 ## 6. The pricing surfaces span BOTH the site AND the app — design them together
 This is the key cross-surface ask. Pricing isn't just a marketing page; it's a **funnel that crosses into the
@@ -86,30 +100,38 @@ product**, and the two must tell **one story**:
   promise, same module-gating language. A user who reads the site's pricing and then signs up should feel zero seam.
 
 ## 7. Critical things the design must get right
-- **Don't say "AI" in the headline.** AI appears as a *capability* deep in the product story (C), framed honestly via
-  the trust-states — never as the lead claim.
-- **Free is genuinely free, permanently** — the site must read trustworthy, not bait-and-switch. No "free trial"
-  language; "free forever." The upgrade triggers (OTA connect, caps, Growth layer) are honest value-for-cost.
-- **No model picker, one Friday** — if the product story mentions intelligence, it's "Friday," not model names/levels.
-- **The friday.mu neutrality commitment** must be visible (FridayOS serves managers who may compete with Friday
-  Retreats; the marketplace is *additional demand*, with a data wall — say so).
-- **Proof over hype** — the live 25+-property Mauritius operation is the strongest asset; lead with it, not adjectives.
+- **Lead with autonomy, not "we have AI."** The headline is **"the AI that runs your rentals end to end"** — backed by
+  the live operation. Avoid the bare "AI-powered" claim (commodity; the giants have it). The product story (C) shows
+  the AI *acting* across modules, with **trust-states as a feature** (it shows its work + confidence + sources →
+  *trustworthy* autonomy, not magic).
+- **Free is genuinely free, permanently** — trustworthy, not bait-and-switch. No "free trial"; "free forever." Upgrade
+  triggers (OTA connect, caps, Growth layer, AI credits) are honest value-for-cost.
+- **No model picker, one Friday** — the intelligence is "Friday," never model names/levels.
+- **Proof over hype** — the live 25+-property Friday Retreats operation is the strongest asset; "live reference, not a
+  demo." Lead with it.
+- **Three brands, kept clean** — FridayOS (this site, software) ≠ friday.mu (Friday Retreats, managed service) ≠
+  friday.travel (global guest marketplace). Don't blur them; at most a small cross-pointer.
 - **AI-credit meter (in-app)** — visible gauge, alert-before-cap, user-settable cap. Never a surprise bill.
 
 ## 8. Open decisions (propose options; some are Ishant's)
-1. **Brand split** — how distinctly to separate the **FridayOS** (dark, SaaS) identity from **Friday Retreats**
-   (navy/gold, managed service) on one site, or whether FridayOS gets its own domain/site entirely. *(Brand Kit may
-   answer; else propose.)*
-2. **Revenue-mix emphasis (Ishant, memo D2)** — should the site foreground the **marketplace**, the **managed
-   services**, or the **software tiers**? The most consequential open question; the hero emphasis follows it.
-3. **Sign-up depth on the marketing site** — does sign-up start on the site and hand to the app, or does the site CTA
-   deep-link straight into the app's sign-up?
-4. **Managed-services prominence** — co-equal path, or a quieter "done-for-you" option below the self-serve pitch?
-5. **Exact pricing numbers** — placeholders until validated live (per `pricing-commercial-model.md` §3).
+**RESOLVED (Ishant, 2026-05-30):**
+- *Revenue-mix / hero (memo D2)* → **the autonomous end-to-end AI + free software** is the lead. Managed services are
+  out (friday.mu); marketplace is the friday.travel distribution benefit, not the headline.
+- *Brand/domain* → **FridayOS gets its own site + domain**, distinct from friday.mu and friday.travel (§1a).
+
+**Still open (propose options):**
+1. **Sign-up depth** — does sign-up start on the marketing site and hand to the app, or does the site CTA deep-link
+   straight into the app's sign-up flow?
+2. **friday.travel cross-link** — how prominent is the distribution/marketplace benefit on the FridayOS site, given
+   friday.travel is a separate (future) guest site — a full page (F), a section, or a teaser?
+3. **friday.mu pointer** — whether/how to surface "based in Mauritius? Friday Retreats can run it for you" without
+   pulling managed-services onto the FridayOS site.
+4. **Exact pricing numbers** — placeholders until validated live (per `pricing-commercial-model.md` §3).
 
 ## 9. What we want back
 The **Home/hero, Pricing, Product, and Sign-up entry** first (P0) — desktop + mobile, EN/FR, in the FridayOS brand,
-**consistent with the SaaS project's product design and with the in-app pricing surfaces (§6)** — leading with the
-unbundle/incumbent's-dilemma/local-first thesis and the live-Friday-Retreats proof, **not "AI."** Then the moat,
-managed-services, audience-split, and about pages. Propose options on §8; flag any clash with `pricing-commercial-
-model.md` or the SaaS project to Ishant per `00-README` §7.
+**consistent with the SaaS project's product design and with the in-app pricing surfaces (§6)** — leading with **"the
+AI that runs your rentals end to end" + free software**, proven by the live operation, with the unbundle/local-first
+as the proof beneath. Then Why-FridayOS, Distribution (friday.travel), the audience focus, and about. Keep the three
+brands clean (§1a); propose options on §8; flag any clash with `pricing-commercial-model.md` or the SaaS project per
+`00-README` §7.
