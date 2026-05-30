@@ -225,7 +225,7 @@ Friday done"): eval-mining/analyzer operating cadence (Plan 2/6), KB harness fac
 - [DONE] AF7 — GM AskPanel wired to real Ask Friday Core (Operations) `cf848908`: live composer + per-action Approve via `executeAskFridayAction`, failed-state gating. Static path preserved for schedule/roster.
 - [DONE] AF8 — Ops AISuggestionRow Accept applies the suggestion `6139a50e`: assign→assignee, urgency_bump→priority via `updateTask`; advisory kinds telemetry-only; kind→patch logic unit-verified 9/9.
 - [DONE] Design refresh to the authoritative 2026-05-30 handoff (`8d3eb93d` + JQ export `98d99cf0`); brand-blue locked (cyan stale). All shell + brand confirmed correct across 3 export iterations.
-- [SPUN OFF] `AIConfidenceChip` still renders a literal % (TaskDetail.tsx ~2069) — same locked-decision violation as ConfBar; flagged as a separate background task (presentation-only fix).
+- [DONE] `AIConfidenceChip` → qualitative band (no %) `f77e17dd` — completes the locked-decision confidence sweep (both callers: AISuggestionCard + Ops TaskDetail). Audit found all other % in the app are legitimate data (occupancy/share/ADR/checklist); the only remaining is AgencyModule's buyer MATCH score (a match %, arguably not confidence — left for judgment).
 - [ ] M2–M17 module-body migrations (pause after each, await per-module design lock) · F1–F6 finalization.
 
 ---
