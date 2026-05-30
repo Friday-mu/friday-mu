@@ -15,7 +15,13 @@ Two ways — pick one:
   at the prototype.
 Hand it **this file (`00-README`) first**, then **`ask-friday.md` (the spine — every module embeds it)**, then the per-module brief(s).
 
-**Briefs in this folder:** `ask-friday.md` (spine) · `inbox.md` · `operations.md` · `properties.md` · `reservations.md` · `calendar.md` · `owners.md` · `guests.md` · `reviews.md` · `training.md` · `notifications-emails.md` · `clashes.md` (running decision log). *(Inbox + Operations are in an earlier engineering-first format; the rest are the vision-led house format.)*
+**Briefs in this folder** (all vision-led house format):
+- **Spine:** `ask-friday.md` (read first — every module embeds it).
+- **P1:** `inbox.md` · `operations.md`.
+- **P2:** `properties.md` · `reservations.md` · `calendar.md` · `owners.md` · `guests.md` · `reviews.md` · `training.md`.
+- **P3:** `finance.md` · `legal-admin.md` · `marketing-leads.md` · `hr.md` · `settings-tenant.md` · `analytics.md`.
+- **Cross-cutting:** `notifications-emails.md`.
+- **Decision log:** `clashes.md` (9 logged — flag new ones here, don't silently choose).
 
 ## 1. The job, in one line
 We built a real, working FAD already. We're redesigning it to be better. Design the **full intended vision** of
