@@ -29,12 +29,18 @@ control doctrine, but it does not appear on the FridayOS site.
 FridayOS is **the AI that runs your rentals end to end, on free software** — proven on a live 25+-property operation,
 defensible because Friday owns all the surfaces (the unbundle) and is built local-first for regions the giants ignore.
 
-**⚠ The sharpening (decided 2026-05-30):** lead with the **autonomous end-to-end AI + free software**, NOT the bare
-"AI-powered" claim. Per the pivot memo, *"we have AI"* is **paid table-stakes** — "the one door the giants are
-guarding" (Guesty shipped an AI revenue agent Dec 2025; ~84% of operators use AI); a model wrapper is commodity. But
-**"the AI that *runs* your rentals end to end"** is a different, defensible claim: autonomous + multi-agent + **proven
-on a real operation** (the giants' AI is a bolt-on that only advises). The **unbundle + local-first + the incumbent's
-dilemma (§5)** are the *proof beneath* the AI headline — the reason the autonomy is real — not a competing headline.
+**⚠ The sharpening (decided 2026-05-30): a TWIN headline.**
+- **(1) The AI that *runs* your rentals end to end** — NOT the bare "AI-powered" claim. Per the pivot memo, *"we have
+  AI"* is **paid table-stakes** ("the door the giants are guarding"; ~84% of operators use AI) — a model wrapper is
+  commodity. But **"the AI that *runs* it"** is defensible: autonomous + multi-agent + **proven on a real operation**
+  (the giants' AI is a bolt-on that only advises). *(Site claims this present-tense as the final vision — autonomy is
+  technically in place, hardening before launch; the product stays honest via trust-states + the assisted→autonomous
+  curve.)*
+- **(2) The ~$65/unit/mo ops stack — free.** Concrete + credible: Friday itself ran on **Guesty + Breezeway + Reva ≈
+  $65/unit/month**; FridayOS gives that whole stack (PMS + ops + reviews) away free. The "wait, *free*?" hook, honest
+  because we lived it.
+- The **unbundle + local-first + the incumbent's dilemma (§5)** are the *proof beneath* the twin headline — why the
+  autonomy is real and why free is sustainable for us but unmatchable for them — not competing headlines.
 
 ## 2. The five-layer model (canonical)
 | Layer | What it is | Commercial model | Who controls money/ops |
