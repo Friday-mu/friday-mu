@@ -4,18 +4,24 @@
 /* ===========================================================================
    FAD V2 — Manager / GM desktop skin  (refines the existing FAD style:
    same dark/indigo system, calmer spacing, less clutter, better use of space)
+   2026-05-30: tokens + fonts updated to the shipped FridayOS Claude Design
+   (fad-desktop.css :root — blue #3E74D9, navy #070C1A, Archivo + Space Grotesk).
+   The spec's aspirational cyan #3DE0FF was never applied in the export, so we
+   match what shipped (blue). Var NAMES kept so existing .dwrap selectors pick up
+   the new values; --royal/--accent/--ink added for the new chrome.
    =========================================================================== */.dwrap{
-  --bg:#0a0d12; --bg-2:#0c0f16; --topbar:#080a0e;
-  --surface:#11161f; --card:#141b27; --card-2:#1a2230; --rail:#0c1017;
-  --line:#222c3c; --line-2:#1a2230; --line-3:#283648;
-  --tx:#e8ecf3; --tx-2:#95a0b2; --tx-3:#5e6a7e; --tx-4:#3f4856;
-  --indigo:#4f72cf; --indigo-bright:#8aa1d8; --indigo-dim:#1e2a4a; --indigo-ghost:rgba(86,129,255,.10); --indigo-line:rgba(86,129,255,.22);
-  --green:#4a9b76; --green-ghost:rgba(74,155,118,.11);
-  --red:#cf6660; --red-ghost:rgba(207,102,96,.11);
-  --amber:#c19a57; --amber-ghost:rgba(193,154,87,.11);
-  --violet:#8773c0; --violet-ghost:rgba(135,115,192,.11);
-  --teal:#4ca6aa;
-  --serif:"Newsreader",Georgia,serif; --ui:"Hanken Grotesk",-apple-system,system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+  --ink:#04121f; --royal:#11356F; --royal-2:#1A4A9E; --accent:#3E74D9;
+  --bg:#070C1A; --bg-2:#0a1124; --topbar:#05091a;
+  --surface:#0C1428; --card:#0F1A33; --card-2:#15223f; --rail:#080F22;
+  --line:#1d2b46; --line-2:#162238; --line-3:#2a3d5e;
+  --tx:#EAF0FB; --tx-2:#8FA0C2; --tx-3:#5d6f93; --tx-4:#3d4d6b;
+  --indigo:#3E74D9; --indigo-bright:#6BA3F2; --indigo-dim:#11356F; --indigo-ghost:rgba(62,116,217,.10); --indigo-line:rgba(62,116,217,.24);
+  --green:#3fb389; --green-ghost:rgba(63,179,137,.12);
+  --red:#ef6b66; --red-ghost:rgba(239,107,102,.12);
+  --amber:#d6a85a; --amber-ghost:rgba(214,168,90,.12);
+  --violet:#9a82e0; --violet-ghost:rgba(154,130,224,.13);
+  --teal:#3ec6cf;
+  --serif:"Archivo",Georgia,sans-serif; --ui:"Space Grotesk",-apple-system,system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
   --r:13px; --r-sm:9px; --pill:999px;
 }.dwrap *{box-sizing:border-box}.dwrap{font-family:var(--ui);color:var(--tx);-webkit-font-smoothing:antialiased;letter-spacing:-.005em}.dwrap *{scrollbar-width:thin;scrollbar-color:var(--line-3) transparent}
 
