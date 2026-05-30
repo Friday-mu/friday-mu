@@ -15,6 +15,8 @@ Two ways — pick one:
   at the prototype.
 Hand it **this file (`00-README`) first**, then **`ask-friday.md` (the spine — every module embeds it)**, then the per-module brief(s).
 
+**Briefs in this folder:** `ask-friday.md` (spine) · `inbox.md` · `operations.md` · `properties.md` · `reservations.md` · `calendar.md` · `owners.md` · `guests.md` · `reviews.md` · `training.md` · `notifications-emails.md` · `clashes.md` (running decision log). *(Inbox + Operations are in an earlier engineering-first format; the rest are the vision-led house format.)*
+
 ## 1. The job, in one line
 We built a real, working FAD already. We're redesigning it to be better. Design the **full intended vision** of
 every surface; we then move our backend toward it gradually. The design must understand our **current reality**

@@ -212,7 +212,9 @@ signals** — don't invent.
 2. **Panel home** — right-rail drawer (current `FridayDrawer`) vs slide-over vs both per surface? Does the panel
    persist across navigation or open per-object?
 3. **Scope chip model** — how granular ("All of FAD" → module → object), and can the user widen/narrow scope inline?
-4. **Governance console home** — Intelligence module vs Settings vs Training ("Govern how Friday learns & acts")?
+4. **Governance console home** — ~~Intelligence vs Settings vs Training?~~ **RESOLVED** (`training.md` §4): **Training**
+   = manager teach-and-approve cockpit; **`ask-friday-review`** (director-only) = the deep Core console (surface
+   registry / context-pack publish / evals); **Intelligence** = read-only commentary.
 5. **Notifications** — its own module/route vs a header tray vs both? How much of "muted" to expose by default?
 6. **History/memory exposure** — how much session memory to show the user; per-conversation scope controls.
 7. **The `ops-consult` ↔ `fad_ops_assistant` alias** — purely backend, but if surface ids ever show in the console UI,
