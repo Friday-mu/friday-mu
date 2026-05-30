@@ -1,4 +1,5 @@
 import { apiFetch } from '../../../components/types';
+import { contractFor } from './askFridayContracts';
 
 export interface AskFridayHistoryTurn {
   role: 'user' | 'assistant' | 'ai';
@@ -12,9 +13,30 @@ export interface AskFridayHistoryTurn {
 // the active thread in ?thread=<id> and the active module in ?m=<id>.
 export interface AskFridayFocus {
   module?: string | null;
+  // AF3 — backend Ask Friday Core surface id, derived from the module's contract.
+  surfaceId?: string | null;
   threadId?: string | null;
+  // AF3 — focused message within a thread.
+  focusMessageId?: string | null;
   teamTarget?: string | null;
+  // AF3 — pathname + active sub-page/tab (no query secrets).
+  route?: string | null;
+  view?: string | null;
   pageUrl?: string | null;
+  // AF3 — richer operator focus. Modules layer these via mergeFocus when opening
+  // Ask Friday. IDs + COMPACT SUMMARIES ONLY — never raw DOM, secrets, access
+  // codes, payment data, or owner/guest-sensitive content (right-panel focus contract).
+  focusedObject?: { type: string; id: string; label?: string } | null;
+  selection?: { selectedIds?: string[]; summary?: string } | null;
+  visibleState?: {
+    summary?: string;
+    activeTab?: string;
+    filters?: Record<string, unknown>;
+    counts?: Record<string, number>;
+  } | null;
+  allowedActions?: string[] | null;
+  privacyClass?: string | null;
+  stalenessMs?: number | null;
 }
 
 export function buildAskFridayFocusFromLocation(): AskFridayFocus | null {
@@ -23,13 +45,28 @@ export function buildAskFridayFocusFromLocation(): AskFridayFocus | null {
   const module = params.get('m');
   const threadId = params.get('thread');
   const teamTarget = params.get('team');
+  const view = params.get('sub');
+  const focusMessageId = params.get('msg');
   if (!module && !threadId && !teamTarget) return null;
   return {
     module: module || null,
+    surfaceId: module ? contractFor(module)?.surfaceId ?? null : null,
     threadId: threadId || null,
+    focusMessageId: focusMessageId || null,
     teamTarget: teamTarget || null,
+    route: window.location.pathname,
+    view: view || null,
     pageUrl: window.location.pathname + window.location.search,
   };
+}
+
+// AF3 — modules layer their active object / selection / visible-state onto the
+// URL-derived base when opening Ask Friday, so the backend's page-focus rule has
+// real anchors (not just ?m=). IDs + compact summaries only (see AskFridayFocus).
+export function mergeFocus(extra: Partial<AskFridayFocus>): AskFridayFocus | null {
+  const base = buildAskFridayFocusFromLocation() || {};
+  const merged: AskFridayFocus = { ...base, ...extra };
+  return Object.keys(merged).length ? merged : null;
 }
 
 export interface AskFridayResponse {
