@@ -101,10 +101,33 @@ These are THE building blocks the specs say everything depends on. Every module 
 - `node_modules` in the worktree is a real install (Turbopack rejects a symlink). Reuse it.
 
 ## Progress log
-- [DONE] S1 AI trust states — `c198d66e`, green.
-- [DONE] S2 provenance primitive — `5df91dc4`, green.
-- [NEXT] S3 AI states → Training/Inbox-draft/TeamInbox (reuse S1; my lane).
-- Everything S3→S13 is queued above, build-ordered, mechanical. A fresh autonomous session continues here.
+- [DONE] S1 AI trust states — `c198d66e`, green (wired into FridayDrawer / global Ask Friday panel).
+- [DONE] S2 provenance primitive (`SourceTag`/`Field`) — `5df91dc4`, green.
+- [DONE] **S4 Agency module** — `d4f76dfe`, green. Full V2 module via GmShell (Overview/Listings/
+  Buyers/Sellers/Matches/Valuations/Opportunities), AVM uses `ConfBar`+`SourceTag`. Replaced the
+  `agency` tease stub. DEMO_CRUFT PROD-AGENCY-1.
+
+## ⚠️ KEY FINDING (changes the strategy for the next run)
+Investigated every module: **they already exist** as built React components (Leads, Marketing,
+Legal, Guests, Owners, Reviews, Finance, Properties, Reservations, Design, etc.) — almost all on
+the **legacy `--color-*` token system** (ModuleHeader + `.card/.row/.chip`), NOT V2. The only
+genuine greenfield stub was **Agency** (now built) and **Syndic** (a Q1'27 tease with no spec/
+prototype in the bundle — skip). So:
+- **Net-new greenfield is essentially exhausted.** Don't expect more "easy" modules.
+- **Remaining V2 work = per-module token migration** (legacy `--color-*` → V2 `.dwrap` skin via
+  GmShell) **+ wire the S1/S2 primitives**. Each is a real rewrite of a working module's view
+  layer. **This needs visual QA** (desktop+mobile) which is NOT possible headless → it is NOT
+  safe to do fully unsupervised. Do these WITH Ishant / with a deploy preview to eyeball each.
+- Recommended next (supervised): Properties spine (S4 in build order), then Settings control
+  plane, then Reservations detail — highest-value migrations. Use Agency (`AgencyModule.tsx`) as
+  the reference for "a module rebuilt in V2 via GmShell".
+
+## What a fresh autonomous run CAN still do safely (no visual-QA dependency)
+- Extend the cross-cutting primitives (e.g., per-module Ask Friday contract config §1.3; reusable
+  empty/loading/error/permission state components as V2 primitives).
+- Backend client boundaries for net-new modules (typed `_data/agencyClient.ts` etc. + `@demo`),
+  so the migrations later swap fixtures → API cleanly.
+Everything that touches an existing module's visual layer should be supervised (visual QA gate).
 
 ## Notes / blockers carried
 - Live visual QA blocked headless (needs deploy or authed dev server). Gate before any merge/deploy.
