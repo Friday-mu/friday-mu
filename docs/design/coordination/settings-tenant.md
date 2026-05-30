@@ -4,22 +4,37 @@
 > (Running Decisions §1.3, Roadmap `36443ca8849281e38052fb6d67343f74` §3.5/§5.4.1; per-tenant pgcrypto `key_vault`,
 > RLS, route guards, AI-prompt isolation). The **FridayOS Design SaaS** ($99/mo, bank-transfer, per-tenant brand;
 > scoping `35443ca8849281079340d7bae1913d28`) is the billing precedent. Read `00-README` + `ask-friday.md` first.
-> **This module has the most structural clashes — two role systems, two "Settings" modules, three billing stories
-> (§7/§12).**
+> **The structural clashes here are now RESOLVED (Ishant, 2026-05-30):** **one merged role-gated Settings module**
+> (not two); **two role models kept but mapped at the guard layer**; **billing = freemium + layered per-unit
+> subscription + add-ons** (direction). See §3, §A "Billing direction", §12.
 
 ## 1. The brief in one line
-Design the **configuration + tenant-administration layer** — personal/operational Settings (appearance, account,
-team, integrations, feedback) for everyday users, and the **tenant trio** (Tenant Settings, Billing, Admin Analytics)
-for tenant/FR-admins — every screen tenant-scoped, with integration health surfaced through the real trust kit and
-the two role models reconciled into one coherent gating story.
+Design **one merged, role-gated Settings module** — personal/operational prefs (appearance, account, language) for
+everyone, team/integrations/branding for the director, and the tenant-admin surfaces (Tenant Settings, Billing, Admin
+Analytics) for FR-admins — every screen tenant-scoped, integration health surfaced through the real trust kit, and
+the FAD-role and tenant-role models mapped (not merged) at the guard layer.
 
 ## 2. Source of truth and grounding (three-way reconcile)
 - **Vision.** **Multi-tenant from day one** (non-re-litigable): per-tenant creds in pgcrypto `key_vault`, RLS,
   route guards, AI-prompt isolation; Sprint 11 v0.2 added per-tenant Guesty creds / Resend allowlist / Kimi quota /
   RLS / tenant-aware caching. **Auth** = OAuth2 client_credentials + short-lived JWTs (FAD-ADR-003); tenant identity
-  rides in the JWT. **Billing precedent** = the Design SaaS ($99/mo, **bank-transfer**, per-tenant brand) — **but the
-  commercial model later pivoted to freemium + marketplace commission** (memo, 2026-05-25); the Billing UI predates
-  the pivot.
+  rides in the JWT.
+- **Billing direction (RESOLVED 2026-05-30 — direction, evolving; pitch-tier, design last).** **Freemium + layered
+  per-unit subscription + add-ons:**
+  - **Free forever** (not a trial) — limited AI use so a tenant gets a feel for it. This is the FridayOS/MCP
+    ecosystem land-grab; perpetual-free beats a time-box because of the platform play.
+  - **Paid tiers (~2–3), priced PER UNIT** — generous/unlimited team seats (per-seat would tax the "fewer staff"
+    value prop we sell; PMs already buy per-listing, so per-unit needs no education).
+  - **AI metered on top:** a free allocation, then a subscription allocation, then paid overage. **But:** keep
+    *core operational* AI (Ask Friday drafts, trust-state surfaces, scheduling) **inside** the subscription —
+    metering the daily-habit AI suppresses the usage that drives retention. Meter only *expensive/optional* AI
+    (bulk generation, deep analytics runs, agent autopilot). **Credits map to outcomes, not tokens** (users don't
+    think in tokens; token-metering causes bill-shock).
+  - **Visible meter + caps, never silent overage** (same honesty doctrine as the trust-states — show the gauge,
+    alert before the ceiling, let them cap).
+  - **Add-ons** (Syndic / Design / Agency) billed on top — separate buyers, clean separation.
+  - The shipped Design-SaaS model ($99/mo flat, bank-transfer) and the prototype's per-unit-€-only model are both
+    **superseded** by this. (Supersedes the precedent in the header.)
 - **Reality — two *separate* Settings surfaces + two *separate* role systems:**
   1. **`SettingsModule.tsx`** (operational/personal; sections appearance / account / team / integrations / feedback /
      billing). **LIVE:** Appearance (theme toggle; the **`ui_version` Classic↔New-design radio** added this session,
@@ -40,37 +55,41 @@ the two role models reconciled into one coherent gating story.
 - **Full-vision rule:** draw the tenant-admin surfaces + the reconciled role/billing model complete; the
   integration-health + API-failure states are not "future".
 
-## 3. Who uses it — TWO role models (the headline problem)
-- **FAD operational model** (`permissions.ts`): director / manager-tier / field / external. `tenant_settings` /
-  `billing` / `admin_analytics` = **`{}` → director-only**; `settings` = **`LIMITED_SETTINGS_ACCESS`** for managers
-  (read all, **write self**, no approve/delete) — so managers *should* touch only personal prefs, but **section-level
-  gating is NOT implemented** (SettingsModule only filters the field role; managers currently over-see Team/
-  Integrations/Billing). Field = self-only.
+## 3. Who uses it — TWO role models, MAPPED at the guard layer (RESOLVED)
+**Decision (2026-05-30): keep both models, map them at the guard layer — don't merge the models.** They're
+orthogonal: **FAD-role gates module/section visibility; tenant-role gates the tenant-admin surfaces.**
+- **FAD operational model** (`permissions.ts`): director / manager-tier / field / external. In the **merged Settings
+  module**, sections gate as: **personal prefs (appearance/account/language) → everyone** (incl. field);
+  **team/integrations/branding → director**; **tenant/billing/admin-analytics → FR-admin** (the tenant-role gate
+  below). `settings` = `LIMITED_SETTINGS_ACCESS` for managers (read all, **write self**) — and the promised
+  section-gating **must now be implemented** (today SettingsModule only filters the field role, so managers over-see
+  Team/Integrations — fix it).
 - **SaaS tenant model** (`useTenantIdentity`): JWT role **admin / agent / staff** + `useIsFrAdmin()` (tenant = FR &&
-  admin). **The trio gates on *this*, not the director model.** A FAD "director" and a tenant "admin" are different
-  gates that merely overlap for Ishant. **No bridge between the two.** The briefs must say which model governs each
-  screen.
+  admin). The **tenant-admin surfaces gate on this**, not the director model. A FAD "director" and a tenant "admin"
+  overlap for Ishant but stay **distinct gates** — the design names which model governs each section (FAD-role for
+  operational sections, tenant-role for tenant-admin).
 
 ## 4. Design principles and system
 - **Tenant-scoped everything.** Never design as if there's one tenant; every config is tenant-scoped (FR is the only
   live tenant today, but the trio is built for external tenants).
-- **Resolve the two-Settings collision.** Two modules both labelled "Settings" (System `settings` + Manage
-  `tenant-settings`) — propose one coherent IA (merge with role-gated tabs, or two clearly-named entries).
+- **One merged Settings module (RESOLVED).** The two "Settings" modules (System `settings` + Manage `tenant-settings`)
+  **merge into one** with role-gated tabs (§5). No more naming collision.
 - **Apply the trust kit to Integrations** — the prototype hand-rolls "Connected/Action-needed/Reconnect"; the real
   `SyncChip`/`SourceTag`/`StateBanner` should drive it. (Settings/trio consume none today.)
 - **Credentials never render** — per-tenant creds live encrypted in `key_vault`; surface connection *state*, never
   values.
 
-## 5. Information architecture
-- **Operational Settings** (everyday): Appearance (theme, **interface version**, language) · Account · Team ·
-  Integrations · Feedback · (personal) Billing.
-- **Tenant trio** (admin): **Tenant Settings** (General / Brand / Vendor defaults / Payment instructions / Users) ·
-  **Billing** (tenant + FR-admin views) · **Admin Analytics** (the SaaS operator dashboard).
+## 5. Information architecture — ONE merged module, role-gated tabs
+A single **Settings** module; tabs reveal by role:
+- **Everyone:** Appearance (theme, **interface version**, language) · Account · Feedback.
+- **Director (FAD-role):** Team · Integrations · Branding · Notifications.
+- **FR-admin (tenant-role):** Tenant Settings (General / Brand / Vendor defaults / Payment instructions / Users) ·
+  Billing · Admin Analytics.
 
 ## 6. Surfaces to design (full vision) — P0 first
 | # | Surface | Purpose | Reality | Priority |
 |---|---|---|---|---|
-| A | **Operational Settings shell** | appearance (incl. interface version) / account / language; role-gated section visibility (implement the LIMITED_SETTINGS gate). | LIVE (partial) | **P0** |
+| A | **Merged Settings shell** | one module; appearance (incl. interface version) / account / language for all + role-gated tabs (§5); implement the section gate. | LIVE (partial) | **P0** |
 | B | **Integrations (trust-instrumented)** | Guesty/Breezeway/Channels/WhatsApp connection health via `SyncChip`/`StateBanner` + Reconnect. | SPEC (demo) | **P0** |
 | C | **Tenant Settings** | General / Brand / Vendor defaults / Payment instructions / Users (invite/promote/demote); danger zone. | LIVE | **P0** |
 | D | **Billing** | tenant view (invoices, "I've paid" bank-ref, PDF) + FR-admin view (issue/confirm/lifecycle). | LIVE | **P1** |
@@ -86,7 +105,9 @@ the two role models reconciled into one coherent gating story.
   the FR-admin-only gate on Billing-admin / Admin-Analytics (with a clean "Not available" on direct URL).
 - **Danger zone** — soft-delete (typed-slug confirm) vs FR-admin **hard-delete** (`X-Confirm-Hard-Delete`) — make the
   irreversibility legible.
-- **Billing model** — whatever's chosen (§12) must read consistently (no mixed per-unit-€ and per-subscription-$).
+- **Billing + AI meter** — the freemium/per-unit/add-on tiers (§A) read consistently; the **AI-credit gauge** shows
+  free vs subscription allocation vs paid overage, alerts before the cap, and lets the tenant cap — **never silent
+  overage**. Core operational AI is *inside* the subscription (not metered); only expensive/optional AI draws credits.
 
 ## 8. Key flows to storyboard
 1. **Switch interface version** (Classic↔New) + theme/language in Appearance.
@@ -97,9 +118,9 @@ the two role models reconciled into one coherent gating story.
 
 ## 9. Reference artifacts
 Prototype `ScreenSettings`; built `SettingsModule.tsx` (+ the `ui_version` toggle / `_data/uiVersion.ts`),
-`TenantSettingsModule` / `BillingModule` / `AdminAnalyticsModule`, `_data/{permissions.ts, useTenantIdentity.ts}`,
-`/api/tenants/*` + `/api/feedback`; the `ai/` kit (for Integrations); the Design-SaaS billing precedent + the
-freemium-pivot memo.
+`TenantSettingsModule` / `BillingModule` / `AdminAnalyticsModule` (the three to **merge** into one role-gated module),
+`_data/{permissions.ts, useTenantIdentity.ts}`, `/api/tenants/*` + `/api/feedback`; the `ai/` kit (for Integrations);
+the billing direction in §A.
 
 ## 10. Recommended design priority
 1. **A–C:** the operational Settings shell (with real section-gating), trust-instrumented Integrations, and Tenant
@@ -112,18 +133,22 @@ Credential **values** never render (key_vault). The notification channel×type m
 `notifications-emails.md`. Stripe is 503 until keyed (bank-transfer is the live path). External-tenant SaaS surfaces
 are built but FAD's day-to-day is FR-only — design both, label which is which.
 
-## 12. Open decisions (propose options, don't guess)
-1. **Merge or split** — do operational Settings and tenant Settings become **one** module (role-gated tabs) or stay
-   two sidebar entries? Resolve the "two Settings" naming collision either way. **Flag — clash.**
-2. **Canonical billing model** — **per-unit €** (prototype) vs **per-subscription bank-transfer/Stripe $** (code) vs
-   **freemium + commission** (latest memo). Three stories — pick one for V2. **Flag — clash.**
-3. **Role-model bridge** — reconcile the FAD director model with the SaaS admin/agent/staff model; say which governs
-   each screen. **Flag — clash.**
-4. **Manager section-gating** — implement the promised LIMITED_SETTINGS section-gating now, or defer to real-auth?
-   (managers currently over-see.)
-5. **Roles & permissions home** — Settings (prototype) vs HR `PermissionsPage` vs the tenant Users tab — **three
-   candidate homes**; pick one.
-6. **FR-internal vs external-tenant** — which audience the briefs target first.
+## 12. Decisions
+**RESOLVED (Ishant, 2026-05-30):**
+1. ~~Merge or split~~ → **Merge into one** role-gated Settings module (§5). Section-gating implemented (no more
+   manager over-see).
+2. ~~Billing model~~ → **Freemium + layered per-unit subscription + add-ons, AI metered on top** (§A "Billing
+   direction"). Direction, evolving; pitch-tier, design it last.
+3. ~~Role-model bridge~~ → **Keep both, map at the guard layer** (§3): FAD-role gates module/section visibility;
+   tenant-role gates tenant-admin surfaces.
+
+**Still open (propose options):**
+4. **Roles & permissions home** — Settings (prototype) vs HR `PermissionsPage` vs the tenant Users tab — three
+   candidate homes; pick one. *(Lean: the role matrix in Settings/Team; per-user invite/promote in the tenant Users
+   tab.)*
+5. **FR-internal vs external-tenant** — which audience the design targets first (FR is the only live tenant; the
+   tenant-admin surfaces are built for external tenants — design both, label which is which).
+6. **AI-credit meter UX** — how the gauge/cap/alert reads (ties to the billing direction + the proactivity dial).
 
 ## 13. What we want back
 The **operational Settings shell** (with real role-gated sections + the interface-version toggle), **trust-

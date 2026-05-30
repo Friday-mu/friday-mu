@@ -103,8 +103,8 @@ Field location/telemetry is an **Ops dispatch** concern (director/ops-manager on
 on-shift status in HR. Cube-Core-backed Insights are Phase-later; show `modeled`/`stale` honestly meanwhile.
 
 ## 12. Open decisions (propose options, don't guess)
-1. **Roster home** — HR tab, Operations, or shared-and-cross-linked? (The prototype puts the rich editor in Ops; HR
-   shows the summary.) **Flag — the sharpest clash.**
+1. ~~Roster home~~ → **RESOLVED (Ishant, 2026-05-30): both** — the rich editor lives in **Operations**, a **summary**
+   in HR, cross-linked. Matches the HR-owned / Ops-operated split.
 2. **Personnel privacy** — does V2 add individual performance / private-notes records, and what restricted scope
    guards them (director-only vs manager-not-own)?
 3. **Roster auto-publish** — ever allowed, or permanently draft+approve?

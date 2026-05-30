@@ -5,11 +5,10 @@
 > panel-only surface insufficient — full-screen view, AI auto-prioritization, mark read/unread, filter chips,
 > per-module wiring") + the **Ask Friday** filtering model. Read `00-README` + `ask-friday.md` first.
 >
-> **⚠ Headline open decision (§2) — confirm the scope with Ishant before deep design:** does this surface cover
-> **team/system notifications only** (in-app + staff/owner *alert* emails + push), with **guest/owner *conversational*
-> outbound staying in Inbox + Owners** — or does it also own **guest/owner outbound comms templates** (booking
-> confirmations, check-in reminders, statement emails as designed artifacts)? This brief designs the **notification
-> system** comprehensively and treats the guest/owner-comms half as the flagged fork.
+> **Scope RESOLVED (Ishant, 2026-05-30): TEAM/SYSTEM ONLY.** This surface owns the in-app notification center, push,
+> staff alert-emails, and the AI-filtering ("muted N low-signal"). **Guest/owner *conversational* outbound stays in
+> Inbox; statement send stays in Owners** — they are NOT designed here. (The guest/owner-comms-template half is
+> dropped from scope.)
 
 ## 1. The brief in one line
 Design the **AI-filtered notification system** — an in-app **notification center** that surfaces the few things that
@@ -41,9 +40,8 @@ per-type **delivery preferences** — so the manager sees "the 6 that need you",
   current role** (the sidebar pending-badges follow the same per-role signal).
 - **Field** — notifications live in the **task PWA** (task assigned, schedule published, requirement gated), not this
   manager center.
-- **Owner / guest** — receive *outbound* notifications (statement-ready, check-in reminder) via email/push/portal —
-  **whether FAD *composes* those here is the §2 fork**; their delivery + preference is in scope, their conversational
-  content may not be.
+- **Owner / guest** — **out of scope here.** Their outbound (statements, check-in reminders) is owned by Owners /
+  Inbox respectively; this module is the **team/system** notification surface only.
 
 ## 4. Design principles and system
 - **Surface the signal, mute the noise — reviewably.** The default view is "**Needs you**" (the few that need a
@@ -62,7 +60,9 @@ per-type **delivery preferences** — so the manager sees "the 6 that need you",
 - **Preferences** — per-type channel matrix (in-app / email / push on/off), digest cadence (instant / daily digest),
   quiet hours.
 - **Sidebar pending badges** — per-module count chips (role-scoped signal).
-- **Email/push templates** — the system/transactional types (and, per the fork, possibly guest/owner comms).
+- **Channel policy (locked, from the Inbox pack):** **push** fires for *every* FAD message/action needing operator
+  attention; **email** fires *only* for **guest inbound + TeamInbox DM/@mention** (don't email every FAD action).
+  In-app center carries everything.
 
 ## 6. Surfaces to design (full vision) — P0 first
 | # | Surface | Purpose | Reality | Priority |
@@ -71,8 +71,8 @@ per-type **delivery preferences** — so the manager sees "the 6 that need you",
 | B | **Header tray + sidebar pending badges** | the always-visible entry + per-module role-scoped counts. | SPEC | **P0** |
 | C | **The "Friday filtered" affordance** | "surfaced N, muted M low-signal" + the reviewable muted list with *why*. | SPEC | **P0** |
 | D | **Preferences (channel × type matrix)** | per-type in-app/email/push, digest cadence, quiet hours. | SPEC | **P1** |
-| E | **Email + push templates (system/transactional)** | the staff/owner *alert* types (approval needed, statement ready, schedule published, store-below-par). | SPEC | **P1** |
-| F | **Guest/owner outbound comms templates** | booking confirmation, check-in reminder, statement email — **only if the §2 fork includes them** (else: Inbox/Owners own these). | SPEC / fork | **P2** |
+| E | **Staff alert email + push types** | the operator-work types (approval needed, schedule published, store-below-par, send-failed, draft-failed) + the locked channel policy (push-for-all-operator-work; email only for guest-inbound + DM/@mention). | SPEC | **P1** |
+| ~~F~~ | ~~Guest/owner outbound comms templates~~ | **Out of scope** (Ishant 2026-05-30) — Inbox owns guest/owner conversational outbound; Owners owns statement send. | — | — |
 
 ## 7. Critical states the UI must make legible
 - **Surfaced vs muted** — *why* a notification needs you (the firing signal) vs *why* something was muted; both
@@ -88,7 +88,8 @@ per-type **delivery preferences** — so the manager sees "the 6 that need you",
 1. **Triage:** open center → "Needs you (6)" → act (jump to task/approval/roster/owner) → it clears.
 2. **Review the mute:** "3,847 muted" → see the categories + a sample → optionally un-mute a type.
 3. **Tune preferences:** turn a noisy type to daily-digest / off / push-only; set quiet hours.
-4. **Delivery failure:** an owner statement email bounces → failed state → retry / fix address.
+4. **Delivery failure:** a staff alert push/email fails (push-permission denied / bounce) → failed state → retry /
+   fix-permission.
 
 ## 9. Reference artifacts
 Prototype `ScreenNotifsMgr` (+ `.html` + mobile); Properties §16 (the redesign mandate + sidebar-badges); the Ask
@@ -97,25 +98,26 @@ SPEC** — per-module notification types + signals need defining (propose the ta
 
 ## 10. Recommended design priority
 1. **A–C:** the center, the header tray + sidebar badges, and the "Friday filtered + reviewable muted" affordance.
-2. **D–E:** preferences (channel × type) + the system/transactional email/push templates.
-3. **F:** guest/owner outbound comms templates — only if §2 includes them.
+2. **D–E:** preferences (channel × type) + the staff/system alert email/push types.
 
-## 11. Out of scope (likely)
-Guest/owner **conversational** outbound (guest messaging lives in **Inbox**; statement *send* lives in **Owners**) —
-unless the §2 fork pulls comms-template *design* in here. The notification **backend / signal pipeline** is unbuilt —
+## 11. Out of scope (RESOLVED)
+**Guest/owner outbound comms is NOT here** — guest messaging lives in **Inbox**, statement send in **Owners**. This
+module is the **team/system** notification surface only. The notification **backend / signal pipeline** is unbuilt —
 design the system + types, mark SPEC.
 
-## 12. Open decisions (propose options, don't guess)
-1. **Scope fork (decide first)** — team/system-only vs also-guest/owner-comms templates. *(Ishant.)*
-2. **Center home** — its own full-screen module/route vs a header tray vs both (recommend both).
-3. **Per-module type taxonomy** — the canonical notification types + firing signals per module (the per-module
+## 12. Decisions
+**RESOLVED (Ishant, 2026-05-30):** scope = **team/system only** (guest/owner comms out — Inbox/Owners own those).
+
+**Still open (propose options):**
+1. **Center home** — its own full-screen module/route vs a header tray vs both (recommend both).
+2. **Per-module type taxonomy** — the canonical notification types + firing signals per module (the per-module
    wiring contract).
-4. **AI auto-mute aggressiveness** — how hard Friday filters before it risks hiding something (ties to the
+3. **AI auto-mute aggressiveness** — how hard Friday filters before it risks hiding something (ties to the
    proactivity dial in `ask-friday.md` §12).
-5. **Sidebar pending-badge signal** — the per-role count definition per module.
+4. **Sidebar pending-badge signal** — the per-role count definition per module.
 
 ## 13. What we want back
 The **notification center** (Needs-you / muted-reviewable) + the **header tray + sidebar badges** + the **"Friday
 filtered" affordance** first — desktop + manager-mobile — built on the `ai/` kit, with the surfaced-vs-muted +
-delivery-failure states visible; then preferences + system/transactional templates. **Confirm the §2 scope fork
-with Ishant** before designing the guest/owner-comms half. Flag clashes per `00-README` §7.
+delivery-failure states visible; then preferences + the staff/system alert types. **Team/system only** — don't design
+guest/owner comms here. Flag any new clash per `00-README` §7.

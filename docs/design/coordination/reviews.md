@@ -109,10 +109,12 @@ competitor pulling · website embed widget · Doubled-Up report · standalone Li
 URLs) · Reva subdomain config · company-level Google/TripAdvisor pulling (defer). Auto-publish threshold is
 mirror-only Phase 1 (Wave-1 Reva-archive audit must resolve the function).
 
-## 12. Open decisions (propose options, don't guess)
-1. **Confirm the Reva → Guesty pivot is locked** — the code already reads Guesty directly; the pack still says
-   read-from-Reva. The design assumes Guesty. *(Flag to Ishant — clash.)*
-2. **Public-reply role gating** — does posting require manager-tier (field = read/draft)? Undefined today.
+## 12. Decisions
+**RESOLVED (Ishant, 2026-05-30): the Reva → Guesty pivot is LOCKED** — design to Guesty (`/api/reviews/list` →
+Guesty `/v1/reviews`); Reva isn't wired; the `SyncChip` source reads "Guesty".
+
+**Still open (propose options):**
+1. **Public-reply role gating** — does posting require manager-tier (field = read/draft)? Undefined today.
 3. **Reply-window-by-channel** — how to render Booking one-shot vs Airbnb 14-day vs Google rolling.
 4. **Live-vs-fixture** — confirm Trends + Staff show honest empty/SPEC states rather than disappearing.
 5. **Naming** — keep "Reviews" distinct from the director-only **`ask-friday-review`** KB-approval queue (different

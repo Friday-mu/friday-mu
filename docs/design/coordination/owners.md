@@ -118,10 +118,13 @@ Owner portal = **read + forms, not payment initiation**. Owner-facing portal *pr
 (mid-2027). No bank-detail rendering ever (encrypted at rest). Statement engine backend is a Finance dependency
 (Mary's end-May accounting automation) — design the full vision, mark SPEC.
 
-## 12. Open decisions (propose options, don't guess)
-1. **Missing `owner` role** — the Sep portal needs a new role + RLS + owner-scoped Ask Friday isolation before any
-   owner-facing surface ships. Design assumes it exists.
-2. **Operator vs owner-portal skin** — confirm the dark-operator / navy-A4-owner split (every existing owner screen
+## 12. Decisions
+**RESOLVED (Ishant, 2026-05-30): the `owner` portal role is DEFERRED to Sept** (when the portal ships) — adding a
+role + RLS + owner-scoped Ask Friday isolation now is premature. Design the owner-portal surfaces as the *vision*
+(they assume the role exists); they don't get built until the role lands. Flagged so it's not forgotten.
+
+**Still open (propose options):**
+1. **Operator vs owner-portal skin** — confirm the dark-operator / navy-A4-owner split (every existing owner screen
    is dark today).
 3. **Manager finance visibility** — do managers see $ amounts on statements, or masked (like the design module's
    fee-masked-to-0 precedent)?
@@ -136,5 +139,5 @@ Owner portal = **read + forms, not payment initiation**. Owner-facing portal *pr
 ## 13. What we want back
 The **statement document + waterfall + reconciliation bar + held-line gate**, and the **live owners list/detail**,
 first — desktop (operator, dark) — built on the live `ownersClient` + the `ai/` kit, with the reconciliation states
-visible. Then the **owner portal** (navy/A4) statement + forms and the **credential-reveal** flow. Propose options
-on §12 (esp. the new owner role + the credential default policy); flag clashes per `00-README` §7.
+visible. Then the **owner portal** (navy/A4) statement + forms and the **credential-reveal** flow (vision now; the
+`owner` role lands Sept). Propose options on §12 (esp. the credential default policy); flag clashes per `00-README` §7.

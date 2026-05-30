@@ -120,12 +120,14 @@ TAC → Properties/Legal · commercial trends (occ/ADR/RevPAR/pace) → Analytic
 Reports feature · double-entry GL + QuickBooks + MRA remittance are Phase 2 · native owner portal is Phase 5. Design
 the full vision; mark Phase-2/3 backend SPEC.
 
-## 12. Open decisions (propose options, don't guess)
-1. **RBAC reconciliation** — `permissions.ts` says Finance = director-only (managers see nothing), but a *second*
-   finance-internal RBAC (`financeRoles.ts`: admin/manager/contributor, driven by a dev RoleSwitcher) gates sub-pages.
-   Pick one: does director-only collapse the internal tiers, or nest accountant-contributor (capture-only) under
-   director? **Flag — clash.**
-2. **Insights home** — drawn inside Finance (the stub) or built in Analytics and surfaced as a Finance window? (Scope
+## 12. Decisions
+**RESOLVED (Ishant, 2026-05-30): Finance = director-only, FLAT.** Collapse the legacy `financeRoles.ts` internal
+tiers (admin/manager/contributor) and retire the dev RoleSwitcher — there are no Finance sub-roles for now (capture
+included). A capture-only accountant tier is a *future* variation, deliberately deferred ("get the platform right
+first"). Managers see nothing; figures are masked wherever they surface in Owners/Properties.
+
+**Still open (propose options):**
+1. **Insights home** — drawn inside Finance (the stub) or built in Analytics and surfaced as a Finance window? (Scope
    says Analytics-built/Phase-3 — draw the full vision regardless.)
 3. **Manager finance redaction** — the masked state where managers view Owners/Properties (hidden vs "—" vs "Director
    only" chip).
@@ -138,5 +140,5 @@ the full vision; mark Phase-2/3 backend SPEC.
 The **Insights cockpit** + the **Friday brief (with trust-states)** + **capture/OCR** + **Approvals/divergence**
 first — director desktop — built on the live `/api/expenses` + `/api/intent/parse-receipt` + `data_quality`
 provenance + the `ai/` kit, with the OCR-fallback, divergence, and compliance-spine states visible. Then owner
-statements, period-close, and the ledgers. Reconcile the RBAC clash; design the manager-redaction masked state;
-propose options on §12.
+statements, period-close, and the ledgers. Finance is **director-only flat** (no sub-roles); design the
+manager-redaction masked state; propose options on §12.
