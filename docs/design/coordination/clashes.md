@@ -6,7 +6,7 @@ loop in `00-README-design-coordination.md` §7.)
 
 | # | Module | Clash — design vision vs current build | Options (design / current / hybrid / discuss) | Decision | Date |
 |---|---|---|---|---|---|
-| _none yet_ | — | — | — | — | — |
+| 1 | Ask Friday (all AI surfaces) | Prototype shows a precise confidence number (`conf. 92%`); our backend emits a **heuristic band** (~0.2/0.55/0.62/0.78/0.82), not a calibrated %. A precise meter is false precision. | **design** = keep a %; **current** = drop to high/med/low band; **hybrid** = qualitative label + subtle bar, no number | _open — flag to Ishant_ (recommend band/label) | 2026-05-30 |
 
 ## Resolved so far (from this session, before the formal loop)
 | Module | Clash | Decision |

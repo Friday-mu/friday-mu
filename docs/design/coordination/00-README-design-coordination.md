@@ -13,7 +13,7 @@ Two ways — pick one:
   prototype (`docs/design/fad-v2/prototype/`), and our actual V2 components + tokens. **Best option.**
 - **Or paste** the relevant brief markdown (these files are written paste-ready) into the design chat + point it
   at the prototype.
-Hand it **this file (`00-README`) first**, then the per-module brief(s).
+Hand it **this file (`00-README`) first**, then **`ask-friday.md` (the spine — every module embeds it)**, then the per-module brief(s).
 
 ## 1. The job, in one line
 We built a real, working FAD already. We're redesigning it to be better. Design the **full intended vision** of
