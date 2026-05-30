@@ -460,7 +460,7 @@
    DESIGN business unit — project pipeline workspace
    =========================================================================== */
 .dphead{padding:2px 2px 0}
-.dptitle{font-family:"Newsreader",serif;font-weight:300;font-size:26px;color:var(--tx)}
+.dptitle{font-family:var(--serif);font-weight:300;font-size:26px;color:var(--tx)}
 .dlink{color:var(--indigo-bright);cursor:pointer}.dlink:hover{text-decoration:underline}
 .dprog{margin:16px 0 4px}
 .dprog-bar{height:4px;border-radius:3px;background:var(--card-2);overflow:hidden}
@@ -764,6 +764,12 @@
 .cb-track{width:42px;height:5px;border-radius:3px;background:var(--card-2);overflow:hidden}
 .cb-track i{display:block;height:100%;border-radius:3px;transition:width .4s}
 .cb-num{font-size:9.5px;color:var(--tx-2)}
+
+/* confidence band (qualitative — never a %) */
+.confband{display:inline-flex;align-items:center;gap:7px}
+.cbd-track{display:inline-flex;align-items:center;gap:3px}
+.cbd-seg{width:9px;height:5px;border-radius:2px;background:var(--card-2);transition:background .3s}
+.cbd-lbl{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
 
 .statebanner{display:flex;align-items:center;gap:10px;border-radius:11px;padding:10px 14px;font-size:12.5px;line-height:1.45;margin-bottom:14px}
 .statebanner svg{width:16px;height:16px;flex:0 0 16px}

@@ -41,10 +41,28 @@ The `.jsx` here is plain React function components with inline styles + class na
 
 The design-coordination pack locked these. The on-disk prototype predates them in two specific spots — **implement the LOCKED behavior, not the prototype's current behavior:**
 
-1. **Confidence = a BAND, never a %.** `fad-states.jsx → ConfBar` currently renders a numeric percentage (`88%`) with a colored track. **Locked decision: show a qualitative band, never a number** (e.g. *High / Medium / Low* confidence, or a 3-segment meter with no digits). When you implement, drop the `{p}%` readout and the precise width; bind the band to the real backend confidence signal. Keep the green ≥ high / amber = medium / red = low tone mapping.
+1. **Confidence = a BAND, never a %.** *(Now implemented in this export.)* `fad-states.jsx → ConfBar` renders a **qualitative 3-segment band + word label — Low / Medium / High, no digits** (green=High, amber=Medium, red=Low). In production, **bind the band to the real backend confidence signal**; never reintroduce a numeric percentage.
 2. **One "Friday" intelligence — NO user-facing model picker.** Never surface model names, tiers, or "levels" anywhere. There is exactly one assistant called **Friday**. (The prototype already honors this — just don't reintroduce a picker.)
 
 Also locked (prototype already honors): the five trust-states bind to **real backend signals**; **Manager tier** = `ops_manager` + `commercial_marketing` see an identical view; **Finance is director-only**.
+
+---
+
+## Open decisions & clashes
+
+> **Scope honesty:** this bundle is an **export of prototypes built in an earlier session**, plus three changes made *during* this export (confidence→band, brand correction, bug fixes). It was **not** re-derived against the live `docs/design/coordination/` pack (ask-friday.md + module briefs + clashes.md + pricing) in this pass — I didn't have the repo open. So treat the per-module specifics below as **verified-by-inspection of the delivered code**, not as "designed to the brief." Please resolve each against the real briefs.
+
+**Resolved during export — no action needed:**
+- Confidence `%`→band (locked decision #1) — implemented.
+- Cyan→Brand-Blue `#3E74D9` — corrected; the prototype was already on blue, so nothing migrated.
+- Bugs fixed: a `Newsreader` serif leftover on property-detail titles, and three off-brand hex values (`#5681ff`, `#2a6fdb`) → Archivo / `#3E74D9`.
+
+**Open — confirm or send the brief:**
+1. **Governance-console split.** The pack splits governance into **Training vs ask-friday-review vs Intelligence**. The prototype ships a **single "Training" console** ("Ask Friday governance control room" — tabs: Teachings · Learning Queue · Sources · Performance · Knowledge base · Brand voice · Automations). Its *Learning Queue* tab is the review surface, but it is **not** broken out as separate ask-friday-review / Intelligence consoles. → **Clash: design the 3-way split / keep unified / hybrid — your call.**
+2. **Properties credential-masking matrix (role × circumstance).** **Not present.** Properties shows entry/lockbox details as plain fields; there's no role×circumstance masking matrix. → **Gap — send the matrix spec and we'll design it.**
+3. **Reviews Reva→Guesty source pivot.** The Reviews module is "Reva-style" (Dashboard · All · Staff · Reports, incl. a "Reviews by source" report), but reviews are attributed **by channel** (Airbnb/Direct/Booking) and the wider app reads listings/bookings "from Guesty." The specific **Reva→Guesty source pivot isn't explicitly modeled** in the Reviews UI. → **Confirm the intended source-of-truth and how it should read in the UI.**
+4. **Notifications = team-only.** The Notifications module exists. Please confirm it should **exclude guest-facing notifications entirely** — we'll verify/adjust the prototype copy to match.
+5. **P3 modules.** Present as built screens: Finance (`fin`), Legal & Admin (`legal`), Marketing (`marketing`) + Leads/CRM (`leads`), Team/HR (`hr`), Settings (`settings`) + Tenant trio, Analytics (`an`). → Confirm each lands against its P3 brief; flag any that don't.
 
 ---
 
@@ -66,7 +84,7 @@ Five operating states, each with a first-class visual treatment (the prototype h
 ### Components in `window.FADSTATE`
 - **`SyncChip({source, health})`** — per-integration status pill: `Guesty · Synced · just now` (green) / `Stale · 12m ago` (amber) / `Sync failed` + Reconnect (red). Sources seen: Guesty (commercial, green), Breezeway (operational, teal).
 - **`Provenance({items, health})`** — "Grounded in" chip row showing the records an answer is built from (e.g. reservation `GY-q7ubP9Ak`, property `GBH-B4` facts, "2 active teachings"). On `fallback` → "General guidance — not grounded". On `failed` → "Couldn't generate a grounded draft" + Retry. On `partial` → trims sources + shows a red "guest history unavailable" chip.
-- **`ConfBar({pct, health})`** — confidence meter. **See locked decision #1 — convert to a band, no %.**
+- **`ConfBar({pct, band, health})`** — confidence shown as a **qualitative 3-segment band + word label (Low/Medium/High), never a number** (locked). Pass `band` directly (`'low'|'medium'|'high'`), or `pct`/`health` which map to a band internally. Bind to the real backend confidence signal in production.
 - **`StateBanner({surface, health})`** — surface-level degraded/error banner; returns nothing when healthy. Carries the per-state copy verbatim (see table).
 - **`SourceTag({kind, note})`** + **`Field({label,value,kind,note})`** — per-field provenance tag. Kinds: `guesty` (green), `breezeway` (teal), `friday`/`FAD` (indigo), `modeled` (violet, "forecast — not observed"), `stale` (amber), `failed` (red + Reconnect). A `Field` is a label/value row that carries its own source tag — use it for any data point whose origin matters.
 
@@ -114,7 +132,7 @@ The desktop rail + "All modules" index (`fad-router.jsx → MODULE_GROUPS`) defi
 **System:** `training` (govern how Friday learns & acts) · `settings` (roles, integrations, branding) · `askfull` (Ask Friday full-screen) · `help`.
 **Platform admin (SaaS):** `tenant` (org config, modules, branding) · `billing` (FridayOS subscription) · `admin` (platform health & adoption).
 
-> Component-availability note: a few deep routes (`billing`→`window.FADBILL`, `admin`→`window.FADADMIN`) reference namespaces not loaded in the current Manager Desktop HTML, so they fall back. Treat those as **specified in IA but not yet built as screens** — confirm scope before implementing.
+> Tenant-trio note: `tenant`, `billing`, and `admin` are **all built** in `fad-tenant.jsx` (which exports `FADTENANT` / `FADBILL` / `FADADMIN` — the "Tenant admin trio": Tenant Settings · Billing · Admin Analytics) and that file loads with Manager Desktop. All three are **delivered**, not deferred.
 
 ### Ask Friday (the spine surface) — `fad-ask-drawer.jsx` + `AskPanel` in `fad-desktop.jsx`
 A context-aware right drawer present on every screen. Header shows scope chips (current surface vs. "All of FridayOS") + an awareness line. Body is a message thread; **Friday's action proposals render as an approval gate** (`.afact`): a titled action card + description + **primary "Approve" button** + "Tweak" ghost button, then a "done" confirmation. Composer: "Ask or tell Friday to act…". **This human-approve-then-mutate pattern is the core interaction** (the code team's AF7/AF8 wire these Approve buttons to real mutations).

@@ -61,15 +61,32 @@ function Provenance({ items, health }){
   );
 }
 
-/* ---- confidence meter ---- */
-function ConfBar({ pct, health }){
-  const h=health||_hs.v;
-  const p = h==='fallback'?38 : h==='partial'?61 : (pct||88);
-  const tone = p>=80?'var(--green)':p>=60?'var(--amber)':'var(--red)';
+/* ---- confidence band (qualitative — LOCKED: never a number) ----
+   Friday confidence is shown as a 3-segment band + word label (Low/Medium/High),
+   never a percentage. Internal pct/health is mapped to a band; the digit is never
+   rendered. fallback degrades to Low, partial to Medium. */
+const CONF_BANDS = {
+  high:   ['High',   3, 'var(--green)'],
+  medium: ['Medium', 2, 'var(--amber)'],
+  low:    ['Low',    1, 'var(--red)'],
+};
+function ConfBar({ pct, band, health }){
+  const h = health||_hs.v;
+  let key = band;
+  if(!key){
+    if(h==='fallback') key='low';
+    else if(h==='partial') key='medium';
+    else { const n = (pct==null?88:pct); key = n>=80?'high' : n>=60?'medium' : 'low'; }
+  }
+  const [label, fill, tone] = CONF_BANDS[key] || CONF_BANDS.high;
   return (
-    <span className="confbar" title={"Friday confidence "+p+"%"}>
-      <span className="cb-track"><i style={{width:p+'%',background:tone}}/></span>
-      <span className="cb-num mono">{p}%</span>
+    <span className={"confband "+key} title={"Friday confidence: "+label}>
+      <span className="cbd-track" aria-hidden="true">
+        {[0,1,2].map(i=>(
+          <span key={i} className="cbd-seg" style={{background: i<fill ? tone : 'var(--card-2)'}}/>
+        ))}
+      </span>
+      <span className="cbd-lbl mono" style={{color:tone}}>{label}</span>
     </span>
   );
 }
