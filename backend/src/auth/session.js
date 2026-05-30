@@ -111,7 +111,11 @@ router.post('/login', async (req, res) => {
 
   try {
     const { rows } = await query(
-      `SELECT id, username, email, password_hash, role, display_name,
+      // fad_role MUST be selected — signUserToken/shapeUser call resolveFadRole,
+      // which falls back to the coarse role map (admin→director, agent→field) when
+      // fad_role is absent. Omitting it here minted EVERY agent as 'field' (no guest
+      // inbox) regardless of their real fad_role. (Bugfix 2026-05-30.)
+      `SELECT id, username, email, password_hash, role, fad_role, display_name,
               tenant_id, is_active, must_change_password, preferred_language
          FROM users
         WHERE LOWER(COALESCE(email, '')) = $1
