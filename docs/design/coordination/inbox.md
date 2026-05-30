@@ -1,68 +1,137 @@
-# Design-input brief — INBOX (for the Claude Design session)
+# Inbox — Design Brief for Claude Design
 
-> Paste-ready context for designing the V2 Inbox. Written by the code session so the design fits our
-> **real** backend. Rule: wire to the data we actually have; never lose functionality; where V2 deliberately
-> replaces a feature, keep the *intent*. The Inbox is **not** a mock — it's a live read+write surface against
-> shared Postgres + Guesty + Kimi/Gemini, with **real AI trust signals** already emitted by the backend.
+> Sits on top of the **FAD Inbox Sprint Prep** ([36543ca8849281e981d2c942caddd3f4](https://www.notion.so/36543ca8849281e981d2c942caddd3f4))
+> and **TeamInbox Sprint — Scoping + Decisions** ([36343ca884928180a38bcd2a433661df](https://www.notion.so/36343ca884928180a38bcd2a433661df)).
+> Read `00-README` + `ask-friday.md` first. *(Reframed 2026-05-30 from the earlier engineering-first brief into the
+> house format.)*
 
-## 0. Already built — DESIGN TO USE THESE, don't redesign them
-The V2 "AI trust states" vocabulary already exists in our code (this session, S1/S2):
-`frontend/src/app/fad/_components/ai/` → **`TrustStates.tsx`** (`SyncChip`, `Provenance`, `ConfBar`,
-`StateBanner`, `AITrustStrip`), **`SourceTag.tsx`** (`SourceTag` 6 kinds: guesty/breezeway/friday/modeled/
-stale/failed + `Field`), **`aiHealth.ts`** (`deriveAIHealth(signals)` → healthy/stale/partial/fallback/failed),
-**`trustEnvelope.ts`** (maps any AI backend's response → the strip). Tokens in `gm-desktop.css` (scoped `.dwrap`).
-→ The design's job is to *place* these on the Inbox surfaces, not invent a parallel set.
+## 1. The brief in one line
+Design Inbox as the **multi-audience operational comms surface** — guest · team · owner · vendor · website/direct ·
+email — where **internal team comms replace Slack** (ADR-008), where **Friday Consult is the single compose/refine
+surface** (the operator talks to Friday; Friday drafts inside the conversation), and where every message shows its
+**real AI trust state** and every operator-relevant event drives a **push**.
 
-## 1. Purpose & core use-cases (priority order)
-1. Open a thread with an AI draft → read it **with visible confidence + provenance** → Approve&send (preflight + 5s undo) / Revise / Edit / Reject. **Send is a real Guesty send.**
-2. Ask Friday (consult panel) to draft/polish/summarise → see grounded vs fallback clearly → push a draft → send.
-3. WhatsApp 24h-window management (live timer; template fallback when closed).
-4. Website-AI handoff: see AI confidence + escalation reason → **Take over AI** (real mutation) → reply.
-5. Triage at scale: filter Unread / Draft-ready / stay-status / mentions; cross-link to Reservations; create an Ops task from a thread.
-6. Internal team coordination (notes + @mentions, Team channels).
+## 2. Source of truth and grounding (three-way reconcile)
+- **Vision.** Inbox is **broader than guest messaging**: the Running-Decisions log puts **internal team comms in FAD
+  Inbox, not Slack**. **Consult-first reset** (Ishant): Friday Consult is *the* review/refine surface — the operator
+  talks to Friday, Friday generates/updates a draft inside that conversation; **no separate old-style review/revise
+  workflow**. **Visible-draft policy:** a visible draft appears **only** when there's an unanswered real inbound *or*
+  the operator explicitly asks — background analysis runs but never surprises with draft cards. **Notification
+  policy:** **push** for every FAD message/action needing operator attention; **email** only for **guest inbound +
+  TeamInbox DM/@mention**.
+- **Reality.** Active module `_components/modules/InboxModule.tsx`; `useLiveConversations()` / `useThreadDetail()`
+  load/refetch but **don't yet consume SSE** (ADR-004 push is the target). Inbox **CRUD/read + send orchestrator +
+  draft reject/retry/fail/dismiss are FAD-native**; **compose/revise/consult/teachings/template-send still
+  GMS-proxied or incomplete**. **TeamInbox shipped** (mig **052**, `backend/src/team_inbox`,
+  `_data/teamInboxClient.ts`, `modules/inbox/TeamInbox.tsx`). **Push backend is missing** (frontend hook + service
+  worker exist; `/api/push/*` + `web-push` + VAPID + subscription table absent). Endpoints: `GET /api/inbox/
+  conversations` (+ `/:id` bundle), `.../drafts/:id/approve` (**real Guesty send**, WhatsApp-window 409),
+  `/api/inbox/consult` (confidence band + draft_updates + teaching/task suggestions + `missingKnowledge` +
+  `metadata.{fallbackUsed,degraded,modelTimeout}`), teachings CRUD, `send-template` (often
+  `template_send_not_configured`), website `/api/inbox/website/*`.
+- **Drawn.** Prototype inbox screens (`fad-desktop-screens.jsx` / `fad-mobile-screens.jsx`): a clean list + timeline
+  + the Friday Consult compose surface + the V2 trust vocabulary (= the spine's `ai/` kit, already built).
+- **Full-vision rule:** design email/unclassified, owner/vendor channels, and the inline widgets complete even where
+  SPEC; the **send-failed / WhatsApp-expired / fallback-draft** states are the point.
 
-## 2. Features we run today (keep the intent — don't drop)
-Entity chips **Guest · Owner · Vendor · Unclassified** + Team + AI-draft filter; thread list w/ sentiment, draft badge, unread; **filter sheet** (triage + stay-status + mentions); conversation **timeline** (inbound+outbound+sent-drafts, per-message provenance `viaSystem`/`viaChannel`, **per-message translation** original↔translated); **internal notes** (team-only, @mentions); **WhatsApp 24h timer**; **website booking-event cards** (booking_request / payment_proof); **AI draft panel** (confidence pill, states drafting/failed/ready, Approve/Revise/Edit/Reject, "Teach Friday" rule, **send preflight + 5s undo**); **Friday Consult** (the single compose surface — Reply/Note/Ask funnel through it; embedded draft cards, inline teaching + task-suggestion cards, consult history, full-thread toggle, "no KB" warning); **right context panel** (Reservation / Financials / Guest / Website-AI takeover / actions); **Team Inbox** (channels + DMs + member admin); +Task → Ops.
-
-## 3. Real backend (endpoint → what it gives → live/mock → get vs don't)
-Shared Postgres (same instance friday-gms uses), tenant-scoped FR. SSE push (ADR-004), no polling.
-| Endpoint | Key fields | Live? | Notes |
-|---|---|---|---|
-| `GET /api/inbox/conversations` | guest, property, channel, status, last_message, unread, sentiment, **latest_draft_state + confidence**, check-in/out, reservation_id | LIVE | **No subject** (GMS has none — derived); `mentionsMe` always false on guest threads |
-| `GET /api/inbox/conversations/:id` | bundle: conversation + messages[] + drafts[] + **reservation (Guesty)** + whatsapp_window + channels | LIVE | one call = full thread |
-| `.../messages` | direction, body, original/translated_language, sender, via_system, attachments(meta) | LIVE | translations real; attachments **read-only** (no compose upload) |
-| `POST .../drafts/:id/approve` | sends, translates to guest lang, **real Guesty send**, enforces WhatsApp window (409 if closed) | LIVE | the marquee real mutation |
-| draft revise/reject/retry/fail/dismiss | learning loop | LIVE (proxied to friday-gms) | feeds real teaching |
-| `POST /api/inbox/consult` | response, **confidence**, draft_updates[], teaching_actions[], task_suggestions[], **missingKnowledge**, **metadata.{fallbackUsed,degraded,modelTimeout}** | LIVE | Kimi/Gemini, grounded; confidence is a **backend heuristic band** (0.2/0.55/0.62/0.78/0.82), not calibrated % |
-| teachings CRUD · consult history/sessions | persisted | LIVE | real |
-| `POST .../send-template` (WhatsApp) | often `template_send_not_configured` | PARTIAL | template **sender not wired in prod** |
-| website `/api/inbox/website/threads/*` | ai_handoff, visitor_message, booking.request/proof, takeover, drafts | LIVE | friday.mu webhook + Resend + Guesty |
-**Channels actually wired:** Airbnb · Booking · WhatsApp · Email · Website/direct. Owner/vendor channels are inferred from Guesty text, not first-class.
-**Don't-fake gaps (design as disabled/"coming soon", not magic):** internal notes **not persisted** (local-only); WhatsApp **template sender unconfigured**; **no @-mentions on guest threads** (only Team); **no guest-thread assignment**; **no attachment upload** on compose.
-
-## 4. The 5 trust-states → REAL signals (bind to these; don't invent)
-- **Healthy** → SSE up + reservation loaded + draft `confidence ≥ 0.6` + consult grounded (no missingKnowledge) → green SyncChip + Provenance ("Grounded in: reservation {code}, {property}, N teachings") + ConfBar.
-- **Stale** → SSE dropped / `last_message_at` aged / reservation availability cache old → amber + "Re-sync".
-- **Partial** → bundle returned but `reservation` null / `availability` missing / consult ran without KB (`missingKnowledge`) → amber; Provenance names the missing source.
-- **Fallback** → consult `metadata.fallbackUsed` or `missingKnowledge` (conf ~0.55–0.62) → indigo "general guidance — verify"; sends from a fallback draft flag for review.
-- **Failed** → draft `generation_failed`/`send_failed`, consult `metadata.degraded`/`modelTimeout`, 5xx, or `whatsapp_window_expired` 409 → red banner naming WHICH service; "couldn't generate · Retry"; **mutating actions DISABLED**.
-
-## 5. Roles (gate the UI; authoritative in permissions.ts)
+## 3. Who uses it (roles)
 - **Director** — full.
-- **Manager** (ops_manager + commercial_marketing, identical) — **full guest + team inbox**, BUT **finance-gated**: the right-panel **Financials block (payout/totals) must be hidden** from managers.
-- **Field** — **Team channel only, NO guest inbox** (`inbox_guest: {}`); design the field inbox as Team-only (their real surface is the Field PWA).
+- **Manager** (ops_manager ≡ commercial_marketing, identical) — **full guest + team inbox**, but **finance-gated**:
+  the right-panel **Financials block (payout/totals) is hidden** from managers.
+- **Field** — **Team channel only, NO guest inbox** (`inbox_guest: {}`); their real surface is the field PWA.
 - **External** — none.
 
-## 6. New-design diff (V2 mock vs current) — reconcile, don't shrink
-- **V2 ADDS** the trust-state vocabulary (= §0, already built) — the core deliverable; bind to §4 signals.
-- **V2 tabs** = All/Guest/**Needs reply**/Team. Current = Guest/Owner/Vendor/Unclassified + AI-draft + filter sheet. → Keep Owner/Vendor/unclassified (live) + the filter sheet; reconcile "Needs reply" vs "Unread"/"AI-draft" (different axes).
-- **V2 right panel** adds **Linked tasks** (good, keep) but the mock drops Financials + Website-AI takeover — those are **real, keep them** (re-skinned with SourceTags, Financials role-gated).
-- **V2 mock omits** Owner/Vendor entities, internal notes, translation toggles — treat as mock omissions, **not** decisions; preserve.
+## 4. Design principles and system
+- **One inbox, many audiences.** Guest · Team · Owner · Vendor · Website/direct · Email (guest/owner/vendor/team/
+  **unclassified**). Audience is a first-class axis; entity chips + a filter sheet, not separate apps.
+- **Consult-first compose.** Reply / Note / Ask all funnel through **Friday Consult** — embedded draft cards, inline
+  teaching, task-suggestion cards, consult history, full-thread toggle, "no KB" warning. No old review/revise flow.
+- **Friday assists, never autonomous on team chat.** The same interpretation pass runs on team messages, but Friday
+  never sends without operator confirmation.
+- **Use the built `ai/` kit + the trust states** (this is `ask-friday.md` §0's "already built — place it, don't
+  rebuild"). Confidence is a band, not a %.
 
-## 7. Open questions for the design session
-1. **Confidence display:** backend confidence is a heuristic **band**, not a calibrated %. Show band (high/med/low) or qualitative label rather than "88%" (false precision). Decide.
-2. **Tab/filter model:** "Needs reply" vs Unread vs AI-draft — one tab axis + the filter sheet, or fold in?
-3. **Entities:** confirm Owner/Vendor/unclassified stay; do syndic/group ever get UI (currently permission-only)?
-4. **Stale threshold:** what time/signal = "stale"? (SSE-disconnect is clean; `last_message_at` age is fuzzy.)
-5. **Provenance copy:** exact citation phrasing (reservation code, property facts, N teachings, KB presence)?
-6. **The don't-fake gaps (§3):** show as disabled/"coming soon" or hide?
+## 5. Information architecture
+- **Guest inbox** — entity chips (Guest · Owner · Vendor · Unclassified) + AI-draft filter; thread list (sentiment,
+  draft badge, unread); filter sheet (triage + stay-status + mentions); conversation **timeline** (per-message
+  provenance + per-message translation); **AI draft panel** (confidence pill, drafting/failed/ready, Approve/Revise/
+  Edit/Reject, "Teach Friday", **send preflight + 5s undo**); **right context panel** (Reservation / Financials
+  [gated] / Guest / Website-AI takeover / actions).
+- **TeamInbox** — 13 seeded channels (**public:** gm · announce · random · ops · reservations · syndic · agency ·
+  marketing · **photoshoot** [full-quality storage]; **private:** finance · admin · refunds · adjustments); DMs (1:1
+  + group); @mentions; threading; **3 semantic reactions** (👀 looking / ✅ done / 🙋 need-help); file uploads
+  (photoshoot quality exception); search (FTS); read receipts; **future inline widgets** (create task / capture
+  expense / capture income); Google Meet links (not embedded video).
+- **Email / multi-audience** — Gmail v1 (generic provider schema for Outlook later); email threads render like guest
+  threads (no AI-draft pipeline yet); classification heuristics → LLM fallback → cached per sender; the
+  **Unclassified** fallback chip.
+
+## 6. Surfaces to design (full vision) — P0 first
+| # | Surface | Purpose | Reality | Priority |
+|---|---|---|---|---|
+| A | **Guest thread + Friday Consult compose** | timeline + the single Consult compose/refine surface; draft cards w/ confidence + provenance; Approve&send (preflight + 5s undo). | LIVE (send) / GMS-proxied (consult) | **P0** |
+| B | **AI trust-state placement** | SyncChip / Provenance / ConfBar on drafts + messages; the five states (§7). | BUILT kit, partly unwired | **P0** |
+| C | **TeamInbox** | channels + DMs + mentions + threading + reactions + uploads + search + read receipts. | LIVE | **P0** |
+| D | **Right context panel** | Reservation / **Financials (role-gated)** / Guest / Website-AI takeover / actions + **Linked tasks**. | LIVE | **P0** |
+| E | **WhatsApp 24h window + template recovery** | live timer + the closed-window template path. | PARTIAL (template sender unconfigured) | **P1** |
+| F | **Email / unclassified + owner/vendor** | email-thread rendering, audience routing, the Unclassified chip; owner/vendor channels. | SPEC | **P1** |
+| G | **Website-AI handoff / takeover** | AI confidence + escalation reason → "Take over AI" (real mutation) → reply. | LIVE | **P1** |
+| H | **Inline widgets (from chat)** | create task / capture expense / capture income from a TeamInbox message. | SPEC | **P2** |
+
+## 7. Critical states the UI must make legible (bind to real signals)
+- **Healthy** → SSE up + reservation loaded + draft `confidence ≥ 0.6` + consult grounded → green `SyncChip` +
+  `Provenance` ("Grounded in: reservation {code}, {property}, N teachings") + `ConfBar`.
+- **Stale** → SSE dropped / `last_message_at` aged / availability cache old → amber + "Re-sync".
+- **Partial** → bundle returned but `reservation` null / consult ran with `missingKnowledge` → amber; Provenance
+  names the missing source.
+- **Fallback** → consult `metadata.fallbackUsed` / `missingKnowledge` (conf ~0.55–0.62) → indigo "general guidance —
+  verify"; a send from a fallback draft is flagged for review.
+- **Failed** → draft `generation_failed` / `send_failed`, consult `metadata.degraded`/`modelTimeout`, 5xx, or
+  `whatsapp_window_expired` 409 → red banner **naming which service**; "couldn't generate · Retry"; **mutating
+  actions DISABLED**.
+- **Visible-draft policy** → no draft card when the last real message is outbound/team; a draft appears only on an
+  unanswered inbound or an explicit ask (don't surprise the operator).
+- **Don't-fake gaps** (design as disabled/"coming soon", not magic): internal notes **not persisted** (local-only);
+  WhatsApp **template sender unconfigured**; **no @-mentions on guest threads** (Team only); **no guest-thread
+  assignment**; **no attachment upload** on compose.
+
+## 8. Key flows to storyboard
+1. **Reply to a guest:** open thread → Friday Consult draft (confidence + provenance) → Approve&send (preflight + 5s
+   undo) / Revise (keep talking to Friday) / Edit / Reject (+ Teach).
+2. **WhatsApp closed window:** timer expired → template-recovery path (or honest "template sender not configured").
+3. **Website handoff:** AI escalates (reason) → "Take over AI" → reply.
+4. **Team coordination:** post in `ops`, @mention, react ✅, thread; (future) "create task" inline widget.
+5. **Triage at scale:** filter Unread / Draft-ready / mentions; cross-link to Reservations; +Task → Operations.
+
+## 9. Reference artifacts
+Built `InboxModule` + `modules/inbox/TeamInbox.tsx` + `_data/{teamInboxClient,teamInbox}.ts` + `/api/inbox/*` +
+TeamInbox mig 052; the `ai/` kit; the notification policy (push-for-all-operator-work, email-for-guest-inbound +
+DM/@mention) → see `notifications-emails.md`; the 13-channel seed; the Consult action protocol (draft_updates /
+teaching_actions / task_suggestions / missingKnowledge).
+
+## 10. Recommended design priority
+1. **A–D:** the guest thread + Consult compose, the trust-state placement, TeamInbox, and the role-gated context
+   panel.
+2. **E–G:** WhatsApp window + template recovery, email/unclassified + owner/vendor, website handoff.
+3. **H:** the inline widgets.
+
+## 11. Out of scope / honest-future
+Internal notes persistence, guest-thread @-mentions + assignment, compose attachment upload, the WhatsApp template
+**sender** (unconfigured), embedded video (Google Meet links only), the AI-draft pipeline **for email** (renders like
+guest threads, no draft yet) — design as disabled/"coming soon", not magic. SSE push + the push **backend** are the
+build dependency for live freshness + notifications.
+
+## 12. Open decisions (propose options, don't guess)
+1. **Confidence display** — band/label, not "88%" (the global clash #1).
+2. **Tab/filter model** — "Needs reply" vs Unread vs AI-draft (different axes): one tab axis + the filter sheet, or
+   fold in? Keep Owner/Vendor/Unclassified (live) + the filter sheet.
+3. **Entities** — confirm Owner/Vendor/Unclassified stay; do syndic/group get UI (currently permission-only)?
+4. **Stale threshold** — what signal = "stale" (SSE-disconnect is clean; `last_message_at` age is fuzzy)?
+5. **Provenance copy** — exact citation phrasing (reservation code, property facts, N teachings, KB presence).
+6. **The don't-fake gaps (§11)** — show disabled/"coming soon" or hide?
+
+## 13. What we want back
+The **guest thread + Friday Consult compose** (with the five trust-states + visible-draft policy + send-preflight/
+undo), the **TeamInbox**, and the **role-gated context panel** first — desktop + manager-mobile — built on the live
+`/api/inbox` + `teamInboxClient` + the `ai/` kit. Then WhatsApp/template, email/unclassified + owner/vendor, website
+handoff, and the inline widgets. Flag clashes per `00-README` §7.
