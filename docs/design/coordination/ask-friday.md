@@ -66,6 +66,14 @@ team/role admin are director-only**. **Field** uses the mobile task PWA, not the
 - **One assistant, many scopes.** The same visual identity (the `spark` mark, indigo `--indigo #4f72cf`) across the
   full-page, the panel, the palette and every module — differentiated by a visible **scope chip** ("All of FAD" vs
   "GBH-B4" vs "this reservation"), never by looking like a different product.
+- **One "Friday" intelligence — NO user-facing model picker (decided 2026-05-30).** Do **not** design a "choose your
+  model / intelligence level" control, and never surface model names (Gemini/Kimi/Opus). Friday is *one* assistant;
+  which model runs underneath is **invisible internal routing** (cheap model for cheap tasks, stronger for hard ones —
+  like Cursor's "Auto"), swappable anytime (incl. for Friday's own future model) with zero UX change. Rationale: for a
+  *vertical* tool the model is plumbing, not the product — a picker would imply "our default is deliberately worse,"
+  and a weak free model makes users blame *the product*, not their tier. The paid axes are **units · modules · AI
+  quantity · proactivity**, never model power. *(This supersedes the Freemium-Pivot memo's D8 "high/med/low model
+  tiers, undisclosed" — we don't expose levels at all.)*
 - **Honesty over magic — the five trust-states are the theme** (see §7). Every AI answer shows its real state.
 - **⚠ Already built — design to PLACE these, do NOT design a parallel set.** This redesign's AI vocabulary is
   already in the repo (`frontend/src/app/fad/_components/`):

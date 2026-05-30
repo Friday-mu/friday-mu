@@ -20,8 +20,12 @@ Hand it **this file (`00-README`) first**, then **`ask-friday.md` (the spine —
 - **P1:** `inbox.md` · `operations.md`.
 - **P2:** `properties.md` · `reservations.md` · `calendar.md` · `owners.md` · `guests.md` · `reviews.md` · `training.md`.
 - **P3:** `finance.md` · `legal-admin.md` · `marketing-leads.md` · `hr.md` · `settings-tenant.md` · `analytics.md`.
-- **Cross-cutting:** `notifications-emails.md`.
-- **Decision log:** `clashes.md` (9 logged — flag new ones here, don't silently choose).
+- **Cross-cutting:** `notifications-emails.md` · **`pricing-commercial-model.md`** (canonical pricing — both app + site).
+- **Decision log:** `clashes.md` (15 logged, all resolved 2026-05-30 — flag new ones here, don't silently choose).
+
+**Separate surface (different design effort):** `website-fridayos.md` — the **customer-facing FridayOS marketing
+website** (not the admin app). It references the FridayOS SaaS project + Brand Kit in the CD account, and shares
+`pricing-commercial-model.md`. The pricing funnel **spans both** the site and the app (`website-fridayos.md` §6).
 
 ## 1. The job, in one line
 We built a real, working FAD already. We're redesigning it to be better. Design the **full intended vision** of

@@ -19,22 +19,14 @@ the FAD-role and tenant-role models mapped (not merged) at the guard layer.
   route guards, AI-prompt isolation; Sprint 11 v0.2 added per-tenant Guesty creds / Resend allowlist / Kimi quota /
   RLS / tenant-aware caching. **Auth** = OAuth2 client_credentials + short-lived JWTs (FAD-ADR-003); tenant identity
   rides in the JWT.
-- **Billing direction (RESOLVED 2026-05-30 — direction, evolving; pitch-tier, design last).** **Freemium + layered
-  per-unit subscription + add-ons:**
-  - **Free forever** (not a trial) — limited AI use so a tenant gets a feel for it. This is the FridayOS/MCP
-    ecosystem land-grab; perpetual-free beats a time-box because of the platform play.
-  - **Paid tiers (~2–3), priced PER UNIT** — generous/unlimited team seats (per-seat would tax the "fewer staff"
-    value prop we sell; PMs already buy per-listing, so per-unit needs no education).
-  - **AI metered on top:** a free allocation, then a subscription allocation, then paid overage. **But:** keep
-    *core operational* AI (Ask Friday drafts, trust-state surfaces, scheduling) **inside** the subscription —
-    metering the daily-habit AI suppresses the usage that drives retention. Meter only *expensive/optional* AI
-    (bulk generation, deep analytics runs, agent autopilot). **Credits map to outcomes, not tokens** (users don't
-    think in tokens; token-metering causes bill-shock).
-  - **Visible meter + caps, never silent overage** (same honesty doctrine as the trust-states — show the gauge,
-    alert before the ceiling, let them cap).
-  - **Add-ons** (Syndic / Design / Agency) billed on top — separate buyers, clean separation.
-  - The shipped Design-SaaS model ($99/mo flat, bank-transfer) and the prototype's per-unit-€-only model are both
-    **superseded** by this. (Supersedes the precedent in the header.)
+- **Billing direction — see the canonical model in `pricing-commercial-model.md` (this folder).** It's the FridayOS
+  **5-layer** model (free self-serve → friday.mu marketplace commission → paid usage tiers + AI credits → managed
+  service 15/20/25). Pitch-tier, evolving; **design the billing/AI-meter surfaces LAST.** The Settings-relevant
+  pieces: **free-forever self-serve** (metered, OTA-connect gated as the conversion trigger); **paid per-unit tiers**
+  (generous/unlimited seats — per-seat fights the "fewer staff" pitch); **AI credits as an orthogonal add-on on any
+  tier** (core operational AI stays *inside* the subscription, only expensive/optional AI draws credits; credits map
+  to **outcomes not tokens**; **visible meter + caps, never silent overage**); **module add-ons** (Syndic/Design/
+  Agency). The shipped $99-flat Design-SaaS model and the prototype's per-unit-€-only model are both **superseded**.
 - **Reality — two *separate* Settings surfaces + two *separate* role systems:**
   1. **`SettingsModule.tsx`** (operational/personal; sections appearance / account / team / integrations / feedback /
      billing). **LIVE:** Appearance (theme toggle; the **`ui_version` Classic↔New-design radio** added this session,
