@@ -110,6 +110,7 @@ type LoginResponse = {
   username?: string
   display_name?: string
   role?: string
+  fad_role?: string
   must_change_password?: boolean
   error?: string
 }
@@ -157,7 +158,11 @@ export default function LoginScreen({ onLogin }: { onLogin: (token: string) => v
     if (!data.token) throw new Error('Login did not return a token')
     const displayName = data.display_name || emailUsed.split('@')[0] || 'Friday'
     const firstName = displayName.split(/\s+/)[0] || 'Friday'
-    const fadRole = mapAuthRoleToFadRole(data.role)
+    // Prefer the backend's exact fad_role (now returned by /api/auth/login); fall
+    // back to the coarse role→fad_role map only when it's absent. The stored
+    // fad:real-role is just a fallback (the JWT's fad_role claim wins in
+    // usePermissions), but keep it precise. (Bugfix 2026-05-30.)
+    const fadRole = data.fad_role || mapAuthRoleToFadRole(data.role)
 
     setToken(data.token)
     try {
