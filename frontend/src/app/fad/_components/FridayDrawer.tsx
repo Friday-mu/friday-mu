@@ -10,6 +10,8 @@ import { IconArrow, IconCheck, IconClose, IconExpand, IconMic, IconSend, IconSpa
 import { canSeeFridayCard, useCurrentRole, useCurrentUserId } from './usePermissions';
 import { TASK_USER_BY_ID } from '../_data/tasks';
 import { useDictation } from './useDictation';
+import { AITrustStrip, StateBanner } from './ai/TrustStates';
+import { deriveAIHealth, provenanceItems, type AISourceStatus } from './ai/aiHealth';
 
 interface AIMessage {
   role: 'ai';
@@ -28,6 +30,9 @@ interface AIMessage {
   }>;
   confidence?: 'high' | 'medium' | 'low';
   sourcesUsed?: string[];
+  // Real trust signals from /api/friday/ask, used to derive the AI health state.
+  fallbackUsed?: boolean;
+  sourceStatus?: AISourceStatus[];
   error?: string;
   stopped?: boolean;
 }
@@ -171,6 +176,8 @@ export function useFridayChat(scope: string) {
               actions: (reply.actions || []).map((action) => ({ ...action, status: 'idle' as const })),
               confidence: reply.confidence,
               sourcesUsed: reply.sourcesUsed || reply.contextSummary?.requestedModules || [],
+              fallbackUsed: reply.fallbackUsed,
+              sourceStatus: reply.contextSummary?.sourceStatus,
             }
           : entry));
       } catch (err) {
@@ -384,6 +391,13 @@ export function FridayMessage({
   const visibleCards = m.cards.filter((c) =>
     canSeeFridayCard(role, c.type, c.type === 'action' ? c.module : undefined),
   );
+  // Derive the AI trust state from the real signals on this answer (no simulator).
+  const aiHealth = deriveAIHealth({
+    error: !!m.error,
+    fallbackUsed: m.fallbackUsed,
+    sourceStatus: m.sourceStatus,
+  });
+  const provenance = provenanceItems({ sourcesUsed: m.sourcesUsed, sourceStatus: m.sourceStatus });
   return (
     <div className={'friday-msg friday-msg-ai' + (m.stopped ? ' stopped' : '')}>
       <div className="friday-msg-header">
@@ -411,19 +425,19 @@ export function FridayMessage({
       )}
       {m.ready && (
         <>
-          {(m.confidence || m.sourcesUsed?.length || m.error) && (
-            <div className="friday-context-row">
-              {m.confidence && <span className="chip">confidence · {m.confidence}</span>}
-              {m.sourcesUsed?.slice(0, 4).map((s) => (
-                <span key={s} className="chip">{s}</span>
-              ))}
-              {m.error && <span className="chip warn">live read failed</span>}
-            </div>
-          )}
+          <StateBanner surface="Ask Friday" health={aiHealth} />
           {m.text && (
             <div className="friday-msg-text">
               <ReactMarkdown>{m.text}</ReactMarkdown>
             </div>
+          )}
+          {(aiHealth !== 'healthy' || m.confidence || provenance.length > 0) && (
+            <AITrustStrip
+              health={aiHealth}
+              source="Friday"
+              confidence={m.confidence}
+              provenance={provenance}
+            />
           )}
           {visibleCards.map((c, i) => (
             <div key={i} style={{ marginTop: 8 }}>
