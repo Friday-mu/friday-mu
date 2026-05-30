@@ -557,12 +557,16 @@ function TabCondition({ property, flash }: { property: Property; flash: (m: stri
   // Access codes / wifi / lockbox / gate codes are restricted/guest_scoped. We
   // NEVER render their bodies on this staff cockpit as if public, and we never
   // expose them on any public surface. Policy applied here:
-  //   • category === 'access'           → body MASKED (shown as "· restricted ·")
-  //   • surface !== 'guest_facing' card  → treated staff-only (badge "Internal")
-  // To EXPOSE any access/wifi/lockbox field publicly (e.g. a guest-portal pre-
-  // arrival reveal) requires Ishant's explicit sign-off FIRST. Until then: masked.
-  const ACCESS_CATEGORIES = new Set(['access']);
-  const isRestricted = (cat: string) => ACCESS_CATEGORIES.has(cat);
+  //   • credential cards (access, wifi_tech) → body MASKED ("· restricted ·")
+  //   • surface !== 'guest_facing' card        → treated staff-only (badge "Internal")
+  // Per Ishant (2026-05-30): hard-mask ALL credentials — access codes, lockbox/gate
+  // codes AND wifi/router/gate credentials — not just 'access'. To EXPOSE any
+  // credential publicly (e.g. a guest-portal pre-arrival reveal) requires Ishant's
+  // explicit sign-off FIRST. Until then: masked everywhere on this cockpit. (Future
+  // modules with credential cards should reuse this predicate — extract to a shared
+  // helper when the second consumer lands.)
+  const CREDENTIAL_CATEGORIES = new Set(['access', 'wifi_tech']);
+  const isRestricted = (cat: string) => CREDENTIAL_CATEGORIES.has(cat);
 
   const status: DataStatus = error ? 'error' : loading ? 'loading' : cards.length === 0 ? 'empty' : 'ready';
 
@@ -590,7 +594,7 @@ function TabCondition({ property, flash }: { property: Property; flash: (m: stri
                 const surf = card.surface === 'guest_facing' ? 'Guest' : card.surface === 'internal_only' ? 'Internal' : 'Both';
                 const src = card.source === 'breezeway_imported' ? 'breezeway' : card.source === 'guesty_imported' ? 'guesty' : 'friday';
                 return (
-                  <tr key={card.id} className="tdrow" onClick={() => flash(restricted ? 'Access details are staff-restricted' : `Open card · ${card.title}`)}>
+                  <tr key={card.id} className="tdrow" onClick={() => flash(restricted ? 'Credentials are staff-restricted (sign-off to reveal)' : `Open card · ${card.title}`)}>
                     <td>
                       <div className="tt">{card.title}</div>
                       <div className="faint" style={{ fontSize: 11, marginTop: 2, maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
