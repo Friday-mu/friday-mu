@@ -13,8 +13,16 @@ checklist, and confirms locked-decision compliance after the ConfBar + AIConfide
 - **Remaining (judgment call, NOT fixed):** `AgencyModule.tsx:254` renders a buyer **"MATCH" score** as `{m.score}%` + an `lq-conf` fill bar. This is a match-quality score, arguably distinct from "AI confidence" — left as-is pending a call on whether match-score counts as confidence.
 - **Legitimate `%` (correctly untouched):** all `occupancy_pct` / `share_pct` / ADR / reconciliation-variance / onboarding-checklist-% across Analytics, Owners, Reservations, Properties. Occupancy *is* a percentage — the locked decision is only about AI confidence.
 
-**2. One "Friday", no model names — ✓ clean.**
-No user-facing model-name leaks (Gemini / Kimi / Opus / Sonnet / Haiku) anywhere outside tests/comments. No model-picker UI.
+**2. One "Friday", no model names — ⚠ mostly, but real surfacings found (judgment calls, NOT auto-fixed).**
+No model-**picker** UI, and the *core* Friday assistant (Ask Friday, Inbox/Ops consult) surfaces no model names. **But** the **Design module** + one **Reviews** string do name models visibly:
+- `design/MoodboardImageGenerator.tsx:218` — "Powered by Nanobanana (Gemini 2.5 Flash Image)" (visible).
+- `design/MoodboardImageGenerator.tsx:263` — "Kimi unavailable — using template fallback" (visible failure state).
+- `design/FloorPlanStudio.tsx:538-539` — "Gemini key missing…" / "Gemini not available" (visible).
+- `design/stages/MoodboardStage.tsx:319` — title "…Nanobanana (Gemini 2.5 Flash Image)".
+- `design/stages/RoughBudgetStage.tsx:610` — "Kimi grounds the result against Friday's…".
+- `reviews/SettingsPage.tsx:256` — "All FAD AI work … runs through Kimi".
+
+**Judgment, for Ishant — not auto-fixed:** the locked decision was framed around the *Ask Friday assistant* (no model picker, don't brand Friday's intelligence by model). These cases are arguably different — feature attribution for image-gen ("Nanobanana/Gemini"), and honest *failure* states ("Kimi unavailable"). Whether "one Friday, no model names" extends to (a) the Design image-gen feature and (b) failure-state copy is a real call. Options: (i) rename all to "Friday" / "the image model" / generic; (ii) keep image-gen attribution but genericise the Reviews/Settings + failure strings; (iii) leave as-is (these aren't the assistant). Flag, don't silently change.
 
 ## Per-module trust-kit adoption (prep for the M-series)
 
