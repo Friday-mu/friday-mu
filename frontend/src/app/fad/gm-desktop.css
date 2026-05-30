@@ -216,9 +216,14 @@
   --font-sans-fad:'Space Grotesk',-apple-system,system-ui,sans-serif;
   --font-friday-fad:'Archivo',Georgia,sans-serif;
 }
-/* Wordmark — Archivo italic, FridayOS look. The component renders "FAD"/"F";
-   we restyle weight/italic to match the brand wordmark treatment. */
+/* Wordmark — Archivo italic, FridayOS. The component markup renders "FAD" (full)
+   + "F" (short/mobile). Under v2 we swap the FULL form's text to "FridayOS" via
+   CSS content-replacement (component + v1 untouched; the "F" short form is already
+   correct for FridayOS). Brand-spec note: long-term this becomes the real Friday.mu
+   logotype asset + "OS" — text is step 1. */
 .fad-app.fad-ui-v2 .fad-brand-wordmark{font-family:var(--font-friday-fad);font-style:italic;font-weight:800;letter-spacing:-.02em}
+.fad-app.fad-ui-v2 .fad-brand-wordmark-full{font-size:0}           /* hide "FAD" glyphs, keep the box */
+.fad-app.fad-ui-v2 .fad-brand-wordmark-full::after{content:"FridayOS";font-size:20px}
 /* Friday entry (rail) — subtle blue gradient like the prototype's .askfri */
 .fad-app.fad-ui-v2 .fad-friday-entry{background:linear-gradient(180deg,rgba(62,116,217,.16),rgba(62,116,217,.05));border-color:rgba(62,116,217,.24)}
 .fad-app.fad-ui-v2 .fad-friday-entry .fad-friday-label{font-family:var(--font-friday-fad);font-style:italic}
