@@ -16,6 +16,7 @@ import {
   type Task,
   type TaskComment,
   type TaskCost,
+  type TaskPriority,
   type TaskSourcePerson,
   type TaskRequirement,
   type TaskRequirementState,
@@ -369,6 +370,26 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
     });
   };
 
+  // AF8 — apply an AI suggestion's actionable payload as a real task mutation.
+  // Returns true when something was applied (so the row can show "Applied"),
+  // false for advisory-only kinds (thread_summary/risk/route/etc. → telemetry only).
+  // Throws on API failure so the row can surface the error.
+  const applySuggestion = async (s: Task['aiSuggestions'][number]): Promise<boolean> => {
+    let patch: Parameters<typeof updateTask>[0]['patch'] | null = null;
+    if (s.kind === 'assign' && s.value && TASK_USER_BY_ID[s.value]) {
+      patch = { assigneeIds: [s.value] };
+    } else if (s.kind === 'urgency_bump') {
+      const VALID: TaskPriority[] = ['lowest', 'low', 'medium', 'high', 'urgent'];
+      patch = { priority: (s.value && (VALID as string[]).includes(s.value)) ? (s.value as TaskPriority) : 'urgent' };
+    }
+    if (!patch) return false; // advisory-only suggestion
+    await runApiMutation('ai-suggestion', async () => {
+      await updateTask({ taskId: task.id, patch, actorId: currentUserId });
+      onBumpRev();
+    });
+    return true;
+  };
+
   const setSchedule = async (patch: Pick<Parameters<typeof updateTask>[0]['patch'], 'dueDate' | 'dueTime'>) => {
     await runApiMutation('schedule', async () => {
       const nextPatch: Parameters<typeof updateTask>[0]['patch'] = { ...patch };
@@ -559,6 +580,7 @@ export function TaskDetail({ task, mode, onClose, onExpand, onBumpRev, onReportI
           staffUsers={staffUsers}
           onUpdateAssignees={setAssigneeIds}
           onUpdateSchedule={setSchedule}
+          onApplySuggestion={applySuggestion}
         />
         <Comments
           task={task}
@@ -918,6 +940,7 @@ function Body({
   staffUsers,
   onUpdateAssignees,
   onUpdateSchedule,
+  onApplySuggestion,
 }: {
   task: Task;
   role: NonNullable<ReturnType<typeof usePermissions>['role']>;
@@ -957,6 +980,7 @@ function Body({
   staffUsers: OperationsStaffUser[];
   onUpdateAssignees: (nextIds: string[]) => void;
   onUpdateSchedule: (patch: Pick<Parameters<typeof updateTask>[0]['patch'], 'dueDate' | 'dueTime'>) => Promise<void>;
+  onApplySuggestion: (s: Task['aiSuggestions'][number]) => Promise<boolean>;
 }) {
   const assignees = taskAssigneePeople(task);
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
@@ -1124,7 +1148,7 @@ function Body({
 
       {task.aiSuggestions.length > 0 && (
         <CollapsibleSection title={`AI suggestions · ${task.aiSuggestions.length}`} defaultOpen>
-          <AIPanel task={task} />
+          <AIPanel task={task} onApplySuggestion={onApplySuggestion} />
         </CollapsibleSection>
       )}
 
@@ -1956,7 +1980,7 @@ function CostRow({ cost, canSeeFinance }: { cost: TaskCost; canSeeFinance: boole
   );
 }
 
-function AIPanel({ task }: { task: Task }) {
+function AIPanel({ task, onApplySuggestion }: { task: Task; onApplySuggestion: (s: Task['aiSuggestions'][number]) => Promise<boolean> }) {
   return (
     <div
       style={{
@@ -1969,7 +1993,7 @@ function AIPanel({ task }: { task: Task }) {
       }}
     >
       {task.aiSuggestions.map((s, i) => (
-        <AISuggestionRow key={i} suggestion={s} />
+        <AISuggestionRow key={i} suggestion={s} onApply={onApplySuggestion} />
       ))}
       {task.inboxThreadId && (
         <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
@@ -1995,14 +2019,36 @@ function suggestionKindToSurface(kind: Task['aiSuggestions'][number]['kind']): A
   return 'risk_flag';
 }
 
-function AISuggestionRow({ suggestion }: { suggestion: Task['aiSuggestions'][number] }) {
+function AISuggestionRow({
+  suggestion,
+  onApply,
+}: {
+  suggestion: Task['aiSuggestions'][number];
+  onApply: (s: Task['aiSuggestions'][number]) => Promise<boolean>;
+}) {
   const [feedback, setFeedback] = useState<'accepted' | 'rejected' | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const telemetry = useAITelemetry();
   const surface = suggestionKindToSurface(suggestion.kind);
 
-  const onAccept = () => {
-    setFeedback('accepted');
-    telemetry.recordAccept(surface, { kind: suggestion.kind, confidence: suggestion.confidence });
+  // AF8 — Accept now APPLIES the suggestion's payload (assign → assignee,
+  // urgency_bump → priority) via a real updateTask mutation, not just telemetry.
+  // Advisory-only kinds (thread_summary/risk/route/…) record acceptance with no
+  // mutation. Failures keep the buttons live so the operator can retry.
+  const onAccept = async () => {
+    setApplyError(null);
+    setApplying(true);
+    try {
+      const applied = await onApply(suggestion);
+      telemetry.recordAccept(surface, { kind: suggestion.kind, confidence: suggestion.confidence });
+      setFeedback('accepted');
+      if (applied) fireToast('Applied · ' + suggestion.kind.replace('_', ' '));
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : 'Could not apply');
+    } finally {
+      setApplying(false);
+    }
   };
   const onReject = () => {
     setFeedback('rejected');
@@ -2025,17 +2071,24 @@ function AISuggestionRow({ suggestion }: { suggestion: Task['aiSuggestions'][num
       </div>
       <div style={{ marginTop: 2 }}>{suggestion.message}</div>
       {feedback === null && (
-        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-          <button className="btn ghost sm" onClick={onAccept} style={{ fontSize: 10, padding: '2px 8px' }}>
-            Accept
-          </button>
-          <button className="btn ghost sm" onClick={onReject} style={{ fontSize: 10, padding: '2px 8px' }}>
-            Reject
-          </button>
-          <button className="btn ghost sm" onClick={onRegenerate} style={{ fontSize: 10, padding: '2px 8px' }}>
-            Regenerate
-          </button>
-        </div>
+        <>
+          <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+            <button className="btn ghost sm" onClick={onAccept} disabled={applying} style={{ fontSize: 10, padding: '2px 8px' }}>
+              {applying ? 'Applying…' : 'Accept'}
+            </button>
+            <button className="btn ghost sm" onClick={onReject} disabled={applying} style={{ fontSize: 10, padding: '2px 8px' }}>
+              Reject
+            </button>
+            <button className="btn ghost sm" onClick={onRegenerate} disabled={applying} style={{ fontSize: 10, padding: '2px 8px' }}>
+              Regenerate
+            </button>
+          </div>
+          {applyError && (
+            <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-danger)' }}>
+              {applyError} · try again
+            </div>
+          )}
+        </>
       )}
       {feedback && (
         <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)' }}>
