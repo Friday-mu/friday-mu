@@ -42,12 +42,21 @@ lands), and a clean boundary against Finance (money-of-record) and Intelligence 
 - **The global filter bar is the spine.** Date range · region · property · channel · cohort drives every sub-page; the
   state is **URL-encoded + shareable**; it's the pattern other modules' Insights tabs adopt — design it as a reusable
   component.
+- **Numbers from SQL, never from the model.** A **deterministic insight engine** computes every figure over the
+  **Cube Core** metric layer (metrics defined once, queried by any dimension — the guardrail against confidently-wrong
+  numbers); the AI agent is deliberately **thin** — it *narrates* ranked insights and composes a view from a
+  natural-language question, it **never computes a number**. That's the trust guarantee: provenance traces to a
+  defined metric, not a model.
 - **Don't double-count Finance or Intelligence.** Commercial performance here; money-of-record in Finance; narrative
   in Intelligence.
 - **Apply the built `ai/` kit** — Analytics figures are the archetypal `modeled` source.
 
 ## 5. Information architecture
-Sub-pages: **Overview** (KPI strip + a Friday narrative summary card + the global filter bar) · **Occupancy & pace**
+**Push is the primary surface:** a ranked **digest written into the Ask Friday morning briefing + Slack** (don't make
+the operator go look). The module below is the **pull** surface — one adaptive surface, not many static tabs. The
+global filter bar carries a **date-axis selector** — **stay date** (occupancy/ADR/RevPAR), **booking date** (volume/
+lead-time/channel-mix), **transaction date** (cash, Finance's axis) — plus **pace** (as-of-a-point vs same-time-last-
+year), the fourth shape. Sub-pages: **Overview** (KPI strip + a Friday narrative summary card + the global filter bar) · **Occupancy & pace**
 (heatmap by property × time, pace curve booked-vs-STLY, the **occupancy × price quadrant**) · **Channels** (mix,
 per-channel ADR/commission/net, conversion funnel, direct-booking share trend) · **Cohorts** (region cohorts
 flic_en_flac / grand_baie / pereybere / bel_ombre, property-type, owner; MoM grids) · **Productivity** (staff/task
