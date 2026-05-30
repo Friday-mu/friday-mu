@@ -211,8 +211,16 @@ Friday done"): eval-mining/analyzer operating cadence (Plan 2/6), KB harness fac
 
 ## 8. Progress log
 - [DONE] S1 trust states `c198d66e` · S2 SourceTag/Field `5df91dc4` · Agency `d4f76dfe` · auth/notif fixes (live).
-- [DONE] P0.1 persist specs → `docs/design/fad-v2/`.
-- [ ] P0.2 harness · P0.3 primitives · AF1–6 · M1–M17 · F1–F6.
+- [DONE] P0.1 persist specs → `docs/design/fad-v2/` (`501a6b66`).
+- [DONE] P0.2 self-QA harness validated (dev server + decode-only director JWT + Playwright screenshots desktop+mobile).
+- [DONE] P0.4 UI-version switch (Legacy↔V2, live-selectable) — `be017169`; tsc+build green, toggle persists, legacy fallback verified.
+- [DONE] P0.3 cross-cutting V2 primitives — `75ac0c8c` (trust-envelope adapter, state-matrix views, AF contract registry).
+- [DONE] AF1 staleness signal (backend) `08770cac` · AF2 gate-on-failed + recovery `7a65199f` · AF3 focus envelope `9bfd50ff`.
+- [FOUNDATION DONE] AF4 (FE registry = P0.3) + AF5 (trust adapter = P0.3): per-surface consumption folds into each
+  M-slice (live-selectable → V2 surfaces, never legacy). AF6 satisfied-by-design (real numeric for consult/draft,
+  honest band for global; no fabricated precision).
+- [DONE] M1 Properties spine (V2, parallel) — `PropertiesModuleV2` + FadApp registry; tsc+build green; harness QA desktop+mobile+error. OPEN: wifi_tech masking decision (Ishant). **PAUSED for review.**
+- [ ] M2–M17 (pause after each) · F1–F6.
 
 ---
 
