@@ -291,25 +291,27 @@ async function notifyUsers({ tenantId, userIds, type, title, body = null, url = 
     type: 'notification.created',
     payload: { notifications: inserted },
   });
-  sendPushToUsers({
-    tenantId,
-    userIds: ids,
-    title,
-    body: body || '',
-    url: url || '/fad',
-    tag: type,
-    data: { source, sourceId, type, ...data },
-  }).then((result) => {
-    if (result?.skipped || result?.reason === 'no_subscriptions' || result?.failed > 0) {
-      console.info('[realtime] push fan-out status:', {
-        type,
-        targets: ids.length,
-        ...result,
-      });
-    }
-  }).catch((e) => {
-    console.warn('[realtime] push fan-out failed:', e.message);
-  });
+  if (shouldPushNotification(type, data)) {
+    sendPushToUsers({
+      tenantId,
+      userIds: ids,
+      title,
+      body: body || '',
+      url: url || '/fad',
+      tag: type,
+      data: { source, sourceId, type, ...data },
+    }).then((result) => {
+      if (result?.skipped || result?.reason === 'no_subscriptions' || result?.failed > 0) {
+        console.info('[realtime] push fan-out status:', {
+          type,
+          targets: ids.length,
+          ...result,
+        });
+      }
+    }).catch((e) => {
+      console.warn('[realtime] push fan-out failed:', e.message);
+    });
+  }
   sendEmailNotifications({
     tenantId,
     userIds: ids,
@@ -330,6 +332,18 @@ function shouldEmailNotification(type, data = {}) {
   if (t.includes('team') && (t.includes('mention') || t.includes('dm'))) return true;
   if (data.emailNotification === true) return true;
   return false;
+}
+
+// Push-eligibility gate (mirrors shouldEmailNotification). Push fires for every
+// type EXCEPT draft-ready: the operator already got a push for the incoming
+// message, and the AI draft is generated automatically right after — a second
+// push is redundant noise. Off for everyone by default. (Ishant, 2026-05-30.)
+// An explicit `data.pushNotification === false` also suppresses.
+function shouldPushNotification(type, data = {}) {
+  if (data.pushNotification === false) return false;
+  const t = String(type || '').toLowerCase();
+  if (t.includes('draft_ready') || (t.includes('draft') && t.includes('ready'))) return false;
+  return true;
 }
 
 async function sendEmailNotifications({ tenantId, userIds, type, title, body = '', url = null, data = {} }) {
