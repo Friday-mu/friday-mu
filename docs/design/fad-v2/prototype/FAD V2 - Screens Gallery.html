@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAD V2 — Screens Gallery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fad.css">
+<style>
+  html,body{margin:0;background:#06080c;color:#e8ecf3;font-family:"Hanken Grotesk",system-ui,sans-serif}
+  .gwrap{padding:40px 40px 80px}
+  .ghead{max-width:1200px;margin:0 auto 8px}
+  .ghead h1{font-family:"Newsreader",serif;font-weight:300;font-size:34px;margin:0 0 4px}
+  .ghead p{color:#97a1b3;margin:0;font-size:14px}
+  .gsec{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:#5e6a7e;margin:38px 0 16px;display:flex;align-items:center;gap:12px}
+  .gsec::after{content:"";flex:1;height:1px;background:#1c2536}
+  .grid{display:flex;flex-wrap:wrap;gap:34px 28px}
+  .gframe{display:flex;flex-direction:column;gap:10px}
+  .glabel{font-size:12.5px;color:#97a1b3;font-weight:600;padding-left:2px}
+  .glabel b{color:#e8ecf3;font-weight:600}
+  .gphone{width:390px;height:844px;border-radius:34px;overflow:hidden;position:relative;
+    border:1px solid #232c3e;box-shadow:0 24px 60px rgba(0,0,0,.5);background:#0a0d12}
+  .gphone .fad{height:100%;min-height:0}
+  .gphone .fad-scroll{overflow:hidden}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#0a0d12"/>
+<rect x="14" y="22" width="22" height="38" rx="4" fill="#151c2b" stroke="#5681ff" stroke-width="1"/>
+<rect x="39" y="22" width="22" height="38" rx="4" fill="#151c2b" stroke="#46c08a" stroke-width="1"/>
+<rect x="64" y="22" width="22" height="38" rx="4" fill="#151c2b" stroke="#9b7cf0" stroke-width="1"/></svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="fad-kit.jsx"></script>
+<script type="text/babel" src="fad-data.jsx"></script>
+<script type="text/babel" src="fad-screens-a.jsx"></script>
+<script type="text/babel" src="fad-screens-b.jsx"></script>
+<script type="text/babel" src="fad-screens-c.jsx"></script>
+<script type="text/babel" src="fad-screens-d.jsx"></script>
+<script type="text/babel" src="fad-screens-e.jsx"></script>
+<script type="text/babel" src="fad-screens-f.jsx"></script>
+
+<script type="text/babel">
+const {water, turnover} = TASKS;
+const NV = (over)=> ({...NAV_STUB, ...over});
+
+function Frame({label, sub, nav, children}){
+  const inner = nav ? <NavCtx.Provider value={NV(nav)}>{children}</NavCtx.Provider> : children;
+  return (
+    <div className="gframe">
+      <div className="glabel"><b>{label}</b>{sub?' · '+sub:''}</div>
+      <div className="gphone">{inner}</div>
+    </div>
+  );
+}
+
+const runNav = {timerFor:()=>({status:'running',elapsed:5025})};
+const reqPreset = {reqFor:()=>({checks:{beds:true,bath:true},counts:{water:6,towels:6,toilet:1},photos:1,itemPhotos:{bath:1}})};
+const completeReady = {timerFor:()=>({status:'running',elapsed:5025}),
+  reqFor:()=>({checks:{iso:true,find:true,fix:true,test:true,leak:true,press:true,clean:true},counts:{},photos:2,itemPhotos:{fix:1,leak:1}})};
+const doneNav = {timerFor:()=>({status:'done',elapsed:5025})};
+const audioCall = {call:{with:'Franny (GM)', type:'audio', elapsed:154, minimized:false}};
+const videoCall = {call:{with:'Bryan Ramluckun', type:'video', elapsed:92, minimized:false}};
+
+function Gallery(){
+  return (
+    <div className="gwrap">
+      <div className="ghead">
+        <h1>FAD V2 — Field PWA · Screens</h1>
+        <p>Every screen of the field-staff app, on its own. Dark/indigo FAD skin · the interactive version lives in the Prototype file.</p>
+      </div>
+
+      <div className="ghead"><div className="gsec">Daily work</div></div>
+      <div className="grid">
+        <Frame label="My Tasks" sub="Today / Tomorrow / Week / All"><ScreenTasks/></Frame>
+        <Frame label="Task detail" sub="before start"><ScreenDetail task={water}/></Frame>
+        <Frame label="Task detail" sub="timer running" nav={runNav}><ScreenDetail task={water}/></Frame>
+        <Frame label="Task detail" sub="completed · from history"><ScreenDetail task={{...water, completed:true, loggedTime:'1h 25m'}}/></Frame>
+        <Frame label="History" sub="tap to reopen"><ScreenHistory/></Frame>
+      </div>
+
+      <div className="ghead"><div className="gsec">On a task</div></div>
+      <div className="grid">
+        <Frame label="Requirements" sub="checklist · inventory · photos" nav={reqPreset}><ScreenRequirements task={turnover}/></Frame>
+        <Frame label="Complete" sub="proof-gated" nav={completeReady}><ScreenComplete task={water}/></Frame>
+        <Frame label="Supplies used" sub="confirm / edit qty"><ScreenSupplies task={water}/></Frame>
+        <Frame label="Expense" sub="receipt scan"><ScreenExpense task={water}/></Frame>
+        <Frame label="Ask Friday" sub="task-scoped"><ScreenAIHelp task={water}/></Frame>
+        <Frame label="Property" sub="map · check-in · access · issues"><ScreenProperty task={water}/></Frame>
+        <Frame label="Comments & log" sub="closing summary" nav={doneNav}><ScreenComments task={water}/></Frame>
+      </div>
+
+      <div className="ghead"><div className="gsec">Reporting</div></div>
+      <div className="grid">
+        <Frame label="Report an issue" sub="manager-vetted"><ScreenReport/></Frame>
+        <Frame label="My reports"><ScreenReports/></Frame>
+      </div>
+
+      <div className="ghead"><div className="gsec">Comms & you</div></div>
+      <div className="grid">
+        <Frame label="Team chat" sub="channels & DMs"><ScreenChat/></Frame>
+        <Frame label="Chat thread"><ScreenChatThread chat={CHATS.west}/></Frame>
+        <Frame label="Call · audio" sub="minimizable" nav={audioCall}><CallScreen/></Frame>
+        <Frame label="Call · video" sub="minimizable" nav={videoCall}><CallScreen/></Frame>
+        <Frame label="Notifications" sub="Friday-filtered"><ScreenNotifs/></Frame>
+        <Frame label="Notification prefs" sub="locked + preset"><ScreenNotifPrefs/></Frame>
+        <Frame label="Help & tutorial" sub="smart walkthrough"><ScreenTutorial/></Frame>
+        <Frame label="Account"><ScreenAccount/></Frame>
+        <Frame label="My roster" sub="own shifts"><ScreenMyRoster/></Frame>
+        <Frame label="Time off" sub="balance + requests"><ScreenTimeOff/></Frame>
+        <Frame label="Reviews" sub="guest reviews on your stays"><ScreenReviews/></Frame>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<NavCtx.Provider value={NAV_STUB}><Gallery/></NavCtx.Provider>);
+</script>
+</body>
+</html>
