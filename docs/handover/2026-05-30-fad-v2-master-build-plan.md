@@ -270,3 +270,27 @@ Friday done"): eval-mining/analyzer operating cadence (Plan 2/6), KB harness fac
   — not a code fix, not a V2 deploy blocker (pre-existing Core state; V2 ships behind the legacy default).
 - **Hygiene:** `git diff --check` clean (stripped trailing whitespace in the persisted design spec); retired-name
   scan ("OS Friday") clean across the V2 diff.
+
+---
+
+## 11. Governing principle — design reconciliation (EVERY module migration)
+Ishant, 2026-05-30. The V2 redesign must **wire to the real backend data we have and never lose functionality.**
+For every module, reconcile design vs current:
+- **Design has it, we don't** → decide whether to import it (need + data exists?).
+- **We have it, design lacks it** → check WHY: is it elsewhere? better placed there? or did the design just miss
+  it? If just missing → **keep our functionality**; the design is **guidance for the target**, not a spec to
+  shrink to. (This is why M1 is a *superset*.)
+- Default outcome = **superset**: design's IA/skin + our substance + real data. Downgrades need an explicit reason.
+
+### Role model (LOCKED 2026-05-30) — Manager tier
+`director` = all. **Manager** = `ops_manager` + `commercial_marketing` (identical): everything EXCEPT **finance**
+(director-only), **platform/admin settings** (tenant_settings/billing/admin_analytics — director-only), and
+**team/role management** (hr_permissions — director-only). `settings` = personal prefs only (system/integration +
+Team sections director-gated in SettingsModule). Operations settings stay manager-editable (Operations module).
+Implication: managers don't see financial figures (incl. owner payout amounts) since finance=none — by design.
+Built in `permissions.ts` (`MANAGER_PERMS`). NOTE: assigning a *person* to a role stays Ishant's (SQL), not mine.
+
+### Credentials — owner access (owner portal)
+Owner is not a flat "never": owners can **request** credentials via a button in their owner portal → director/
+manager **approves** (or it **appears-but-logged**); audit-logged either way. Owner-portal flow, separate from
+the staff record's role×window masking. Net-new backend (request + approval + audit log) — parked.

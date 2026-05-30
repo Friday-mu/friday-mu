@@ -98,48 +98,37 @@ const DIRECTOR_PERMS: RolePermissions = {
   settings: FULL_ACCESS,
 };
 
-const COMMERCIAL_MARKETING_PERMS: RolePermissions = {
+// Manager tier (2026-05-30, Ishant) — ops_manager + commercial_marketing are IDENTICAL.
+// "Full rights EXCEPT finance, platform/admin settings, and team/role management."
+//   - finance:        director-only. Managers don't see the Finance module; financial
+//                     figures in Owners/Properties are finance-gated too (so owner payout
+//                     amounts etc. are hidden from managers — by design).
+//   - hr_permissions: director-only (team & role management).
+//   - tenant_settings / billing / admin_analytics: director-only (platform / SaaS admin).
+//   - settings: LIMITED (personal prefs only — appearance / account / language). The
+//     system/integration + Team SECTIONS inside the Settings module are director-gated
+//     separately (section gating in SettingsModule). Operations settings live in the
+//     Operations module (governed by tasks/operations access), not the `settings` resource.
+const MANAGER_PERMS: RolePermissions = {
   tasks: FULL_ACCESS,
   inbox_guest: FULL_ACCESS,
   inbox_syndic: FULL_ACCESS,
   inbox_group: FULL_ACCESS,
   inbox_team: FULL_ACCESS,
   crm: FULL_ACCESS,
-  owners: READ_ONLY,
-  finance: { read: 'all', write: 'all', approve: 'none', delete: 'none' },
+  owners: FULL_ACCESS,
+  finance: {}, // director-only
   reservations: FULL_ACCESS,
   properties: FULL_ACCESS,
-  hr_staff: SELF_ONLY,
-  hr_roster: SELF_ONLY,
-  hr_time_off: SELF_ONLY,
-  hr_stats: {},
-  hr_permissions: {},
-  tenant_settings: LIMITED_SETTINGS_ACCESS,
-  billing: LIMITED_SETTINGS_ACCESS,
-  admin_analytics: LIMITED_SETTINGS_ACCESS,
-  settings: LIMITED_SETTINGS_ACCESS,
-};
-
-const OPS_MANAGER_PERMS: RolePermissions = {
-  tasks: FULL_ACCESS,
-  inbox_guest: FULL_ACCESS,
-  inbox_syndic: FULL_ACCESS,
-  inbox_group: FULL_ACCESS,
-  inbox_team: FULL_ACCESS,
   hr_staff: FULL_ACCESS,
   hr_roster: FULL_ACCESS,
   hr_time_off: FULL_ACCESS,
   hr_stats: FULL_ACCESS,
-  hr_permissions: {},
-  crm: READ_ONLY,
-  owners: READ_ONLY,
-  finance: { read: 'all', write: 'all', approve: 'none', delete: 'none' },
-  reservations: FULL_ACCESS,
-  properties: FULL_ACCESS,
-  tenant_settings: LIMITED_SETTINGS_ACCESS,
-  billing: LIMITED_SETTINGS_ACCESS,
-  admin_analytics: LIMITED_SETTINGS_ACCESS,
-  settings: LIMITED_SETTINGS_ACCESS,
+  hr_permissions: {}, // team / role management — director-only
+  tenant_settings: {}, // platform / SaaS admin — director-only
+  billing: {}, // director-only
+  admin_analytics: {}, // director-only
+  settings: LIMITED_SETTINGS_ACCESS, // personal prefs; system/integration/team sections director-gated in SettingsModule
 };
 
 const FIELD_PERMS: RolePermissions = {
@@ -171,8 +160,9 @@ const EXTERNAL_PERMS: RolePermissions = {
 
 export const PERMISSIONS: Record<TaskUser['role'], RolePermissions> = {
   director: DIRECTOR_PERMS,
-  commercial_marketing: COMMERCIAL_MARKETING_PERMS,
-  ops_manager: OPS_MANAGER_PERMS,
+  // Manager tier — ops_manager + commercial_marketing are identical (2026-05-30).
+  commercial_marketing: MANAGER_PERMS,
+  ops_manager: MANAGER_PERMS,
   field: FIELD_PERMS,
   external: EXTERNAL_PERMS,
 };
