@@ -31,6 +31,15 @@ bring existing modules to the V2 look using the repo's token system + the new pr
 the spec's *content* (provenance, AI states, 17-stage workbench, etc.). The dark tokens already match
 the design exactly (`gm-desktop.css :root`).
 
+## ⚠️ Token-system gotcha (read before any module slice)
+The repo has **two token systems**: (a) **V2** `--indigo/--green/--card/...` in `gm-desktop.css`
+(used by the GM/Ops screens + my S1/S2 primitives), and (b) **legacy** `--color-*` / `--radius-*`
+in `fad.css` (used by `InboxModule`, `inbox/DraftPanel.tsx`, `ai/AIComponents.tsx`, and most
+business modules). My trust/provenance primitives are V2-tokened. **Do not naively drop V2
+components into a legacy-tokened module** — it mixes two design languages. Each module slice =
+migrate that module's surface to V2 tokens **and** wire the primitives, together. This is why
+S3+ are real slices, not drop-ins. (Verified on `DraftPanel.tsx`, which is fully `--color-*`.)
+
 ## DONE (verified, committed, pushed)
 - **S1 — AI trust-state vocabulary** (`c198d66e`). `ai/aiHealth.ts` (`deriveAIHealth` from real
   signals) + `ai/TrustStates.tsx` (SyncChip/Provenance/ConfBar/StateBanner/AITrustStrip) + CSS, wired
