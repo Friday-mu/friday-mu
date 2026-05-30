@@ -39,6 +39,7 @@ const GuestsModule = dynamic(() => import('./modules/Tier3Modules').then((m) => 
 const IntelligenceModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.IntelligenceModule })), { ssr: false, loading: ModuleLoading });
 const LeadsModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.LeadsModule })), { ssr: false, loading: ModuleLoading });
 const MarketingModule = dynamic(() => import('./modules/Tier3Modules').then((m) => ({ default: m.MarketingModule })), { ssr: false, loading: ModuleLoading });
+const AgencyModule = dynamic(() => import('./modules/AgencyModule').then((m) => ({ default: m.AgencyModule })), { ssr: false, loading: ModuleLoading });
 const ReviewsModule = dynamic(() => import('./modules/ReviewsModule').then((m) => ({ default: m.ReviewsModule })), { ssr: false, loading: ModuleLoading });
 const AnalyticsModule = dynamic(() => import('./modules/AnalyticsModule').then((m) => ({ default: m.AnalyticsModule })), { ssr: false, loading: ModuleLoading });
 const ReservationsModule = dynamic(() => import('./modules/ReservationsModule').then((m) => ({ default: m.ReservationsModule })), { ssr: false, loading: ModuleLoading });
@@ -506,8 +507,9 @@ function renderModuleInner(
       return <AdminAnalyticsModule />;
     case 'ask-friday-review':
       return <AskFridayReviewModule subPage={subPage || 'pending'} onChangeSubPage={ctx.setSubPage} />;
-    case 'syndic':
     case 'agency':
+      return <AgencyModule />;
+    case 'syndic':
       return <TeaseModule mod={mod} />;
     default:
       return <div className="fad-module-body">Module not found.</div>;

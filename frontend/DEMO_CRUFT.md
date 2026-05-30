@@ -278,3 +278,9 @@ The manager/GM desktop retrofit (`src/app/fad/_components/gm/`) refines the exis
 |---|---|---|---|---|
 | PROD-FIELD-TIMEOFF-1 | `field/screens/work2.tsx` (ScreenTimeOff) | @demo:data | Inline time-off balance/requests + local request form | `GET/POST /api/hr/time-off?staff=me` |
 | PROD-FIELD-REVIEWS-1 | `field/screens/work2.tsx` (ScreenReviews) | @demo:data | Inline reviews list (no reviews→reservation→assigned-staff join) | `GET /api/reviews/by-staff?staff=me` |
+
+## PROD-AGENCY — Agency module (2026-05-30, V2 net-new, replaces tease stub)
+
+| ID | Path | Type | What it fakes | Backend action |
+|---|---|---|---|---|
+| PROD-AGENCY-1 | `modules/AgencyModule.tsx` | @demo:data | Inline LISTINGS/BUYERS/SELLERS/MATCHES/OPPS fixtures + client-side AVM estimate + match scores | `GET /api/agency/{listings,buyers,sellers,matches,opportunities}`; move AVM valuation + match scoring server-side; portal push → real lExpress Property / Property Cloud sync |

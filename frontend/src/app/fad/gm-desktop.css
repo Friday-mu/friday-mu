@@ -146,3 +146,21 @@
 .field-label{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx-3)}
 .field-value{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--tx)}
 .field-v{font-weight:500}
+
+/* Agency (+ reusable) classes ported from the design CSS. Scoped under .dwrap (these
+   render via GmShell). Tag: PROD-AGENCY-1. */
+.dwrap .tdrow{cursor:pointer}
+.dwrap .tdrow:hover td{background:var(--card)}
+.dwrap .tdrow:hover .pcodeD{border-color:var(--line-3)}
+.dwrap .synalert{display:flex;align-items:flex-start;gap:10px;padding:11px 2px;border-bottom:1px solid var(--line-2);cursor:pointer}
+.dwrap .synalert:last-child{border-bottom:none}
+.dwrap .synalert:hover{background:var(--card)}
+.dwrap .synflag{font-family:var(--mono);font-size:8.5px;letter-spacing:.03em;padding:2px 5px;border-radius:5px;background:var(--card-2);border:1px solid var(--line-2);color:var(--tx-2);white-space:nowrap}
+.dwrap .synflag.amber{background:var(--amber-ghost);border-color:rgba(193,154,87,.3);color:var(--amber)}
+.dwrap .synflag.red{background:var(--red-ghost);border-color:rgba(207,102,96,.3);color:var(--red)}
+.dwrap .synflag.green{background:var(--green-ghost);border-color:rgba(74,155,118,.3);color:var(--green)}
+.dwrap .synflag.violet{background:var(--violet-ghost);border-color:rgba(135,115,192,.3);color:var(--violet)}
+.dwrap .lq-conf{height:6px;border-radius:3px;background:var(--card-2);overflow:hidden}
+.dwrap .lq-conf i{display:block;height:100%;border-radius:3px}
+.dwrap .portal-pill{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--tx-3);background:var(--card);cursor:pointer;white-space:nowrap}
+.dwrap .portal-pill.on{color:var(--green);border-color:rgba(74,155,118,.4);background:var(--green-ghost)}
